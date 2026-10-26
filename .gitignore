@@ -9,3 +9,6 @@ dist/
 .DS_Store
 runner/.work/
 playtest-results/
+.test-runtime/
+test-results/
+playwright-report/

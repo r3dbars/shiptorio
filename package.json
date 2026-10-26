@@ -19,11 +19,20 @@
     "build": "bun run --filter './web' build",
     "deploy": "bun run build && bun run --filter './server' deploy",
     "typecheck": "bun run --filter '*' typecheck",
-    "test": "bun test",
+    "test": "bun test shared server runner playtest tests/contract",
     "spark:check": "bun server/scripts/spark-check.ts",
-    "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts"
+    "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts",
+    "test:fast": "bun run typecheck && bun run test && bun run playtest --check",
+    "test:e2e": "playwright test",
+    "test:visual:update": "playwright test --update-snapshots",
+    "test:load": "bun tests/load/run.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1"
+    "@cloudflare/workers-types": "^5.20261026.1",
+    "@playwright/test": "^1.64.1",
+    "@types/bun": "^1.4.4",
+    "@types/ws": "^8.18.2",
+    "typescript": "^5.9.0",
+    "ws": "^8.22.0"
   }
 }
