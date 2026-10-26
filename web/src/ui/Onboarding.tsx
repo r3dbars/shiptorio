@@ -114,7 +114,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
             <p className="psub">{ONBOARD.tagline}</p>
             <Coach>{ONBOARD.hello}</Coach>
             <div className="nm-options">
-              <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
+              <button type="button" className="btn rec nm-btn" onClick={signIn} autoFocus={typeof matchMedia === "undefined" || !matchMedia("(pointer: coarse)").matches}>
                 {ONBOARD.signIn}
               </button>
             </div>
@@ -163,7 +163,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                   spellCheck={false}
                   autoFocus
                 />
-                <button type="submit" className="nm-btn rec" disabled={!valid}>
+                <button type="submit" className="btn rec nm-btn" disabled={!valid}>
                   {ONBOARD.open}
                 </button>
               </form>

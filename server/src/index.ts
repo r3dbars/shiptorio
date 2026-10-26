@@ -10,7 +10,7 @@ import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
-import { appJwt, gh, repoInstallationId } from "./github";
+import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 import { isAllowed } from "./session";
 import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
@@ -26,7 +26,7 @@ import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
-import { browserMutationAllowed, securityHeaders } from "./security";
+import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
@@ -142,11 +142,13 @@ app.use("*", async (c, next) => {
   if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
   if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
   if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
-  const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
+  const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  // public docs pages can be cached briefly; everything else is per player
-  c.header("Cache-Control", isPublicDocs(c.req.path) && c.res.ok ? "public, max-age=300" : "no-store");
+  // Docs are public static content; authenticated build assets retain their private immutable policy.
+  c.header("Cache-Control", isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method) && c.res.ok
+    ? "public, max-age=300" : browserCacheControl(c.req.raw, c.res.status));
 });
 
 app.onError((err, c) => {
@@ -261,7 +263,9 @@ async function installUrl(env: Env): Promise<string | null> {
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
   let slug = await env.CACHE?.get("app:slug");
   if (!slug) {
-    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug);
+    const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    await registerGithubCredential(jwt, env.DB, `github:app:${env.GITHUB_APP_ID}`);
+    slug = await gh<{ slug: string }>("/app", jwt).then((a) => a.slug);
     if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 });
   }
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
@@ -565,6 +569,7 @@ app.all("*", async (c) => {
     return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
   }
   return response;
+
 });
 
 export { app }; // Unwrapped Hono app for route tests.
