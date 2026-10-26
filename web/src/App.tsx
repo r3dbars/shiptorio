@@ -348,6 +348,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
   const settings = (
     <>
+      <a className="btn" href="/settings">Account &amp; data</a>
       <button type="button" className="credit-btn" onClick={() => { setTray(false); setSheet("thinks"); }}>
         {SETTINGS.howItThinks}
       </button>
@@ -424,13 +425,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
             {autonomy?.launches ? (
               // Live: how much of the shipping runs itself. Shows up after the first rocket.
-              <div className="chip" title={permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone}>
+              <div className="chip" title={[permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone, autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : ""].join(" ").trim()}>
                 <span className="badge" style={{ background: "var(--blue)" }}>
                   <Icon name="bot" size={14} />
                 </span>
                 <span>
                   {Math.round((autonomy.automated ?? 0) * 100)}%
-                  <small>{HUD.automated}</small>
+                  <small>{autonomy.level === "advisor" ? HUD.automated : `${HUD.automated} · ${LEVEL_LABEL[autonomy.level]}`}</small>
                 </span>
               </div>
             ) : show("autonomy") && autonomy && (

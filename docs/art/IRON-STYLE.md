@@ -111,6 +111,32 @@ reject red, held amber, followed blue).
 - Logo files live in `web/public/brand/` (wordmark, mark, favicons, OG). Use the SVG wordmark for headings that say
   SHIPTORIO; don't re-type the name in Silkscreen next to it.
 
+### Logo
+
+The SHIPTORIO wordmark is hand-built pixel lettering, not typed Silkscreen: cast-iron letter faces with a lit
+amber top edge, a furnace-lit extrusion, a black ink outline, brass rivets with rust streaks, the **I of SHIP is a
+rocket** (it's what you ship) and the **last O is a brass cog** (it's a factory). Source: `docs/art/brand-gen.py`
+(`python3 docs/art/brand-gen.py web/public/brand` regenerates the SVGs; PNGs are rendered from them).
+
+| File (`/brand/…`) | What | Use |
+| --- | --- | --- |
+| `wordmark.svg` | full-color wordmark, 297×50 art px | every heading that says SHIPTORIO (`<Wordmark />` in `web/src/ui/Logo.tsx`) |
+| `wordmark-mono.svg` | one-color ink silhouette (`#f4ead8`) | tiny or busy placements, watermarks, single-color print |
+| `mark.svg` | riveted iron badge, brass cog, rocket, 32×32 grid | app icon, avatar, square slots (`<Mark />`) |
+| `favicon.svg`, `favicon-16.png`, `favicon-32.png` | 16-grid hand-tuned favicon, 32 from the mark | browser tabs |
+| `apple-touch-icon.png` (180), `icon-192.png`, `icon-512.png`, `manifest.webmanifest` | home-screen icons | PWA / iOS |
+| `og.png` | 1200×630 real Black Iron render + wordmark + "The factory must grow." | `og:image`, `twitter:image` |
+
+- **Scale by whole numbers** where you can (wordmark 297/594/891 px wide, mark 32/64/128) and always set
+  `image-rendering: pixelated`. Other sizes are fine; never blur or smooth it.
+- **Min sizes**: wordmark 120 px wide (below that use the mark), mark 32 px (16 px only via the favicon files).
+- **Clear space**: at least the height of one letter's top bar (1/6 of the wordmark height) on every side;
+  nothing else inside it but the background.
+- **Backgrounds**: `--iron-bg`, the furnace sky, or the real render. It survives light backgrounds thanks to the
+  black outline, but prefer dark.
+- **Don't**: recolor it, stretch it, add glows/drop shadows/rounded plates behind it, rebuild it in Silkscreen,
+  swap the rocket or cog for other glyphs, or set a second SHIPTORIO in text next to it.
+
 ## 8. Motion and sound cues
 
 - Steps, not eases, for UI chrome (`steps(2)` belt crawl, 1-frame flash on change). Panels slide in ≤ 160ms.
