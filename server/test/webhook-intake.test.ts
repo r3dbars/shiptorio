@@ -88,6 +88,7 @@ it("runner revoke is a same-origin signed-in web action and invalidates renewal"
   const { testD1, signedInCookie } = await import("./d1-fixture");
   let paired = true;
   const env = { ...browserEnv, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get: () => ({ revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
+  await env.DB.prepare("INSERT INTO repos(full_name, installation_id, repo_id) VALUES ('r3dbars/shiptorio', 1, 501)").run();
   const url = "https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/revoke";
   const cookie = await signedInCookie(env, "test-player", ["r3dbars/shiptorio"]) + "; " + (await browserCookies()).split("; ")[1];
   expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://evil.example" } }), env as never)).status).toBe(403);

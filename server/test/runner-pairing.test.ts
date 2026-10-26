@@ -17,7 +17,7 @@ test("one pairing slot per repository replaces older runners and revoke clears i
 
 test("a copied pairing token cannot claim another job while its slot is running", async () => {
   const job = { status: "running", deadline: Date.now() + 60000 };
-  const storage = { get: async () => "pair", list: async () => new Map([["runnerJob:active", job]]) };
+  const storage = { get: async (key: string) => key === "runnerPair" ? "pair" : undefined, list: async () => new Map([["runnerJob:active", job]]) };
   const f = new Factory({ storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn() } as never, {} as never);
   expect(await f.claimRunner("pair", ["codex"])).toBeNull();
 });

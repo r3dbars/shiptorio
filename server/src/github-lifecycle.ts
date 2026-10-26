@@ -53,6 +53,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   const id = p.installation?.id;
   if (!id) throw new Error("Installation ID required");
   purgeInstallationTokens(id);
+  await env.DB.prepare("INSERT OR IGNORE INTO installations (id, account_login) VALUES (?, ?)").bind(id, p.installation?.account?.login ?? "").run();
   // Cross-isolate invalidation: every token acquisition/use checks this generation.
   await env.DB.prepare("UPDATE installations SET token_version = token_version + 1 WHERE id = ?").bind(id).run();
   if (event === "repository") {
@@ -78,6 +79,10 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     if (!["created", "deleted", "suspend", "unsuspend", "new_permissions_accepted"].includes(p.action ?? "")) return;
     await env.DB.prepare("INSERT INTO installations (id, account_login, status, permissions, account_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login, status = excluded.status, permissions = COALESCE(excluded.permissions, installations.permissions), account_type = excluded.account_type").bind(id, account?.login ?? "", status, p.installation?.permissions ? JSON.stringify(p.installation.permissions) : null, account?.type ?? "User").run();
     if (status !== "active") {
+      if (status === "deleted") await env.DB.batch([
+        env.DB.prepare("DELETE FROM user_repos WHERE installation_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM user_installations WHERE installation_id = ?").bind(id),
+      ]);
       for (const row of await rows(env, id)) {
         if (status === "deleted") await archive(env, row, "installation deleted");
         else await (await objectFor(env, row)).pauseGitHub("GitHub installation suspended");
@@ -87,7 +92,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   }
   if (event === "installation_repositories") {
     for (const repo of p.repositories_removed ?? []) {
-      const row = await env.DB.prepare("SELECT * FROM repos WHERE full_name = ? AND installation_id = ?").bind(repo.full_name.toLowerCase(), id).first<RepoRecord>();
+      const row = await env.DB.prepare("SELECT * FROM repos WHERE (repo_id = ? OR full_name = ?) AND installation_id = ?").bind(repo.id ?? null, repo.full_name.toLowerCase(), id).first<RepoRecord>();
       if (row) await archive(env, row, "repository removed", repo.id);
     }
   }

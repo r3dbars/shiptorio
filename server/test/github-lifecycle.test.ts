@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { FactoryState } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
-import { handleLifecycle, permissionStatus, RETENTION_MS } from "../src/github-lifecycle";
+import { handleLifecycle, RETENTION_MS } from "../src/github-lifecycle";
 import { migrateRepository, repositoryFactory, type RepoRecord } from "../src/repository";
 import { authorizationRevoked, makeSessionCookie, readSessionDetails } from "../src/session";
 import payload from "./fixtures/github/lifecycle.json";
@@ -147,6 +147,28 @@ describe("GitHub lifecycle fixture payloads", () => {
     expect(obj.data.get("state").science.red).toBe(2); expect(old.data.size).toBe(1);
     await expect(old.factory.pairRunner()).rejects.toThrow("archived");
   });
+});
+
+const { default: app } = await import("../src/index");
+it("signed intake queues every lifecycle event, including revocation without installation or repo", async () => {
+  const f = fixture();
+  f.env.GITHUB_WEBHOOK_SECRET = "fixture-signature-secret";
+  const events = [
+    ["installation", "created"], ["installation", "deleted"], ["installation", "suspend"], ["installation", "unsuspend"], ["installation", "new_permissions_accepted"],
+    ["installation_repositories", "added"], ["installation_repositories", "removed"],
+    ["repository", "renamed"], ["repository", "transferred"], ["repository", "deleted"], ["github_app_authorization", "revoked"],
+  ];
+  const pending: Promise<unknown>[] = [];
+  for (const [event, action] of events) {
+    const body = JSON.stringify(event === "github_app_authorization" ? { action, sender: payload.sender } : { ...payload, action, repositories: [payload.repository], repositories_added: [payload.repository], repositories_removed: [payload.repository] });
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(f.env.GITHUB_WEBHOOK_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const signature = "sha256=" + Buffer.from(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body))).toString("hex");
+    const delivery = `fixture-${event}-${action}`;
+    const response = await app.fetch(new Request("https://shiptorio.com/webhooks/github", { method: "POST", headers: { "x-github-event": event!, "x-github-delivery": delivery, "x-hub-signature-256": signature }, body }), f.env, { waitUntil: (promise: Promise<unknown>) => pending.push(promise) } as never);
+    expect(response.status).toBe(202);
+    expect(f.objects.get("github-installations")!.data.get(`delivery:${delivery}`).event).toBe(event);
+  }
+  await Promise.all(pending);
 });
 
 export async function privateKey() {

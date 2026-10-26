@@ -1753,6 +1753,16 @@ export class Factory extends DurableObject<FactoryEnv> {
           this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(meta.repo),
           this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo),
         ]);
+        if (meta) {
+          for (const kind of ["sentry", "posthog"] as const) {
+            await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);
+            if (await linkedRepo(this.env, kind) === meta.repo) {
+              await this.env.CACHE?.delete(`cred:${kind}`);
+              await linkRepo(this.env, kind, null);
+            }
+          }
+          await this.env.DB.prepare("DELETE FROM installations WHERE id = ? AND status = 'deleted' AND NOT EXISTS (SELECT 1 FROM repos WHERE installation_id = ?)").bind(meta.installationId, meta.installationId).run();
+        }
         await this.ctx.storage.deleteAll();
         this.state = null; this.meta = null; this.openMoves = null; this.deckBook = null; this.deckRules = null;
       } else if (lifecycle.deleteAt) await this.ctx.storage.setAlarm(lifecycle.deleteAt);
