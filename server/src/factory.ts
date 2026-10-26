@@ -50,6 +50,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   private meta: Meta | null = null;
   private running = new Set<string>(); // item ids with a job in flight
 
+  private batchingDecisions = false;
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
@@ -70,7 +71,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async refreshDecisions() {
-    if (!this.state || !this.meta) return;
+    if (!this.state || !this.meta || this.batchingDecisions) return;
     await this.decisionData();
     const s = this.state, now = Date.now(), jobs = await this.runnerJobs();
     const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
@@ -91,13 +92,21 @@ export class Factory extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(move => {
       const item = move.itemId && s.items.find(i => i.id === move.itemId);
       if (move.itemId && (!item || item.state === "launched")) return false;
+      const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
+      if (proposing && item && (!(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
       if (jobId && !jobs.some(j => j.id === jobId && j.status === "awaiting_approval")) return false;
       if (move.stage === "pad" && item && item.state !== "on_pad" && item.state !== "rejected") return false;
       if (move.stage === "resources" && s.bottleneck?.stage !== "resources") return false;
       return true;
     });
-    const offered = buildDeck(s, this.openMoves!.filter(m => !suppressed(this.deckBook!, m)), { now, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
+    const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
+    const offered = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
+      if (!this.openMoves!.some(m => m.id === implied.id)) this.openMoves!.push(implied);
+    }
+    this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") || offered.some(card => card.id === m.id));
     const deck = offered.filter(m => !suppressed(this.deckBook!, m)).map(m => {
       const decision = this.deckBook!.decisions[moveKey(m)];
       return decision && decision.count >= 3 ? thirdDefer(m) : m;
@@ -189,14 +198,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
-    let item: Item | undefined;
-    for (const candidate of s.items.filter(i => ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
-      if (await this.ctx.storage.get<number>(`runnerDeferred:${candidate.id}`) !== candidate.updatedAt) { item = candidate; break; }
-    }
-    if (!item) return;
+    for (const item of s.items.filter(i => ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
+      if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
     const choices = presence.harnesses.slice(0, 2).map(harness => ({ id: harness, label: `Plan with ${harness === "codex" ? "Codex" : "Claude"}`, recommended: harness === presence.harnesses[0], actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Read this issue and propose a file scope before building." }] }));
     if (!choices.length) return;
     await this.publishRunnerMove({ id: crypto.randomUUID(), title: `Plan #${item.id.slice(3)}: ${item.title}`, why: "Get a focused plan first. Review its files and steps before any code changes.", stage: "build", kind: "build", itemId: item.id, createdAt: Date.now(), options: [...choices, { id: "decline", label: "Later", recommended: false, actions: [] }] });
+    }
   }
 
   private async chooseRunnerMove(moveId: string, optionId: string): Promise<void> {
@@ -343,6 +350,8 @@ export class Factory extends DurableObject<FactoryEnv> {
         await this.patch({ power: [...this.state.power.filter(p => !["power-codex", "power-claude_code", ...localPower.map(p => p.id)].includes(p.id)), ...localPower] });
       }
       await this.offerRunnerPlan();
+      await this.refreshDecisions();
+      await this.scheduleTick();
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
       if (!job) return null;
@@ -936,7 +945,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.decisionData();
       const card = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
       if (!card) return; // stale or forged card ids never execute
-      const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) : card;
+      const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) ?? Object.values(this.deckBook!.decisions).find(d => `${d.move.id}:deferred` === card.id)?.move : card;
       if (!original) return;
       if (msg.type === "defer_move") { await this.swipe(original, "defer"); return; }
       if (msg.type === "dismiss_move") { await this.swipe(original, msg.why); return; }
@@ -1046,6 +1055,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
+    this.batchingDecisions = true;
+    try {
     await this.processDeliveries();
     if (!(await this.load())) return;
     await this.planRunnerJobs();
@@ -1107,10 +1118,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.offerGauntletMove();
     await this.offerPermitMove();
     await this.offerRunnerPlan();
-    await this.refreshDecisions();
+    const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
-    if (busy && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+    if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
+    } finally { this.batchingDecisions = false; await this.refreshDecisions(); }
   }
 
   private async runSparkJob(itemId: string, machineId: string): Promise<void> {

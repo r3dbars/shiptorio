@@ -49,7 +49,7 @@ export function enrichMove(move: Move, state: FactoryState): Move {
   const enriched: Move = { ...move, kind, focus, grows, plan, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args } })) })) };
   // Scar/rework cards deliberately retain their existing explicit overrule behavior.
   // Only actual shipping cards get a safe default for a fast right swipe.
-  if (kind !== "ship" && move.stage !== "pad") return enriched;
+  if (kind !== "ship") return enriched;
   const evidence = REQUIRED.map(({ gate, name }) => {
     const stamp = item?.inspection?.stages.find(s => s.gate === gate);
     return { station: name, ok: stamp?.state === "passed", note: stamp?.reason ?? "This check has not run." };
