@@ -35,7 +35,10 @@ import {
   type Built,
 } from "./itemlab";
 import { buildDrone, type DroneMode } from "./drone";
-import { islandDepth, makeDistrict, makeFloater, makeIsland, makeWaterfall } from "./models";
+import { islandDepth, makeDistrict, makeFloater, makeGlassLake, makeGoldTrim, makeIsland, makeLantern, makeWaterfall } from "./models";
+
+import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type SatelliteView } from "./empire";
+import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
 import { bakeModel, findDynamic, mergeStatic } from "./bake";
@@ -54,7 +57,6 @@ const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
-const TOP_BAR_PX = 64; // the top bar (score chips, mode toggle, icons); map labels stay below it
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -215,6 +217,11 @@ function bakedItem(key: string, states: string[] | undefined, make: () => Built)
   }, states);
 }
 
+// Only touch the DOM when a value changes; style writes invalidate layout even when equal-looking.
+function setStyle(el: HTMLElement, prop: "display" | "transform", v: string) {
+  if (el.style[prop] !== v) el.style[prop] = v;
+}
+
 // Where the label sits above each model, from the Item Lab's item heights.
 const LABEL_Y: Partial<Record<Machine["type"], number>> = {
   ore_deposit: 2.6,
@@ -301,6 +308,12 @@ function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built 
   }
 }
 
+export interface Cosmetics {
+  glassLake?: boolean;
+  lanterns?: number; // how many are lit: your streak
+  goldPad?: boolean;
+}
+
 export class FactoryScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -322,6 +335,18 @@ export class FactoryScene {
   private readonly launched = new Set<string>();
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
+  // progression unlocks on the island (shared/src/progression.ts), rebuilt with the world
+  private cosmetics: Cosmetics = {};
+  private cosmeticsKey = "";
+  private readonly extras = new THREE.Group();
+  private extraTicks: ((t: number) => void)[] = [];
+
+  // the empire: other repos as satellite islands, and the sky rails to them (map/empire.ts)
+  private satSpecs: SatelliteSpec[] = [];
+  private satKey = "";
+  private sats: { view: SatelliteView; label: Label; route: Route; y: number }[] = [];
+  private readonly outer = { x0: -10, x1: 10, z0: -10, z1: 10 }; // pan limits: the main island plus satellites
+  private zoomMax = ZOOM_MAX;
   private worldKey = "";
   private districtCount = 0;
   private lineKey = "";
@@ -431,7 +456,7 @@ export class FactoryScene {
     this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
+    this.zoom = Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
@@ -444,7 +469,7 @@ export class FactoryScene {
     const down = new THREE.Vector3(Math.sin(YAW), 0, Math.cos(YAW));
     this.target.addScaledVector(right, -dx * k);
     this.target.addScaledVector(down, (-dy * k) / Math.sin(TILT));
-    const b = this.bounds;
+    const b = this.outer;
     this.target.x = Math.max(b.x0, Math.min(b.x1, this.target.x));
     this.target.z = Math.max(b.z0, Math.min(b.z1, this.target.z));
   }
@@ -489,6 +514,7 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
+      this.buildExtras();
       const center = new THREE.Vector3((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
       if (first) this.target.copy(center);
       else if (state.districts.length !== this.districtCount) this.glide = center;
@@ -632,6 +658,87 @@ export class FactoryScene {
     this.biasGoal = this.biasFor(!!this.home);
   }
 
+  // ---------- the empire ----------
+
+  // Other repos float nearby as satellite islands. Rebuilt only when the set of islands or their
+  // districts change; label text updates in place.
+  setSatellites(specs: SatelliteSpec[]) {
+    this.satSpecs = specs;
+    const key = JSON.stringify(specs.map((s) => [s.repo, s.districts.map((d) => d.name), Math.min(6, s.rockets), s.hot]));
+    if (key !== this.satKey) {
+      this.satKey = key;
+      this.layoutSatellites();
+    } else for (const sat of this.sats) {
+      const sp = specs.find((x) => x.repo === sat.view.repo);
+      if (sp) this.setLabel(sat.label, sp.title, sp.sub, sp.hot);
+    }
+  }
+
+  private clearSatellites() {
+    for (const sat of this.sats) {
+      this.scene.remove(sat.view.g, sat.route.g);
+      disposeOwnedGeometries(sat.view.g);
+      sat.route.dispose();
+      this.dropLabel(sat.label);
+    }
+    this.sats = [];
+  }
+
+  private layoutSatellites() {
+    this.clearSatellites();
+    const b = this.bounds;
+    const center = new THREE.Vector3((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2);
+    const mainHalf = Math.hypot(b.x1 - b.x0, b.z1 - b.z0) / 2;
+    Object.assign(this.outer, b);
+    this.satSpecs.forEach((spec, i) => {
+      const view = buildSatellite(spec, i);
+      const at = satelliteSpot(i, this.satSpecs.length, center, mainHalf * 0.8, view.half, YAW);
+      view.g.position.copy(at);
+      this.scene.add(view.g);
+      // the rail leaves the main island's edge toward the satellite and lands on its near rim
+      const dir = at.clone().sub(center).setY(0).normalize();
+      const from = center.clone().addScaledVector(dir, mainHalf * 0.62).setY(0.6);
+      const to = at.clone().addScaledVector(dir, -view.half * 0.7).setY(at.y + 0.6);
+      const route = new Route(from, to, spec.hot);
+      this.scene.add(route.g);
+      const label = this.addLabel(view.g, view.labelY, view.key);
+      label.el.classList.add("island");
+      this.setLabel(label, spec.title, spec.sub, spec.hot);
+      this.sats.push({ view, label, route, y: at.y });
+      const r = view.half + 2;
+      Object.assign(this.outer, { x0: Math.min(this.outer.x0, at.x - r), x1: Math.max(this.outer.x1, at.x + r), z0: Math.min(this.outer.z0, at.z - r), z1: Math.max(this.outer.z1, at.z + r) });
+    });
+    this.zoomMax = this.sats.length ? Math.max(ZOOM_MAX, this.empireZoom() * 1.6) : ZOOM_MAX;
+  }
+
+  private empireZoom() {
+    const b = this.outer;
+    const span = (b.x1 - b.x0) * Math.cos(YAW) + (b.z1 - b.z0) * Math.sin(YAW);
+    const tall = ((b.x1 - b.x0) * Math.sin(YAW) + (b.z1 - b.z0) * Math.cos(YAW)) * Math.sin(TILT) + 14; // islands hang below their tops
+    return Math.max(span / (this.baseViewHeight() * (this.width / this.height)), tall / this.baseViewHeight()) * 1.08;
+  }
+
+  // Leave the empire overview: back to the main island's line.
+  backToLine() {
+    this.wideShot = false;
+    if (this.state) this.fitLine(this.state);
+  }
+
+  // Pull all the way back so every island shows: the empire overview.
+  empireView() {
+    this.wideShot = true;
+    this.dropLaunchCam();
+    this.selected = undefined;
+    this.home = null;
+    this.glide = null;
+    const b = this.outer;
+    // the overview sheet sits on the left on wide screens and along the bottom on phones; the islands take the rest
+    const phone = this.width <= 760;
+    const room = phone ? 0.95 : 1.3;
+    this.camGoal = { target: new THREE.Vector3((b.x0 + b.x1) / 2, -2, (b.z0 + b.z1) / 2), zoom: Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.empireZoom() * room)) };
+    this.biasGoal = phone ? { x: 0, y: 0.27 } : { x: 0.17, y: 0 };
+  }
+
   // Pull back over the whole island, eased like focus (the welcome tour's wide shots). scale > 1 sits further out.
   overview(scale = 1) {
     this.wideShot = true;
@@ -727,9 +834,59 @@ export class FactoryScene {
     });
 
     Object.assign(this.bounds, { x0, x1, z0, z1 });
+    this.layoutSatellites();
     const half = Math.max(w, d) / 2 + 6;
     Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 120 });
     this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  /** Switch progression cosmetics on or off: the glass lake, streak lanterns, gold pad trim. */
+  setCosmetics(c: Cosmetics | undefined) {
+    const key = JSON.stringify(c ?? {});
+    if (key === this.cosmeticsKey) return;
+    this.cosmeticsKey = key;
+    this.cosmetics = c ?? {};
+    if (this.state) this.buildExtras();
+  }
+
+  private buildExtras() {
+    if (!this.extras.parent) this.scene.add(this.extras);
+    this.extras.clear();
+    this.extraTicks = [];
+    const { x0, x1, z0, z1 } = this.bounds;
+    const w = x1 - x0, d = z1 - z0;
+    const c = this.cosmetics;
+    if (c.glassLake) {
+      // front left of the island, clear of the waterfall at 72% and half sunk past the rim
+      const r = Math.min(2.2, Math.max(1.5, w * 0.08));
+      const lake = makeGlassLake(r, islandDepth(w, d) * 0.3);
+      lake.group.position.set(x0 + w * 0.2, 0, z1 + 0.6 - r * 0.7);
+      this.extras.add(lake.group);
+      this.extraTicks.push(lake.tick);
+    }
+    if (c.lanterns) {
+      // along the front rim, left to right, then up the right side
+      const n = Math.min(14, c.lanterns);
+      const glows: THREE.MeshPhongMaterial[] = [];
+      for (let i = 0; i < n; i++) {
+        const l = makeLantern();
+        const f = (i + 0.5) / 14;
+        const front = f < 0.6;
+        const x = front ? x0 + 1 + (w - 2) * (f / 0.6) : x1 + 0.2;
+        const z = front ? z1 + 0.25 : z1 - 1 - (d - 2) * ((f - 0.6) / 0.4);
+        l.group.position.set(x, 0, z);
+        this.extras.add(l.group);
+        glows.push(l.glow);
+      }
+      this.extraTicks.push((t) => glows.forEach((g, i) => g.emissiveIntensity = 0.85 + Math.sin(t * 3 + i * 1.7) * 0.15));
+    }
+    const pad = this.ofType("launch_pad")[0];
+    if (c.goldPad && pad) {
+      const p = this.machinePos(pad);
+      const trim = makeGoldTrim(2.8);
+      trim.position.set(p.x, 0, p.z);
+      this.extras.add(trim);
+    }
   }
 
   // ---------- machines ----------
@@ -1333,9 +1490,12 @@ export class FactoryScene {
     });
   }
 
+  // Reads every label's size once, then writes every position: interleaving the two forced a
+  // layout per label per frame. Labels that would overlap stack upward instead.
   private placeLabels() {
     const w = this.width, h = this.height;
     let teachingRow = 0;
+    const placed: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const l of this.labels) {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y;
@@ -1345,29 +1505,51 @@ export class FactoryScene {
       const teaching = !!l.key && this.teachingKeys.has(l.key);
       l.el.classList.toggle("teaching", teaching);
       if (teaching) y -= (teachingRow++ % 3) * 24;
-      const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
+      const shown = teaching || this.showAll || l.el.classList.contains("hot") || l.el.classList.contains("island") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
-      l.el.style.display = off ? "none" : "flex";
-      // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
-      if (!off) y = Math.max(y, TOP_BAR_PX + l.el.offsetHeight);
-      if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
+      setStyle(l.el, "display", off ? "none" : "flex");
+      if (!off) placed.push({ el: l.el, x, y, w: 0, h: 0 });
     }
+    const tags: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const pe of this.pings) {
       const l = [...this.labels].find((x) => x.key === pe.key);
       if (!l) {
-        pe.el.style.display = "none";
+        setStyle(pe.el, "display", "none");
         continue;
       }
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y * 0.55;
       this.v3.project(this.camera);
       const x = ((this.v3.x + 1) / 2) * w;
-      let y = ((1 - this.v3.y) / 2) * h;
-      pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
-      y = Math.max(y, TOP_BAR_PX + pe.el.offsetHeight / 2);
-      pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      const y = ((1 - this.v3.y) / 2) * h;
+      const off = x < -40 || x > w + 40 || y < -20 || y > h + 20;
+      setStyle(pe.el, "display", off ? "none" : "flex");
+      if (!off) tags.push({ el: pe.el, x, y, w: 0, h: 0 });
+    }
+    // one layout for everything, including where the HUD sits (its chips and the Check in / Build
+    // lens move around on phones, and the notch pushes them down)
+    for (const p of [...placed, ...tags]) (p.w = p.el.offsetWidth), (p.h = p.el.offsetHeight);
+    const hud = [...document.querySelectorAll(".topbar > *, .lens")].map((e) => e.getBoundingClientRect());
+    const canvasTop = this.labelRoot.getBoundingClientRect().top;
+    const below = (x: number, half: number) =>
+      hud.reduce((m, r) => (r.right > x - half && r.left < x + half && r.top < canvasTop + h / 2 ? Math.max(m, r.bottom - canvasTop + 4) : m), 0);
+    // a label that would hide under the HUD stops just below it; then, top to bottom, a label that
+    // overlaps one already placed moves down under it
+    for (const p of placed) p.y = Math.max(p.y, below(p.x, p.w / 2) + p.h);
+    placed.sort((a, b) => a.y - b.y);
+    for (let i = 0; i < placed.length; i++) {
+      const p = placed[i];
+      for (let j = 0; j < i; j++) {
+        const q = placed[j];
+        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 && p.y > q.y - q.h && p.y - p.h < q.y) p.y = q.y + p.h + 2;
+      }
+      setStyle(p.el, "transform", `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`);
+    }
+    for (const t of tags) {
+      const y = Math.max(t.y, below(t.x, t.w / 2) + t.h / 2);
+      setStyle(t.el, "transform", `translate(${Math.round(t.x)}px,${Math.round(y)}px)`);
       // keep the tag on screen: flip it to the dot's left near the right edge
-      pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
+      t.el.classList.toggle("flip", t.x + t.w > w - 8);
     }
   }
 
@@ -1416,8 +1598,13 @@ export class FactoryScene {
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterfalls) w(dt, t);
+    for (const e of this.extraTicks) e(t);
     for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+    for (const sat of this.sats) {
+      sat.view.g.position.y = sat.y + (this.reduceMotion ? 0 : Math.sin(t * 0.4 + sat.view.bob) * 0.25);
+      if (!this.reduceMotion) sat.route.update(t);
+    }
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);
     if (this.biasGoal) {
@@ -1497,6 +1684,7 @@ export class FactoryScene {
   };
 
   dispose() {
+    this.clearSatellites();
     for (const pe of this.pings) pe.el.remove();
     for (const p of this.pops) p.el.remove();
     cancelAnimationFrame(this.raf);

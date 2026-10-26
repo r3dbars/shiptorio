@@ -1,17 +1,18 @@
 // One response policy for assets, API errors, redirects and the preview gate.
-export function securityHeaders(request: Request, artNonce?: string): Record<string, string> {
+export function securityHeaders(request: Request, artNonce?: string, turnstile = false): Record<string, string> {
   const url = new URL(request.url);
   const local = ["localhost", "127.0.0.1"].includes(url.hostname);
   const socket = `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
   const csp = [
     "default-src 'none'",
-    `script-src 'self'${artNonce ? ` 'nonce-${artNonce}' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js` : ""}`,
+    `script-src 'self'${turnstile ? " https://challenges.cloudflare.com" : ""}${artNonce ? ` 'nonce-${artNonce}' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js` : ""}`,
     "script-src-attr 'none'",
     // React positions map labels with style attributes; forms also use inline CSS.
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
-    `connect-src 'self' ${socket}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
+    `connect-src 'self' ${socket}${turnstile ? " https://challenges.cloudflare.com" : ""}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
+    ...(turnstile ? ["frame-src https://challenges.cloudflare.com"] : []),
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
     "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'",

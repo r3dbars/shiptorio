@@ -22,6 +22,9 @@ import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
+import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
+
+import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -123,6 +126,8 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
+  const empire = useEmpire(cfg, state);
+  const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -151,7 +156,18 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
+  const [progressing] = useState(() => !intro && progressOn());
+  const profile = progressProfile(cfg.kind, login);
+  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
+  const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
+  const nudge = useBottleneckNudge(deck, progressing);
+  // today's log remembers the deck you walked in to (the morning number the trend is made of)
+  useEffect(() => {
+    if (progressing && state) prog.open(deck.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressing, !!state, deck.length > 0]);
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -164,6 +180,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // map picks: an empty mine opens its connect sheet, anything else its panel
   const pickOnMap = (k: string | null) => {
     if (intro) return tourly.pick(k);
+    if (k?.startsWith("island:")) return void (location.href = empire.hrefFor(k.slice(7)));
     if (k?.startsWith("src:")) {
       setSource(k.slice(4));
       setCheckin(false);
@@ -243,7 +260,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -330,6 +347,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
           pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
+          cosmetics={cosmeticsOf(prog.p, progressing)}
+
+          satellites={intro ? undefined : satellites}
+          empire={!intro && sheet === "empire"}
         />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
@@ -339,8 +360,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <header className="topbar">
           <div className="chips">
+            {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
+
+            {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             {show("score") && (
-              <div className="chip" title="PRs merged">
+              <div className={progressing ? "chip desk" : "chip"} title="PRs merged">
                 <span className="badge" style={{ background: "var(--amber)" }}>
                   <Icon name="rocket" size={14} />
                 </span>
@@ -460,6 +484,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </div>
             <p className="empty">You can switch any time.</p>
           </section>
+        ) : brief.show && progressing && !checkin && !sheet ? (
+          <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
+        ) : sheet === "progress" ? (
+          <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
         ) : source && state ? (
           <ConnectSource kind={source} state={state} send={send} onClose={() => setSource(null)} />
         ) : sheet === "yours" && state ? (
@@ -468,13 +496,23 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <Suspense fallback={null}>
             <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
           </Suspense>
+        ) : sheet === "empire" ? (
+          <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
           <Suspense fallback={null}>
-            <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
+            <CheckIn
+              deck={deck}
+              autonomy={autonomy}
+              send={send}
+              onFocus={setFocus}
+              onClose={() => { setCheckin(false); setFocus(null); }}
+              onAnswered={progressing ? prog.card : undefined}
+              end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+            />
           </Suspense>
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label="The line">
@@ -618,6 +656,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         )}
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
+
+        {progressing && <XpPop pop={prog.pop} />}
 
         <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>

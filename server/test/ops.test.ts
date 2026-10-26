@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { expect, mock, test } from "bun:test";
 import { flagEnabled, flagKey, readFlags } from "../src/flags";
 import { makeSessionCookie } from "../src/session";
@@ -12,7 +13,7 @@ function fixture() {
   const values = new Map<string, string>();
   const CACHE = { get: async (key: string) => values.get(key) ?? null, put: async (key: string, value: string) => { values.set(key, value); }, delete: async (key: string) => { values.delete(key); } };
   const env = { SESSION_SECRET: secret, APP_PASSWORD: password, ADMIN_LOGINS: "admin", ALLOWED_LOGINS: "admin,player", CACHE,
-    DB: { prepare: () => ({ first: async () => ({ 1: 1 }), bind: (_hash: string, uid: number) => ({ first: async () => uid === 1 ? { id: 1, login: "admin" } : { id: 2, login: "player" } }) }) },
+    DB: { prepare: (sql:string) => sql.startsWith("SELECT enabled") ? ({bind:()=>({first:async()=>null})}) : ({ first: async () => ({ 1: 1 }), bind: (_hash: string, uid: number) => ({ first: async () => uid === 1 ? { id: 1, login: "admin" } : { id: 2, login: "player" } }) }) },
     FACTORY: { idFromName: (name: string) => name, get: () => ({ health: async () => ({ ok: true }) }) } };
   return { values, env, request: (path: string, init?: RequestInit) => app.fetch(new Request(`https://shiptorio.dev${path}`, init), env as never) };
 }
@@ -64,12 +65,12 @@ test("admin flag write requires admin session and same origin; validates and res
 });
 test("DO health probe reads storage without initializing a factory or scheduling work", async () => {
   const reads: string[] = [];
-  const factory = new Factory({ storage: { get: async (key: string) => { reads.push(key); } } } as never, {} as never);
+  const factory = new Factory({ storage: { get: async (key: string) => { reads.push(key); } } } as never, credentialEnv({}) as never);
   expect(await factory.health()).toEqual({ ok: true });
   expect(reads).toEqual(["ops-health"]);
 });
 test("permit kill switch blocks existing autonomous launches before any GitHub request", async () => {
-  const factory = new Factory({} as never, { CACHE: { get: async () => "false" } } as never);
+  const factory = new Factory({} as never, credentialEnv({ CACHE: { get: async () => "false" } }) as never);
   (factory as unknown as { meta: unknown }).meta = { repo: "test/repo", installationId: 1 };
   const launch = factory as unknown as { launch(item: unknown, by: string): Promise<void> };
   // Would read meta/token if the guard were absent. No initialized repo is needed to stop it.

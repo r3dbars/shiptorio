@@ -116,7 +116,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               piece shows up when you need it.
             </Coach>
             <div className="nm-options">
-              <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
+              <button type="button" className="btn rec nm-btn" onClick={signIn} autoFocus={!matchMedia("(pointer: coarse)").matches}>
                 SIGN IN WITH GITHUB
               </button>
             </div>
@@ -165,7 +165,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                   spellCheck={false}
                   autoFocus
                 />
-                <button type="submit" className="nm-btn rec" disabled={!valid}>
+                <button type="submit" className="btn rec nm-btn" disabled={!valid}>
                   OPEN
                 </button>
               </form>

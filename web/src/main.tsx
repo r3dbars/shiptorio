@@ -6,14 +6,6 @@ import { Onboarding, type OnboardStep } from "./ui/Onboarding";
 import { sound } from "./sound/engine";
 import "./styles.css";
 
-// Keep async font loading compatible with the site's ban on inline event handlers.
-const fonts = document.getElementById("game-fonts") as HTMLLinkElement | null;
-if (fonts) {
-  const ready = () => { fonts.media = "all"; };
-  fonts.addEventListener("load", ready, { once: true });
-  if (fonts.sheet) ready(); // a cached stylesheet may finish before this module starts
-}
-
 sound.install();
 
 // A bare visit starts at onboarding. `?onboard=repo` resumes it after the GitHub login; any

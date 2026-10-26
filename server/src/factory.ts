@@ -1,3 +1,6 @@
+import { runQuota } from './signup';
+import { Redactor } from "./redact";
+import { repoAccess, requireUser, validRepo } from "./authorization";
 import { stuckItem } from "./reliability";
 import { validatePlan, validatePatch } from "./injection-policy";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
@@ -5,7 +8,7 @@ import { validatePlan, validatePatch } from "./injection-policy";
 
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
-import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
@@ -27,6 +30,8 @@ import {
   type SourceStatus,
   type Thought,
   type ThoughtDecision,
+  summarizeIsland,
+  type IslandSummary,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
@@ -44,7 +49,7 @@ import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } 
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
-import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
+import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
 import { loadFactoryState, saveFactoryState, stateSize, persistedState } from "./state-storage";
@@ -89,6 +94,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
+  private credentialsReady = false;
+  private redactor = new Redactor(this.env);
+  private credentialScope() { return this.meta ? { installationId: this.meta.installationId, repo: this.meta.repo } : undefined; }
   private running = new Set<string>(); // item ids with a job in flight
 
   private batchingDecisions = false;
@@ -377,11 +385,12 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async runnerJobs(): Promise<RunnerJob[]> {
+    await this.load();
     const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
-    return [...jobs.values()].map(({ lease, ...job }) => job);
+    return this.redactor.value([...jobs.values()].map(({ lease, ...job }) => job));
   }
 
-  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }): Promise<RunnerJob> {
+  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
@@ -396,6 +405,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         old.status = "failed";
       }
       if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      {
+        const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
+      }
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
@@ -662,7 +675,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       return;
     }
-    if (!repo || !installationId) return;
+    if (!repo || !installationId || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) return;
     if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
       if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
       await this.ensure(repo, installationId);
@@ -744,9 +757,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    // The connect page needs to know which map to plug the mine into, and keys are per map.
     const repo = this.meta?.repo ?? this.state?.repo;
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, repo), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, this.credentialScope(), this.redactor), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, this.credentialScope(), this.redactor), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
   }
 
@@ -762,8 +774,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     await this.ctx.storage.put(`${kind}Linked`, true);
     await this.ctx.storage.delete(`${kind}Disconnected`);
-    // The legacy shared keys stay with the first map that linked them; per-repo keys don't need a link.
-    if (!(await linkedRepo(this.env, kind))) await linkRepo(this.env, kind, this.state!.repo);
+    await linkRepo(this.env, kind, this.state!.repo, this.credentialScope()!);
     const deposit = `ore-${kind}`;
     const splitter = this.state!.machines.find((m) => m.type === "splitter");
     const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
@@ -784,7 +795,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!repo) return;
     for (const kind of ["sentry", "posthog"] as const) {
       if ((await this.ctx.storage.get(`${kind}Linked`)) || (await this.ctx.storage.get(`${kind}Disconnected`))) continue;
-      const linked = await linkedRepo(this.env, kind);
+      const linked = await linkedRepo(this.env, kind, this.credentialScope());
       if (linked && linked !== repo) continue;
       if ((await this.mineStatus(kind)).state === "connected") await this.connectMine(kind);
     }
@@ -795,7 +806,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put(`${kind}Disconnected`, true);
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
-    if ((await linkedRepo(this.env, kind)) === this.state!.repo.toLowerCase()) await linkRepo(this.env, kind, null);
+    await linkRepo(this.env, kind, null, this.credentialScope()!);
     const deposit = `ore-${kind}`;
     await this.patch({
       sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
@@ -808,7 +819,9 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   private async handleSentry(resource: string, payload: SentryPayload): Promise<void> {
     if (!(await this.load()) || !(await this.ctx.storage.get<boolean>("sentryLinked"))) return;
-    for (const signal of normalizeSentry(payload, resource)) await this.ingestSignal(signal);
+    if (!(await sentryCreds(this.env, this.credentialScope(), this.redactor)).clientSecret) return;
+    await markUsed(this.env, "sentry", this.credentialScope()!);
+    for (const signal of normalizeSentry(this.redactor.value(payload), resource)) await this.ingestSignal(signal);
   }
 
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
@@ -818,11 +831,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
-    const creds = await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo);
     try {
+      const creds = await postHogCreds(this.env, this.credentialScope(), this.redactor);
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
-      const { signals, traffic } = analyze(rows, creds.keyEvent || "$pageview", now);
+      if (!fake) await markUsed(this.env, "posthog", this.credentialScope()!);
+      const { signals, traffic } = analyze(this.redactor.value(rows), creds.keyEvent || "$pageview", now);
       await this.ctx.storage.put("posthogPoll", { nextAt: now + POLL_MS, failures: 0 });
       await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
@@ -834,11 +848,17 @@ export class Factory extends DurableObject<FactoryEnv> {
       const retry = (err as { retryAfter?: number }).retryAfter;
       await this.ctx.storage.put("posthogPoll", { nextAt: now + Math.max((retry ?? 0) * 1000, Math.min(3600000, POLL_MS * 2 ** Math.min(failures, 4))), failures });
       const status = await this.mineStatus("posthog");
-      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Retrying.` }] });
+      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? this.redactor.text(err.message).slice(0, 80) : "error"}). Retrying.` }] });
     }
   }
 
   // ---------- state ----------
+
+  // The empire overview's line for this repo. Reads stored state only: no tick, no GitHub calls.
+  async summary(): Promise<IslandSummary | null> {
+    const state = await this.load();
+    return state ? summarizeIsland(state) : null;
+  }
 
   private async load(): Promise<FactoryState | null> {
     this.socketEpoch = await browserSocketEpoch(this.env);
@@ -858,11 +878,16 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
     }
+    if (this.meta && !this.credentialsReady) {
+      await sentryCreds(this.env, this.credentialScope(), this.redactor);
+      await postHogCreds(this.env, this.credentialScope(), this.redactor);
+      this.credentialsReady = true;
+    }
     return this.state;
   }
 
   private async save() {
-    if (this.state) await saveFactoryState(this.ctx.storage, this.state);
+    if (this.state) await saveFactoryState(this.ctx.storage, this.redactor.value(this.state));
   }
 
   /** Owner authorization is enforced by the Worker route, before DO access. */
@@ -870,20 +895,27 @@ export class Factory extends DurableObject<FactoryEnv> {
     const state = await this.load();
     if (!state) return null;
     return { format: "shiptorio-factory", exportedAt: new Date().toISOString(),
-      state: persistedState(structuredClone(state)), storage: stateSize(state) };
+      state: this.redactor.value(persistedState(structuredClone(state))), storage: stateSize(state) };
   }
 
+  private broadcastQueue: Promise<void> = Promise.resolve();
+
   private broadcast(msg: ServerToWeb) {
-    const text = JSON.stringify(msg);
-    for (const ws of this.ctx.getWebSockets("web")) {
-      try {
-        if (!browserSocketAllowed(ws.deserializeAttachment(), this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); continue; }
-        ws.send(text);
-      } catch {
-        // Legacy/unattached sockets reconnect through the authenticated upgrade.
-        try { ws.close(1008, "Sign in again"); } catch { /* Already gone. */ }
+    const text = JSON.stringify(this.redactor.value(msg));
+    const repo = this.meta?.repo ?? this.state?.repo;
+    const deliver = async () => {
+      for (const ws of this.ctx.getWebSockets("web")) {
+        try {
+          const auth = ws.deserializeAttachment();
+          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); continue; }
+          ws.send(text);
+        } catch { try { ws.close(1008, "Sign in again"); } catch {} }
       }
-    }
+    };
+    const delivery = this.broadcastQueue.then(deliver);
+    this.broadcastQueue = delivery.catch(() => {});
+    this.ctx.waitUntil?.(delivery);
+    return delivery;
   }
 
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
@@ -965,7 +997,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
-    this.broadcast({ type: "patch", patch: p });
+    await this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();
   }
 
@@ -988,6 +1020,8 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   async ensure(repo: string, installationId: number): Promise<void> {
+    await this.load();
+    if (!validRepo(repo) || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) throw new Error("Repository mismatch");
     if (await this.load()) {
       if (this.meta?.installationId !== installationId) {
         this.meta = { repo, installationId };
@@ -1174,6 +1208,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
     this.gauntletRunning = true;
     const pr = item.prNumber!;
+    const headSha = item.inspection!.headSha;
+    // Any await can let a webhook/reconciliation replace this inspection. Results
+    // belong only to the commit and station that started the run.
+    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection?.headSha === headSha && nextGate(i) === gate);
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const files = await prFiles(token, this.meta.repo, pr);
@@ -1182,12 +1220,12 @@ export class Factory extends DurableObject<FactoryEnv> {
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
-      const current = () => {
-        const now = this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
+      const currentInLane = () => {
+        const now = current();
         return now && lane && !now.lane ? { ...now, lane } : now;
       };
       if (gate === "checks") {
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         const { item: checked, ran } = runChecks(now, files);
         await this.patch({ items: [checked] });
@@ -1195,7 +1233,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
@@ -1204,17 +1242,19 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
-        await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
+        const afterComment = currentInLane();
+        if (!afterComment) return;
+        await this.patch({ items: [setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
     } catch (e) {
-      const latest = this.state!.items.find(i => i.id === item.id);
-      if (latest && nextGate(latest) === gate) {
+      const latest = current();
+      if (latest) {
         const failed = setStage(latest, gate === "checks" ? "ci" : gate, "rework", `Station request failed: ${String(e)}`);
         await this.patch({ items: [failed] });
         await this.noteRework(failed);
@@ -1422,7 +1462,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.district === item.lane) await this.publishGauntletMove(null);
     if (revoked) {
       const text = `${item.lane} lost its launch permit: ${why}. Its PRs wait for you again until the lane earns trust back.`;
-      this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
+      await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
       this.log("warn", text, item.id);
     }
   }
@@ -1454,7 +1494,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (permit && !earned(r)) { this.log("info", `${lane} hasn't earned a launch permit yet.`); return; }
     await this.savePermits(setPermit(book, lane, permit));
     const text = permit ? `${lane} has a launch permit. Its PRs that pass every station now ship on their own.` : `${lane} launch permit is off. Its PRs wait for you again.`;
-    this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
+    await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
     this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: by === "card" ? "You said yes on the permit card." : "You changed it in settings." });
   }
 
@@ -1568,21 +1608,34 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
-    if (!auth) return new Response("login required", { status: 401 });
+    const user = await requireUser(request, this.env);
+    if (!auth || !user) return new Response("login required", { status: 401 });
+    const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
+    const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
+    await this.load();
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
+    Object.assign(auth, { repo, user });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
     const state = await this.load();
     if (state) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
-    else if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
+    else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    await this.broadcastQueue;
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    try { await this.handleBrowserMessage(ws, raw); }
+    finally { await this.broadcastQueue; }
+  }
+
+  private async handleBrowserMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
@@ -1592,8 +1645,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
     }
+    await this.load();
+    const repo = this.meta?.repo ?? this.state?.repo;
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); return; }
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
+    if (value && typeof value === "object" && "repo" in value && (value as { repo: unknown }).repo !== repo) { ws.close(1008, "Repository mismatch"); return; }
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
@@ -1869,6 +1926,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (m.state !== "blocked") this.log("warn", "Spark has no power. Add the Meta API key to start this line.", item.id);
         await this.patch({ machines: [{ ...m, state: "blocked" }] });
         continue;
+      }
+      {
+        const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
       }
       await this.patch({
         items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
