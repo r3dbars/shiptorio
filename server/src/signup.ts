@@ -68,9 +68,9 @@ export async function redeemInvite(env: Env, code: string, login: string): Promi
   // Claim + grant share a D1 transaction. Only this claimant can grant access.
   const results = await env.DB.batch([
     env.DB.prepare('UPDATE signup_invites SET redeemed_by=?,redeemed_at=? WHERE digest=? AND redeemed_by IS NULL AND expires_at>?').bind(login.toLowerCase(),now,digest,now),
-    env.DB.prepare(`INSERT INTO signup_allowlist(login,approved_by,updated_at) SELECT ?,created_by,? FROM signup_invites WHERE digest=? AND redeemed_by=? AND redeemed_at=? ON CONFLICT(login) DO UPDATE SET enabled=1,approved_by=excluded.approved_by,updated_at=excluded.updated_at`).bind(login.toLowerCase(),now,digest,login.toLowerCase(),now),
+    env.DB.prepare(`INSERT INTO signup_allowlist(login,approved_by,updated_at) SELECT ?,created_by,? FROM signup_invites WHERE digest=? AND redeemed_by=? AND redeemed_at=? ON CONFLICT(login) DO UPDATE SET enabled=1,approved_by=excluded.approved_by,updated_at=excluded.updated_at WHERE signup_allowlist.enabled != 0`).bind(login.toLowerCase(),now,digest,login.toLowerCase(),now),
   ]);
-  return results[0].meta.changes === 1;
+  return results[0].meta.changes === 1 && results[1].meta.changes === 1;
 }
 export async function resourceQuota(env: Env, login: string, kind: 'factory'|'repo', resource: string): Promise<boolean> {
   const caps = await env.DB.prepare('SELECT factories,repos FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{factories:number;repos:number}>();

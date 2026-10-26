@@ -12,7 +12,7 @@ function fixture() {
   const values = new Map<string, string>();
   const CACHE = { get: async (key: string) => values.get(key) ?? null, put: async (key: string, value: string) => { values.set(key, value); }, delete: async (key: string) => { values.delete(key); } };
   const env = { SESSION_SECRET: secret, APP_PASSWORD: password, ADMIN_LOGINS: "admin", ALLOWED_LOGINS: "admin,player", CACHE,
-    DB: { prepare: () => ({ first: async () => ({ 1: 1 }), bind: (_hash: string, uid: number) => ({ first: async () => uid === 1 ? { id: 1, login: "admin" } : { id: 2, login: "player" } }) }) },
+    DB: { prepare: (sql:string) => sql.startsWith("SELECT enabled") ? ({bind:()=>({first:async()=>null})}) : ({ first: async () => ({ 1: 1 }), bind: (_hash: string, uid: number) => ({ first: async () => uid === 1 ? { id: 1, login: "admin" } : { id: 2, login: "player" } }) }) },
     FACTORY: { idFromName: (name: string) => name, get: () => ({ health: async () => ({ ok: true }) }) } };
   return { values, env, request: (path: string, init?: RequestInit) => app.fetch(new Request(`https://shiptorio.dev${path}`, init), env as never) };
 }

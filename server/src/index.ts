@@ -121,7 +121,7 @@ app.post('/waitlist',async c => {
   return signupPage(c.env,'You are on the waitlist. Justin will review your request.');
 });
 app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
-app.on(['GET','POST'],'/admin',c=>adminSignup(c.req.raw,c.env));
+app.post('/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));

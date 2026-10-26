@@ -103,7 +103,7 @@ test('failed runner pairings throttle and surface on admin without calling a fac
   for(let i=0;i<10;i++) expect((await app.fetch(new Request('https://shiptorio.com/api/runner/owner/repo/claim',{method:'POST',headers:{authorization:'Bearer invalid','cf-connecting-ip':'192.0.2.8'}}),e as never)).status).toBe(401);
   expect((await app.fetch(new Request('https://shiptorio.com/api/runner/owner/repo/claim',{method:'POST',headers:{authorization:'Bearer invalid','cf-connecting-ip':'192.0.2.8'}}),e as never)).status).toBe(429);
   const admin=await signedInCookie(e,'r3dbars');
-  const page=await app.fetch(req('/admin',admin),e as never);
+  const page=await app.fetch(req('/admin/signup',admin),e as never);
   expect(await page.text()).toContain('repeated failed runner authentication');
 });
 
