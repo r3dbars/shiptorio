@@ -12,6 +12,9 @@ const VERB: Record<ThoughtDecision, string> = {
   review: "Reviewed",
   next_move: "Chose your next card",
   rank: "Ranked your cards",
+  orbit: "Judged a comeback",
+  research: "Picked a check",
+  permit: "Weighed a permit",
 };
 
 const ago = (at: number) => {

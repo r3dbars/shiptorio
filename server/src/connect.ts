@@ -5,7 +5,9 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};
 
 export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null; connected: boolean; webhookUrl: string; error?: string; saved?: boolean }): string {
   const name = o.kind === "sentry" ? "Sentry" : "PostHog";
-  const back = o.repo ? `/?repo=${encodeURIComponent(o.repo)}` : "/";
+  // The browser defaults to the simulator unless live mode is explicit.
+  const target = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) ? o.repo : null;
+  const back = target ? `/?source=live&repo=${encodeURIComponent(target)}` : "/";
   const action = `/connect/${o.kind}${o.repo ? `?repo=${encodeURIComponent(o.repo)}` : ""}`;
   const steps = o.kind === "sentry"
     ? `<ol><li>In Sentry: <b>Settings → Developer Settings → Custom Integrations → Create New Integration → Internal Integration</b>.</li>

@@ -374,6 +374,68 @@ const beltTex = tex().belt;
     } };
   }
 
+  // RESEARCHED CHECK: the inspector frame plus the one device that does this check, between the press and the kicker.
+  // Frame parts are inspector blue so the scene's tint paints them in the check's own color.
+  function buildCheck(id) {
+    const base = buildInspector(), g = base.g, B = 0x3b82f6, x = 0.84;
+    const dev = group(g, x, 0, 0);
+    for (const z of [-0.42, 0.42]) box(0.08, 0.95, 0.08, B, 0, 0.55, z, dev);
+    box(0.12, 0.08, 0.96, B, 0, 1.04, 0, dev);
+    const lamp = box(0.14, 0.1, 0.14, own(0x10141f), 0, 1.13, 0, dev);
+    let spin = null, sweep = [], plate = null, needle = null, hook = null, hand = null, flash = null, bird = null;
+    if (id === 'leftovers') { // a bristle roller sweeps stray console.logs off the work into a bin
+      spin = group(dev, 0, 0.62, 0);
+      cyl(0.07, 0.07, 0.8, 0x6b7280, 8, 0, 0, 0, spin).rotation.x = Math.PI / 2;
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; box(0.03, 0.12, 0.76, 0xf2c94c, Math.cos(a) * 0.1, Math.sin(a) * 0.1, 0, spin).rotation.z = a + Math.PI / 2; }
+      box(0.3, 0.22, 0.26, 0x4a505a, 0.1, 0.25, -0.75, dev);
+    } else if (id === 'secrets') { // a laser curtain across the belt and a vault dial on the beam
+      for (let i = 0; i < 4; i++) { const l = box(0.02, 0.02, 0.84, basic(0xff5e52, 0.8), 0, 0.42 + i * 0.13, 0, dev); l.castShadow = false; sweep.push(l); }
+      const dial = group(dev, 0.07, 1.04, 0.2); cyl(0.12, 0.12, 0.04, 0xc9ced6, 10, 0, 0, 0, dial).rotation.z = Math.PI / 2;
+      needle = box(0.02, 0.02, 0.16, 0x16120a, 0.03, 0, 0, dial);
+    } else if (id === 'types') { // a shape-sorter gate: the plate has a square hole, wrong shapes don't pass
+      plate = group(dev, 0, 0.72, 0);
+      for (const [w, h, y, z] of [[0.04, 0.12, 0.2, 0], [0.04, 0.12, -0.2, 0], [0.04, 0.52, 0, 0.3], [0.04, 0.52, 0, -0.3]]) box(w, h, z ? 0.24 : 0.84, B, 0, y, z, plate);
+      cyl(0.06, 0.06, 0.05, 0xeef1fa, 3, 0.03, 0.2, 0.3, plate).rotation.z = Math.PI / 2;
+    } else if (id === 'scope') { // a clearance arch with a ruler and a big gauge whose needle swings with the diff size
+      for (let i = 0; i < 7; i++) box(0.09, 0.015, 0.03, i % 2 ? 0x16120a : 0xeef1fa, 0.05, 0.3 + i * 0.1, 0.42, dev);
+      const gauge = group(dev, 0.07, 1.36, 0); cyl(0.22, 0.22, 0.05, 0xeef1fa, 14, 0, 0, 0, gauge).rotation.z = Math.PI / 2;
+      box(0.06, 0.2, 0.08, B, 0, -0.17, 0, gauge);
+      needle = group(gauge, 0.04, 0, 0); box(0.02, 0.18, 0.025, 0xff5e52, 0, 0.08, 0, needle);
+    } else if (id === 'deps') { // a crane hook on a chain weighs what the change drags in
+      hook = group(dev, 0, 1.0, 0);
+      for (let i = 0; i < 4; i++) mesh(new THREE.TorusGeometry(0.05, 0.015, 4, 8), 0x8a94a3, 0, -0.08 - i * 0.08, 0, hook).rotation.y = i % 2 ? Math.PI / 2 : 0;
+      const hk = mesh(new THREE.TorusGeometry(0.07, 0.022, 4, 10, Math.PI * 1.4), 0xf2a93b, 0, -0.42, 0, hook); hk.rotation.z = Math.PI * 0.8;
+    } else if (id === 'perf') { // a stopwatch times the run
+      const w = group(dev, 0.07, 1.42, 0); cyl(0.22, 0.22, 0.06, 0xeef1fa, 14, 0, 0, 0, w).rotation.z = Math.PI / 2;
+      box(0.06, 0.08, 0.06, 0x8a94a3, 0, 0.26, 0, w);
+      hand = group(w, 0.04, 0, 0); box(0.02, 0.17, 0.025, 0x16120a, 0, 0.07, 0, hand);
+    } else if (id === 'visual') { // a camera on a boom snaps the screen before and after
+      const cam = group(dev, 0.25, 1.15, 0); box(0.22, 0.16, 0.26, 0x2b2f36, 0, 0, 0, cam);
+      cyl(0.06, 0.06, 0.12, 0x10141f, 8, 0.14, 0, 0, cam).rotation.z = Math.PI / 2;
+      flash = box(0.08, 0.05, 0.1, own(0x30343c), 0, 0.11, 0.06, cam);
+    } else if (id === 'canary') { // a canary in a cage on a tall post sings until something goes wrong
+      cyl(0.03, 0.03, 0.8, 0x6b7280, 6, 0, 1.48, 0.42, dev);
+      const cage = group(dev, 0, 1.95, 0.42);
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; box(0.012, 0.3, 0.012, 0xd4a83a, Math.cos(a) * 0.13, 0, Math.sin(a) * 0.13, cage); }
+      cyl(0.15, 0.15, 0.03, 0xd4a83a, 8, 0, -0.15, 0, cage); cone(0.16, 0.12, 0xd4a83a, 8, 0, 0.21, 0, cage);
+      bird = group(cage, 0, -0.07, 0); box(0.08, 0.07, 0.11, 0xf2cf6b, 0, 0, 0, bird); box(0.03, 0.03, 0.04, 0xf2a93b, 0, 0.01, 0.07, bird);
+    }
+    return { g, update(t, dt, st) {
+      base.update(t, dt, st);
+      const busy = st !== 'IDLE', bad = st === 'REJECT', ok = st === 'PASS';
+      lamp.material.emissive.setHex(bad ? (Math.sin(t * 10) > 0 ? 0xff5e52 : 0) : ok ? 0x5bd18b : Math.sin(t * 3) > 0 ? 0x2a5fa0 : 0x10141f);
+      if (spin) spin.rotation.z -= dt * (busy ? 12 : 1);
+      sweep.forEach((l, i) => (l.visible = Math.sin(t * 9 + i * 1.7) > -0.6 || bad));
+      if (needle && id === 'secrets') needle.parent.rotation.x = t * (bad ? 6 : 1.2);
+      if (needle && id === 'scope') needle.rotation.x = bad ? 1.1 + Math.sin(t * 30) * 0.06 : -0.9 + Math.sin(t * 0.8) * 0.4;
+      if (plate) plate.position.y = 0.72 + (bad ? Math.abs(Math.sin(t * 8)) * -0.04 : Math.sin(t * 2) * 0.03);
+      if (hook) { hook.rotation.x = Math.sin(t * 1.6) * 0.12; hook.position.y = 1.0 + (bad ? -0.1 + Math.sin(t * 12) * 0.03 : 0); }
+      if (hand) hand.rotation.x = -Math.floor(t * 4) * (Math.PI / 30);
+      if (flash) flash.material.emissive.setHex((t * 0.8) % 1 < 0.05 ? 0xffffff : 0);
+      if (bird) { bird.position.y = -0.07 + (bad ? -0.05 : Math.max(0, Math.sin(t * 7)) * 0.04); bird.rotation.z = bad ? 1.4 : 0; bird.rotation.y = Math.sin(t * 1.3) * 1.2; }
+    } };
+  }
+
   // STEAM PLANT: a refinery with tanks, a cracking column, a credit-burning flare and a pumpjack
   function buildSteam(o) {
     const trim = o.variant[1], g = group();
@@ -1341,6 +1403,7 @@ const beltTex = tex().belt;
 
 export function setNight(on) { night = on; }
 export {
+  buildCheck,
   updateFx,
   buildAssembler,
   buildSplitter,

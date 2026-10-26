@@ -152,6 +152,20 @@ export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
     }
   }
   if (next.machines.some((m) => !prev.machines.some((p) => p.id === m.id))) out.push("place");
+  // research: packs spent, then the new station drops onto the line
+  if ((next.research?.done.length ?? 0) > (prev.research?.done.length ?? 0)) out.push("research");
+  if (prev.stations?.length && next.stations?.some((st) => !prev.stations!.some((x) => x.id === st.id))) out.push("station_drop");
+  const tip = next.research?.suggest?.tech;
+  if (tip && tip !== prev.research?.suggest?.tech) out.push("suggest");
+  // launch permits and autonomy levels
+  const had = new Map(prev.autonomy?.districts.map((d) => [d.district, d.permit]));
+  for (const d of next.autonomy?.districts ?? []) {
+    const was = had.get(d.district) ?? false;
+    if (d.permit && !was) out.push("permit_grant");
+    else if (!d.permit && was) out.push("permit_revoke");
+  }
+  const LEVELS = ["advisor", "floor", "build", "lights_out"];
+  if (prev.autonomy && next.autonomy && LEVELS.indexOf(next.autonomy.level) > LEVELS.indexOf(prev.autonomy.level)) out.push("level_up");
   const f0 = prev.foreman;
   const f1 = next.foreman;
   if (f1?.thinking && !f0?.thinking) out.push("think");

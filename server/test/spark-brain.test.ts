@@ -48,3 +48,29 @@ describe("decision log", () => {
     expect([b.thoughts.length, b.decisions]).toEqual([1, 2]);
   });
 });
+
+import { judgeOrbit, judgePermit, pickResearch } from "../src/spark";
+describe("Spark judges", () => {
+  const orbit = { launch: { pr: 4, title: "Fix cart", district: "web", files: ["web/cart.ts"], launchedMinutesAgo: 40 }, error: { title: "Font CDN 404", district: "web", events: 5, firstSeenMinutesAfterLaunch: 30 } };
+  it("orbit: a clear unrelated verdict keeps the launch up", async () => {
+    reply({ caused: false, reason: "A CDN outage, nothing in cart.ts." });
+    expect(await judgeOrbit(env, orbit)).toEqual({ caused: false, reason: "A CDN outage, nothing in cart.ts." });
+  });
+  it("orbit: no verdict throws so the spike rule stands", async () => {
+    reply({ reason: "hmm" });
+    await expect(judgeOrbit(env, orbit)).rejects.toThrow();
+  });
+  it("research: only techs on the tree, null allowed", async () => {
+    const c = { scars: [{ station: "ci", reason: "console.log left" }, { station: "ci", reason: "debugger left" }], techs: [{ id: "leftovers", name: "Leftover sweeper", what: "", cost: 2, affordable: true }] };
+    reply({ tech: "leftovers", why: "Two debug leftovers." });
+    expect((await pickResearch(env, c)).tech).toBe("leftovers");
+    reply({ tech: null, why: "" });
+    expect((await pickResearch(env, c)).tech).toBeNull();
+    reply({ tech: "rm-rf", why: "" });
+    await expect(pickResearch(env, c)).rejects.toThrow("isn't on the tree");
+  });
+  it("permit: advice needs a boolean", async () => {
+    reply({ recommend: false, why: "Only typo fixes so far." });
+    expect(await judgePermit(env, { lane: "docs", streak: 5, need: 5, ships: [], openRisks: [] })).toEqual({ recommend: false, why: "Only typo fixes so far." });
+  });
+});

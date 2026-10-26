@@ -50,13 +50,13 @@ describe("Factory lifecycle", () => {
       if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
       if (url.endsWith("/chat/completions") && browserPlanning) {
         browserCall++;
-        const action = browserCall === 1 ? { files: ["server/src/engine.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Read guard" } : { tool: "assign_job", reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
+        const action = browserCall === 1 ? { files: ["server/src/engine.ts", "shared/src/protocol.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Read reference schema without editing it" } : { tool: "assign_job", files: ["server/src/engine.ts"], reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
         return json({ choices: [{ message: { content: JSON.stringify(action) } }] });
       }
-      if (url.endsWith("/chat/completions")) { sparkCalls++; return json({ choices: [{ message: { content: JSON.stringify(sparkCalls === 1 ? { tool: "read_issue", reason: "Understand the approved issue" } : sparkCalls === 2 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect the existing guard" } : { tool: "assign_job", reason: "The scope is clear", plan: "Reject credential paths and add a regression test.", acceptance: ["Ordinary code paths remain accepted", "Secret paths are refused"] }) } }] }); }
+      if (url.endsWith("/chat/completions")) { sparkCalls++; return json({ choices: [{ message: { content: JSON.stringify(sparkCalls === 1 ? { tool: "read_issue", reason: "Understand the approved issue" } : sparkCalls === 2 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect the existing guard" } : { tool: "assign_job", files: ["server/src/engine.ts"], reason: "The scope is clear", plan: "Reject credential paths and add a regression test.", acceptance: ["Ordinary code paths remain accepted", "Secret paths are refused"] }) } }] }); }
       if (url.includes("/contents/")) return json({ content: btoa("export const SAFE_PATH = /.+/;"), encoding: "base64" });
       if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
-      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }], truncated: false });
+      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }, { path: "shared/src/protocol.ts", type: "blob" }], truncated: false });
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
@@ -125,6 +125,7 @@ describe("Factory lifecycle", () => {
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         await g.factory.alarm();
         expect((await g.factory.runnerJobs())[0].status).toBe("awaiting_approval");
+        expect((await g.factory.runnerJobs())[0].allowedPaths).toEqual(["server/src/engine.ts"]);
         expect(g.saved().deck?.find(m => m.options.some(o => o.id === "approve"))?.plan?.[0]).toContain("server/src/engine.ts");
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         return { g, pairing, approval: g.saved().deck!.find(m => m.options.some(o => o.id === "approve"))! };
@@ -146,6 +147,7 @@ describe("Factory lifecycle", () => {
       expect((await reconnected.runnerJobs())[0].approvedAt).toBeGreaterThan(0);
       const doubleClaim = await Promise.all([reconnected.claimRunner(approved.pairing, ["codex"]), reconnected.claimRunner(approved.pairing, ["codex"])]);
       expect(doubleClaim.filter(Boolean)).toHaveLength(1);
+      expect(doubleClaim.find(Boolean)!.allowedPaths).toEqual(["server/src/engine.ts"]);
 
       const declined = await prepareBrowserPlan();
       await declined.g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "defer_move", moveId: declined.approval.id }));
@@ -228,4 +230,21 @@ describe("Factory lifecycle", () => {
     expect(f.saved().items).toHaveLength(0);
     expect(f.saved().science.red).toBe(0);
   });
+});
+
+
+it("offers local runner plans only for real GitHub issues and refuses source-only enqueue", async () => {
+  const external = [item({ id: "posthog-dictation", source: "posthog", state: "queued", prNumber: undefined }), item({ id: "sentry-123", source: "sentry", state: "queued", prNumber: undefined }), item({ id: "gh-999", source: "inbox", state: "queued", prNumber: undefined }), item({ id: "github-invalid", source: "github_issue", state: "queued", prNumber: undefined })];
+  const valid = item({ id: "gh-125", state: "queued", prNumber: undefined });
+  for (const items of [external, [...external, valid]]) {
+    const f = fixture(items);
+    f.data.set("openMoves", [{ id: "stale-posthog-plan", title: "Plan #thog-dictation", why: "Legacy offer", itemId: external[0].id, stage: "build", kind: "build", createdAt: 1, options: [{ id: "codex", label: "Plan with Codex", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness: "codex" }, reason: "Legacy offer" }] }] }]);
+    const pairing = await f.factory.pairRunner();
+    await f.factory.claimRunner(pairing, ["codex"]);
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const plans = (f.saved().deck ?? []).filter(move => move.options.some(option => option.actions.some(action => action.tool === "plan_runner_job")));
+    expect(plans.map(move => move.itemId)).toEqual(items.includes(valid) ? ["gh-125"] : []);
+    for (const item of external) await expect(f.factory.enqueueRunner({ itemId: item.id, harness: "codex", allowedPaths: ["server/src/factory.ts"], needsApproval: true })).rejects.toThrow("not available");
+    expect(await f.factory.runnerJobs()).toEqual([]);
+  }
 });

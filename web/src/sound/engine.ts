@@ -26,7 +26,16 @@ export type Sfx =
   | "review_stamp"
   | "gate_clank"
   | "orbit_clear"
-  | "orbit_alarm";
+  | "orbit_alarm"
+  | "research"
+  | "station_drop"
+  | "suggest"
+  | "permit_grant"
+  | "permit_revoke"
+  | "level_up"
+  | "beat"
+  | "beat_done"
+  | "finale";
 
 import { SCAPES, type Focus } from "./scapes";
 
@@ -487,12 +496,71 @@ class SoundEngine {
         this.tone({ f: 65, to: 45, dur: 0.35, type: "square", vol: 0.2, at: t + 0.4 });
         this.noise({ dur: 0.18, vol: 0.25, lp: 900, at: t + 0.4 });
         break;
-      case "orbit_clear": // orbit watch: two rising radar pings, all clear
+      case "orbit_clear": // orbit watch, 24h clean: two rising radar pings and a soft bell, all clear
         this.tone({ f: 1046, dur: 0.12, type: "sine", vol: 0.1, at: t });
         this.tone({ f: 1568, dur: 0.25, type: "sine", vol: 0.1, at: t + 0.16 });
+        this.tone({ f: 2093, dur: 0.9, type: "sine", vol: 0.05, at: t + 0.36 });
+        this.tone({ f: 3136, dur: 0.6, type: "sine", vol: 0.025, at: t + 0.36 });
         break;
       case "orbit_alarm": // orbit watch saw new errors after launch
         for (let i = 0; i < 3; i++) this.tone({ f: 988, to: 740, dur: 0.18, type: "square", vol: 0.1, at: t + i * 0.22 });
+        break;
+      case "research": // spend science packs: flasks clink in, bubbling, then a rising "learned it" sweep
+        for (let i = 0; i < 4; i++) this.tone({ f: 2200 + i * 260, dur: 0.04, type: "triangle", vol: 0.07, at: t + i * 0.06 });
+        for (let i = 0; i < 8; i++) {
+          const f = 300 + Math.random() * 500;
+          this.tone({ f, to: f * 1.8, dur: 0.05, type: "sine", vol: 0.05, at: t + 0.25 + i * 0.05 });
+        }
+        this.tone({ f: 330, to: 1320, dur: 0.5, type: "triangle", vol: 0.09, at: t + 0.65 });
+        [659, 831, 988].forEach((f, i) => this.tone({ f, dur: 0.35, type: "square", vol: 0.05, at: t + 1.1 + i * 0.05 }));
+        break;
+      case "station_drop": // a new station drops onto the line: falling whistle, heavy landing, bolts torqued in
+        this.tone({ f: 1800, to: 300, dur: 0.45, type: "sine", vol: 0.07, at: t });
+        this.tone({ f: 90, to: 35, dur: 0.4, type: "sine", vol: 0.45, at: t + 0.45 });
+        this.noise({ dur: 0.25, vol: 0.3, lp: 700, at: t + 0.45 });
+        for (let i = 0; i < 3; i++) {
+          this.noise({ dur: 0.05, vol: 0.12, bp: 3000, at: t + 0.8 + i * 0.13 });
+          this.tone({ f: 600 + i * 120, dur: 0.04, vol: 0.06, at: t + 0.8 + i * 0.13 });
+        }
+        break;
+      case "suggest": // "hey, look at this": a soft two-note nudge
+        this.tone({ f: 880, dur: 0.1, type: "sine", vol: 0.09, at: t });
+        this.tone({ f: 1319, dur: 0.22, type: "sine", vol: 0.09, at: t + 0.11 });
+        break;
+      case "permit_grant": {
+        // a lane earned its launch permit: official seal thump, brass rise, bell
+        this.noise({ dur: 0.07, vol: 0.3, lp: 900, at: t });
+        this.tone({ f: 80, to: 45, dur: 0.18, type: "sine", vol: 0.4, at: t });
+        const b = t + 0.15;
+        [[392, 0], [523, 0.12], [659, 0.24]].forEach(([f, d]) => {
+          this.tone({ f, dur: 0.14, type: "sawtooth", vol: 0.06, at: b + d });
+          this.tone({ f, dur: 0.14, type: "square", vol: 0.05, at: b + d });
+        });
+        for (const f of [784, 988, 1175]) this.tone({ f, dur: 0.9, type: "triangle", vol: 0.08, at: b + 0.38 });
+        this.tone({ f: 2637, dur: 1.2, type: "sine", vol: 0.05, at: b + 0.38 });
+        break;
+      }
+      case "permit_revoke": // a lane lost its permit: everything powers down a notch
+        this.tone({ f: 660, to: 160, dur: 0.6, type: "sawtooth", vol: 0.08, at: t });
+        this.tone({ f: 330, to: 80, dur: 0.6, type: "square", vol: 0.05, at: t });
+        this.noise({ dur: 0.08, vol: 0.15, lp: 600, at: t + 0.6 });
+        break;
+      case "level_up": // autonomy level up: a big climbing run into a held chord
+        [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone({ f, dur: 0.1, vol: 0.09, at: t + i * 0.06 }));
+        for (const f of [523, 784, 1047, 1319]) this.tone({ f, dur: 1.2, type: "triangle", vol: 0.07, at: t + 0.4 });
+        break;
+      case "beat": // intro: the next card slides in
+        this.noise({ dur: 0.18, vol: 0.06, lp: 2500, sweepTo: 600, at: t, attack: 0.05 });
+        this.tone({ f: 523, dur: 0.06, type: "triangle", vol: 0.06, at: t + 0.12 });
+        break;
+      case "beat_done": // intro: your move landed
+        this.tone({ f: 784, dur: 0.08, type: "triangle", vol: 0.1, at: t });
+        this.tone({ f: 1175, dur: 0.08, type: "triangle", vol: 0.1, at: t + 0.08 });
+        this.tone({ f: 1568, dur: 0.25, type: "triangle", vol: 0.1, at: t + 0.16 });
+        break;
+      case "finale": // intro's last beat: lights out, the whole factory hums in harmony
+        for (const [f, v] of [[131, 0.08], [196, 0.06], [262, 0.06], [330, 0.05], [392, 0.04]] as const) this.tone({ f, dur: 3, type: "triangle", vol: v, at: t, attack: 0.8 });
+        for (let i = 0; i < 6; i++) this.tone({ f: [1047, 1319, 1568, 2093][i % 4], dur: 0.3, type: "sine", vol: 0.04, at: t + 0.8 + i * 0.25 });
         break;
       case "think": // Spark is thinking: a soft data warble
         for (let i = 0; i < 4; i++) this.tone({ f: 600 + Math.random() * 900, dur: 0.04, type: "triangle", vol: 0.05, at: t + i * 0.05 });
