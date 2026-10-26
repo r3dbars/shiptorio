@@ -70,7 +70,10 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
 (allow file-write* (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agent ? `(subpath ${quote(home)})` : ""} (literal "/dev/null") (subpath "/dev/fd"))
 ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSResponder") (remote tcp "*:443") (remote tcp "*:53") (remote udp "*:53"))
 (allow file-read* (literal "/private/var/run/resolv.conf"))
-(allow mach-lookup (global-name "com.apple.mDNSResponder") (global-name "com.apple.trustd"))` : ""}
+(allow mach-lookup (global-name "com.apple.mDNSResponder") (global-name "com.apple.trustd") (global-name "com.apple.cfprefsd.agent") (global-name "com.apple.cfprefsd.daemon"))
+; Codex loads managed preferences through cfprefsd and needs the system network/trust services for HTTPS.
+(allow ipc-posix-shm-read* (ipc-posix-name-prefix "apple.cfprefs."))
+(allow mach-lookup (global-name "com.apple.SystemConfiguration.configd") (global-name "com.apple.SystemConfiguration.DNSConfiguration") (global-name "com.apple.networkd") (global-name "com.apple.trustd.agent") (global-name "com.apple.ocspd") (global-name "com.apple.SecurityServer"))` : ""}
 `;
   let closed = false;
   return {

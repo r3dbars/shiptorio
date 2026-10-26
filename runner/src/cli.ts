@@ -145,7 +145,11 @@ async function execute(job: Job, pair: Pairing) {
       if (!executable) throw new Error("Assigned harness is unavailable");
       agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
       const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
-      if (result.code) throw new Error(`Agent failed (${result.code}); check dedicated subscription sign-in`);
+      if (result.code) {
+        // The stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
+        console.error(`${job.harness} exited ${result.code}: ${result.err.trim().slice(-2000)}`);
+        throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
+      }
       output = result.out;
       await agentSandbox.close(); agentSandbox = undefined;
     }
