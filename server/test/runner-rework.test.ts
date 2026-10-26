@@ -1,4 +1,5 @@
-import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { credentialEnv } from "./credential-fixture";
+import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -36,6 +37,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   const plans: string[] = [], comparisons: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input), json = (x: unknown) => Response.json(x);
+    if (/\/comments\?per_page=100&page=/.test(url)) return json([]);
     if (url.endsWith("/access_tokens")) return json({ token: "test-install-token" });
     if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
     if (url.includes("/git/trees/")) return json({ sha: "tree", tree: [{ path: "server/src/engine.ts", type: "blob" }, { path: "server/test/engine.test.ts", type: "blob" }], truncated: false });
@@ -48,13 +50,13 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
       if (init?.method === "PATCH") { patchedBody = JSON.parse(String(init.body)).body; return json({}); }
       return json({ number: 99, html_url: "https://github.com/r3dbars/demo/pull/99", state: "open", merged: false, body: patchedBody || "Original PR", head: { sha: head, ref: branch }, base: { sha: base, ref: "main" } });
     }
-    if (url.includes("/compare/")) { comparisons.push(url); return json({ status: "ahead", ahead_by: 1, files: [{ filename: scopeViolation ? "server/.dev.vars" : "server/src/engine.ts", status: "modified", changes: 2 }] }); }
+    if (url.includes("/compare/")) { comparisons.push(url); return json({ status: "ahead", ahead_by: 1, files: [{ filename: scopeViolation ? "server/.dev.vars" : "server/src/engine.ts", status: "modified", changes: 2, patch: "-old\n+fixed" }] }); }
     if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
     if (url.includes("/status?")) return json({ total_count: 0, statuses: [] });
     if (url.includes("/issues/1/comments?")) return json([]);
     if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix credential guard", body: "Guard the paths", state: "open", html_url: "https://github.com/r3dbars/demo/issues/1" });
-    if (url.endsWith("/issues/99/comments")) return json({ id: 1 });
-    if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
+    if (/\/issues\/\d+\/comments$/.test(url)) return json({ id: 1 });
+    if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(JSON.parse(String(init?.body)).messages[1].content.split("\n")[1])); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
     if (url.endsWith("/chat/completions")) {
       const request = JSON.parse(String(init?.body));
       if (request.messages[0].content.includes("hostile reviewer")) return json({ choices: [{ message: { content: JSON.stringify({ verdict: "pass", reason: "Regression is fixed with direct coverage.", findings: [] }) } }] });
@@ -72,7 +74,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };
-  const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+  const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
   const saved = () => data.get("state") as FactoryState;
   const choose = async (optionId: string) => f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: saved().move!.id, optionId }));
   try {

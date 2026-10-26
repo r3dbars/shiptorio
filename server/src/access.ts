@@ -63,6 +63,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
   // The support inlets: email carries its own secret token in the path, Intercom signs with HMAC.
   if (/^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(url.pathname) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
+  // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.
+  if (url.pathname === "/api/version" && request.method === "GET") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;

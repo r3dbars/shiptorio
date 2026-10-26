@@ -1,4 +1,4 @@
-import { authorizedSocket, browserEnv } from "./browser-fixture";
+import { authorizedDB, authorizedSocket, browserEnv, membershipCache } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { readFileSync } from "node:fs";
 import { FactoryState, type Item, type SupportTicket } from "@shiptorio/shared";
@@ -170,12 +170,12 @@ describe("nothing is sent without a player tap", () => {
         async getAlarm() { return alarm; },
         async setAlarm(v: number) { alarm = v; },
       };
-      const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
+      const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)), "example/shop");
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [socket] };
       const env = {
         ...browserEnv, META_API_KEY: "fake-meta-key", INTERCOM_CLIENT_SECRET: "intercom-client-secret-123", INTERCOM_TOKEN: "intercom-token", INTERCOM_ADMIN_ID: "42",
-        DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
-        CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
+        DB: authorizedDB({ prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }), first: async () => null }) }) }),
+        CACHE: { get: async (k: string, type?: string) => { if (k.startsWith("access:v2:")) return membershipCache.get(k); const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
       };
       const factory = new Factory(ctx as never, env as never);
       const saved = () => data.get("state") as FactoryState;
@@ -248,9 +248,9 @@ describe("support webhooks", () => {
         const statement = {
           bind: (...args: unknown[]) => { values = args; return statement; },
           run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-          first: async () => rows.get(String(values[0])) ?? null,
+          first: async () => (sql.includes("signup_counters") ? { count: 1 } : rows.get(String(values[0])) ?? null),
         };
-        expect(sql).toContain("support");
+        expect(sql).toMatch(/support|signup_counters/);
         return statement;
       } },
       FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSupport: async (_id: string, m: { channel: string; from: string }) => { expect(repo).toBe("example/shop"); queued.push(`${m.channel}:${m.from}`); } }) },

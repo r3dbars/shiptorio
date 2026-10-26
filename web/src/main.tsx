@@ -1,3 +1,4 @@
+import { loadFeatureFlags } from "./flags";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -28,6 +29,8 @@ function Root() {
     />
   );
 }
+
+await loadFeatureFlags();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

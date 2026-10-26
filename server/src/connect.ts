@@ -1,9 +1,9 @@
 // /connect/<kind>: the one page where the player pastes a mine's key. Server-rendered,
-// same look as the access page. Keys go to KV and never come back out to the browser.
+// same look as the access page. Keys are encrypted in D1 and never come back out to the browser.
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
-export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null; connected: boolean; webhookUrl: string; error?: string; saved?: boolean }): string {
+export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null; connected: boolean; webhookUrl: string; error?: string; saved?: boolean; lastUsedAt?: number | null; revoked?: boolean; workerOverride?: boolean }): string {
   const name = o.kind === "sentry" ? "Sentry" : "PostHog";
   // The browser defaults to the simulator unless live mode is explicit.
   const target = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) ? o.repo : null;
@@ -23,11 +23,14 @@ export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null
 <label>Project id<input name="projectId" inputmode="numeric" placeholder="12345" required></label>
 <label>Region<select name="host"><option value="us">US cloud</option><option value="eu">EU cloud</option></select></label>
 <label>Key event <small>(optional, default $pageview)</small><input name="keyEvent" placeholder="$pageview"></label>`;
+  const status = o.connected ? `<p class="ok">✓ Connected</p><p>Last used: ${o.lastUsedAt ? esc(new Date(o.lastUsedAt).toISOString()) : "Not used yet"}</p>
+<form method="post" action="${esc(action)}"><button name="action" value="revoke">Revoke</button></form>` : o.revoked ? `<p>Connection revoked. Shiptorio will no longer use this key. To invalidate the key everywhere, also revoke it in ${name}.</p>` : "";
   const body = o.saved
     ? `<p>✓ ${name} is plugged in${o.repo ? ` to <b>${esc(o.repo)}</b>` : ""}. ${o.kind === "sentry" ? "New errors will show up as biters on the folder they hit." : "Traffic drops and error spikes per route will show up as ore within a few minutes."}</p><a class="btn" href="${esc(back)}">Back to the factory</a>`
-    : `${o.connected ? `<p class="ok">✓ ${name} already has a key. Paste a new one to replace it.</p>` : ""}${steps}
-<form method="post" action="${esc(action)}">${o.error ? `<p class="err">${esc(o.error)}</p>` : ""}${fields}<button>Plug in ${name}</button></form>`;
-  return shell(name, `<h1>Connect ${name}</h1>${body}<p><small>The key is stored server-side for this factory only and is never shown again.</small></p>`);
+    : o.workerOverride ? `<p>This factory uses an operator-managed key. Ask the operator to rotate it; Revoke stops Shiptorio from using it here.</p>`
+    : `${o.connected ? `<p class="ok">✓ ${name} already has a key. Rotate your connection by pasting a replacement key below. Revoke the old key in the provider after saving.</p>` : ""}${steps}
+<form method="post" action="${esc(action)}">${o.error ? `<p class="err">${esc(o.error)}</p>` : ""}${fields}<button>${o.connected ? "Rotate key" : `Plug in ${name}`}</button></form>`;
+  return shell(name, `<h1>Connect ${name}</h1>${status}${body}<p><small>The key is stored server-side for this factory only and is never shown again.</small></p>`);
 }
 
 function shell(name: string, main: string): string {

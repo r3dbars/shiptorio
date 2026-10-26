@@ -523,7 +523,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (s.move?.id === moveId) {
       s.move = null;
       const next = pending.shift();
-      if (next) later(delay, () => open(next));
+      // A card retracted while it waited to open (a sent reply clears its ticket's other cards) stays closed.
+      if (next) later(delay, () => {
+        if (s.move) { if (onChoose.has(next.id)) pending.unshift(next); dealDeck(); }
+        else if (onChoose.has(next.id)) open(next);
+        else if (pending.length) open(pending.shift()!);
+        else dealDeck();
+      });
     }
     dealDeck();
   };

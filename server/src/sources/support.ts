@@ -9,6 +9,7 @@
 //   /webhooks/intercom/<owner>/<repo>, signed with the app's client secret (X-Hub-Signature: sha1=<hex>).
 
 import type { SourceStatus, SupportChannel } from "@shiptorio/shared";
+import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./credential-crypto";
 
 /** One inbound customer message, normalized from either inlet. */
 export interface SupportMessage {
@@ -30,7 +31,7 @@ export interface SupportCreds {
   intercomAdminId?: string; // who the reply is from in Intercom
 }
 
-export interface SupportEnv {
+export interface SupportEnv extends KeyEnv {
   CACHE?: KVNamespace;
   // Worker secrets win over the connect page (operator's own map, local dev).
   SUPPORT_INBOUND_TOKEN?: string;
@@ -43,23 +44,31 @@ export interface SupportEnv {
   FAKE_SUPPORT?: string; // "1": the mine counts as connected with no keys (local dev, demos)
 }
 
+// Pasted keys are encrypted with the same master key as the other mines (credential-crypto.ts, PR #155),
+// bound to this repo, and kept in KV: the D1 credentials table only takes sentry/posthog rows.
 const credKey = (repo: string) => `cred:support:${repo.toLowerCase()}`;
+const binding = (repo: string) => `support:${repo.toLowerCase()}`;
+
+async function stored(env: SupportEnv, repo: string): Promise<SupportCreds> {
+  const raw = await env.CACHE?.get<{ envelope?: Envelope }>(credKey(repo), "json").catch(() => null);
+  if (!raw?.envelope) return {};
+  return decryptCredential<SupportCreds>(env, binding(repo), raw.envelope).catch(() => ({}));
+}
 
 export async function supportCreds(env: SupportEnv, repo?: string | null): Promise<SupportCreds> {
-  const stored = repo ? ((await env.CACHE?.get<SupportCreds>(credKey(repo), "json").catch(() => null)) ?? {}) : {};
+  const own = repo ? await stored(env, repo) : {};
   return {
-    inboundToken: env.SUPPORT_INBOUND_TOKEN || stored.inboundToken,
-    intercomClientSecret: env.INTERCOM_CLIENT_SECRET || stored.intercomClientSecret,
-    intercomToken: env.INTERCOM_TOKEN || stored.intercomToken,
-    intercomAdminId: env.INTERCOM_ADMIN_ID || stored.intercomAdminId,
+    inboundToken: env.SUPPORT_INBOUND_TOKEN || own.inboundToken,
+    intercomClientSecret: env.INTERCOM_CLIENT_SECRET || own.intercomClientSecret,
+    intercomToken: env.INTERCOM_TOKEN || own.intercomToken,
+    intercomAdminId: env.INTERCOM_ADMIN_ID || own.intercomAdminId,
   };
 }
 
 export async function saveSupportCreds(env: SupportEnv, repo: string, patch: SupportCreds): Promise<SupportCreds> {
   if (!env.CACHE) throw new Error("no KV binding");
-  const current = (await env.CACHE.get<SupportCreds>(credKey(repo), "json").catch(() => null)) ?? {};
-  const next = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v)) };
-  await env.CACHE.put(credKey(repo), JSON.stringify(next));
+  const next = { ...(await stored(env, repo)), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v)) };
+  await env.CACHE.put(credKey(repo), JSON.stringify({ envelope: await encryptCredential(env, binding(repo), next) }));
   return next;
 }
 

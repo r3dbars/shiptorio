@@ -75,21 +75,25 @@ export function analyze(rows: RouteDay[], keyEvent: string, now = Date.now()): {
     const sum = (pick: (r: RouteDay) => number, days: Set<string>) => list.filter((r) => days.has(r.day)).reduce((t, r) => t + pick(r), 0);
     const baseline = sum((r) => r.count, baselineDays) / 7;
     const baseUsers = sum((r) => r.users, baselineDays) / 7;
-    const last = list.find((r) => r.day === yesterday);
-    const y = last?.count ?? 0;
+    // parseRows collapses paths such as /orders/123 and /orders/456. The query
+    // still returns a row per original path, so compare whole route totals on
+    // both sides; taking the first row invents drops and hides error spikes.
+    const yesterdayDays = new Set([yesterday]);
+    const y = sum((r) => r.count, yesterdayDays);
+    const yesterdayUsers = sum((r) => r.users, yesterdayDays);
     if (event === keyEvent) {
       traffic.push({ route, usersPerDay: Math.round(baseUsers), baseline: Math.round(baseline), yesterday: y });
       if (baseline >= MIN_BASELINE && y < baseline * DROP_RATIO) {
         const pct = Math.round((1 - y / baseline) * 100);
-        const lostUsers = Math.max(0, Math.round(baseUsers - (last?.users ?? 0)));
+        const lostUsers = Math.max(0, Math.round(baseUsers - yesterdayUsers));
         signals.push(signal(event, route, yesterday, `${route} traffic dropped ${pct}% yesterday`,
           `${event} on ${route}: ${y} yesterday vs ${Math.round(baseline)}/day over the week before (−${pct}%). About ${lostUsers} fewer people got through.`,
           lostUsers, 2, now));
       }
     } else if (event === "$exception" && y >= SPIKE_MIN && y >= SPIKE_RATIO * Math.max(1, baseline)) {
       signals.push(signal(event, route, yesterday, `Error spike on ${route}: ${y} exceptions yesterday`,
-        `$exception on ${route}: ${y} yesterday vs ${Math.round(baseline)}/day before. ${last?.users ?? 0} people hit it.`,
-        last?.users ?? 0, 2, now));
+        `$exception on ${route}: ${y} yesterday vs ${Math.round(baseline)}/day before. ${yesterdayUsers} people hit it.`,
+        yesterdayUsers, 2, now));
     }
   }
   traffic.sort((a, b) => b.usersPerDay - a.usersPerDay);
