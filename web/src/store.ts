@@ -41,6 +41,7 @@ export function applyPatch(s: FactoryState, p: Patch): FactoryState {
     brain: p.brain ?? s.brain,
     sources: p.sources ?? s.sources,
     stations: p.stations ?? s.stations,
+    research: p.research ?? s.research,
   };
 }
 

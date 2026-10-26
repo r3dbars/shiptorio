@@ -74,6 +74,20 @@ New stations are research, bought with science packs (shipped PRs). Spark recomm
 caught last week's misses. Starter tech: test turret, visual diff camera, security sentry, perf gauge, canary
 tower (ship to 5% first), arena (two machines build, a judge keeps the better one).
 
+**Built (2026-10-26, `shared/src/research.ts`).** The flask in the top bar opens the research tree once you've
+shipped a PR. Every shipped PR is a science pack. Researching a tech drops a new station onto the line right
+after CI (the rest of the line slides along) and from then on it really runs on every live PR's diff, cheapest
+first, before the verify bay. A fail rides the rework belt with a scar naming the check (`ScarTag.check`).
+
+| Tier | Tech | Cost | Runs today |
+| --- | --- | --- | --- |
+| 1 (after 1 ship) | Leftover sweeper (console.log, debugger, `.only`, conflict markers), Secret scanner (keys, tokens, private keys) | 2 | yes, on the diff |
+| 2 (after 3 ships + parent) | Type guard (`any`, @ts-ignore, eslint-disable), Scope gauge (>400 lines / >20 files), Dependency guard (manifest and lockfile change together) | 4 | yes, on the diff |
+| 3 (after 8+ ships) | Perf gauge, Visual diff camera, Canary tower | 8 to 10 | shown, "coming soon" (needs the runner or deploy hooks) |
+
+Same scar twice (matched by each tech's `scar` pattern) → the planner marks that tech "Suggested" in the tree and
+offers it once as a check-in card. Sim: `?source=sim&scenario=research`.
+
 ### Rigor follows risk
 
 Heavy checks cost power, so spend them where mistakes are expensive. A district's risk sets which stations its

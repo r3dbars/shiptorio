@@ -19,6 +19,7 @@ import {
   Move,
   PowerSource,
   Science,
+  Research,
   Station,
   SourceKind,
   SourceStatus,
@@ -44,6 +45,7 @@ export const Patch = z.object({
   brain: Brain.optional(), // full replacement when present
   sources: z.array(SourceStatus).optional(), // full replacement when present
   stations: z.array(Station).optional(), // full replacement when present
+  research: Research.optional(), // full replacement when present
 });
 export type Patch = z.infer<typeof Patch>;
 
@@ -103,6 +105,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   // A station panel button. stationId is a Station id, or "rework" / a power source id for those panels.
   z.object({ type: z.literal("station_action"), stationId: z.string(), action: z.string() }),
   z.object({ type: z.literal("connect_source"), kind: SourceKind }),
+  // Spend science packs on a tech in the research tree. Its station joins the gauntlet right after CI.
+  z.object({ type: z.literal("research"), tech: z.string().max(40) }),
   z.object({ type: z.literal("disconnect_source"), kind: SourceKind }),
 ]);
 export type WebToServer = z.infer<typeof WebToServer>;

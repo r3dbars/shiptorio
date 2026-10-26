@@ -2,7 +2,7 @@
 // Pure rules plus the two station runs. The Factory DO calls these; nothing here holds state.
 // Agent output is untrusted until it shows evidence. Spark judges, it never writes code.
 
-import type { Belt, FactoryState, Inspection, Item, Machine, Move, ScarTag, Station, StationKind } from "@shiptorio/shared";
+import { checkStationId, researchedChecks, runCheck, techById, type Belt, type DiffFile, type FactoryState, type Inspection, type Item, type Machine, type Move, type ScarTag, type Station, type StationKind } from "@shiptorio/shared";
 import { gh } from "./github";
 import { parseJsonReply, sparkChat, type SparkEnv } from "./spark";
 import type { RegressionProof } from "./runner-job";
@@ -61,8 +61,9 @@ export const freshInspection = (headSha: string, ci?: { passed: boolean; reason:
 export const stageOf = (item: Item, gate: Gate) => item.inspection?.stages.find((st) => st.gate === gate);
 
 /** The next station that still has to run for this item, or null when it is waiting on the player. */
-export function nextGate(item: Item): "verify" | "ai" | null {
+export function nextGate(item: Item): "checks" | "verify" | "ai" | null {
   if (item.state !== "inspecting" || stageOf(item, "ci")?.state !== "passed") return null;
+  if (item.inspection?.checks?.some((c) => c.state === "pending")) return "checks";
   if (stageOf(item, "verify")?.state === "pending") return "verify";
   if (stageOf(item, "ai")?.state === "pending") return "ai";
   return null;
@@ -71,7 +72,7 @@ export function nextGate(item: Item): "verify" | "ai" | null {
 export function setStage(item: Item, gate: Gate, state: "passed" | "rework", reason: string, now = Date.now()): Item {
   const inspection = item.inspection ?? freshInspection("unknown");
   const stages = inspection.stages.map((st) => (st.gate === gate ? { ...st, state, reason } : st));
-  const machinesPassed = stages.filter((st) => st.gate !== "human").every((st) => st.state === "passed");
+  const machinesPassed = stages.filter((st) => st.gate !== "human").every((st) => st.state === "passed") && (inspection.checks ?? []).every((c) => c.state === "passed");
   const next: Item = { ...item, inspection: { ...inspection, stages, state: state === "rework" ? "rework" : machinesPassed ? "passed" : "pending" }, updatedAt: now };
   if (state === "rework") {
     const station = BY_GATE[gate].kind;
@@ -80,8 +81,70 @@ export function setStage(item: Item, gate: Gate, state: "passed" | "rework", rea
     return { ...next, state: "rejected", failure: reason, machineId: BY_GATE[gate].id, scars: [...(item.scars ?? []), scar] };
   }
   if (machinesPassed) return { ...next, state: "on_pad", failure: undefined, machineId: "gate-1" };
-  const after = gate === "ci" ? "verify-1" : gate === "verify" ? "review-1" : "gate-1";
+  const check = inspection.checks?.find((c) => c.state === "pending");
+  const after = gate === "ci" ? (check ? checkStationId(check.id) : "verify-1") : gate === "verify" ? "review-1" : "gate-1";
   return { ...next, machineId: after };
+}
+
+// ---------- researched checks (shared/src/research.ts) ----------
+
+/**
+ * Researched checks for an item that hasn't reached the verify bay yet. A check researched mid-flight joins
+ * the line for everything still upstream of it, the way a new station on a real line would.
+ */
+export function withChecks(item: Item, s: Pick<FactoryState, "research">): Item {
+  const ins = item.inspection;
+  const ids = researchedChecks(s);
+  if (!ins || !ids.length || item.state !== "inspecting" || stageOf(item, "verify")?.state !== "pending") return item;
+  const have = new Set((ins.checks ?? []).map((c) => c.id));
+  const missing = ids.filter((id) => !have.has(id));
+  if (!missing.length) return item;
+  const checks = [...(ins.checks ?? []), ...missing.map((id) => ({ id, state: "pending" as const, reason: "Waiting for its turn" }))];
+  // CI already waved it on to the verify bay: it stops at the first check instead
+  const machineId = item.machineId === "verify-1" ? checkStationId(checks.find((c) => c.state === "pending")!.id) : item.machineId;
+  return { ...item, machineId, inspection: { ...ins, checks, state: ins.state === "passed" ? "pending" : ins.state } };
+}
+
+/** Runs every pending researched check on the diff. The first one that fails sends the PR back with its scar. */
+export function runChecks(item: Item, files: DiffFile[], now = Date.now()): { item: Item; ran: { id: string; passed: boolean; reason: string }[] } {
+  const ins = item.inspection;
+  if (!ins?.checks) return { item, ran: [] };
+  const ran: { id: string; passed: boolean; reason: string }[] = [];
+  let failed: { id: string; reason: string } | undefined;
+  const checks = ins.checks.map((c) => {
+    if (c.state !== "pending" || failed) return c;
+    const r = runCheck(c.id, files);
+    ran.push({ id: c.id, ...r });
+    if (!r.passed) failed = { id: c.id, reason: r.reason };
+    return { ...c, state: r.passed ? ("passed" as const) : ("rework" as const), reason: r.reason };
+  });
+  const next: Item = { ...item, inspection: { ...ins, checks, state: failed ? "rework" : ins.state }, updatedAt: now };
+  if (failed) {
+    const strike = (item.scars ?? []).filter((sc) => sc.station === "custom").length + 1;
+    const scar: ScarTag = { station: "custom", check: failed.id, reason: failed.reason.slice(0, 500), evidenceUrl: item.prUrl, strike, at: now };
+    return { item: { ...next, state: "rejected", failure: failed.reason, machineId: checkStationId(failed.id), scars: [...(item.scars ?? []), scar] }, ran };
+  }
+  return { item: { ...next, machineId: "verify-1" }, ran };
+}
+
+/** The planner's research pick, as a card: repeated scars say which check would have caught them. */
+export function researchMove(tech: string, why: string, now = Date.now()): Move {
+  const t = techById(tech)!;
+  return {
+    id: crypto.randomUUID(),
+    title: `Research ${t.name}?`,
+    why,
+    stage: "inspect",
+    kind: "verify",
+    focus: "ci-1",
+    grows: ["+1 CHECK", `${t.cost} SCIENCE`],
+    createdAt: now,
+    plan: [`Spend ${t.cost} science packs`, `${t.name} joins the line right after CI`, t.what, "From then on every PR goes through it"],
+    options: [
+      { id: "research", label: `Research ${t.name}`, recommended: true, actions: [{ tool: "research", args: { tech }, reason: why }] },
+      { id: "not_yet", label: "Not yet", recommended: false, actions: [] },
+    ],
+  };
 }
 
 // ---------- the verify bay (v1) ----------
@@ -162,6 +225,7 @@ export function reviewComment(v: ReviewVerdict, builder: string): string {
 
 export function launchMove(item: Item, now = Date.now()): Move {
   const stamps = (item.inspection?.stages ?? []).filter((st) => st.gate !== "human").map((st) => ({ station: BY_GATE[st.gate].name, ok: st.state === "passed", note: st.reason.slice(0, 120) }));
+  stamps.splice(1, 0, ...(item.inspection?.checks ?? []).map((c) => ({ station: techById(c.id)?.name ?? c.id, ok: c.state === "passed", note: c.reason.slice(0, 120) })));
   return {
     id: crypto.randomUUID(),
     title: `Launch #${item.prNumber}: ${item.title}`,
@@ -197,7 +261,8 @@ export function proofComment(proof: RegressionProof): string {
 
 export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "claude_code" = "codex"): Move {
   const scar = item.scars?.at(-1);
-  const station = GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";
+  const check = scar?.check ? techById(scar.check) : undefined;
+  const station = check?.name ?? GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";
   return {
     id: crypto.randomUUID(),
     title: `${station} sent #${item.prNumber} back`,
@@ -206,7 +271,7 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
     kind: "review",
     itemId: item.id,
     url: item.prUrl,
-    focus: GAUNTLET.find((g) => g.kind === scar?.station)?.id,
+    focus: check ? checkStationId(check.id) : GAUNTLET.find((g) => g.kind === scar?.station)?.id,
     createdAt: now,
     options: [
       ...(canRework(item) ? [{ id: `rework-${harness}`, label: `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
@@ -233,7 +298,30 @@ const ACTIONS: Record<string, Station["actions"]> = {
 
 export function liveStations(s: FactoryState, now = Date.now()): Station[] {
   const live = s.items.filter((i) => i.state !== "launched");
-  const stations = GAUNTLET.map((g): Station => {
+  const pile = (id: string) => live.filter((i) => i.machineId === id && ["inspecting", "on_pad", "rejected"].includes(i.state));
+  const wait = (here: Item[]) => (here.length ? Math.max(0, now - Math.min(...here.map((i) => i.updatedAt))) : undefined);
+  // researched checks sit between CI and the verify bay, in the order they were researched
+  const checks = researchedChecks(s).filter((id) => s.machines.some((m) => m.id === checkStationId(id))).map((id): Station => {
+    const sid = checkStationId(id);
+    const tech = techById(id)!;
+    const here = pile(sid);
+    const ran = s.items.map((i) => i.inspection?.checks?.find((c) => c.id === id && c.state !== "pending") && i).filter((i): i is Item => !!i);
+    const last = [...ran].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    const lastCheck = last?.inspection?.checks?.find((c) => c.id === id);
+    return {
+      id: sid,
+      kind: "custom",
+      name: tech.name,
+      machineId: sid,
+      wip: here.length,
+      oldestWaitMs: wait(here),
+      passRate: ran.length ? ran.filter((i) => i.inspection?.checks?.find((c) => c.id === id)?.state === "passed").length / ran.length : undefined,
+      caughtThisWeek: s.items.reduce((n, i) => n + (i.scars ?? []).filter((sc) => sc.check === id).length, 0),
+      lastLog: lastCheck ? { who: tech.name, text: `#${last.prNumber}: ${lastCheck.reason}`.slice(0, 200), ok: lastCheck.state === "passed" } : undefined,
+      actions: [],
+    };
+  });
+  const gauntlet = GAUNTLET.map((g): Station => {
     const here = live.filter((i) => i.machineId === g.id && ["inspecting", "on_pad", "rejected"].includes(i.state));
     const caught = s.items.reduce((n, i) => n + (i.scars ?? []).filter((sc) => sc.station === g.kind).length, 0);
     const ran = s.items.filter((i) => { const st = stageOf(i, g.gate); return st && st.state !== "pending"; });
@@ -252,5 +340,5 @@ export function liveStations(s: FactoryState, now = Date.now()): Station[] {
       actions: ACTIONS[g.id] ?? [],
     };
   });
-  return [...stations, orbitStation(s, now)];
+  return [gauntlet[0], ...checks, ...gauntlet.slice(1), orbitStation(s, now)];
 }
