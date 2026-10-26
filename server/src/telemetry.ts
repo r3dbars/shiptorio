@@ -1,9 +1,10 @@
+import { factoryDeleted } from "./account-lifecycle";
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as Sentry from '@sentry/cloudflare';
 import { redact, Redactor } from './redact';
 
 export interface Trace { requestId: string; userId?: string; repo?: string; itemId?: string }
-export interface TelemetryEnv { SHIPTORIO_SENTRY_DSN?: string; BUILD_SHA?: string; CACHE?: KVNamespace }
+export interface TelemetryEnv { SHIPTORIO_SENTRY_DSN?: string; BUILD_SHA?: string; CACHE?: KVNamespace; DB?: D1Database }
 export type LogGroup = 'events' | 'errors' | 'spark' | 'webhooks';
 export interface LogEntry extends Trace { level: 'info' | 'warn' | 'error'; ts: string; event: string; durationMs?: number; [key: string]: unknown }
 interface Context { trace: Trace; env: TelemetryEnv; waitUntil: (task: Promise<unknown>) => void }
@@ -27,7 +28,19 @@ export function log(level: LogEntry['level'], event: string, fields: Record<stri
     const suffix = `${String(9999999999999 - Date.now()).padStart(13, '0')}:${crypto.randomUUID()}`;
     const categories = ['events', ...(level === 'error' ? ['errors'] : []), ...(event.startsWith('spark.') ? ['spark'] : []), ...(event.startsWith('webhook.') ? ['webhooks'] : [])];
     const groups = categories.flatMap(group => [`${group}:all`, ...(entry.repo ? [`${group}:repo:${entry.repo}`] : [])]);
-    const persist = Promise.resolve().then(() => Promise.all(groups.map(group => ctx.env.CACHE!.put(`ops:${group}:${suffix}`, JSON.stringify(entry), { expirationTtl: 7 * 86400 })))).catch(() => {
+    const keys = groups.map(group => `ops:${group}:${suffix}`);
+    const mayRetain = async () => {
+      if (!ctx.env.DB) return true;
+      if (entry.repo && await factoryDeleted(ctx.env.DB, entry.repo)) return false;
+      if (entry.userId && !await ctx.env.DB.prepare("SELECT id FROM users WHERE lower(login) = ?").bind(entry.userId.toLowerCase()).first()) return false;
+      return true;
+    };
+    const persist = Promise.resolve().then(async () => {
+      if (!await mayRetain()) return;
+      await Promise.all(keys.map(key => ctx.env.CACHE!.put(key, JSON.stringify(entry), { expirationTtl: 7 * 86400 })));
+      // A background write that overlaps deletion must clean up its late keys.
+      if (!await mayRetain()) await Promise.all(keys.map(key => ctx.env.CACHE!.delete(key)));
+    }).catch(() => {
       console.warn(JSON.stringify({ level: 'warn', event: 'telemetry.persist_failed', ts: new Date().toISOString(), requestId: entry.requestId }));
     });
     try { ctx.waitUntil(persist); } catch { /* Missing/closed execution context must not break the business request. */ }
