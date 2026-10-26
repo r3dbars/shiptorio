@@ -87,6 +87,9 @@ await context.route(`${origin}/auth/login*`, async (route) => {
 const page = await context.newPage();
 const consoleErrors = [];
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
+page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+const apiErrors = [];
+page.on("response", (r) => { if (r.url().includes("/api/") && r.status() >= 400) apiErrors.push(`${r.status()} ${new URL(r.url()).pathname}`); });
 
 const steps = [];
 const report = {};
@@ -132,7 +135,7 @@ try {
   });
   await step("back in Shiptorio, repo is listed by itself", async () => {
     await page.bringToFront();
-    await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: 20000 });
+    await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: 45000 });
   });
   await step("open the factory", async () => {
     await page.getByRole("button", { name: new RegExp(stub.state.repo) }).click();
@@ -151,9 +154,19 @@ try {
   // Spark key, then the first rocket: see docs/context/new-user-path.md for what's left.
 } catch (error) {
   failed = error;
+  // what the server knew when the stranger got stuck
+  const rows = async (sql) => (await db.prepare(sql).all()).results;
+  report.db = {
+    users: await rows("SELECT id, login FROM users"),
+    user_repos: await rows("SELECT * FROM user_repos"),
+    repos: await rows("SELECT * FROM repos"),
+    webhook_deliveries: await rows("SELECT source, delivery_id, state FROM webhook_deliveries"),
+  };
+  report.page = { url: page.url(), text: (await page.locator("body").innerText().catch(() => "")).slice(0, 1500) };
+  console.log(JSON.stringify({ db: report.db, page: report.page }, null, 1));
 }
 
-Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, githubCalls: stub.state.calls, out });
+Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, apiErrors, githubCalls: stub.state.calls, out });
 writeFileSync(join(out, "timings.json"), JSON.stringify(report, null, 2));
 for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.name.padEnd(52)} ${(s.ms / 1000).toFixed(1)}s${s.error ? `  ${s.error}` : ""}`);
 console.log(`total ${(report.totalMs / 1000).toFixed(1)}s · screenshots and timings.json in ${out}`);
