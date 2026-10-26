@@ -17,7 +17,7 @@ import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./eng
 import { layoutMap } from "./map";
 import { pickFiles, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
 import { foldSignal } from "./ore";
-import { githubStatus, normalizeGitHub, type GitHubPayload, type GitHubSourceEnv } from "./sources/github";
+import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 
 export interface FactoryEnv extends AppCredentials, SparkEnv {
@@ -137,7 +137,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     const item = foldSignal(existing, signal);
     if (item === existing) return;
-    await this.patch({ items: [item] });
+    const status = s.sources?.find((source) => source.kind === "github") ?? githubStatus(this.env);
+    const now = Date.now();
+    const sameDay = status.lastEventAt && new Date(status.lastEventAt).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10);
+    await this.patch({ items: [item], sources: [...(s.sources ?? []).filter((source) => source.kind !== "github"), { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 }] });
     this.log("info", `${existing ? "Ore updated" : "Ore"}: ${item.title}`, item.id);
     await this.scheduleTick();
   }
@@ -319,6 +322,24 @@ export class Factory extends DurableObject<FactoryEnv> {
     const msg = parsed.data;
     const s = this.state!;
     switch (msg.type) {
+      case "connect_source": {
+        if (msg.kind === "github") {
+          await this.ctx.storage.delete("githubDisabled");
+          const source = githubStatus(this.env);
+          await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== "github"), source] });
+          this.log("info", source.setup.steps.join(" "));
+        } else {
+          const source = { kind: msg.kind, state: "needs_action" as const, detail: "Connector setup is not implemented yet.", eventsToday: 0, setup: { steps: ["GitHub is the first source checkpoint. This connector follows the verified shipping loop."] } };
+          await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== msg.kind), source] });
+          this.log("info", source.detail);
+        }
+        break;
+      }
+      case "disconnect_source": {
+        if (msg.kind === "github") await this.disconnectGitHub();
+        else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
+        break;
+      }
       case "place_machine": {
         const m: Machine = {
           id: `${msg.machineType}-${crypto.randomUUID().slice(0, 6)}`,
@@ -432,7 +453,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
 
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
-    if (busy) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+    if (busy && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
   }
 
