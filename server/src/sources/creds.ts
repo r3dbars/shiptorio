@@ -17,7 +17,7 @@ export interface CredsEnv extends SentrySourceEnv, PostHogSourceEnv {
 const key = (kind: MineKind, repo: string) => `cred:${kind}:${repo.toLowerCase()}`;
 
 async function stored<T>(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<Partial<T>> {
-  const read = (k: string) => env.CACHE?.get<T>(k, "json").catch(() => null) ?? Promise.resolve(null);
+  const read = (k: string) => env.CACHE?.get<T>(k, "json") ?? Promise.resolve(null);
   if (repo) {
     const own = await read(key(kind, repo));
     if (own) return own as Partial<T>;
@@ -51,7 +51,7 @@ export async function saveCreds(env: CredsEnv, kind: MineKind, creds: SentryCred
 /** The repo the legacy shared keys and the old /webhooks/sentry URL feed. Per-repo keys don't need it. */
 export async function linkedRepo(env: CredsEnv, kind: MineKind): Promise<string | null> {
   const pinned = kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO;
-  return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`).catch(() => null)) ?? null);
+  return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`)) ?? null);
 }
 
 export async function linkRepo(_env: CredsEnv, _kind: MineKind, _repo: string | null): Promise<void> {
