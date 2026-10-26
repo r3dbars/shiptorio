@@ -1,3 +1,4 @@
+import { budgetReport } from "./budget";
 import type { Hono } from 'hono';
 import * as Sentry from '@sentry/cloudflare';
 import type { Env } from './index';
@@ -15,7 +16,7 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
     c.header('X-Content-Type-Options', 'nosniff');
     await next();
   });
-  app.get('/admin', c => c.html(ADMIN_HTML));
+  app.get('/admin', async c => c.req.query('format') === 'json' ? c.json(await budgetReport(c.env)) : c.html(ADMIN_HTML));
   app.get('/admin/app.js', c => { c.header('Content-Type', 'application/javascript; charset=utf-8'); return c.body(ADMIN_JS); });
   app.get('/admin/data', async c => {
     const env = c.env as Env;
@@ -26,7 +27,7 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
     return c.json({ release: env.BUILD_SHA, sentryConfigured: !!env.SHIPTORIO_SENTRY_DSN,
       repos: repos.results.map(r => r.full_name),
       snapshot: selected ? await factory(env, selected).debugSnapshot() : null,
-      errors, events, spark, webhooks,
+      errors, events, spark, webhooks, budget: await budgetReport(env),
       note: 'Last 50 events per category and factory; KV may take up to 60 seconds to propagate. Retention: 7 days.' });
   });
   app.post('/admin/force-error', async c => {
@@ -49,7 +50,7 @@ const ADMIN_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Ship
 <script type="module" src="/admin/app.js"></script></body></html>`;
 const ADMIN_JS = `
 const repo=document.querySelector('#repo'), status=document.querySelector('#status');
-async function refresh(){try{const res=await fetch('/admin/data?repo='+encodeURIComponent(repo.value));if(!res.ok)throw Error('Request failed: '+res.status);const data=await res.json();if(repo.options.length===1)for(const name of data.repos){const option=document.createElement('option');option.value=option.textContent=name;repo.append(option)}status.textContent='Release '+data.release+' • Sentry '+(data.sentryConfigured?'configured':'not configured')+' • '+data.note;const content=document.querySelector('#content');content.replaceChildren();for(const [key,value] of Object.entries(data)){if(!['snapshot','errors','events','spark','webhooks'].includes(key))continue;const section=document.createElement('section'),h=document.createElement('h2'),pre=document.createElement('pre');h.textContent=key;pre.textContent=JSON.stringify(value,null,2);section.append(h,pre);content.append(section)}}catch(e){status.textContent=e.message}}
+async function refresh(){try{const res=await fetch('/admin/data?repo='+encodeURIComponent(repo.value));if(!res.ok)throw Error('Request failed: '+res.status);const data=await res.json();if(repo.options.length===1)for(const name of data.repos){const option=document.createElement('option');option.value=option.textContent=name;repo.append(option)}status.textContent='Release '+data.release+' • Sentry '+(data.sentryConfigured?'configured':'not configured')+' • '+data.note;const content=document.querySelector('#content');content.replaceChildren();for(const [key,value] of Object.entries(data)){if(!['budget','snapshot','errors','events','spark','webhooks'].includes(key))continue;const section=document.createElement('section'),h=document.createElement('h2'),pre=document.createElement('pre');h.textContent=key;pre.textContent=JSON.stringify(value,null,2);section.append(h,pre);content.append(section)}}catch(e){status.textContent=e.message}}
 document.querySelector('#refresh').onclick=refresh;repo.onchange=refresh;
 document.querySelector('#force').onclick=async()=>{const res=await fetch('/admin/force-error',{method:'POST'});status.textContent=JSON.stringify(await res.json());};refresh();
 `;

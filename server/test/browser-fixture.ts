@@ -17,7 +17,7 @@ export async function browserCookies() {
 
 export const membershipCache = { get: async (key: string) => key.startsWith("access:v2:") ? { expiresAt: Date.now() + 59000 } : null, put: async () => {} };
 export function authorizedDB(original: any) { return { ...original, prepare(sql: string) {
-  if (sql.startsWith('SELECT u.id, u.login FROM sessions') || sql.includes('FROM user_repos WHERE') || sql.includes('FROM user_installations WHERE') || sql === 'SELECT installation_id FROM repos WHERE full_name = ?' || sql === 'SELECT id FROM installations WHERE id = ?') return { bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }) }) };
+  if (sql.startsWith('SELECT') && (sql.startsWith('SELECT u.id, u.login FROM sessions') || sql.includes('FROM user_repos WHERE') || sql.includes('FROM user_installations WHERE') || sql === 'SELECT installation_id FROM repos WHERE full_name = ?' || sql === 'SELECT id FROM installations WHERE id = ?')) return { bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }) }) };
   if (sql.startsWith('SELECT enabled')) return {bind:()=>({first:async()=>null})};
   if (sql.startsWith('SELECT login FROM signup_resources')) return {bind:()=>({first:async()=>({login:'test-player'})})};
   if (sql.startsWith('SELECT runs_daily')) return {bind:()=>({first:async()=>({runs_daily:20})})};
