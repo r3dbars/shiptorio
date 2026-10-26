@@ -307,6 +307,36 @@ The demo story, step by step. Every row is a real effect.
 (2) the heal cascade table above, live, (3) Spark's tool calls visible in the floor log, (4) the score moving
 on real numbers, (5) a launch permit earned on camera (docs PR auto-launches).
 
+**First proof (build this before anything else):** one real GitHub issue → Spark triages and plans →
+assembler opens a fix PR → CI inspects, rejects, Spark reworks → green → human merge → rocket. One useful,
+verified change shipped. Sentry, email, other agents and voice layer on after that loop is real. (Matches
+the backend lane's plan.) Revenue and customer counts are the long-term goal; in the demo they're the
+demo shop's numbers.
+
+## Demo narrative, lined up with judging
+
+Judging: impact 30%, use of Meta's tools 25%, demo 25%, technical depth 20%. The 3-minute video should
+make each one obvious without a voiceover explaining it.
+
+| Time | Beat | Hits |
+| --- | --- | --- |
+| 0:00 | "Every team has more feedback than hands. Shiptorio turns your repo into a factory that Meta's Muse Spark runs, and you just play." | Impact |
+| 0:15 | Sign in, pick the demo shop repo. Spark scans it, the island rises, Spark places the starter factory and the first item is already moving | Meta tools, demo |
+| 0:40 | Break checkout on camera. Sentry fires, biters swarm `/checkout`, a customer email lands and Spark links it to the same error. Floor log shows the tool calls (`get_sentry_issue`, `link_items`, `triage`) | Meta tools, technical depth |
+| 1:05 | Next Move card: "Checkout crash, 112 users. Fix at high effort?" Click Go. Spark assembler writes the fix | Demo, Meta tools |
+| 1:25 | Inspector stamps red (CI fails), Spark reads the failure and reworks, second pass green, real PR #N on GitHub | Technical depth |
+| 1:50 | Bottleneck moves to the pad. Merge. Rocket launches, release ships, biters die, Sentry goes quiet. Spark drafts the customer reply, click Send | Impact, demo |
+| 2:15 | Scale: queue backs up, Spark adds an assembler on a Claude Code solar plant. "Bring your own agents, Spark runs the floor." Docs district earns a launch permit and a docs PR auto-launches | Technical depth, Meta tools |
+| 2:35 | HUD: real lead time (minutes), users unblocked, customers answered, PRs Shiptorio shipped to its own repo this week | Impact |
+| 2:50 | "There's always a bottleneck. The factory must grow. Shiptorio." | |
+
+Backup: if the live fix fails on camera, the sim's `heal` scenario replays the same beats on the real UI.
+
+## Where it lives
+
+`shiptorio.com` (password-gated for now, so only Justin gets in) and `shiptorio.dev`, both on the
+`shiptorio` Worker. The backend lane owns the gate and deploys.
+
 ## What each lane builds from this
 
 **Contract (`shared/`, its own PR):** add `Stage` and `Bottleneck` (stage, wip, age, throughput, valueAtRisk),
