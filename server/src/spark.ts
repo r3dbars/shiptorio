@@ -414,8 +414,10 @@ export async function pickFiles(env: SparkEnv, task: Task, paths: string[]): Pro
     `Task: ${task.title}\n\n${task.body.slice(0, 4000)}\nLatest failure: ${task.failure ?? "none"}\nScars: ${JSON.stringify(task.scars?.slice(-5) ?? [])}\n\nRepo files:\n${paths.slice(0, 600).join("\n")}\n\nJSON shape: {"files": ["path", ...]}`,
     "medium",
   );
-  if (!out.files.every(f => paths.includes(f) && pathAllowed(f))) throw new SparkError("Unapproved file selection");
-  return [...new Set(out.files)];
+  // A pick outside the candidate list is dropped, not fatal: only listed, allowed paths survive.
+  const files = [...new Set(out.files.filter(f => paths.includes(f) && pathAllowed(f)))];
+  if (!files.length) throw new SparkError(`Unapproved file selection (${out.files.slice(0, 4).join(", ").slice(0, 200)})`);
+  return files;
 }
 
 export interface Fix {

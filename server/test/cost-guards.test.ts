@@ -40,7 +40,7 @@ it("Spark reserves every outbound call, caps output, and never fetches when disa
   const env = { ...sparkTestEnv(), SPARK_DAILY_CALLS: "1" };
   const fetch = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ choices: [{ message: { content: "ok" } }], usage: { total_tokens: 10 } }));
   expect(await sparkChat(env, [{ role: "user", content: "hi" }])).toBe("ok");
-  expect(JSON.parse(String(fetch.mock.calls[0][1]!.body)).max_completion_tokens).toBe(2048);
+  expect(JSON.parse(String(fetch.mock.calls[0][1]!.body)).max_completion_tokens).toBe(6144);
   expect(await budgetUsage(env, "owner")).toMatchObject({ calls: 1, tokens: 10 });
   await expect(sparkChat(env, [{ role: "user", content: "hi" }])).rejects.toThrow("exhausted");
   await expect(sparkChat({ ...env, SPARK_DISABLED: "1" }, [])).rejects.toThrow("kill switch");
