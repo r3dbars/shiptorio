@@ -36,6 +36,44 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("broadcasts and persists exact player goals across Factory reloads, including clearing", async () => {
+    const f = fixture();
+    for (const goal of ["  Ship checkout fixes\nwithout regressions  ", "g".repeat(200), ""]) {
+      f.events.length = 0;
+      await f.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "set_goal", text: goal }));
+      expect(f.events).toContainEqual({ type: "patch", patch: { goal } });
+      expect(f.saved().goal).toBe(goal);
+      // A fresh instance must read the durable value, not the previous instance's cache.
+      const reloaded = f.reload() as unknown as { load(): Promise<FactoryState | null> };
+      expect((await reloaded.load())?.goal).toBe(goal);
+    }
+  });
+  it("rejects invalid or unauthorized goal messages without saving or broadcasting", async () => {
+    const f = fixture();
+    f.data.set("state", { ...f.saved(), goal: "Keep the existing goal" });
+    const before = structuredClone(f.saved());
+    for (const raw of [
+      "not JSON",
+      JSON.stringify({ type: "set_goal" }),
+      JSON.stringify({ type: "set_goal", text: null }),
+      JSON.stringify({ type: "set_goal", text: 42 }),
+      JSON.stringify({ type: "set_goal", text: "g".repeat(201) }),
+      JSON.stringify({ type: "set_goal", text: "Valid goal", padding: " ".repeat(16384) }),
+      new ArrayBuffer(8),
+    ]) {
+      await f.factory.webSocketMessage(authorizedSocket(), raw);
+      expect(f.saved()).toEqual(before);
+      expect(f.events).toEqual([]);
+    }
+    const unauthorized = authorizedSocket();
+    unauthorized.serializeAttachment(null);
+    const closed: unknown[][] = [];
+    unauthorized.close = (...args) => { closed.push(args); };
+    await f.factory.webSocketMessage(unauthorized, JSON.stringify({ type: "set_goal", text: "Unauthorized change" }));
+    expect(closed).toEqual([[1008, "Sign in again"]]);
+    expect(f.saved()).toEqual(before);
+    expect(f.events).toEqual([]);
+  });
   it("runs Spark planning, exclusive runner claim, scoped branch verification and idempotent PR receipts", async () => {
     const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
     const der = await crypto.subtle.exportKey("pkcs8", keys.privateKey);
