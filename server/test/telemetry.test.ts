@@ -35,7 +35,7 @@ it('keeps concurrent request identities isolated and redacts persisted JSON', as
       log('error', 'test.failure', { error: new Error('api_key=never-log-this'), durationMs: 10 });
     })));
     await Promise.all(pending);
-    const entries = [...saved].filter(([key]) => key.startsWith('ops:events:')).map(([, value]) => JSON.parse(value));
+    const entries = [...saved].filter(([key]) => key.startsWith('ops:events:all:')).map(([, value]) => JSON.parse(value));
     expect(entries).toHaveLength(2);
     for (const e of entries) { expect(e.requestId).toBe(e.userId + '-request'); expect(e.error.message).not.toContain('never-log-this'); expect(e.ts).toBeString(); }
     expect(currentTrace()).toBeUndefined();
@@ -60,8 +60,8 @@ it('propagates the request ID to Spark and GitHub and logs duration without auth
 
 it('queries separate recent error and webhook indexes', async () => {
   const prefixes: string[] = [];
-  const env = { CACHE: { list: async ({ prefix }: { prefix: string }) => { prefixes.push(prefix); return { keys: [{ name: prefix + '1' }] }; }, get: async () => ({ event: 'test' }) } };
+  const env = { CACHE: { list: async ({ prefix }: { prefix: string }) => { prefixes.push(prefix); return { keys: [{ name: prefix + '1' }] }; }, get: async (keys: string[]) => new Map(keys.map(key => [key, { event: 'test' }])) } };
   expect(await recentLogs(env as never, 'errors')).toHaveLength(1);
   await recentLogs(env as never, 'webhooks');
-  expect(prefixes).toEqual(['ops:errors:', 'ops:webhooks:']);
+  expect(prefixes).toEqual(['ops:errors:all:', 'ops:webhooks:all:']);
 });

@@ -4,6 +4,7 @@ import { redact } from './redact';
 
 export interface Trace { requestId: string; userId?: string; repo?: string; itemId?: string }
 export interface TelemetryEnv { SHIPTORIO_SENTRY_DSN?: string; BUILD_SHA?: string; CACHE?: KVNamespace }
+export type LogGroup = 'events' | 'errors' | 'spark' | 'webhooks';
 export interface LogEntry extends Trace { level: 'info' | 'warn' | 'error'; ts: string; event: string; durationMs?: number; [key: string]: unknown }
 interface Context { trace: Trace; env: TelemetryEnv; waitUntil: (task: Promise<unknown>) => void }
 const context = new AsyncLocalStorage<Context>();
@@ -24,8 +25,9 @@ export function log(level: LogEntry['level'], event: string, fields: Record<stri
   // One immutable key per event avoids cross-isolate lost updates. Seven-day retention.
   if (ctx?.env.CACHE) {
     const suffix = `${String(9999999999999 - Date.now()).padStart(13, '0')}:${crypto.randomUUID()}`;
-    const groups = ['events', ...(level === 'error' ? ['errors'] : []), ...(event.startsWith('spark.') ? ['spark'] : []), ...(event.startsWith('webhook.') ? ['webhooks'] : [])];
-    ctx.waitUntil(Promise.all(groups.map(group => ctx.env.CACHE!.put(`ops:${group}:${suffix}`, JSON.stringify(entry), { expirationTtl: 7 * 86400 }))).catch(() => {
+    const categories = ['events', ...(level === 'error' ? ['errors'] : []), ...(event.startsWith('spark.') ? ['spark'] : []), ...(event.startsWith('webhook.') ? ['webhooks'] : [])];
+    const groups = categories.flatMap(group => [`${group}:all`, ...(entry.repo ? [`${group}:repo:${entry.repo}`] : [])]);
+    ctx.waitUntil(Promise.resolve().then(() => Promise.all(groups.map(group => ctx.env.CACHE!.put(`ops:${group}:${suffix}`, JSON.stringify(entry), { expirationTtl: 7 * 86400 })))).catch(() => {
       console.warn(JSON.stringify({ level: 'warn', event: 'telemetry.persist_failed', ts: new Date().toISOString(), requestId: entry.requestId }));
     }));
   }
@@ -40,16 +42,20 @@ export function sentryOptions(env: TelemetryEnv): Sentry.CloudflareOptions {
     dsn: env.SHIPTORIO_SENTRY_DSN, enabled: !!env.SHIPTORIO_SENTRY_DSN,
     release: env.BUILD_SHA ?? 'development',
     // Bodies/headers may carry runner grants, source credentials or private code.
-    beforeSend(event) { delete event.request; return redact(event); },
+    beforeSend(event) { delete event.request; if (event.user) delete event.user.ip_address; return redact(event); },
     beforeBreadcrumb(breadcrumb) { return redact(breadcrumb); },
     tracesSampleRate: 0,
   };
 }
-export async function recentLogs(env: TelemetryEnv, group: 'events' | 'errors' | 'spark' | 'webhooks' = 'events'): Promise<LogEntry[]> {
+export async function recentLogs(env: TelemetryEnv, group: LogGroup = 'events', repo?: string): Promise<LogEntry[]> {
   if (!env.CACHE) return [];
-  const page = await env.CACHE.list({ prefix: `ops:${group}:`, limit: 200 });
-  const rows = await Promise.all(page.keys.map(k => env.CACHE!.get<LogEntry>(k.name, 'json')));
-  return rows.filter((v): v is LogEntry => !!v);
+  const prefix = `ops:${group}:${repo ? `repo:${repo}` : 'all'}:`;
+  const page = await env.CACHE.list({ prefix, limit: 50 });
+  if (!page.keys.length) return [];
+  // Bulk reads keep this page within the Worker's external operation budget.
+  const keys = page.keys.map(k => k.name);
+  const rows = await env.CACHE.get<LogEntry>(keys, 'json');
+  return keys.map(key => rows.get(key)).filter((v): v is LogEntry => !!v);
 }
 export async function observedFetch(service: 'spark' | 'github', url: string, init: RequestInit): Promise<Response> {
   const start = Date.now();

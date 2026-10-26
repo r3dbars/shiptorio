@@ -5,7 +5,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const { Factory } = await import("../src/factory");
 const secret = "ops-test-session", password = "ops-test-preview";
 function fixture() {

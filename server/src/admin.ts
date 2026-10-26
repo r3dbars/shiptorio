@@ -19,18 +19,15 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
   app.get('/admin/app.js', c => { c.header('Content-Type', 'application/javascript; charset=utf-8'); return c.body(ADMIN_JS); });
   app.get('/admin/data', async c => {
     const env = c.env as Env;
-    const [entries, errors, spark, webhooks] = await Promise.all(['events', 'errors', 'spark', 'webhooks'].map(group => recentLogs(env, group as 'events')));
     const repos = await env.DB.prepare('SELECT full_name FROM repos ORDER BY full_name').all<{ full_name: string }>();
     const selected = c.req.query('repo');
     if (selected && !repos.results.some(r => r.full_name === selected)) return c.json({ error: 'unknown factory' }, 404);
-    const events = selected ? entries.filter(e => e.repo === selected) : entries;
+    const [events, errors, spark, webhooks] = await Promise.all((['events', 'errors', 'spark', 'webhooks'] as const).map(group => recentLogs(env, group, selected)));
     return c.json({ release: env.BUILD_SHA, sentryConfigured: !!env.SHIPTORIO_SENTRY_DSN,
       repos: repos.results.map(r => r.full_name),
       snapshot: selected ? await factory(env, selected).debugSnapshot() : null,
-      errors: errors.filter(e => !selected || e.repo === selected).slice(0, 50), events: events.slice(0, 50),
-      spark: spark.filter(e => !selected || e.repo === selected).slice(0, 50),
-      webhooks: webhooks.filter(e => !selected || e.repo === selected).slice(0, 50),
-      note: 'Last 200 global events sampled; KV may take up to 60 seconds to propagate. Retention: 7 days.' });
+      errors, events, spark, webhooks,
+      note: 'Last 50 events per category and factory; KV may take up to 60 seconds to propagate. Retention: 7 days.' });
   });
   app.post('/admin/force-error', async c => {
     if (c.req.header('origin') !== new URL(c.req.url).origin) return c.json({ error: 'invalid origin' }, 403);

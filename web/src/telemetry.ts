@@ -11,7 +11,7 @@ export async function initTelemetry() {
     requestId = config.requestId;
     if (config.dsn) Sentry.init({
       dsn: config.dsn, release: config.release,
-      beforeSend(event) { delete event.request; return redact(event); },
+      beforeSend(event) { delete event.request; if (event.user) delete event.user.ip_address; return redact(event); },
       beforeBreadcrumb(breadcrumb) { return redact(breadcrumb); },
       // GlobalHandlers captures unhandled promise rejections and uncaught exceptions.
     });

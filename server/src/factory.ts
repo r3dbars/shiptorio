@@ -107,7 +107,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.load();
     // No runner receipts, pairing grants, issue bodies, source keys, or private code.
     const s = this.state;
-    return redact(s ? { repo: this.meta?.repo, tick: s.tick, machines: s.machines, belts: s.belts,
+    return redact(s ? { release: this.env.BUILD_SHA ?? "unknown", repo: this.meta?.repo, tick: s.tick, machines: s.machines, belts: s.belts,
       items: s.items.map(i => ({ id: i.id, state: i.state, district: i.district, attempts: i.attempts, prNumber: i.prNumber, failure: i.failure })),
       brain: s.brain, power: s.power } : null);
   }

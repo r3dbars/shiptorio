@@ -242,9 +242,9 @@ Goal 6 / Oct 26 checkpoint. Applies only to the `shiptorio` Worker. Never target
 
 ## Find a failure in under a minute
 
-1. Open `/admin` as **r3dbars** (a live GitHub session is required). Choose a factory and refresh.
+1. Open `/admin` (feature flags remain at `/admin/flags`) as **r3dbars** (a live GitHub session is required). Choose a factory and refresh.
 2. Check **errors**, then use its `requestId` to correlate **events**, **spark**, and **webhooks**.
-   The snapshot shows machines, belts, item states, power, and the Foreman decision log. It excludes
+   The snapshot includes the DO release SHA and shows machines, belts, item states, power, and the Foreman decision log. It excludes
    source credentials, runner grants/receipts, issue bodies, and private code.
 3. In Sentry, filter `requestId:<id>` or `user.id:r3dbars`; `release` is the deployed git SHA.
 4. If persistence is delayed, tail the Worker live using the commands below.
@@ -288,7 +288,7 @@ Spark/GitHub logs record duration, method and status, never request bodies or au
 
 The existing `shiptorio-cache` KV holds immutable, redacted diagnostic events for **7 days**. Separate
 indexes retain errors, Spark calls, and webhook events even when normal requests are busy. Admin reads
-up to 200 latest entries per index, filters the selected factory and displays its last 50. KV is eventually
+the last 50 entries per category, using a separate index for each selected factory and bulk KV reads. KV is eventually
 consistent: cross-location readers can lag about 60 seconds. Workers live tail and Sentry are the faster
 path. This is a bounded recent-history view, not a complete audit archive. State snapshots read the DO
 but do not boot a new factory, dispatch jobs, or mutate game state.
