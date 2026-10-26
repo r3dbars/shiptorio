@@ -61,7 +61,7 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
   let state: FactoryState | null = null, closed = false, lateEvents = 0, step = 0;
   const states = new Set<string>(), tools = new Set<string>();
   const seenMoves = new Map<string, number>();
-  const guided = scenario === "intro" ? (result.guided = { steps: [], actions: [], completed: false, verifiedRework: false, sentryOre: false, automatedLaunches: 0 }) : undefined;
+  const guided: GuidedResult | undefined = scenario === "intro" ? (result.guided = { steps: [], actions: [], completed: false, verifiedRework: false, sentryOre: false, automatedLaunches: 0 }) : undefined;
   let introAt = 0, introEnteredAt = -1, introActed = false;
   const reverified = new Set<string>();
   let rng = seed >>> 0;
