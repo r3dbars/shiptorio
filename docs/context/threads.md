@@ -1,4 +1,4 @@
-# Claude project threads (as of 2026-10-26 ~16:55 UTC)
+# Claude project threads (as of 2026-10-26 ~19:40 UTC)
 
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
@@ -25,15 +25,21 @@ is the only copy agents outside it (Codex) can see.
 
 ## PRs at a glance
 
+Rule since 18:44 UTC: every agent merges its own PR once CI is green, then checks the Deploy run (AGENTS.md).
+
 | PR | What | State |
 | --- | --- | --- |
-| #1 | Day 1 scaffold on Cloudflare | merged |
-| #2 | AGENTS.md | merged |
-| #3, #4 | Codex: shared protocol proposal, persistent factory API + issue ingestion | open drafts, built on the old scaffold. Need porting onto `main` |
-| #5 | Plan, architecture, art docs, prototypes | merged |
-| #6, #9 | docs/context | merged |
-| #7 | Item Lab launch pad + solar panel v2 | merged |
-| #8 | Pixel Prototype art port into `web/` (incl. HUD) | draft, in progress |
+| #1–#9 | Scaffold, AGENTS.md, plan/art docs, context, Item Lab, pixel art port | merged |
+| #29–#60 | Gauntlet on the map, click-to-zoom panels, hover labels, playtest fixes, sound, onboarding v1, mobile, check-in deck | merged |
+| #65, #66, #69 | Floating island, ship celebration + sound | merged |
+| #67, #78 | HUD v3 (top bar, dock, sheets, activity tray) + phone fixes | merged |
+| #68, #70, #72 | Actions minutes (PR-only CI, skip docs, cancel stale), merge-own-green-PR rule, push-often rule | merged |
+| #73 | Live ship loop: gauntlet stations, AI review, verify bay, merge gate | merged |
+| #84 | New onboarding (welcome intro, two worlds, field guide) | merged |
+| #81, #82, #83, #86 | Codex: in-game plan approval, scar-driven rework + real verify receipts, approval card fix, runner independent of checkout | merged |
+| #85 | Codex: repeatable whole-game playtests + papercut reports | draft, Codex working |
+| #87 | Made by the game itself (Spark plan → local Codex → verify bay): direnv path guard | green, on the launch pad for Justin |
+| #3, #4 | Old pre-#1 drafts | stale, close them |
 
 ## Codex (outside the Claude project)
 
