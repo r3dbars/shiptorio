@@ -1,81 +1,100 @@
 ---
 title: Connect your machine
-description: The local runner is how your own Claude Code or Codex subscription builds what Spark plans.
+description: Install the local runner, pair in your browser and power Spark's plans with your own agent.
 section: Start here
 order: 4
 ---
 # Connect your machine
 
-Shiptorio never writes code on its servers. Your own agents do, on your own computer, using the subscriptions you already pay for. The **local runner** is the small helper that connects them to your factory.
+Spark makes the plan. Your local Claude Code or Codex builds it, using your own
+subscription. Agent sign-ins stay on your computer; pairing never approves a build.
 
-On the map, each signed-in agent shows up as a **power plant**. Claude Code and Codex each become one. No power, no building: Spark can still read, sort and plan, but the Next Move card will say "Plug in Claude or ChatGPT to start building."
+## Install
 
-> **Coming soon** A one-line installer with browser pairing (so anyone can connect a machine in a minute) is being built right now. Until it lands, pairing a runner needs the factory owner's server credentials, so the steps below are for the operator. This page will switch to the installer as soon as it ships.
+macOS and Linux are supported. On Windows, use a glibc Linux distribution in WSL2
+and install your agent inside WSL.
 
-## What you need
+1. Install git and either [Codex CLI](https://developers.openai.com/codex/cli) or
+   [Claude Code](https://code.claude.com/docs/en/setup).
+2. Run this in your terminal:
 
-- **macOS** with Apple Command Line Tools (`xcode-select --install`). Checks run inside the macOS sandbox, and other platforms refuse to run jobs until they have a sandbox of their own.
-- **Bun** installed.
-- **Claude Code** (`claude`) or **Codex** (`codex`) installed and signed in. Both is better: more power plants.
-- A checkout of the Shiptorio repo (for now, until the installer ships).
+   ```sh
+   curl -fsSL https://shiptorio.com/install.sh | sh
+   ```
 
-## Check your agents
+3. Setup checks the agent and guides you through a dedicated local agent sign-in
+   if needed. This keeps your usual agent settings outside job sandboxes.
+4. Browser pairing opens. Sign in to Shiptorio, compare the code with your terminal,
+   enter a repository where the Shiptorio GitHub App is installed and you have write
+   access, then approve. Only approve a code you requested on this computer.
+5. The terminal confirms the repository. Keep it open. Open that factory, select an
+   open GitHub issue and request Spark's plan. Review the files and steps in the plan
+   card before approving a build.
 
-From the Shiptorio repo:
+macOS needs Apple Command Line Tools (`xcode-select --install`). Linux needs
+bubblewrap (`sudo apt install bubblewrap`) and working unprivileged user namespaces.
+The runner refuses jobs if the OS sandbox is unavailable.
 
-```sh
-bun run runner doctor
-```
+The installer places a private pinned Bun and standalone bundle in
+`~/.local/share/shiptorio/runner`, checks the bundle against its HTTPS checksum
+manifest, and creates `~/.local/bin/shiptorio-runner`. No repository checkout or
+manual token copying is required. Add `~/.local/bin` to PATH if desired.
 
-It prints one line per agent it finds, like `claude_code: installed and signed in`. If it says `Install and sign in to Codex or Claude Code first`, do that and run it again.
+## More repos and updates
 
-## Pair the runner
+Run `~/.local/bin/shiptorio-runner pair` to add another repository while the runner
+is open. One process serves all paired repos, with one build at a time. Pairing
+another repo preserves earlier connections. Pairing a new machine to the same repo
+replaces that repo's previous machine credential.
 
-Pairing links the runner to one repo with an **eight-hour, repo-only** token, saved in a gitignored `runner/.dev.vars` that only you can read. Re-pairing revokes the old token, and a running runner renews its token before it expires.
+Rerun the installer to update. Existing pairings survive the update. After closing
+the terminal, restart with `~/.local/bin/shiptorio-runner watch`.
 
-For now pairing is an operator step, done by the factory owner. The browser pairing flow in the installer replaces it.
-
-## Run it
-
-```sh
-bun run runner watch
-```
-
-The runner says `Local runner ready for owner/repo: claude_code. Only approved jobs run.` and then checks for approved work every few seconds. `bun run runner once` checks a single time and exits. `bun run runner paths` shows where it keeps its files and which agents it found.
-
-To keep it running in the background on a Mac:
-
-```sh
-bun run runner:service install
-bun run runner:service status
-bun run runner:service stop
-```
-
-The service runs only for your Mac user, from its own bundled copy in `~/Library/Application Support/Shiptorio`. Your Mac has to be awake and your agent CLI signed in for jobs to run.
-
-## How a job runs
-
-1. A new issue gets a **Plan with Codex** or **Plan with Claude** card.
-2. Spark reads the issue and the files, then proposes a plan and an exact file list. Open **Review plan and files** to see it.
-3. Nothing builds until you tap **Approve and build**. **Not now** defers it.
-4. The runner makes a fresh clone pinned to the planned commit, and your agent edits only the approved files.
-5. The runner checks the change: approved paths only, at most 10 files and 500 changed lines, no secret-looking strings. Then it runs typecheck, tests and build inside the sandbox.
-6. It pushes a `shiptorio/runner-*` branch. The server double-checks the branch and file scope, then opens the PR. The PR enters the [gauntlet](/docs/gauntlet).
-
-## What your agent can and can't touch
-
-- It gets only a minimal environment (home, path, locale). Not your shell's secrets.
-- Codex runs with `--sandbox workspace-write`. Claude Code runs with only Read, Edit, Write, Glob and Grep tools.
-- Files like `.env*`, `.git*`, `node_modules`, key files and anything outside the repo are never in scope.
-- Your subscription sign-in stays on your machine. Shiptorio never sees it.
-- Each job has a 15-minute limit.
+In the game, **Power → Connect your machine** shows online/offline, last seen,
+detected agents and latest job. A newly selected live repo opens this card.
 
 ## Troubleshooting
 
-- **"No approved Spark job is ready."** Normal. Approve a plan on the map first.
-- **"Run runner:control pair first"** The runner isn't paired with a repo yet.
-- **"Run runner watch on this platform; service installation currently supports macOS."** The background service is Mac only.
-- **"Claude is not signed in"** Run `claude` once and sign in, then `bun run runner doctor`.
-- **"Local verification requires macOS sandbox-exec"** You're not on a Mac. Jobs are disabled on purpose until there's a sandbox for your platform.
-- **Network dropped right after a push?** `bun run runner retry JOB_ID` re-sends the saved receipt.
-- **Where are the logs?** Next to each job's clone, under `runner/.work/` (or the Application Support folder for the service).
+- **Browser didn't open:** copy the pairing URL from the terminal. This also works
+  in WSL. A code expires in ten minutes; run `pair` again for a fresh one.
+- **Offline:** keep the terminal open, check its error and your internet connection,
+  then run `~/.local/bin/shiptorio-runner watch`.
+- **Agent sign-in:** run `~/.local/bin/shiptorio-runner doctor`. Use
+  `~/.local/bin/shiptorio-runner login codex` or `login claude` for the dedicated
+  Shiptorio agent sign-in. Setup never copies your normal credential directory.
+- **Expired pairing:** tokens renew while online. After more than eight hours offline,
+  pair that repo again. Logout or lost repository access also revokes the grant.
+- **No plan:** the first runner plan needs an open GitHub issue. Pairing alone does
+  not create an issue or start a build. Spark still asks for plan approval.
+- **Claude uses macOS Keychain:** some installations may fail in the dedicated
+  sandbox. Do not expose your normal Keychain or home to get around that boundary.
+
+## What your agent can and can't touch
+
+Jobs run in an isolated checkout. The runner publishes only the approved file scope,
+then opens a pull request. It never pushes to the default branch. The OS sandbox
+keeps your normal home, unrelated repositories and supervisor GitHub credentials
+outside the agent and test processes. The agent can read its dedicated subscription
+sign-in and contact its inference provider; tests run without those credentials.
+
+The supervisor runs the repository's checks and verifies the frozen patch before
+publication. You still approve the plan and decide when to merge.
+
+## Stop, revoke and uninstall
+
+Ctrl-C stops the foreground runner. **Disconnect this machine** in the factory
+revokes that repository's credential immediately. Stop other runner terminals,
+then remove the standalone files and local pairings with:
+
+```sh
+~/.local/bin/shiptorio-runner uninstall
+```
+
+Pairings are owner-only files in `~/.local/share/shiptorio/runner/pairings/`.
+Uninstall does not delete your usual Claude/Codex settings or your repositories.
+
+Legacy macOS service users should first run `bun run runner:service stop` from
+their checkout. That service has a separate install under
+`~/Library/Application Support/Shiptorio` and a launch agent at
+`~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
+files to uninstall the legacy service.

@@ -1,15 +1,16 @@
 import type { AccessUser } from "./authorization";
 import { currentUser } from './accounts';
 import { signupMode, signupAllowed, hash } from './signup';
-import { isAllowed, readSessionDetails } from "./session";
+import { authorizationRevoked, isAllowed, readSessionDetails } from "./session";
 import { ipSubject } from "./rate-limit";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database; SIGNUP_GATE_MODE?: string }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; sessionHash?: string; userId?: number; rateSubject?: string; repo?:string; user?:AccessUser }
+export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; issuedAt?: number; sessionHash?: string; userId?: number; rateSubject?: string; repo?:string; user?:AccessUser }
+
 
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
-export async function browserSocketEpoch(env: BrowserSocketEnv): Promise<string> {
+export async function browserSocketEpoch(env: Pick<BrowserSocketEnv, "SESSION_SECRET" | "APP_PASSWORD" | "ALLOWED_LOGINS">): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(["browser-socket-v1", env.SESSION_SECRET, env.APP_PASSWORD, env.ALLOWED_LOGINS])));
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -22,6 +23,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
     const user = await currentUser({...env,DB:env.DB},cookie,new URL(request.url),now);
     if (!user) return null;
   } else if (!isAllowed(env.ALLOWED_LOGINS ?? '',session.login)) return null;
+
   const url = new URL(request.url);
   const local = !!env.DEV_LOGIN && ["localhost", "127.0.0.1"].includes(url.hostname);
   let expiresAt = session.expiresAt;
@@ -32,7 +34,8 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
     if (!preview) return null;
     expiresAt = Math.min(expiresAt, preview.expiresAt);
   }
-  return { login: session.login, expiresAt, rateSubject:ipSubject(request), epoch: await browserSocketEpoch(env), ...(session.ref ? {sessionHash:await hash(session.ref.sid),userId:session.ref.uid} : {}) };
+  return { issuedAt: session.issuedAt, login: session.login, expiresAt, rateSubject:ipSubject(request), epoch: await browserSocketEpoch(env), ...(session.ref ? {sessionHash:await hash(session.ref.sid),userId:session.ref.uid} : {}) };
+
 }
 
 export function browserSocketAllowed(auth: unknown, env: BrowserSocketEnv, epoch: string | null, now = Date.now()): auth is BrowserSocketAuth {

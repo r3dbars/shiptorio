@@ -82,6 +82,32 @@ export interface AppCredentials {
   DB?: D1Database;
 }
 
+export class GitHubError extends OutboundError {
+  constructor(status: number, path: string, method: string) { super(status); this.message = `GitHub ${method} ${path} failed (${status})`; }
+}
+interface TokenEntry { token: string; expiresAt: number; installationId: number; version: number; env: AppCredentials; scope?: InstallationTokenScope }
+const tokenCache = new Map<string, TokenEntry>();
+const tokenOwners = new Map<string, Omit<TokenEntry, "token">>();
+async function tokenFingerprint(token: string) {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(token)));
+  return [...hash].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+const pendingTokens = new Map<string, Promise<string>>();
+const tokenKey = (env: AppCredentials, id: number, scope?: InstallationTokenScope) => JSON.stringify([env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, id, scope]);
+export function purgeInstallationTokens(id: number) {
+  for (const [key, value] of tokenCache) if (value.installationId === id) tokenCache.delete(key);
+  // Keep ownership until expiry so outstanding callers can refresh or fail closed.
+}
+async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
+  if (!env.DB) return 0;
+  const row = await env.DB.prepare("SELECT token_version, status FROM installations WHERE id = ?").bind(id).first<{ token_version: number; status: string }>();
+  if (row && row.status !== "active") {
+    const error = new GitHubError(403, `/app/installations/${id}`, "GET");
+    error.message = "GitHub installation is suspended or deleted";
+    throw error;
+  }
+  return row?.token_version ?? 0;
+}
 // In-isolate queues serialize each credential; D1 also spaces requests and preserves cooldowns
 // across isolates/restarts for installation credentials. Keys are hashes, never stored tokens.
 const queues = new Map<string, Promise<unknown>>();
@@ -89,7 +115,6 @@ const queued = new Map<string, number>();
 const contexts = new Map<string, { db: D1Database; scope: string }>();
 const cooldowns = new Map<string, { next: number; failures: number }>();
 const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
-const tokenCache = new Map<string, { token: string; expires: number }>();
 async function credentialKey(token: string) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -141,7 +166,7 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
     if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
     if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
     if (res.status === 304 && cached) return structuredClone(cached.value) as T;
-    if (!res.ok) throw new OutboundError(res.status);
+    if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
     if (res.status === 204) return undefined as T;
     const value = await res.json();
     if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
@@ -155,29 +180,54 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
   }
 }
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const owner = tokenOwners.get(await tokenFingerprint(token));
+  let authRetried = false;
+
 
   const comment = init.method === "POST" && /\/issues\/\d+\/comments$/.test(path) && typeof init.body === "string";
   let marker: string | undefined;
   if (comment) {
     const payload = JSON.parse(init.body as string) as { body: string };
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.body));
+    const digest = await crypto.subtle.digest("SHA-256", enc.encode(payload.body));
     marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
     init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
   }
-  const request = async () => {
+  const request = async (): Promise<T> => {
+    if (owner) {
+      const version = await tokenVersion(owner.env, owner.installationId);
+      const repo = /^\/repos\/([^/]+\/[^/?]+)/.exec(path)?.[1]?.toLowerCase();
+      if (repo && owner.env.DB) {
+        const row = await owner.env.DB.prepare("SELECT archived_at, installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ archived_at: number | null; installation_id: number }>();
+        if (row && (row.archived_at != null || row.installation_id !== owner.installationId)) throw new GitHubError(403, path, init.method ?? "GET");
+      }
+      const current = tokenOwners.get(await tokenFingerprint(token));
+      if (!current || version !== current.version || current.expiresAt <= Date.now() + 60000) token = await installationToken(owner.env, owner.installationId, owner.scope);
+    }
     if (marker) {
       for (let page = 1; ; page++) {
-        if (page > 20) throw new OutboundError(409); // do not post if duplicate history cannot be checked within budget
+        if (page > 20) throw new OutboundError(409);
         const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
         const existing = comments.find(c => c.body?.includes(marker!));
         if (existing) return existing as T;
         if (comments.length < 100) break;
       }
     }
-    return ghRequest<T>(path, token, init);
+    try { return await ghRequest<T>(path, token, init); }
+    catch (error) {
+      if (!owner || authRetried || !(error instanceof OutboundError) || ![401, 403].includes(error.status)) throw error;
+      authRetried = true;
+      purgeInstallationTokens(owner.installationId);
+      token = await installationToken(owner.env, owner.installationId, owner.scope);
+      return ghRequest<T>(path, token, init);
+    }
   };
-  // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
-  return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { shouldRetry: error => !(error instanceof RateLimitError), attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
+  try {
+    return await retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { shouldRetry: error => !(error instanceof RateLimitError), attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
+  } catch (error) {
+    if (error instanceof RetryExhausted && error.cause instanceof GitHubError && (error.cause.status === 404 || owner && [401, 403].includes(error.cause.status))) throw error.cause;
+    throw error;
+  }
+
 }
 
 interface InstallationTokenScope {
@@ -186,21 +236,30 @@ interface InstallationTokenScope {
 }
 
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {
-  const cacheKey = `${env.GITHUB_APP_ID}:${await credentialKey(env.GITHUB_APP_PRIVATE_KEY)}:${installationId}:${JSON.stringify(scope ?? null)}`;
-  const cached = tokenCache.get(cacheKey);
-  if (cached && cached.expires > Date.now()) {
-    if (env.DB) await registerGithubCredential(cached.token, env.DB, `github:installation:${installationId}`);
-    return cached.token;
-  }
-  const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-  if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
-  const res = await gh<{ token: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
-    method: "POST",
-    ...(scope ? { body: JSON.stringify(scope) } : {}),
-  });
-  if (env.DB) boundedSet(contexts, await credentialKey(res.token), { db: env.DB, scope: `github:installation:${installationId}` });
-  boundedSet(tokenCache, cacheKey, { token: res.token, expires: Date.now() + 45 * 60000 });
-  return res.token;
+  const key = tokenKey(env, installationId, scope);
+  const version = await tokenVersion(env, installationId);
+  const cached = tokenCache.get(key);
+  if (cached && cached.version === version && cached.expiresAt > Date.now() + 60000) return cached.token;
+  const pendingKey = key + version;
+  if (pendingTokens.has(pendingKey)) return pendingTokens.get(pendingKey)!;
+  const pending = (async () => {
+    const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
+    const res = await gh<{ token: string; expires_at?: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
+      method: "POST", ...(scope ? { body: JSON.stringify(scope) } : {}),
+    });
+    if (await tokenVersion(env, installationId) !== version) throw new Error("GitHub installation changed while issuing token");
+    const entry = { token: res.token, expiresAt: Date.parse(res.expires_at ?? "") || Date.now(), installationId, version, env, scope };
+    boundedSet(tokenCache, key, entry);
+    if (env.DB) await registerGithubCredential(res.token, env.DB, `github:installation:${installationId}`);
+    for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
+    const { token: _, ...metadata } = entry;
+    tokenOwners.set(await tokenFingerprint(res.token), metadata);
+    return res.token;
+  })();
+  pendingTokens.set(pendingKey, pending);
+  try { return await pending; } finally { pendingTokens.delete(pendingKey); }
+
 }
 
 // Publishing credentials stay inside one repository and cannot create PRs.
@@ -290,8 +349,9 @@ export async function fileContent(token: string, fullName: string, path: string,
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
   } catch (error) {
-    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    if (error instanceof GitHubError && error.status === 404 || error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
     throw error;
+
   }
 }
 
@@ -300,8 +360,9 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
   } catch (error) {
-    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    if (error instanceof GitHubError && error.status === 404 || error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
     throw error;
+
   }
 }
 

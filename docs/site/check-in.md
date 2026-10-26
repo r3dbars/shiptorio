@@ -22,7 +22,7 @@ Always on screen at the bottom. It says:
 - **why it matters**
 - **one to three buttons**, one tagged **Suggested**
 
-A build card has **Review plan and files**, so you can see exactly what will change before you say yes. A ship card links the PR.
+A build card has **See the plan and files**, so you can see exactly what will change before you say yes. A ship card links the PR.
 
 If nothing needs a card, it shows the bottleneck and a button to open that station.
 
