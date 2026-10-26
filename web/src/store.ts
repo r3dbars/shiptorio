@@ -58,7 +58,9 @@ export function useFactory(cfg: SourceConfig) {
       if (msg.type === "snapshot") setState(msg.state);
       else if (msg.type === "patch") setState((s) => (s ? applyPatch(s, msg.patch) : s));
       else if (msg.type === "move") setState((s) => (s ? { ...s, move: msg.move } : s));
-      else if (msg.type === "move_resolved") setState((s) => (s && s.move?.id === msg.moveId ? { ...s, move: null } : s));
+      else if (msg.type === "move_resolved")
+        setState((s) => (s ? { ...s, move: s.move?.id === msg.moveId ? null : s.move, deck: s.deck?.filter((m) => m.id !== msg.moveId) } : s));
+      else if (msg.type === "deck") setState((s) => (s ? { ...s, deck: msg.deck } : s));
       else if (msg.type === "autonomy_unlocked") {
         setUnlock(msg);
         setLog((l) => [...l.slice(-(MAX_LOG - 1)), { level: "success", text: msg.text, at: Date.now(), actor: "system" }]);

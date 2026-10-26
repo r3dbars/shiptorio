@@ -218,6 +218,18 @@ export const MoveOption = z.object({
 });
 export type MoveOption = z.infer<typeof MoveOption>;
 
+// What a move does for the loop. The check-in deck favors verify, input and automate (docs/PRODUCT.md "Check-in").
+export const MoveKind = z.enum(["unblock", "build", "verify", "input", "automate", "ship", "review"]);
+export type MoveKind = z.infer<typeof MoveKind>;
+
+// One gauntlet stamp on a card: a station that passed, failed or never ran.
+export const MoveEvidence = z.object({
+  station: z.string(), // "CI", "Verify bay", or a Station id
+  ok: z.boolean(),
+  note: z.string().optional(), // "repro'd, then gone"
+});
+export type MoveEvidence = z.infer<typeof MoveEvidence>;
+
 // The Next Move card: the one thing holding the factory back, and 1 to 3 ways to act on it.
 export const Move = z.object({
   id: z.string(),
@@ -228,6 +240,13 @@ export const Move = z.object({
   itemId: z.string().optional(),
   url: z.string().optional(), // e.g. the PR to review
   createdAt: z.number(),
+  // Check-in deck fields. All optional; a plain Next Move card ignores them.
+  kind: MoveKind.optional(),
+  focus: z.string().optional(), // station, machine or district id the map zooms to on tap
+  grows: z.array(z.string()).optional(), // what yes adds to the loop: "+1 CHECK", "+1 SOURCE"
+  evidence: z.array(MoveEvidence).optional(), // gauntlet stamps on a merge card
+  locked: z.boolean().optional(), // not proven yet: swipe right runs the recommended option, never a merge
+  plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
 });
 export type Move = z.infer<typeof Move>;
 
@@ -319,6 +338,7 @@ export const FactoryState = z.object({
   goal: z.string().optional(),
   bottleneck: Bottleneck.nullable().optional(),
   move: Move.nullable().optional(), // the open Next Move card
+  deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
