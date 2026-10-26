@@ -5,10 +5,12 @@
   "workspaces": [
     "shared",
     "runner",
+    "playtest",
     "server",
     "web"
   ],
   "scripts": {
+    "playtest": "bun playtest/src/run.ts",
     "runner:service": "bun runner/scripts/service.ts",
     "runner": "bun --env-file=runner/.dev.vars runner/src/cli.ts",
     "runner:control": "bun --env-file=server/.dev.vars server/scripts/runner-control.ts",

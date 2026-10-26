@@ -5,6 +5,13 @@
     "": {
       "name": "shiptorio",
     },
+    "playtest": {
+      "name": "@shiptorio/playtest",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "runner": {
       "name": "@shiptorio/runner",
       "devDependencies": {
@@ -289,6 +296,8 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.65.1", "", { "os": "win32", "cpu": "x64" }, "sha512-+KN8HIr88vN59JNxlrM2fMimzY43Y0lQB7+0xdVsFbvFCAA74CLKCdfzIHzzvndJryBc94Pm+MvwtukKjaS2ug=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.65.1", "", { "os": "win32", "cpu": "x64" }, "sha512-+Y1Sd49cSDq60UOl8/U2HI0ebUvnSl/hDhMHQn+ouw17yb8fYwMWIazzJ4JFpSkjPE7sj5NTNSX9IoyEqcFfyQ=="],
+
+    "@shiptorio/playtest": ["@shiptorio/playtest@workspace:playtest"],
 
     "@shiptorio/runner": ["@shiptorio/runner@workspace:runner"],
 
