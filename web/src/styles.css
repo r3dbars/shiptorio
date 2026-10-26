@@ -114,7 +114,16 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   padding: 16px; overflow: auto;
   background: radial-gradient(ellipse at 50% 60%, #2a3566 0%, var(--void) 60%, #0b1030 100%);
 }
-.ob-card { width: min(520px, 100%); gap: 12px; padding: 16px 18px; }
+.ob-card { width: min(520px, 100%); gap: 12px; padding: 16px 18px; position: relative; }
+/* the live island behind the card: no input, dimmed toward the card so the text stays easy to read */
+.ob-backdrop { position: fixed; inset: 0; pointer-events: none; }
+.ob-backdrop .maplabels { display: none; }
+.ob-backdrop::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(11, 16, 48, 0.55) 0%, rgba(11, 16, 48, 0.15) 60%, rgba(11, 16, 48, 0.35) 100%); }
+.onboard > .ob-skip { position: relative; padding: 4px 10px; border-radius: 999px; background: rgba(11, 16, 48, 0.7); }
+/* phones: the card sits low so the island shows above it */
+@media (max-width: 600px) and (orientation: portrait) {
+  .onboard { justify-content: flex-end; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+}
 .ob-title { font-size: 34px; color: var(--amber); text-shadow: none; }
 .ob-steps { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 12px var(--pixel); letter-spacing: 0.03em; color: var(--faint); }
 .ob-steps .on { color: var(--amber); }
