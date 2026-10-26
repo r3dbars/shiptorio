@@ -39,7 +39,8 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
   globalThis.fetch = (async (input: any) => {
     const url = String(input);
     if (url.endsWith("/access_tokens")) return Response.json({ token: "install-token", expires_at: new Date(Date.now() + 3600000).toISOString() });
-    if (url.includes("/collaborators/test-player/permission")) return Response.json({ permission });
+    if (url.includes("/collaborators/test-player/permission")) return Response.json({ permission, user: { id: 77 } });
+    if (/\/repos\/you\/[^/]+\/installation$/.test(url)) return Response.json({ id: 1 });
     throw new Error(`Unexpected network ${url}`);
   }) as typeof fetch;
   const request = (path: string, init: RequestInit = {}) => app.fetch(new Request(`https://shiptorio.com${path}`, init), env as never);
@@ -49,8 +50,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const d = await start.json() as { code: string; secret: string; verificationUri: string };
     const path = `/runner/pair?code=${d.code}`;
     expect((await request(path)).status).toBe(401); // preview gate
-    await env.DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES ('you/repo', 1), ('you/second', 1)").run();
-    const cookies = await signedInCookie(env, "test-player", ["you/repo", "you/second"]) + "; " + (await makeSessionCookie(`${browserEnv.SESSION_SECRET}:${browserEnv.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
+    const cookies = await signedInCookie(env, "test-player", ["you/repo", "you/second"], 77) + "; " + (await makeSessionCookie(`${browserEnv.SESSION_SECRET}:${browserEnv.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
     const page = await request(path, { headers: { cookie: cookies } });
     expect(page.status).toBe(200); expect(await page.text()).toContain(d.code);
     const approve = (repo = "you/repo", origin = "https://shiptorio.com") => request(path, { method: "POST", headers: { cookie: cookies, origin }, body: new URLSearchParams({ repo }) });

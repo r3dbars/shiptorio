@@ -279,4 +279,20 @@ is not itself an app failure. Console findings belong only to the current naviga
 - 2026-10-26: The optional real-map welcome tour is explicitly a sandbox. Only the intro simulator source can run its cues or sample Sentry ore; a live-source URL cannot enable it. Repeated tour actions are idempotent. Its dedicated playtest follows all eight actual UI beats, including scar → second verification → launch and automated shipping, and closes mid-build to protect delayed callback cleanup. Protocol proof remains separate from rendered desktop and physical-phone checks.
 - 2026-10-26: Launch credit is durable per merged PR and commits atomically with science and permit counters. Orbit regressions keep their scars and new work when old merge receipts replay. Idle orbit watches schedule their actual 24-hour deadline; incoming work can preempt that distant alarm. This records elapsed observation, not proof of customer impact.
 
+### 2026-10-26 — Multi-tenant access boundary (goal 1)
+
+All live repository entry points resolve the current signed-in user through
+`server/src/authorization.ts::requireUser`, then require both an installed GitHub App
+and effective GitHub repository permission. The accounts lane owns users/sessions;
+this seam deliberately adds no competing user or session tables. PR #160 supplies `accounts.ts`, user ids and revocable sessions; the isolation
+integration uses those same rows for HTTP, sockets and runner capabilities. Positive membership grants last at
+most 60 seconds in KV; D1 installation/repo removal always takes precedence.
+Browser socket attachments bind the authenticated user to one canonical repo;
+connect, moves and outgoing broadcasts all check access. Existing runner pairings
+must be repeated: new capability tokens also bind the pairing user and their
+session expiry. `/connect`, `/api/sources` and `/api/setup/status` need an explicit
+`repo` query parameter. Source keys must be repo-scoped; the encrypted-credential
+lane owns their final storage integration (PR #155). Factory-generated PRs remain
+launchable only through the game. See [security.md](security.md) for the inventory.
+
 - 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.
