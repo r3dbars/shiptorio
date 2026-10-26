@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import type { Env } from "./index";
 import { FLAG_DEFAULTS, flagKey, flagName, readFlags } from "./flags";
 import { currentUser } from "./accounts";
+import { ironPage } from "./ironPage";
 
 export const ops = new Hono<{ Bindings: Env; Variables: { admin: string } }>();
 const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
@@ -42,9 +43,10 @@ for (const path of ["/admin/flags", "/api/admin/*"]) ops.use(path, async (c, nex
 });
 ops.get("/admin/flags", async c => {
   const flags = await readFlags(c.env);
-  const rows = Object.entries(flags).map(([name, enabled]) => `<tr><td>${name}</td><td>${enabled}</td><td><form method="post" action="/api/admin/flags"><input type="hidden" name="name" value="${name}"><input name="user" aria-label="GitHub login" placeholder="Global (or GitHub login)"><select name="value"><option>true</option><option>false</option><option>inherit</option></select><button>Save</button></form></td></tr>`).join("");
+  const rows = Object.entries(flags).map(([name, enabled]) => `<tr><td><b>${name}</b></td><td><span class="ok-lamp${enabled ? "" : " idle"}">${enabled}</span></td><td><form method="post" action="/api/admin/flags"><input type="hidden" name="name" value="${name}"><input name="user" aria-label="GitHub login" placeholder="Global (or GitHub login)"><select name="value"><option>true</option><option>false</option><option>inherit</option></select><button>Save</button></form></td></tr>`).join("");
   c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-  return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Shiptorio flags</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}td{padding:12px}input,select,button{padding:8px}</style><p><a href="/admin">Diagnostics</a></p><h1>Shiptorio admin</h1><p><a href="/admin/signup">Manage waitlist, allowlist, invite codes, quotas and abuse flags</a></p><h2>Feature flags</h2><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table><p>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</p></html>`);
+  // This route's CSP is `default-src 'none'`: no web fonts, the plate falls back to monospace.
+  return c.html(ironPage({ title: "Flags", eyebrow: "Internal · flags", wide: true, fonts: false, home: "/admin", body: `<p><a href="/admin">Diagnostics</a></p><h1>Shiptorio admin</h1><p><a href="/admin/signup">Manage waitlist, allowlist, invite codes, quotas and abuse flags</a></p><h2>Feature flags</h2><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><div class="scroll"><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table></div><p><small>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</small></p>` }));
 
 });
 ops.get("/api/admin/budget", async c => c.json(await budgetReport(c.env)));
