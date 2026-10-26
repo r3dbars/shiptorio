@@ -221,7 +221,7 @@ button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .screen.low { justify-content: flex-end; background: linear-gradient(transparent 40%, rgba(14,20,32,.92) 62%, var(--void)); }
 .intro { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; justify-content: space-between; }
 .intro .top { display: flex; gap: 10px; align-items: center; padding: 18px 18px 0; }
-.segs { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.segs { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
 .segs i { height: 3px; border-radius: 2px; background: rgba(255,255,255,.18); }
 .segs i.done { background: var(--amber); }
 .segs i.now { background: linear-gradient(90deg, var(--amber) 50%, rgba(255,255,255,.18) 50%); background-size: 200% 100%; animation: seg 1.2s ease-out forwards; }
@@ -340,7 +340,7 @@ const S0 = () => ({
 let S = S0();
 
 const NOTES = {
-  intro: ["Welcome to Shiptorio: five beats, about 40 seconds.", "Right after GitHub sign-in, before any setup. It sells the whole idea with a live factory instead of paragraphs:", "1. Your repo is a factory. 2. AI builds now, fast. 3. So the slow part is you: work piles up at your gate. 4. Clear it: you swipe one real-looking decision, the gate opens, rockets launch. 5. Decide faster, ship more, better product. That's the game.", "Beat 4 is teach-by-doing: the first thing you ever do in Shiptorio is clear a bottleneck. Skip is always there."],
+  intro: ["Welcome to Shiptorio: seven beats, under a minute.", "Right after GitHub sign-in, before any setup. A live factory tells the story instead of paragraphs:", "1. Your repo is a factory. 2. AI builds fast. 3. Today you're the approve button, and the pile grows. 4. Try it: swipe one decision and the pile drains. 5. The bottleneck moves (feedback, CI, review) and Shiptorio suggests the fix, so the game grows with your repo. 6. Every source you connect is a new mine and your factory gets richer. 7. Where you're headed: things shipping everywhere, customers arriving.", "Beat 4 is teach-by-doing. Skip is always there."],
   title: ["One button.", "GitHub sign-in is the only thing we ask for up front. Every other connection waits until the game needs it, so signup is two taps."],
   repo: ["One repo, one island.", "Pick the repo. In the real app this lists the repos the GitHub App can see."],
   scan: ["The first wow, then the first truth.", "The island rises with your folders as districts. Then a first read from GitHub alone: we already know your bottleneck (6 PRs waiting on review) before you connect anything. That's the two-minute promise."],
@@ -757,14 +757,16 @@ function jump(k) {
 
 // ---------- intro: one live factory scene that tells the story ----------
 const BEATS = [
-  { kick: "Welcome, @you", h: "Welcome to <em>Shiptorio</em>.", body: "Your GitHub repo, as a factory you can see and play. Every building is a folder. Every crate is real work.", fx: { island: 1, belt: 0, checks: 0, gate: "none", spawn: 0 } },
-  { kick: "1 · The new way to build", h: "AI builds now. <em>Fast.</em>", body: "Your agents write fixes and features all day. Each crate on the belt is a change to your code, built by AI.", fx: { island: 1, belt: 1, checks: 1, gate: "closed", spawn: 420, spot: 0 } },
-  { kick: "2 · The catch", h: "So the slow part is <em>you</em>.", body: "Every crate waits for a person to decide. Build it? Does it really work? Ship it? The pile at your gate is the real bottleneck.", fx: { island: 1, belt: 1, checks: 1, gate: "closed", spawn: 300, spot: 1 } },
-  { kick: "3 · Try it", h: "Clear the pile.", body: "Shiptorio hands you each decision with the proof attached, so a yes takes a second. Swipe this one right.", fx: { island: 1, belt: 1, checks: 3, gate: "closed", spawn: 300, spot: 0 }, swipe: true },
-  { kick: "4 · The game", h: "Decide faster. <em>Ship more.</em>", body: "Choose what AI builds, what it checks, and what it proves. Every check you add makes yeses safer. Faster yeses, more shipped, a better product. The factory must grow.", fx: { island: 1, belt: 1, checks: 3, gate: "open", spawn: 260, spot: 0, score: 1 } },
+  { kick: "Welcome, @you", h: "Welcome to <em>Shiptorio</em>.", body: "Your GitHub repo, as a factory you can see and play. Every building is a folder. Every crate is real work.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 0, checks: 0, gate: "none", spawn: 0 } },
+  { kick: "AI builds now", h: "Your agents are <em>fast</em>.", body: "Claude and Codex write fixes and features all day. Each crate on the belt is a change to your code, built by AI.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 1, gate: "closed", spawn: 420 } },
+  { kick: "Today", h: "And you're the <em>approve button</em>.", body: "Right now most of your job is waiting to approve things. Build it? Does it work? Ship it? Everything stops at your gate, and the pile keeps growing.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 1, gate: "closed", spawn: 300, spot: 1 } },
+  { kick: "Try it", h: "Clear the pile.", body: "Shiptorio hands you each decision with the proof attached, so a yes takes a second. Swipe this one right.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 300 }, swipe: true },
+  { kick: "The game", h: "The bottleneck <em>moves</em>.", body: "Clear one and the next shows up. Too little feedback coming in. A CI gate that's too slow. A pile at review. Shiptorio reads your repo and how you work, finds the next one, and suggests the fix. It grows with you.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "open", spawn: 380, markers: 1 } },
+  { kick: "Connect more", h: "Every source is a <em>new mine</em>.", body: "GitHub brings issues. Sentry adds errors the moment they happen. PostHog shows what users really do. Later: support, payments, marketing. The more you connect, the richer your factory gets.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "open", spawn: 340, mines: 1 } },
+  { kick: "Where you're headed", h: "The factory <em>must grow</em>.", body: "Bugs fixed before users notice. Features shipped while you sleep. New customers showing up. You just make the calls, faster every week.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "open", spawn: 150, mines: 1, party: 1, score: 1 } },
 ];
 
-function startIntro() { S = S0(); S.screen = "intro"; S.beat = 0; setStep("intro"); FX.reset(); FX.set({ ambient: 0, spot: 0, score: 0, ...BEATS[0].fx }); render(); }
+function startIntro() { S = S0(); S.screen = "intro"; S.beat = 0; setStep("intro"); FX.reset(); FX.set(BEATS[0].fx); render(); }
 
 function renderIntro(o) {
   const b = BEATS[S.beat];
@@ -800,13 +802,13 @@ function wireMini(el) {
 const FX = (() => {
   const cv = $("fx"), cx = cv.getContext("2d");
   let W = 0, H = 0, run = false, last = 0, t0 = 0;
-  let p = {}, items = [], pile = 0, rockets = [], shipped = 0, sparks = [], spawnAcc = 0, drainAcc = 0, beatT = 0, gateLift = 0;
+  let p = {}, people = [], customers = 0, peopleAcc = 0, items = [], pile = 0, rockets = [], shipped = 0, sparks = [], spawnAcc = 0, drainAcc = 0, beatT = 0, gateLift = 0;
   const NAMES = ["/checkout", "/cart", "/api", "/auth", "/docs"];
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   function size() { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0); }
   addEventListener("resize", size);
   const X = { start: .08, agent: .2, checks: [.34, .46, .58], gate: .72, pad: .88 };
-  function reset() { items = []; pile = 0; rockets = []; shipped = 0; sparks = []; beatT = 0; t0 = performance.now(); gateLift = 0; }
+  function reset() { people = []; customers = 0; items = []; pile = 0; rockets = []; shipped = 0; sparks = []; beatT = 0; t0 = performance.now(); gateLift = 0; }
   function set(np) { p = { ...p, ...np }; beatT = 0; }
   function show(on) {
     cv.classList.toggle("off", !on);
@@ -822,7 +824,13 @@ const FX = (() => {
   }
   function step(dt) {
     const by = H * .41, speed = W * .32;
-    if (p.belt && p.spawn) { spawnAcc += dt * 1000; if (spawnAcc > p.spawn) { spawnAcc = 0; items.push({ x: W * X.start, s: 0 }); } }
+    if (p.belt && p.spawn) { spawnAcc += dt * 1000; if (spawnAcc > p.spawn) { spawnAcc = 0; const srcs = ["#c7a46b"]; if (p.mines && (p.party || beatT > 1.2)) srcs.push("#c58bff"); if (p.mines && (p.party || beatT > 2.4)) srcs.push("#ffd36b"); items.push({ x: W * X.start, s: 0, c: srcs[Math.floor(Math.random() * srcs.length)] }); } }
+    if (p.party) {
+      peopleAcc += dt; if (peopleAcc > .09) { peopleAcc = 0; const left = Math.random() < .5; people.push({ x: left ? -6 : W + 6, y: H * (.12 + Math.random() * .38), tx: W * (.3 + Math.random() * .4), ty: H * .36 }); }
+      if (Math.random() < dt * 3) rockets.push({ x: W * (Math.random() < .5 ? .15 : .85), y: H * .16, v: 30 });
+    }
+    for (const q of people) { const dx = q.tx - q.x, dy = q.ty - q.y, d = Math.hypot(dx, dy); if (d < 6) { q.dead = true; customers++; } else { q.x += dx / d * 90 * dt; q.y += dy / d * 90 * dt; } }
+    people = people.filter(q => !q.dead);
     const gx = W * X.gate, open = p.gate === "open";
     gateLift += ((open ? 1 : 0) - gateLift) * Math.min(1, dt * 6);
     for (const it of items) {
@@ -844,6 +852,51 @@ const FX = (() => {
   function burst(x, y, c, n) { if (reduce) return; for (let i = 0; i < n; i++) sparks.push({ x, y: y - 8, vx: (Math.random() - .5) * 90, vy: -Math.random() * 80, life: .4, c }); }
   function rr(x, y, w, h, r, f) { cx.beginPath(); cx.roundRect(x, y, w, h, r); cx.fillStyle = f; cx.fill(); }
   function label(t, x, y, c = "#e8edf5", bg = "rgba(8,12,20,.75)") { cx.font = "500 10px 'JetBrains Mono', monospace"; const w = cx.measureText(t).width + 10; rr(x - w / 2, y - 8, w, 15, 4, bg); cx.fillStyle = c; cx.textAlign = "center"; cx.fillText(t, x, y + 3); }
+
+  function ring(x, y, T, c) { const r = 16 + (Math.sin(T * 6) + 1) * 4; cx.strokeStyle = c; cx.lineWidth = 2.5; cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke(); }
+  function drawMarkers(by, T) {
+    const M = [
+      { x: X.start + .02, t: "Too little feedback coming in", s: "Suggested: connect Sentry" },
+      { x: X.checks[0], t: "CI gate takes 14 min", s: "Suggested: split the slow tests" },
+      { x: X.gate - .05, t: "5 PRs wait on review", s: "Suggested: let AI review /docs" },
+    ];
+    const k = Math.floor(beatT / 1.8) % M.length, m = M[k], x = W * m.x;
+    ring(x, by - 6, T, "#ff5d5d");
+    const lx = Math.min(Math.max(x, 90), W - 90);
+    label(m.t, lx, by - 62, "#fff", "#ff5d5d");
+    label(m.s, lx, by - 44, "#241503", "#f4a63a");
+  }
+  function mine(x, y, name, c, on, T, tag) {
+    if (on) {
+      cx.setLineDash([4, 5]); cx.lineDashOffset = -T * 30; cx.strokeStyle = c; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x, y); cx.lineTo(W * X.start, by0); cx.stroke(); cx.setLineDash([]);
+      cx.fillStyle = c; cx.beginPath(); cx.arc(x, y, 13, 0, 7); cx.fill(); cx.lineWidth = 2; cx.strokeStyle = "#0e1420"; cx.stroke();
+    } else { cx.setLineDash([3, 3]); cx.strokeStyle = "rgba(255,255,255,.35)"; cx.lineWidth = 1.5; cx.beginPath(); cx.arc(x, y, 12, 0, 7); cx.stroke(); cx.setLineDash([]); }
+    label(name, x, y + 24, on ? "#e8edf5" : "#8d9ab0");
+    if (tag) label(tag, x, y - 23, "#241503", "#f4a63a");
+  }
+  let by0 = 0;
+  function drawMines(cy, by, T) {
+    by0 = by;
+    const t = p.party ? 99 : beatT;
+    const on = n => t > n * 1.2;
+    mine(W * .05, by - 30, "GitHub", "#9aa7bd", true, T, !p.party && t < 1.2 ? "+ issues" : "");
+    mine(W * .2, cy - H * .16, "Sentry", "#c58bff", on(1), T, !p.party && on(1) && t < 2.4 ? "+ errors" : "");
+    mine(W * .8, cy - H * .16, "PostHog", "#ffd36b", on(2), T, !p.party && on(2) && t < 3.6 ? "+ user signals" : "");
+    if (t > 3.6 && !p.party) { mine(W * .5, cy - H * .2, "Support", "", false, T); mine(W * .1, cy + H * .15, "Payments", "", false, T); mine(W * .9, cy + H * .15, "Marketing", "", false, T); }
+    // new districts sprout as sources connect
+    const extra = Math.min(3, Math.floor(t / 1.2));
+    for (let i = 0; i < extra; i++) { const bx = W * (.3 + i * .2), byy = cy + H * .07; rr(bx - 10, byy - 8, 20, 14, 3, "#c9c0b0"); rr(bx - 7, byy - 12, 14, 5, 2, ["#6b3aa8", "#c27a12", "#2d6db0"][i]); }
+  }
+  function sat(x, y, name) {
+    cx.beginPath(); cx.ellipse(x, y, W * .12, H * .035, 0, 0, 7); cx.fillStyle = "#4f8a4a"; cx.fill(); cx.strokeStyle = "#1e3a22"; cx.lineWidth = 2; cx.stroke();
+    cx.beginPath(); cx.moveTo(x - W * .1, y + 4); cx.lineTo(x + W * .1, y + 4); cx.lineTo(x, y + H * .06); cx.closePath(); cx.fillStyle = "#4a3e36"; cx.fill();
+    for (let i = -1; i <= 1; i++) rr(x + i * 16 - 6, y - 10, 12, 9, 2, "#c9c0b0");
+    label(name, x, y + 26, "#e8edf5");
+  }
+  function drawParty(T) {
+    sat(W * .15, H * .2 + Math.sin(T) * 3, "growth");
+    sat(W * .85, H * .21 + Math.sin(T + 1) * 3, "support");
+  }
   function draw(T) {
     cx.clearRect(0, 0, W, H);
     const rise = Math.min(1, beatT / 1.4), e = 1 - Math.pow(1 - rise, 3);
@@ -878,7 +931,7 @@ const FX = (() => {
       if (S.beat === 1 || p.ambient) label("AI agent", ax, by - 40, "#f4a63a");
       // checks
       const nc = p.checks || 0, names = ["CI", "Verify", "Review"];
-      for (let i = 0; i < nc; i++) { const qx = W * X.checks[i]; rr(qx - 9, by - 28, 18, 20, 3, "#8d9ab0"); cx.fillStyle = "#4fd18b"; cx.beginPath(); cx.arc(qx, by - 22, 3, 0, 7); cx.fill(); if (S.beat === 3 || S.beat === 4) label(names[i], qx, by - 38 - (i % 2) * 16, "#4fd18b"); }
+      for (let i = 0; i < nc; i++) { const qx = W * X.checks[i]; rr(qx - 9, by - 28, 18, 20, 3, "#8d9ab0"); cx.fillStyle = "#4fd18b"; cx.beginPath(); cx.arc(qx, by - 22, 3, 0, 7); cx.fill(); if (S.beat === 3) label(names[i], qx, by - 38 - (i % 2) * 16, "#4fd18b"); }
       // gate + you
       const gx = W * X.gate, open = gateLift;
       cx.save(); cx.translate(gx, by - 4); cx.rotate(-open * 1.3); rr(-2, -3, 30, 6, 3, p.gate === "none" ? "rgba(0,0,0,0)" : open > .5 ? "#4fd18b" : "#ff5d5d"); cx.restore();
@@ -889,11 +942,14 @@ const FX = (() => {
       // pad
       const px = W * X.pad; rr(px - 14, by - 4, 28, 10, 3, "#8d9ab0");
       // items
-      for (const it of items) { const c = it.s === 0 ? "#c7a46b" : it.s === 1 ? "#6cb6ff" : "#4fd18b"; rr(it.x - 6, by - 14, 12, 10, 2, c); }
+      for (const it of items) { const c = it.s === 0 ? (it.c || "#c7a46b") : it.s === 1 ? "#6cb6ff" : "#4fd18b"; rr(it.x - 6, by - 14, 12, 10, 2, c); }
       // pile
       for (let i = 0; i < Math.min(pile, 42); i++) { const col = i % 7, row = Math.floor(i / 7); rr(gx - 18 - col * 12, by + 12 + row * 10, 11, 9, 2, (row + col) % 2 ? "#b7884c" : "#a67a40"); }
       if (pile > 0 && p.gate !== "open") label(`${pile} waiting on you`, gx - 54, by + 12 + Math.min(6, Math.ceil(pile / 7)) * 10 + 12, "#fff", "#ff5d5d");
     }
+    if (p.belt && p.markers) drawMarkers(by, T);
+    if (p.mines) drawMines(cy, by, T);
+    if (p.party) drawParty(T);
     cx.restore();
     // rockets + sparks on top
     for (const s of sparks) { cx.globalAlpha = Math.max(0, s.life / .6); cx.fillStyle = s.c; cx.fillRect(s.x, s.y, 3, 3); }
@@ -905,7 +961,11 @@ const FX = (() => {
       const g = cx.createRadialGradient(gx, by + 10, 30, gx, by + 10, W * .55);
       g.addColorStop(0, "rgba(14,20,32,0)"); g.addColorStop(1, `rgba(14,20,32,${.8 * k})`); cx.fillStyle = g; cx.fillRect(0, 0, W, H);
     }
-    if (p.score) { cx.font = "700 15px 'Chakra Petch', sans-serif"; cx.textAlign = "center"; cx.fillStyle = "#4fd18b"; cx.fillText(`SHIPPED  ${shipped}`, W / 2, H * .1); }
+    if (p.score) {
+      const cols = [["SHIPPED", shipped, "#4fd18b"], ["USERS REACHED", shipped * 37 + customers * 3, "#6cb6ff"], ["NEW CUSTOMERS", customers, "#ffd36b"]];
+      cols.forEach(([n, v, c], i) => { const x = W * (.2 + i * .3); cx.textAlign = "center"; cx.fillStyle = c; cx.font = "700 22px 'Chakra Petch', sans-serif"; cx.fillText(v.toLocaleString(), x, H * .075); cx.font = "500 9px 'JetBrains Mono', monospace"; cx.fillStyle = "#8d9ab0"; cx.fillText(n, x, H * .095); });
+    }
+    for (const q of people) { cx.fillStyle = "#ffd36b"; cx.beginPath(); cx.arc(q.x, q.y - 4, 2.5, 0, 7); cx.fill(); rr(q.x - 2.5, q.y - 1, 5, 6, 2, "#ffd36b"); }
   }
   return { show, set, reset };
 })();
