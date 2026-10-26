@@ -855,7 +855,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async scheduleTick() {
-    // Pull a far-off alarm (the PostHog poll) in, so work never waits behind it.
+    // Pull a far-off poll/watch alarm in, so work never waits behind it.
     const at = await this.ctx.storage.getAlarm();
     if (at == null || at > Date.now() + TICK_MS) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
@@ -1507,7 +1507,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
     const poll = await this.ctx.storage.get<{ nextAt: number }>("posthogPoll");
-    if (poll && (await this.ctx.storage.get<boolean>("posthogLinked")) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Math.max(Date.now() + TICK_MS, poll.nextAt));
+    if (poll && (await this.ctx.storage.get<boolean>("posthogLinked"))) {
+      const next = Math.max(Date.now() + TICK_MS, poll.nextAt);
+      const alarm = await this.ctx.storage.getAlarm();
+      if (alarm == null || alarm > next) await this.ctx.storage.setAlarm(next);
+    }
     await this.scheduleOrbitDeadline();
     } finally { this.batchingDecisions = false; await this.refreshDecisions(); }
   }

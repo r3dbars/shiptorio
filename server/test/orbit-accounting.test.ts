@@ -133,6 +133,22 @@ describe("idle orbit deadlines", () => {
     } finally { Date.now = originalNow; }
   });
 
+  it("keeps PostHog polling ahead of a watch alarm established during a launch", async () => {
+    const originalNow = Date.now;
+    const now = 1_800_000_000_000;
+    Date.now = () => now;
+    try {
+      const f = fixture();
+      f.data.set("posthogLinked", true);
+      f.data.set("posthogPoll", { nextAt: now + 60_000, failures: 0 });
+      const factory = f.reload(); await factory.onPullClosed(41, true, merge);
+      expect(f.alarm()).toBe(now + WATCH_MS);
+      await factory.alarm();
+      expect(f.alarm()).toBe(now + 60_000);
+      expect(f.saved().items[0].orbit?.state).toBe("watching");
+    } finally { Date.now = originalNow; }
+  });
+
   it("preserves an earlier alarm and pulls the watch alarm forward for new work", async () => {
     const originalNow = Date.now;
     const now = 1_800_000_000_000;
