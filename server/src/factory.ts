@@ -412,7 +412,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       // Refresh persisted input before planning, never an already-approved/ready job.
       const input = await freshIssueInput(token, job.repo, Number(item.id.slice(3)));
       const current = this.state.items.find(i => i.id === job.itemId);
-      if (!current || beforeRefresh !== await workRevision(current)) throw new Error("Issue changed during input refresh");
+      if (!current || beforeRefresh !== await workRevision(current) || this.state.items.find(i => i.id === job.itemId) !== current) throw new Error("Issue changed during input refresh");
       item = { ...current, title: input.title.slice(0, 500), body: input.body.slice(0, 16000), url: input.url };
       await this.patch({ items: [item] });
       job.inputRevision = await workRevision(item);

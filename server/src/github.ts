@@ -168,7 +168,12 @@ export async function freshIssueInput(token: string, repo: string, number: numbe
     const comments = await gh<NonNullable<GitHubPayload["comment"]>[]>(`/repos/${repo}/issues/${number}/comments?per_page=100&page=${page}`, token);
     if (!Array.isArray(comments)) throw new Error("GitHub issue feedback unavailable");
     for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
-    if (comments.length < 100) return normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+    if (comments.length < 100) {
+      const again = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
+      const stamp = (value: GitHubIssue) => JSON.stringify([value.number, value.state, !!value.pull_request, value.title, value.body ?? "", value.labels ?? [], value.updated_at]);
+      if (stamp(issue) !== stamp(again)) throw new Error("Issue changed while reading feedback");
+      return normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+    }
   }
   throw new Error("Issue feedback exceeds the bounded planning window; narrow the issue before planning");
 }

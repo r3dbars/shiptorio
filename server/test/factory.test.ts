@@ -43,6 +43,7 @@ describe("Factory lifecycle", () => {
     const originalFetch = globalThis.fetch;
     const base = "a".repeat(40), head = "b".repeat(40);
     let opened = 0, sparkCalls = 0, merged = false, browserPlanning = false, browserCall = 0;
+    let onFeedbackRead: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (value: unknown) => Response.json(value);
@@ -61,7 +62,9 @@ describe("Factory lifecycle", () => {
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
       if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged });
-      if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix checkout", body: "Issue was closed by merge", state: "closed", html_url: "https://github.com/r3dbars/demo/issues/1", user: { login: "reporter" } });
+      if (url.includes("/issues/1/comments?")) { const hook = onFeedbackRead; onFeedbackRead = undefined; await hook?.(); return json([]); }
+      if (url.endsWith("/issues/1/comments") && init?.method === "POST") return json({ id: 200 });
+      if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix checkout", body: merged ? "Issue was closed by merge" : "Canonical request", state: merged ? "closed" : "open", html_url: "https://github.com/r3dbars/demo/issues/1", user: { login: "reporter" } });
       if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return json({ total_count: 0, statuses: [] });
       if (url.includes("/pulls?")) return json([]);
@@ -112,10 +115,11 @@ describe("Factory lifecycle", () => {
       await f.factory.pairRunner();
       await expect(f.factory.claimRunner(pair, ["codex"])).rejects.toThrow("revoked");
 
+      merged = false;
       browserPlanning = true;
       const prepareBrowserPlan = async (backlog = false) => {
         browserCall = 0;
-        const g = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 }), ...(backlog ? [item({ id: "gh-2", title: "Another queued issue", state: "queued", prNumber: undefined, attempts: 0 })] : [])], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
+        const g = fixture([item({ state: "queued", prNumber: undefined, attempts: 0, body: "Canonical request\n\nLabels: \n\nComment: 🧠 **Shiptorio planned this** with Meta Muse Spark (`muse-spark-1.3`)\nOld speculative scope" }), ...(backlog ? [item({ id: "gh-2", title: "Another queued issue", state: "queued", prNumber: undefined, attempts: 0 })] : [])], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
         const pairing = await g.factory.pairRunner();
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         const proposal = g.saved().move!;
@@ -125,6 +129,7 @@ describe("Factory lifecycle", () => {
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         await g.factory.alarm();
         expect((await g.factory.runnerJobs())[0].status).toBe("awaiting_approval");
+        expect(g.saved().items[0].body).toBe("Canonical request\n\nLabels: ");
         expect((await g.factory.runnerJobs())[0].allowedPaths).toEqual(["server/src/engine.ts"]);
         expect(g.saved().deck?.find(m => m.options.some(o => o.id === "approve"))?.plan?.[0]).toContain("server/src/engine.ts");
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
@@ -139,6 +144,10 @@ describe("Factory lifecycle", () => {
       expect(backlog.g.saved().deck?.some(m => m.id === backlog.approval.id)).toBe(true);
       expect(backlog.g.saved().deck?.find(m => m.id === backlog.approval.id)?.options[0].id).toBe("approve");
       const approved = await prepareBrowserPlan();
+      await approved.g.factory.enqueueGitHub("own-plan-audit", "issue_comment", { action: "created", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 1, title: "Fix checkout", body: "Canonical request", state: "open", html_url: "https://github.com/r3dbars/demo/issues/1" }, comment: { id: 200, body: "🧠 **Shiptorio planned this** with Meta Muse Spark (`muse-spark-1.3`)\nOld speculative scope", user: { login: "shiptorio[bot]", type: "Bot" } } });
+      await approved.g.factory.alarm();
+      expect((await approved.g.factory.runnerJobs())[0].status).toBe("awaiting_approval");
+      expect(approved.g.saved().items[0].body).toBe("Canonical request\n\nLabels: ");
       const reconnected = approved.g.reload();
       const approve = JSON.stringify({ type: "choose_move", moveId: approved.approval.id, optionId: "approve" });
       await reconnected.webSocketMessage(authorizedSocket(), approve);
@@ -160,6 +169,21 @@ describe("Factory lifecycle", () => {
       await stale.g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: stale.approval.id, optionId: "approve" }));
       expect((await stale.g.factory.runnerJobs())[0].status).toBe("failed");
       expect(await stale.g.factory.claimRunner(stale.pairing, ["codex"])).toBeNull();
+
+      const human = await prepareBrowserPlan();
+      for (const signal of normalizeGitHub({ repository: { full_name: "r3dbars/demo" }, issue: { number: 1, title: "Fix checkout", body: "Canonical request", html_url: "https://github.com/r3dbars/demo/issues/1" }, comment: { id: 201, body: "A genuine new requirement", user: { login: "r3dbars", type: "User" } } })) await human.g.factory.ingestSignal(signal);
+      await human.g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: human.approval.id, optionId: "approve" }));
+      expect((await human.g.factory.runnerJobs())[0].status).toBe("failed");
+      expect(await human.g.factory.claimRunner(human.pairing, ["codex"])).toBeNull();
+
+      const raced = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
+      await raced.factory.enqueueRunner({ itemId: "gh-1", harness: "codex", allowedPaths: [], needsApproval: true });
+      onFeedbackRead = async () => {
+        for (const signal of normalizeGitHub({ repository: { full_name: "r3dbars/demo" }, issue: { number: 1, title: "Fix checkout", body: "Canonical request", html_url: "https://github.com/r3dbars/demo/issues/1" }, comment: { id: 202, body: "Human requirement arriving during refresh", user: { login: "r3dbars", type: "User" } } })) await raced.factory.ingestSignal(signal);
+      };
+      await raced.factory.alarm();
+      expect((await raced.factory.runnerJobs())[0].status).toBe("failed");
+      expect(raced.saved().items[0].body).toContain("Human requirement arriving during refresh");
 
       const closed = await prepareBrowserPlan();
       await closed.g.factory.enqueueGitHub("close-planned", "issues", { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 1, title: "Fix checkout", state: "closed", html_url: "https://github.com/r3dbars/demo/issues/1" } });
