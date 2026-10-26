@@ -2,7 +2,8 @@ name: CI
 permissions:
   contents: read
 # Actions minutes are metered on this private repo: one run per branch at a time (a new push
-# cancels the old run), docs-only changes skip it, and main is checked by the Deploy run instead.
+# cancels the old run), docs-only changes skip it, drafts skip it (agents run `bun run check` locally while
+# they work; CI runs once the PR is marked ready), and main is checked by the Deploy run instead.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,12 +15,14 @@ on:
         type: boolean
         default: false
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore:
       - "**/*.md"
       - "docs/context/**"
       - "docs/playtest/**"
 jobs:
   check:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

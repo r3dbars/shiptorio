@@ -12,3 +12,5 @@ playtest-results/
 .test-runtime/
 test-results/
 playwright-report/
+
+runner/.agent-home/
