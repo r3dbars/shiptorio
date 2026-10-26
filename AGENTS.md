@@ -51,7 +51,7 @@ Justin chose Cloudflare, since their domain already lives there. The current sha
 - Hono on the Worker for routes.
 - **Accounts**: GitHub sign-in through the App's user-to-server OAuth, D1 `users` / `sessions` /
   `user_repos`, and a factory is only served to players whose GitHub account reaches its repo
-  (`server/src/accounts.ts`, `requireUser`, docs/SETUP.md §3).
+  (`server/src/accounts.ts`, `requireUser`). **API summary: [`docs/context/accounts.md`](docs/context/accounts.md).**
 - A **GitHub App** (not OAuth) for sign-in, installs, webhooks (`pull_request`, `push`,
   `check_suite`) and opening PRs as `shiptorio[bot]`.
 - A **Factory Durable Object per repo** (`server/src/factory.ts`) is the factory engine:

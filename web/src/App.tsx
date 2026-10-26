@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { savePref } from "./account";
 import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
@@ -173,6 +174,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   });
   const setSeenGuide = (n: number) => {
     setSeenGuideState(n);
+    savePref("guideSeen", String(n));
     try {
       localStorage.setItem(GUIDE_SEEN_KEY, String(n));
     } catch {
