@@ -15,3 +15,10 @@ test("every core scenario is covered with a gameplay and disconnection journey",
   expect(cases.filter(c => c.mode === "journey").every(c => c.decisions > 0)).toBe(true);
   expect(cases.flatMap(c => c.findings)).toEqual([]); // Includes the post-disconnect regression, even though it is P2.
 });
+
+test("the first-run ships its fixes then offers a real input-growth decision", () => {
+  const result=runCase("first-run",71);
+  expect(result.shipped).toBeGreaterThanOrEqual(2);
+  expect(result.tools).toContain("connect_source");
+  expect(result.findings).toEqual([]);
+});
