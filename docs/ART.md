@@ -31,7 +31,7 @@ Live prototype: https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK (a copy is in 
 - Pipeline: render the scene to a `WebGLRenderTarget` at `ceil(w/px) × ceil(h/px)` with `NearestFilter`,
   then a full-screen pass that does outline → saturation/contrast → quantize. The shader is in the prototype.
 - Materials: `MeshPhongMaterial` with `flatShading`, no specular. Small canvas textures with `NearestFilter`
-  (stone paving, cliff faces, belts, water).
+  (stone paving, belts, water).
 - Machines are built from boxes, cylinders and cones in code, so they can animate (gears, smoke, rockets, biters).
 - Palette: stone `#c9b48a`, cliff slate `#3a4268`, moss `#4f7d3b`, steel `#8a94a3`, amber `#f2a93b`,
   green `#5bd18b`, red `#ff5e52`, blue `#6fb2ff`, void `#1b2448`.
@@ -54,6 +54,21 @@ every item's model, states and animation. Port builders from there.
   spinning anemometer. Sunny: rows track the sun and a light sweep runs across the cells. Capped: rows stow flat, cells
   go dark, a cloud parks overhead, the meter blinks red.
 
+
+### Floating island (locked by Justin on Oct 26)
+
+Option A of the island mockup (https://claude.ai/artifact/XogJ8LQk47YobCSA7jQQbN), built from Justin's reference photo of a
+low-poly floating island. Code: `makeIsland`, `makeWaterfall`, `makeFloater` in `web/src/map/models.ts`.
+
+- **Moss cap**: a thick green cap with a soft rounded rim that bulges a little past the edge, short grass tufts, and the
+  stone paving inset inside it. No long hanging moss strands.
+- **Rock**: chunky faceted purple-grey rock under a soil band, stacked rings that taper to a blunt tip, slightly off center.
+  Rock depth grows a bit with the island. Roots dangle from under the cap.
+- **Waterfalls**: fall past the rock's tip, fade out, and break into a puff of mist.
+- **Floating chunks**: small mossy rocks bob around the island.
+
+**Later (Justin, "for a rainy day"):** option B's glass lake: a glass-walled water pocket cut into the front corner with
+fish and weeds inside, like the reference photo. A good island upgrade for players to unlock.
 
 ### Inspection stations (round 2, locked by Justin on Oct 26)
 
