@@ -394,6 +394,23 @@ The demo story, step by step. Every row is a real effect.
 
 ## Onboarding (first 2 minutes)
 
+Decided with Justin 2026-10-26 (playable mockup `docs/onboarding-mockup.html`, built in PR #84):
+
+- **Welcome intro right after sign-in** (`web/src/ui/Intro.tsx`): one live island tells the idea in eight
+  beats. You're the approve button today; **verify, then automate** (two beats taught by doing: swipe a
+  verified PR, then let a whole kind of work ship on its own); the bottleneck moves; every source is a new
+  mine; "It runs itself". Plays once per browser, Skip always there.
+- **Two worlds, one map.** After the scan, a first read (the bottleneck in one line) and one soft question:
+  **Check in** ("show me what's stuck": the deck is the game) or **Build** ("let me build": the line, power,
+  machines). A toggle at the top switches any time.
+- **Power is asked at the first build**, not at signup. Watching and merging work without it.
+- **Sentry and PostHog are empty mines on the map**, asked when they pay off (after a rocket: did that help
+  anyone?), never a connect screen at signup.
+- **Build tools open after the first rocket.** Make it yours for Nov 4: place machines, pick the agent per
+  assembler, add a gauntlet station. Paint and skins later.
+- **Field guide** (`web/src/ui/FieldGuide.tsx`): every concept met, plus ??? slots for what's ahead, in
+  chapters. The latent complexity, visible but quiet.
+
 1. **Sign in with GitHub** (GitHub App). One click.
 2. **Pick a repo.** Install the app on it if needed.
 3. **Spark scans it** (15–60 s, shown as the island rising out of the void): repo tree → districts, open issues

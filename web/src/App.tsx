@@ -12,6 +12,7 @@ import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, useTutorial } from "./ui/tutorial";
+import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
 import { ShipCelebration } from "./ui/ShipCelebration";
@@ -50,6 +51,19 @@ const SLOTS = [
 ] as const;
 // science packs by item kind (shared SCIENCE_FOR)
 const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "tests" } as const;
+
+// Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
+// "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
+type World = "checkin" | "build";
+const WORLD_KEY = "shiptorio:world";
+function readWorld(): World | null {
+  try {
+    const w = localStorage.getItem(WORLD_KEY);
+    return w === "checkin" || w === "build" ? w : null;
+  } catch {
+    return null;
+  }
+}
 
 function fmtLead(ms?: number) {
   if (ms === undefined) return "–";
@@ -94,6 +108,16 @@ export function App() {
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
   const [panel, setPanel] = useState<string | null>(null);
+  // the first run asks which world to start in; everyone else lands in Build, the full map
+  const [world, setWorldState] = useState<World | null>(() => (tour.on ? null : (readWorld() ?? "build")));
+  const setWorld = (w: World) => {
+    setWorldState(w);
+    try {
+      localStorage.setItem(WORLD_KEY, w);
+    } catch {
+      // remembered for this visit only
+    }
+  };
   // ?checkin opens the deck on load, the way a phone check-in would.
   const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
   const [focus, setFocus] = useState<string | null>(null); // what the check-in wants the map to zoom to
@@ -103,7 +127,10 @@ export function App() {
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | null>(null);
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | null>(null);
+  const met = guideMet(state, tour.learned);
+  const [seenGuide, setSeenGuide] = useState(0); // the chip glows when something new lands
+  const fork = world === null && !!state && state.districts.length > 0 && !tour.lesson;
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const items = state?.items ?? [];
@@ -145,7 +172,7 @@ export function App() {
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show });
@@ -262,6 +289,24 @@ export function App() {
               </div>
             )}
           </div>
+          {world && (
+            <div className="lens" role="group" aria-label="View">
+              <button type="button" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
+                Check in
+              </button>
+              <button type="button" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
+                Build
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`checkin-chip guide-chip${met.size > seenGuide ? " new" : ""}`}
+            onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
+            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
+          >
+            Guide · {met.size}/{GUIDE_TOTAL}
+          </button>
           {show("checkin") && deck.length > 1 && !checkin && (
             <button type="button" className="checkin-chip" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
               Check in · {deck.length}
@@ -279,7 +324,31 @@ export function App() {
           </section>
         )}
 
-        {checkin ? (
+        {fork && state ? (
+          <section className="card nextmove firstread" aria-label="First read">
+            <div className="nm-head">
+              <span className="nm-kicker">First read · {state.repo}</span>
+            </div>
+            <h2>
+              {state.bottleneck?.summary
+                ? `Your bottleneck right now: ${state.bottleneck.summary}.`
+                : `${state.districts.length} folders scanned. Now let's find what's stuck.`}
+            </h2>
+            <div className="opts">
+              <button type="button" className="btn rec" onClick={() => { setWorld("checkin"); if (deck.length > 1) setCheckin(true); }}>
+                Show me what's stuck
+                <small>Suggested · decide what waits on you, two minutes at a time</small>
+              </button>
+              <button type="button" className="btn" onClick={() => setWorld("build")}>
+                Let me build
+                <small>Lay down your own factory line and ship a fix</small>
+              </button>
+            </div>
+            <p className="empty">You can switch any time.</p>
+          </section>
+        ) : sheet === "guide" ? (
+          <FieldGuide met={met} onClose={() => setSheet(null)} />
+        ) : checkin ? (
           <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label="The line">
@@ -374,14 +443,23 @@ export function App() {
             <Icon name="list" size={20} />
             Line
           </button>
+          {world !== "checkin" && (
           <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={!show("power")}>
             <Icon name="bolt" size={20} />
             Power
           </button>
+          )}
           <button type="button" className="tool big" onClick={launch} disabled={!show("launch") || pad.length === 0} aria-label="Launch the PR on the pad" title="Launch (B)">
             <Icon name="rocket" size={20} />
             Launch
           </button>
+          {world === "checkin" ? (
+          <button type="button" className="tool big go" onClick={() => setCheckin(true)} disabled={deck.length === 0} aria-label={`Check in: ${deck.length} waiting on you`}>
+            {deck.length > 0 && <span className="n">{deck.length}</span>}
+            <Icon name="list" size={20} />
+            Check in
+          </button>
+          ) : (
           <button
             type="button"
             className="tool big go"
@@ -393,12 +471,13 @@ export function App() {
             <Icon name="bot" size={20} />
             Build
           </button>
+          )}
         </nav>
         )}
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
 
-        <div className={`card caption${caption.on ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
+        <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>
           <div className="psub">{caption.sub}</div>
         </div>
