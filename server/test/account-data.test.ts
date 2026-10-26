@@ -102,6 +102,31 @@ describe("account data controls", () => {
     expect((await env.DB.prepare("SELECT envelope FROM credentials").all()).results).toEqual([{envelope: "encrypted-bob"}]);
     expect((await env.DB.prepare("SELECT delivery_id FROM webhook_deliveries").all()).results).toEqual([{delivery_id: "bob-delivery"}]);
   });
+  it("a credential save racing deletion cannot recreate the encrypted envelope", async () => {
+    const {env} = await fixture();
+    const {saveCreds, sentryCreds} = await import("../src/sources/creds");
+    const {repoHash} = await import("../src/account-lifecycle");
+    const originalDB = env.DB;
+    const hash = await repoHash("alice/app");
+    const racingDB = new Proxy(originalDB, {get(target, key) {
+      if (key !== "prepare") return Reflect.get(target, key);
+      return (sql: string) => {
+        const statement = target.prepare(sql);
+        if (!sql.startsWith("INSERT INTO credentials")) return statement;
+        return {bind(...args: unknown[]) {
+          const bound = statement.bind(...args);
+          return {run: async () => {
+            await originalDB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, 1)").bind(hash).run();
+            return bound.run();
+          }};
+        }};
+      };
+    }});
+    const credsEnv = {...env, DB: racingDB, CRED_MASTER_KEY: btoa("x".repeat(32)), SENTRY_REPO: "alice/app", SENTRY_CLIENT_SECRET: "operator-secret"};
+    await expect(saveCreds(credsEnv, "sentry", {clientSecret: "user-secret"}, {repo: "alice/app", installationId: 1})).rejects.toThrow("Factory deleted");
+    expect((await originalDB.prepare("SELECT * FROM credentials WHERE scope = 'installation:1:repo:alice/app'").all()).results).toEqual([]);
+    expect(await sentryCreds(credsEnv, {repo: "alice/app", installationId: 1})).toEqual({});
+  });
   it("can retry a failed KV purge without reporting deletion complete early", async () => {
     const {env, user, kv, objects} = await fixture();
     const original = env.CACHE.delete.bind(env.CACHE);

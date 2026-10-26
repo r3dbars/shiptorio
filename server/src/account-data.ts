@@ -6,14 +6,8 @@ import { reposFor, type User, type RepoRow } from "./accounts";
 import type { Env } from "./index";
 import { linkedRepo } from "./sources/creds";
 
-export async function repoHash(repo: string): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(repo.toLowerCase()));
-  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-export async function factoryDeleted(db: D1Database, repo: string): Promise<boolean> {
-  const rows = await db.prepare("SELECT repo_hash FROM deleted_factories WHERE repo_hash = ?").bind(await repoHash(repo)).all();
-  return rows.results.length > 0;
-}
+export { repoHash, factoryDeleted } from "./account-lifecycle";
+import { repoHash } from "./account-lifecycle";
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
 /** Only personal installation owners can erase shared repository data. Membership is insufficient. */
@@ -71,6 +65,8 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   if (JSON.stringify([...new Set(confirmations)].sort()) !== JSON.stringify(expected)) throw new Error("Type every owned repository name exactly to confirm deletion");
   // The archive goes only to the requesting browser, never into a retained server backup.
   const archive = await exportAccount(env, user);
+  // Revoked GitHub reach must not prevent an owner from archiving their own stored data.
+  for (const repo of repos) if (!archive.factories.some(f => f.repo === repo.full_name)) archive.factories.push({repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData});
   const now = Date.now();
   // Commit the durable stop before destructive work. Retries can finish partial cleanup.
   for (const repo of repos) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(repo.full_name), now).run();
