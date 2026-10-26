@@ -199,7 +199,25 @@ const LAUNCH_RISE = 3.2; // world units the camera climbs with the rocket
 const LAUNCH_HOLD = 5.2; // seconds before it eases back to where you were
 const clickable = (key: string) => !key.startsWith("d:") && key !== "drone";
 
+// A researched check (shared/src/research.ts) is an inspector frame in its own color, so the line reads
+// as CI, then your checks, then the verify bay.
+const CHECK_TINT: Record<string, number> = { leftovers: 0x9b8cff, secrets: 0xf2cf6b, types: 0x6cc28c, scope: 0xff9a3c, deps: 0x4fd1c5 };
+const INSPECTOR_BLUE = 0x3b82f6;
+function tintCheck(built: Built, color: number): Built {
+  built.g.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || Array.isArray(o.material)) return;
+    const mt = o.material as THREE.MeshPhongMaterial;
+    if (mt.color?.getHex() !== INSPECTOR_BLUE) return;
+    const own = mt.clone();
+    own.color.setHex(color);
+    if (own.emissive && own.emissive.getHex() === INSPECTOR_BLUE) own.emissive.setHex(color);
+    o.material = own;
+  });
+  return built;
+}
+
 function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built {
+  if (m.type === "inspector" && m.id.startsWith("check-")) return tintCheck(buildInspector(), CHECK_TINT[m.id.slice(6)] ?? 0x9b8cff);
   if (m.type === "inspector")
     switch (kind) {
       case "verify":

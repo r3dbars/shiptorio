@@ -47,6 +47,8 @@ export const Inspection = z.object({
     state: z.enum(["pending", "passed", "rework"]),
     reason: z.string(),
   })),
+  // Researched checks (shared/src/research.ts). They run right after CI, cheapest first, before the verify bay.
+  checks: z.array(z.object({ id: z.string(), state: z.enum(["pending", "passed", "rework"]), reason: z.string() })).optional(),
   humanApproved: z.boolean().default(false),
 });
 export type Inspection = z.infer<typeof Inspection>;
@@ -75,6 +77,7 @@ export const ScarTag = z.object({
   evidenceUrl: z.string().optional(), // CI log, repro, review comment
   strike: z.number().int().min(1), // 1, 2, 3
   at: z.number().optional(),
+  check: z.string().optional(), // the researched check that caught it, when station is "custom"
 });
 export type ScarTag = z.infer<typeof ScarTag>;
 
@@ -372,6 +375,15 @@ export const Station = z.object({
 });
 export type Station = z.infer<typeof Station>;
 
+// The research tree (docs/LOOP.md "Players add checks"). Shipped PRs are science packs; spending them unlocks
+// new gauntlet stations that really run on every PR. The catalog and rules live in shared/src/research.ts.
+export const Research = z.object({
+  done: z.array(z.string()), // researched tech ids, in the order they were unlocked
+  spent: z.number().int().nonnegative(), // science packs spent so far
+  suggest: z.object({ tech: z.string(), why: z.string() }).optional(), // the planner's pick, from repeated scars
+});
+export type Research = z.infer<typeof Research>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -394,5 +406,6 @@ export const FactoryState = z.object({
   brain: Brain.optional(), // the planner's decision log (powered by Meta Muse Spark)
   sources: z.array(SourceStatus).optional(),
   stations: z.array(Station).optional(), // the gauntlet, in line order
+  research: Research.optional(),
 });
 export type FactoryState = z.infer<typeof FactoryState>;

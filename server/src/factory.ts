@@ -6,6 +6,11 @@ import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type Brows
 import {
   SCIENCE_FOR,
   WebToServer,
+  emptyResearch,
+  insertCheck,
+  researchBlocked,
+  suggestResearch,
+  techById,
   type Belt,
   type FactoryState,
   type Item,
@@ -25,7 +30,7 @@ import { gameMaster, heuristicTriage, pickFiles, planLocalTask, sparkConfigured,
 import { emptyBrain, recordThought } from "./brain";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal, matchDistrict } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, reviewComment, reviewDiff, reworkMove, setStage, stageOf, verifyFromDiff } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
@@ -830,6 +835,9 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   private async patch(p: Patch) {
     const s = this.state!;
+    if (p.research) s.research = p.research;
+    // Researched checks join every PR that hasn't reached the verify bay yet.
+    if (p.items && s.research?.done.length) p = { ...p, items: p.items.map((it) => withChecks(it, s)) };
     for (const it of p.items ?? []) upsert(s.items, it);
     for (const m of p.machines ?? []) upsert(s.machines, m);
     for (const b of p.belts ?? []) upsert(s.belts, b);
@@ -848,16 +856,25 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
     // Station piles follow the items, so every item change re-counts the gauntlet.
-    if (p.items || p.removed) p = { ...p, stations: (s.stations = liveStations(s)) };
+    if (p.items || p.removed || p.research) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
     this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();
   }
 
   private async scheduleTick() {
-    // Pull a far-off alarm (the PostHog poll) in, so work never waits behind it.
+    // Pull a far-off poll/watch alarm in, so work never waits behind it.
     const at = await this.ctx.storage.getAlarm();
     if (at == null || at > Date.now() + TICK_MS) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+  }
+
+  /** One wake-up for the earliest watch, even when every player and agent is offline. */
+  private async scheduleOrbitDeadline() {
+    const deadlines = this.state?.items.filter(i => i.state === "launched" && i.orbit?.state === "watching").map(i => i.orbit!.until) ?? [];
+    if (!deadlines.length) return;
+    const next = Math.max(Date.now() + 1, Math.min(...deadlines));
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm == null || alarm > next) await this.ctx.storage.setAlarm(next);
   }
 
   // ---------- RPC from the Worker ----------
@@ -963,19 +980,32 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async onPullClosed(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     if (!(await this.load())) return;
+    const creditKey = `launchCredit:${prNumber}`;
+    if (merged) {
+      // An item's active PR changes on rework. Credit belongs to the merged PR forever.
+      if (await this.ctx.storage.get(creditKey)) { await this.scheduleOrbitDeadline(); return; }
+      const previous = this.state!.items.find(i => i.orbit?.prNumber === prNumber || i.state === "launched" && i.prNumber === prNumber);
+      if (previous) {
+        // Seed watches shipped before this ledger, without changing their current work.
+        await this.ctx.storage.put(creditKey, { itemId: previous.id, at: previous.orbit?.since ?? previous.updatedAt, mergeSha: previous.orbit?.mergeSha ?? mergeSha });
+        await this.scheduleOrbitDeadline();
+        return;
+      }
+    }
     let item = this.state!.items.find((i) => i.prNumber === prNumber);
     // Recover pre-fix issue-close ordering from our durable job and GitHub's real issue.
     // Never synthesize a rocket for an unrelated PR or reopen the GitHub issue.
     if (!item && merged && this.meta) {
       const job = (await this.runnerJobs()).find(j => j.status === "completed" && j.prUrl?.endsWith(`/pull/${prNumber}`));
       if (job) {
+        // A queued regression or a newer PR is not the old issue-close deletion.
+        if (this.state!.items.some(i => i.id === job.itemId)) return;
         const token = await installationToken(this.env, this.meta.installationId);
         const issue = await gh<NonNullable<GitHubPayload["issue"]>>(`/repos/${job.repo}/issues/${job.itemId.slice(3)}`, token);
         const signal = normalizeGitHub({ repository: { full_name: job.repo }, issue })[0];
         if (signal) {
           const { reason: _reason, ...classification } = await this.sparkTriage({ title: issue.title, body: issue.body ?? "" }, this.state!.districts.map(d => d.name));
           item = { ...foldSignal(undefined, { ...signal, action: "upsert" }), ...classification, state: "inspecting", branch: job.branch, prNumber, prUrl: job.prUrl, attempts: 1 };
-          await this.patch({ items: [item] });
         }
       }
     }
@@ -985,20 +1015,39 @@ export class Factory extends DurableObject<FactoryEnv> {
       this.log("info", `PR #${prNumber} closed without merging. Item scrapped.`, item.id);
       return;
     }
-    const s = this.state!;
-    const key = SCIENCE_FOR[item.kind];
-    const auto = (await this.ctx.storage.get<number>(`autoLaunch:${item.id}`)) === prNumber;
-    const before = await this.permitBook();
-    const book = recordShip(before, item, auto);
-    await this.ctx.storage.put("permits", book);
-    await this.patch({
-      items: [startWatch({ ...item, state: "launched", updatedAt: Date.now() }, Date.now(), mergeSha)],
-      science: { ...s.science, [key]: s.science[key] + 1 },
-      trust: Math.min(1, s.trust + 0.05),
-      autonomy: autonomyView(book),
+    const candidate = item;
+    const committed = await this.ctx.blockConcurrencyWhile(async () => {
+      const s = this.state!;
+      const current = s.items.find(i => i.id === candidate.id);
+      if (current && current.prNumber !== prNumber) return null;
+      const launchedItem = current ?? candidate;
+      const auto = (await this.ctx.storage.get<number>(`autoLaunch:${launchedItem.id}`)) === prNumber;
+      // State, rocket credit and permit counters commit atomically. A failed write
+      // leaves no partial credit; a redelivered receipt can safely try again.
+      const result = await this.ctx.storage.transaction(async tx => {
+        if (await tx.get(creditKey)) return null;
+        const now = Date.now();
+        const key = SCIENCE_FOR[launchedItem.kind];
+        const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
+        const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
+        const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book) };
+        next.stations = liveStations(next, now);
+        await tx.put("state", next);
+        await tx.put("permits", book);
+        await tx.put(creditKey, { itemId: launched.id, at: now, mergeSha });
+        return { next, launched, auto };
+      });
+      if (result) Object.assign(s, result.next);
+      return result;
     });
-    this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${item.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, item.id);
-    if (s.move?.itemId === item.id) await this.publishGauntletMove(null);
+    if (!committed) return;
+    const { next, launched, auto } = committed;
+    this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations } });
+    await this.scheduleOrbitDeadline();
+    await this.refreshDecisions();
+    this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);
+    if (this.state!.move?.itemId === launched.id) await this.publishGauntletMove(null);
   }
 
   // ---------- the gauntlet (docs/LOOP.md) ----------
@@ -1026,7 +1075,14 @@ export class Factory extends DurableObject<FactoryEnv> {
         const now = this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
         return now && lane && !now.lane ? { ...now, lane } : now;
       };
-      if (gate === "verify") {
+      if (gate === "checks") {
+        const now = current();
+        if (!now) return;
+        const { item: checked, ran } = runChecks(now, files);
+        await this.patch({ items: [checked] });
+        for (const r of ran) this.log(r.passed ? "success" : "warn", `${techById(r.id)?.name ?? r.id} ${r.passed ? "passed" : "sent back"} PR #${pr}: ${r.reason}`, item.id);
+        if (checked.state === "rejected") await this.noteRework(checked);
+      } else if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
         const now = current();
         if (!now) return;
@@ -1046,7 +1102,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       await this.scheduleTick();
     } catch {
-      this.log("warn", `The ${gate === "ai" ? "AI review" : "verify bay"} couldn't run on PR #${pr}. It will retry on the next event.`, item.id);
+      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr}. It will retry on the next event.`, item.id);
     } finally {
       this.gauntletRunning = false;
     }
@@ -1237,6 +1293,45 @@ export class Factory extends DurableObject<FactoryEnv> {
     return true;
   }
 
+  // ---------- research (shared/src/research.ts) ----------
+
+  /** Spends science packs on a tech. Its station drops onto the line right after CI and runs on every PR from now on. */
+  private async research(tech: string, by: "tree" | "card"): Promise<void> {
+    const s = this.state!;
+    const blocked = researchBlocked(s, tech);
+    if (blocked) { this.log("info", blocked); return; }
+    const t = techById(tech)!;
+    const r = s.research ?? emptyResearch();
+    const line = insertCheck(s, tech);
+    const done = { done: [...r.done, tech], spent: r.spent + t.cost };
+    const research = { ...done, suggest: suggestResearch({ ...s, research: done }) };
+    await this.patch({ machines: line.machines, belts: line.belts, removed: line.removed.map((id) => ({ kind: "belt" as const, id })), research });
+    this.broadcast({ type: "log", level: "success", text: `Researched: ${t.name}. It now checks every PR right after CI.`, at: Date.now(), actor: "player", tool: "research", approvedBy: "player", reason: by === "card" ? "You said yes on the research card." : `You spent ${t.cost} science packs in the research tree.` });
+  }
+
+  /** Repeated scars point at a tech: keep the tree's pick current, and offer it as a card once it's affordable. */
+  private async offerResearchMove(): Promise<void> {
+    const s = this.state;
+    if (!s) return;
+    const suggest = suggestResearch(s);
+    if (JSON.stringify(suggest) !== JSON.stringify(s.research?.suggest)) await this.patch({ research: { ...(s.research ?? emptyResearch()), suggest } });
+    if (!suggest || researchBlocked(s, suggest.tech)) return;
+    const offered = (await this.ctx.storage.get<string[]>("researchOffered")) ?? [];
+    if (offered.includes(suggest.tech)) return; // one card per tech; the tree keeps the pick after that
+    await this.ctx.storage.put("researchOffered", [...offered, suggest.tech]);
+    await this.publishGauntletMove(researchMove(suggest.tech, suggest.why));
+  }
+
+  /** Handles the research card. Returns false for every other move. */
+  private async chooseResearchMove(moveId: string, optionId: string): Promise<boolean> {
+    const move = this.state!.move;
+    const action = move?.options[0]?.actions[0];
+    if (!move || move.id !== moveId || action?.tool !== "research" || typeof action.args.tech !== "string") return false;
+    await this.publishGauntletMove(null);
+    if (optionId === "research") await this.research(action.args.tech, "card");
+    return true;
+  }
+
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
@@ -1292,7 +1387,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.log("warn", "Run the missing checks before launching.");
       } else {
         const before = JSON.stringify(await this.runnerJobs());
-        const handled = await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
+        const handled = await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(msg.moveId, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
@@ -1300,6 +1395,9 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.refreshDecisions(); return;
     }
     switch (msg.type) {
+      case "research":
+        await this.research(msg.tech, "tree");
+        break;
       case "set_autonomy":
         if (msg.district && msg.permit !== undefined) await this.grantPermit(msg.district, msg.permit, "toggle");
         break;
@@ -1341,6 +1439,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       case "remove_machine":
         if (s.machines.some((m) => m.id === msg.id && m.state === "working")) break;
+        if (s.stations?.some((st) => st.machineId === msg.id)) break; // gauntlet stations stay on the line
         await this.patch({
           removed: [
             { kind: "machine", id: msg.id },
@@ -1460,13 +1559,19 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.autoLaunchPermitted();
     await this.offerGauntletMove();
     await this.offerPermitMove();
+    await this.offerResearchMove();
     await this.offerRunnerPlan();
     const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
     const poll = await this.ctx.storage.get<{ nextAt: number }>("posthogPoll");
-    if (poll && (await this.ctx.storage.get<boolean>("posthogLinked")) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Math.max(Date.now() + TICK_MS, poll.nextAt));
+    if (poll && (await this.ctx.storage.get<boolean>("posthogLinked"))) {
+      const next = Math.max(Date.now() + TICK_MS, poll.nextAt);
+      const alarm = await this.ctx.storage.getAlarm();
+      if (alarm == null || alarm > next) await this.ctx.storage.setAlarm(next);
+    }
+    await this.scheduleOrbitDeadline();
     } finally { this.batchingDecisions = false; await this.refreshDecisions(); }
   }
 

@@ -4,10 +4,10 @@
 // what feeds it and where its work goes, recent history, and 1–3 actions with Spark's pick marked.
 
 import { useEffect } from "react";
-import type { FactoryState, Item, Machine, WebToServer } from "@shiptorio/shared";
+import { techById, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
 import type { LogLine } from "../store";
-import { MACHINE_COPY, POWER_COPY, POWER_TYPES, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
+import { MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
 
 function fmtWait(ms?: number) {
   if (ms === undefined) return "–";
@@ -102,7 +102,7 @@ function panelFor(id: string, state: FactoryState): Panel | null {
         ["Strikes", worst ? `${ref(worst)}: ${worst.scars!.length} / 3` : "–"],
       ],
       now: onBelt,
-      last: scar && worst ? { who: "Rework", text: `${ref(worst)} came back from the ${lc(STATION_COPY[scar.station].name)}: ${scar.reason}`, ok: false } : undefined,
+      last: scar && worst ? { who: "Rework", text: `${ref(worst)} came back from the ${lc(scar.check ? (techById(scar.check)?.name ?? "check") : STATION_COPY[scar.station].name)}: ${scar.reason}`, ok: false } : undefined,
       match: (l) => /rework|re-plan|rejected/i.test(l.text) || l.tool === "request_rework",
       actions: REWORK_COPY.actions ?? [],
     };
@@ -122,7 +122,7 @@ function panelFor(id: string, state: FactoryState): Panel | null {
         actions: st.actions,
       };
     return {
-      copy: STATION_COPY[st.kind],
+      copy: st.kind === "custom" ? researchedCopy(st.id) : STATION_COPY[st.kind],
       stats: [
         ["In line", String(st.wip)],
         ["Oldest wait", fmtWait(st.oldestWaitMs)],
