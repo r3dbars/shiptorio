@@ -21,6 +21,7 @@ of each section. If you decide something, add it here in the same PR.
 
 | Item | Waiting on |
 | --- | --- |
+| Product calls in `docs/PRODUCT.md` (bottom): Spark's default autonomy, where demo "money" comes from, customer reply sending, who the pitch is for. Building toward the recommendations until answered | Justin |
 | Which .com Shiptorio lives on (only `r3d.bar` seen on the Cloudflare account) | Justin |
 | `npx wrangler login` + `bun run deploy` (cloud sessions have no Cloudflare token) | Justin |
 | Open `/setup` on the deployed URL to create the GitHub App, then `wrangler secret put` its secrets | Justin, after deploy |

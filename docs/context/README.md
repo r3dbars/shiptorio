@@ -12,6 +12,7 @@ something, add it here and push.
 
 | File | What it is |
 | --- | --- |
+| [../PRODUCT.md](../PRODUCT.md) | **Product spec**: Spark as the Foreman agent, core loop, bottleneck engine, tools, trust, score, onboarding, demo scope |
 | [decisions.md](decisions.md) | Decisions made so far and open items (who's blocked on what) |
 | [memory/](memory/) | Snapshot of the Claude project memory (one fact per file). `memory/MEMORY.md` is its index |
 | [threads.md](threads.md) | Short summary of each Claude project thread and what it produced |
