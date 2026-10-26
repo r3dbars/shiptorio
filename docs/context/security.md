@@ -94,10 +94,10 @@ work. Infrastructure errors fail closed with a generic 500, not an allow bypass.
 Production runs only behind Cloudflare with its trusted client-IP header and
 HTTPS. This audit does not establish live secret strength or external GitHub
 rulesets. A repository-scoped contents-write token has broader GitHub authority
-than one branch; supervisor policy is not token-level branch isolation. Coding
-harnesses use native restrictions with the operator's HOME, while verification
-uses a separate OS sandbox. Do not claim those are equivalent or that this web
-hardening proves native harness filesystem-read confinement. Dedicated tenant,
+than one branch; supervisor policy is not token-level branch isolation. The
+concurrently merged runner hardening confines coding harnesses with an OS sandbox
+and dedicated authentication home; verification uses a separate private home.
+This web hardening does not independently prove native runner confinement. Dedicated tenant,
 runner isolation, credential-encryption and prompt-injection tasks own those
 boundaries; this patch preserves their guards rather than replacing them.
 
