@@ -73,7 +73,7 @@ function render(slug: string, raw: string): DocPage {
   // search entries: one per h2 section (the intro counts as the page itself)
   const sections: SearchEntry[] = [];
   const url = slug === "index" ? "/docs/" : `/docs/${slug}`;
-  const parts = html.split(/(?=<h2 id=")/);
+  const parts = html.replace(/<a class="anchor"[^>]*>#<\/a>/g, "").split(/(?=<h2 id=")/);
   for (const part of parts) {
     const h = /^<h2 id="([^"]+)">(.*?)<\/h2>/.exec(part);
     sections.push({ url: h ? `${url}#${h[1]}` : url, page: title, heading: h ? plain(h[2]) : title, text: plain(h ? part.slice(h[0].length) : part.replace(/<h1>.*?<\/h1>/, "")).slice(0, 600) });

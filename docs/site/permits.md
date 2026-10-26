@@ -32,8 +32,6 @@ Hit the streak and you get a card:
 
 Pick **Allow** (Suggested) or **Not yet**. Not yet asks again three clean ships later. The card only shows up when nothing else needs you.
 
-![A permit card](/docs/img/permit.png)
-
 ## What a permit does
 
 With a permit, a PR in that lane that is on the pad and passed every station with no scars **merges on its own**. The log says "Rocket launched on its own: PR #N merged on the docs launch permit."

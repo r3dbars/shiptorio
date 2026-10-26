@@ -48,7 +48,7 @@ Issue text, code comments and error messages can be written by anyone. Spark's p
 
 Open **How it thinks** from the settings menu (**powered by Meta Muse Spark · how it thinks**), from **See how the planner thinks** in the Power sheet, or with `?thinks` on any factory URL.
 
-![How it thinks](/docs/img/thinks.png)
+![How it thinks, in the sandbox's heal scenario](/docs/img/thinks.png)
 
 It shows how many decisions Spark made, the share made by the model versus fixed rules, and the latest calls: Sorted, Picked files, Planned, Reviewed, Chose your next card, Judged a comeback, Picked a check, Weighed a permit. Each one with how long Spark took.
 

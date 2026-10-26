@@ -80,7 +80,7 @@ article p { margin: 0 0 14px; }
 article ul, article ol { padding-left: 24px; margin: 0 0 14px; }
 article li { margin: 4px 0; }
 article strong { color: #fff; }
-article img { display: block; max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--hair); margin: 8px 0 18px; image-rendering: pixelated; }
+article img { display: block; max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--hair); margin: 8px 0 18px; }
 article hr { border: 0; border-top: 1px solid var(--hair); margin: 28px 0; }
 code { font: 14px var(--code); color: var(--amber); background: rgba(255,255,255,.05); padding: 1px 5px; border-radius: 4px; }
 .code { position: relative; margin: 0 0 16px; }

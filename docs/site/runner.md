@@ -17,7 +17,7 @@ On the map, each signed-in agent shows up as a **power plant**. Claude Code and 
 - **macOS** with Apple Command Line Tools (`xcode-select --install`). Checks run inside the macOS sandbox, and other platforms refuse to run jobs until they have a sandbox of their own.
 - **Bun** installed.
 - **Claude Code** (`claude`) or **Codex** (`codex`) installed and signed in. Both is better: more power plants.
-- A checkout of the Shiptorio repo (operator setup only, for now).
+- A checkout of the Shiptorio repo (for now, until the installer ships).
 
 ## Check your agents
 
@@ -29,13 +29,11 @@ bun run runner doctor
 
 It prints one line per agent it finds, like `claude_code: installed and signed in`. If it says `Install and sign in to Codex or Claude Code first`, do that and run it again.
 
-## Pair the runner (operator)
+## Pair the runner
 
-```sh
-bun run runner:control pair
-```
+Pairing links the runner to one repo with an **eight-hour, repo-only** token, saved in a gitignored `runner/.dev.vars` that only you can read. Re-pairing revokes the old token, and a running runner renews its token before it expires.
 
-This pairs the runner with one repo. It saves an **eight-hour, repo-only** token in a gitignored `runner/.dev.vars` (owner-readable only). Re-pairing revokes the old token. A running runner renews its token before it expires.
+For now pairing is an operator step, done by the factory owner. The browser pairing flow in the installer replaces it.
 
 ## Run it
 
@@ -43,7 +41,7 @@ This pairs the runner with one repo. It saves an **eight-hour, repo-only** token
 bun run runner watch
 ```
 
-The runner says `Local runner ready for owner/repo: ... Only approved jobs run.` and then checks for approved work every few seconds. `bun run runner once` checks a single time and exits.
+The runner says `Local runner ready for owner/repo: claude_code. Only approved jobs run.` and then checks for approved work every few seconds. `bun run runner once` checks a single time and exits. `bun run runner paths` shows where it keeps its files and which agents it found.
 
 To keep it running in the background on a Mac:
 
@@ -76,6 +74,7 @@ The service runs only for your Mac user, from its own bundled copy in `~/Library
 
 - **"No approved Spark job is ready."** Normal. Approve a plan on the map first.
 - **"Run runner:control pair first"** The runner isn't paired with a repo yet.
+- **"Run runner watch on this platform; service installation currently supports macOS."** The background service is Mac only.
 - **"Claude is not signed in"** Run `claude` once and sign in, then `bun run runner doctor`.
 - **"Local verification requires macOS sandbox-exec"** You're not on a Mac. Jobs are disabled on purpose until there's a sandbox for your platform.
 - **Network dropped right after a push?** `bun run runner retry JOB_ID` re-sends the saved receipt.

@@ -26,6 +26,8 @@ A build card has **Review plan and files**, so you can see exactly what will cha
 
 If nothing needs a card, it shows the bottleneck and a button to open that station.
 
+![A Next Move card in the sandbox: a checkout crash hitting 112 users, ready to send to Claude Code](/docs/img/next-move.png)
+
 ## The check-in deck
 
 When more than one card is waiting, a **Check in** chip appears. Open it and you get a deck of up to 12 cards, ranked. Swipe through them and walk away.

@@ -8,12 +8,18 @@ order: 1
 
 Agent output is untrusted until it shows evidence. So between your assemblers and the launch pad, every PR runs **the gauntlet**: a line of stations, cheapest first. Anything that fails rides the **rework belt** back with a scar tag.
 
-![The gauntlet stations on the map](/docs/img/gauntlet.png)
+![The verify bay's station panel in the sandbox](/docs/img/gauntlet.png)
 
 ```
-assembler → CI inspector → [your researched checks] → verify bay → AI review → merge gate → rocket → orbit watch
-                 ↑                                                                                       │
-                 └──────────────────────────── rework belt (scar tags) ◄─────────────────────────────────┘
+assembler
+  → CI inspector
+  → your researched checks
+  → verify bay
+  → AI review
+  → merge gate (you)
+  → rocket → orbit watch (24h)
+
+fail anywhere → rework belt, with a scar tag
 ```
 
 The full gauntlet runs on PRs your runner built (`shiptorio/runner-*` branches). Other PRs in the repo just get CI inspection before they sit on the pad.
