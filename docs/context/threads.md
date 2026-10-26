@@ -58,6 +58,7 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 | #100, #103, #117 | Codex: mobile/onboarding papercuts, first-run loop never idles | merged |
 | #104, #123, #126 | Codex: sandboxed local verify, release receipts, orbit replay deadlines | merged |
 | #118, #119 | Codex: live repo picker, disposed factories stop reconnecting | merged |
+| #177 | Growth loop prototype: funnel drop → experiment → gauntlet → measure station (`?scenario=growth`, docs/context/growth-loop.md) | open |
 | #3, #4 | Old pre-#1 drafts | closed |
 
 ## Codex (outside the Claude project)

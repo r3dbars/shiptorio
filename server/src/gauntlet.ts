@@ -7,6 +7,7 @@ import { gh } from "./github";
 import { parseJsonReply, sparkChat, type SparkEnv } from "./spark";
 import type { RegressionProof } from "./runner-job";
 import { ORBIT_ID, orbitStation } from "./orbit";
+import { measureStation } from "./growth";
 
 type Gate = Inspection["stages"][number]["gate"];
 interface StationDef { id: string; kind: StationKind; name: string; gate: Gate }
@@ -340,5 +341,6 @@ export function liveStations(s: FactoryState, now = Date.now()): Station[] {
       actions: ACTIONS[g.id] ?? [],
     };
   });
-  return [gauntlet[0], ...checks, ...gauntlet.slice(1), orbitStation(s, now)];
+  const measure = measureStation(s);
+  return [gauntlet[0], ...checks, ...gauntlet.slice(1), orbitStation(s, now), ...(measure ? [measure] : [])];
 }
