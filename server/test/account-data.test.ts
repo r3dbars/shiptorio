@@ -30,7 +30,7 @@ async function fixture() {
     get: async (key: string, format?: string) => { const value = kv.get(key) ?? null; return value && format === "json" ? JSON.parse(value) : value; },
     put: async (key: string, value: string) => { kv.set(key, value); },
     delete: async (key: string) => { kv.delete(key); },
-    list: async ({cursor}: {cursor?: string}) => { const keys = [...kv.keys()].sort(); const offset = Number(cursor ?? 0); return { keys: keys.slice(offset, offset + 2).map(name => ({name})), list_complete: offset + 2 >= keys.length, cursor: String(offset + 2) }; },
+    list: async ({cursor, prefix}: {cursor?: string; prefix?: string}) => { const keys = [...kv.keys()].filter(key => !prefix || key.startsWith(prefix)).sort(); const offset = Number(cursor ?? 0); return { keys: keys.slice(offset, offset + 2).map(name => ({name})), list_complete: offset + 2 >= keys.length, cursor: String(offset + 2) }; },
   }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => objects.get(repo)!.factory }, ASSETS: {fetch: async () => new Response("app")} } as unknown as Env;
   for (const repo of ["alice/app", "bob/app", "org/shared", await securityObjectName("user:11"), await securityObjectName("user:alice")]) {
     const record = { data: new Map<string, unknown>([
@@ -126,6 +126,54 @@ describe("account data controls", () => {
     await expect(saveCreds(credsEnv, "sentry", {clientSecret: "user-secret"}, {repo: "alice/app", installationId: 1})).rejects.toThrow("Factory deleted");
     expect((await originalDB.prepare("SELECT * FROM credentials WHERE scope = 'installation:1:repo:alice/app'").all()).results).toEqual([]);
     expect(await sentryCreds(credsEnv, {repo: "alice/app", installationId: 1})).toEqual({});
+  });
+  it("exports and purges both repo and global operational log copies, preserving other users", async () => {
+    const {env, user, kv} = await fixture();
+    kv.set("ops:events:all:alice", JSON.stringify({userId: "alice", repo: "org/shared", event: "saved"}));
+    kv.set("ops:events:repo:alice/app:copy", JSON.stringify({repo: "alice/app", event: "saved"}));
+    kv.set("ops:events:all:bob", JSON.stringify({userId: "bob", repo: "bob/app", event: "keep"}));
+    const archive = await exportAccount(env, user);
+    expect(archive.activity.some(e => e.event === "saved")).toBe(true);
+    expect(archive.activity.some(e => e.event === "keep")).toBe(false);
+    await deleteAccount(env, user, ["alice/app"]);
+    expect(kv.has("ops:events:all:alice")).toBe(false);
+    expect(kv.has("ops:events:repo:alice/app:copy")).toBe(false);
+    expect(kv.has("ops:events:all:bob")).toBe(true);
+  });
+  it("an in-flight operational log cannot recreate user keys after deletion", async () => {
+    const {env, user, kv} = await fixture();
+    const {inTrace, log} = await import("../src/telemetry");
+    let release!: () => void, started!: () => void;
+    const gate = new Promise<void>(resolve => {release = resolve;});
+    const writing = new Promise<void>(resolve => {started = resolve;});
+    const original = env.CACHE.put.bind(env.CACHE);
+    env.CACHE.put = (async (key: string, value: string) => { if (key.startsWith("ops:")) {started(); await gate;} return original(key, value); }) as typeof env.CACHE.put;
+    const tasks: Promise<unknown>[] = [];
+    inTrace({requestId: "delete-race", userId: "alice", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
+    await writing;
+    await deleteAccount(env, user, ["alice/app"]);
+    release();
+    await Promise.all(tasks);
+    expect([...kv.keys()].some(key => key.startsWith("ops:"))).toBe(false);
+  });
+  it("removes signup, progress, budget and API-limit ledgers without removing another account's approval", async () => {
+    const {env, user} = await fixture();
+    for (const sql of [
+      "INSERT INTO user_progress VALUES (11, '{\"level\":3}', 1)",
+      "INSERT INTO signup_allowlist (login, approved_by, updated_at) VALUES ('alice', 'admin', 1), ('bob', 'alice', 1)",
+      "INSERT INTO signup_waitlist (identity, kind, created_at, updated_at) VALUES ('alice', 'github', 1, 1)",
+      "INSERT INTO signup_invites (digest, expires_at, created_by) VALUES ('test-invite', 2, 'alice')",
+      "INSERT INTO signup_resources VALUES ('alice', 'factory', 'alice/app')",
+      "INSERT INTO signup_counters VALUES ('runs:alice', 1, 1, 2)",
+      "INSERT INTO signup_abuse (scope, reason, updated_at) VALUES ('install:alice', 'test', 1)",
+      "INSERT INTO spark_usage (account, day) VALUES ('user:11', '2026-10-26')",
+      "INSERT INTO factory_budget_owners VALUES ('alice/app', 11)",
+      "INSERT INTO api_limits (scope) VALUES ('github:installation:1')",
+    ]) await env.DB.prepare(sql).run();
+    expect((await exportAccount(env, user)).progress).not.toBeNull();
+    await deleteAccount(env, user, ["alice/app"]);
+    for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
+    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}]);
   });
   it("can retry a failed KV purge without reporting deletion complete early", async () => {
     const {env, user, kv, objects} = await fixture();

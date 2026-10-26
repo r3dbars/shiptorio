@@ -30,14 +30,31 @@ export async function accountRepos(env: Env, user: User): Promise<RepoRow[]> {
   for (const repo of repos) if (await repoAccess(env, user as AccessUser, repo.full_name)) allowed.push(repo);
   return allowed;
 }
+async function retainedActivity(env: Env, user: User, repos: RepoRow[]) {
+  const logs: Record<string, unknown>[] = [];
+  const names = new Set(repos.map(r => r.full_name.toLowerCase()));
+  let cursor: string | undefined;
+  do {
+    const page = await env.CACHE.list({prefix: "ops:events:all:", cursor});
+    for (const {name} of page.keys) {
+      const entry = await env.CACHE.get<Record<string, unknown>>(name, "json");
+      if (entry && (entry.userId === user.login || entry.userId === String(user.id) || names.has(String(entry.repo).toLowerCase()))) logs.push(entry);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return logs;
+}
 export async function exportAccount(env: Env, user: User) {
   const repos = await accountRepos(env, user);
   const factories = [];
   for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData });
   const prefs = await env.DB.prepare("SELECT key, value, updated_at FROM user_prefs WHERE user_id = ?").bind(user.id).all();
+  const exportTables = new Set((await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{name: string}>()).results.map(t => t.name));
+  const progress = exportTables.has("user_progress") ? await env.DB.prepare("SELECT value, updated_at FROM user_progress WHERE user_id = ?").bind(user.id).first() : null;
   const profile = await env.DB.prepare("SELECT id, login, name, avatar_url, created_at, last_login_at FROM users WHERE id = ?").bind(user.id).first();
   const installations = (await env.DB.prepare("SELECT installation_id, account_login FROM user_installations WHERE user_id = ?").bind(user.id).all()).results;
-  return { profile, installations, format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
+  const activity = await retainedActivity(env, user, repos);
+  return { profile, installations, progress, activity, format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
 }
 
 async function purgeKV(env: Env, repos: RepoRow[], login: string, userId: number): Promise<void> {
@@ -48,6 +65,10 @@ async function purgeKV(env: Env, repos: RepoRow[], login: string, userId: number
   do {
     const page = await env.CACHE.list({ cursor });
     for (const { name } of page.keys) {
+      if (name.startsWith("ops:")) {
+        const entry = await env.CACHE.get<{userId?: string; repo?: string}>(name, "json");
+        if (entry && (entry.userId?.toLowerCase() === login.toLowerCase() || entry.userId === String(userId) || names.has(entry.repo?.toLowerCase() ?? ""))) keys.add(name);
+      }
       if ([...names].some(repo => name === `cred:sentry:${repo}` || name === `cred:posthog:${repo}` || name.includes(`:${repo}:`) || name.endsWith(`:${repo}`))
         || name.startsWith(`access:v1:${login.toLowerCase()}:`) || name.startsWith("access:v2:") && name.endsWith(`:${userId}`)) keys.add(name);
     }
@@ -97,6 +118,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   }
   if (tables.has("credentials")) statements.push(env.DB.prepare("DELETE FROM credentials WHERE lower(updated_by) = ?").bind(user.login.toLowerCase()));
   for (const table of ["sessions", "user_prefs", "user_repos", "user_installations"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE user_id = ?`).bind(user.id));
+  if (tables.has("user_progress")) statements.push(env.DB.prepare("DELETE FROM user_progress WHERE user_id = ?").bind(user.id));
   statements.push(env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id));
   const login = user.login.toLowerCase();
   // Signup, usage and lifecycle ledgers must not outlive the account either.
