@@ -55,6 +55,7 @@ export function signupPage(env: Env, message = '', status = 200): Response {
 export async function signupGate(request: Request, env: Env): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   if (env.DEV_LOGIN && isLocal(new URL(request.url))) return null;
+  if (['/api/version','/api/health'].includes(path) && ['GET','HEAD'].includes(request.method)) return null;
   if (path === '/admin' || path.startsWith('/admin/')) return null;
   if (['/waitlist','/auth/login','/auth/callback','/auth/logout','/webhooks/github','/webhooks/sentry'].includes(path) || path.startsWith('/webhooks/sentry/')) return null;
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url),Date.now(),true))?.login || null;

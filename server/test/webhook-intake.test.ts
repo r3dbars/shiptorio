@@ -11,7 +11,7 @@ const { default: app } = await import("../src/index");
 
 it("runner transport authenticates independently without opening the preview or other repos", async () => {
   let claims = 0;
-  const env = { DB: testD1(), SIGNUP_GATE_MODE: "password", SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", FACTORY: { idFromName: (repo: string) => repo, get: () => ({ isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
+  const env = { DB:testD1(), SIGNUP_GATE_MODE:"password", SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
   const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", expires: Date.now() + 10000 });
   const send = (repo: string, bearer = token) => app.fetch(new Request(`https://shiptorio.com/api/runner/${repo}/claim`, { method: "POST", headers: { authorization: `Bearer ${bearer}` }, body: JSON.stringify({ harnesses: ["codex"] }) }), env as never);
   expect((await send("r3dbars/shiptorio", "forged")).status).toBe(401);
@@ -88,7 +88,7 @@ it("runner revoke is a same-origin signed-in web action and invalidates renewal"
   const { browserCookies, browserEnv } = await import("./browser-fixture");
   const { testD1, signedInCookie } = await import("./d1-fixture");
   let paired = true;
-  const env = { ...browserEnv, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get: () => ({ revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
+  const env = { ...browserEnv, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
   const url = "https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/revoke";
   const cookie = await signedInCookie(env, "test-player", ["r3dbars/shiptorio"]) + "; " + (await browserCookies()).split("; ")[1];
   expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://evil.example" } }), env as never)).status).toBe(403);

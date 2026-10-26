@@ -7,6 +7,7 @@ import { validatePlan, validatePatch } from "./injection-policy";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -80,6 +81,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     return { ok: true };
   }
 
+  // Dedicated security objects never load repo state, call Spark, or set alarms.
+  async securityLimit(budget: Budget): Promise<LimitResult> {
+    return consumeBudget(this.ctx.storage, budget);
+  }
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
@@ -1587,6 +1592,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!await browserSocketActive(auth,this.env)) { ws.close(1008,'Access revoked'); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
+    for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
+      if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
+    }
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
     const parsed = WebToServer.safeParse(value);
