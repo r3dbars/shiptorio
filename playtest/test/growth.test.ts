@@ -49,12 +49,11 @@ describe("growth scenario", () => {
     expect(pricing.daysWatched).toBe(7);
     expect(pricing.line).toContain("No real change");
   });
-  test("the planner's growth calls land in how it thinks", () => {
+  test("the planner's proposal lands in how it thinks; the verdict is math, so it's only on the floor log", () => {
     expect(tools).toContain("propose_experiment");
     expect(tools).toContain("measure_experiment");
     const decisions = state!.brain!.thoughts.map((t) => t.decision);
     expect(decisions).toContain("growth");
-    expect(decisions).toContain("measure");
   });
   test("the measure station is on the map and in the station list", () => {
     expect(state!.machines.some((m) => m.id === "measure-1")).toBe(true);

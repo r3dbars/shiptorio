@@ -16,7 +16,6 @@ const VERB: Record<ThoughtDecision, string> = {
   research: "Picked a check",
   permit: "Weighed a permit",
   growth: "Picked an experiment",
-  measure: "Called an experiment",
 };
 
 const ago = (at: number) => {

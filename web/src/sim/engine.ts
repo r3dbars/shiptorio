@@ -489,7 +489,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let pr = 140;
   let seq = 0;
 
-  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", propose_experiment: "growth", measure_experiment: "measure" };
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", propose_experiment: "growth" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });

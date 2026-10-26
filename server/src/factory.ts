@@ -7,6 +7,7 @@ import {
   SCIENCE_FOR,
   WebToServer,
   emptyResearch,
+  fallbackExperiment,
   insertCheck,
   researchBlocked,
   suggestResearch,
@@ -27,7 +28,7 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought } from "./brain";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal, matchDistrict } from "./ore";
@@ -39,7 +40,8 @@ import { buildDeck, moveScope, enrichMove } from "./deck";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
-import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
+import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
+import { experimentSignal, growthTick, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
@@ -777,6 +779,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.ctx.storage.put("posthogPoll", { nextAt: now + POLL_MS, failures: 0 });
       await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
+      await this.growthPoll(rows, creds.keyEvent || "$pageview", now);
       const top = traffic.slice(0, 3).map((t) => `${t.route} ${t.usersPerDay}/day`).join(", ");
       const status = this.state!.sources?.find((source) => source.kind === "posthog") ?? (await this.mineStatus("posthog"));
       await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "connected", detail: top ? `Busiest routes: ${top}.` : status.detail, lastEventAt: status.lastEventAt ?? now }] });
@@ -787,6 +790,35 @@ export class Factory extends DurableObject<FactoryEnv> {
       const status = await this.mineStatus("posthog");
       await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Retrying.` }] });
     }
+  }
+
+  /** The growth loop (server/src/growth.ts): measure launched experiments, and turn a funnel drop into a new one. */
+  private async growthPoll(rows: RouteDay[], keyEvent: string, now: number): Promise<void> {
+    const s = this.state!;
+    const users = routeUsers(rows, keyEvent);
+    const tick = growthTick(s.experiments ?? [], s.items, users, now);
+    if (tick.changed) await this.patch({ experiments: tick.experiments });
+    for (const exp of tick.decided) {
+      // the call is plain math (shared/src/growth.ts), so it goes in the floor log, not the planner's decision log
+      this.log(exp.state === "won" ? "success" : exp.state === "lost" ? "warn" : "info", `Measure station: ${exp.line} (p = ${(exp.p ?? 1).toFixed(3)})`, exp.itemId);
+    }
+    const drop = tick.drop;
+    if (!drop) return;
+    const districts = s.districts.map((d) => d.name);
+    const fallback = () => ({ ...fallbackExperiment(drop), district: districts[0] ?? "/", reason: "A fixed rule picked the experiment." });
+    const busiestRoutes = [...new Set(users.map((u) => u.route))].slice(0, 20);
+    const pick = !sparkConfigured(this.env)
+      ? fallback()
+      : await this.think("growth", { title: `${drop.step.label} −${drop.dropPct}%`, target: "ore-posthog" },
+          () => proposeExperiment(this.env, { step: drop.step.label, baseRate: drop.baseRate, rate: drop.rate, dropPct: drop.dropPct, lostPerDay: drop.lostPerDay, districts, busiestRoutes }),
+          (p) => ({ outcome: p.title, reason: p.reason }),
+        ).catch(fallback);
+    const exp = newExperiment(drop, pick, now);
+    if ((s.experiments ?? []).some((e) => e.id === exp.id)) return;
+    await this.ingestSignal(experimentSignal(exp, drop, now));
+    const item = this.state!.items.find((i) => i.ore?.fingerprint === `growth:${exp.id}`);
+    await this.patch({ experiments: [{ ...exp, itemId: item?.id }, ...(this.state!.experiments ?? [])].slice(0, 20) });
+    this.log("info", `${drop.step.label} fell ${drop.dropPct}%. New experiment on the line: ${exp.title}`, item?.id);
   }
 
   // ---------- state ----------
@@ -898,6 +930,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.sources) s.sources = p.sources;
+    if (p.experiments) s.experiments = p.experiments;
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
