@@ -61,7 +61,10 @@ it("checks cookie acceptance and preserves the intended factory after native for
   const html = await gate!.text();
   expect(html).toContain('method="post" action="/access"');
   expect(html).toContain('name="next"');
-  expect(html).not.toContain("<script");
+  // The form works with JS off; the only script is the page's own nonce'd unlock animation.
+  const nonce = gate!.headers.get("content-security-policy")!.match(/script-src 'nonce-([\da-f]{32})'$/)![1];
+  expect(html.match(/<script[^>]*>/g)).toEqual([`<script nonce="${nonce}">`]);
+  expect(gate!.headers.get("content-security-policy")).toStartWith("frame-ancestors 'none'; base-uri 'none'; form-action 'self'; ");
   const response = await previewAccess(new Request("https://shiptorio.com/access", {
     method: "POST", headers: { origin: "https://shiptorio.com" },
     body: new URLSearchParams({ password: env.APP_PASSWORD, next }),

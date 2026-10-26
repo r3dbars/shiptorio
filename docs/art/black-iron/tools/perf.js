@@ -5,7 +5,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   const p = await b.newPage({ viewport: { width: 1440, height: 860 } }); p.setDefaultTimeout(170000);
   const errs = []; p.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   await p.setContent('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + fs.readFileSync(html, 'utf8') + '</body></html>', { waitUntil: 'load' });
-  await p.waitForTimeout(1500);
+  await p.waitForFunction(() => window.IRON && IRON.ready, null, { timeout: 150000 });
   const r = await p.evaluate(() => {
     IRON.debug.advance(50); IRON.setView('line'); for (let i = 0; i < 90; i++) IRON.camStep(1 / 30);
     const t0 = performance.now(); IRON.hudStep(); IRON.render(); const ms = performance.now() - t0;

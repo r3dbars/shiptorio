@@ -6,6 +6,8 @@
 // =====================================================================
 (function () {
   'use strict';
+  // decor sits ~15% darker + less saturated than the line, so machines/belts/items stay the brightest things
+  function dd(h, k, s) { const r = (h >> 16) & 255, g = (h >> 8) & 255, b = h & 255; const l = 0.3 * r + 0.59 * g + 0.11 * b; const f = (c) => Math.max(0, Math.min(255, Math.round((c + (l - c) * (s === undefined ? 0.28 : s)) * (k === undefined ? 0.85 : k)))); return (f(r) << 16) | (f(g) << 8) | f(b); }
   const C = {
     soot: 0x1e1814, iron: 0x3a322b, ironL: 0x5a5046, ironM: 0x463d35,
     brass: 0xa87a34, brassD: 0x6a4c22, brassL: 0xd0a24e,
@@ -14,6 +16,8 @@
     wood: 0x5e4026, woodD: 0x45301c, leather: 0x553220, cream: 0xd8c49a,
     gas: 0xffc070, ember: 0xff7a2a, red: 0xc03a24, hazard: 0xd8a018, teal: 0x7af0d8
   };
+  ['brass', 'brassD', 'brassL', 'copper', 'copperD', 'wood', 'woodD', 'leather', 'red', 'cream', 'verd', 'verdD'].forEach((k) => (C[k] = dd(C[k])));
+  C.hazard = dd(C.hazard, 0.9, 0.15); C.brick = dd(C.brick, 0.95, 0.2); C.brickD = dd(C.brickD, 0.95, 0.2);
   let M = null;
   function mats(K) {
     M = {
@@ -98,7 +102,7 @@
         g.fillStyle = 'rgba(255,210,170,0.10)'; g.fillRect(x + 1, y + 1, 14, 1);
         g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(x + 1, y + 6, 14, 1);
       }
-      if (soot) { const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(8,5,3,0.7)'); gr.addColorStop(0.45, 'rgba(8,5,3,0.18)'); gr.addColorStop(1, 'rgba(8,5,3,0.05)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }
+      if (soot) { const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(8,5,3,0.5)'); gr.addColorStop(0.45, 'rgba(8,5,3,0.12)'); gr.addColorStop(1, 'rgba(8,5,3,0.05)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }
       for (let i = 0; i < 4; i++) { g.fillStyle = 'rgba(110,46,16,0.28)'; g.fillRect(Math.floor(r() * 60), 20 + r() * 10, 2, 30 + r() * 14); }
     }, rep);
   }
@@ -118,8 +122,8 @@
   function textTex(K, text, w, h, fg, bg, size) {
     return K.canvasTex(w, h, (g) => {
       g.fillStyle = bg; g.fillRect(0, 0, w, h);
-      g.fillStyle = fg; g.font = 'bold ' + size + 'px monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText(text, w / 2, h / 2 + 1);
+      g.fillStyle = fg; g.font = 'bold ' + size + "px Silkscreen, 'Courier New', monospace"; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.fillText(text, Math.round(w / 2), Math.round(h / 2 + size * 0.36));
     });
   }
 
@@ -135,7 +139,7 @@
   function clear(x, z, r) {
     r = r || 0.3;
     if (Math.abs(x) > 18.2 - r || Math.abs(z) > 7.2 - r) return false;
-    for (const sx of [-10, 0, 10]) if (Math.abs(x - sx) + Math.abs(z) < 3.95 + r * 1.4) return false;
+    for (const sx of [-10, 0, 10]) { if (Math.abs(x - sx) + Math.abs(z) < 3.95 + r * 1.4) return false; if (Math.hypot(x - sx, z) < 4.2 + r) return false; if (Math.abs(x - sx) < 2.3 + r && z > 4.4 - r && z < 6.4 + r) return false; }
     for (const s of KEEP.segs) if (segDist(x, z, s) < 0.75 + r) return false;
     for (const [cx, cz] of KEEP.cols) if (Math.hypot(x - cx, z - cz) < 0.95 + r) return false;
     if (x > -7.8 && x < 7.6 && z > -3.5 && z < -1.9) return false; // aether conduit strip
@@ -220,7 +224,7 @@
     IRON.look({
       sky: { top: '#1c120c', bottom: '#7a3a16', fog: '#3a2416', fogNear: 78, fogFar: 150 },
       light: { sun: 0xffc48e, sunI: 1.15, sunDir: [-12, 24, 16], hemiSky: 0xbcb4b0, hemiGnd: 0x46362a, hemiI: 1.15 },
-      finish: { levels: 52, dither: 0.06, outline: 0.42, thresh: 0.1, ink: '#100806', sat: 1.02, contrast: 1.04, bloom: 0.7, bloomThresh: 0.64, vignette: 0.2, grade: 0.28, shadow: '#2a1c40', high: '#ffd6a0', scan: 0 }
+      finish: { levels: 52, dither: 0.06, outline: 0.42, thresh: 0.1, ink: '#100806', sat: 1.02, contrast: 1.04, bloom: 0.7, bloomThresh: 0.64, vignette: 0.1, grade: 0.24, shadow: '#3a3050', high: '#ffd6a0', scan: 0 }
     });
     const S = K.group(root); // static decor, baked at the end
     const anim = [];
@@ -303,7 +307,7 @@
         const len = Math.hypot(bx - ax, bz - az), n = Math.floor(len / 0.62);
         for (let k = 0; k < n; k++) { if (Math.random() < 0.12) continue; const u = (k + 0.3) / n; decal(ax + (bx - ax) * u, az + (bz - az) * u, 0.38, 0.09, M.paint, -Math.atan2(bz - az, bx - ax)); }
       }
-      const plate = K.mat(0xffffff, { map: textTex(K, 'BAY ' + BAY[bi], 64, 16, '#e8b830', '#1a120c', 11), op: 0.85, depthWrite: false });
+      const plate = K.mat(0xffffff, { map: textTex(K, 'BAY ' + BAY[bi], 64, 16, '#d8ac34', '#1a120c', 8), op: 0.85, depthWrite: false });
       const pl = decal(sx + 0.0, 4.55, 1.5, 0.38, plate, 0); pl.rotation.x = 0;
     });
     // flow arrows painted beside the belts
@@ -354,11 +358,11 @@
     // pilasters
     for (let x = -18; x <= 18; x += 4.6) { if (Math.abs(x - 4.6) < 2.2 || Math.abs(x - 8.4) < 1.6) continue; K.box(0.5, 3.6, 0.2, M.brickD, x, 1.9, WF + 0.08, S); K.box(0.6, 0.18, 0.28, M.stone, x, 3.55, WF + 0.1, S); }
     // arched windows (some lit, some flicker), frames + sills
-    const winOn = K.glow(0xd8803a), winDim = K.glow(0x4a2a16), winFlick = K.glow(0xd8803a);
+    const winOn = K.glow(0xb07444), winDim = K.glow(0x4a2e1c), winFlick = K.glow(0xb07444); const litWins = [];
     const doorX = 8.4;
     for (let x = -16.6; x <= 16.8; x += 2.3) {
       if (Math.abs(x - doorX) < 1.6 || Math.abs(x - 4.6) < 1.9 || Math.abs(x + 5.2) < 1.3 || Math.abs(x - 2.6) < 0.8) continue;
-      const r = Math.random(); const m = r < 0.5 ? winOn : r < 0.75 ? winFlick : winDim;
+      const r = Math.random(); const m = r < 0.5 ? winOn : r < 0.75 ? winFlick : winDim; if (m === winOn) litWins.push(x);
       K.box(0.9, 1.4, 0.06, m, x, 1.95, WF + 0.02, S);
       const a = K.cyl(0.45, 0.45, 0.06, m, 12, x, 2.65, WF + 0.02, S); a.rotation.x = Math.PI / 2;
       K.box(0.06, 2.1, 0.1, M.iron, x, 2.05, WF + 0.06, S); K.box(0.95, 0.06, 0.1, M.iron, x, 1.85, WF + 0.06, S); K.box(0.95, 0.05, 0.1, M.iron, x, 2.35, WF + 0.06, S);
@@ -367,7 +371,7 @@
       // soot plume stain above each window
       K.box(0.8, 0.8, 0.01, M.grimeL, x, 3.2, WF + 0.005, S);
     }
-    anim.push((t) => { const f = Math.sin(t * 17) > 0.6 || Math.sin(t * 3.1) > 0.9 ? 0.45 : 1; winFlick.color.setRGB(0.85 * f, 0.5 * f, 0.23 * f); });
+    anim.push((t) => { const f = Math.sin(t * 17) > 0.6 || Math.sin(t * 3.1) > 0.9 ? 0.45 : 1; winFlick.color.setRGB(0.69 * f, 0.45 * f, 0.27 * f); });
     // big sliding iron door with hazard stripes and a warm gap
     const door = K.group(S, doorX, 0, WF + 0.1);
     K.box(2.6, 3.0, 0.14, M.ironM, 0, 1.6, 0, door);
@@ -378,7 +382,7 @@
     K.box(3.4, 0.16, 0.3, M.iron, 0.2, 3.18, 0.04, door);
     for (const x of [-0.9, 0.9]) K.cyl(0.08, 0.08, 0.14, M.brass, 8, x, 3.06, 0.12, door);
     // painted works sign
-    const sign = K.mat(0xffffff, { map: textTex(K, 'SHIPTORIO', 160, 20, '#f2c878', '#20140c', 17) });
+    const sign = K.mat(0xffffff, { map: textTex(K, 'SHIPTORIO', 160, 20, '#dcb46c', '#20140c', 16) });
     K.box(3.6, 0.48, 0.06, sign, 4.6, 2.85, WF + 0.12, S);
     K.box(3.75, 0.08, 0.1, M.brassD, 4.6, 3.13, WF + 0.07, S); K.box(3.75, 0.08, 0.1, M.brassD, 4.6, 2.57, WF + 0.07, S);
     // a wall clock + notice boards with invented glyphs
@@ -394,7 +398,7 @@
     // wall gears (turning)
     const wallGears = [];
     for (const [x, r, y] of [[-5.2, 1.0, 1.9], [-3.9, 0.55, 2.85], [2.6, 0.9, 1.85], [1.5, 0.48, 2.85]]) {
-      const gr = gear(K, root, r, 0.16, Math.round(r * 16), M.brass, x, y, WF + 0.06); gr.rotation.x = Math.PI / 2; wallGears.push({ g: gr, s: 1 / r });
+      const gr = gear(K, root, r, 0.16, Math.round(r * 16), M.brassD, x, y, WF + 0.06); gr.rotation.x = Math.PI / 2; wallGears.push({ g: gr, s: 1 / r });
       K.cyl(r * 0.3, r * 0.3, 0.2, M.ironM, 8, x, y, WF + 0.02, S).rotation.x = Math.PI / 2;
     }
     // pipework along the wall: copper mains, verdigris return, valves, gauges, steam leak points
@@ -530,7 +534,6 @@
     toolbox(K, S, -16.6, 6.6, 0.3);
     // right: coal pile with wheelbarrow, rocket-parts depot, water tower, fuel drums
     for (let i = 0; i < 46; i++) { const a = Math.random() * Math.PI * 2, r = Math.random() * 1.5; K.rock(0.14 + Math.random() * 0.2, M.coal, 16.4 + Math.cos(a) * r, 0.1 + (1.5 - r) * 0.35 + Math.random() * 0.15, -1.6 + Math.sin(a) * r * 0.8, S); }
-    const wb = K.group(S, 15.2, 0, 0.2); wb.rotation.y = 0.7; K.box(0.7, 0.3, 0.5, M.rust, 0, 0.45, 0, wb); K.cyl(0.18, 0.18, 0.06, M.iron, 10, 0.42, 0.2, 0, wb).rotation.x = Math.PI / 2; for (const s of [-0.18, 0.18]) K.box(0.9, 0.04, 0.04, M.wood, -0.35, 0.5, s, wb); for (let i = 0; i < 6; i++) K.rock(0.09, M.coal, K.R() * 0.4, 0.66, K.R() * 0.3, wb);
     const shovelR = K.box(0.05, 0.05, 1.1, M.wood, 15.6, 0.5, -0.7, S); shovelR.rotation.set(0.9, 0.4, 0);
     // spare rocket nose cones + fuel tank on cradles
     const depot = K.group(S, 16.3, 0, 3.6);
@@ -559,22 +562,155 @@
     [[-9.0, -5.3, 0.7, 0.2], [-8.2, -5.6, 0.5, -0.4], [-1.9, -5.6, 0.6, 0.3], [-0.6, -5.5, 0.85, -0.1], [5.6, -5.5, 0.7, 0.4], [6.6, -5.3, 0.5, 0.1], [11.0, -5.7, 0.6, -0.2]].forEach(([x, z, s, ry]) => crate(K, S, x, z, s, ry));
     for (const [x, z] of [[-5.2, -5.3], [2.9, -5.3]]) {
       const rk = K.group(S, x, 0, z); for (const sx of [-0.8, 0.8]) K.box(0.08, 1.8, 0.5, M.iron, sx, 0.9, 0, rk);
-      for (const y of [0.4, 1.0, 1.6]) { K.box(1.7, 0.06, 0.5, M.ironM, 0, y, 0, rk); for (let i = 0; i < 4; i++) { const gg = gear(K, rk, 0.16 + Math.random() * 0.06, 0.06, 10, Math.random() < 0.5 ? M.brass : M.ironL, -0.55 + i * 0.36, y + 0.2, 0); gg.rotation.x = Math.PI / 2 + 0.2; } }
+      for (const y of [0.4, 1.0, 1.6]) { K.box(1.7, 0.06, 0.5, M.ironM, 0, y, 0, rk); for (let i = 0; i < 4; i++) { const gg = gear(K, rk, 0.16 + Math.random() * 0.06, 0.06, 10, Math.random() < 0.4 ? M.brassD : M.ironM, -0.55 + i * 0.36, y + 0.2, 0); gg.rotation.x = Math.PI / 2 + 0.2; } }
     }
     barrel(K, S, -3.0, -5.6, M.copperD); barrel(K, S, 1.0, -5.9, M.wood); barrel(K, S, 4.2, -5.8, M.copperD);
     // floor steam vents
-    const steamVents = [[-6.8, 5.2], [1.6, 4.0], [-16.6, -0.9], [16.3, 2.4], [8.4, -4.4], [-7.4, -4.6]].filter(([x, z]) => clear(x, z, 0.4));
+    const steamVents = [[-6.8, 5.2], [1.6, 4.0], [-16.6, -0.9], [16.6, -3.6], [8.4, -4.4], [-7.4, -4.6]].filter(([x, z]) => clear(x, z, 0.4));
     steamVents.forEach(([x, z]) => { K.box(0.7, 0.06, 0.7, M.ironM, x, 0.13, z, S); for (let i = 0; i < 4; i++) K.box(0.6, 0.07, 0.05, M.soot, x, 0.15, z - 0.24 + i * 0.16, S); });
 
     // ================= WORKERS (walking) =================
     const walkers = [
-      { w: worker(K, root, 0x4a3a2c, 0, 5.75), x0: -12.6, x1: 12.6, z: 5.75, sp: 0.8, x: -4, dir: 1, load: 'crate' },
-      { w: worker(K, root, 0x3a4a52, 0, 6.0), x0: -10.5, x1: 13.5, z: 6.0, sp: 0.6, x: 6, dir: -1, load: 'barrow' }
+      { w: worker(K, root, 0x4a3a2c, 0, 0), axis: 'z', a0: -2.3, a1: 1.8, fix: -16.15, sp: 0.55, x: 0, dir: 1, load: 'crate' },
+      { w: worker(K, root, 0x3a4a52, 0, 0), axis: 'x', a0: 14.3, a1: 17.3, fix: 2.3, sp: 0.5, x: 15, dir: -1, load: 'barrow' }
     ];
     walkers.forEach((wk) => {
       if (wk.load === 'crate') { const c = K.group(wk.w.body, 0, 0.42, 0.22); K.box(0.36, 0.28, 0.3, M.woodD, 0, 0, 0, c); K.box(0.38, 0.04, 0.32, M.wood, 0, 0.12, 0, c); wk.w.arms.forEach((a) => (a.rotation.x = -1.2)); }
       else { const b = K.group(wk.w.g, 0, 0, 0.62); K.box(0.55, 0.24, 0.42, M.rust, 0, 0.42, 0, b); for (let i = 0; i < 5; i++) K.rock(0.08, M.coal, K.R() * 0.3, 0.58, K.R() * 0.2, b); const wh = K.cyl(0.14, 0.14, 0.05, M.iron, 10, 0, 0.16, 0.32, b); wh.rotation.z = Math.PI / 2; wk.wheel = wh; wk.w.arms.forEach((a) => (a.rotation.x = -0.5)); }
     });
+
+    // ================= ROUND 2: more life on the deck =================
+    const life = [];
+    // ---- foreman automaton with a clipboard, walking the back strip and checking each bay ----
+    const fm = K.group(root, -8.0, 0, -4.05);
+    const fmBody = K.mat(dd(0x6a6a70, 0.95, 0.1), { shine: 40, spec: 0x55555a }), fmTrim = K.mat(C.brassD, { shine: 30 });
+    const fmLegs = [];
+    for (const s of [-1, 1]) { const hip = K.group(fm, s * 0.1, 0.46, 0); K.box(0.09, 0.42, 0.09, M.ironM, 0, -0.21, 0, hip); K.box(0.13, 0.06, 0.2, M.iron, 0, -0.43, 0.03, hip); fmLegs.push(hip); }
+    const fmTorso = K.group(fm, 0, 0.46, 0);
+    K.cyl(0.17, 0.2, 0.46, fmBody, 10, 0, 0.23, 0, fmTorso);
+    K.cyl(0.21, 0.21, 0.05, fmTrim, 10, 0, 0.05, 0, fmTorso); K.cyl(0.18, 0.18, 0.05, fmTrim, 10, 0, 0.44, 0, fmTorso);
+    for (let i = 0; i < 3; i++) K.box(0.04, 0.04, 0.02, K.mat(0xd8c49a), 0, 0.14 + i * 0.09, 0.19, fmTorso);
+    const fmHead = K.group(fmTorso, 0, 0.6, 0);
+    K.sph(0.14, fmBody, 0, 0, 0, fmHead, 10, 8);
+    const fmEye = K.box(0.16, 0.05, 0.04, K.glow(0xffc060), 0, 0.01, 0.12, fmHead);
+    K.cyl(0.17, 0.17, 0.03, K.mat(0x1c1612), 12, 0, 0.11, 0, fmHead); K.cyl(0.11, 0.12, 0.14, K.mat(0x1c1612), 10, 0, 0.18, 0, fmHead);
+    const fmArmR = K.group(fmTorso, 0.22, 0.38, 0); K.box(0.07, 0.3, 0.07, M.ironM, 0, -0.14, 0, fmArmR); fmArmR.rotation.x = -1.1;
+    const board = K.group(fmArmR, 0, -0.3, 0.06); K.box(0.24, 0.02, 0.32, M.woodD, 0, 0, 0, board); K.box(0.2, 0.025, 0.26, K.mat(0xe8dcc0), 0, 0.012, 0.01, board); K.box(0.08, 0.035, 0.04, fmTrim, 0, 0.02, -0.14, board);
+    const fmArmL = K.group(fmTorso, -0.22, 0.38, 0); K.box(0.07, 0.3, 0.07, M.ironM, 0, -0.14, 0, fmArmL);
+    const pencil = K.box(0.02, 0.02, 0.12, K.mat(0xc8a030), 0, -0.3, 0.04, fmArmL);
+    const STOPS = [-7.0, 0.0, 6.4]; let fmI = 0, fmDir = 1, fmX = -8.0, fmWait = 0;
+    life.push((t, dt) => {
+      const target = STOPS[fmI];
+      if (fmWait > 0) {
+        fmWait -= dt; fm.rotation.y += ((0) - fm.rotation.y) * Math.min(1, dt * 4); // face the bay (+z)
+        fmArmL.rotation.x = -1.0 + Math.sin(t * 9) * 0.12; fmArmL.rotation.z = Math.sin(t * 5) * 0.1; fmHead.rotation.x = 0.25; fmHead.rotation.y = Math.sin(t * 0.8) * 0.4;
+        fmLegs.forEach((l) => (l.rotation.x *= 0.8));
+        if (fmWait <= 0) { if (fmI === STOPS.length - 1) fmDir = -1; if (fmI === 0) fmDir = 1; fmI += fmDir; }
+        return;
+      }
+      const d = target - fmX, step = Math.sign(d) * Math.min(Math.abs(d), 0.75 * dt);
+      fmX += step; fm.position.x = fmX;
+      fm.rotation.y += ((d > 0 ? Math.PI / 2 : -Math.PI / 2) - fm.rotation.y) * Math.min(1, dt * 6);
+      const ph = t * 6; fmLegs[0].rotation.x = Math.sin(ph) * 0.45; fmLegs[1].rotation.x = -Math.sin(ph) * 0.45; fmTorso.position.y = 0.46 + Math.abs(Math.sin(ph)) * 0.02;
+      fmArmL.rotation.x = Math.sin(ph) * 0.3; fmHead.rotation.x = 0; fmHead.rotation.y = 0;
+      if (Math.abs(d) < 0.02) fmWait = 2.6;
+      fmEye.material.color.setHex(Math.sin(t * 2.3) > 0.95 ? 0x3a2a10 : 0xffc060);
+    });
+    // ---- grinder bench with a worker throwing sparks ----
+    const gb = K.group(S, -6.9, 0, -5.5);
+    K.box(0.9, 0.08, 0.55, M.woodD, 0, 0.82, 0, gb); for (const sx of [-0.38, 0.38]) for (const sz of [-0.22, 0.22]) K.box(0.07, 0.8, 0.07, M.iron, sx, 0.4, sz, gb);
+    K.box(0.36, 0.26, 0.26, M.ironM, 0.18, 0.99, -0.05, gb); K.cyl(0.05, 0.05, 0.5, M.ironL, 6, 0, 1.0, -0.05, gb).rotation.z = Math.PI / 2;
+    K.box(0.12, 0.24, 0.03, K.mat(dd(0x7a2a18)), -0.18, 1.06, 0.12, gb);
+    const wheel = K.group(root, -7.1, 1.0, -5.55); const wh = K.cyl(0.2, 0.2, 0.06, K.mat(0x5a5650), 12, 0, 0, 0, wheel); wh.rotation.z = Math.PI / 2; K.box(0.06, 0.04, 0.04, M.ironL, 0, 0.18, 0, wheel);
+    const grinder = worker(K, root, dd(0x4a4030, 1, 0.1), -7.1, -4.9); grinder.g.rotation.y = Math.PI; grinder.arms.forEach((a) => (a.rotation.x = -1.25));
+    const bar = K.box(0.04, 0.04, 0.5, M.ironL, -7.1, 1.0, -5.2, root);
+    let tGr = 0, grOn = true, grT = 0;
+    life.push((t, dt) => {
+      wheel.rotation.x -= dt * 22; grT -= dt; if (grT <= 0) { grOn = !grOn; grT = grOn ? 2.5 + Math.random() * 2 : 1.4 + Math.random(); }
+      bar.position.z = -5.2 + (grOn ? 0 : 0.18); grinder.body.rotation.x = grOn ? -0.12 : 0; tGr -= dt;
+      if (grOn && tGr <= 0) { tGr = 0.035; K.spawn(root, -7.1 + K.R() * 0.06, 0.95, -5.38, K.R() * 1.2, 0.4 + Math.random() * 1.6, 1.0 + Math.random() * 2.2, Math.random() < 0.6 ? 0xffc858 : 0xfff2c8, 0.38, 0.035, 6, true); }
+    });
+    // ---- manhole covers that breathe steam ----
+    const manholes = [[-8.0, 4.4], [5.6, 5.4], [14.0, 4.4], [-12.4, -3.3]].filter(([x, z]) => clear(x, z, 0.45));
+    manholes.forEach(([x, z]) => {
+      K.cyl(0.46, 0.46, 0.04, M.iron, 16, x, 0.12, z, S); K.torus(0.42, 0.03, M.ironL, 4, 18, x, 0.145, z, S).rotation.x = Math.PI / 2;
+      for (let i = 0; i < 4; i++) { const b = K.box(0.7, 0.012, 0.05, M.ironM, x, 0.148, z, S); b.rotation.y = i * Math.PI / 4; }
+      K.cyl(0.08, 0.08, 0.02, M.brassD, 8, x, 0.15, z, S);
+    });
+    let tMh = 0;
+    life.push((t, dt) => { tMh -= dt; if (tMh <= 0 && manholes.length) { tMh = 0.22; const [x, z] = manholes[Math.floor(Math.random() * manholes.length)]; const a = Math.random() * Math.PI * 2; K.spawn(root, x + Math.cos(a) * 0.42, 0.18, z + Math.sin(a) * 0.42, Math.cos(a) * 0.15 + 0.1, 0.55 + Math.random() * 0.3, Math.sin(a) * 0.15, 0xb8ae9c, 2.0, 0.1, -0.1); } });
+    // ---- crows on the chimneys (perch, bob, hop, sometimes take a lap and come back) ----
+    const crowM = K.mat(0x141218, { shine: 30, spec: 0x3a3a50 }), beakM = K.mat(0x5a5040);
+    const perches = chimTops.slice(0, 5).map(([x, y, z, r]) => [x, y - 0.15, z, r]).concat([[-6.3, 3.98, -6.6, 0], [10.4, 3.98, -6.6, 0]]);
+    const crows = [0, 1, 1, 3, 5, 6].map((pi, k) => {
+      const [px, py, pz, pr] = perches[pi]; const a = k * 1.7;
+      const home = new K.THREE.Vector3(px + Math.cos(a) * pr * 0.95, py, pz + Math.sin(a) * pr * 0.95);
+      const c = K.group(root, home.x, home.y, home.z);
+      const body = K.group(c); K.box(0.2, 0.12, 0.11, crowM, 0, 0.1, 0, body); const tail = K.box(0.12, 0.03, 0.08, crowM, -0.14, 0.12, 0, body); tail.rotation.z = 0.3;
+      const hd = K.group(body, 0.11, 0.19, 0); K.box(0.09, 0.08, 0.08, crowM, 0, 0, 0, hd); K.box(0.06, 0.025, 0.03, beakM, 0.07, -0.01, 0, hd);
+      for (const s of [-1, 1]) K.box(0.015, 0.06, 0.015, beakM, 0.02, 0.03, s * 0.03, body);
+      const wings = [-1, 1].map((s) => { const wg = K.group(body, 0, 0.13, s * 0.055); K.box(0.16, 0.02, 0.18, crowM, 0, 0, s * 0.09, wg); wg.visible = false; return wg; });
+      c.rotation.y = Math.random() * 6;
+      return { c, body, hd, wings, home, state: 'perch', t: 6 + Math.random() * 20, ang: 0, rad: 2 + Math.random() * 1.5, cy: 7.5 + Math.random() * 1.5 };
+    });
+    life.push((t, dt) => crows.forEach((cw, i) => {
+      cw.t -= dt;
+      if (cw.state === 'perch') {
+        cw.hd.rotation.y = Math.sin(t * 1.3 + i * 2) > 0.7 ? 0.6 : Math.sin(t * 0.7 + i) * 0.3; cw.hd.rotation.z = Math.max(0, Math.sin(t * 3 + i)) * 0.25;
+        if (Math.random() < dt * 0.15) cw.c.rotation.y += K.R() * 2;
+        if (cw.t <= 0) { cw.state = 'fly'; cw.t = 5 + Math.random() * 4; cw.ang = Math.atan2(cw.c.position.z - cw.home.z, cw.c.position.x - cw.home.x); cw.wings.forEach((w) => (w.visible = true)); }
+      } else if (cw.state === 'fly') {
+        cw.ang += dt * 0.9; const tx = cw.home.x + Math.cos(cw.ang) * cw.rad, tz = cw.home.z - 1.5 + Math.sin(cw.ang) * cw.rad * 0.6, ty = cw.cy + Math.sin(cw.ang * 2) * 0.4;
+        cw.c.position.x += (tx - cw.c.position.x) * Math.min(1, dt * 2); cw.c.position.y += (ty - cw.c.position.y) * Math.min(1, dt * 2); cw.c.position.z += (tz - cw.c.position.z) * Math.min(1, dt * 2);
+        cw.c.rotation.y = -cw.ang - Math.PI / 2 + Math.PI; const fl = Math.sin(t * 22 + i) * 0.9; cw.wings[0].rotation.x = fl; cw.wings[1].rotation.x = -fl;
+        if (cw.t <= 0) cw.state = 'land';
+      } else {
+        const d = cw.home.clone().sub(cw.c.position); const L = d.length();
+        cw.c.position.addScaledVector(d, Math.min(1, dt * 1.8)); const fl = Math.sin(t * 26 + i) * 0.9; cw.wings[0].rotation.x = fl; cw.wings[1].rotation.x = -fl;
+        if (L < 0.05) { cw.c.position.copy(cw.home); cw.state = 'perch'; cw.t = 10 + Math.random() * 25; cw.wings.forEach((w) => (w.visible = false)); }
+      }
+    }));
+    // ---- silhouettes passing behind lit windows ----
+    const silM = K.mat(0x2a160a);
+    const sils = litWins.slice(0, 5).map((x, k) => {
+      const s = K.group(root, x, 0, WF + 0.04); K.box(0.32, 0.5, 0.01, silM, 0, 1.55, 0, s); K.box(0.17, 0.17, 0.01, silM, 0, 1.92, 0, s); K.box(0.22, 0.05, 0.01, silM, 0, 2.02, 0, s);
+      s.visible = false; return { s, x, o: -1, sp: 0.2 + Math.random() * 0.12, wait: 3 + k * 4 + Math.random() * 6 };
+    });
+    life.push((t, dt) => sils.forEach((q) => {
+      if (q.wait > 0) { q.wait -= dt; q.s.visible = false; return; }
+      q.o += q.sp * dt; if (q.o > 0.6) { q.o = -0.6; q.wait = 6 + Math.random() * 10; q.sp = (Math.random() < 0.5 ? 1 : -1) * Math.abs(q.sp); }
+      const o = q.sp > 0 ? q.o : -q.o; q.s.position.x = q.x + o; q.s.visible = Math.abs(o) < 0.26; q.s.position.y = Math.abs(Math.sin(t * 6)) * 0.02;
+    }));
+    // ---- leaky standpipe taps dripping into puddles (ripples) ----
+    const taps = [[7.3, -5.0, 6.9, -4.6], [0.45, -5.15, -0.05, -4.72]];
+    const ripples = [];
+    for (let i = 0; i < 8; i++) { const rp = K.torus(1, 0.04, K.glow(0xc8c0d8, 0.5, true), 3, 20, 0, 0.13, 0, root); rp.rotation.x = Math.PI / 2; rp.visible = false; rp.castShadow = false; ripples.push({ rp, t: 0, on: false }); }
+    const drips = [];
+    taps.forEach(([px, pz, dx, dz]) => {
+      K.cyl(0.06, 0.06, 1.05, M.copperD, 8, px, 0.52, pz, S); K.cyl(0.1, 0.1, 0.06, M.ironM, 8, px, 0.13, pz, S);
+      K.tube([[px, 1.02, pz], [px + (dx - px) * 0.5, 1.12, pz + (dz - pz) * 0.5], [dx, 1.0, dz], [dx, 0.9, dz]], 0.035, M.copperD, S, 10, 5);
+      const vw = K.torus(0.08, 0.02, K.mat(dd(0x9a2a18)), 4, 10, px, 1.1, pz, S); vw.rotation.x = Math.PI / 2;
+      drips.push({ x: dx, z: dz, t: Math.random(), d: null });
+    });
+    life.push((t, dt) => drips.forEach((dp) => {
+      dp.t -= dt;
+      if (dp.t <= 0 && !dp.d) { dp.t = 0.9 + Math.random() * 0.8; dp.d = K.box(0.03, 0.05, 0.03, K.glow(0xa8a0b8, 0.85), dp.x, 0.86, dp.z, root); dp.v = 0; }
+      if (dp.d) { dp.v += 7 * dt; dp.d.position.y -= dp.v * dt; if (dp.d.position.y <= 0.13) { root.remove(dp.d); dp.d.material.dispose(); dp.d = null; const r = ripples.find((q) => !q.on); if (r) { r.on = true; r.t = 0; r.rp.position.set(dp.x, 0.13, dp.z); r.rp.visible = true; } } }
+    }));
+    life.push((t, dt) => ripples.forEach((r) => { if (!r.on) return; r.t += dt; const k = r.t / 0.9; r.rp.scale.setScalar(0.05 + k * 0.45); r.rp.material.opacity = 0.5 * (1 - k); if (k >= 1) { r.on = false; r.rp.visible = false; } }));
+    // ---- noticeboard by the door with papers fluttering in the draught ----
+    const nb = K.group(S, 6.45, 1.65, WF + 0.05);
+    K.box(1.0, 0.95, 0.05, K.mat(dd(0x6a4a2c)), 0, 0, 0, nb);
+    for (const [w, h, x, y] of [[1.06, 0.05, 0, 0.5], [1.06, 0.05, 0, -0.5], [0.05, 1.0, 0.52, 0], [0.05, 1.0, -0.52, 0]]) K.box(w, h, 0.07, M.woodD, x, y, 0.01, nb);
+    const papers = [];
+    [[-0.3, 0.28, 0.26, 0.3, 0xe6dcc4], [0.02, 0.3, 0.22, 0.26, 0xd8c890], [0.3, 0.24, 0.24, 0.34, 0xe6dcc4], [-0.28, -0.12, 0.3, 0.24, 0xcfc8b8], [0.06, -0.08, 0.2, 0.3, 0xe8b8a0], [0.32, -0.16, 0.22, 0.22, 0xe6dcc4], [-0.06, -0.36, 0.34, 0.12, 0xd8c890]].forEach(([x, y, w, h, c], i) => {
+      const pv = K.group(root, 6.45 + x, 1.65 + y + h / 2, WF + 0.085); const pm = K.mat(dd(c, 0.9, 0.1));
+      const pg = K.box(w, h, 0.01, pm, 0, -h / 2, 0, pv); pg.castShadow = false;
+      for (let k = 0; k < 3; k++) K.box(w * (0.5 + Math.random() * 0.35), 0.016, 0.005, K.mat(0x3a2c20), -w * 0.05, -h * (0.25 + k * 0.2), 0.008, pv);
+      K.box(0.03, 0.03, 0.02, K.mat(i % 2 ? 0xb02a1a : 0x2a5a8a), 0, -0.01, 0.012, pv);
+      papers.push({ pv, k: Math.random() * 6 });
+    });
+    life.push((t) => { const gust = Math.max(0, Math.sin(t * 0.37)) ** 6; papers.forEach((p) => { p.pv.rotation.x = -(0.05 + gust * 0.5) * (0.6 + Math.sin(t * 7 + p.k) * 0.4); p.pv.rotation.z = Math.sin(t * 3 + p.k) * 0.04 * (1 + gust * 3); }); });
 
     K.bake(S);
 
@@ -583,6 +719,7 @@
     const v = new K.THREE.Vector3();
     return { update(t, dt) {
       anim.forEach((f) => f(t, dt));
+      life.forEach((f) => f(t, dt));
       // furnace
       const ff = 0.85 + Math.sin(t * 9) * 0.07 + Math.sin(t * 23) * 0.05;
       if (!furnL.isDummy) furnL.intensity = 2.8 * ff;
@@ -612,9 +749,11 @@
       hangers.forEach((h) => (h.hg.rotation.z = Math.sin(t * 0.9 + h.k) * 0.06));
       // workers
       walkers.forEach((wk) => {
+        if (wk.pause > 0) { wk.pause -= dt; wk.w.legs.forEach((l) => (l.rotation.x *= 0.8)); return; }
         wk.x += wk.dir * wk.sp * dt;
-        if (wk.x > wk.x1) { wk.x = wk.x1; wk.dir = -1; } if (wk.x < wk.x0) { wk.x = wk.x0; wk.dir = 1; }
-        wk.w.g.position.set(wk.x, 0, wk.z); wk.w.g.rotation.y = wk.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        if (wk.x > wk.a1) { wk.x = wk.a1; wk.dir = -1; wk.pause = 1.6; } if (wk.x < wk.a0) { wk.x = wk.a0; wk.dir = 1; wk.pause = 1.6; }
+        if (wk.axis === 'x') { wk.w.g.position.set(wk.x, 0, wk.fix); wk.w.g.rotation.y = wk.dir > 0 ? Math.PI / 2 : -Math.PI / 2; }
+        else { wk.w.g.position.set(wk.fix, 0, wk.x); wk.w.g.rotation.y = wk.dir > 0 ? 0 : Math.PI; }
         const ph = t * wk.sp * 7; wk.w.legs[0].rotation.x = Math.sin(ph) * 0.5; wk.w.legs[1].rotation.x = -Math.sin(ph) * 0.5;
         wk.w.body.position.y = 0.42 + Math.abs(Math.sin(ph)) * 0.025;
         if (wk.wheel) wk.wheel.rotation.x += dt * wk.sp * 7;

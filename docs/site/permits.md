@@ -53,6 +53,22 @@ You can also turn a permit off by hand. Open **Make it yours**: every folder wit
 
 Once you've launched a rocket, the top bar shows **automated**: the share of all rockets that launched on a permit. Hover it to see which lanes ship on their own. That number going up is the whole point of the game.
 
-## What's next for autonomy
+## Autonomy levels
 
-Permits are the first rung. The plan is a ladder of trust, from Advisor (Spark only suggests) up through routing and building on its own, to Lights out (the factory runs while you sleep and you get a morning summary). Only permits are live today.
+> **Coming soon** Levels are built and switched off behind a flag while they're tested on real factories. Until they're on, every factory stays at Advisor and only permits are live.
+
+Permits are per lane. Levels are for the whole factory, and they're earned the same way: from what actually shipped clean, never from clicks.
+
+| Level | Earned when | Spark may then, without asking |
+| --- | --- | --- |
+| **Advisor** | You connect a repo | Read, sort and suggest. Every card waits for you |
+| **Floor** | 3 PRs shipped clean | Start plans: read the issue and the code and propose files and steps. No code changes until you approve the plan |
+| **Build** | 8 PRs shipped clean, plus one launch permit | Approve its own plans so your agents start building, and send a failed PR back to the builder with its scar (3 scars and it's yours) |
+| **Lights out** | A week at Build with no escaped defect, plus permits on most lanes | Take the launch permits your lanes earn, and keep running while you're away, inside your budget |
+
+What never changes, at any level:
+
+- Nothing merges except through the Launch card or a lane's permit, after every station passes on that exact commit.
+- Each level comes up as a card first. **Not yet** asks again after 3 more clean ships.
+- You can turn the level down anytime in **Make it yours**. Going back up takes the card.
+- An escaped defect (orbit watch catching a comeback) drops the factory straight back to Advisor, and the clean count starts over.

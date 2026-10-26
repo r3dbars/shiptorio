@@ -1,3 +1,4 @@
+import { factoryDeleted } from "./account-lifecycle";
 import { RetryExhausted } from "./reliability";
 import type { SourceStatus } from "@shiptorio/shared";
 import { gh, GitHubError, purgeInstallationTokens, repoInstallationId } from "./github";
@@ -29,6 +30,7 @@ async function archive(env: RepositoryEnv, row: RepoRecord, reason: string, id?:
   await (await objectFor(env, row, id)).archiveGitHub(reason, at, row.full_name, row.installation_id);
 }
 async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: number) {
+  if (await factoryDeleted(env.DB, repo.full_name) || await factoryDeleted(env.DB, `installation:${installation}`)) throw new Error("Factory deleted");
   if (!repo.id) throw new Error("Lifecycle repository ID required");
   const collision = await env.DB.prepare("SELECT * FROM repos WHERE full_name = ? AND repo_id IS NOT NULL AND repo_id <> ?").bind(repo.full_name.toLowerCase(), repo.id).first<RepoRecord>();
   if (collision) {
@@ -48,6 +50,7 @@ async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: 
 
 /** Runs in the durable installation coordinator's queue; deliveries retry on partial failure. */
 export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitHubPayload): Promise<void> {
+  if (p.installation?.id && await factoryDeleted(env.DB, `installation:${p.installation.id}`)) return;
   if (event === "github_app_authorization") {
     if (p.action !== "revoked" || !p.sender?.login) return;
     const affected = await env.DB.prepare("SELECT DISTINCT r.* FROM repos r JOIN user_repos ur ON ur.repo = r.full_name JOIN users u ON u.id = ur.user_id WHERE lower(u.login) = ?").bind(p.sender.login.toLowerCase()).all<RepoRecord>();
