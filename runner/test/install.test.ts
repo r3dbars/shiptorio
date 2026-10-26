@@ -47,8 +47,8 @@ test("clean HOME install → browser pairing → two repos in one runner → upd
   const installer = join(home, "install.sh");
   await Bun.write(installer, (await Bun.file(join(import.meta.dir, "../install.sh")).text()).replace("origin=https://shiptorio.com", `origin=${origin}`).replaceAll("__BUN_VERSION__", Bun.version));
   const env = { HOME: home, PATH: `${fakeBin}:/usr/bin:/bin`, SHIPTORIO_URL: origin };
-  const children: ReturnType<typeof Bun.spawn>[] = [];
-  const run = (args: string[]) => { const child = Bun.spawn(args, { env, cwd: home, stdout: "pipe", stderr: "pipe" }); children.push(child); return child; };
+  const children: Bun.Subprocess<"ignore", "pipe", "pipe">[] = [];
+  const run = (args: string[]) => { const child = Bun.spawn(args, { env, cwd: home, stdin: "ignore", stdout: "pipe", stderr: "pipe" }); children.push(child); return child; };
   const until = async (predicate: () => boolean | Promise<boolean>, timeout = 20000) => {
     const deadline = Date.now() + timeout;
     while (!await predicate()) { if (Date.now() >= deadline) throw Error("Installer smoke timed out"); await Bun.sleep(100); }

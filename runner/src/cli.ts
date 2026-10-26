@@ -1,11 +1,12 @@
 import { mkdir, lstat, realpath } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
-import { agentEnvironment, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
+import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
-import { snapshotApproved, publishApproved } from "./publication";
+import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
 import { runnerHome, loadPairings, savePairing, removePairing, pairMachine, type Pairing } from "./pairing";
+
 
 import { jobWorkspace } from "./workspace";
 import { responseSchemas, type Job } from "./messages";
@@ -91,6 +92,7 @@ async function renewPairing(pair: Pairing) {
 async function execute(job: Job, pair: Pairing) {
   const repo = pair.repo;
   if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || (!job.reworkPr && job.branch !== `shiptorio/runner-${job.id}` || !!job.reworkPr && (!Number.isInteger(job.reworkPr) || job.reworkPr < 1 || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(job.branch))) || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
+  assemblerPrompt(job); // Validate before creating workspace or launching any child.
   const workspace = await jobWorkspace(root, job.id);
   const jobRoot = workspace.directory, work = workspace.work;
   const gitEnv = { ...cleanEnv, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${job.token}`).toString("base64")}`, GIT_TERMINAL_PROMPT: "0" };
@@ -113,7 +115,7 @@ async function execute(job: Job, pair: Pairing) {
     const boundary = await checkSandbox(jobRoot);
     sandbox = { run: (args, cwd = work, options) => boundary.run(args, cwd, options), close: () => boundary.close() };
     await checked(["git", "checkout", "--detach", job.baseSha]);
-    const prompt = `You are Shiptorio's ${job.harness} assembler, executing Muse Spark's approved plan.\n${job.plan}\n\nOnly edit these exact paths: ${job.allowedPaths.join(", ")}. Read AGENTS.md and relevant product docs. Make the smallest fix and a regression test. Do not commit, push, deploy, access secrets, invoke other agents, change settings, or write outside this checkout. The supervisor will run checks and publish the branch. Return a short summary.\n`;
+    const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
     console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
     const executable = harnessPath(job.harness);
     if (!executable) throw new Error("Assigned harness is unavailable");
