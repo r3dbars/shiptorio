@@ -35,3 +35,15 @@
   no stale-plan or writable-scope checks were bypassed.
 - No claim of completed issue → approval → local build → PR → Launch until the
   real run below is recorded. Unit/integration tests alone do not satisfy it.
+
+## Acceptance target changed after concurrent work
+
+- Another lane opened PR #154 for #125 outside the in-game runner. That work is
+  not duplicated and is not counted as evidence of the complete game flow.
+- PR #146 fixes the self-invalidating planner comment and refreshes canonical
+  issue context before a fresh plan. Final CI passed, with 218 local tests passing
+  and one intentional platform skip; merged as `0424f0b`.
+- Issue #170 is the replacement real acceptance target: a resolved Sentry issue
+  assigned for follow-up currently normalizes to `upsert`, recreating factory ore.
+  A direct call reproduced it on main. The issue reserves only
+  `server/src/sources/sentry.ts` and `server/test/mines.test.ts` for the runner.
