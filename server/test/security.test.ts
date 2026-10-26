@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { securityHeaders, browserMutationAllowed } from "../src/security";
 import { consumeBudget, ipSubject, LIMITS, rateLimit, requestBudget, type Budget } from "../src/rate-limit";
@@ -146,7 +147,7 @@ describe("durable per-IP and per-user rate limits", () => {
     expect(results.filter(r => r.allowed)).toHaveLength(20);
     expect(await consumeBudget(store, "auth", 2000)).toEqual({ allowed: false, retryAfter: 59 });
     expect(await consumeBudget(store, "connect", 2000)).toEqual({ allowed: true, retryAfter: 0 });
-    const reloaded = new Factory({ storage: store } as never, {} as never);
+    const reloaded = new Factory({ storage: store } as never, credentialEnv({}) as never);
     const realNow = Date.now; Date.now = () => 2000;
     try { expect((await reloaded.securityLimit("auth")).allowed).toBe(false); } finally { Date.now = realNow; }
     expect((await consumeBudget(store, "auth", 61000)).allowed).toBe(true);
@@ -194,7 +195,7 @@ describe("durable per-IP and per-user rate limits", () => {
     for (const subject of ["user:test-player", "ip:192.0.2.1"]) {
       const env = { ...browserEnv, FACTORY: namespace() };
       for (let n = 0; n < LIMITS.move; n++) await rateLimit(env as never, subject, "move");
-      const f = new Factory({ storage: { get() { throw new Error("Rate-limited move reached state"); } } } as never, env as never);
+      const f = new Factory({ storage: { get() { throw new Error("Rate-limited move reached state"); } } } as never, credentialEnv(env) as never);
       for (let n = 0; n < 2; n++) {
         const socket = authorizedSocket();
         socket.serializeAttachment({ ...socket.deserializeAttachment(), rateSubject: "ip:192.0.2.1" });

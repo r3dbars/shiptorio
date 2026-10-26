@@ -1,5 +1,6 @@
-import { credentialDB, credentialEnv } from "./credential-fixture";
-import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { credentialEnv } from "./credential-fixture";
+import { credentialDB } from "./credential-fixture";
+import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
 import { foldSignal, matchDistrict } from "../src/ore";
 import { fakeSentry, normalizeSentry, topInAppPath } from "../src/sources/sentry";

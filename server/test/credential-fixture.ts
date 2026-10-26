@@ -24,6 +24,7 @@ export function credentialDB(original?: { prepare(sql: string): unknown }) {
 const databases = new WeakMap<object, ReturnType<typeof credentialDB>>();
 export function credentialEnv<T>(env: T): T {
   const source = env as { DB: { prepare(sql: string): unknown } };
+  if (!source.DB) return env; // Non-factory tests may exercise only storage-independent RPCs.
   let db = databases.get(source.DB);
   if (!db) { db = credentialDB(source.DB); databases.set(source.DB, db); }
   return new Proxy(env as object, { get(target, key, receiver) { return key === "DB" ? db : Reflect.get(target, key, receiver); } }) as T;
