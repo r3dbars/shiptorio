@@ -52,6 +52,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
     if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
     if (url.includes("/status?")) return json({ total_count: 0, statuses: [] });
     if (url.endsWith("/issues/99/comments")) return json({ id: 1 });
+    if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
     if (url.endsWith("/chat/completions")) {
       const request = JSON.parse(String(init?.body));
       if (request.messages[0].content.includes("hostile reviewer")) return json({ choices: [{ message: { content: JSON.stringify({ verdict: "pass", reason: "Regression is fixed with direct coverage.", findings: [] }) } }] });
