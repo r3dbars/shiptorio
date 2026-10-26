@@ -340,7 +340,7 @@ const S0 = () => ({
 let S = S0();
 
 const NOTES = {
-  intro: ["Welcome to Shiptorio: seven beats, under a minute.", "Right after GitHub sign-in, before any setup. A live factory tells the story instead of paragraphs:", "1. Your repo is a factory. 2. AI builds fast. 3. Today you're the approve button, and the pile grows. 4. Try it: swipe one decision and the pile drains. 5. The bottleneck moves (feedback, CI, review) and Shiptorio suggests the fix, so the game grows with your repo. 6. Every source you connect is a new mine and your factory gets richer. 7. Where you're headed: things shipping everywhere, customers arriving.", "Beat 4 is teach-by-doing. Skip is always there."],
+  intro: ["The intro sells the real goal: verify, then automate.", "Right after GitHub sign-in, one live factory tells the story:", "1. Your repo is a factory. 2. AI builds fast. 3. Today you're the approve button. 4. Verify: checks make a yes safe (you swipe one). 5. Automate: you let a whole kind of work ship on its own, the gate runs itself, only risky crates wait for you (you tap Allow). 6. The bottleneck moves, and the fix is usually one more check or one more automation. 7. More sources, more to automate. 8. It runs itself: automated %, shipped, new customers.", "Swiping fast is a means. Building verified automation is the point. Skip is always there."],
   title: ["One button.", "GitHub sign-in is the only thing we ask for up front. Every other connection waits until the game needs it, so signup is two taps."],
   repo: ["One repo, one island.", "Pick the repo. In the real app this lists the repos the GitHub App can see."],
   scan: ["The first wow, then the first truth.", "The island rises with your folders as districts. Then a first read from GitHub alone: we already know your bottleneck (6 PRs waiting on review) before you connect anything. That's the two-minute promise."],
@@ -757,13 +757,16 @@ function jump(k) {
 
 // ---------- intro: one live factory scene that tells the story ----------
 const BEATS = [
-  { kick: "Welcome, @you", h: "Welcome to <em>Shiptorio</em>.", body: "Your GitHub repo, as a factory you can see and play. Every building is a folder. Every crate is real work.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 0, checks: 0, gate: "none", spawn: 0 } },
-  { kick: "AI builds now", h: "Your agents are <em>fast</em>.", body: "Claude and Codex write fixes and features all day. Each crate on the belt is a change to your code, built by AI.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 1, gate: "closed", spawn: 420 } },
-  { kick: "Today", h: "And you're the <em>approve button</em>.", body: "Right now most of your job is waiting to approve things. Build it? Does it work? Ship it? Everything stops at your gate, and the pile keeps growing.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 1, gate: "closed", spawn: 300, spot: 1 } },
-  { kick: "Try it", h: "Clear the pile.", body: "Shiptorio hands you each decision with the proof attached, so a yes takes a second. Swipe this one right.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 300 }, swipe: true },
-  { kick: "The game", h: "The bottleneck <em>moves</em>.", body: "Clear one and the next shows up. Too little feedback coming in. A CI gate that's too slow. A pile at review. Shiptorio reads your repo and how you work, finds the next one, and suggests the fix. It grows with you.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "open", spawn: 380, markers: 1 } },
-  { kick: "Connect more", h: "Every source is a <em>new mine</em>.", body: "GitHub brings issues. Sentry adds errors the moment they happen. PostHog shows what users really do. Later: support, payments, marketing. The more you connect, the richer your factory gets.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "open", spawn: 340, mines: 1 } },
-  { kick: "Where you're headed", h: "The factory <em>must grow</em>.", body: "Bugs fixed before users notice. Features shipped while you sleep. New customers showing up. You just make the calls, faster every week.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, island: 1, belt: 1, checks: 3, gate: "open", spawn: 150, mines: 1, party: 1, score: 1 } },
+  { kick: "Welcome, @you", h: "Welcome to <em>Shiptorio</em>.", body: "Your GitHub repo, as a factory you can see and play. Every building is a folder. Every crate is real work.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 0, checks: 0, gate: "none", spawn: 0 } },
+  { kick: "AI builds now", h: "Your agents are <em>fast</em>.", body: "Claude and Codex write fixes and features all day. Each crate on the belt is a change to your code, built by AI.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 1, gate: "closed", spawn: 420 } },
+  { kick: "Today", h: "And you're the <em>approve button</em>.", body: "Right now most of your job is waiting to approve things. Build it? Does it work? Ship it? Everything stops at your gate, and the pile keeps growing.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 1, gate: "closed", spawn: 300, spot: 1 } },
+  { kick: "Step 1 · Verify", h: "Checks make a yes <em>safe</em>.", body: "Every crate carries its proof: CI passed, the fix was verified, a second AI reviewed it. You're not guessing anymore. Swipe this one right.", after: "One swipe, because three checks already did the hard part. The more you verify, the less you have to look.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 300 },
+    card: { title: 'Ship PR #38 "Fix cart rounding"?', stamps: ["CI ✓", "Verified ✓", "AI review ✓"], btn: "Ship it →" }, go: { gate: "open" } },
+  { kick: "Step 2 · Automate", h: "Then hand it <em>off</em>.", body: "Here's the real goal. Every clean ship builds trust, and Shiptorio keeps asking: let this kind ship on its own? Say yes.", after: "Now the safe stuff ships itself and only the risky crates wait for you. Do this again and again and your factory gets more automated every week, every step still verified.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 260 },
+    card: { title: "5 docs PRs shipped clean, zero rework. Let docs ship on their own?", stamps: ["+1 AUTOMATION"], btn: "Allow →" }, go: { auto: 1 } },
+  { kick: "The game", h: "The bottleneck <em>moves</em>.", body: "Clear one and the next shows up. Too little feedback coming in. A CI gate that's too slow. A pile at review. Shiptorio reads your repo, finds the next one, and suggests the fix: usually one more check, or one more thing to automate.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 380, markers: 1, auto: 1 } },
+  { kick: "Connect more", h: "Every source is a <em>new mine</em>.", body: "GitHub brings issues. Sentry adds errors the moment they happen. PostHog shows what users really do. Later: support, payments, marketing. More sources, more to automate, a richer factory.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 340, mines: 1, auto: 1 } },
+  { kick: "Where you're headed", h: "It runs <em>itself</em>.", body: "Verified, automated, growing. Bugs fixed before users notice. Features shipped while you sleep. New customers showing up. You set the direction and check in when it asks.", fx: { ambient: 0, spot: 0, score: 0, markers: 0, mines: 0, party: 0, auto: 0, island: 1, belt: 1, checks: 3, gate: "closed", spawn: 150, mines: 1, party: 1, score: 1, auto: 1 } },
 ];
 
 function startIntro() { S = S0(); S.screen = "intro"; S.beat = 0; setStep("intro"); FX.reset(); FX.set(BEATS[0].fx); render(); }
@@ -771,27 +774,27 @@ function startIntro() { S = S0(); S.screen = "intro"; S.beat = 0; setStep("intro
 function renderIntro(o) {
   const b = BEATS[S.beat];
   const words = b.h.split(/(<em>.*?<\/em>[.,]?|\s+)/).filter(w => w && w.trim()).map((w, i) => `<span class="w" style="animation-delay:${i * 70}ms">${w}</span>`).join(" ");
-  const swiped = S.swiped;
+  const swiped = S.swiped, c = b.card;
   o.innerHTML = `<div class="intro">
     <div class="top"><div class="segs">${BEATS.map((_, i) => `<i class="${i < S.beat ? "done" : i === S.beat ? "now" : ""}"></i>`).join("")}</div><button class="skip" id="skip">Skip</button></div>
     <div class="words">
       <div class="kick">${b.kick}</div>
       <h2>${words}</h2>
-      <p class="body">${b.swipe && swiped ? "That's it. Three checks already ran, so one swipe was enough. Watch the pile drain." : b.body}</p>
-      ${b.swipe && !swiped ? `<div class="mini" id="mini"><div class="row2"><b>Ship PR #38 "Fix cart rounding"?</b></div>
-        <div class="stamps"><span class="stamp">CI ✓</span><span class="stamp">Verified ✓</span><span class="stamp">AI review ✓</span></div>
-        <div class="row2"><span class="hint">drag right, or tap</span><button class="ship" id="shipIt">Ship it →</button></div></div>` : ""}
-      ${!b.swipe || swiped ? `<button class="btn rec next" id="next" style="text-align:center">${S.beat === BEATS.length - 1 ? "Pick your repo" : "Next"}</button>` : ""}
+      <p class="body">${c && swiped ? b.after : b.body}</p>
+      ${c && !swiped ? `<div class="mini" id="mini"><div class="row2"><b>${c.title}</b></div>
+        <div class="stamps">${c.stamps.map(t => `<span class="stamp">${t}</span>`).join("")}</div>
+        <div class="row2"><span class="hint">drag right, or tap</span><button class="ship" id="shipIt">${c.btn}</button></div></div>` : ""}
+      ${!c || swiped ? `<button class="btn rec next" id="next" style="text-align:center">${S.beat === BEATS.length - 1 ? "Pick your repo" : "Next"}</button>` : ""}
     </div></div>`;
   $("skip").onclick = toRepo;
-  const n = $("next"); if (n) n.onclick = () => { if (S.beat === BEATS.length - 1) toRepo(); else { S.beat++; FX.set(BEATS[S.beat].fx); render(); } };
+  const n = $("next"); if (n) n.onclick = () => { if (S.beat === BEATS.length - 1) toRepo(); else { S.beat++; S.swiped = false; FX.set(BEATS[S.beat].fx); render(); } };
   const m = $("mini"); if (m) wireMini(m);
 }
 
 function toRepo() { S.screen = "repo"; setStep("repo"); render(); }
 
 function wireMini(el) {
-  const go = () => { el.style.transform = "translateX(140%) rotate(12deg)"; el.style.opacity = 0; setTimeout(() => { S.swiped = true; FX.set({ gate: "open" }); render(); }, 300); };
+  const go = () => { el.style.transform = "translateX(140%) rotate(12deg)"; el.style.opacity = 0; setTimeout(() => { S.swiped = true; FX.set(BEATS[S.beat].go); render(); }, 300); };
   $("shipIt").onclick = e => { e.stopPropagation(); go(); };
   let sx = 0, dx = 0, down = false;
   el.onpointerdown = e => { if (e.target.closest("button")) return; down = true; sx = e.clientX; el.setPointerCapture(e.pointerId); el.style.transition = "none"; };
@@ -802,14 +805,14 @@ function wireMini(el) {
 const FX = (() => {
   const cv = $("fx"), cx = cv.getContext("2d");
   let W = 0, H = 0, run = false, last = 0, t0 = 0;
-  let p = {}, people = [], customers = 0, peopleAcc = 0, items = [], pile = 0, rockets = [], shipped = 0, sparks = [], spawnAcc = 0, drainAcc = 0, beatT = 0, gateLift = 0;
+  let autoT = 9, p = {}, people = [], customers = 0, peopleAcc = 0, items = [], pile = 0, rockets = [], shipped = 0, sparks = [], spawnAcc = 0, drainAcc = 0, beatT = 0, gateLift = 0;
   const NAMES = ["/checkout", "/cart", "/api", "/auth", "/docs"];
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   function size() { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0); }
   addEventListener("resize", size);
   const X = { start: .08, agent: .2, checks: [.34, .46, .58], gate: .72, pad: .88 };
   function reset() { people = []; customers = 0; items = []; pile = 0; rockets = []; shipped = 0; sparks = []; beatT = 0; t0 = performance.now(); gateLift = 0; }
-  function set(np) { p = { ...p, ...np }; beatT = 0; }
+  function set(np) { p = { ...p, ...np }; beatT = 0; if (np.auto) autoT = 0; }
   function show(on) {
     cv.classList.toggle("off", !on);
     if (on && S.screen === "title" && !p.ambient) { reset(); set({ island: 1, belt: 1, checks: 3, gate: "open", spawn: 520, spot: 0, score: 0, ambient: 1 }); }
@@ -818,13 +821,13 @@ const FX = (() => {
   }
   function loop(now) {
     if (!run) return;
-    const dt = Math.min(.05, (now - last) / 1000); last = now; beatT += dt;
+    const dt = Math.min(.05, (now - last) / 1000); last = now; beatT += dt; autoT += dt;
     step(dt); draw(now / 1000);
     requestAnimationFrame(loop);
   }
   function step(dt) {
     const by = H * .41, speed = W * .32;
-    if (p.belt && p.spawn) { spawnAcc += dt * 1000; if (spawnAcc > p.spawn) { spawnAcc = 0; const srcs = ["#c7a46b"]; if (p.mines && (p.party || beatT > 1.2)) srcs.push("#c58bff"); if (p.mines && (p.party || beatT > 2.4)) srcs.push("#ffd36b"); items.push({ x: W * X.start, s: 0, c: srcs[Math.floor(Math.random() * srcs.length)] }); } }
+    if (p.belt && p.spawn) { spawnAcc += dt * 1000; if (spawnAcc > p.spawn) { spawnAcc = 0; const srcs = ["#c7a46b"]; if (p.mines && (p.party || beatT > 1.2)) srcs.push("#c58bff"); if (p.mines && (p.party || beatT > 2.4)) srcs.push("#ffd36b"); items.push({ x: W * X.start, s: 0, safe: Math.random() < .75, c: srcs[Math.floor(Math.random() * srcs.length)] }); } }
     if (p.party) {
       peopleAcc += dt; if (peopleAcc > .09) { peopleAcc = 0; const left = Math.random() < .5; people.push({ x: left ? -6 : W + 6, y: H * (.12 + Math.random() * .38), tx: W * (.3 + Math.random() * .4), ty: H * .36 }); }
       if (Math.random() < dt * 3) rockets.push({ x: W * (Math.random() < .5 ? .15 : .85), y: H * .16, v: 30 });
@@ -838,11 +841,11 @@ const FX = (() => {
       if (it.s === 0 && it.x > W * X.agent) { it.s = 1; burst(W * X.agent, by, "#f4a63a", 5); }
       const nc = Math.max(1, p.checks || 0);
       if (it.s === 1 && it.x > W * X.checks[nc - 1]) { it.s = 2; burst(W * X.checks[nc - 1], by, "#4fd18b", 4); }
-      if (!open && it.x > gx - 12) { it.dead = true; pile++; }
+      if (!open && !it.passed && !(p.auto && it.safe) && it.x > gx - 12) { it.dead = true; pile++; }
       if (it.x > W * X.pad) { it.dead = true; launch(); }
     }
     items = items.filter(i => !i.dead);
-    if (open && pile > 0) { drainAcc += dt; if (drainAcc > .12) { drainAcc = 0; pile--; items.push({ x: gx, s: 2, fast: 1 }); } }
+    if ((open && pile > 0) || (p.auto && pile > 4)) { drainAcc += dt; if (drainAcc > .12) { drainAcc = 0; pile--; items.push({ x: gx + 2, s: 2, fast: 1, safe: true, passed: 1 }); } }
     for (const r of rockets) { r.v += 420 * dt; r.y -= r.v * dt; if (Math.random() < .7) sparks.push({ x: r.x + (Math.random() - .5) * 4, y: r.y + 14, vx: (Math.random() - .5) * 30, vy: 60 + Math.random() * 60, life: .6, c: Math.random() < .5 ? "#ffd36b" : "#ff6a2b" }); }
     rockets = rockets.filter(r => r.y > -60);
     for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }
@@ -932,20 +935,22 @@ const FX = (() => {
       // checks
       const nc = p.checks || 0, names = ["CI", "Verify", "Review"];
       for (let i = 0; i < nc; i++) { const qx = W * X.checks[i]; rr(qx - 9, by - 28, 18, 20, 3, "#8d9ab0"); cx.fillStyle = "#4fd18b"; cx.beginPath(); cx.arc(qx, by - 22, 3, 0, 7); cx.fill(); if (S.beat === 3) label(names[i], qx, by - 38 - (i % 2) * 16, "#4fd18b"); }
-      // gate + you
-      const gx = W * X.gate, open = gateLift;
-      cx.save(); cx.translate(gx, by - 4); cx.rotate(-open * 1.3); rr(-2, -3, 30, 6, 3, p.gate === "none" ? "rgba(0,0,0,0)" : open > .5 ? "#4fd18b" : "#ff5d5d"); cx.restore();
+      // gate + you (with automation the gate runs itself and you step aside)
+      const gx = W * X.gate, open = gateLift, au = p.auto ? Math.min(1, autoT / .8) : 0;
+      cx.save(); cx.translate(gx, by - 4); cx.rotate(-Math.max(open, au * .9) * 1.3); rr(-2, -3, 30, 6, 3, p.gate === "none" ? "rgba(0,0,0,0)" : open > .5 || au > .5 ? "#4fd18b" : "#ff5d5d"); cx.restore();
       if (p.gate !== "none") {
-        cx.fillStyle = "#e8edf5"; cx.beginPath(); cx.arc(gx + 14, by - 34, 6, 0, 7); cx.fill(); rr(gx + 7, by - 27, 14, 14, 5, "#e8edf5");
-        label("you", gx + 14, by - 48, p.spot ? "#fff" : "#e8edf5", p.spot ? "#ff5d5d" : "rgba(8,12,20,.75)");
+        const hx = gx + 14 + au * 22, hy = by - 34 + au * 46;
+        cx.fillStyle = "#e8edf5"; cx.beginPath(); cx.arc(hx, hy, 6, 0, 7); cx.fill(); rr(hx - 7, hy + 7, 14, 14, 5, "#e8edf5");
+        label("you", hx, hy - 14, p.spot ? "#fff" : "#e8edf5", p.spot ? "#ff5d5d" : "rgba(8,12,20,.75)");
+        if (au > .3) { cx.globalAlpha *= au; rr(gx - 2, by - 40, 22, 16, 4, "#4fd18b"); cx.strokeStyle = "#062014"; cx.lineWidth = 2; cx.beginPath(); cx.arc(gx + 9, by - 32, 4, 0, 7); cx.stroke(); label("auto", gx + 9, by - 52, "#062014", "#4fd18b"); cx.globalAlpha = alpha; }
       }
       // pad
       const px = W * X.pad; rr(px - 14, by - 4, 28, 10, 3, "#8d9ab0");
       // items
       for (const it of items) { const c = it.s === 0 ? (it.c || "#c7a46b") : it.s === 1 ? "#6cb6ff" : "#4fd18b"; rr(it.x - 6, by - 14, 12, 10, 2, c); }
       // pile
-      for (let i = 0; i < Math.min(pile, 42); i++) { const col = i % 7, row = Math.floor(i / 7); rr(gx - 18 - col * 12, by + 12 + row * 10, 11, 9, 2, (row + col) % 2 ? "#b7884c" : "#a67a40"); }
-      if (pile > 0 && p.gate !== "open") label(`${pile} waiting on you`, gx - 54, by + 12 + Math.min(6, Math.ceil(pile / 7)) * 10 + 12, "#fff", "#ff5d5d");
+      for (let i = 0; i < Math.min(pile, 28); i++) { const col = i % 7, row = Math.floor(i / 7); rr(gx - 18 - col * 12, by + 12 + row * 10, 11, 9, 2, (row + col) % 2 ? "#b7884c" : "#a67a40"); }
+      if (pile > 0 && p.gate !== "open") label(p.auto ? `${pile} risky ones wait on you` : `${pile} waiting on you`, gx - 54, by + 12 + Math.min(4, Math.ceil(pile / 7)) * 10 + 12, "#fff", p.auto ? "#a35f3a" : "#ff5d5d");
     }
     if (p.belt && p.markers) drawMarkers(by, T);
     if (p.mines) drawMines(cy, by, T);
@@ -962,7 +967,7 @@ const FX = (() => {
       g.addColorStop(0, "rgba(14,20,32,0)"); g.addColorStop(1, `rgba(14,20,32,${.8 * k})`); cx.fillStyle = g; cx.fillRect(0, 0, W, H);
     }
     if (p.score) {
-      const cols = [["SHIPPED", shipped, "#4fd18b"], ["USERS REACHED", shipped * 37 + customers * 3, "#6cb6ff"], ["NEW CUSTOMERS", customers, "#ffd36b"]];
+      const cols = [["SHIPPED", shipped, "#4fd18b"], ["AUTOMATED", Math.min(91, Math.round(48 + beatT * 6)) + "%", "#6cb6ff"], ["NEW CUSTOMERS", customers, "#ffd36b"]];
       cols.forEach(([n, v, c], i) => { const x = W * (.2 + i * .3); cx.textAlign = "center"; cx.fillStyle = c; cx.font = "700 22px 'Chakra Petch', sans-serif"; cx.fillText(v.toLocaleString(), x, H * .075); cx.font = "500 9px 'JetBrains Mono', monospace"; cx.fillStyle = "#8d9ab0"; cx.fillText(n, x, H * .095); });
     }
     for (const q of people) { cx.fillStyle = "#ffd36b"; cx.beginPath(); cx.arc(q.x, q.y - 4, 2.5, 0, 7); cx.fill(); rr(q.x - 2.5, q.y - 1, 5, 6, 2, "#ffd36b"); }
