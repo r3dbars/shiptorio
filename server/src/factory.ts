@@ -1535,10 +1535,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const text = JSON.stringify(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
+      // A player may have many sockets. Share the same revocable session check only
+      // within this frame; the next frame must query D1 again (no authorization TTL).
+      const access = new Map<string, Promise<boolean>>();
       for (const ws of this.ctx.getWebSockets("web")) {
         try {
           const auth = ws.deserializeAttachment();
-          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); continue; }
+          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user) { ws.close(1008, "Repository access revoked"); continue; }
+          const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login]);
+          let allowed = access.get(key);
+          if (!allowed) { allowed = repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
+          if (!await allowed) { ws.close(1008, "Repository access revoked"); continue; }
           ws.send(text);
         } catch { try { ws.close(1008, "Sign in again"); } catch {} }
       }
