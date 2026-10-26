@@ -366,6 +366,12 @@ export const STATION_COPY: Record<StationKind, PanelCopy> = {
     tag: ["green", "real world"],
     what: "Checks don't stop at merge. For 24 hours after a launch, orbit watch checks the real world: Sentry stays quiet, nobody reverts it, main stays green. If the bug comes back, it rides the rework belt with an orbit scar and that folder loses its launch permit.",
   },
+  measure: {
+    zone: "5 · Growth · after the launch",
+    name: "Measure station",
+    tag: ["green", "did it work?"],
+    what: "Shipping a growth change isn't the end. For a week after the launch, the measure station watches the same PostHog funnel step that dropped and compares it to the week before. Enough people and a clear jump: lift. A clear drop: it hurt, roll it back. Otherwise: no lift, try the next idea.",
+  },
   custom: {
     zone: "3 · Gauntlet",
     name: "Custom check",
@@ -490,6 +496,7 @@ export const THINKS = {
     research: "Picked a check",
     permit: "Weighed a permit",
     route: "Picked the power plant",
+    growth: "Picked an experiment",
   } as Record<ThoughtDecision, string>,
 };
 

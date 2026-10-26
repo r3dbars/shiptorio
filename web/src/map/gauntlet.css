@@ -21,6 +21,8 @@
 }
 .mappop.pass { color: var(--green, #5bd18b); }
 .mappop.fail { color: var(--red, #ff5e52); }
+.mappop.lift { color: var(--green, #5bd18b); animation-name: mappop-slam; }
+.mappop.flat { color: var(--amber, #f2cf6b); }
 .mappop.caught { color: var(--red, #ff5e52); animation-name: mappop-slam; }
 .mappop.caught b {
   font-size: 24px;
@@ -93,3 +95,8 @@ body.caught-shake canvas.map {
   0%, 100% { opacity: 0; }
   10%, 85% { opacity: 1; }
 }
+
+/* the growth loop: the measure station calls an experiment */
+.mappop.lift b, .mappop.flat b { font-size: 20px; padding: 4px 14px; border-width: 2px; border-radius: 12px; }
+.mappop.lift b { background: #0a2414; box-shadow: 0 0 0 2px #0a2414, 0 0 24px rgba(91, 209, 139, 0.5); }
+.mappop.lift i, .mappop.flat i { font-style: normal; font: 500 13px var(--mono); color: var(--ink); background: var(--panel-solid); padding: 2px 8px; border-radius: 6px; }
