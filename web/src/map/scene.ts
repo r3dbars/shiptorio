@@ -145,18 +145,45 @@ interface BiterView {
   attacking: boolean;
 }
 
-type OreKind = "sentry" | "inbox" | "issues";
+type OreKind = "sentry" | "inbox" | "posthog" | "issues";
 
 function oreKind(m: Machine): OreKind {
   if (m.id.includes("sentry")) return "sentry";
   if (m.id.includes("inbox")) return "inbox";
+  if (m.id.includes("posthog")) return "posthog";
   return "issues";
+}
+
+// Sources you haven't connected yet sit on the island as empty mines (docs/PRODUCT.md, Onboarding): a dim
+// deposit with a "tap to connect" label, picked as "src:<kind>". Connecting one replaces it with the real deposit.
+export const GHOST_SOURCES = ["sentry", "posthog"] as const;
+export type GhostSource = (typeof GHOST_SOURCES)[number];
+const GHOST_TRY: Record<GhostSource, [number, number][]> = {
+  sentry: [[0, -3], [0, -6], [-3, -3]],
+  posthog: [[-3, 0], [0, 6], [-3, 3]],
+};
+
+export function ghostSpots(state: FactoryState): { kind: GhostSource; x: number; y: number }[] {
+  const ore = state.machines.find((m) => m.type === "ore_deposit" && oreKind(m) === "issues");
+  if (!ore) return [];
+  const taken = state.machines.map((m) => [m.x, m.y]);
+  const out: { kind: GhostSource; x: number; y: number }[] = [];
+  for (const kind of GHOST_SOURCES) {
+    const live = state.machines.some((m) => m.type === "ore_deposit" && oreKind(m) === kind) || state.sources?.some((x) => (x.kind as string) === kind && x.state === "connected");
+    if (live) continue;
+    const spot = GHOST_TRY[kind].map(([dx, dy]) => [ore.x + dx, ore.y + dy]).find(([x, y]) => !taken.some(([tx, ty]) => Math.abs(tx - x) < 2 && Math.abs(ty - y) < 2));
+    if (!spot) continue;
+    taken.push(spot);
+    out.push({ kind, x: spot[0], y: spot[1] });
+  }
+  return out;
 }
 
 // Item Lab variants: [name, color, extra?]
 const ORE_VARIANT: Record<OreKind, BuildOpts["variant"]> = {
   sentry: ["SENTRY", 0xff5e52],
   inbox: ["INBOX", 0x6fb2ff],
+  posthog: ["POSTHOG", 0xf2cf6b],
   issues: ["ISSUES", 0xf2a93b],
 };
 
@@ -243,6 +270,7 @@ export class FactoryScene {
   private readonly districts = new Map<string, DistrictView>();
   private readonly items = new Map<string, ItemView>();
   private readonly biters = new Map<string, BiterView>();
+  private readonly ghosts = new Map<GhostSource, { built: Built; label: Label }>();
   private readonly paths = new Map<string, Path>(); // "from>to" and "rework:inspector>assembler"
   private readonly labels = new Set<Label>();
   private beltTextures: THREE.Texture[] = [];
@@ -382,7 +410,7 @@ export class FactoryScene {
     const first = !this.state;
     this.state = state;
     this.syncMachines(state.machines);
-    const key = JSON.stringify([state.districts, state.machines.map((m) => [m.x, m.y])]);
+    const key = JSON.stringify([state.districts, state.machines.map((m) => [m.x, m.y]), ghostSpots(state)]);
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
@@ -397,6 +425,7 @@ export class FactoryScene {
     this.syncItems(state.items);
     this.syncBiters(state.items);
     this.syncLabels(state);
+    this.syncGhosts(state);
     this.syncGauntlet(state);
     this.syncDrone(state, first);
   }
@@ -524,7 +553,7 @@ export class FactoryScene {
     this.rocks = [];
     this.rising = [];
 
-    const ms = state.machines.map((m) => this.machinePos(m));
+    const ms = [...state.machines, ...ghostSpots(state)].map((m) => this.machinePos(m));
     let x0 = Math.min(-8, ...ms.map((p) => p.x - 2.5));
     let x1 = Math.max(8, ...ms.map((p) => p.x + 2.5));
     let z1 = Math.max(4, ...ms.map((p) => p.z + 2.5));
@@ -601,6 +630,39 @@ export class FactoryScene {
       v.built.g.position.copy(this.machinePos(m));
     }
     for (const id of [...this.machines.keys()]) if (!seen.has(id)) this.removeMachine(id);
+  }
+
+  private syncGhosts(state: FactoryState) {
+    const spots = ghostSpots(state);
+    for (const [kind, g] of this.ghosts)
+      if (!spots.some((sp) => sp.kind === kind)) {
+        this.scene.remove(g.built.g);
+        this.dropLabel(g.label);
+        this.ghosts.delete(kind);
+      }
+    // they wait quietly until the first rocket, then ask: did that help anyone?
+    const ask = (state.metrics?.rockets ?? 0) > 0;
+    for (const sp of spots) {
+      let g = this.ghosts.get(sp.kind);
+      if (!g) {
+        const built = buildOre({ variant: ORE_VARIANT[sp.kind] });
+        built.g.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).clone() as THREE.Material;
+          mat.transparent = true;
+          mat.opacity = 0.35;
+          mat.depthWrite = false;
+          mesh.material = mat;
+          mesh.castShadow = false;
+        });
+        g = { built, label: this.addLabel(built.g, LABEL_Y.ore_deposit ?? 2.6, `src:${sp.kind}`) };
+        this.ghosts.set(sp.kind, g);
+        this.scene.add(built.g);
+      }
+      g.built.g.position.copy(this.machinePos(sp));
+      this.setLabel(g.label, sp.kind.toUpperCase(), "empty mine · tap to connect", ask);
+    }
   }
 
   private removeMachine(id: string) {
@@ -989,6 +1051,11 @@ export class FactoryScene {
         case "ore_deposit": {
           const kind = oreKind(m);
           // count this deposit's own source, and ore Spark hasn't started building yet
+          if (kind === "posthog") {
+            const n = count((i) => (i.source as string) === "posthog" && (i.state === "ore" || i.state === "queued"));
+            this.setLabel(v.label, "POSTHOG", `${n} waiting · user signals`);
+            break;
+          }
           const src = { sentry: "sentry", inbox: "inbox", issues: "github_issue" }[kind];
           const n = count((i) => i.source === src && (i.state === "ore" || i.state === "queued"));
           const name = { sentry: "SENTRY", inbox: "INBOX", issues: "ISSUES" }[kind];

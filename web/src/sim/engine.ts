@@ -5,6 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
+import { ghostSpots } from "../map/scene";
 import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
@@ -979,6 +980,36 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         case "remove_machine":
           apply({ removed: [{ kind: "machine", id: msg.id }] });
           break;
+        case "move_machine": {
+          const m = s.machines.find((x) => x.id === msg.id);
+          const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
+          if (m && !taken) apply({ machines: [{ ...m, x: msg.x, y: msg.y }] });
+          break;
+        }
+        case "set_harness": {
+          const m = s.machines.find((x) => x.id === msg.machineId);
+          if (m?.type !== "assembler") break;
+          const plant = s.power.find((p) => p.id === `solar-${msg.harness}`);
+          apply({ machines: [{ ...m, harness: msg.harness, powerId: plant ? plant.id : m.powerId }] });
+          log("info", `${m.id} now runs on ${SOLAR_NAME[msg.harness] ?? msg.harness}`, m.id);
+          break;
+        }
+        case "connect_source": {
+          // sim: the empty mine fills in where the map showed it, and feeds the splitter
+          const kind = msg.kind as string; // posthog lands in SourceKind with the mines PR
+          if (kind !== "sentry" && kind !== "posthog") break;
+          const id = `ore-${kind}`;
+          if (s.machines.some((m) => m.id === id)) break;
+          const spot = ghostSpots(s).find((g) => g.kind === kind);
+          if (!spot) break;
+          const splitter = s.machines.find((m) => m.type === "splitter");
+          apply({
+            machines: [{ id, type: "ore_deposit", x: spot.x, y: spot.y, tier: 1, state: "idle" }],
+            belts: splitter ? [{ id: `belt-${id}`, from: id, to: splitter.id }] : [],
+          });
+          log("success", kind === "sentry" ? "Sentry connected: errors now arrive as ore, and biters show where they hit" : "PostHog connected: user signals now weigh what gets built first");
+          break;
+        }
         case "connect_belt":
           apply({ belts: [{ id: `belt-${s.tick}-${msg.from}`, from: msg.from, to: msg.to, carries: msg.carries }] });
           break;
