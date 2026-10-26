@@ -289,7 +289,7 @@ const TRIM = IRON ? 0x2e2620 : 0x3a3f52;
 const GLASS: number | THREE.Material = IRON ? mat(0xffc070, 0x8a4a10) : 0x8fd3ff;
 const DARK_GLASS: number | THREE.Material = IRON ? mat(0xb05a20, 0x4a1c06) : 0x2b3150;
 // district roofs show health: fine, busy, under attack / rework
-export const ROOF = IRON ? { ok: 0x3e8a72, busy: 0xd8a018, bad: 0xc03a24 } : { ok: 0x4fae73, busy: 0xe39a2f, bad: 0xd94a3f };
+export const ROOF = IRON ? { ok: 0x3e8a72, busy: 0xb07a18, bad: 0xb83420 } : { ok: 0x4fae73, busy: 0xe39a2f, bad: 0xd94a3f };
 
 type Tick = (t: number) => void;
 
