@@ -1,3 +1,4 @@
+import { repoAccess, type AccessUser } from "./authorization";
 import { securityObjectName } from "./rate-limit";
 import type { FactoryState } from "@shiptorio/shared";
 import type { PermitBook } from "./permits";
@@ -28,15 +29,22 @@ export interface AccountFactoryData {
   research: FactoryState["research"] | null;
   logs: {thoughts: NonNullable<FactoryState["brain"]>["thoughts"]; approvals: {kind: string; scope: string; at: number; actionId: string}[]; stages: {itemId: string; stage: string; enteredAt: number; exitedAt?: number}[]};
 }
-export async function exportAccount(env: Env, user: User) {
+export async function accountRepos(env: Env, user: User): Promise<RepoRow[]> {
   const repos = await reposFor(env, user);
+  if (user.dev) return repos;
+  const allowed: RepoRow[] = [];
+  for (const repo of repos) if (await repoAccess(env, user as AccessUser, repo.full_name)) allowed.push(repo);
+  return allowed;
+}
+export async function exportAccount(env: Env, user: User) {
+  const repos = await accountRepos(env, user);
   const factories = [];
   for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData });
   const prefs = await env.DB.prepare("SELECT key, value, updated_at FROM user_prefs WHERE user_id = ?").bind(user.id).all();
   return { format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
 }
 
-async function purgeKV(env: Env, repos: RepoRow[], login: string): Promise<void> {
+async function purgeKV(env: Env, repos: RepoRow[], login: string, userId: number): Promise<void> {
   const names = new Set(repos.map(r => r.full_name.toLowerCase()));
   const keys = new Set<string>(repos.flatMap(r => [`cred:sentry:${r.full_name.toLowerCase()}`, `cred:posthog:${r.full_name.toLowerCase()}`]));
   // Enumerate first, delete second: deleting during pagination can skip keys.
@@ -45,7 +53,7 @@ async function purgeKV(env: Env, repos: RepoRow[], login: string): Promise<void>
     const page = await env.CACHE.list({ cursor });
     for (const { name } of page.keys) {
       if ([...names].some(repo => name === `cred:sentry:${repo}` || name === `cred:posthog:${repo}` || name.includes(`:${repo}:`) || name.endsWith(`:${repo}`))
-        || name.startsWith(`access:v1:${login.toLowerCase()}:`)) keys.add(name);
+        || name.startsWith(`access:v1:${login.toLowerCase()}:`) || name.startsWith("access:v2:") && name.endsWith(`:${userId}`)) keys.add(name);
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
@@ -67,7 +75,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   // Commit the durable stop before destructive work. Retries can finish partial cleanup.
   for (const repo of repos) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(repo.full_name), now).run();
   for (const repo of repos) await factory(env, repo.full_name).eraseAccountData();
-  await purgeKV(env, repos, user.login);
+  await purgeKV(env, repos, user.login, user.id);
   for (const subject of [`user:${user.id}`, `user:${user.login.toLowerCase()}`]) {
     await env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).eraseAccountData();
   }

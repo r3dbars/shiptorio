@@ -1,3 +1,4 @@
+import { requireUser as resolveUser } from "../src/authorization";
 import { securityObjectName } from "../src/rate-limit";
 import { FactoryState } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -54,13 +55,17 @@ async function fixture() {
   const aliceCookie = await signedInCookie(env, "alice", ["alice/app", "org/shared"], 11);
   const aliceSecond = (await createSession(env, {id: 11, login: "alice"}, "other-browser")).split(";")[0];
   const bobCookie = await signedInCookie(env, "bob", ["bob/app", "alice/app"], 22);
-  await DB.prepare("INSERT INTO installations (id, account_login) VALUES (1, 'alice'), (2, 'bob'), (3, 'org')").run();
-  await DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES ('alice/app', 1), ('bob/app', 2), ('org/shared', 3)").run();
-  await DB.prepare("INSERT INTO user_installations (user_id, installation_id, account_login) VALUES (11, 1, 'alice'), (11, 3, 'org'), (22, 2, 'bob')").run();
+  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (1, 'alice'), (2, 'bob'), (3, 'org')").run();
+  await DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES ('alice/app', 1), ('bob/app', 2), ('org/shared', 3)").run();
+  await DB.prepare("INSERT OR REPLACE INTO user_installations (user_id, installation_id, account_login) VALUES (11, 1, 'alice'), (11, 3, 'org'), (22, 2, 'bob')").run();
   await DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('alice/app', 1, 'Fix', 'open'), ('bob/app', 2, 'Other', 'open')").run();
   await DB.prepare("INSERT INTO move_kind_rules VALUES ('alice/app', 'test', '/', 'id', 1)").run();
   await DB.prepare("INSERT INTO user_prefs VALUES (11, 'intro', 'done', 1)").run();
-  return {env, kv, objects, aliceCookie, aliceSecond, bobCookie, user: {id: 11, login: "alice"}};
+  await DB.prepare("UPDATE user_repos SET installation_id = 3 WHERE repo = 'org/shared'").run();
+  await DB.prepare("UPDATE user_repos SET installation_id = 2 WHERE repo = 'bob/app'").run();
+  for (const [installation, repo, uid] of [[1, "alice/app", 11], [3, "org/shared", 11], [2, "bob/app", 22], [1, "alice/app", 22]]) kv.set(`access:v2:${installation}:${repo}:${uid}`, JSON.stringify({expiresAt: Date.now() + 59000}));
+  const user = await resolveUser(new Request("https://shiptorio.com", {headers: {cookie: aliceCookie}}), env);
+  return {env, kv, objects, aliceCookie, aliceSecond, bobCookie, user: user!};
 }
 
 describe("account data controls", () => {
@@ -134,7 +139,7 @@ describe("account data controls", () => {
     expect(objects.get("alice/app")!.alarm).toBeNull();
     expect(objects.get(await securityObjectName("user:11"))!.data.size).toBe(0);
     expect(objects.get("alice/app")!.closed).toBeGreaterThan(0);
-    expect([...kv.keys()].sort()).toEqual(["cred:sentry:bob/app", "unrelated"]);
+    expect([...kv.keys()].sort()).toEqual(["access:v2:2:bob/app:22", "cred:sentry:bob/app", "unrelated"]);
     expect(await currentUser(env, aliceCookie)).toBeNull();
     expect(await currentUser(env, aliceSecond)).toBeNull();
     expect(await currentUser(env, bobCookie)).toEqual({id: 22, login: "bob"});
@@ -174,19 +179,15 @@ describe("account data controls", () => {
     expect(objects.get("alice/app")!.closed).toBeGreaterThan(0);
     expect(objects.get("alice/app")!.data.size).toBeGreaterThan(0);
   });
-  it("rejects a queued websocket action and upgrade after its server session is revoked", async () => {
-    const {env, aliceCookie} = await fixture();
-    const {browserSocketAuth, browserSessionActive} = await import("../src/browser-socket");
-    const {makeSessionCookie} = await import("../src/session");
-    const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:preview`, "preview")).split(";")[0].replace("shiptorio_session", "shiptorio_access");
-    const socketEnv = {...env, APP_PASSWORD: "preview"};
-    const request = new Request("https://shiptorio.com/api/repos/alice/app/factory", {headers: {cookie: `${aliceCookie}; ${preview}`}});
-    const auth = await browserSocketAuth(request, socketEnv);
-    expect(auth?.sessionHash).toBeTruthy();
-    expect(await browserSessionActive(auth!, socketEnv)).toBe(true);
+  it("rejects a queued socket action and upgrade after its server session is revoked", async () => {
+    const {env, aliceCookie, user} = await fixture();
+    const {repoAccess, requireUser} = await import("../src/authorization");
+    const request = new Request("https://shiptorio.com/api/repos/alice/app/factory", {headers: {cookie: aliceCookie}});
+    expect(await repoAccess(env, user, "alice/app")).toBe(1);
+    expect(await requireUser(request, env)).not.toBeNull();
     await env.DB.prepare("DELETE FROM sessions WHERE user_id = 11").run();
-    expect(await browserSessionActive(auth!, socketEnv)).toBe(false);
-    expect(await browserSocketAuth(request, socketEnv)).toBeNull();
+    expect(await repoAccess(env, user, "alice/app")).toBeNull();
+    expect(await requireUser(request, env)).toBeNull();
   });
   it("serves readable draft legal pages publicly even with the private preview gate", async () => {
     const {env} = await fixture();

@@ -1,8 +1,9 @@
+import type { AccessUser } from "./authorization";
 import { isAllowed, readSessionDetails } from "./session";
 import { ipSubject } from "./rate-limit";
 
-export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; rateSubject?: string; sessionHash?: string; userId?: number }
+export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string }
+export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; repo?: string; user?: AccessUser; rateSubject?: string; userId?: number }
 
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
@@ -25,13 +26,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
     if (!preview) return null;
     expiresAt = Math.min(expiresAt, preview.expiresAt);
   }
-  const auth: BrowserSocketAuth = { rateSubject: ipSubject(request), login: session.login, expiresAt, epoch: await browserSocketEpoch(env) };
-  if (session.ref) {
-    auth.userId = session.ref.uid;
-    auth.sessionHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(session.ref.sid)))].map(b => b.toString(16).padStart(2, "0")).join("");
-    if (!await browserSessionActive(auth, env, now)) return null;
-  }
-  return auth;
+  return { login: session.login, expiresAt, epoch: await browserSocketEpoch(env), rateSubject: ipSubject(request), userId: session.ref?.uid };
 }
 
 export function browserSocketAllowed(auth: unknown, env: BrowserSocketEnv, epoch: string | null, now = Date.now()): auth is BrowserSocketAuth {
@@ -39,12 +34,4 @@ export function browserSocketAllowed(auth: unknown, env: BrowserSocketEnv, epoch
   const value = auth as Partial<BrowserSocketAuth>;
   return !!epoch && !!env.SESSION_SECRET && typeof value.login === "string" && isAllowed(env.ALLOWED_LOGINS ?? "", value.login)
     && typeof value.expiresAt === "number" && Number.isFinite(value.expiresAt) && value.expiresAt > now && value.epoch === epoch;
-}
-
-/** Revalidate the session on upgrade and before a queued browser action. Attachments never hold the raw sid. */
-export async function browserSessionActive(auth: BrowserSocketAuth, env: BrowserSocketEnv, now = Date.now()): Promise<boolean> {
-  // Legacy sockets are already bounded by epoch/expiry and closed explicitly on sign-out.
-  if (!auth.sessionHash) return true;
-  if (!env.DB) return false;
-  return !!await env.DB.prepare("SELECT 1 AS ok FROM sessions WHERE id_hash = ? AND user_id = ? AND expires_at > ?").bind(auth.sessionHash, auth.userId, now).first();
 }
