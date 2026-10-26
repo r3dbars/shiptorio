@@ -73,7 +73,7 @@ export const LESSONS: Lesson[] = [
   {
     id: "bottleneck",
     title: "Bottleneck",
-    text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows. Add assemblers with A.",
+    text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows. Add builders with Build.",
     when: (s) => (s.metrics?.rockets ?? 0) > 0,
     unlocks: ["build", "log", "labels"],
   },
@@ -144,15 +144,15 @@ export function Coach({ lesson, step, total, repo, onDismiss, onSkip }: { lesson
   return (
     <div className="coach" role="status" aria-live="polite">
       <div className="coach-head">
-        <span className="who">NEW · {lesson.title.toUpperCase()}</span>
+        <span className="who">New · {lesson.title}</span>
         <span className="coach-step">
           {step}/{total}
         </span>
       </div>
       <p>{lesson.text.replace("{repo}", repo)}</p>
       <div className="coach-btns">
-        <button type="button" className="nm-btn rec" onClick={onDismiss}>
-          GOT IT
+        <button type="button" className="btn rec" onClick={onDismiss}>
+          Got it
         </button>
         <button type="button" className="linkish coach-skip" onClick={onSkip}>
           skip the tour
