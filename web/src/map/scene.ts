@@ -246,6 +246,9 @@ export class FactoryScene {
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
   private worldKey = "";
+  private districtCount = 0;
+  private rising: THREE.Object3D[] = []; // new districts climb out of the void (the onboarding scan)
+  private glide: THREE.Vector3 | null = null; // camera eases here when the island grows
   private beltKey = "";
   private zoom = 1;
   private width = 1;
@@ -352,10 +355,11 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
-      if (first) {
-        this.target.set((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
-        this.fitLine(state);
-      }
+      const center = new THREE.Vector3((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
+      if (first) this.target.copy(center);
+      else if (state.districts.length !== this.districtCount) this.glide = center;
+      this.districtCount = state.districts.length;
+      if (first) this.fitLine(state);
     }
     this.syncBelts(state);
     this.syncDistricts(state);
@@ -458,6 +462,7 @@ export class FactoryScene {
     this.world.clear();
     this.waterTextures = [];
     this.rocks = [];
+    this.rising = [];
 
     const ms = state.machines.map((m) => this.machinePos(m));
     let x0 = Math.min(-8, ...ms.map((p) => p.x - 2.5));
@@ -478,7 +483,9 @@ export class FactoryScene {
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
-      model.group.position.set(cx, 0, cz);
+      const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
+      model.group.position.set(cx, isNew ? -2.5 : 0, cz);
+      if (isNew) this.rising.push(model.group);
       this.world.add(model.group);
       const label = this.addLabel(model.group, model.labelY, `d:${d.name}`);
       this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
@@ -1028,6 +1035,12 @@ export class FactoryScene {
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterTextures) w.offset.y += dt * 1.6;
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+    for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
+    this.rising = this.rising.filter((g) => g.position.y < 0);
+    if (this.glide) {
+      this.target.lerp(this.glide, Math.min(1, dt * 3));
+      if (this.target.distanceTo(this.glide) < 0.05) this.glide = null;
+    }
 
     for (const v of this.items.values()) {
       if (v.path && v.s < v.stopAt) {
