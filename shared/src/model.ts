@@ -124,7 +124,8 @@ export const SCIENCE_FOR: Record<ItemKind, keyof Science> = {
 // ---------- the foreman layer (docs/PRODUCT.md) ----------
 
 // The pipeline stages the bottleneck engine scores.
-export const Stage = z.enum(["intake", "triage", "build", "inspect", "pad", "release", "impact", "power"]);
+// "resources": nothing can build because no subscription is plugged in.
+export const Stage = z.enum(["intake", "triage", "build", "inspect", "pad", "release", "impact", "power", "resources"]);
 export type Stage = z.infer<typeof Stage>;
 
 // Who did something. Every Spark action carries its reason so the player can ask "why".
@@ -141,10 +142,19 @@ export const Bottleneck = z.object({
 });
 export type Bottleneck = z.infer<typeof Bottleneck>;
 
+// A Spark tool call waiting on the player. Saying yes to the option applies it.
+export const MoveAction = z.object({
+  tool: z.string(), // e.g. "start_job"
+  args: z.record(z.string(), z.unknown()),
+  reason: z.string(),
+});
+export type MoveAction = z.infer<typeof MoveAction>;
+
 export const MoveOption = z.object({
   id: z.string(),
-  label: z.string(), // button text: "Review #41", "Fix at high effort"
+  label: z.string(), // button text: "Review #41", "Send to Claude Code"
   recommended: z.boolean().default(false), // exactly one option is Spark's pick
+  actions: z.array(MoveAction).default([]), // what Spark will do on yes; empty for "skip" or a link out
 });
 export type MoveOption = z.infer<typeof MoveOption>;
 
@@ -169,6 +179,26 @@ export const DistrictTrust = z.object({
 });
 export type DistrictTrust = z.infer<typeof DistrictTrust>;
 
+// Autonomy is earned by playing (docs/PRODUCT.md). Spark asks first at "advisor".
+// "launch" is per district: it's DistrictTrust.permit, never a factory-wide level.
+export const AutonomyLevel = z.enum(["advisor", "floor", "build", "lights_out"]);
+export type AutonomyLevel = z.infer<typeof AutonomyLevel>;
+
+export const Autonomy = z.object({
+  level: AutonomyLevel,
+  districts: z.array(DistrictTrust),
+  next: z
+    .object({
+      level: AutonomyLevel,
+      have: z.number().int(), // e.g. 7 floor moves approved as-is
+      need: z.number().int(), // e.g. 10
+      label: z.string(), // "floor moves approved without a change"
+    })
+    .nullable(), // null at the top level
+  ranAlone: z.number().int().default(0), // actions this week Spark took without asking
+});
+export type Autonomy = z.infer<typeof Autonomy>;
+
 // HUD numbers. Every one is a real metric with a game skin.
 export const Metrics = z.object({
   rockets: z.number().int(), // PRs merged
@@ -179,6 +209,7 @@ export const Metrics = z.object({
   usersUnblocked: z.number().int(),
   costPerRocket: z.number().optional(), // credits
   shipScore: z.number(), // users unblocked + 10 × customers answered + rockets − 25 × escaped defects
+  checkouts: z.number().int().optional(), // demo shop "checkout completed" counter (Stripe test mode)
 });
 export type Metrics = z.infer<typeof Metrics>;
 
@@ -205,7 +236,7 @@ export const FactoryState = z.object({
   goal: z.string().optional(),
   bottleneck: Bottleneck.nullable().optional(),
   move: Move.nullable().optional(), // the open Next Move card
-  districtTrust: z.array(DistrictTrust).optional(),
+  autonomy: Autonomy.optional(),
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
 });
