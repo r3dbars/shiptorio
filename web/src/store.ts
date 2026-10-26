@@ -38,6 +38,7 @@ export function applyPatch(s: FactoryState, p: Patch): FactoryState {
     autonomy: p.autonomy ?? s.autonomy,
     metrics: p.metrics ?? s.metrics,
     foreman: p.foreman ?? s.foreman,
+    brain: p.brain ?? s.brain,
     sources: p.sources ?? s.sources,
     stations: p.stations ?? s.stations,
   };

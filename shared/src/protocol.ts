@@ -7,6 +7,7 @@ import {
   AutonomyLevel,
   Belt,
   Bottleneck,
+  Brain,
   District,
   FactoryState,
   Foreman,
@@ -40,6 +41,7 @@ export const Patch = z.object({
   autonomy: Autonomy.optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
+  brain: Brain.optional(), // full replacement when present
   sources: z.array(SourceStatus).optional(), // full replacement when present
   stations: z.array(Station).optional(), // full replacement when present
 });

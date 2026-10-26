@@ -27,6 +27,7 @@ import {
   type Stage,
   type Station,
   type StationKind,
+  type ThoughtDecision,
   type WebToServer,
 } from "@shiptorio/shared";
 import type { Listener, Source, StatusListener } from "../source";
@@ -282,6 +283,7 @@ function initialState(sc: Scenario): FactoryState {
       ranAlone: 0,
     },
     foreman: { thinking: false },
+    brain: { model: "sim", online: true, decisions: 0, fallbacks: 0, thoughts: [] },
     // Mines this scenario's ore comes from show as plugged in, so the map doesn't offer to connect them.
     sources: mines.length ? mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })) : undefined,
     stations: [...GAUNTLET, ORBIT].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
@@ -326,6 +328,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let pr = 140;
   let seq = 0;
 
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
@@ -338,6 +341,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     s.foreman = { targetId: opts.target ?? s.foreman?.targetId, tool: line.tool, thinking: false };
     lastSpark = s.tick;
     emit({ type: "patch", patch: { foreman: s.foreman } });
+    // The sim's decision log mirrors the live one, tagged simulated so nobody mistakes it for a real model call.
+    const decision = THOUGHT_FOR[line.tool];
+    if (decision && s.brain) {
+      const item = opts.itemId ? s.items.find((i) => i.id === opts.itemId) : undefined;
+      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
+      emit({ type: "patch", patch: { brain: s.brain } });
+    }
   };
 
   const apply = (p: Patch) => {

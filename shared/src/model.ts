@@ -303,6 +303,33 @@ export const Foreman = z.object({
 });
 export type Foreman = z.infer<typeof Foreman>;
 
+// One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
+// and so does every time a rule had to stand in because Spark was down or unconfigured.
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank"]);
+export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
+export const Thought = z.object({
+  id: z.string(),
+  at: z.number(),
+  decision: ThoughtDecision,
+  by: z.enum(["spark", "fallback"]), // fallback = a fixed rule decided because Spark couldn't
+  model: z.string(), // e.g. "muse-spark-1.3"
+  ms: z.number(), // how long the call took
+  itemId: z.string().optional(),
+  title: z.string(), // what it looked at: "Checkout button does nothing on Safari"
+  outcome: z.string(), // what it decided: "bug → web"
+  reason: z.string(), // why, in its own words
+  simulated: z.boolean().optional(), // sim mode only; never set by the live server
+});
+export type Thought = z.infer<typeof Thought>;
+export const Brain = z.object({
+  model: z.string(),
+  online: z.boolean(), // the Meta key is set
+  decisions: z.number().int(), // Spark decisions since the factory started counting
+  fallbacks: z.number().int(),
+  thoughts: z.array(Thought).max(40), // newest first
+});
+export type Brain = z.infer<typeof Brain>;
+
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
   id: z.string(),
@@ -345,6 +372,7 @@ export const FactoryState = z.object({
   autonomy: Autonomy.optional(),
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
+  brain: Brain.optional(), // the planner's decision log (powered by Meta Muse Spark)
   sources: z.array(SourceStatus).optional(),
   stations: z.array(Station).optional(), // the gauntlet, in line order
 });
