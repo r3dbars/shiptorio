@@ -9,6 +9,7 @@ import type { FactoryState, WebToServer } from "@shiptorio/shared";
 import type { SourceConfig } from "../source";
 import { freeNear } from "./MakeItYours";
 import { Icon } from "./icons";
+import { Wordmark } from "./Logo";
 import { sound } from "../sound/engine";
 import { BEAT_COPY, HUD, TOUR } from "../copy";
 
@@ -138,6 +139,12 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
   const turret = state?.machines.find((m) => m.type === "turret");
   const rockets = state?.metrics?.rockets ?? 0;
 
+  // the map pings and labels wear the tour's caution paint while it runs (styles.css "Welcome tour")
+  useEffect(() => {
+    document.documentElement.dataset.tour = "1";
+    return () => void delete document.documentElement.dataset.tour;
+  }, []);
+
   // each beat's cue for the sim, once
   const cued = useRef(new Set<number>());
   const acted = useRef(new Set<number>()); // double taps cannot ship the next crate or move a new turret
@@ -261,15 +268,23 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
       </div>
     );
 
+  const pad2 = (n: number) => String(n).padStart(2, "0");
   const card = (
-    <section className="card nextmove tour" aria-label={TOUR.label}>
-      <div className="nm-head">
+    <section className="card nextmove tour" aria-label={TOUR.label} data-at={at} data-done={done || undefined}>
+      <div className="nm-head tour-head">
         <span className="nm-kicker tour-kick">{TOUR.kicker(at === 0 && login ? TOUR.welcome(login) : beat.kick)}</span>
-        <span className="tour-step">
-          {at + 1}/{BEATS.length}
+        {/* the beat counter: a brass odometer, read as words by screen readers */}
+        <span className="tour-step tour-dial">
+          <span className="sr">{TOUR.step(at + 1, BEATS.length)}</span>
+          <span aria-hidden="true">
+            <b key={at}>{pad2(at + 1)}</b>
+            <i>/</i>
+            {pad2(BEATS.length)}
+          </span>
         </span>
       </div>
       <div className="tour-words" key={at}>
+        {at === 0 && <Wordmark className="tour-wordmark" width={297} />}
         <Title text={beat.title} />
         <p className="nm-why tour-body" key={String(done)}>
           {done && beat.after ? beat.after : beat.body}
@@ -284,6 +299,11 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
         ) : (
           <button type="button" className="btn rec tour-go" onClick={next} disabled={!ready} autoFocus>
             {at === BEATS.length - 1 ? TOUR.start : ready ? TOUR.next : TOUR.wait}
+          </button>
+        )}
+        {at < BEATS.length - 1 && (
+          <button type="button" className="tour-skip" onClick={onDone}>
+            {TOUR.skip}
           </button>
         )}
       </div>
@@ -318,9 +338,6 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
           </span>
         </div>
       )}
-      <button type="button" className="checkin-chip tour-skip" onClick={onDone}>
-        {TOUR.skip}
-      </button>
     </header>
   );
 

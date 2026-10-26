@@ -7,6 +7,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import { COACH, LESSON_COPY } from "../copy";
+import { Icon, type IconName } from "./icons";
+
+/** A small pixel icon per concept, for the coach card and the field guide. */
+export const CONCEPT_ICON: Record<string, IconName> = {
+  island: "island", machines: "cog", power: "bolt", ore: "ore", inspect: "check", pad: "up", rocket: "rocket",
+  bottleneck: "gauge", autonomy: "bot", checkin: "bell",
+  sentry: "flame", feedback: "drop", users: "eye", station: "shield", permit: "key", lights: "sun",
+};
 
 export type HudPart = "spark" | "score" | "launch" | "build" | "power" | "line" | "autonomy" | "science" | "log" | "scenarios" | "labels" | "checkin";
 
@@ -145,11 +153,20 @@ export function useTutorial(state: FactoryState | null, on: boolean) {
 
 export function Coach({ lesson, step, total, repo, onDismiss, onSkip }: { lesson: Lesson; step: number; total: number; repo: string; onDismiss: () => void; onSkip: () => void }) {
   return (
-    <div className="coach" role="status" aria-live="polite">
+    <div className="coach" role="status" aria-live="polite" data-concept={lesson.id}>
       <div className="coach-head">
-        <span className="who">{COACH.kicker(lesson.title)}</span>
+        <span className="coach-icon" aria-hidden="true">
+          <Icon name={CONCEPT_ICON[lesson.id] ?? "star"} size={24} />
+        </span>
+        <span className="who">
+          <span className="coach-eyebrow">{COACH.eyebrow}</span>
+          <span className="coach-title">{lesson.title}</span>
+        </span>
         <span className="coach-step">
-          {step}/{total}
+          <span className="sr">{COACH.step(step, total)}</span>
+          <span aria-hidden="true">
+            {String(step).padStart(2, "0")}/{String(total).padStart(2, "0")}
+          </span>
         </span>
       </div>
       <p>{lesson.text.replace("{repo}", repo)}</p>

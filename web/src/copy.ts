@@ -518,6 +518,21 @@ export const RESEARCH = {
   catches: (what: string) => `Catches ${what}`,
   go: "Research",
   running: "Running",
+  /** the eyebrow over the board */
+  board: "Schematic board",
+};
+
+/** Achievements (ui/Achievements.tsx): the sheet of medallions and the unlock toast. */
+export const ACHIEVE = {
+  title: "Achievements",
+  earned: (total: number) => `of ${total} earned`,
+  earnedSub: "Each one is something that really happened in your repo.",
+  eyebrow: "Foundry medals",
+  tier: { bronze: "Bronze", silver: "Silver", gold: "Gold" } as Record<"bronze" | "silver" | "gold", string>,
+  unlocked: "Achievement unlocked",
+  more: (n: number) => `And ${n} more`,
+  moreSub: "Tap to see every badge you've earned.",
+  xp: (n: number) => `+${n} XP`,
 };
 
 export const GUIDE = {
@@ -626,7 +641,8 @@ export const LESSON_COPY: Record<string, { title: string; text: string }> = {
 };
 
 export const COACH = {
-  kicker: (title: string) => `New · ${title}`,
+  eyebrow: "New concept",
+  step: (n: number, of: number) => `Lesson ${n} of ${of}`,
   gotIt: "Got it",
   skip: "skip the tour",
 };
@@ -644,7 +660,7 @@ export interface BeatCopy {
 export const BEAT_COPY: BeatCopy[] = [
   {
     kick: "Welcome",
-    title: "Welcome to *Shiptorio*.",
+    title: "Welcome *aboard*.",
     body: "This floating island is a codebase. Every building is a folder. This sandbox runs a demo shop with sample changes; your repo comes next.",
   },
   {
@@ -697,10 +713,10 @@ export const TOUR = {
   permit: "Let docs ship on their own",
   turret: (folder: string) => `Add a test turret on /${folder}`,
   sentry: "Connect Sentry",
-  watchVerify: "Watch the verify bay…",
-  start: "Start your factory →",
+  watchVerify: "Watch the verify bay...",
+  start: "Start your factory",
   next: "Next",
-  wait: "…",
+  wait: "Working...",
   step: (n: number, of: number) => `Step ${n} of ${of}`,
   pile: "waiting on you at the merge gate",
   askLead: "5 docs PRs shipped clean",
