@@ -775,6 +775,41 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   .rs-why { max-width: 96px; }
 }
 
+/* Achievements (ui/Achievements.tsx): a toast that drops in under the top bar, and a sheet of badges. */
+.ach-badge { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: rgba(0, 0, 0, 0.3); color: var(--faint); flex: none; border: 2px solid transparent; }
+.ach-badge.got.bronze { color: #e0a370; border-color: rgba(224, 163, 112, 0.45); background: rgba(224, 163, 112, 0.12); }
+.ach-badge.got.silver { color: #d6dde8; border-color: rgba(214, 221, 232, 0.45); background: rgba(214, 221, 232, 0.1); }
+.ach-badge.got.gold { color: var(--amber); border-color: rgba(227, 163, 63, 0.6); background: rgba(227, 163, 63, 0.14); box-shadow: 0 0 14px rgba(227, 163, 63, 0.25); }
+.ach-toast-wrap { position: absolute; top: calc(70px + var(--sat)); left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 45; padding: 0 12px; }
+.ach-toast {
+  pointer-events: auto; cursor: pointer; display: flex; flex-direction: row; align-items: center; gap: 12px; text-align: left; color: var(--ink);
+  width: min(420px, 100%); padding: 10px 14px; border-radius: 14px; border: 1px solid var(--amber); font: inherit;
+  box-shadow: 0 0 0 2px rgba(227, 163, 63, 0.18), 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: ach-drop 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both, ach-out 0.35s ease-in 3.85s both;
+}
+.ach-toast .ach-badge { width: 48px; height: 48px; animation: ach-spin 0.6s steps(6) 0.15s both; }
+.ach-tbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ach-kicker { font: 700 11px var(--pixel); letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
+.ach-tname { font: 700 18px/1.15 var(--pixel); letter-spacing: 0.02em; }
+.ach-twhat { font-size: 13px; color: var(--dim); line-height: 1.3; }
+.ach-xp { flex: none; font: 700 14px var(--pixel); color: var(--dark); background: var(--amber); padding: 3px 8px; border-radius: 999px; }
+@keyframes ach-drop { from { transform: translateY(-24px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ach-out { to { transform: translateY(-12px); opacity: 0; } }
+@keyframes ach-spin { from { transform: rotateY(180deg) scale(0.6); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ach-toast, .ach-toast .ach-badge { animation: none; } }
+.ach-btn.new { border-color: var(--amber); color: var(--amber); }
+.achievements { max-height: min(72vh, 640px); }
+.ach-head { background: rgba(227, 163, 63, 0.14); color: var(--amber); }
+.ach-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.ach-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--chip); }
+.ach-row:not(.got) { opacity: 0.7; }
+.ach-tier { font: 700 10px var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; font-style: normal; background: rgba(255, 255, 255, 0.08); color: var(--dim); }
+.ach-row.got .ach-tier.bronze { color: #e0a370; } .ach-row.got .ach-tier.silver { color: #d6dde8; } .ach-row.got .ach-tier.gold { color: var(--amber); }
+.ach-meter { width: 100%; max-width: 220px; height: 5px; margin-top: 3px; }
+.ach-meter i { background: var(--amber); }
+.ach-side { flex: none; font: 600 13px var(--pixel); color: var(--dim); text-align: right; }
+.ach-row.got .ach-side { color: var(--green); }
+@media (max-width: 560px) { .ach-toast-wrap { top: calc(62px + var(--sat)); } .ach-toast { padding: 8px 12px; } .ach-tname { font-size: 16px; } }
 /* progression (ui/Progress.tsx): level + streak chip, XP pops, morning brief, progress sheet */
 .lvl-chip { cursor: pointer; color: var(--ink); }
 .lvl-chip:hover { border-color: rgba(255, 255, 255, 0.25); }
