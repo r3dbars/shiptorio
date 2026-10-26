@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FactoryState, Item, PowerSource } from "@shiptorio/shared";
+import type { AutonomyLevel, FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import { css, KIND_COLOR } from "./map/palette";
 import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
+import { NextMove } from "./ui/NextMove";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -28,6 +29,34 @@ function Segs({ value, max = 8, color }: { value: number; max?: number; color: s
         <i key={i} style={i < lit ? { background: color } : undefined} />
       ))}
     </div>
+  );
+}
+
+const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "ADVISOR", floor: "FLOOR", build: "BUILD", lights_out: "LIGHTS OUT" };
+const UNDO_MS = 5 * 60_000;
+
+function fmtLead(ms?: number) {
+  if (ms === undefined) return "–";
+  const m = Math.round(ms / 60_000);
+  return m < 90 ? `${m}m` : `${Math.round(m / 60)}h`;
+}
+
+// One floor log line. Spark's lines show the tool it called and why, and an undo while it's fresh.
+function LogRow({ l, send, live }: { l: LogLine; send: (msg: WebToServer) => void; live: boolean }) {
+  if (l.actor !== "spark") return <li className={l.level}>{l.text}</li>;
+  const canUndo = l.actionId && Date.now() - l.at < UNDO_MS;
+  return (
+    <li className={`spark ${l.level}`} title={l.reason ? `why: ${l.reason}` : undefined}>
+      <span className="who">SPARK</span>
+      {l.tool && <span className="tool">{l.tool}</span>}
+      <span className="txt">{l.text}</span>
+      {l.approvedBy === "autonomy" && <span className="auto" title="Spark did this on its own">auto</span>}
+      {canUndo && live && (
+        <button type="button" className="undo" onClick={() => send({ type: "undo", actionId: l.actionId! })}>
+          undo
+        </button>
+      )}
+    </li>
   );
 }
 
@@ -66,6 +95,9 @@ export function App() {
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
+  const metrics = state?.metrics;
+  const autonomy = state?.autonomy;
+  const permits = autonomy?.districts.filter((d) => d.permit).map((d) => `/${d.district}`) ?? [];
   const shipped = state ? state.science.red + state.science.green + state.science.grey + state.science.blue : 0;
 
   const launch = () => {
@@ -90,14 +122,53 @@ export function App() {
             {cfg.kind === "sim" ? `sim · ${cfg.scenario}` : `${cfg.repo} · ${state?.baseBranch ?? "main"}`}
             <span className={`status ${status}`}> · {status}</span>
           </div>
-          <div className="hrow">
-            <span>SHIPPED {shipped}</span>
-            <Segs value={shipped % 8 || (shipped ? 8 : 0)} color="#5bd18b" />
-          </div>
-          <div className="hrow">
-            <span>TRUST</span>
-            <Segs value={(state?.trust ?? 0) * 8} color="#f2a93b" />
-          </div>
+          {metrics ? (
+            <>
+              <div className="score" title="users unblocked + 10 × customers answered + rockets − 25 × escaped defects">
+                <span>SHIP SCORE</span>
+                <b>{metrics.shipScore}</b>
+              </div>
+              <div className="stats">
+                <span title="PRs merged">
+                  <b>{metrics.rockets}</b> rockets
+                </span>
+                <span title="Users affected by fixed issues">
+                  <b>{metrics.usersUnblocked}</b> unblocked
+                </span>
+                <span title="Customer threads closed with a shipped fix">
+                  <b>{metrics.customersAnswered}</b> answered
+                </span>
+                <span title="Sentry issues resolved">
+                  <b>{metrics.bitersKilled}</b> biters
+                </span>
+                <span title="Median lead time, ore to merged">
+                  <b>{fmtLead(metrics.leadTimeMs)}</b> lead
+                </span>
+                {metrics.checkouts !== undefined && (
+                  <span title="Demo shop checkouts completed (Stripe test mode)">
+                    <b>{metrics.checkouts.toLocaleString()}</b> checkouts
+                  </span>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="hrow">
+              <span>SHIPPED {shipped}</span>
+              <Segs value={shipped % 8 || (shipped ? 8 : 0)} color="#5bd18b" />
+            </div>
+          )}
+          {autonomy ? (
+            <div className="hrow" title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}>
+              <span>AUTONOMY · {LEVEL_LABEL[autonomy.level]}</span>
+              <Segs value={autonomy.next ? (autonomy.next.have / autonomy.next.need) * 8 : 8} color="#6fb2ff" />
+            </div>
+          ) : (
+            <div className="hrow">
+              <span>TRUST</span>
+              <Segs value={(state?.trust ?? 0) * 8} color="#f2a93b" />
+            </div>
+          )}
+          {permits.length > 0 && <div className="psub">LAUNCH PERMIT: {permits.join(", ")}</div>}
           <div className="science" aria-label="Science">
             {(["red", "green", "grey", "blue"] as const).map((k) => (
               <span key={k} className={`sci ${k}`} title={`${k} science`}>
@@ -162,14 +233,14 @@ export function App() {
             {showLog && (
               <ol>
                 {[...log].reverse().map((l, n) => (
-                  <li key={`${l.at}-${n}`} className={l.level}>
-                    {l.text}
-                  </li>
+                  <LogRow key={`${l.at}-${n}`} l={l} send={send} live={status === "live"} />
                 ))}
               </ol>
             )}
           </section>
         </div>
+
+        <NextMove move={state?.move} bottleneck={state?.bottleneck} send={send} />
 
         <div className={`card caption${caption ? " on" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption?.title}</div>
