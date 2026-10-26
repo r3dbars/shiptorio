@@ -14,6 +14,8 @@ const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.char
 
 // Secure cookies cannot authenticate an HTTP page. Redirect before showing the form,
 // otherwise a successful password POST looks like a silent return to the same gate.
+export const isPublicDocs = (path: string) => path === "/docs" || path.startsWith("/docs/");
+
 export function secureTransport(request: Request): Response | null {
   const url = new URL(request.url);
   if (url.protocol !== "http:" || isLocal(url)) return null;
@@ -61,6 +63,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
+  // The docs site (/docs/*) is public: static pages about how the game works, no factory data.
+  if (isPublicDocs(url.pathname)) return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;

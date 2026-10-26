@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { docsSite } from "./docs-site";
 
 // The art pages live in docs/ (one source of truth) and are served at /art/ on the site.
 const ART: Record<string, string> = {
@@ -31,7 +32,7 @@ function artPages(): Plugin {
 
 // `bun run dev:web` serves the UI on :5173 and proxies the API + websockets to `wrangler dev` on :8787.
 export default defineConfig({
-  plugins: [react(), artPages()],
+  plugins: [react(), artPages(), docsSite()],
   server: {
     proxy: {
       "/api": { target: "http://localhost:8787", ws: true },

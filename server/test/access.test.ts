@@ -13,6 +13,15 @@ describe("private preview", () => {
     expect((await previewAccess(new Request("https://shiptorio.com/"), { SESSION_SECRET: "" }))?.status).toBe(503);
     expect(await previewAccess(new Request("https://shiptorio.com/webhooks/github"), env)).toBeNull();
   });
+  it("serves the docs site publicly, and only the docs site", async () => {
+    for (const path of ["/docs", "/docs/", "/docs/runner", "/docs/search.json", "/docs/img/hero.png"]) {
+      expect(await previewAccess(new Request(`https://shiptorio.com${path}`), env)).toBeNull();
+      expect(await previewAccess(new Request(`https://shiptorio.com${path}`), { SESSION_SECRET: "" })).toBeNull();
+    }
+    for (const path of ["/docsx", "/documents", "/api/docs", "/art/spark.html"]) {
+      expect((await previewAccess(new Request(`https://shiptorio.com${path}`), env))?.status).toBe(401);
+    }
+  });
   it("accepts a password, rejects forgery, and invalidates cookies after password rotation", async () => {
     const request = (password: string) => new Request("https://shiptorio.com/access", { method: "POST", headers: { origin: "https://shiptorio.com" }, body: new URLSearchParams({ password }) });
     expect((await previewAccess(request("wrong"), env))?.status).toBe(401);

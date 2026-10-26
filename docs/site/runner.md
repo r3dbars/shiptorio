@@ -1,0 +1,82 @@
+---
+title: Connect your machine
+description: The local runner is how your own Claude Code or Codex subscription builds what Spark plans.
+section: Start here
+order: 4
+---
+# Connect your machine
+
+Shiptorio never writes code on its servers. Your own agents do, on your own computer, using the subscriptions you already pay for. The **local runner** is the small helper that connects them to your factory.
+
+On the map, each signed-in agent shows up as a **power plant**. Claude Code and Codex each become one. No power, no building: Spark can still read, sort and plan, but the Next Move card will say "Plug in Claude or ChatGPT to start building."
+
+> **Coming soon** A one-line installer with browser pairing (so anyone can connect a machine in a minute) is being built right now. Until it lands, pairing a runner needs the factory owner's server credentials, so the steps below are for the operator. This page will switch to the installer as soon as it ships.
+
+## What you need
+
+- **macOS** with Apple Command Line Tools (`xcode-select --install`). Checks run inside the macOS sandbox, and other platforms refuse to run jobs until they have a sandbox of their own.
+- **Bun** installed.
+- **Claude Code** (`claude`) or **Codex** (`codex`) installed and signed in. Both is better: more power plants.
+- A checkout of the Shiptorio repo (operator setup only, for now).
+
+## Check your agents
+
+From the Shiptorio repo:
+
+```sh
+bun run runner doctor
+```
+
+It prints one line per agent it finds, like `claude_code: installed and signed in`. If it says `Install and sign in to Codex or Claude Code first`, do that and run it again.
+
+## Pair the runner (operator)
+
+```sh
+bun run runner:control pair
+```
+
+This pairs the runner with one repo. It saves an **eight-hour, repo-only** token in a gitignored `runner/.dev.vars` (owner-readable only). Re-pairing revokes the old token. A running runner renews its token before it expires.
+
+## Run it
+
+```sh
+bun run runner watch
+```
+
+The runner says `Local runner ready for owner/repo: ... Only approved jobs run.` and then checks for approved work every few seconds. `bun run runner once` checks a single time and exits.
+
+To keep it running in the background on a Mac:
+
+```sh
+bun run runner:service install
+bun run runner:service status
+bun run runner:service stop
+```
+
+The service runs only for your Mac user, from its own bundled copy in `~/Library/Application Support/Shiptorio`. Your Mac has to be awake and your agent CLI signed in for jobs to run.
+
+## How a job runs
+
+1. A new issue gets a **Plan with Codex** or **Plan with Claude** card.
+2. Spark reads the issue and the files, then proposes a plan and an exact file list. Open **Review plan and files** to see it.
+3. Nothing builds until you tap **Approve and build**. **Not now** defers it.
+4. The runner makes a fresh clone pinned to the planned commit, and your agent edits only the approved files.
+5. The runner checks the change: approved paths only, at most 10 files and 500 changed lines, no secret-looking strings. Then it runs typecheck, tests and build inside the sandbox.
+6. It pushes a `shiptorio/runner-*` branch. The server double-checks the branch and file scope, then opens the PR. The PR enters the [gauntlet](/docs/gauntlet).
+
+## What your agent can and can't touch
+
+- It gets only a minimal environment (home, path, locale). Not your shell's secrets.
+- Codex runs with `--sandbox workspace-write`. Claude Code runs with only Read, Edit, Write, Glob and Grep tools.
+- Files like `.env*`, `.git*`, `node_modules`, key files and anything outside the repo are never in scope.
+- Your subscription sign-in stays on your machine. Shiptorio never sees it.
+- Each job has a 15-minute limit.
+
+## Troubleshooting
+
+- **"No approved Spark job is ready."** Normal. Approve a plan on the map first.
+- **"Run runner:control pair first"** The runner isn't paired with a repo yet.
+- **"Claude is not signed in"** Run `claude` once and sign in, then `bun run runner doctor`.
+- **"Local verification requires macOS sandbox-exec"** You're not on a Mac. Jobs are disabled on purpose until there's a sandbox for your platform.
+- **Network dropped right after a push?** `bun run runner retry JOB_ID` re-sends the saved receipt.
+- **Where are the logs?** Next to each job's clone, under `runner/.work/` (or the Application Support folder for the service).

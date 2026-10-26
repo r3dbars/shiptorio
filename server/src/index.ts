@@ -3,7 +3,7 @@ import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
 import { canSeeRepo, currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
-import { previewAccess, secureTransport } from "./access";
+import { isPublicDocs, previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
@@ -71,7 +71,8 @@ app.use("*", async (c, next) => {
   const denied = await previewAccess(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  c.header("Cache-Control", "no-store");
+  // public docs pages can be cached briefly; everything else is per player
+  c.header("Cache-Control", isPublicDocs(c.req.path) && c.res.ok ? "public, max-age=300" : "no-store");
 });
 
 app.onError((err, c) => {
