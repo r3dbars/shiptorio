@@ -416,7 +416,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const b = BACKLOG[n % BACKLOG.length];
     const names = (sc.districts ?? REPO_DISTRICTS).map((d) => d.name).filter((d) => d !== "/");
     const district = b.docs && names.includes("docs") ? "docs" : names.filter((d) => d !== "docs")[n % Math.max(1, names.length - 1)] ?? names[0];
-    return { at: 0, title: n < BACKLOG.length ? b.title : `${b.title} (#${n + 1})`, kind: b.kind, district };
+    return { at: 0, title: b.title, kind: b.kind, district };
   };
   let lastSpark = 0; // tick of Spark's last tool call
   const byTitle = new Map<string, string>(); // ore title -> item id, for linking

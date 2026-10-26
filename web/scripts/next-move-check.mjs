@@ -29,17 +29,20 @@ async function play(page, label) {
         return results;
       }
       const sugg = card.locator("button.rec").first();
-      if ((await sugg.count()) && (await sugg.isVisible())) {
+      const nudge = (await card.first().getAttribute("data-nudge", { timeout: 200 }).catch(() => null)) ?? "";
+      // station panels are bottom sheets on phones; the line moves without opening them
+      if (!nudge.startsWith("station:") && (await sugg.count()) && (await sugg.isVisible())) {
         const text = (await sugg.innerText()).toLowerCase();
         // the "launch it" nudge clicks the same thing as the dock button; anything that opens a sheet we close again
         if (!text.includes("launch")) {
           await sugg.click().catch(() => {});
           await page.keyboard.press("Escape");
-          await page.locator('.sheet button[aria-label="Close"], .station-panel button[aria-label="Close"]').first().click({ timeout: 300 }).catch(() => {});
+          await page.locator('.sheet button[aria-label="Close"], .sp-close').first().click({ timeout: 300 }).catch(() => {});
         }
       }
       await page.waitForTimeout(400);
     }
+    await page.keyboard.press("Escape"); // close any panel the player left open
     await launch.click();
     const at = Date.now();
     const seen = await card.first().waitFor({ state: "visible", timeout: WITHIN_MS }).then(() => Date.now() - at, () => null);
