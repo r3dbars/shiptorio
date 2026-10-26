@@ -8,12 +8,11 @@ link. Then keep feeding issues through and fix whatever hurts.
 Owner: Claude thread "Run a real issue end to end in a test repo". Spark-visibility work is in the
 "Make Meta Muse Spark central" thread.
 
-## The test repo: `r3dbars/shiptorio-testbed`
+## The test repo: [`r3dbars/Testing`](https://github.com/r3dbars/Testing)
 
 A tiny bun + TypeScript shop cart (`src/cart.ts`, `src/format.ts`, `src/index.ts`, tests in `test/`).
 It has `typecheck` / `test` / `build` scripts, a `bun.lock`, and a CI workflow, because the runner
-supervisor and verify bay assume all of those (see F2). Source is staged in the project files at
-`shiptorio/testbed/` until the repo exists. All base tests pass; none of them cover the seeded bugs,
+supervisor and verify bay assume all of those (see F2). Seeded issues are [#1 to #5](https://github.com/r3dbars/Testing/issues). All base tests pass; none of them cover the seeded bugs,
 so a real fix has to add a test that fails on base and passes on head (that's what the verify bay proves).
 
 Seeded issues (one per run):
@@ -35,7 +34,11 @@ where the first fix doesn't really fix the bug, so AI review fails it and the re
 
 | When (UTC) | Step | Link | Notes |
 | --- | --- | --- | --- |
-| 10-26 20:15 | Testbed app built and staged | project files `shiptorio/testbed/` | Waiting on Justin: create the repo + install the Shiptorio and Claude apps |
+| 10-26 20:15 | Testbed app built | project files `shiptorio/testbed/` | |
+| 10-26 20:55 | Justin creates `r3dbars/Testing` | https://github.com/r3dbars/Testing | Named Testing, not shiptorio-testbed |
+| 10-26 21:01 | App pushed, issues #1 to #5 filed | https://github.com/r3dbars/Testing/issues | |
+| 10-26 21:08 | Shiptorio app installed on Testing | D1 `repos` has `r3dbars/testing` | Install webhook landed |
+| 10-26 21:15 | Runner re-pair blocked | | Needs `server/.dev.vars` on the Mac (F5) |
 
 ## Friction log
 
@@ -55,3 +58,10 @@ Format: what hurt, how bad, what we did. Fixed items stay for the record.
 - **F4. Agents can't see the live factory.** The cloud sandbox can't reach shiptorio.com (proxy 403), so
   progress is checked through GitHub (issue, PR, checks, Spark's review comment) or a Remote Control
   session on Justin's Mac. *Workaround.*
+- **F5. Pairing a runner needs the server's secrets on the player's Mac.** `runner:control pair` reads
+  `APP_PASSWORD` + `SESSION_SECRET` from `server/.dev.vars`. Only the checkout that set up the server has
+  them, and the Mac's agent guard (rightly) won't copy credential files, so Justin had to `cp` it by
+  hand. A real player will never have server secrets. Real fix: pair from the game ("Connect this Mac"
+  shows a one-time code, `runner pair CODE` trades it for the repo-scoped token). *Open, runner lane.*
+- **F6. Bun isn't on the default shell PATH** on Justin's Mac (`~/.bun/bin`), so the documented
+  `bun run ...` commands fail in a fresh shell. Minor; the service bundles its own bun. *Workaround.*

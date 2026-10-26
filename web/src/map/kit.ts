@@ -132,3 +132,14 @@ export function tex(): Textures {
   textures = { stone, belt, water };
   return textures;
 }
+
+// Small parts skip the shadow pass. Their shadows are a pixel or two at the pixel-art resolution,
+// and with ~1400 casters the shadow pass was nearly half of every frame's draw calls.
+export function trimShadows(root: THREE.Object3D, minRadius = 0.25) {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || !o.castShadow) return;
+    const g = o.geometry as THREE.BufferGeometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    if (g.boundingSphere!.radius * Math.max(o.scale.x, o.scale.y, o.scale.z) < minRadius) o.castShadow = false;
+  });
+}

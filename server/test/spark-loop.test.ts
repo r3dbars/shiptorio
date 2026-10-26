@@ -28,7 +28,7 @@ test("a repeated read doesn't spend a planning turn or show up as a step", async
     { tool: "read_file", path: "web/src/a.ts", reason: "a" },
     { tool: "read_file", path: "web/src/b.ts", reason: "b" },
     { tool: "read_file", path: "web/src/c.ts", reason: "c" },
-    { tool: "assign_job", reason: "ready", plan: "Fix all three", acceptance: ["works"] },
+    { tool: "assign_job", reason: "ready", plan: "Fix all three", acceptance: ["works"], files: ["web/src/a.ts"] },
   ];
   const payloads: string[] = [];
   globalThis.fetch = (async (_: unknown, init: { body: string }) => {
@@ -38,8 +38,24 @@ test("a repeated read doesn't spend a planning turn or show up as a step", async
   const steps: string[] = [];
   try {
     const plan = await planLocalTask({ META_API_KEY: "test" }, { title: "Issue", body: "Evidence", district: "web" }, ["web/src/a.ts", "web/src/b.ts", "web/src/c.ts"], async () => "code", async s => { steps.push(s.tool); });
-    expect(plan).toContain("Fix all three");
+    expect(plan.plan).toContain("Fix all three");
     expect(steps).toEqual(["read_issue", "read_file", "read_file", "read_file", "assign_job"]);
     expect(JSON.parse(payloads[1]).alreadyRead).toEqual(["issue"]);
+  } finally { globalThis.fetch = original; }
+});
+
+test("assignment narrows reference files to explicit edit paths and refuses missing or expanded scope", async () => {
+  const original = globalThis.fetch;
+  const candidates = ["server/src/factory.ts", "server/test/factory.test.ts", "shared/src/protocol.ts"];
+  const run = async (files: unknown) => {
+    let call = 0;
+    globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify(++call === 1 ? { tool: "read_issue", reason: "Understand goal persistence" } : call === 2 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Confirm existing protocol without editing it" } : { tool: "assign_job", reason: "Schema already supports goals", plan: "Persist the existing goal without changing schemas.", acceptance: ["Survives reload"], files }) } }] })) as unknown as typeof fetch;
+    return planLocalTask({ META_API_KEY: "test" }, { title: "Persist goal", body: "No schema changes", district: "server" }, candidates, async () => "existing schema", async () => {});
+  };
+  try {
+    const assignment = await run(candidates.slice(0, 2));
+    expect(assignment.files).toEqual(candidates.slice(0, 2));
+    expect(assignment.plan).toContain("without changing schemas");
+    for (const invalid of [undefined, [], ["server/.dev.vars"], ["server/src/factory.ts", "unapproved.ts"]]) await expect(run(invalid)).rejects.toThrow("explicit writable subset");
   } finally { globalThis.fetch = original; }
 });
