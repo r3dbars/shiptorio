@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch } from "../src/browser-socket";
@@ -48,7 +49,7 @@ describe("privileged browser socket lifetime", () => {
     const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }) }) }) } };
     const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); }, list: async () => new Map(), getAlarm: async () => null, setAlarm: async () => {} };
     env.DB = authorizedDB(env.DB);
-    const f = new Factory({ storage, getWebSockets: () => [active, expired], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, env as never);
+    const f = new Factory({ storage, getWebSockets: () => [active, expired], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(env) as never);
     const action = JSON.stringify({ type: "place_machine", machineType: "assembler", x: 22, y: 22 });
     const before = state.machines.length;
     await f.webSocketMessage(expired, action);

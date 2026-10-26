@@ -31,8 +31,10 @@ import {
   type Built,
 } from "./itemlab";
 import { buildDrone, type DroneMode } from "./drone";
-import { islandDepth, makeDistrict, makeFloater, makeIsland, makeWaterfall } from "./models";
+import { islandDepth, makeDistrict, makeFloater, makeGlassLake, makeGoldTrim, makeIsland, makeLantern, makeWaterfall } from "./models";
+
 import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type SatelliteView } from "./empire";
+import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
 
@@ -264,6 +266,12 @@ function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built 
   }
 }
 
+export interface Cosmetics {
+  glassLake?: boolean;
+  lanterns?: number; // how many are lit: your streak
+  goldPad?: boolean;
+}
+
 export class FactoryScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -285,6 +293,12 @@ export class FactoryScene {
   private readonly launched = new Set<string>();
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
+  // progression unlocks on the island (shared/src/progression.ts), rebuilt with the world
+  private cosmetics: Cosmetics = {};
+  private cosmeticsKey = "";
+  private readonly extras = new THREE.Group();
+  private extraTicks: ((t: number) => void)[] = [];
+
   // the empire: other repos as satellite islands, and the sky rails to them (map/empire.ts)
   private satSpecs: SatelliteSpec[] = [];
   private satKey = "";
@@ -452,6 +466,7 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
+      this.buildExtras();
       const center = new THREE.Vector3((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
       if (first) this.target.copy(center);
       else if (state.districts.length !== this.districtCount) this.glide = center;
@@ -613,6 +628,7 @@ export class FactoryScene {
   private clearSatellites() {
     for (const sat of this.sats) {
       this.scene.remove(sat.view.g, sat.route.g);
+      disposeOwnedGeometries(sat.view.g);
       sat.route.dispose();
       this.dropLabel(sat.label);
     }
@@ -768,6 +784,55 @@ export class FactoryScene {
     const half = Math.max(w, d) / 2 + 6;
     Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 120 });
     this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  /** Switch progression cosmetics on or off: the glass lake, streak lanterns, gold pad trim. */
+  setCosmetics(c: Cosmetics | undefined) {
+    const key = JSON.stringify(c ?? {});
+    if (key === this.cosmeticsKey) return;
+    this.cosmeticsKey = key;
+    this.cosmetics = c ?? {};
+    if (this.state) this.buildExtras();
+  }
+
+  private buildExtras() {
+    if (!this.extras.parent) this.scene.add(this.extras);
+    this.extras.clear();
+    this.extraTicks = [];
+    const { x0, x1, z0, z1 } = this.bounds;
+    const w = x1 - x0, d = z1 - z0;
+    const c = this.cosmetics;
+    if (c.glassLake) {
+      // front left of the island, clear of the waterfall at 72% and half sunk past the rim
+      const r = Math.min(2.2, Math.max(1.5, w * 0.08));
+      const lake = makeGlassLake(r, islandDepth(w, d) * 0.3);
+      lake.group.position.set(x0 + w * 0.2, 0, z1 + 0.6 - r * 0.7);
+      this.extras.add(lake.group);
+      this.extraTicks.push(lake.tick);
+    }
+    if (c.lanterns) {
+      // along the front rim, left to right, then up the right side
+      const n = Math.min(14, c.lanterns);
+      const glows: THREE.MeshPhongMaterial[] = [];
+      for (let i = 0; i < n; i++) {
+        const l = makeLantern();
+        const f = (i + 0.5) / 14;
+        const front = f < 0.6;
+        const x = front ? x0 + 1 + (w - 2) * (f / 0.6) : x1 + 0.2;
+        const z = front ? z1 + 0.25 : z1 - 1 - (d - 2) * ((f - 0.6) / 0.4);
+        l.group.position.set(x, 0, z);
+        this.extras.add(l.group);
+        glows.push(l.glow);
+      }
+      this.extraTicks.push((t) => glows.forEach((g, i) => g.emissiveIntensity = 0.85 + Math.sin(t * 3 + i * 1.7) * 0.15));
+    }
+    const pad = this.ofType("launch_pad")[0];
+    if (c.goldPad && pad) {
+      const p = this.machinePos(pad);
+      const trim = makeGoldTrim(2.8);
+      trim.position.set(p.x, 0, p.z);
+      this.extras.add(trim);
+    }
   }
 
   // ---------- machines ----------
@@ -1447,6 +1512,7 @@ export class FactoryScene {
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterfalls) w(dt, t);
+    for (const e of this.extraTicks) e(t);
     for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
     for (const sat of this.sats) {

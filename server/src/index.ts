@@ -1,7 +1,8 @@
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
+import { Redactor } from "./redact";
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
+import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
 import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
@@ -11,7 +12,7 @@ import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
-import { linkedRepo, postHogCreds, saveCreds, sentryCreds } from "./sources/creds";
+import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
 import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
@@ -97,7 +98,7 @@ app.use("*", async (c, next) => {
 });
 
 app.onError((err, c) => {
-  console.error(err);
+  console.error(new Redactor(c.env).value({ error: "Request failed" }));
   return c.json({ error: "internal server error" }, 500);
 });
 
@@ -132,6 +133,7 @@ app.route("/", ops);
 app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
@@ -166,9 +168,20 @@ async function installUrl(env: Env): Promise<string | null> {
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
 }
 
-app.get("/api/setup/status", async (c) => c.json({
-  sentry: !!(await sentryCreds(c.env, c.req.query("repo"))).clientSecret,
-  posthog: c.env.FAKE_POSTHOG === "1" || !!(await postHogCreds(c.env, c.req.query("repo"))).apiKey,
+async function requestScope(c: Context<AppEnv>): Promise<CredentialScope | null> {
+  const user = await resolveUser(c.req.raw, c.env);
+  const repo = c.req.query("repo")?.toLowerCase();
+  if (!user || !repo || !validRepo(repo) || !(await repoAccess(c.env, user, repo))) return null;
+  const row = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
+  return row?.installation_id ? { installationId: row.installation_id, repo, user: String(user.id) } : null;
+}
+
+app.get("/api/setup/status", async (c) => {
+  const scope = await requestScope(c);
+  if (!scope) return c.json({ error: "repository access denied" }, 403);
+  return c.json({
+  sentry: !!(await sentryCreds(c.env, scope)).clientSecret,
+  posthog: c.env.FAKE_POSTHOG === "1" || !!(await postHogCreds(c.env, scope)).apiKey,
   github: !!(c.env.GITHUB_APP_ID && c.env.GITHUB_APP_PRIVATE_KEY && c.env.GITHUB_WEBHOOK_SECRET && c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET),
   spark: !!c.env.META_API_KEY,
   githubAppId: !!c.env.GITHUB_APP_ID,
@@ -176,13 +189,15 @@ app.get("/api/setup/status", async (c) => c.json({
   githubWebhookSecret: !!c.env.GITHUB_WEBHOOK_SECRET,
   githubClientId: !!c.env.GITHUB_CLIENT_ID,
   githubClientSecret: !!c.env.GITHUB_CLIENT_SECRET,
-}));
+}); });
 
 app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
 
 app.get("/api/sources", async (c) => {
   const url = publicUrl(new URL(c.req.url), c.env);
-  return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env, c.req.query("repo")), url, c.req.query("repo")), postHogStatus(await postHogCreds(c.env, c.req.query("repo")), url, c.env.FAKE_POSTHOG === "1")] });
+  const scope = await requestScope(c);
+  if (!scope) return c.json({ error: "repository access denied" }, 403);
+  return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env, scope), url, scope.repo), postHogStatus(await postHogCreds(c.env, scope), url, c.env.FAKE_POSTHOG === "1")] });
 });
 
 // ---------- connect a mine (Sentry, PostHog): paste the key once ----------
@@ -193,27 +208,39 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const url = publicUrl(new URL(c.req.url), c.env);
-  const repoParam = c.req.query("repo") ?? "";
-  const repo = repoParam.toLowerCase();
+  const scope = await requestScope(c);
+  if (!scope) return c.text("You don't have access to that repo's factory.", 403);
+  const repo = scope.repo;
   const webhookUrl = sentryWebhookUrl(url, repo);
-  const connected = kind === "sentry" ? !!(await sentryCreds(c.env, c.req.query("repo"))).clientSecret : !!(await postHogCreds(c.env, c.req.query("repo"))).apiKey;
-  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl }));
+  if (c.req.method === "GET") {
+    const { connected, lastUsedAt, workerOverride } = await credentialStatus(c.env, kind, scope);
+    return c.html(connectPage({ kind, repo, connected, lastUsedAt, workerOverride, webhookUrl }));
+  }
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
+  if (field("action") === "revoke") {
+    await revokeCreds(c.env, kind, scope);
+    await factory(c.env, repo).disconnectMine(kind);
+    return c.html(connectPage({ kind, repo, connected: false, webhookUrl, revoked: true }));
+  }
+  const { connected, workerOverride } = await credentialStatus(c.env, kind, scope);
+  if (workerOverride) return c.html(connectPage({ kind, repo, connected, workerOverride, webhookUrl, error: "This factory uses an operator-managed key. Ask the operator to rotate it." }), 409);
+  if (!c.env.CRED_MASTER_KEY) return c.text("Encrypted credential storage is not configured. Ask the operator to set CRED_MASTER_KEY.", 503);
   if (kind === "sentry") {
     const clientSecret = field("clientSecret");
     if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl, error: "That doesn't look like a Sentry Client Secret." }), 400);
-    await saveCreds(c.env, "sentry", { clientSecret }, repo);
+    await saveCreds(c.env, "sentry", { clientSecret }, scope);
   } else {
     const apiKey = field("apiKey");
     const projectId = field("projectId");
     const host = field("host") === "eu" ? "https://eu.posthog.com" : "https://us.posthog.com";
     const keyEvent = field("keyEvent") || "$pageview";
     if (!/^ph[a-z]_[\w]{10,200}$/.test(apiKey) || !/^\d{1,12}$/.test(projectId) || !/^[\w$ .:-]{1,100}$/.test(keyEvent)) return c.html(connectPage({ kind, repo, connected, webhookUrl: "", error: "Check the key (starts with phx_) and the project id (a number)." }), 400);
-    await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, repo);
+    await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, scope);
   }
   // Plug it straight into the map it came from.
+  await factory(c.env, repo).ensure(repo, scope.installationId);
   await factory(c.env, repo).connectMine(kind);
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
@@ -365,21 +392,31 @@ app.post("/webhooks/github", async (c) => {
 
 // ---------- Sentry webhooks ----------
 
-app.on("POST", ["/webhooks/sentry", "/webhooks/sentry/:owner/:repo"], async (c) => {
+// /webhooks/sentry/<owner>/<repo> is checked with that map's own secret. The bare URL is the
+// pre-accounts one and still feeds the repo the legacy shared key is linked to.
+app.post("/webhooks/sentry/:owner/:repo", (c) => sentryWebhook(c, `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase()));
+app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
+
+async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
+  if (!/^[a-f0-9]{64}$/i.test(c.req.header("sentry-hook-signature") ?? "")) return c.json({ error: "bad signature" }, 401);
+  if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
   if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
   const body = await c.req.text();
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
-  const namedRepo = c.req.param("owner") && c.req.param("repo") ? `${c.req.param("owner")}/${c.req.param("repo")}` : null;
-  const targetRepo = (namedRepo ?? c.req.query("repo"))?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
-  const { clientSecret } = await sentryCreds(c.env, targetRepo);
+  const repo = perRepo ?? c.req.query("repo")?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
+  if (!repo || !REPO_RE.test(repo)) return c.json({ error: "repository unavailable" }, 403);
+  const installation = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
+  if (!installation) return c.json({ error: "repository unavailable" }, 403);
+  const scope = { repo, installationId: installation.installation_id };
+  const redactor = new Redactor(c.env);
+  const { clientSecret } = await sentryCreds(c.env, scope, redactor);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
+  await markUsed(c.env, "sentry", scope);
   const resource = c.req.header("sentry-hook-resource") ?? "";
   if (!["issue", "event_alert", "error"].includes(resource)) return c.json({ ok: true, ignored: true });
-  if (!targetRepo || !validRepo(targetRepo) || !await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(targetRepo).first()) return c.json({ error: "repository access denied" }, 403);
   let payload: SentryPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
-  const repo = targetRepo;
   if (!repo || !REPO_RE.test(repo)) return c.json({ ok: true, ignored: true, reason: "Sentry isn't plugged into a map yet" });
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
@@ -391,10 +428,10 @@ app.on("POST", ["/webhooks/sentry", "/webhooks/sentry/:owner/:repo"], async (c) 
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
+  await factory(c.env, repo).enqueueSentry(delivery, resource, redactor.value(payload));
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true }, 202);
-});
+}
 
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());
