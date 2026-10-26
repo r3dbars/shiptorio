@@ -132,3 +132,12 @@ it("supports header-stripping Firefox privacy using a signed expiring form proof
   Date.now = () => realNow() + 601_000;
   try { expect((await post({ cookie }))?.status).toBe(403); } finally { Date.now = realNow; }
 });
+
+describe("docs caching", () => {
+  it("lets browsers keep public docs a few minutes, never app pages", async () => {
+    const { browserCacheControl } = await import("../src/security");
+    expect(browserCacheControl(new Request("https://shiptorio.com/docs/faq"), 200)).toBe("public, max-age=300");
+    expect(browserCacheControl(new Request("https://shiptorio.com/docs/nope"), 404)).toBe("no-store");
+    expect(browserCacheControl(new Request("https://shiptorio.com/"), 200)).toBe("no-store");
+  });
+});
