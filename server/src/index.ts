@@ -16,6 +16,8 @@ import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { browserMutationAllowed, securityHeaders } from "./security";
+import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
 
@@ -43,7 +45,7 @@ const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromNa
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
 const app = new Hono<AppEnv>();
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
   const user = await resolveUser(c.req.raw, c.env);
@@ -54,9 +56,25 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 
 app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
-  if (redirect) return redirect;
+  if (redirect) c.res = redirect;
+  else await next();
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce")))) c.header(key, value);
+});
+
+app.use("*", async (c, next) => {
+  // Use the router's decoded path, so encoded aliases consume the same budget.
+  const budget = requestBudget(c.req.raw, c.req.path);
+  if (budget) {
+    const user = await signedIn(c);
+    for (const subject of [ipSubject(c.req.raw), ...(user ? [`user:${user.id}`] : [])]) {
+      const result = await rateLimit(c.env, subject, budget);
+      if (!result.allowed) {
+        c.header("Retry-After", String(result.retryAfter));
+        return c.json({ error: "too many requests" }, 429);
+      }
+    }
+  }
   await next();
-  if (new URL(c.req.url).protocol === "https:") c.header("Strict-Transport-Security", "max-age=31536000");
 });
 
 app.use("*", async (c, next) => {
@@ -79,7 +97,12 @@ app.use("*", async (c, next) => {
 
 app.onError((err, c) => {
   console.error(err);
-  return c.json({ error: err.message }, 500);
+  return c.json({ error: "internal server error" }, 500);
+});
+
+app.use("*", async (c, next) => {
+  if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  await next();
 });
 
 app.use("*", async (c, next) => {
@@ -316,11 +339,11 @@ app.on("POST", ["/webhooks/sentry", "/webhooks/sentry/:owner/:repo"], async (c) 
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
   const namedRepo = c.req.param("owner") && c.req.param("repo") ? `${c.req.param("owner")}/${c.req.param("repo")}` : null;
   const targetRepo = (namedRepo ?? c.req.query("repo"))?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
-  if (!targetRepo || !validRepo(targetRepo) || !await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(targetRepo).first()) return c.json({ error: "repository access denied" }, 403);
   const { clientSecret } = await sentryCreds(c.env, targetRepo);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   const resource = c.req.header("sentry-hook-resource") ?? "";
   if (!["issue", "event_alert", "error"].includes(resource)) return c.json({ ok: true, ignored: true });
+  if (!targetRepo || !validRepo(targetRepo) || !await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(targetRepo).first()) return c.json({ error: "repository access denied" }, 403);
   let payload: SentryPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
@@ -345,6 +368,16 @@ app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+app.all("*", async (c) => {
+  const response = await c.env.ASSETS.fetch(c.req.raw);
+  // Only trusted static art contains inline executable scripts. Never add nonces
+  // to user-provided text or relax the application/API policy to allow them.
+  if (/^\/art\/(prototype|item-lab)(?:\.html)?\/?$/.test(c.req.path) && response.headers.get("content-type")?.includes("text/html")) {
+    const nonce = crypto.randomUUID().replaceAll("-", "");
+    c.set("artNonce", nonce);
+    return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
+  }
+  return response;
+});
 
 export default app;

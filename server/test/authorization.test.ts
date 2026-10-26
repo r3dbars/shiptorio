@@ -35,7 +35,7 @@ function fixture() {
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',
     CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async () => { writes++; } },
     ASSETS: { fetch: async () => new Response('static shell') },
-    FACTORY: { idFromName: (name: string) => name, get: () => { factoryCalls++; return { runnerJobs: async () => [], fetch: async () => new Response('private factory') }; } },
+    FACTORY: { idFromName: (name: string) => name, get: (name: string) => { if (name.startsWith("security:")) return { securityLimit: async () => ({ allowed: true, retryAfter: 0 }) }; factoryCalls++; return { runnerJobs: async () => [], fetch: async () => new Response('private factory') }; } },
   };
   const send = async (path: string, login = 'bob', method = 'GET', headers = {}, body?: string) => app.fetch(new Request(origin + path, { method, headers: { origin, cookie: await cookies(login), ...headers }, body }), env as never);
   return { env, send, cache, repos, installs, calls: () => factoryCalls, writes: () => writes };

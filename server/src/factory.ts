@@ -7,6 +7,7 @@ import { validatePlan, validatePatch } from "./injection-policy";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -80,6 +81,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     return { ok: true };
   }
 
+  // Dedicated security objects never load repo state, call Spark, or set alarms.
+  async securityLimit(budget: Budget): Promise<LimitResult> {
+    return consumeBudget(this.ctx.storage, budget);
+  }
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
@@ -1591,11 +1596,14 @@ export class Factory extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
+    if (typeof raw !== "string" || raw === "ping") return;
+    if (raw.length > 16384) return;
+    for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
+      if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
+    }
     await this.load();
     const repo = this.meta?.repo ?? this.state?.repo;
     if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); return; }
-    if (typeof raw !== "string" || raw === "ping") return;
-    if (raw.length > 16384) return;
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
     if (value && typeof value === "object" && "repo" in value && (value as { repo: unknown }).repo !== repo) { ws.close(1008, "Repository mismatch"); return; }
