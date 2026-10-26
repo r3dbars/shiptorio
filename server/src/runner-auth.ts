@@ -1,7 +1,7 @@
 // Repo-scoped, expiring runner pairing. This is never a browser session token.
 const enc = new TextEncoder();
 const encode = (s: string) => btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-export interface RunnerIdentity { repo: string; pairId: string; expires: number }
+export interface RunnerIdentity { repo: string; pairId: string; expires: number; user?: { login: string; expiresAt: number } }
 async function signature(secret: string, text: string) {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return encode(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)))));
@@ -23,6 +23,7 @@ export async function readRunnerToken(secret: string, token: string, now = Date.
     if (diff) return null;
     const data = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
     if (data.purpose !== "runner" || typeof data.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(data.repo) || typeof data.pairId !== "string" || !Number.isFinite(data.expires) || data.expires <= now) return null;
-    return { repo: data.repo, pairId: data.pairId, expires: data.expires };
+    if (data.user !== undefined && (!data.user || typeof data.user.login !== "string" || !Number.isFinite(data.user.expiresAt))) return null;
+    return { repo: data.repo, pairId: data.pairId, expires: data.expires, ...(data.user ? { user: data.user } : {}) };
   } catch { return null; }
 }

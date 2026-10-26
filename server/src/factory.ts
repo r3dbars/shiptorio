@@ -591,7 +591,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       return;
     }
-    if (!repo || !installationId) return;
+    if (!repo || !installationId || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) return;
     if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
       if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
       await this.ensure(repo, installationId);
@@ -911,6 +911,8 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   async ensure(repo: string, installationId: number): Promise<void> {
+    await this.load();
+    if (!validRepo(repo) || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) throw new Error("Repository mismatch");
     if (await this.load()) {
       if (this.meta?.installationId !== installationId) {
         this.meta = { repo, installationId };
@@ -1479,6 +1481,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
     if (!auth) return new Response("login required", { status: 401 });

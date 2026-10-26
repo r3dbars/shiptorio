@@ -51,7 +51,7 @@ app.use("*", async (c, next) => {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
-    if (!await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(identity.repo).first()) return c.json({ error: "repository access denied" }, 403);
+    if (!identity.user || !isAllowed(c.env.ALLOWED_LOGINS, identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({ error: "repository access denied" }, 403);
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
@@ -181,7 +181,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "pair") {
     const pairId = await f.pairRunner();
     const expires = Date.now() + 8 * 60 * 60 * 1000;
-    return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires }), expires });
+    return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await requireUser(c.req.raw, c.env))! }), expires });
   }
   if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
   const text = await c.req.text();
