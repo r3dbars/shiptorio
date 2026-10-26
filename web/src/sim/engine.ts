@@ -9,6 +9,12 @@ import { ghostSpots } from "../map/ghosts";
 import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
+  checkStationId,
+  insertCheck,
+  researchBlocked,
+  researchedChecks,
+  suggestResearch,
+  techById,
   type Autonomy,
   type Belt,
   type Bottleneck,
@@ -48,6 +54,7 @@ interface Ore {
   source?: OreSource;
   failFirst?: string; // a gauntlet station rejects the first attempt with this
   failAt?: StationKind; // which station catches it (default: the CI inspector)
+  failCheck?: string; // a researched check that catches it first, once the player has it (shared/src/research.ts)
   users?: number; // usersAffected, from Sentry
   reporter?: string; // who reported it (email sender, issue author)
   linkTo?: string; // title of an earlier ore this is the same problem as; merges into it
@@ -64,6 +71,8 @@ interface Scenario {
   checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
   onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
   permits?: string[]; // lanes that start with a launch permit
+  science?: FactoryState["science"]; // packs already shipped, so the research tree has something to spend
+  rockets?: number; // PRs already shipped
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -94,6 +103,19 @@ export const SCENARIOS = {
     ores: [
       { at: 2, title: "Retry sync when the app comes back online", kind: "bug", district: "server", failFirst: "vitest: 2 failing (sync.test.ts)" },
       { at: 8, title: "Show PR status on the launch pad", kind: "feature", district: "web" },
+    ],
+  },
+  // The research loop (docs/LOOP.md "Players add checks"): AI review keeps catching the same leftover
+  // console.log, the planner suggests the Leftover sweeper, and once it's researched the sweeper catches
+  // the next one right after CI, before anything expensive runs.
+  research: {
+    science: { red: 3, green: 2, grey: 1, blue: 0 },
+    rockets: 6,
+    ores: [
+      { at: 2, title: "Cart badge shows the wrong count", kind: "bug", district: "web", failAt: "review", failFirst: "left a console.log of the whole cart in the badge component" },
+      { at: 5, title: "Retry webhook delivery on 502", kind: "bug", district: "server", failAt: "review", failFirst: "stray console.log of the webhook payload, that's customer data in the logs" },
+      { at: 26, title: "Sort orders by newest first", kind: "feature", district: "server", failAt: "review", failCheck: "leftovers", failFirst: "console.log(orders) left in the orders handler" },
+      { at: 34, title: "Fix typo on the pricing page", kind: "cleanup", district: "docs" },
     ],
   },
   // The heal cascade from docs/PRODUCT.md, beat for beat. Also the demo's backup replay.
@@ -293,12 +315,13 @@ function initialState(sc: Scenario): FactoryState {
     belts: sc.onboard ? [] : belts,
     items: [],
     power,
-    science: { red: 0, green: 0, grey: 0, blue: 0 },
+    science: sc.science ?? { red: 0, green: 0, grey: 0, blue: 0 },
+    research: { done: [], spent: 0 },
     trust: 0.5,
     tick: 0,
     bottleneck: null,
     move: null,
-    metrics: { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0, checkouts: sc.districts ? 1240 : undefined },
+    metrics: { rockets: sc.rockets ?? 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0, checkouts: sc.districts ? 1240 : undefined },
     autonomy: {
       level: "advisor",
       districts: districts.map((d) => ({ district: d.name, score: sc.permits?.includes(d.name) ? 1 : d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: !!sc.permits?.includes(d.name) })),
@@ -343,6 +366,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const pending: Move[] = []; // moves waiting behind the open card
   const undos = new Map<string, () => void>();
   const failAt = new Map<string, StationKind | undefined>(); // item id -> station that catches the scripted failure
+  const failCheck = new Map<string, string | undefined>(); // item id -> researched check that would catch it first
   const builtBy = new Map<string, string | undefined>(); // item id -> assembler that built it
   const watching = new Map<string, number>(); // launched item id -> tick orbit watch stops
   const comebacks = new Map<string, string>(); // item id -> what orbit watch will catch after its first launch
@@ -399,6 +423,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
+    if (p.research) s.research = p.research;
     emit({ type: "patch", patch: { ...p, tick: s.tick } });
   };
 
@@ -524,7 +549,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         stage: "pad",
         kind: "ship",
         focus: "gate-1",
-        evidence: GAUNTLET.slice(0, 3).map((g) => ({ station: g.name, ok: true })),
+        evidence: lineNow().filter((g) => g.kind !== "merge").map((g) => ({ station: g.name, ok: true })),
         itemId: item.id,
         options: [
           { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "green and on the pad" }] },
@@ -606,6 +631,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     fails.set(item.id, o.failFirst);
     failAt.set(item.id, o.failAt);
     if (o.comeback) comebacks.set(item.id, o.comeback);
+    failCheck.set(item.id, o.failCheck);
     byTitle.set(o.title, item.id);
     if (o.ask) asks.set(item.id, o.ask);
     apply({ items: [item] });
@@ -637,10 +663,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     // point at the station where the pile is, so the map can make it glow
     if (best?.stage === "pad") best.stationId = "gate-1";
     else if (best?.stage === "inspect") {
-      const piles = GAUNTLET.map((g) => [g.id, live.filter((i) => i.machineId === g.id).length] as const).sort((a, b) => b[1] - a[1]);
+      const piles = lineNow().map((g) => [g.id, live.filter((i) => i.machineId === g.id).length] as const).sort((a, b) => b[1] - a[1]);
       if (piles[0][1] > 0) {
         best.stationId = piles[0][0];
-        const st = GAUNTLET.find((g) => g.id === best!.stationId)!;
+        const st = lineNow().find((g) => g.id === best!.stationId)!;
         best.summary = `${piles[0][1]} item${piles[0][1] > 1 ? "s" : ""} waiting at the ${lc(st.name)}`;
       }
     }
@@ -692,19 +718,24 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         }
         case "inspecting": {
-          const at = GAUNTLET.findIndex((g) => g.id === item.machineId);
-          const st = GAUNTLET[Math.max(0, at)];
+          const line = lineNow();
+          const at = line.findIndex((g) => g.id === item.machineId);
+          const st = line[Math.max(0, at)];
           const failure = fails.get(item.id);
-          if (failure && item.attempts === 1 && (failAt.get(item.id) ?? "ci") === st.kind) {
-            const scar = { station: st.kind, reason: failure, strike: item.attempts, at: now };
+          // a researched check that would catch it gets there first, before the expensive stations
+          const check = failCheck.get(item.id);
+          const catcher = check && line.some((g) => g.id === checkStationId(check)) ? checkStationId(check) : undefined;
+          if (failure && item.attempts === 1 && (catcher ? catcher === st.id : (failAt.get(item.id) ?? "ci") === st.kind)) {
+            const scar = { station: st.kind, reason: failure, strike: item.attempts, at: now, ...(st.kind === "custom" && { check: st.id.slice("check-".length) }) };
             apply({ items: [{ ...next, state: "rejected", failure, scars: [...(item.scars ?? []), scar] }] });
             record(st, false, `#${item.prNumber} ${failure}. Back to the planner on the rework belt.`);
             log("warn", `${st.name} rejected PR #${item.prNumber}: ${failure}`, item.id);
             spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${lc(st.name)} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
+            suggestNow();
             break;
           }
           record(st, true, `#${item.prNumber} passed.`);
-          const nextSt = GAUNTLET[at + 1];
+          const nextSt = line[at + 1];
           if (nextSt && nextSt.kind !== "merge") {
             since.set(item.id, s.tick);
             apply({ items: [{ ...next, machineId: nextSt.id }] });
@@ -780,8 +811,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     }
     v.lastLog = { who: st.name, text, ok };
   }
+  // The line in order: CI, then researched checks in the order they were researched, then the rest.
+  function lineNow(): StationDef[] {
+    const checks = researchedChecks(s)
+      .filter((id) => s.machines.some((m) => m.id === checkStationId(id)))
+      .map((id): StationDef => ({ id: checkStationId(id), kind: "custom", name: techById(id)!.name, caught: 0, actions: [] }));
+    return [GAUNTLET[0], ...checks, ...GAUNTLET.slice(1)];
+  }
   function stationsNow(): Station[] {
-    return [...GAUNTLET, ORBIT].map((g) => {
+    return [...lineNow(), ORBIT].map((g) => {
       const v = stat(g.id);
       const here = g.kind === "orbit" ? s.items.filter((i) => watching.has(i.id)) : s.items.filter((i) => i.machineId === g.id && (i.state === "inspecting" || i.state === "on_pad"));
       const oldest = Math.max(0, ...here.map((i) => s.tick - (since.get(i.id) ?? s.tick)));
@@ -839,7 +877,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
     watching.set(item.id, s.tick + WATCH_TICKS);
     if (comebacks.has(item.id)) trips.set(item.id, s.tick + COMEBACK_TICKS);
-    record(GAUNTLET[3], true, `#${item.prNumber} merged and launched.`);
+    record(GAUNTLET.find((g) => g.kind === "merge")!, true, `#${item.prNumber} merged and launched.`);
     const m = s.metrics!;
     const users = item.customer?.usersAffected ?? 0;
     bumpMetrics({ rockets: m.rockets + 1, usersUnblocked: m.usersUnblocked + users, bitersKilled: m.bitersKilled + (item.source === "sentry" ? 1 : 0) });
@@ -849,12 +887,58 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (a.next?.level === "build") apply({ autonomy: { ...a, next: { ...a.next, have: a.next.have + 1 } } });
   };
 
+  // ---------- research (shared/src/research.ts) ----------
+
+  const offered = new Set<string>();
+  // Repeated scars point at a tech. The tree shows the pick; the first time it's affordable it's a card too.
+  function suggestNow() {
+    const suggest = suggestResearch(s);
+    if (JSON.stringify(suggest) !== JSON.stringify(s.research?.suggest)) apply({ research: { ...s.research!, suggest } });
+    if (!suggest || offered.has(suggest.tech) || researchBlocked(s, suggest.tech)) return;
+    offered.add(suggest.tech);
+    const t = techById(suggest.tech)!;
+    spark({ tool: "suggest_research", text: `Same scar twice. ${t.name} would catch it right after CI`, reason: suggest.why }, { target: "ci-1" });
+    propose(
+      {
+        title: `Research ${t.name}?`,
+        why: suggest.why,
+        stage: "inspect",
+        kind: "verify",
+        focus: "ci-1",
+        grows: ["+1 CHECK", `${t.cost} SCIENCE`],
+        plan: [`Spend ${t.cost} science packs`, `${t.name} joins the line right after CI`, t.what, "From then on every PR goes through it"],
+        options: [
+          { id: "research", label: `Research ${t.name}`, recommended: true, actions: [{ tool: "research", args: { tech: t.id }, reason: suggest.why }] },
+          { id: "not_yet", label: "Not yet", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt === "research") research(t.id, "card");
+      },
+    );
+  }
+
+  function research(tech: string, by: "tree" | "card") {
+    const blocked = researchBlocked(s, tech);
+    if (blocked) return log("info", blocked);
+    const t = techById(tech)!;
+    const line = insertCheck(s, tech);
+    const done = { done: [...s.research!.done, tech], spent: s.research!.spent + t.cost };
+    // the new station rises in place and the line slides along to make room
+    apply({ removed: line.removed.map((id) => ({ kind: "belt" as const, id })), machines: line.machines, belts: line.belts, research: { ...done, suggest: suggestResearch({ ...s, research: done }) } });
+    // a pending card for the same tech is moot now
+    for (const m of [s.move, ...pending]) if (m?.options[0]?.actions[0]?.tool === "research" && m.options[0].actions[0].args.tech === tech) resolve(m.id, undefined, "player");
+    emit({ type: "log", level: "success", text: `Researched: ${t.name}. It now checks every PR right after CI`, at: Date.now(), actor: "player", tool: "research", approvedBy: "player", reason: by === "card" ? "You said yes on the research card" : `You spent ${t.cost} science packs` });
+    s.stations = stationsNow();
+    emit({ type: "patch", patch: { stations: s.stations } });
+  }
+
   // ---------- clicking a station ----------
 
   // A station panel's action, from the player. Merge actually launches; the rest is Spark
   // taking the job on, logged with undo, the way a real station action would be queued.
   const stationAction = (stationId: string, action: string) => {
-    const def = [...GAUNTLET, ORBIT].find((g) => g.id === stationId);
+    const def = [...lineNow(), ORBIT].find((g) => g.id === stationId);
     const machine = s.machines.find((m) => m.id === stationId);
     const label = def?.actions.find((a) => a.id === action)?.label ?? actionLabel(action) ?? action;
     const target = def?.id ?? machine?.id ?? (stationId === "power" ? "steam-spark" : "splitter-1");
@@ -1098,6 +1182,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "station_action":
           stationAction(msg.stationId, msg.action);
+          break;
+        case "research":
+          research(msg.tech, "tree");
           break;
         case "undo": {
           const undo = undos.get(msg.actionId);

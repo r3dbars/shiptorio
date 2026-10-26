@@ -19,6 +19,8 @@ import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
 import { ShipCelebration } from "./ui/ShipCelebration";
+import { Research, researchReady } from "./ui/Research";
+import { checkStationId } from "@shiptorio/shared";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -135,7 +137,15 @@ export function App() {
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  // after research, fly to the new station as soon as it's on the line
+  const [landing, setLanding] = useState<string | null>(null);
+  useEffect(() => {
+    if (landing && state?.stations?.some((st) => st.id === landing)) {
+      setPanel(landing);
+      setLanding(null);
+    }
+  }, [landing, state]);
   const [source, setSource] = useState<string | null>(null); // an empty mine you tapped
   // map picks: an empty mine opens its connect sheet, anything else its panel
   const pickOnMap = (k: string | null) => {
@@ -217,7 +227,7 @@ export function App() {
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show });
@@ -363,6 +373,19 @@ export function App() {
           >
             <Icon name="book" size={20} />
           </button>
+          {state && shipped > 0 && (
+            // Research shows up after the first ship: that's the first science pack to spend.
+            <button
+              type="button"
+              className={`hud-iconbtn research-btn${researchReady(state) ? " new" : ""}`}
+              aria-pressed={sheet === "research"}
+              onClick={() => toggleSheet("research")}
+              aria-label="Research new checks"
+              title="Research · spend science packs on new checks"
+            >
+              <Icon name="flask" size={20} />
+            </button>
+          )}
           <button type="button" className="hud-iconbtn" aria-label={`Activity, ${waiting} waiting on you`} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
             {waiting > 0 && <span className="n">{waiting}</span>}
             <Icon name="bell" size={20} />
@@ -414,6 +437,8 @@ export function App() {
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "thinks" ? (
           <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+        ) : sheet === "research" && state ? (
+          <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (

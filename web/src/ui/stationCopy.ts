@@ -1,7 +1,7 @@
 // Panel copy for every clickable thing on the line, lifted from docs/loop.html (the S object).
 // The numbers come from the factory state; this is only the words.
 
-import type { Machine, StationKind } from "@shiptorio/shared";
+import { techOfStation, type Machine, type StationKind } from "@shiptorio/shared";
 
 export interface PanelCopy {
   zone: string;
@@ -49,6 +49,13 @@ export const STATION_COPY: Record<StationKind, PanelCopy> = {
     what: "A check you added with research. It runs on every PR in the districts that need it.",
   },
 };
+
+/** A researched check's panel: what it does and a real example of what it stops (shared/src/research.ts). */
+export function researchedCopy(stationId: string): PanelCopy {
+  const t = techOfStation(stationId);
+  if (!t) return STATION_COPY.custom;
+  return { zone: "3 · Gauntlet · researched", name: t.name, tag: ["blue", "runs after CI"], what: `${t.what} Catches ${t.catches}.` };
+}
 
 export const REWORK_COPY: PanelCopy = {
   zone: "The loop back",

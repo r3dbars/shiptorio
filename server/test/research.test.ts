@@ -46,7 +46,7 @@ describe("researched checks in the gauntlet", () => {
     s.machines = [...s.machines.filter((m) => !line.machines.some((x) => x.id === m.id)), ...line.machines];
     s.belts = [...s.belts.filter((b) => !line.removed.includes(b.id)), ...line.belts];
     s.research = { done: ["leftovers"], spent: 2 };
-    expect(liveStations(s).map((st) => st.id)).toEqual(["ci-1", "check-leftovers", "verify-1", "review-1", "gate-1"]);
+    expect(liveStations(s).map((st) => st.id)).toEqual(["ci-1", "check-leftovers", "verify-1", "review-1", "gate-1", "orbit-1"]);
     expect(researchMove("leftovers", "AI review sent back 2 PRs for this.").options[0].actions[0]).toMatchObject({ tool: "research", args: { tech: "leftovers" } });
   });
 });
