@@ -54,7 +54,7 @@ export async function checkSandbox(work: string): Promise<CheckSandbox> {
 (allow sysctl-read (sysctl-name-regex #"^hw\\.")
   (sysctl-name "kern.osrelease") (sysctl-name "kern.ostype") (sysctl-name "kern.osproductversion")
   (sysctl-name "kern.osversion") (sysctl-name "kern.version") (sysctl-name "kern.argmax")
-  (sysctl-name "kern.boottime") (sysctl-name "kern.maxfilesperproc") (sysctl-name "vm.loadavg"))
+  (sysctl-name "kern.hostname") (sysctl-name "kern.boottime") (sysctl-name "kern.maxfilesperproc") (sysctl-name "vm.loadavg"))
 (allow file-read-metadata)
 (allow file-read* (literal "/") (subpath "/System") (subpath "/usr/bin") (subpath "/usr/lib") (subpath "/usr/share") (subpath "/usr/libexec") (subpath "/usr/sbin") (subpath "/bin") (subpath "/sbin")
   (subpath "/Library/Developer") (subpath "/Library/Apple") (subpath "/Applications/Xcode.app/Contents/Developer")

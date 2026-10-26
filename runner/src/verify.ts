@@ -28,31 +28,31 @@ export async function verifyRegression(work: string, baseSha: string, paths: str
     return { code: result.code, log: stripAnsi(result.out + "\n" + result.err) };
   };
   try {
-  const base = resolve(work, ".shiptorio-verify-base");
-  let baseResult: Result;
-  const added = await run(["git", "worktree", "add", "--detach", base, baseSha], work);
-  if (added.code) throw new Error("Unable to prepare isolated verify base");
-  let baseSandbox: CheckSandbox | undefined;
-  try {
-    baseSandbox = await checkSandbox(base);
-    if (await Bun.file(resolve(base, "bun.lock")).exists()) {
-      const install = await run([process.execPath, "install", "--frozen-lockfile", "--ignore-scripts"], base, baseSandbox, true);
-      if (install.code) throw new Error("Verify base dependency setup failed");
+    const base = resolve(work, ".shiptorio-verify-base");
+    let baseResult: Result;
+    const added = await run(["git", "worktree", "add", "--detach", base, baseSha], work);
+    if (added.code) throw new Error("Unable to prepare isolated verify base");
+    let baseSandbox: CheckSandbox | undefined;
+    try {
+      baseSandbox = await checkSandbox(base);
+      if (await Bun.file(resolve(base, "bun.lock")).exists()) {
+        const install = await run([process.execPath, "install", "--frozen-lockfile", "--ignore-scripts"], base, baseSandbox, true);
+        if (install.code) throw new Error("Verify base dependency setup failed");
+      }
+      const recipes = await snapshotApproved(sandbox, tests);
+      const overlay = await baseSandbox.run([process.execPath, "--no-env-file", "-e", `
+        import {mkdirSync,writeFileSync} from "node:fs";import {dirname} from "node:path";
+        for(const [path,content] of Object.entries(JSON.parse(process.argv[1]))){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,Buffer.from(content,"base64"));}
+      `, JSON.stringify(recipes)], base);
+      if (overlay.code) throw new Error("Unable to overlay regression recipe inside verify sandbox");
+      baseResult = await run(args, base, baseSandbox);
+    } finally {
+      await baseSandbox?.close();
+      const removed = await run(["git", "worktree", "remove", "--force", base], work);
+      if (removed.code) throw new Error("Verify base cleanup failed");
     }
-    const recipes = await snapshotApproved(sandbox, tests);
-    const overlay = await baseSandbox.run([process.execPath, "--no-env-file", "-e", `
-      import {mkdirSync,writeFileSync} from "node:fs";import {dirname} from "node:path";
-      for(const [path,content] of Object.entries(JSON.parse(process.argv[1]))){mkdirSync(dirname(path),{recursive:true});writeFileSync(path,Buffer.from(content,"base64"));}
-    `, JSON.stringify(recipes)], base);
-    if (overlay.code) throw new Error("Unable to overlay regression recipe inside verify sandbox");
-    baseResult = await run(args, base, baseSandbox);
-  } finally {
-    await baseSandbox?.close();
-    const removed = await run(["git", "worktree", "remove", "--force", base], work);
-    if (removed.code) throw new Error("Verify base cleanup failed");
-  }
-  const headResult = await run(args, work);
-  const logTail = `BASE ${baseSha}: exit ${baseResult.code}\n${baseResult.log.slice(-1400)}\nHEAD: exit ${headResult.code}\n${headResult.log.slice(-1400)}`.slice(-3000);
-  return { failsOnBase: testOutcome(baseResult).reproduced, passesOnHead: testOutcome(headResult).passed, baseSha, command, logTail };
+    const headResult = await run(args, work);
+    const logTail = `BASE ${baseSha}: exit ${baseResult.code}\n${baseResult.log.slice(-1400)}\nHEAD: exit ${headResult.code}\n${headResult.log.slice(-1400)}`.slice(-3000);
+    return { failsOnBase: testOutcome(baseResult).reproduced, passesOnHead: testOutcome(headResult).passed, baseSha, command, logTail };
   } finally { await sandbox.close(); }
 }
