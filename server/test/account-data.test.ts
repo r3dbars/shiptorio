@@ -73,6 +73,20 @@ describe("account data controls", () => {
     expect(JSON.stringify(result)).not.toContain("DO-NOT-EXPORT");
     expect(JSON.stringify(result)).not.toContain("pair-secret");
   });
+  it("exports and erases every chunk of a large factory", async () => {
+    const {env, user, objects} = await fixture();
+    const data = objects.get("alice/app")!.data;
+    const state = data.get("state") as FactoryState;
+    const body = "long issue context ".repeat(12000);
+    state.items[0].body = body;
+    const json = JSON.stringify({...state, schemaVersion: 2});
+    const parts = json.match(/[\s\S]{1,16000}/g)!;
+    data.set("state", {format: "shiptorio-state-chunks", chunks: parts.length, bytes: new TextEncoder().encode(json).byteLength, schemaVersion: 2});
+    parts.forEach((part, i) => data.set(`stateChunk:${String(i).padStart(6, "0")}`, part));
+    expect((await exportAccount(env, user)).factories[0].data.state?.items[0].body).toBe(body);
+    await deleteAccount(env, user, ["alice/app"]);
+    expect(data.size).toBe(0);
+  });
   it("purges installation-scoped encrypted credentials and attributed webhook receipts", async () => {
     const {env, user} = await fixture();
     await env.DB.prepare("CREATE TABLE IF NOT EXISTS credentials (scope TEXT NOT NULL, kind TEXT NOT NULL, envelope TEXT, revoked INTEGER NOT NULL DEFAULT 0, linked INTEGER NOT NULL DEFAULT 0, updated_by TEXT, updated_at INTEGER NOT NULL, last_used_at INTEGER, PRIMARY KEY(scope, kind))").run();
