@@ -15,6 +15,7 @@ export const XP = {
   card: 2, // a check-in card answered
   deckCleared: 15, // every card answered, nothing waiting on you
   streakDay: 5, // first real move of the day, × streak length (capped at 7)
+  achievement: 0, // set per achievement (shared/src/achievements.ts); pass the xp to achieved()
 } as const;
 
 export type XpReason = keyof typeof XP;
@@ -120,10 +121,9 @@ export interface Unlock {
 
 export const UNLOCKS: Unlock[] = [
   { id: "glass-lake", name: "Glass lake", what: "A glass-walled lake set into your island, for a rainy day.", icon: "drop", streak: 3, cosmetic: true },
-  { id: "morning-brief", name: "Morning brief", what: "Each new day opens with yesterday's ships and today's deck.", icon: "sun", level: 2 },
-  { id: "lanterns", name: "Island lanterns", what: "Warm lanterns along the island rim, lit for every day of your streak.", icon: "flame", level: 3, cosmetic: true },
+  { id: "lanterns", name: "Island lanterns", what: "Warm lanterns along the island rim, one lit for every day of your streak.", icon: "flame", level: 2, cosmetic: true },
   { id: "freeze", name: "Streak shield", what: "Miss a day and a shield takes the hit instead of your streak. One per 7-day run.", icon: "shield", streak: 7 },
-  { id: "gold-pad", name: "Gold launch pad", what: "Your launch pad's trim turns gold.", icon: "rocket", level: 5, cosmetic: true },
+  { id: "gold-pad", name: "Gold launch pad", what: "Your launch pad's trim turns gold.", icon: "rocket", level: 4, cosmetic: true },
 ];
 
 const earned = (u: Unlock, level: number, best: number) => (u.level !== undefined && level >= u.level) || (u.streak !== undefined && best >= u.streak);
@@ -250,6 +250,9 @@ export function answered(p: Progress, now: number, left: number): Step {
   if (left === 0) gains.push({ reason: "deckCleared", xp: XP.deckCleared, text: "Deck cleared, nothing waits on you" });
   return award(p, gains, now, left + 1, 0, 1);
 }
+
+/** An achievement landed (shared/src/achievements.ts carries its xp). Counts as a real move for the streak. */
+export const achieved = (p: Progress, now: number, xp: number, text: string): Step => award(p, [{ reason: "achievement", xp, text }], now, 0);
 
 /** Just open the day (no XP): makes today's log with the deck you walked in to. */
 export const openDay = (p: Progress, now: number, deck: number) => today(p, now, deck)[0];

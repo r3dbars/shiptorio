@@ -2,7 +2,7 @@
 // Right = do it (Spark's pick), left = later, down = never (+ one tap on why), up = details, tap = zoom.
 // Every gesture also has a button and an arrow key.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
 
 type Gesture = "right" | "left" | "down" | "up";
@@ -24,6 +24,8 @@ interface Props {
   send: (msg: WebToServer) => void;
   onFocus: (id: string | null) => void; // the map zooms to the card's spot
   onClose: () => void;
+  onAnswered?: (left: number) => void; // a yes or a never landed (progression), with this many cards still up
+  end?: ReactNode; // extra on the end screen: today's tally and the deck trend
 }
 
 const pickOf = (m: Move) => m.options.find((o) => o.recommended) ?? m.options[0];
@@ -95,7 +97,7 @@ export function createCheckInSession(initial: Move[], clock = {
   };
 }
 
-export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
+export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, end }: Props) {
   const [session] = useState(() => createCheckInSession(deck));
   const [sheet, setSheet] = useState<"details" | "never" | null>(null);
   const [zoomed, setZoomed] = useState(false);
@@ -145,6 +147,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     done(m, "right", { type: "choose_move", moveId: m.id, optionId }, () => {
       const o = m.options.find((x) => x.id === optionId);
       setTally((t) => ({ ...t, yes: t.yes + 1, grows: o?.recommended ? [...t.grows, ...(m.grows ?? [])] : t.grows }));
+      onAnswered?.(session.cards().length); // the answered card is already gone
       setToast(o ? `${o.label}. On it.` : "On it.");
     });
 
@@ -163,6 +166,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     if (!top || session.busy()) return;
     done(top, "down", { type: "dismiss_move", moveId: top.id, why }, () => {
       setTally((t) => ({ ...t, never: t.never + 1, rules: t.rules + (why === "once" ? 0 : 1) }));
+      onAnswered?.(session.cards().length); // the answered card is already gone
       setToast(why === "once" ? "Gone." : why === "kind" ? "Rule saved. No more cards like it." : why === "spark" ? "Handled without asking from now on." : "Scar logged.");
     });
   };
@@ -341,6 +345,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                 </div>
               </div>
             )}
+            {end}
             <p className="ci-quote">The score isn't how many you cleared. It's how few need you tomorrow.</p>
             <button type="button" className="nm-btn" onClick={close}>
               Back to the floor

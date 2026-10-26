@@ -24,6 +24,7 @@ import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
+import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -145,7 +146,16 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
+  const [progressing] = useState(() => !intro && progressOn());
+  const prog = useProgress(state, cfg.kind === "sim" ? "sim" : "me", cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
+  const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0);
+  const nudge = useBottleneckNudge(deck, progressing);
+  useEffect(() => {
+    if (brief.show) prog.open(deck.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brief.show]);
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -237,7 +247,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -324,6 +334,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
           pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
+          cosmetics={cosmeticsOf(prog.p, progressing)}
         />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
@@ -333,6 +344,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <header className="topbar">
           <div className="chips">
+            {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
             {show("score") && (
               <div className="chip" title="PRs merged">
                 <span className="badge" style={{ background: "var(--amber)" }}>
@@ -454,6 +466,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </div>
             <p className="empty">You can switch any time.</p>
           </section>
+        ) : brief.show && progressing && !checkin && !sheet ? (
+          <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
+        ) : sheet === "progress" ? (
+          <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
         ) : source && state ? (
           <ConnectSource kind={source} state={state} send={send} onClose={() => setSource(null)} />
         ) : sheet === "yours" && state ? (
@@ -465,7 +481,15 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
-          <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
+          <CheckIn
+            deck={deck}
+            autonomy={autonomy}
+            send={send}
+            onFocus={setFocus}
+            onClose={() => { setCheckin(false); setFocus(null); }}
+            onAnswered={progressing ? prog.card : undefined}
+            end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+          />
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label="The line">
             <div className="sheet-top">
@@ -608,6 +632,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         )}
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
+
+        {progressing && <XpPop pop={prog.pop} />}
 
         <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>
