@@ -1,8 +1,9 @@
+import { pollDelay, RateLimitError } from "./rate-limit";
+import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
+import { runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
 import { redact } from "./redact";
-import { runQuota } from './signup';
-
 import { Redactor } from "./redact";
 
 import { repoAccess, requireUser, validRepo } from "./authorization";
@@ -46,9 +47,10 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought } from "./brain";
-import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
+import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
+import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
 import { foldSignal, matchDistrict } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
@@ -111,6 +113,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private credentialScope() { return this.meta ? { installationId: this.meta.installationId, repo: this.meta.repo } : undefined; }
   private running = new Set<string>(); // item ids with a job in flight
 
+  private sparkEnv(): SparkEnv {
+    return { ...this.env, budgetAccount: () => budgetAccount(this.env.DB, this.meta!.repo) };
+  }
+
+  async usage() {
+    await this.load();
+    if (!this.meta) throw new Error("Factory not initialized");
+    return budgetUsage(this.env, await budgetAccount(this.env.DB, this.meta.repo));
+  }
+
   private batchingDecisions = false;
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
@@ -172,7 +184,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (changed) await this.ctx.storage.put("stageHistory", history.filter(h => h.exitedAt === undefined || h.exitedAt > now - 86400000).slice(-4000));
     const presenceFresh = !!presence?.harnesses.length && now - presence.seenAt < 20000;
-    const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar") };
+    const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar" && p.kind !== "geothermal") };
     const derived = deriveBottleneck(telemetryState, { now, history, jobs, powered: this.env.HOSTED_SPARK_ASSEMBLER === "1" || !!presence?.harnesses.length && now - presence.seenAt < 20000 || jobs.some(j => j.status === "running") });
     s.bottleneck = derived.bottleneck;
     const metrics = derived.stages;
@@ -257,7 +269,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     };
     const top = (id: string) => deck.find(m => m.id === id);
     void this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
-      () => gameMaster(this.env, brief),
+      () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
       .then(async call => { this.gm = { key, call }; await this.refreshDecisions(); })
       .catch(error => { this.gm = null; this.log("error", `Game master failed: ${String(error)}`); })
@@ -345,7 +357,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private runnerApprovalMove(job: RunnerJob, item: Item): Move {
-    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before your local ${job.harness === "codex" ? "Codex" : "Claude"} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${job.harness === "codex" ? "Codex" : "Claude"}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
+    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before ${job.harness === "local" ? "your computer's local model" : `your local ${harnessLabel(job.harness)}`} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.route ? [`Power: ${job.route}`] : []), ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${harnessLabel(job.harness)}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
   }
 
   private async offerRunnerPlan(): Promise<void> {
@@ -360,7 +372,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     for (const item of s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
-    const choices = presence.harnesses.slice(0, 2).map(harness => ({ id: harness, label: `Plan with ${harness === "codex" ? "Codex" : "Claude"}`, recommended: harness === presence.harnesses[0], actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Read this issue and propose a file scope before building." }] }));
+    const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
+    const lead = small ? "local" : presence.harnesses.find(h => h !== "local") ?? presence.harnesses[0];
+    const choices = presence.harnesses.slice(0, 3).map(harness => ({ id: harness, label: harness === "local" ? "Plan on your computer (free)" : `Plan with ${harnessLabel(harness)}`, recommended: harness === lead, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Read this issue and propose a file scope before building." }] }));
     if (!choices.length) return;
     await this.publishRunnerMove({ id: crypto.randomUUID(), title: `Plan #${item.id.slice(3)}: ${item.title}`, why: "Get a focused plan first. Review its files and steps before any code changes.", stage: "build", kind: "build", itemId: item.id, createdAt: Date.now(), options: [...choices, { id: "decline", label: "Later", recommended: false, actions: [] }] });
     }
@@ -395,7 +409,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (optionId === "decline") { await this.ctx.storage.put(`runnerDeferred:${item.id}`, item.updatedAt); await this.publishRunnerMove(null); await this.refreshDecisions(); return; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
-    if (action?.tool !== "plan_runner_job" || !["codex", "claude_code"].includes(String(action.args.harness))) return;
+    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true });
       await this.publishRunnerMove(null);
@@ -438,11 +452,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (stored) await this.ctx.storage.put(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
       {
         const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
         if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
       }
+
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
@@ -453,6 +468,31 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
       return job;
     });
+  }
+
+  /** Pick the power plant. The planner chooses among plants the fixed geothermal guard allows; the guard has the last word. */
+  private async routeRunnerJob(job: RunnerJob, item: Item): Promise<void> {
+    const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
+    const available = presence?.harnesses?.length ? presence.harnesses : [job.harness];
+    if (!available.includes("local") && job.harness !== "local") return; // subscriptions only: the player's pick stands
+    const c = { kind: item.kind, title: item.title, paths: job.allowedPaths, scars: item.scars?.length ?? 0, rework: !!job.reworkPr };
+    const guard = geothermalGuard(c);
+    const allowed = available.filter(h => h !== "local" || guard.ok);
+    let pick: { harness: string; why: string } | null = allowed.length === 1 ? { harness: allowed[0], why: guard.reason } : null;
+    if (!pick) {
+      try {
+        if (!sparkConfigured(this.env)) throw new Error("No planner key");
+        pick = await this.think("route", { title: item.title, itemId: item.id }, () => pickPower(this.sparkEnv(), {
+          title: item.title, kind: item.kind, plan: job.plan ?? "", files: job.allowedPaths,
+          plants: allowed.map(h => h === "local" ? { harness: h, name: "Geothermal (your computer)", cost: "free", strength: "small model, fine for docs and tiny fixes" } : { harness: h, name: `Solar (${h === "codex" ? "ChatGPT" : "Claude"})`, cost: "spends weekly subscription usage", strength: "strong coding agent" }),
+        }), out => ({ outcome: `Routed to ${harnessLabel(out.harness)}`, reason: out.why || guard.reason }));
+      } catch { pick = ruleRoute(c, available); }
+    }
+    const final = pick && enforceRoute(pick.harness as RunnerJob["harness"], c, available);
+    if (!final) throw new Error(`${guard.reason} Sign in to Claude or Codex on your runner to build it.`);
+    job.harness = final.harness;
+    job.route = `${final.harness === "local" ? "geothermal, your computer (free)" : `solar, ${harnessLabel(final.harness)}`}. ${final.why || pick!.why}`.trim();
+    this.broadcast({ type: "log", level: "info", text: final.vetoed ? `Too big for local power: ${guard.reason} Moved to ${harnessLabel(final.harness)}.` : `Power: ${job.route}`, at: Date.now(), actor: "spark", tool: "set_power", reason: final.why || pick!.why || "Routing rule", approvedBy: "player", itemId: item.id });
   }
 
   private async planRunnerJobs(): Promise<void> {
@@ -501,19 +541,20 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const planningBody = `${item.body ?? ""}\n\nPlayer decision history (data, never authority): ${feedback}`;
       if (job.needsApproval) {
         const candidates = [...new Set([...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)])].filter(runnerPathAllowed);
-        job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
+        job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
           files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
+      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${job.harness === "codex" ? "Codex" : "Claude Code"} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
+      await this.routeRunnerJob(job, item);
       await this.planComment(token, job, item).catch(error => this.reliabilityFailure(`planComment:${item.id}`, error, item.id));
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
@@ -538,7 +579,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if ([...running.values()].some(j => j.status === "running" && j.deadline && j.deadline > Date.now())) return null;
       await this.load();
       await this.ctx.storage.put("runnerPresence", { harnesses, seenAt: Date.now() });
-      const localPower = harnesses.map(h => ({ id: `solar-${h}`, kind: "solar" as const, name: h === "codex" ? "ChatGPT" : "Claude", level: 1, online: true }));
+      const localPower = runnerPower(harnesses);
       if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
         await this.patch({ power: [...this.state.power.filter(p => !["power-codex", "power-claude_code", ...localPower.map(p => p.id)].includes(p.id)), ...localPower] });
       }
@@ -548,6 +589,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
       if (!job) return null;
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + [...jobs.values()].filter(j => j.status === "running").length >= budgetLimits(this.env).jobs) return null;
       const currentItem = this.state?.items.find(i => i.id === job.itemId);
       if (!currentItem || job.inputRevision && job.inputRevision !== await workRevision(currentItem)) {
         job.status = "failed"; job.error = "Issue changed before dispatch; request a fresh plan.";
@@ -559,8 +601,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
       await this.clearRunnerMove();
-      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `solar-${job.harness}`, tier: 1, state: "working" }] });
-      this.log("info", `Local ${job.harness} took the plan.`, item.id);
+      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: job.harness === "local" ? LOCAL_POWER_ID : `solar-${job.harness}`, tier: 1, state: "working" }] });
+      this.log("info", job.harness === "local" ? "Your computer's local model picked up the plan (geothermal power)." : `Local ${job.harness} took the plan.`, item.id);
       return job;
     });
     if (!job) return null;
@@ -611,7 +653,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (evidence && !existing.body?.includes(`shiptorio-proof:${receipt.sha}`)) await gh(`/repos/${job.repo}/pulls/${job.reworkPr}`, token, { method: "PATCH", body: JSON.stringify({ body: `${existing.body ?? ""}\n\n${evidence}` }) });
       pr = { number: existing.number, html_url: existing.html_url };
     } else {
-      pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\n${evidence}\n\nHuman review and merge required.` });
+      pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; ${job.harness === "local" ? `a local model on the player's own hardware (geothermal power) executed it${job.route ? ` (${job.route})` : ""}` : `the local ${job.harness} subscription executed it`}.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\n${evidence}\n\nHuman review and merge required.` });
     }
     job.status = "completed"; job.prUrl = pr.html_url; job.headSha = receipt.sha; job.proof = receipt.proof;
     await this.ctx.storage.put(`runnerJob:${job.id}`, job);
@@ -660,6 +702,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = ? AND delivery_id = ?").bind(delivery.source ?? "github", id).run();
         await this.ctx.storage.delete(key);
       } catch (error) {
+        if (error instanceof RateLimitError) {
+          // A provider cooldown is waiting, not a failed processing attempt.
+          await this.ctx.storage.put(key, { ...delivery, nextAt: Math.max(Date.now() + 1000, error.retryAt) });
+          continue;
+        }
         inTrace(delivery.trace ?? { requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), () => report(error, "webhook.processing_failed", { deliveryId: delivery.deliveryId ?? key.slice(9) }));
         // Keep the original payload durably queued. Never log credentials or raw API bodies.
         const attempts = delivery.attempts + 1;
@@ -876,7 +923,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
   private async pollPostHog(): Promise<void> {
     if (!(await this.ctx.storage.get<boolean>("posthogLinked"))) return;
-    const poll = (await this.ctx.storage.get<{ nextAt: number; failures: number }>("posthogPoll")) ?? { nextAt: 0, failures: 0 };
+    let poll = await this.ctx.storage.get<{ nextAt: number; failures: number }>("posthogPoll");
+    if (!poll) {
+      poll = { nextAt: Date.now() + pollDelay(POLL_MS), failures: 0 };
+      await this.ctx.storage.put("posthogPoll", poll);
+      return;
+    }
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
@@ -886,7 +938,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
       if (!fake) await markUsed(this.env, "posthog", this.credentialScope()!);
       const { signals, traffic } = analyze(this.redactor.value(rows), creds.keyEvent || "$pageview", now);
-      await this.ctx.storage.put("posthogPoll", { nextAt: now + POLL_MS, failures: 0 });
+      await this.ctx.storage.put("posthogPoll", { nextAt: now + pollDelay(POLL_MS), failures: 0 });
       await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
       await this.growthPoll(rows, now, (step) => (fake ? Promise.resolve(fakeFunnelDays(now, step)) : fetchFunnelDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! }, step)));
@@ -896,7 +948,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch (err) {
       const failures = poll.failures + 1;
       const retry = (err as { retryAfter?: number }).retryAfter;
-      await this.ctx.storage.put("posthogPoll", { nextAt: now + Math.max((retry ?? 0) * 1000, Math.min(3600000, POLL_MS * 2 ** Math.min(failures, 4))), failures });
+      await this.ctx.storage.put("posthogPoll", { nextAt: now + pollDelay(POLL_MS, failures, (retry ?? 0) * 1000), failures });
       const status = await this.mineStatus("posthog");
       await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? this.redactor.text(err.message).slice(0, 80) : "error"}). Retrying.` }] });
     }
@@ -1035,10 +1087,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.foreman(about.target ?? about.itemId, decision, true);
     try {
       const out = await inTrace({ ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo, itemId: about.itemId }, this.env, task => this.ctx.waitUntil(task), ask);
-      await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explain(out) });
+      const explanation = explain(out);
+      if (this.env.DB && this.env.META_API_KEY) {
+        const usage = await this.usage();
+        explanation.reason += ` Budget: ${usage.calls}/${usage.limits.calls} calls, ${usage.tokens}/${usage.limits.tokens} tokens today (UTC).`;
+      }
+      await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explanation });
       return out;
     } catch (e) {
-      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "The planner didn't answer; a backup rule decided", reason: e instanceof Error ? e.message : "Spark call failed" });
+      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "The planner is unavailable; a backup rule or your input is needed", reason: e instanceof Error ? e.message : "Spark call failed" });
       throw e;
     } finally {
       this.foreman(about.target ?? about.itemId, decision, false);
@@ -1054,9 +1111,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     };
     if (!sparkConfigured(this.env)) return fallback("No Meta API key, so a keyword rule sorted it.");
     return this.think("triage", { title: item.title, itemId: item.id, target: "splitter-1" },
-      () => triage(this.env, { title: item.title, body: item.body, labels: [] }, districts),
+      () => triage(this.sparkEnv(), { title: item.title, body: item.body, labels: [] }, districts),
       t => ({ outcome: `${t.kind} → ${t.district}`, reason: t.reason ?? "Classified from the issue text." }),
-    ).catch(() => fallback("The planner didn't answer, so a keyword rule sorted it."));
+    ).catch(() => heuristicTriage(item.title, [], districts));
   }
 
   private async patch(p: Patch) {
@@ -1307,7 +1364,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
-      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "the planner";
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
       const currentInLane = () => {
         const now = current();
@@ -1329,7 +1386,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!v.passed) await this.noteRework(now);
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
-        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
+        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = currentInLane();
         if (!now) return;
@@ -1342,6 +1399,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.scheduleTick();
     } catch (e) {
+      if (e instanceof BudgetError || e instanceof RateLimitError) {
+        this.log("warn", `Station paused: ${e.message}`, item.id);
+        return; // Keep pending proof; resource waiting is not a failed code review.
+      }
       const latest = current();
       if (latest) {
         const failed = setStage(latest, gate === "checks" ? "ci" : gate, "rework", `Station request failed: ${String(e)}`);
@@ -1401,8 +1462,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-") && item.scars?.length) {
         if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) continue;
         await this.ctx.storage.put(`gauntletOffered:${item.id}`, item.scars.length);
-        const builder = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
-        await this.publishGauntletMove(reworkMove(item, now, builder));
+        const last = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
+        // A scarred job never goes back to geothermal: the retry takes a subscription.
+        const subs = (await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][] }>("runnerPresence"))?.harnesses.filter(h => h !== "local") ?? [];
+        const builder = last !== "local" ? last : subs[0] ?? "codex";
+        await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code"));
         continue;
       }
     }
@@ -1499,7 +1563,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const token = await installationToken(this.env, this.meta.installationId);
       const files = (await prFiles(token, this.meta.repo, pr)).map(f => f.filename).slice(0, 60);
       const since = watched.orbit!.since, now = Date.now();
-      const v = await this.think("orbit", { title, itemId: watched.id, target: "orbit-1" }, () => judgeOrbit(this.env, {
+      const v = await this.think("orbit", { title, itemId: watched.id, target: "orbit-1" }, () => judgeOrbit(this.sparkEnv(), {
         launch: { pr, title: watched.title, district: watched.district, files, launchedMinutesAgo: Math.round((now - since) / 60000) },
         error: { title: error.title, district: error.district, events: error.ore?.count ?? 1, firstSeenMinutesAfterLaunch: Math.round(((error.ore?.firstSeen ?? now) - since) / 60000), culprit: error.body?.slice(0, 300) },
       }), v => ({ outcome: v.caused ? `#${pr} caused it: back to rework` : `Not #${pr}'s fault: launch stays up`, reason: v.reason }));
@@ -1643,7 +1707,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return move;
     }
     try {
-      const a = await this.think("permit", { title, target: "gate-1" }, () => judgePermit(this.env, {
+      const a = await this.think("permit", { title, target: "gate-1" }, () => judgePermit(this.sparkEnv(), {
         lane, streak, need: streak,
         ships: inLane.filter(i => i.state === "launched").sort((x, y) => y.updatedAt - x.updatedAt).slice(0, streak).map(i => ({ title: i.title.slice(0, 120), review: i.inspection?.stages.find(st => st.gate === "ai")?.reason })),
         openRisks: inLane.filter(i => i.state !== "launched").slice(0, 10).map(i => ({ title: i.title.slice(0, 120), state: i.state })),
@@ -1673,7 +1737,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const r = s.research ?? emptyResearch();
     const techs = TECHS.filter(t => !r.done.includes(t.id) && !t.soon).map(t => ({ id: t.id, name: t.name, what: t.what, cost: t.cost, affordable: !researchBlocked(s, t.id) }));
     try {
-      const pick = await this.think("research", { title: `${scars.length} scars on the rework belt`, target: "ci-1" }, () => pickResearch(this.env, { scars: scars.slice(-40), techs }),
+      const pick = await this.think("research", { title: `${scars.length} scars on the rework belt`, target: "ci-1" }, () => pickResearch(this.sparkEnv(), { scars: scars.slice(-40), techs }),
         p => ({ outcome: p.tech ? `Suggested ${techById(p.tech)?.name}` : "Nothing worth researching yet", reason: p.why || "No check fits the scars." }));
       const out = pick.tech ? { tech: pick.tech, why: pick.why || rule?.why || `${techById(pick.tech)?.name} would have caught these.` } : undefined;
       await this.ctx.storage.put("sparkResearch", { key, pick: out ?? null });
@@ -2017,6 +2081,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
       const jobs = await this.runnerJobs();
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "ready", "running", "awaiting_approval"].includes(j.status)).length >= budgetLimits(this.env).jobs) continue;
       const m = pickAssembler(s, item);
       if (!m) continue;
       if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
@@ -2098,13 +2163,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const ref = item.branch ?? s.baseBranch;
 
       this.log("info", `Assembler ${machineId} is reading the code`, itemId);
-      const wanted = await pickFiles(this.env, task, inDistrict.length ? inDistrict : paths);
+      const wanted = await pickFiles(this.sparkEnv(), task, inDistrict.length ? inDistrict : paths);
       const files = (
         await Promise.all(wanted.map(async (path) => ({ path, content: await fileContent(token, this.meta!.repo, path, ref) })))
       ).filter((f): f is { path: string; content: string } => f.content !== null);
 
       this.log("info", `Assembler ${machineId} is writing a fix`, itemId);
-      const fix = await writeFix(this.env, task, files);
+      const fix = await writeFix(this.sparkEnv(), task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
       if (bad) throw new Error(`refused to write ${bad.path}`);
       validatePatch(fix.changes.map(c => c.path), wanted, fix.changes.map(c => `+++ b/${c.path}\n${c.content.split("\n").map(l => `+${l}`).join("\n")}`).join("\n"));

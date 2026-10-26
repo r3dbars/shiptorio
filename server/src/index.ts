@@ -1,3 +1,4 @@
+import { factoryRpc } from "./factory-rpc";
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
 
@@ -10,10 +11,12 @@ import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
-import { appJwt, gh, repoInstallationId } from "./github";
+import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 import { isAllowed } from "./session";
-import { previewAccess, secureTransport } from "./access";
+import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { joinWaitlist } from "./waitlist";
+import { landingPage, publicFile } from "./landing";
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
@@ -24,7 +27,7 @@ import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
-import { browserMutationAllowed, securityHeaders } from "./security";
+import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
@@ -59,7 +62,7 @@ const factory = (env: Env, repo: string) => {
       headers.set("X-Request-ID", trace.requestId);
       return target.fetch(new Request(request, { headers }));
     };
-    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+    return (...args: unknown[]) => factoryRpc(target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }, String(method), args, trace);
   } }) as typeof stub;
 };
 
@@ -136,10 +139,17 @@ app.use("*", async (c, next) => {
     return;
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
-  const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  const open = await publicRoute(c.req.raw, c.env);
+  if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
+  if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
+  if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
+  const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
+  const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  c.header("Cache-Control", "no-store");
+  // Docs are public static content; authenticated build assets retain their private immutable policy.
+  c.header("Cache-Control", isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method) && c.res.ok
+    ? "public, max-age=300" : browserCacheControl(c.req.raw, c.res.status));
 });
 
 app.onError((err, c) => {
@@ -254,7 +264,9 @@ async function installUrl(env: Env): Promise<string | null> {
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
   let slug = await env.CACHE?.get("app:slug");
   if (!slug) {
-    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug);
+    const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    await registerGithubCredential(jwt, env.DB, `github:app:${env.GITHUB_APP_ID}`);
+    slug = await gh<{ slug: string }>("/app", jwt).then((a) => a.slug);
     if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 });
   }
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
@@ -403,7 +415,7 @@ app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   const raw = JSON.parse(body);
-  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   return c.json({ job: await factory(c.env, identity.repo).claimRunner(identity.pairId, raw.harnesses) });
 });
 
@@ -558,6 +570,7 @@ app.all("*", async (c) => {
     return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
   }
   return response;
+
 });
 
 export { app }; // Unwrapped Hono app for route tests.

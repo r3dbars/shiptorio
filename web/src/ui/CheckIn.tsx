@@ -362,7 +362,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
             )}
             {end}
             <p className="ci-quote">{CHECKIN.quote}</p>
-            <button type="button" className="nm-btn" onClick={close}>
+            <button type="button" className="btn nm-btn" onClick={close}>
               {CHECKIN.back}
             </button>
           </div>

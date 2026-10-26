@@ -196,12 +196,7 @@ export const Science = z.object({
 });
 export type Science = z.infer<typeof Science>;
 
-export const SCIENCE_FOR: Record<ItemKind, keyof Science> = {
-  bug: "red",
-  feature: "green",
-  cleanup: "grey",
-  tests: "blue",
-};
+export { SCIENCE_FOR } from "./science";
 
 // ---------- the foreman layer (docs/PRODUCT.md) ----------
 
@@ -327,7 +322,7 @@ export type Foreman = z.infer<typeof Foreman>;
 
 // One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
 // and so does every time a rule had to stand in because Spark was down or unconfigured.
-export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "growth"]);
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "route", "growth"]);
 export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
 export const Thought = z.object({
   id: z.string(),

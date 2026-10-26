@@ -153,6 +153,7 @@ export const LINE = {
 export const POWER = {
   title: "Power",
   intro: "Your Claude and ChatGPT sign-ins are the power. More sign-ins, more builders. The planner picks what they build.",
+  introGeo: "Your sign-ins and your own computer power the builders. The planner decides what each one builds.",
   planner: "Planner",
   plannerTag: "steam plant",
   offline: "offline",
@@ -401,12 +402,21 @@ export const POWER_COPY: PanelCopy = {
   zone: "Power · AI compute",
   name: "Power plants",
   tag: ["green", "your sign-ins"],
-  what: "Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every check spends power, so more checks cost more. Heavy checks go where mistakes are expensive; docs stay cheap. The planner runs on its own steam plant.",
+  what: "Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every check spends power, so more checks cost more. Heavy checks go where mistakes are expensive; docs stay cheap. A model on your own computer is geothermal: free, but small and capped. The planner runs on its own steam plant.",
   actions: [
     { id: "sign-in", label: "Sign in with another plan", recommended: false },
     { id: "hold", label: "Hold low-value work", recommended: false },
     { id: "balance", label: "Balance power for me", recommended: true },
   ],
+};
+
+// A local model on the player's computer (Ollama or any OpenAI-compatible endpoint the runner finds).
+export const GEO_COPY: PanelCopy = {
+  zone: "Power · your computer",
+  name: "Geothermal plant",
+  tag: ["amber", "free, capped"],
+  what: "A model running on your own computer. It costs nothing, but it's small and only as fast as your machine, so it gets the small jobs.",
+  actions: POWER_COPY.actions,
 };
 
 // Every other machine on the map opens a panel too (Justin's playtest: click anything, see what it's doing).
@@ -485,6 +495,7 @@ export const THINKS = {
     orbit: "Judged a comeback",
     research: "Picked a check",
     permit: "Weighed a permit",
+    route: "Picked the power plant",
     growth: "Picked an experiment",
   } as Record<ThoughtDecision, string>,
 };

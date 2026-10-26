@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /$
+Allow: /welcome/
+Disallow: /api/
+Disallow: /access
+
+Sitemap: https://shiptorio.com/sitemap.xml

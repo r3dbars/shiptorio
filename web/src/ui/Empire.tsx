@@ -6,7 +6,7 @@
 // Behind a flag while Justin looks at it: ?empire=1 turns it on (and remembers), ?empire=0 off.
 
 import { useEffect, useMemo, useState } from "react";
-import { Empire as EmpireSchema, rollup, stuckScore, summarizeIsland, type FactoryState, type IslandSummary } from "@shiptorio/shared";
+import { rollup, stuckScore, summarizeIsland, type FactoryState, type IslandSummary } from "@shiptorio/shared";
 import type { SourceConfig } from "../source";
 import type { SatelliteSpec } from "../map/empire";
 import { Icon } from "./icons";
@@ -78,8 +78,10 @@ function simIslands(current: string, t: number): IslandSummary[] {
 async function fetchIslands(): Promise<IslandSummary[] | null> {
   const r = await fetch("/api/empire", { credentials: "same-origin" }).catch(() => null);
   if (r?.ok) {
-    const parsed = EmpireSchema.safeParse(await r.json().catch(() => null));
-    if (parsed.success) return parsed.data.islands;
+    // the schema (and zod) load only when there's an empire to check
+    const schemas = await import("../source/schemas").catch(() => null);
+    const parsed = schemas?.Empire.safeParse(await r.json().catch(() => null));
+    if (parsed?.success) return parsed.data.islands;
   }
   // older servers: the repo list alone still draws the islands
   const repos = await fetch("/api/repos", { credentials: "same-origin" }).catch(() => null);

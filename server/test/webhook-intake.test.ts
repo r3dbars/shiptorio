@@ -26,7 +26,7 @@ it("runner transport authenticates independently without opening the preview or 
   const revoked = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "revoked", user: fixtureUser(), expires: Date.now() + 10000 });
   expect((await app.fetch(new Request("https://shiptorio.com/api/runner/r3dbars/shiptorio/renew", { method: "POST", headers: { authorization: `Bearer ${revoked}` } }), env as never)).status).toBe(401);
   expect((await app.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/pair", { method: "POST" }), env as never)).status).toBe(401);
-  expect((await app.fetch(new Request("https://shiptorio.com/", { headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
+  expect((await app.fetch(new Request("https://shiptorio.com/index.html", { headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
 });
 
 it("authenticates, durably enqueues before 202, and deduplicates completed deliveries", async () => {
@@ -73,13 +73,13 @@ it("authenticates, durably enqueues before 202, and deduplicates completed deliv
 
 it("upgrades remote HTTP before authentication and sets HSTS on HTTPS gate responses", async () => {
   const env = { SIGNUP_GATE_MODE: "password", APP_PASSWORD: "test-preview", SESSION_SECRET: "test-secret" };
-  const insecure = await app.fetch(new Request("http://shiptorio.com/"), env as never);
+  const insecure = await app.fetch(new Request("http://shiptorio.com/index.html"), env as never);
   expect(insecure.status).toBe(308);
-  expect(insecure.headers.get("location")).toBe("https://shiptorio.com/");
-  const secure = await app.fetch(new Request("https://shiptorio.com/"), env as never);
+  expect(insecure.headers.get("location")).toBe("https://shiptorio.com/index.html");
+  const secure = await app.fetch(new Request("https://shiptorio.com/index.html"), env as never);
   expect(secure.status).toBe(401);
   expect(secure.headers.get("strict-transport-security")).toBe("max-age=31536000");
-  const local = await app.fetch(new Request("http://localhost/"), env as never);
+  const local = await app.fetch(new Request("http://localhost/index.html"), env as never);
   expect(local.status).toBe(401);
   expect(local.headers.has("location")).toBe(false);
   expect(local.headers.has("strict-transport-security")).toBe(false);

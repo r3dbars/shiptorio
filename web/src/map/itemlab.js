@@ -1464,6 +1464,8 @@ const beltTex = tex().belt;
   }
 
 export function setNight(on) { night = on; }
+// so scene.ts can build a throwaway probe copy (bake.ts) without shifting everyone's decor
+export const getSeed = () => seed, setSeed = (s) => { seed = s; };
 export {
   buildCheck,
   updateFx,
