@@ -76,6 +76,8 @@ export default {
       if (!Number.isInteger(index) || index < 0 || index > 5) return new Response('bad fixture user', { status: 400 });
       const user = { id: 123 + index, login: index ? `fixture${index}` : 'fixture' };
       await upsertUser(env, user);
+      // Explicitly grant the load accounts enough factories; production quotas still execute.
+      await env.DB.prepare('INSERT OR REPLACE INTO signup_allowlist (login, enabled, approved_by, factories, repos, runs_daily, updated_at) VALUES (?, 1, ?, 51, 51, 20, ?)').bind(user.login, 'test-fixture', Date.now()).run();
       await saveReach(env, user.id, { installations: [{ id: 1, account: 'fixture' }], repos: [...knownRepos].map(repo => ({ repo, installationId: 1, defaultBranch: 'main' })) });
       const session = await createSession(env, user, 'load fixture');
       return reply({ cookie: `${session.split(';')[0]}; ${preview.split(';')[0]}` });

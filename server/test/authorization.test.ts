@@ -223,7 +223,7 @@ it('broadcast shares checks per session within a frame but rechecks revocation o
   const state = FactoryState.parse({ repo: 'alice/private', baseBranch: 'main', districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
   const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
-  const epoch = await browserSocketEpoch(env);
+  const epoch = await browserSocketEpoch(env as never);
   let sent = 0, closed = 0;
   const sockets = Array.from({ length: 200 }, (_, index) => ({
     deserializeAttachment: () => ({ repo: state.repo, login: 'alice', epoch, expiresAt: Date.now() + 60000,

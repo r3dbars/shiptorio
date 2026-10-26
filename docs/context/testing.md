@@ -79,7 +79,7 @@ its intended stripping behavior; the tests do not change the shared contract.
 
 `bun run test:load` starts the isolated Worker, seeds one busy factory plus 50 other
 factories, opens 200 WebSockets on the first and one on each of the others (250 total),
-uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets), ramps handshakes in batches of 25, then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
+uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets, with explicit 51-factory signup allocations), ramps handshakes in batches of 25, then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
 client must receive the round's tick before the next round starts. It measures
 request-start → client patch receipt and tick RPC wall time, fails on disconnects or
 invalid messages and requires all 5,000 expected tick deliveries. This is a fan-out
