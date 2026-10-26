@@ -14,7 +14,7 @@ import {
   updateExperiment,
   type Experiment,
   type FunnelStep,
-  type RouteUsers,
+  type FunnelDay,
   checkStationId,
   insertCheck,
   researchBlocked,
@@ -1069,16 +1069,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const setExp = (e: Experiment) => apply({ experiments: [e, ...(s.experiments ?? []).filter((x) => x.id !== e.id)] });
   const expOf = (itemId: string) => s.experiments?.find((e) => e.itemId === itemId);
 
-  // A funnel day in the shape the PostHog mine pulls: people on each route.
-  const funnelRows = (g: GrowthDrop, now: number): RouteUsers[] => {
-    const rows: RouteUsers[] = [];
-    for (let i = 1; i <= 8; i++) {
-      const day = new Date(now - i * 86400000).toISOString().slice(0, 10);
-      const share = i === 1 ? g.dropped : g.before;
-      rows.push({ route: g.step.from, day, users: g.entered }, { route: g.step.to, day, users: Math.round(g.entered * share) });
-    }
-    return rows;
-  };
+  // The funnel step per day, per person, the shape the PostHog funnel query returns.
+  const funnelRows = (g: GrowthDrop, now: number): FunnelDay[] =>
+    Array.from({ length: 8 }, (_, k) => {
+      const i = 8 - k;
+      return { day: new Date(now - i * 86400000).toISOString().slice(0, 10), entered: g.entered, converted: Math.round(g.entered * (i === 1 ? g.dropped : g.before)) };
+    });
 
   const funnelDrop = (g: GrowthDrop, now: number) => {
     const drop = findFunnelDrop(funnelRows(g, now), g.step, now);

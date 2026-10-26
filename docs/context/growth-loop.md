@@ -7,8 +7,11 @@ acquisition, retention, same game, more districts). PR #177.
 
 ## The loop
 
-1. **Signal.** The PostHog mine already pulls people per route per day. A funnel step (`/cart → /checkout`)
-   that converts at least 20% worse yesterday than its 7-day baseline is a drop.
+1. **Signal.** Route traffic (the PostHog mine's existing poll) only *picks* the step to watch
+   (`guessFunnel`). Conversion always comes from a separate per-person funnel query (`funnelQuery`): people
+   whose first `from` pageview on a UTC day is followed by a `to` pageview later that same day. Same person,
+   in order, one-day window (`funnelDays` is the same rule in code, with disjoint-cohort and cross-day tests).
+   A step that converts at least 20% worse yesterday than its 7-day baseline, with all 8 days present, is a drop.
 2. **Proposal.** Spark proposes one small, reversible experiment (copy, a CTA, an onboarding tweak, a small
    layout change) through `Factory.think("growth")`, so it lands in "How it thinks". No Meta key, or no
    answer: a fixed rule picks one (`fallbackExperiment`) and it's logged as a fallback. Spark never writes it.
@@ -18,9 +21,11 @@ acquisition, retention, same game, more districts). PR #177.
 4. **Measure.** After the launch, the **measure station** (new machine `measure-1`, next to orbit watch)
    freezes the 7 days before the launch as the baseline (A), then adds each full day after the launch (B)
    and runs a two-proportion z-test.
-5. **Verdict.** `lift` (p < 0.05, at least +2%, at least 3 days in), `hurt` (p < 0.05, at least −2%, ends
-   the watch early), `no lift` (the 7-day window ran out). It pops over the station (`+20% LIFT`,
-   `NO LIFT`, `HURT`) and the sim offers a card: keep it / roll it back.
+5. **Verdict, once, at the predeclared 7-day horizon** (no daily peeking: stopping on the first p < 0.05
+   inflates false wins). Before day 7 it's always "still measuring"; a significant drop only shows as an
+   advisory early warning. At day 7: `inconclusive` if any day is missing or either side has under 200 people,
+   else `lift` (p < 0.05, at least +2%), `hurt` (p < 0.05, at least −2%) or `no lift`. It pops over the
+   station (`+20% LIFT`, `NO LIFT`, `HURT`, `NO CALL`) and the sim offers a card: keep it / roll it back.
 
 ## Where things live
 
@@ -46,6 +51,8 @@ launch, `ALPHA` 0.05, `MIN_LIFT` 2%.
 - **Funnel choice.** Live picks the step with `guessFunnel` (`/cart → /checkout`, `/pricing → /signup`,
   `/ → /signup`, `/ → /pricing`). Next: let the player name the funnel on the PostHog connect page, or ask
   PostHog for its saved funnels.
+- **Fixed horizon, not sequential.** One call at day 7 keeps the 5% error rate honest. An anytime-valid
+  sequential test (mSPRT / always-valid p-values) would allow a real early stop; not built yet.
 - **Before/after, not A/B.** It compares the week before the launch with the days after. Seasonality and
   other launches can fool it. Next: ship the change behind a PostHog feature flag and measure the split.
 - **Roll back is a log line in the sim.** Live has no "keep / roll back" card yet; the verdict lands in the

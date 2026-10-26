@@ -35,14 +35,14 @@ interface Panel {
   experiments?: Experiment[]; // the measure station: before vs after, per experiment
 }
 
-const EXP_WORD: Record<Experiment["state"], string> = { proposed: "waiting on you", building: "being built", measuring: "measuring", won: "lift", flat: "no lift", lost: "hurt", dropped: "dropped" };
+const EXP_WORD: Record<Experiment["state"], string> = { proposed: "waiting on you", building: "being built", measuring: "measuring", won: "lift", flat: "no lift", lost: "hurt", inconclusive: "no call", dropped: "dropped" };
 
 // Before (A) against after (B) for one experiment, as two bars and the call.
 function ExperimentRow({ e }: { e: Experiment }) {
   const a = rate(e.baseline);
   const b = e.after ? rate(e.after) : undefined;
   const max = Math.max(a, b ?? 0, 0.01);
-  const tone = e.state === "won" ? "good" : e.state === "lost" ? "bad" : e.state === "flat" ? "flat" : "";
+  const tone = e.state === "won" ? "good" : e.state === "lost" ? "bad" : e.state === "flat" || e.state === "inconclusive" ? "flat" : "";
   return (
     <li className={`sp-exp ${tone}`}>
       <div className="sp-exp-top">
@@ -130,7 +130,7 @@ function panelFor(id: string, state: FactoryState): Panel | null {
     const m = state.machines.find((x) => x.id === st.machineId);
     if (st.kind === "measure") {
       const exps = (state.experiments ?? []).filter((e) => e.state !== "dropped");
-      const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost");
+      const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost" || e.state === "inconclusive");
       const live = exps.find((e) => e.state === "measuring");
       return {
         copy: STATION_COPY.measure,

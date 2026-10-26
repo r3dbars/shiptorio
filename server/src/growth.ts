@@ -3,7 +3,7 @@
 // that dropped (with no experiment already on it) comes back as a proposal for Spark to turn into one.
 // Pure: the Factory does the Spark call through think() and ingests the proposal as ore.
 
-import { findFunnelDrop, guessFunnel, MEASURE_DAYS, stepCounts, updateExperiment, type Experiment, type FunnelDrop, type FunnelStep, type Item, type RouteUsers, type Station } from "@shiptorio/shared";
+import { findFunnelDrop, guessFunnel, MEASURE_DAYS, stepCounts, updateExperiment, type Experiment, type FunnelDay, type FunnelDrop, type FunnelStep, type Item, type Station } from "@shiptorio/shared";
 import type { Signal } from "./sources/types";
 import type { RouteDay } from "./sources/posthog";
 
@@ -11,8 +11,16 @@ const DAY = 86400000;
 const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 const MAX_EXPERIMENTS = 20;
 
-/** People per route per day for the key event, the shape the funnel math reads. */
-export const routeUsers = (rows: RouteDay[], keyEvent: string): RouteUsers[] => rows.filter((r) => r.event === keyEvent).map(({ route, day, users }) => ({ route, day, users }));
+/** The funnel step to watch for drops: a pair of busy pageview routes that looks like one (traffic rows only pick it). */
+export const funnelFromTraffic = (rows: RouteDay[]): FunnelStep | null => guessFunnel([...new Set(rows.filter((r) => r.event === "$pageview").map((r) => r.route))]);
+
+/** Every funnel step the tick needs numbers for: the one to watch, plus each experiment still being built or measured. */
+export function stepsToQuery(experiments: Experiment[], watch: FunnelStep | null): FunnelStep[] {
+  const steps = new Map<string, FunnelStep>();
+  if (watch) steps.set(watch.label, watch);
+  for (const e of experiments) if (e.state === "building" || e.state === "measuring") steps.set(e.step.label, e.step);
+  return [...steps.values()].slice(0, 4);
+}
 
 /** Full days strictly after `from` up to yesterday, at most `max`. */
 function daysAfter(from: number, now: number, max: number): Set<string> {
@@ -30,26 +38,32 @@ export interface GrowthTick {
   drop?: FunnelDrop; // a funnel step that dropped with nothing on it yet: ask Spark for an experiment
 }
 
-export function growthTick(experiments: Experiment[], items: Item[], users: RouteUsers[], now: number, step: FunnelStep | null = guessFunnel([...new Set(users.map((u) => u.route))])): GrowthTick {
+/** `funnels` maps a step's label to its per-person funnel days (server/src/sources/posthog.ts `funnelQuery`). */
+export function growthTick(experiments: Experiment[], items: Item[], funnels: Map<string, FunnelDay[]>, now: number, step: FunnelStep | null): GrowthTick {
   const decided: Experiment[] = [];
   const next = experiments.map((exp) => {
+    const rows = funnels.get(exp.step.label);
     const item = exp.itemId ? items.find((i) => i.id === exp.itemId) : undefined;
     // the PR launched: freeze the week before as the baseline, start the watch
     if (exp.state === "building" && item?.state === "launched") {
       const launchedAt = item.orbit?.since ?? item.updatedAt;
-      return { ...exp, state: "measuring" as const, prNumber: item.orbit?.prNumber ?? item.prNumber, launchedAt, baseline: stepCounts(users, exp.step, daysBefore(launchedAt, 7)), daysWatched: 0 };
+      // no funnel numbers this poll: wait for the next one rather than freezing an empty baseline
+      if (!rows) return exp;
+      return { ...exp, state: "measuring" as const, prNumber: item.orbit?.prNumber ?? item.prNumber, launchedAt, baseline: stepCounts(rows, daysBefore(launchedAt, 7)), daysWatched: 0 };
     }
     if (exp.state === "building" && !item) return { ...exp, state: "dropped" as const }; // the ore was closed before it shipped
-    if (exp.state !== "measuring" || !exp.launchedAt) return exp;
+    if (exp.state !== "measuring" || !exp.launchedAt || !rows) return exp;
     const days = daysAfter(exp.launchedAt, now, exp.windowDays);
     if (!days.size) return exp;
-    const out = updateExperiment(exp, stepCounts(users, exp.step, days), days.size, now);
+    // days.size is calendar days watched; stepCounts().days is how many of them PostHog had numbers for
+    const out = updateExperiment(exp, stepCounts(rows, days), days.size, now);
     if (out.state !== "measuring" && out !== exp) decided.push(out);
     return out;
   });
   const changed = next.some((e, i) => e !== experiments[i]);
   const open = (e: Experiment) => e.state === "proposed" || e.state === "building" || e.state === "measuring";
-  const drop = step && !next.some((e) => e.step.label === step.label && open(e)) ? findFunnelDrop(users, step, now) ?? undefined : undefined;
+  const watched = step && funnels.get(step.label);
+  const drop = step && watched && !next.some((e) => e.step.label === step.label && open(e)) ? findFunnelDrop(watched, step, now) ?? undefined : undefined;
   return { experiments: next.slice(0, MAX_EXPERIMENTS), changed, decided, drop };
 }
 
@@ -87,7 +101,7 @@ export const measureMachine = () => ({ id: MEASURE_ID, type: "inspector" as cons
 export function measureStation(s: { experiments?: Experiment[]; machines: { id: string }[] }): Station | null {
   const exps = s.experiments ?? [];
   if (!exps.length || !s.machines.some((m) => m.id === MEASURE_ID)) return null;
-  const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost");
+  const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost" || e.state === "inconclusive");
   const last = [...decided].sort((a, b) => (b.decidedAt ?? 0) - (a.decidedAt ?? 0))[0];
   return {
     id: MEASURE_ID, kind: "measure", name: "Measure station", machineId: MEASURE_ID,
