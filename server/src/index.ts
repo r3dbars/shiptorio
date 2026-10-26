@@ -7,7 +7,8 @@ import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
 import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
 import { isAllowed } from "./session";
-import { previewAccess, secureTransport } from "./access";
+import { previewAccess, publicRoute, secureTransport } from "./access";
+import { joinWaitlist } from "./waitlist";
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
@@ -91,11 +92,30 @@ app.use("*", async (c, next) => {
     return;
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
+  const open = await publicRoute(c.req.raw, c.env);
+  if (open === "landing") return landing(c.req.raw, c.env);
+  if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
+  if (open === "file") {
+    await next();
+    if (c.res.ok) c.header("Cache-Control", "public, max-age=3600");
+    return;
+  }
   const denied = await previewAccess(c.req.raw, c.env);
   if (denied) return denied;
   await next();
   c.header("Cache-Control", "no-store");
 });
+
+// The public landing page. "/" is the app for anyone with the preview cookie, so it must not be cached.
+async function landing(request: Request, env: Env): Promise<Response> {
+  const page = await env.ASSETS.fetch(new Request(new URL("/welcome/", request.url), { method: request.method }));
+  const response = new Response(page.body, page);
+  response.headers.set("cache-control", "no-cache");
+  response.headers.set("vary", "cookie");
+  response.headers.set("x-content-type-options", "nosniff");
+  response.headers.set("content-security-policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+  return response;
+}
 
 app.onError((err, c) => {
   console.error(new Redactor(c.env).value({ error: "Request failed" }));

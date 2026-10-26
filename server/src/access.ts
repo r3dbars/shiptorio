@@ -54,6 +54,24 @@ async function validForm(request: Request, secret: string, token: string | null)
   return signature === await formSignature(secret, new URL(request.url).origin, `${expires}.${nonce}`);
 }
 
+// shiptorio.com is public: anyone without the preview cookie gets the landing page at "/"
+// (web/public/welcome/), its files, robots/sitemap and the waitlist. Everything else stays gated.
+const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|robots\.txt|sitemap\.xml)$/;
+export type PublicRoute = "landing" | "file" | "waitlist";
+export async function publicRoute(request: Request, env: AccessEnv): Promise<PublicRoute | null> {
+  const url = new URL(request.url);
+  const read = request.method === "GET" || request.method === "HEAD";
+  if (read && PUBLIC_FILE.test(url.pathname)) return "file";
+  if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
+  if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;
+  return (await hasPreviewAccess(request, env)) ? null : "landing";
+}
+async function hasPreviewAccess(request: Request, env: AccessEnv): Promise<boolean> {
+  if (!env.APP_PASSWORD || !env.SESSION_SECRET) return false;
+  const cookie = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_access=([^;]+)/)?.[1];
+  return !!(await readSession(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, cookie ? `shiptorio_session=${cookie}` : null));
+}
+
 export async function previewAccess(request: Request, env: AccessEnv): Promise<Response | null> {
   const secure = secureTransport(request);
   if (secure) return secure;
@@ -101,5 +119,6 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
     return gate(request, secret, "Your browser did not keep the sign-in cookie. Enable cookies for this site, then try again.", next);
   }
   if (url.pathname.startsWith("/api/")) return new Response("Preview password required", { status: 401, headers: { "cache-control": "no-store" } });
-  return gate(request, secret, "", url.pathname + url.search);
+  // The landing page links to /access?next=/, so the form sends players straight on to next.
+  return gate(request, secret, "", url.pathname === "/access" ? next : url.pathname + url.search);
 }

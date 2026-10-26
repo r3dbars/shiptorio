@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shiptorio: your repo is a factory that learns to run itself</title>
+<meta name="description" content="Shiptorio turns your codebase into a factory game. Bugs and requests are ore, AI agents are the machines, and every rocket is a real merged pull request. Verify, then automate, until you stop being the bottleneck.">
+<link rel="canonical" href="https://shiptorio.com/">
+<meta name="theme-color" content="#1b2448">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://shiptorio.com/">
+<meta property="og:title" content="Shiptorio: the factory must grow">
+<meta property="og:description" content="Your repo as a factory game. Every rocket is a real merged PR. Verify, then automate, until it runs itself.">
+<meta property="og:image" content="https://shiptorio.com/welcome/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%231b2448'/%3E%3Crect x='7' y='2' width='2' height='2' fill='%23e8685c'/%3E%3Crect x='6' y='4' width='4' height='6' fill='%23ece7dc'/%3E%3Crect x='4' y='9' width='2' height='3' fill='%23e8685c'/%3E%3Crect x='10' y='9' width='2' height='3' fill='%23e8685c'/%3E%3Crect x='7' y='10' width='2' height='4' fill='%23e3a33f'/%3E%3C/svg%3E">
+<link rel="preload" href="/welcome/barlow-sc-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/welcome/barlow-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" as="image" href="/welcome/poster.webp" imagesrcset="/welcome/poster-640.webp 640w, /welcome/poster.webp 1280w" imagesizes="(min-width: 960px) 760px, 100vw" fetchpriority="high">
+<style>
+@font-face{font-family:"Barlow";font-weight:400;font-display:swap;src:url(/welcome/barlow-400.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:500;font-display:swap;src:url(/welcome/barlow-500.woff2) format("woff2")}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:600;font-display:swap;src:url(/welcome/barlow-sc-600.woff2) format("woff2")}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:700;font-display:swap;src:url(/welcome/barlow-sc-700.woff2) format("woff2")}
+/* Same tokens as the game's HUD (web/src/styles.css) so the page reads as the game, not a template. */
+:root{
+  --stone:#c9b48a;--moss:#4f7d3b;--grass:#8fd14f;--amber:#e3a33f;--green:#6cc28c;--red:#e8685c;--blue:#7aa7d9;
+  --void:#1b2448;--void-deep:#141a36;--panel:rgba(22,25,33,.92);--panel-solid:#171a22;--hair:rgba(255,255,255,.12);
+  --ink:#ece7dc;--dim:#b4b9c4;--dark:#12141a;
+  --pixel:"Barlow Semi Condensed","Barlow",system-ui,sans-serif;--body:"Barlow",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--void);color:var(--ink);font:400 18px/1.55 var(--body);
+  background-image:radial-gradient(1px 1px at 12% 18%,#6b7aa8 50%,transparent 51%),radial-gradient(1px 1px at 78% 9%,#6b7aa8 50%,transparent 51%),radial-gradient(1px 1px at 42% 62%,#4d5a86 50%,transparent 51%),radial-gradient(1px 1px at 88% 48%,#4d5a86 50%,transparent 51%),radial-gradient(1px 1px at 22% 84%,#6b7aa8 50%,transparent 51%);
+  background-size:420px 420px}
+a{color:var(--amber)}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.skip{position:absolute;left:-999px;top:8px;background:var(--amber);color:var(--dark);padding:8px 12px;border-radius:8px;z-index:9}
+.skip:focus{left:8px}
+
+/* top bar: the HUD chips */
+header.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0}
+.brand{display:flex;align-items:center;gap:10px;font:700 22px/1 var(--pixel);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand svg{width:30px;height:30px;image-rendering:pixelated}
+.chip{display:inline-flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--hair);border-radius:12px;padding:8px 14px;font:600 15px/1 var(--pixel);color:var(--ink);text-decoration:none}
+.chip:hover{border-color:rgba(255,255,255,.3)}
+
+/* hero */
+.hero{display:grid;gap:28px;padding:20px 0 40px;align-items:center}
+@media (min-width:960px){.hero{grid-template-columns:minmax(0,1fr) 760px;gap:36px;padding:36px 0 64px}}
+.kicker{font:600 15px/1 var(--pixel);letter-spacing:.14em;text-transform:uppercase;color:var(--grass);margin:0 0 14px}
+h1{font:700 clamp(40px,7vw,64px)/1.02 var(--pixel);margin:0 0 18px;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--amber)}
+.lede{color:var(--dim);font-size:19px;margin:0 0 24px;max-width:34em}
+.lede b{color:var(--ink);font-weight:500}
+
+/* the map window: a HUD panel framing the real game */
+.screen{position:relative;border-radius:16px;overflow:hidden;background:var(--void-deep);border:2px solid #0d1024;box-shadow:0 0 0 1px var(--hair),0 24px 60px rgba(0,0,0,.45);aspect-ratio:16/9}
+.screen img,.screen video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.screen video{opacity:0;transition:opacity .4s}
+.screen video.on{opacity:1}
+.screen .tag{position:absolute;left:12px;bottom:12px;background:var(--panel);border:1px solid var(--hair);border-radius:10px;padding:6px 10px;font:600 14px/1 var(--pixel);color:var(--ink);display:flex;gap:8px;align-items:center}
+.dot{width:8px;height:8px;border-radius:2px;background:var(--green);box-shadow:0 0 8px var(--green)}
+.screen button{position:absolute;right:12px;bottom:12px;background:var(--panel);border:1px solid var(--hair);border-radius:10px;color:var(--ink);font:600 14px/1 var(--pixel);padding:8px 12px;cursor:pointer;min-height:36px}
+
+/* waitlist: the game's primary button */
+form.join{display:flex;flex-wrap:wrap;gap:10px;max-width:520px}
+form.join label{position:absolute;left:-9999px}
+form.join input[type=email]{flex:1 1 220px;min-width:0;min-height:52px;padding:0 16px;border-radius:12px;border:1px solid var(--hair);background:var(--panel-solid);color:var(--ink);font:500 18px var(--body)}
+form.join input::placeholder{color:#8d93a1}
+.btn{min-height:52px;padding:0 22px;border:0;border-radius:12px;background:var(--amber);color:var(--dark);font:700 19px/1 var(--pixel);letter-spacing:.02em;cursor:pointer;box-shadow:inset 0 -3px 0 rgba(0,0,0,.25)}
+.btn:hover{filter:brightness(1.07)}
+.btn[disabled]{opacity:.6;cursor:progress}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.note{min-height:1.5em;margin:10px 0 0;font-size:16px;color:var(--dim)}
+.note.ok{color:var(--green)}.note.err{color:#ff9d93}
+.enter{margin:14px 0 0;font-size:16px;color:var(--dim)}
+
+/* sections */
+section{padding:48px 0}
+h2{font:700 clamp(30px,4.6vw,42px)/1.1 var(--pixel);margin:0 0 12px}
+.sub{color:var(--dim);margin:0 0 28px;max-width:40em}
+.cards{display:grid;gap:18px}
+@media (min-width:760px){.cards{grid-template-columns:repeat(3,1fr)}}
+.card{background:var(--panel);border:1px solid var(--hair);border-radius:16px;overflow:hidden}
+.card img{display:block;width:100%;height:auto;aspect-ratio:8/5;image-rendering:pixelated;background:var(--void-deep)}
+.card div{padding:16px 18px 20px}
+.card h3{font:700 22px/1.2 var(--pixel);margin:0 0 6px}
+.card p{margin:0;color:var(--dim);font-size:17px}
+.step{display:inline-block;font:700 13px/1 var(--pixel);letter-spacing:.12em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+
+/* the trust ladder: like the gauntlet stations on a belt */
+.ladder{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+@media (min-width:760px){.ladder{grid-template-columns:repeat(4,1fr)}}
+.ladder li{position:relative;background:var(--panel);border:1px solid var(--hair);border-radius:14px;padding:16px 16px 18px;border-top:4px solid var(--c,var(--amber))}
+.ladder b{display:block;font:700 20px/1.2 var(--pixel);margin-bottom:4px}
+.ladder span{color:var(--dim);font-size:16px}
+.belt{height:10px;margin:22px 0 0;border-radius:3px;background:repeating-linear-gradient(90deg,#2a2f3d 0 14px,#3a4050 14px 18px);box-shadow:inset 0 0 0 1px #0d1024;animation:belt 1.2s linear infinite}
+@keyframes belt{to{background-position:18px 0}}
+
+.big{background:var(--panel);border:1px solid var(--hair);border-radius:20px;padding:28px}
+@media (min-width:760px){.big{padding:40px 44px}}
+.big p{color:var(--dim);max-width:44em}
+.big p b{color:var(--ink);font-weight:500}
+
+footer{padding:36px 0 48px;color:var(--dim);font-size:15px;border-top:1px solid var(--hair);margin-top:24px}
+footer .row{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between;align-items:center}
+.credit{font:600 15px/1 var(--pixel);letter-spacing:.04em;color:var(--dim)}
+
+@media (prefers-reduced-motion:reduce){.belt{animation:none}.screen video{transition:none}}
+</style>
+</head>
+<body>
+<a class="skip" href="#join">Skip to the waitlist</a>
+<div class="wrap">
+  <header class="bar">
+    <a class="brand" href="/" aria-label="Shiptorio home">
+      <svg viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true"><rect x="7" y="1" width="2" height="2" fill="#e8685c"/><rect x="6" y="3" width="4" height="7" fill="#ece7dc"/><rect x="7" y="5" width="2" height="2" fill="#7aa7d9"/><rect x="4" y="8" width="2" height="4" fill="#e8685c"/><rect x="10" y="8" width="2" height="4" fill="#e8685c"/><rect x="7" y="10" width="2" height="2" fill="#e8685c"/><rect x="7" y="12" width="2" height="3" fill="#e3a33f"/></svg>
+      Shiptorio
+    </a>
+    <a class="chip" href="/access?next=%2F">Enter the factory</a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <p class="kicker">The factory must grow</p>
+        <h1>Your repo is a factory. <em>Teach it to run itself.</em></h1>
+        <p class="lede">Shiptorio turns your codebase into a factory game. <b>Bugs and requests are ore, AI agents are the machines, and every rocket is a real merged pull request.</b> You play by deciding. The factory learns to need you less.</p>
+        <form class="join" id="join" action="/api/waitlist" method="post" novalidate>
+          <label for="email">Email address</label>
+          <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@yourstartup.com" maxlength="254" required>
+          <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+          <button class="btn" type="submit">Join the waitlist</button>
+        </form>
+        <p class="note" id="note" role="status" aria-live="polite"></p>
+        <p class="enter">Early access is invite only. Have the password? <a href="/access?next=%2F">Enter the factory</a>.</p>
+      </div>
+      <div class="screen">
+        <img src="/welcome/poster.webp" srcset="/welcome/poster-640.webp 640w, /welcome/poster.webp 1280w" sizes="(min-width: 960px) 760px, 100vw" width="1280" height="720" alt="A floating island factory in Shiptorio: belts carry work from ore fields through machines and inspection stations to a rocket pad" fetchpriority="high">
+        <video id="loop" muted loop playsinline preload="none" width="1280" height="720" aria-label="30 seconds of a Shiptorio factory: issues come in, agents build fixes, checks run, and a merged pull request launches as a rocket"></video>
+        <span class="tag"><span class="dot" aria-hidden="true"></span>Real game, 30 second loop</span>
+        <button type="button" id="toggle" hidden>Pause</button>
+      </div>
+    </div>
+
+    <section aria-labelledby="how">
+      <h2 id="how">How it plays</h2>
+      <p class="sub">Connect a GitHub repo and it becomes a floating island. Every district is a folder. Everything you see is real work happening in your repo.</p>
+      <div class="cards">
+        <article class="card">
+          <img src="/welcome/step-ore.webp" width="480" height="300" loading="lazy" decoding="async" alt="Ore fields and machines on the factory floor, one machine building a fix for the server folder">
+          <div><span class="step">1 · Ore</span><h3>Feedback is ore</h3><p>Issues, Sentry errors and PostHog drops get mined, sorted and planned. Your Claude and ChatGPT sign-ins power the machines that build the fix.</p></div>
+        </article>
+        <article class="card">
+          <img src="/welcome/step-gauntlet.webp" width="480" height="300" loading="lazy" decoding="async" alt="Inspection stations on the belt checking a pull request for the web folder">
+          <div><span class="step">2 · Gauntlet</span><h3>Every PR runs the gauntlet</h3><p>CI, a verify bay, AI review, your merge gate, then orbit watch after it ships. Anything that fails rides the rework belt back with a scar tag.</p></div>
+        </article>
+        <article class="card">
+          <img src="/welcome/step-rocket.webp" width="480" height="300" loading="lazy" decoding="async" alt="A rocket on the launch pad venting smoke as a pull request merges">
+          <div><span class="step">3 · Launch</span><h3>A rocket is a merged PR</h3><p>Launch merges the pull request for real. The bottleneck moves, and there is always a next move waiting for you.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="why">
+      <div class="big">
+        <p class="kicker">Why it exists</p>
+        <h2 id="why">You're the bottleneck. That's the game.</h2>
+        <p>AI writes the code now. What slows shipping is a person deciding what to build, what to check, and what it has to prove. Shiptorio makes those calls visible and fast, then pushes you further: <b>add more checks, verify everything, and let each clean ship earn trust.</b> Verify, then automate. Over time the factory runs more and more of itself.</p>
+        <ol class="ladder" aria-label="How autonomy is earned">
+          <li style="--c:var(--blue)"><b>Ask first</b><span>Day one, nothing ships without your yes.</span></li>
+          <li style="--c:var(--amber)"><b>Quick check-ins</b><span>Swipe through a short deck of next moves.</span></li>
+          <li style="--c:var(--green)"><b>Launch permits</b><span>Clean ships earn a district the right to launch alone.</span></li>
+          <li style="--c:var(--grass)"><b>Lights out</b><span>The factory runs itself. You watch it grow.</span></li>
+        </ol>
+        <div class="belt" aria-hidden="true"></div>
+      </div>
+    </section>
+
+    <section id="pricing" hidden></section>
+
+    <section aria-labelledby="cta">
+      <h2 id="cta">Build a factory that ships</h2>
+      <p class="sub">Shiptorio is in private preview for solo founders and tiny teams. Join the waitlist and we'll send an invite when there's room on the island.</p>
+      <a class="btn" href="#join" style="display:inline-flex;align-items:center;text-decoration:none">Get on the waitlist</a>
+    </section>
+  </main>
+
+  <footer>
+    <div class="row">
+      <span>Shiptorio · the factory must grow</span>
+      <span class="credit">powered by Meta Muse Spark</span>
+    </div>
+  </footer>
+</div>
+<script>
+(function () {
+  var form = document.getElementById("join"), note = document.getElementById("note");
+  var say = function (text, kind) { note.textContent = text; note.className = "note" + (kind ? " " + kind : ""); };
+  if (/[?&]joined=1/.test(location.search)) say("You're on the list. We'll email you when your island is ready.", "ok");
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var email = form.email.value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { say("That email doesn't look right. Try again?", "err"); form.email.focus(); return; }
+    var button = form.querySelector("button"); button.disabled = true; say("Joining…");
+    fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email, website: form.website.value, ref: document.referrer.slice(0, 200) }) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
+      .then(function (r) {
+        if (r.ok) { say("You're on the list. We'll email you when your island is ready.", "ok"); form.reset(); }
+        else say(r.status === 429 ? "Too many tries from here. Give it an hour." : (r.body.error || "That didn't work. Try again in a minute."), "err");
+      })
+      .catch(function () { say("Couldn't reach the factory. Check your connection and try again.", "err"); })
+      .then(function () { button.disabled = false; });
+  });
+
+  // The loop loads after the page does, so it never slows the first paint.
+  var video = document.getElementById("loop"), toggle = document.getElementById("toggle");
+  var still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
+  var start = function () {
+    video.src = "/welcome/loop.mp4";
+    video.addEventListener("playing", function () { video.classList.add("on"); }, { once: true });
+    toggle.hidden = false;
+    if (still) { toggle.textContent = "Play"; return; }
+    video.play().catch(function () { toggle.textContent = "Play"; });
+  };
+  toggle.addEventListener("click", function () {
+    if (video.paused) { video.play(); toggle.textContent = "Pause"; } else { video.pause(); toggle.textContent = "Play"; }
+  });
+  if (document.readyState === "complete") setTimeout(start, 300); else addEventListener("load", function () { setTimeout(start, 300); });
+})();
+</script>
+</body>
+</html>
