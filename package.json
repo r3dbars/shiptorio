@@ -1,0 +1,19 @@
+{
+  "name": "shiptorio",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "bun run build && bun run --filter './server' dev",
+    "dev:web": "bun run --filter './web' dev",
+    "build": "bun run --filter './web' build",
+    "deploy": "bun run build && bun run --filter './server' deploy",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun test",
+    "spark:check": "bun server/scripts/spark-check.ts"
+  }
+}
