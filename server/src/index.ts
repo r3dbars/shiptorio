@@ -2,7 +2,7 @@ import { repoAccess, requireUser as resolveUser, validRepo, type AccessUser } fr
 import { Redactor } from "./redact";
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
+import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, installationToken, repoInstallationId } from "./github";
 import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
@@ -144,6 +144,7 @@ app.route("/", ops);
 app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
