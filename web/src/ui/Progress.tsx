@@ -9,6 +9,7 @@ import {
   dayKey,
   levelOf,
   liveStreak,
+  mergeProgress,
   nextUnlock,
   observe,
   openDay,
@@ -24,6 +25,7 @@ import {
 } from "@shiptorio/shared";
 import { Icon, type IconName } from "./icons";
 import { sound } from "../sound/engine";
+import { PROGRESS, WORDS } from "../copy";
 
 const ON_KEY = "shiptorio:progress-on";
 const BRIEF_KEY = "shiptorio:brief-day";
@@ -84,16 +86,51 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
     setPop(null);
   }, [key]);
 
+  // Signed in: progress follows you across devices. Pull once, merge, and push changes a few seconds later.
+  const synced = on && profile.startsWith("github:") && profile !== "github:signed-out";
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pull = useRef(false);
+  const push = useCallback(() => {
+    if (!synced) return;
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => {
+      if (!pull.current) return; // never overwrite the server copy before reading it
+      fetch("/api/me/progress", { method: "PUT", body: JSON.stringify(cur.current), headers: { "content-type": "application/json" } }).catch(() => {});
+    }, 3000);
+  }, [synced]);
+  useEffect(() => {
+    if (!synced) return;
+    let live = true;
+    pull.current = false;
+    fetch("/api/me/progress")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { progress: Progress | null } | null) => {
+        if (!live || !body) return;
+        pull.current = true;
+        const server = body.progress ? parseProgress(JSON.stringify(body.progress)) : null;
+        const next = server ? mergeProgress(cur.current, server) : cur.current;
+        cur.current = next;
+        setP(next);
+        store.set(key, JSON.stringify(next));
+        push();
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [synced, key, push]);
+
   const apply = useCallback(
     (step: Step) => {
       cur.current = step.progress;
       setP(step.progress);
       store.set(key, JSON.stringify(step.progress));
+      push();
       if (!step.gains.length && !step.unlocked.length) return;
       setPop({ id: ++seq.current, gains: step.gains, levelUp: step.levelUp, unlocked: step.unlocked });
       if (step.levelUp || step.unlocked.length) sound.play("level_up");
     },
-    [key],
+    [key, push],
   );
 
   useEffect(() => {
@@ -139,16 +176,16 @@ export function ProgressChip({ p, onOpen }: { p: Progress; onOpen: () => void })
   const streak = liveStreak(p, Date.now());
   const today = p.last === dayKey(Date.now());
   return (
-    <button type="button" className="chip lvl-chip" onClick={onOpen} aria-label={`Level ${lv.level}, ${streak}-day streak. Open progress`} title={`${lv.title} · ${lv.have}/${lv.need} XP to level ${lv.level + 1}`}>
+    <button type="button" className="chip lvl-chip" onClick={onOpen} aria-label={PROGRESS.chipLabel(lv.level, streak)} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
       <span className={`badge flame${today ? " lit" : ""}`}>
         <Icon name="flame" size={14} />
       </span>
       <span>
         {streak}
-        <small>{streak === 1 ? "day" : "days"}</small>
+        <small>{PROGRESS.days(streak)}</small>
       </span>
       <span className="lvl">
-        Lv {lv.level}
+        {PROGRESS.lv(lv.level)}
         <i style={{ width: `${Math.round(lv.into * 100)}%` }} />
       </span>
     </button>
@@ -164,13 +201,13 @@ export function XpPop({ pop }: { pop: Pop | null }) {
     <div key={pop.id} className={`xp-pop card${big ? " big" : ""}`} role="status" aria-live="polite">
       {xp > 0 && (
         <div className="xp-line">
-          <b>+{xp} XP</b>
+          <b>{PROGRESS.xp(xp)}</b>
           <span>{pop.gains.map((g) => g.text).join(" · ")}</span>
         </div>
       )}
       {pop.levelUp && (
         <div className="xp-level">
-          <Icon name="up" size={16} /> Level {pop.levelUp.level} · {pop.levelUp.title}
+          <Icon name="up" size={16} /> {PROGRESS.levelUp(pop.levelUp.level, pop.levelUp.title)}
         </div>
       )}
       {pop.unlocked.map((u) => (
@@ -179,7 +216,7 @@ export function XpPop({ pop }: { pop: Pop | null }) {
             <Icon name={u.icon as IconName} size={18} />
           </span>
           <span>
-            <b>Unlocked: {u.name}</b>
+            <b>{PROGRESS.unlocked(u.name)}</b>
             <small>{u.what}</small>
           </span>
         </div>
@@ -199,18 +236,18 @@ export function DeckTrend({ p }: { p: Progress }) {
         {s.trend.map((d, i) => (
           <span key={d.day} className={i === s.trend.length - 1 ? "now" : ""}>
             <i style={{ height: `${Math.max(6, Math.round((d.deck / max) * 100))}%` }} />
-            <small>{i === s.trend.length - 1 ? "today" : new Date(`${d.day}T12:00`).toLocaleDateString(undefined, { weekday: "narrow" })}</small>
+            <small>{i === s.trend.length - 1 ? PROGRESS.today : new Date(`${d.day}T12:00`).toLocaleDateString(undefined, { weekday: "narrow" })}</small>
           </span>
         ))}
       </div>
       <p className="empty">
         {s.shrink === null
-          ? "Cards waiting on you each morning. Play a few days and watch it shrink as trust grows."
+          ? PROGRESS.trendEmpty
           : s.shrink > 0
-            ? `${s.shrink} fewer card${s.shrink === 1 ? "" : "s"} waiting on you than ${s.trend.length - 1} day${s.trend.length === 2 ? "" : "s"} ago. Trust is growing.`
+            ? PROGRESS.trendDown(s.shrink, s.trend.length - 1)
             : s.shrink < 0
-              ? `${-s.shrink} more than ${s.trend.length - 1} day${s.trend.length === 2 ? "" : "s"} ago. New work came in. Clean ships and new checks shrink it.`
-              : "Same as before. Clean ships, new checks and launch permits shrink it."}
+              ? PROGRESS.trendUp(-s.shrink, s.trend.length - 1)
+              : PROGRESS.trendSame}
       </p>
     </div>
   );
@@ -222,13 +259,13 @@ export function DayTally({ p }: { p: Progress }) {
   return (
     <div className="pg-tally">
       <div>
-        <b>{t.ships}</b>shipped
+        <b>{t.ships}</b>{PROGRESS.tally.ships}
       </div>
       <div>
-        <b>{t.cards}</b>cards answered
+        <b>{t.cards}</b>{PROGRESS.tally.cards}
       </div>
       <div>
-        <b>+{t.xp}</b>XP today
+        <b>+{t.xp}</b>{PROGRESS.tally.xp}
       </div>
     </div>
   );
@@ -255,42 +292,42 @@ export function MorningBrief({ p, deck, onCheckin, onClose }: { p: Progress; dec
   const streak = liveStreak(p, Date.now());
   const y = s.yesterday;
   const hour = new Date().getHours();
-  const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const hello = PROGRESS.hello(hour);
   const keep = streak > 0 && p.last !== dayKey(Date.now());
   return (
-    <section className="card nextmove brief" aria-label="Today">
+    <section className="card nextmove brief" aria-label={PROGRESS.briefLabel}>
       <div className="nm-head">
         <span className="nm-kicker">
           <Icon name="sun" size={14} /> {hello}
         </span>
         {streak > 0 && (
           <span className="brief-streak">
-            <Icon name="flame" size={12} /> {streak}-day streak
+            <Icon name="flame" size={12} /> {PROGRESS.streak(streak)}
           </span>
         )}
       </div>
       <h2 className="nm-title">
         {deck.length === 0
-          ? "Nothing is waiting on you. The factory's running."
-          : `${deck.length} card${deck.length === 1 ? "" : "s"} waiting on you today.`}
+          ? PROGRESS.nothing
+          : PROGRESS.cardsToday(deck.length)}
       </h2>
       {y && (
         <p className="nm-why">
-          Last time: {y.ships} shipped, {y.cards} cards answered{y.automated ? `, ${Math.round(y.automated * 100)}% launched on their own` : ""}.
-          {keep ? ` One move today keeps your streak at ${streak + 1}.` : ""}
+          {PROGRESS.lastTime(y.ships, y.cards, Math.round((y.automated ?? 0) * 100))}
+          {keep ? PROGRESS.keepStreak(streak + 1) : ""}
         </p>
       )}
-      {!y && <p className="nm-why">Answer a card or ship a PR every day to start a streak. Streaks unlock things for your island.</p>}
+      {!y && <p className="nm-why">{PROGRESS.startStreak}</p>}
       <DeckTrend p={p} />
       <div className="nm-options">
         {deck.length > 0 ? (
           <button type="button" className="btn rec" onClick={onCheckin}>
-            Check in · {deck.length}
-            <small>about two minutes</small>
+            {PROGRESS.checkin(deck.length)}
+            <small>{PROGRESS.twoMinutes}</small>
           </button>
         ) : null}
         <button type="button" className="btn" onClick={onClose}>
-          {deck.length > 0 ? "Later" : "Back to the floor"}
+          {deck.length > 0 ? PROGRESS.later : PROGRESS.back}
         </button>
       </div>
     </section>
@@ -307,12 +344,10 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
   // the last 7 days, lit where you played
   const week = Array.from({ length: 7 }, (_, i) => dayKey(Date.now() - (6 - i) * 86_400_000)).map((d) => ({ d, lit: p.days.some((x) => x.day === d && (x.cards > 0 || x.ships > 0)) }));
   return (
-    <section className="card sheet progress" aria-label="Progress">
+    <section className="card sheet progress" aria-label={PROGRESS.sheet}>
       <div className="sheet-top">
-        <h2>
-          Level {lv.level} · {lv.title}
-        </h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <h2>{PROGRESS.sheetTitle(lv.level, lv.title)}</h2>
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
@@ -321,7 +356,7 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
           <i style={{ width: `${Math.round(lv.into * 100)}%` }} />
         </div>
         <span>
-          {lv.have}/{lv.need} XP to level {lv.level + 1}
+          {PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}
         </span>
       </div>
       <div className="pg-streak">
@@ -329,23 +364,23 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
           <Icon name="flame" size={18} />
         </span>
         <span>
-          <b>{streak}</b>-day streak
+          <b>{streak}</b>{PROGRESS.streakSuffix}
           <small>
-            Best {p.best}
-            {p.unlocked.includes("freeze") ? ` · ${p.freezes} shield${p.freezes === 1 ? "" : "s"}` : ""}
+            {PROGRESS.best(p.best)}
+            {p.unlocked.includes("freeze") ? PROGRESS.shields(p.freezes) : ""}
           </small>
         </span>
-        <span className="pg-week" aria-label="This week">
+        <span className="pg-week" aria-label={PROGRESS.week}>
           {week.map((w) => (
             <i key={w.d} className={`${w.lit ? "lit" : ""}${w.d === today ? " today" : ""}`} title={w.d} />
           ))}
         </span>
       </div>
-      <h3>Today</h3>
+      <h3>{PROGRESS.todayHead}</h3>
       <DayTally p={p} />
-      <h3>Waiting on you each day</h3>
+      <h3>{PROGRESS.waitingEachDay}</h3>
       <DeckTrend p={p} />
-      <h3>Unlocks</h3>
+      <h3>{PROGRESS.unlocks}</h3>
       {UNLOCKS.map((u) => {
         const have = p.unlocked.includes(u.id);
         return (
@@ -359,34 +394,34 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
             </span>
             {have && u.cosmetic ? (
               <button type="button" className="toggle" aria-pressed={p.equip[u.id] !== false} onClick={() => onEquip(u.id, p.equip[u.id] === false)}>
-                {p.equip[u.id] !== false ? "On" : "Off"}
+                {p.equip[u.id] !== false ? WORDS.on : WORDS.off}
               </button>
             ) : have ? (
               <span className="pill rs-done">
-                <Icon name="check" size={10} /> Yours
+                <Icon name="check" size={10} /> {PROGRESS.yours}
               </span>
             ) : (
-              <span className="rs-why">{u.level !== undefined ? `Level ${u.level}` : `${u.streak}-day streak`}</span>
+              <span className="rs-why">{u.level !== undefined ? PROGRESS.needLevel(u.level) : PROGRESS.needStreak(u.streak ?? 0)}</span>
             )}
           </div>
         );
       })}
-      {next && <p className="empty">Next: {next.unlock.name} at {next.gap.toLowerCase()}.</p>}
-      <h3>Nudges</h3>
+      {next && <p className="empty">{PROGRESS.next(next.unlock.name, next.gap.toLowerCase())}</p>}
+      <h3>{PROGRESS.nudges}</h3>
       <div className="row2">
-        <span>Tell me when I'm the bottleneck</span>
+        <span>{PROGRESS.nudgeAsk}</span>
         <button type="button" className="toggle" aria-pressed={notify === "on"} disabled={notify === "unsupported" || notify === "blocked"} onClick={onNotify}>
-          {notify === "on" ? "On" : notify === "blocked" ? "Blocked" : notify === "unsupported" ? "n/a" : "Off"}
+          {PROGRESS.nudge[notify]}
         </button>
       </div>
       <p className="empty">
         {notify === "blocked"
-          ? "Notifications are blocked for this site in your browser settings."
+          ? PROGRESS.nudgeBlocked
           : notify === "unsupported"
-            ? "This browser can't show notifications. On iPhone, add Shiptorio to your home screen first."
-            : "One quiet notification when new cards land and you're not looking. Never more than one every 15 minutes."}
+            ? PROGRESS.nudgeUnsupported
+            : PROGRESS.nudgeWhat}
       </p>
-      <p className="empty">XP only comes from real results: ships, clean ships, launches that hold, checks you add, cards you answer.</p>
+      <p className="empty">{PROGRESS.xpRule}</p>
     </section>
   );
 }
@@ -418,8 +453,8 @@ export function useBottleneckNudge(deck: Move[], on: boolean) {
     lastCount.current = deck.length;
     if (!on || state !== "on" || deck.length <= was || !document.hidden || Date.now() - lastAt.current < NOTIFY_GAP) return;
     lastAt.current = Date.now();
-    const title = `${deck.length} card${deck.length === 1 ? "" : "s"} waiting on you`;
-    const opts: NotificationOptions = { body: deck[0]?.title ?? "The factory needs a decision.", tag: "shiptorio-bottleneck", data: { url: location.href } };
+    const title = PROGRESS.notifyTitle(deck.length);
+    const opts: NotificationOptions = { body: deck[0]?.title ?? PROGRESS.notifyBody, tag: "shiptorio-bottleneck", data: { url: location.href } };
     const show = async () => {
       const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
       if (reg) return reg.showNotification(title, opts);

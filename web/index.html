@@ -8,10 +8,22 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Shiptorio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- the font CSS starts downloading now but only blocks what comes after its <link> in <body>,
+     so the boot splash paints first (the CSP has no inline handlers, so no media="print" trick) -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  /* painted before any JS: the game's void with a loading belt, replaced when React mounts */
+  html, body { margin: 0; height: 100%; background: #1b2448; }
+  .boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; color: #ece7dc; font: 600 13px/1 system-ui, sans-serif; letter-spacing: 0.2em; text-transform: uppercase; }
+  .boot i { display: block; width: 120px; height: 8px; background: repeating-linear-gradient(90deg, #e3a33f 0 8px, #3a4268 8px 16px); animation: boot 0.6s steps(2) infinite; image-rendering: pixelated; }
+  @keyframes boot { to { background-position: 16px 0; } }
+  @media (prefers-reduced-motion: reduce) { .boot i { animation: none; } }
+</style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div class="boot">Shiptorio<i></i></div></div>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

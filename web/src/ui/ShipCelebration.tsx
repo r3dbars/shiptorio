@@ -3,8 +3,9 @@ import type { AutonomyLevel, FactoryState } from "@shiptorio/shared";
 import "./ship.css";
 
 import { SHIP_EVENT, SHIP_TIMING, type ShipEvent } from "../sound/ship";
+import { SHIP } from "../copy";
 
-const LEVEL: Record<AutonomyLevel, string> = { advisor: "ADVISOR", floor: "FLOOR", build: "BUILD", lights_out: "LIGHTS OUT" };
+const LEVEL: Record<AutonomyLevel, string> = SHIP.level;
 const CARD_AT_MS = SHIP_TIMING.doneMs + 200; // let the rocket clear the frame before the card arrives
 const HOLD_MS = 6500; // the card stays this long after the check lands
 
@@ -106,7 +107,7 @@ export function ShipCelebration({ state, quiet = false, high = false }: { state:
   return (
     <div className={`ship-cel ${show.phase}${high ? " high" : ""}`} aria-live="polite">
       {shipped && (
-        <div className="ship-card card" role="status" onClick={() => setShow(null)} title="Click to close">
+        <div className="ship-card card" role="status" onClick={() => setShow(null)} title={SHIP.close}>
           <div className="ship-burst" aria-hidden>
             <span className="ship-ring" />
             {Array.from({ length: 22 }, (_, i) => {
@@ -130,18 +131,18 @@ export function ShipCelebration({ state, quiet = false, high = false }: { state:
               <rect key={i} x={x} y={y} width={1} height={1} style={{ animationDelay: `${(i % 10) * 28 + (i >= 10 ? 60 : 0)}ms` }} />
             ))}
           </svg>
-          <div className="ship-title">SHIPPED!</div>
+          <div className="ship-title">{SHIP.title}</div>
           <div className="ship-what">
             {ev.prNumber != null && <b>#{ev.prNumber}</b>} {ev.title}
           </div>
           <div className="ship-badges">
-            {ev.firstTry && <span className="b first">FIRST TRY</span>}
-            {ev.streak >= 2 && <span className="b streak">STREAK ×{ev.streak}</span>}
+            {ev.firstTry && <span className="b first">{SHIP.firstTry}</span>}
+            {ev.streak >= 2 && <span className="b streak">{SHIP.streak(ev.streak)}</span>}
           </div>
-          {show.delta > 0 && <div className="ship-score">+{pts} SHIP SCORE</div>}
+          {show.delta > 0 && <div className="ship-score">{SHIP.score(pts)}</div>}
           {next && (
             <div className={`ship-auto ${unlocked ? "unlocked" : ""}`}>
-              <span>{unlocked ? `${LEVEL[next.level]} UNLOCKED` : `→ ${LEVEL[next.level]} ${next.have}/${next.need}`}</span>
+              <span>{unlocked ? SHIP.unlocked(LEVEL[next.level]) : SHIP.toLevel(LEVEL[next.level], next.have, next.need)}</span>
               <span className="segs">
                 {Array.from({ length: next.need }, (_, i) => (
                   <i key={i} className={i < next.have ? (i === next.have - 1 ? "on new" : "on") : ""} />
@@ -149,11 +150,7 @@ export function ShipCelebration({ state, quiet = false, high = false }: { state:
               </span>
             </div>
           )}
-          <span className="sr">
-            Shipped {ev.prNumber != null ? `PR ${ev.prNumber}, ` : ""}
-            {ev.title}.{ev.firstTry ? " First try." : ""}
-            {ev.streak >= 2 ? ` Streak of ${ev.streak}.` : ""}
-          </span>
+          <span className="sr">{SHIP.sr(ev.prNumber, ev.title, ev.firstTry, ev.streak)}</span>
         </div>
       )}
     </div>

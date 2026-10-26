@@ -1,3 +1,4 @@
+import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, describe, expect, it } from "bun:test";
 import { gameMaster, triage, type GameMasterBrief } from "../src/spark";
 import { emptyBrain, recordThought, scoreShip, sparkShare } from "../src/brain";
@@ -6,7 +7,7 @@ import { scorecard } from "@shiptorio/shared";
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 const reply = (content: unknown) => { globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] })) as unknown as typeof fetch; };
-const env = { META_API_KEY: "k" };
+const env = sparkTestEnv();
 const brief: GameMasterBrief = {
   bottleneck: { stage: "inspect", stationId: "review-1", wip: 2, ageMinutes: 30, valueAtRisk: 8, summary: "2 items waiting at AI review." },
   stages: [], items: [], playerFeedback: "{}",

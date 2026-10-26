@@ -10,6 +10,7 @@ import type { SourceConfig } from "../source";
 import { freeNear } from "./MakeItYours";
 import { Icon } from "./icons";
 import { sound } from "../sound/engine";
+import { BEAT_COPY, HUD, TOUR } from "../copy";
 
 // what the camera does: fly in on a pick key, or pull back over the island (bigger is further out)
 export type TourCam = { focus: string | null; wide: number | null };
@@ -23,62 +24,12 @@ interface Beat {
   cue?: "build" | "catch" | "lights"; // what the sim does when the beat opens
 }
 
-export const BEATS: Beat[] = [
-  {
-    kick: "Welcome",
-    title: "Welcome to *Shiptorio*.",
-    body: "This floating island is a codebase. Every building is a folder. This sandbox uses a demo shop and sample changes; your repo comes next.",
-  },
-  {
-    kick: "AI builds now",
-    title: "Your agents are *fast*.",
-    body: "Claude and Codex write fixes and features all day. These sample crates show how your agents turn a plan into a change.",
-    cue: "build",
-  },
-  {
-    kick: "Today",
-    title: "And you're the *approve button*.",
-    body: "Every change stops at the merge gate and waits for your yes. Does it work? Is it safe? Ship it? The pile only grows.",
-  },
-  {
-    kick: "Step 1 · Verify",
-    title: "Checks make a yes *safe*.",
-    body: "Before a crate reaches you, CI runs it, the verify bay proves the fix, and a second AI reviews it. You're not guessing anymore.",
-    after: "One tap, because three checks already did the hard part. The more you verify, the less you have to look.",
-    act: "ship",
-  },
-  {
-    kick: "Step 2 · Automate",
-    title: "Then hand it *off*.",
-    body: "Here's the real goal. Docs PRs keep passing every check clean. Let them ship on their own.",
-    after: "Now the safe stuff ships itself and only the risky crates wait for you. Every week a bit more runs alone, every step still checked.",
-    act: "permit",
-  },
-  {
-    kick: "The game",
-    title: "The bottleneck *moves*.",
-    body: "Clear one and the next shows up. Watch the verify bay: a /cart fix passed CI but still gets the total wrong.",
-    after: "Now CI catches that kind of bug first. Every check you add means more can ship alone. Shiptorio finds the next one and suggests the fix.",
-    act: "turret",
-    cue: "catch",
-  },
-  {
-    kick: "Connect more",
-    title: "Every source is a *new mine*.",
-    body: "GitHub brings issues. Sentry adds errors the moment users hit them. PostHog shows what people really do. Tap the Sentry mine.",
-    after: "Errors arrive as ore now, and biters show where they hit. More sources, more to fix, more to automate.",
-    act: "sentry",
-  },
-  {
-    kick: "Where you're headed",
-    title: "It runs *itself*.",
-    body: "Verified, automated, growing. Bugs fixed before users notice. Features shipped while you sleep. You set the direction and check in when it asks.",
-    cue: "lights",
-  },
-];
+// The words live in copy.ts (BEAT_COPY); this adds what the player does and what the sim cues, beat by beat.
+const BEAT_MOVES: Pick<Beat, "act" | "cue">[] = [{}, { cue: "build" }, {}, { act: "ship" }, { act: "permit" }, { act: "turret", cue: "catch" }, { act: "sentry" }, { cue: "lights" }];
+export const BEATS: Beat[] = BEAT_COPY.map((words, i) => ({ ...words, ...BEAT_MOVES[i] }));
 
 const VERIFY_TOUR = ["ci-1", "verify-1", "review-1"] as const;
-const STAMPS = ["CI ✓", "Verified ✓", "AI review ✓"];
+const STAMPS = TOUR.stamps;
 const TOUR_MS = 1500;
 
 function Title({ text }: { text: string }) {
@@ -270,16 +221,16 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
 
   const auto = Math.round((state?.autonomy?.automated ?? 0) * 100);
   const actLabel =
-    beat.act === "ship" ? (pad[0]?.prNumber ? `Ship #${pad[0].prNumber}` : "Ship it") :
-    beat.act === "permit" ? "Let docs ship on their own" :
-    beat.act === "turret" ? `Add a test turret on /${caught?.district ?? "cart"}` :
-    beat.act === "sentry" ? "Connect Sentry" : "";
+    beat.act === "ship" ? TOUR.ship(pad[0]?.prNumber) :
+    beat.act === "permit" ? TOUR.permit :
+    beat.act === "turret" ? TOUR.turret(caught?.district ?? "cart") :
+    beat.act === "sentry" ? TOUR.sentry : "";
   const actReady = introCanAct(state, at, tourAt >= 3);
 
   let extra: ReactNode = null;
   if (at === 2) extra = (
     <div className="tour-pile">
-      <b>{pad.length}</b> waiting on you at the merge gate
+      <b>{pad.length}</b> {TOUR.pile}
     </div>
   );
   if (at === 3)
@@ -297,23 +248,23 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
       <div className="tour-ask">
         <Icon name="bot" size={16} />
         <span>
-          <b>5 docs PRs shipped clean</b> this week, zero rework.
+          <b>{TOUR.askLead}</b>{TOUR.askRest}
         </span>
       </div>
     );
   if (at === 7 && state?.metrics)
     extra = (
       <div className="tour-stats">
-        <Stat n={rockets} label="shipped" />
-        <Stat n={state.metrics.usersUnblocked} label="users helped" />
-        <Stat n={auto} label="automated" suffix="%" />
+        <Stat n={rockets} label={TOUR.statShipped} />
+        <Stat n={state.metrics.usersUnblocked} label={TOUR.statUsers} />
+        <Stat n={auto} label={TOUR.statAuto} suffix="%" />
       </div>
     );
 
   const card = (
-    <section className="card nextmove tour" aria-label="Welcome tour">
+    <section className="card nextmove tour" aria-label={TOUR.label}>
       <div className="nm-head">
-        <span className="nm-kicker tour-kick">Sandbox · {at === 0 && login ? `Welcome, @${login}` : beat.kick}</span>
+        <span className="nm-kicker tour-kick">{TOUR.kicker(at === 0 && login ? TOUR.welcome(login) : beat.kick)}</span>
         <span className="tour-step">
           {at + 1}/{BEATS.length}
         </span>
@@ -328,11 +279,11 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
       <div className="nm-options">
         {beat.act && !done ? (
           <button type="button" className="btn rec tour-go" onClick={act} disabled={!actReady}>
-            {actReady ? actLabel : beat.act === "turret" ? "Watch the verify bay…" : actLabel}
+            {actReady ? actLabel : beat.act === "turret" ? TOUR.watchVerify : actLabel}
           </button>
         ) : (
           <button type="button" className="btn rec tour-go" onClick={next} disabled={!ready} autoFocus>
-            {at === BEATS.length - 1 ? "Start your factory →" : ready ? "Next" : "…"}
+            {at === BEATS.length - 1 ? TOUR.start : ready ? TOUR.next : TOUR.wait}
           </button>
         )}
       </div>
@@ -341,34 +292,34 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
 
   const top = (
     <header className="topbar tour-top">
-      <div className="tour-segs" aria-label={`Step ${at + 1} of ${BEATS.length}`}>
+      <div className="tour-segs" aria-label={TOUR.step(at + 1, BEATS.length)}>
         {BEATS.map((_, i) => (
           <i key={i} className={i < at ? "done" : i === at ? "now" : undefined} />
         ))}
       </div>
       {rockets > 0 && (
-        <div className="chip" title="PRs merged">
+        <div className="chip" title={HUD.shippedTitle}>
           <span className="badge" style={{ background: "var(--amber)" }}>
             <Icon name="rocket" size={14} />
           </span>
           <span>
             {rockets}
-            <small>shipped</small>
+            <small>{HUD.shipped}</small>
           </span>
         </div>
       )}
       {at >= 4 && (
-        <div className="chip" title="Rockets that launched on their own">
+        <div className="chip" title={TOUR.autoTitle}>
           <span className="badge" style={{ background: "var(--blue)" }}>
             <Icon name="bot" size={14} />
           </span>
           <span>
-            {auto}%<small>automated</small>
+            {auto}%<small>{HUD.automated}</small>
           </span>
         </div>
       )}
       <button type="button" className="checkin-chip tour-skip" onClick={onDone}>
-        Skip
+        {TOUR.skip}
       </button>
     </header>
   );
