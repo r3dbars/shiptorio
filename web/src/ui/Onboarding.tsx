@@ -10,6 +10,7 @@ import { IslandBackdrop } from "./IslandBackdrop";
 import { savePref, seedPrefs, type PrefKey } from "../account";
 import { CREDIT, ONBOARD } from "../copy";
 import { Icon, type IconName } from "./icons";
+import { Wordmark } from "./Logo";
 import "./onboarding.css";
 
 // An older phone without WebGL must still be able to sign in.
@@ -65,12 +66,11 @@ function Coach({ children }: { children: React.ReactNode }) {
 
 const reducedMotion = () => typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// The wordmark from /brand once it's there; the name in pixel letters until then (or if it fails to load).
-function Wordmark() {
-  const [img, setImg] = useState(true);
+// The brand wordmark (ui/Logo.tsx) heads the plate, as the sign over the foundry gate.
+function BrandWordmark() {
   return (
     <h1 className="ob-wordmark">
-      {img ? <img src="/brand/wordmark.svg" alt={ONBOARD.brand} onError={() => setImg(false)} /> : <span>{ONBOARD.brand}</span>}
+      <Wordmark width={420} />
     </h1>
   );
 }
@@ -215,7 +215,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
         {step === "hello" && (
           <>
             <p className="iron-eyebrow ob-eyebrow">{ONBOARD.eyebrow}</p>
-            <Wordmark />
+            <BrandWordmark />
             <p className="ob-tagline">{ONBOARD.tagline}</p>
             <Coach>{ONBOARD.hello}</Coach>
 
