@@ -100,21 +100,17 @@ frame only**. A regression test verifies separate sessions remain separate, all 
 sockets receive a frame, and revoking access prevents the next frame reaching any
 of them. There is no new access TTL or cross-frame authorization cache.
 
-Post-fix macOS arm64 local measurement with tenant guards enabled: 5,000/5,000
-deliveries, zero failures; message p50 48.75 ms, p95 634.01 ms, max 908.28 ms;
-tick RPC p95 1,389.01 ms; sampled active isolate CPU 15,690.45 ms, Factory stacks
-5,019.18 ms (4.92 ms per requested tick), 21.06 s measured window. This replaces
-unprotected-load numbers as the relevant local result; hardware/runner results differ.
+Reference macOS arm64 local measurement with tenant/session/signup guards enabled:
+5,000/5,000 deliveries, zero failures; message p50 62.51 ms, p95 787.37 ms,
+max 902.32 ms; tick RPC p95 1,651.66 ms; sampled active isolate CPU 18,797.08 ms,
+Factory stacks 6,312.04 ms (6.19 ms per requested tick), 24.89 s measured window.
+Hardware/runner results differ; compare equivalent environments and revisions.
 
 Outputs: `test-results/load.json` (latency, RPC, sampled CPU and failures),
 `load.cpuprofile` (inspect in DevTools) and `load-worker.log` (startup/errors).
 
-Initial Linux x64 GitHub Actions measurement at `6cf09fd`, 20 rounds:
-250 clients; 5,000/5,000 tick deliveries; 0 failures; 7.28 s measured window;
-message p50 78.83 ms, p95 275.84 ms, max 307.04 ms; tick RPC p95 435.50 ms;
-sampled active isolate CPU 5,132.14 ms, Factory stacks 2,437.91 ms
-(2.39 ms per requested tick). Later validation measurements belong in the PR with
-an exact Actions run link and revision, since unrelated merges change the workload.
+The PR records the final Linux Actions run/revision and its latency/CPU numbers;
+raw JSON and CPU profiles are available from that run's artifacts.
 
 ## CI and evidence
 

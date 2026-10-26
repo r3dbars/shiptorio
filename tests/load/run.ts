@@ -8,7 +8,8 @@ if (!Number.isInteger(rounds) || rounds < 5 || rounds > 100) throw new Error('LO
 await mkdir('test-results', { recursive: true });
 await rm('test-results/load-worker.log', { force: true });
 const output = Bun.file('test-results/load-worker.log');
-const server = Bun.spawn(['bun', 'tests/e2e/start.ts'], { stdout: output, stderr: output, detached: true });
+const runId = `load-${crypto.randomUUID()}`;
+const server = Bun.spawn(['bun', 'tests/e2e/start.ts'], { stdout: output, stderr: output, detached: true, env: { ...process.env, SHIPTORIO_TEST_RUN_ID: runId } });
 const clients: { ws: WebSocket; repo: string; tick: number }[] = [];
 const latencies: number[] = [], tickTimes: number[] = [];
 let profileSocket: WebSocket | undefined;
@@ -20,7 +21,7 @@ const post = async (path: string) => { const r = await fetch(origin + path, { me
 try {
   const until = Date.now() + 120_000;
   while (true) {
-    try { if ((await fetch(origin + '/api/version')).ok) break; } catch {}
+    try { const response = await fetch(origin + '/api/version'); if (response.ok && (await response.json() as { commit?: string }).commit === runId) break; } catch {}
     if (Date.now() > until || server.exitCode !== null) throw new Error('Wrangler failed to start; see load-worker.log');
     await Bun.sleep(200);
   }

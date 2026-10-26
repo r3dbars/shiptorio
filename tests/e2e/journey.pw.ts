@@ -90,7 +90,7 @@ test('sim rework scenario renders and responds', async ({ page }) => {
   await page.request.post('/__test/access');
   await page.goto('/?source=sim&scenario=rework-loop&tour=0');
   await expect(page.locator('canvas').first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Build', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'View', exact: true }).getByRole('button', { pressed: true })).toBeVisible();
   await page.getByRole('button', { name: /Line$/ }).click();
   await expect(page.getByText('The line', { exact: true })).toBeVisible();
 });
