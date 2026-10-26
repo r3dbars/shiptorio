@@ -231,6 +231,22 @@ describe("account data controls", () => {
     expect(await env.DB.prepare("SELECT * FROM installations WHERE id = 1").first()).toBeNull();
     expect(await env.DB.prepare("SELECT * FROM repos WHERE full_name = 'alice/app'").first()).toBeNull();
   });
+  it("a support credential save racing deletion removes its identity-scoped KV key", async () => {
+    const {env, kv} = await fixture();
+    const {saveSupportCreds, supportCreds} = await import("../src/sources/support");
+    const {repoHash} = await import("../src/account-lifecycle");
+    await env.DB.prepare("UPDATE repos SET repo_id = 101 WHERE full_name = 'alice/app'").run();
+    const original = env.CACHE.put.bind(env.CACHE);
+    const hash = await repoHash("alice/app");
+    env.CACHE.put = (async (key: string, value: string) => {
+      if (key === "cred:support:1:101") await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, 1)").bind(hash).run();
+      return original(key, value);
+    }) as typeof env.CACHE.put;
+    const source = {...env, CRED_MASTER_KEY: btoa("x".repeat(32))};
+    await expect(saveSupportCreds(source, "alice/app", {intercomToken: "private-test-token"})).rejects.toThrow("Factory deleted");
+    expect(kv.has("cred:support:1:101")).toBe(false);
+    expect(await supportCreds(source, "alice/app")).toEqual({});
+  });
   it("can retry a failed KV purge without reporting deletion complete early", async () => {
     const {env, user, kv, objects} = await fixture();
     const original = env.CACHE.delete.bind(env.CACHE);

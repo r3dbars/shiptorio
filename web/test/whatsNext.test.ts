@@ -30,9 +30,9 @@ function factory(over: Partial<FactoryState> = {}): FactoryState {
 const item = (state: Item["state"], n = 1): Item =>
   ({ id: `it-${n}`, kind: "bug", source: "github_issue", title: `Fix ${n}`, district: "web", state, attempts: 0, updatedAt: 0, prNumber: 140 + n }) as Item;
 
-// sentry + posthog connected, so no empty mine competes
+// All available mines connected, so no empty mine competes
 const mined = {
-  sources: (["sentry", "posthog"] as const).map((kind) => ({ kind, state: "connected" as const, detail: "", eventsToday: 0, setup: { steps: [] } })),
+  sources: (["sentry", "posthog", "email"] as const).map((kind) => ({ kind, state: "connected" as const, detail: "", eventsToday: 0, setup: { steps: [] } })),
 };
 
 describe("whatsNext", () => {
@@ -74,6 +74,11 @@ describe("whatsNext", () => {
     const n = whatsNext(factory());
     expect(n.cta.action).toEqual({ do: "connect", source: "sentry" });
     expect(n.grows).toBe("+1 SOURCE");
+  });
+
+  test("support is the next mine once error and traffic mines are connected", () => {
+    const sources = mined.sources.filter(s => s.kind !== "email");
+    expect(whatsNext(factory({ sources })).cta.action).toEqual({ do: "connect", source: "email" });
   });
 
   test("no mine nudge before the first rocket", () => {

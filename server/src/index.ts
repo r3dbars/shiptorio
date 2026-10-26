@@ -32,7 +32,8 @@ import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/se
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
-import { connectPage } from "./connect";
+import { connectPage, supportConnectPage } from "./connect";
+import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
@@ -245,6 +246,9 @@ app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
 app.post('/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+// The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
+// already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
+app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
 app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
@@ -376,6 +380,40 @@ app.post("/api/account/delete", async c => {
   c.header("Set-Cookie", "shiptorio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
   c.header("Content-Disposition", 'attachment; filename="shiptorio-deletion-archive.json"');
   return c.json(result);
+});
+
+// ---------- connect the support mine: the email inlet URL, and Intercom keys ----------
+
+app.on(["GET", "POST"], "/connect/support", async (c) => {
+  const user = await resolveUser(c.req.raw, c.env);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  // Same boundary as the other mines: a signed-in player whose GitHub account reaches this repo.
+  const scope = await requestScope(c);
+  if (!scope) return c.text("You don't have access to that repo's factory.", 403);
+  const repoParam = scope.repo;
+  if (await factoryDeleted(c.env.DB, repoParam)) return c.text("Factory deleted", 410);
+  const url = publicUrl(new URL(c.req.url), c.env);
+  // Upgrade legacy name-routed factories before requiring the immutable credential identity.
+  const supportFactory = await factory(c.env, repoParam);
+  const token = await ensureInboundToken(c.env, repoParam);
+  const view = async (extra: { error?: string; saved?: boolean } = {}) => {
+    const creds = await supportCreds(c.env, repoParam);
+    return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: await isOperatorSupport(c.env, repoParam) && !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
+  };
+  if (c.req.method === "GET") {
+    await supportFactory.connectSupport().catch(() => null);
+    return c.html(await view());
+  }
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
+  const form = await c.req.formData();
+  const field = (name: string) => String(form.get(name) ?? "").trim();
+  const intercomClientSecret = field("intercomClientSecret"), intercomToken = field("intercomToken"), intercomAdminId = field("intercomAdminId");
+  if (intercomClientSecret && !/^[\w-]{16,200}$/.test(intercomClientSecret)) return c.html(await view({ error: "That doesn't look like an Intercom client secret." }), 400);
+  if (intercomToken && !/^[\w=:+/-]{20,400}$/.test(intercomToken)) return c.html(await view({ error: "That doesn't look like an Intercom access token." }), 400);
+  if (intercomAdminId && !/^\d{1,20}$/.test(intercomAdminId)) return c.html(await view({ error: "The admin id is a number (Intercom → Settings → your profile URL)." }), 400);
+  await saveSupportCreds(c.env, repoParam, { intercomClientSecret, intercomToken, intercomAdminId });
+  await supportFactory.connectSupport().catch(() => null);
+  return c.html(await view({ saved: true }));
 });
 
 // Device-code flow. No subscription credential or browser cookie crosses to the runner.
@@ -723,6 +761,55 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
 
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
 
+  return c.json({ ok: true, queued: true }, 202);
+}
+
+// ---------- support mine webhooks ----------
+
+// Email: /webhooks/support/<owner>/<repo>/<token>. Inbound-email services don't sign, so the URL's token is the key.
+app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (!tokenMatches((await supportCreds(c.env, repo)).inboundToken, c.req.param("token"))) return c.json({ error: "unknown inbox" }, 401);
+  const body = await boundedBody(c);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  let payload: unknown;
+  try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  const message = normalizeEmail(payload);
+  if (!message) return c.json({ ok: true, ignored: true, reason: "no sender or text" });
+  return queueSupport(c, repo, message, body);
+});
+
+// Intercom: /webhooks/intercom/<owner>/<repo>, signed with that map's client secret.
+app.post("/webhooks/intercom/:owner/:repo", async (c) => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  const body = await boundedBody(c);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  if (!(await verifyIntercom((await supportCreds(c.env, repo)).intercomClientSecret, body, c.req.header("x-hub-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
+  let payload: unknown;
+  try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  const message = normalizeIntercom(payload);
+  if (!message) return c.json({ ok: true, ignored: true });
+  return queueSupport(c, repo, message, body);
+});
+
+async function boundedBody(c: Context<AppEnv>): Promise<string | null> {
+  if (Number(c.req.header("content-length") ?? 0) > 1048576) return null;
+  const body = await c.req.text();
+  return body.length > 1048576 ? null : body;
+}
+
+async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
+  if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
+  const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${repo}:${message.channel}:${message.messageId}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const now = Date.now();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('support', ?, ?, ?)").bind(digest, now, now + 7 * 86400000).run();
+  if (!inserted.meta.changes) {
+    const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'support' AND delivery_id = ?").bind(digest).first<{ state: string }>();
+    if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
+  }
+  await (await factory(c.env, repo)).enqueueSupport(digest, message);
   return c.json({ ok: true, queued: true }, 202);
 }
 
