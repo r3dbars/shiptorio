@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { rollup, stuckScore, summarizeIsland, type FactoryState, type IslandSummary } from "@shiptorio/shared";
 import type { SourceConfig } from "../source";
 import type { SatelliteSpec } from "../map/empire";
+import { BrassPin } from "./ironArt";
 import { Icon } from "./icons";
 import { EMPIRE, WORDS } from "../copy";
 
@@ -179,7 +180,10 @@ export function EmpireSheet({ e, live, onClose }: { e: EmpireView; live: boolean
   return (
     <section className="card sheet empire" aria-label={EMPIRE.title}>
       <div className="sheet-top">
-        <h2>{EMPIRE.title}</h2>
+        <div className="sheet-head">
+          <span className="iron-eyebrow">{EMPIRE.eyebrow}</span>
+          <h2>{EMPIRE.title}</h2>
+        </div>
         <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
@@ -205,7 +209,7 @@ export function EmpireSheet({ e, live, onClose }: { e: EmpireView; live: boolean
           const isHere = i.repo === here;
           return (
             <a key={i.repo} className={`em-row${isHere ? " here" : ""}`} href={isHere ? undefined : e.hrefFor(i.repo)} onClick={isHere ? onClose : undefined} aria-current={isHere ? "location" : undefined}>
-              <span className="em-ico" aria-hidden="true"><Icon name="island" size={20} /></span>
+              <span className="em-ico" aria-hidden="true"><BrassPin size={24} hot={i.waiting > 0} /></span>
               <span className="em-body">
                 <span className="em-name">{shortName(i.repo)}{isHere && <em>{EMPIRE.youreHere}</em>}</span>
                 <span className="em-line">{islandLine(i)}</span>

@@ -762,6 +762,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export const EMPIRE = {
   title: "Your empire",
+  eyebrow: "Map room",
   notOpened: "not opened yet",
   auto: (pct: number) => ` · ${pct}% auto`,
   waiting: (n: number, auto: string) => `${n} waiting on you${auto}`,
@@ -820,6 +821,8 @@ export const PROGRESS = {
   later: "Later",
   back: "Back to the floor",
   sheet: "Progress",
+  /** the eyebrow over the level gauge */
+  gauge: "Boiler pressure",
   sheetTitle: (level: number, title: string) => `Level ${level} · ${title}`,
   toLevel: (have: number, need: number, next: number) => `${have}/${need} XP to level ${next}`,
   best: (n: number) => `Best ${n}`,

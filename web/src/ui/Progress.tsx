@@ -24,6 +24,7 @@ import {
   type Step,
   type Unlock,
 } from "@shiptorio/shared";
+import { PressureGauge } from "./ironArt";
 import { Icon, type IconName } from "./icons";
 import { sound } from "../sound/engine";
 import { PROGRESS, WORDS } from "../copy";
@@ -355,11 +356,13 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
         </button>
       </div>
       <div className="pg-level">
-        <div className="pg-bar">
-          <i style={{ width: `${Math.round(lv.into * 100)}%` }} />
-        </div>
-        <span>
-          {PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}
+        <PressureGauge into={lv.into} />
+        <span className="pg-odo">
+          <span className="iron-eyebrow">{PROGRESS.gauge}</span>
+          <span className="pg-digits" aria-hidden="true">
+            {String(lv.level).padStart(2, "0").split("").map((d, i) => <i key={i}>{d}</i>)}
+          </span>
+          <span>{PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}</span>
         </span>
       </div>
       <div className="pg-streak">
