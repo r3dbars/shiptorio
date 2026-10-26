@@ -6,6 +6,8 @@ APP_PASSWORD=
 DEV_LOGIN=
 # Muse Spark (Meta Model API). Without it the splitter uses a heuristic and assemblers stay unpowered.
 META_API_KEY=
+# Dev/demo fallback only. Spark never codes on the product path; default is off.
+HOSTED_SPARK_ASSEMBLER=0
 # Fill these in from /setup once the GitHub App exists, to load real repos locally.
 GITHUB_APP_ID=
 GITHUB_CLIENT_ID=

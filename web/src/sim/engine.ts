@@ -5,6 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
+import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
   type Autonomy,
@@ -57,6 +58,7 @@ interface Scenario {
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
+  onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -125,6 +127,7 @@ export const SCENARIOS = {
   // Onboarding from docs/PRODUCT.md: Spark reads the repo, but nothing builds until you plug in a subscription.
   "first-run": {
     unplugged: true,
+    onboard: true,
     ores: [
       {
         at: 2,
@@ -132,7 +135,7 @@ export const SCENARIOS = {
         kind: "bug",
         district: "web",
         ask: "Send it to your new assembler with Spark's plan: await the payment intent before enabling the button.",
-        spark: [{ tool: "triage", text: "Read the repo: web and server carry the risk, 1 open bug worth fixing first", reason: "repo scan" }],
+        spark: [{ tool: "triage", text: "Triaged as a bug in web: the one worth fixing first", reason: "it blocks checkout on Safari" }],
       },
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
     ],
@@ -161,10 +164,12 @@ const GAUNTLET: StationDef[] = [
   { id: "gate-1", kind: "merge", name: "Merge gate", caught: 0, actions: [act("review", "Review with receipts", true), act("merge", "Merge and launch"), act("permit", "Give docs a launch permit")] },
 ];
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
+const FOREMAN_IDLE_TICKS = 5; // quiet ticks before the drone goes back to its plant
 const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
 
 function initialState(sc: Scenario): FactoryState {
-  const harness = sc.harness ?? "spark";
+  // Spark never writes code: without a scenario harness, the player is signed in with Claude
+  const harness = sc.harness ?? "claude_code";
   // Spark's steam plant powers the brain. A subscription (solar) powers the assemblers, when there is one.
   const plant = harness === "spark" ? "steam-spark" : `solar-${harness}`;
   const machines: Machine[] = [
@@ -189,12 +194,15 @@ function initialState(sc: Scenario): FactoryState {
   const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
   const districts = sc.districts ?? REPO_DISTRICTS;
+  // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
+  // and the starter factory is built only when the player says yes.
+  const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
   return {
     repo: sc.districts ? "sim/demo-shop" : "sim/shiptorio",
     baseBranch: "main",
-    districts,
-    machines,
-    belts,
+    districts: sc.onboard ? [] : districts,
+    machines: starter,
+    belts: sc.onboard ? [] : belts,
     items: [],
     power,
     science: { red: 0, green: 0, grey: 0, blue: 0 },
@@ -206,7 +214,7 @@ function initialState(sc: Scenario): FactoryState {
     autonomy: {
       level: "advisor",
       districts: districts.map((d) => ({ district: d.name, score: d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: false })),
-      next: { level: "floor", have: 8, need: 10, label: "Spark moves approved as-is" },
+      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "Spark moves approved as-is" },
       ranAlone: 0,
     },
     foreman: { thinking: false },
@@ -222,14 +230,21 @@ const STAGE_OF: Partial<Record<Item["state"], Stage>> = { ore: "intake", queued:
 
 const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + m.rockets - 25 * m.escapedDefects;
 
-export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener): Source {
+export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
+  if (repo) s.repo = repo;
+  // Ore ticks count from here. Onboarding holds the ore until the starter factory stands.
+  let clock0 = sc.onboard ? Infinity : 0;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
   const since = new Map<string, number>(); // item id -> tick it entered its state
   const fails = new Map<string, string | undefined>(); // item id -> scripted inspector failure
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
   const held = new Set<string>(); // queued items waiting on the player's yes
+  const parked = new Set<string>(); // items the player said "not now" to
+  let lastSpark = 0; // tick of Spark's last tool call
   const byTitle = new Map<string, string>(); // ore title -> item id, for linking
   const onChoose = new Map<string, (optionId: string) => void>(); // move id -> what each answer does
   const pending: Move[] = []; // moves waiting behind the open card
@@ -253,6 +268,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (actionId && opts.undo) undos.set(actionId, opts.undo);
     emit({ type: "log", level: "info", text: line.text, at: Date.now(), itemId: opts.itemId, actor: "spark", tool: line.tool, reason: line.reason, actionId, approvedBy: opts.approvedBy });
     s.foreman = { targetId: opts.target ?? s.foreman?.targetId, tool: line.tool, thinking: false };
+    lastSpark = s.tick;
     emit({ type: "patch", patch: { foreman: s.foreman } });
   };
 
@@ -274,6 +290,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       if (r.kind === "belt") s.belts = s.belts.filter((x) => x.id !== r.id);
       if (r.kind === "item") s.items = s.items.filter((x) => x.id !== r.id);
     }
+    if (p.districts) s.districts = p.districts;
     if (p.science) s.science = p.science;
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.metrics) s.metrics = p.metrics;
@@ -307,7 +324,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "move_resolved", moveId, optionId, actor });
     if (optionId) then(optionId);
     const next = pending.shift();
-    if (next) setTimeout(() => open(next), 600);
+    if (next) setTimeout(() => (s.move ? pending.unshift(next) : open(next)), 600);
   };
 
   // Each move the player approves as-is counts toward the next autonomy unlock.
@@ -341,8 +358,11 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         ],
       },
       (opt) => {
-        if (opt !== "go") return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
         held.delete(item.id);
+        if (opt !== "go") {
+          parked.add(item.id);
+          return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
+        }
         spark({ tool: "start_job", text: `Sent "${item.title}" to ${asm?.id ?? "the assembler"} with the plan`, reason: "you said go" }, { itemId: item.id, target: asm?.id, approvedBy: "player" });
         approvedAsIs();
       },
@@ -477,9 +497,14 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   const tick = () => {
     s.tick++;
+    // Spark heads back to its plant once it's been quiet for a bit, instead of hovering on its last job
+    if (s.foreman?.targetId && s.tick - lastSpark > FOREMAN_IDLE_TICKS) {
+      s.foreman = { thinking: false };
+      emit({ type: "patch", patch: { foreman: s.foreman } });
+    }
     const now = Date.now();
 
-    while (script.length && script[0].at <= s.tick) arrive(script.shift()!, now);
+    while (script.length && script[0].at + clock0 <= s.tick) arrive(script.shift()!, now);
 
     for (const item of [...s.items]) {
       const age = s.tick - (since.get(item.id) ?? s.tick);
@@ -496,8 +521,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           }
           break;
         case "queued": {
-          if (held.has(item.id)) continue;
-          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle");
+          // Spark's pick goes first: nothing else starts while its "fix this first" waits on your Go
+          if (held.size || parked.has(item.id)) continue;
+          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId);
           if (!a) continue;
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
@@ -634,8 +660,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // taking the job on, logged with undo, the way a real station action would be queued.
   const stationAction = (stationId: string, action: string) => {
     const def = [...GAUNTLET, ORBIT].find((g) => g.id === stationId);
-    const label = def?.actions.find((a) => a.id === action)?.label ?? action;
-    const target = def?.id ?? (stationId === "power" ? "steam-spark" : "splitter-1");
+    const machine = s.machines.find((m) => m.id === stationId);
+    const label = def?.actions.find((a) => a.id === action)?.label ?? actionLabel(action) ?? action;
+    const target = def?.id ?? machine?.id ?? (stationId === "power" ? "steam-spark" : "splitter-1");
     if (stationId === "gate-1" && action === "merge") {
       const item = s.items.filter((i) => i.state === "on_pad").sort((a, b) => (since.get(a.id) ?? 0) - (since.get(b.id) ?? 0))[0];
       if (!item) return log("info", "Nothing at the merge gate yet");
@@ -656,7 +683,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       spark({ tool: "escalate", text: `Sending #${item.prNumber ?? item.title} to you with its scar tags`, reason: item.scars?.at(-1)?.reason }, { itemId: item.id, target, approvedBy: "player" });
       return;
     }
-    spark({ tool: "station_action", text: `On it: ${label.toLowerCase()}`, reason: `You asked from the ${def ? lc(def.name) : stationId} panel` }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${label.toLowerCase()}`) });
+    spark({ tool: "station_action", text: `On it: ${label.toLowerCase()}`, reason: `You asked from the ${def ? lc(def.name) : (machine?.type.replace("_", " ") ?? stationId)} panel` }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${label.toLowerCase()}`) });
   };
 
   // ---------- plugging in a subscription ----------
@@ -693,9 +720,64 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     );
   };
 
+  // ---------- onboarding: scan the repo, then propose the starter factory ----------
+
+  const SCAN_MS = 650;
+  const scan = () => {
+    const ds = sc.districts ?? REPO_DISTRICTS;
+    const files = ds.reduce((n, d) => n + d.files, 0);
+    spark({ tool: "read_repo", text: `Opening ${s.repo}: reading the tree, issues and CI`, reason: "you picked this repo" }, { target: "steam-spark" });
+    ds.forEach((d, n) =>
+      later(SCAN_MS * (n + 1), () => {
+        apply({ districts: ds.slice(0, n + 1) });
+        log("info", `District ${d.name === "/" ? "/ (root)" : `/${d.name}`}: ${d.files} files`);
+      }),
+    );
+    const t = SCAN_MS * (ds.length + 1);
+    later(t, () => spark({ tool: "list_issues", text: `${sc.ores.length} open issues become ore at the deposit`, reason: "GitHub issues" }, { target: "ore-issues" }));
+    later(t + SCAN_MS, () => spark({ tool: "read_ci", text: "Found GitHub Actions: that's your first inspector", reason: ".github/workflows" }));
+    later(t + SCAN_MS * 2, () => {
+      log("success", `Repo read: ${ds.length} districts, ${files} files, ${sc.ores.length} open issues. ${ds[0].name} carries the most risk`);
+      proposeStarter();
+    });
+  };
+
+  // The splitter → assembler → inspector → launch pad line from initialState, minus what's already down.
+  const proposeStarter = () => {
+    const full = initialState({ ...sc, onboard: false });
+    const first = sc.ores.find((o) => o.ask) ?? sc.ores[0];
+    propose(
+      {
+        title: "Build your starter factory?",
+        why: `A splitter, one assembler, an inspector and a launch pad, with belts. First job: "${first.title}".`,
+        stage: "build",
+        options: [
+          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "smallest line that can ship a PR" }] },
+          { id: "later", label: "Not yet", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt !== "build") {
+          spark({ tool: "post_log", text: "No rush. Say the word and I'll lay it down." });
+          return later(TICK_MS * 6, proposeStarter);
+        }
+        approvedAsIs();
+        const add = full.machines.filter((m) => !s.machines.some((x) => x.id === m.id));
+        add.forEach((m, n) => later(300 * n, () => apply({ machines: [m] })));
+        later(300 * add.length, () => {
+          apply({ belts: full.belts });
+          spark({ tool: "place_machine", text: "Starter factory down. The assembler is dark: it needs power", reason: "you said build" }, { target: "assembler-1", approvedBy: "player" });
+          clock0 = s.tick;
+          later(TICK_MS, askForPower);
+        });
+      },
+    );
+  };
+
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
-  if (sc.unplugged) setTimeout(askForPower, TICK_MS * 1.5);
+  if (sc.onboard) later(TICK_MS, scan);
+  else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, TICK_MS);
 
   return {
@@ -733,7 +815,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "place_machine":
           apply({
-            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, tier: 1, state: "idle" }],
+            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
           });
           break;
         case "remove_machine":
@@ -748,6 +830,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     },
     close() {
       clearInterval(timer);
+      timers.forEach(clearTimeout);
       onStatus("offline");
     },
   };

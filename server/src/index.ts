@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
-import { repoInstallationId, verifyWebhookSignature } from "./github";
+import { repoInstallationId } from "./github";
 import { isAllowed, readSession } from "./session";
 import { previewAccess } from "./access";
+import { githubSource } from "./sources";
+import type { GitHubPayload } from "./sources/github";
 
 export { Factory };
 
@@ -66,6 +68,15 @@ app.get("/api/setup/status", (c) => c.json({
 
 app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
 
+app.get("/api/sources", (c) => c.json({ sources: [githubSource.status(c.env)] }));
+
+app.get("/api/repos", async (c) => {
+  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
+  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
+  const repos = await c.env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name").all();
+  return c.json({ repos: repos.results });
+});
+
 // ---------- the factory (browser websocket) ----------
 
 app.use("/api/repos/*", async (c, next) => {
@@ -97,84 +108,32 @@ async function installationFor(env: Env, repo: string): Promise<number> {
 // ---------- GitHub webhooks ----------
 
 app.post("/webhooks/github", async (c) => {
-  const env = c.env;
+  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
+  if (!(await githubSource.verify(c.req.raw.clone(), c.env))) return c.json({ error: "bad signature" }, 401);
   const body = await c.req.text();
-  if (!(await verifyWebhookSignature(env.GITHUB_WEBHOOK_SECRET, body, c.req.header("x-hub-signature-256") ?? null)))
-    return c.json({ error: "bad signature" }, 401);
-
-  const event = c.req.header("x-github-event");
-  let p;
-  try { p = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
-  const repo: string | undefined = p.repository?.full_name;
-  const installationId: number | undefined = p.installation?.id;
-
-  switch (event) {
-    case "installation":
-    case "installation_repositories": {
-      if (p.action === "deleted") {
-        await env.DB.batch([
-          env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId),
-          env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId),
-        ]);
-        break;
-      }
-      const added: { full_name: string }[] = p.repositories ?? p.repositories_added ?? [];
-      const removed: { full_name: string }[] = p.repositories_removed ?? [];
-      await env.DB.batch([
-        env.DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (?, ?)").bind(
-          installationId,
-          p.installation.account.login,
-        ),
-        ...added.map((r) =>
-          env.DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES (?, ?)").bind(
-            r.full_name.toLowerCase(),
-            installationId,
-          ),
-        ),
-        ...removed.map((r) => env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(r.full_name.toLowerCase())),
-      ]);
-      // Build each new repo's starter factory now, so the first visit is instant.
-      for (const r of added) c.executionCtx.waitUntil(factory(env, r.full_name).ensure(r.full_name, installationId!));
-      break;
-    }
-
-    case "issues": {
-      if (!repo || !installationId || !["opened", "reopened"].includes(p.action)) break;
-      const f = factory(env, repo);
-      await f.ensure(repo, installationId);
-      await f.ingestIssue({
-        number: p.issue.number,
-        title: p.issue.title,
-        body: p.issue.body ?? "",
-        url: p.issue.html_url,
-        labels: (p.issue.labels ?? []).map((l: { name: string }) => l.name),
-      });
-      break;
-    }
-
-    case "check_suite": {
-      if (!repo || p.action !== "completed") break;
-      const suite = p.check_suite;
-      const prs: number[] = (suite.pull_requests ?? []).map((pr: { number: number }) => pr.number);
-      if (!prs.length) break;
-      const ok = ["success", "neutral", "skipped"].includes(suite.conclusion);
-      await factory(env, repo).onCheckSuite(prs, ok, `${suite.app?.name ?? "CI"} ${suite.conclusion}`, suite.head_sha);
-      break;
-    }
-
-    case "pull_request": {
-      if (!repo || p.action !== "closed") break;
-      await factory(env, repo).onPullClosed(p.pull_request.number, !!p.pull_request.merged);
-      break;
-    }
-
-    case "push": {
-      if (!repo || p.ref !== `refs/heads/${p.repository.default_branch}`) break;
-      await factory(env, repo).refreshDistricts();
-      break;
-    }
+  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  let payload: GitHubPayload;
+  try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
+  const event = c.req.header("x-github-event") ?? "";
+  const supported = ["installation", "installation_repositories", "issues", "issue_comment", "pull_request", "pull_request_review", "check_run", "check_suite", "push"];
+  if (!supported.includes(event)) return c.json({ ok: true, ignored: true });
+  const delivery = c.req.header("x-github-delivery");
+  if (!delivery || !/^[a-zA-Z0-9_-]{1,200}$/.test(delivery)) return c.json({ error: "delivery id required" }, 400);
+  const repo = payload.repository?.full_name;
+  const installation = payload.installation?.id;
+  if (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo))) return c.json({ error: "invalid installation or repo" }, 400);
+  if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
+  const now = Date.now();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('github', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
+  if (!inserted.meta.changes) {
+    const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'github' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
+    if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  return c.json({ ok: true });
+  // Persistence is acknowledged before returning; API and model work run in the DO alarm.
+  await factory(c.env, repo ?? "github-installations").enqueueGitHub(delivery, event, payload);
+  c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE expires_at < ? AND state = 'done'").bind(now).run());
+  return c.json({ ok: true, queued: true, duplicate: !inserted.meta.changes }, 202);
 });
 
 // Everything else is the web app.

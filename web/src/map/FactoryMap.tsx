@@ -2,7 +2,14 @@ import { useEffect, useRef } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import { FactoryScene } from "./scene";
 
-export function FactoryMap({ state, onPick }: { state: FactoryState | null; onPick?: (id: string) => void }) {
+interface Props {
+  state: FactoryState | null;
+  onPick?: (id: string) => void;
+  focus?: string | null; // the picked thing the camera flies in on
+  showLabels?: boolean; // all labels on; otherwise they show on hover
+}
+
+export function FactoryMap({ state, onPick, focus = null, showLabels = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -33,7 +40,11 @@ export function FactoryMap({ state, onPick }: { state: FactoryState | null; onPi
     };
     const move = (e: PointerEvent) => {
       const p = pts.get(e.pointerId);
-      if (!p) return;
+      if (!p) {
+        // no button down: hovering shows that thing's label
+        if (e.pointerType === "mouse") canvas.style.cursor = scene.hover(e.clientX, e.clientY, canvas.getBoundingClientRect()) ? "pointer" : "";
+        return;
+      }
       if (pts.size === 1) {
         moved += Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y);
         scene.panBy(e.clientX - p.x, e.clientY - p.y);
@@ -66,6 +77,8 @@ export function FactoryMap({ state, onPick }: { state: FactoryState | null; onPi
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", up);
+    const leave = () => scene.clearHover();
+    canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("wheel", wheel, { passive: false });
     if (stateRef.current) scene.update(stateRef.current);
     return () => {
@@ -80,6 +93,8 @@ export function FactoryMap({ state, onPick }: { state: FactoryState | null; onPi
   useEffect(() => {
     if (state) sceneRef.current?.update(state);
   }, [state]);
+  useEffect(() => sceneRef.current?.focus(focus), [focus]);
+  useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
 
   return (
     <>

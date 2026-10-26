@@ -99,6 +99,7 @@ function pointAt(p: Path, s: number): Pt {
 const join = (...paths: (Path | undefined)[]) => pathOf(paths.flatMap((p) => p?.pts ?? []));
 
 interface Label {
+  key?: string; // what hovering or clicking this thing means: a pick id, "d:<district>" or "drone"
   obj: THREE.Object3D;
   y: number;
   el: HTMLDivElement;
@@ -177,8 +178,9 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
 
 // Gauntlet stations are inspector-type machines; the station kind picks the Item Lab model.
 const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4 };
-const POWER_TYPES: Machine["type"][] = ["steam", "solar", "battery", "geothermal"];
 const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
+const FOCUS_ZOOM = 0.5; // how close the camera flies in on a picked machine
+const clickable = (key: string) => !key.startsWith("d:") && key !== "drone";
 
 function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built {
   if (m.type === "inspector")
@@ -244,6 +246,9 @@ export class FactoryScene {
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
   private worldKey = "";
+  private districtCount = 0;
+  private rising: THREE.Object3D[] = []; // new districts climb out of the void (the onboarding scan)
+  private glide: THREE.Vector3 | null = null; // camera eases here when the island grows
   private beltKey = "";
   private zoom = 1;
   private width = 1;
@@ -262,11 +267,18 @@ export class FactoryScene {
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
   private readonly glow = box(3.4, 0.06, 3.4, new THREE.MeshBasicMaterial({ color: 0xf2a93b, transparent: true, opacity: 0.4 }), 0, 0.04, 0);
   private rework?: { built: Built; label: Label };
+  // labels show on hover, on the picked thing, when hot, or all of them when toggled on
+  private hovered?: string;
+  private selected?: string;
+  private showAll = false;
+  private camGoal: { target: THREE.Vector3; zoom: number } | null = null;
+  private home: { target: THREE.Vector3; zoom: number } | null = null;
+  private readonly ray = new THREE.Raycaster();
 
   constructor(
     canvas: HTMLCanvasElement,
     private readonly labelRoot: HTMLElement,
-    private readonly onPick?: (id: string) => void, // a station id, "power" or "rework"
+    private readonly onPick?: (id: string) => void, // a station id, "m:<machine id>" or "rework"
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(1);
@@ -284,7 +296,7 @@ export class FactoryScene {
     this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g, this.glow);
     this.glow.visible = false;
     this.glow.castShadow = this.glow.receiveShadow = false;
-    this.droneLabel = this.addLabel(this.drone.g, 1.3);
+    this.droneLabel = this.addLabel(this.drone.g, 1.3, "drone");
     this.droneLabel.el.classList.add("drone");
     this.loop();
   }
@@ -298,11 +310,13 @@ export class FactoryScene {
 
   // factor > 1 zooms out
   zoomBy(factor: number) {
+    this.camGoal = null;
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
   panBy(dx: number, dy: number) {
+    this.camGoal = null;
     const k = (this.camera.top - this.camera.bottom) / this.height;
     const right = new THREE.Vector3(Math.cos(YAW), 0, -Math.sin(YAW));
     const down = new THREE.Vector3(Math.sin(YAW), 0, Math.cos(YAW));
@@ -343,6 +357,7 @@ export class FactoryScene {
     Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
+    this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
   }
 
   update(state: FactoryState) {
@@ -353,10 +368,11 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
-      if (first) {
-        this.target.set((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
-        this.fitLine(state);
-      }
+      const center = new THREE.Vector3((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
+      if (first) this.target.copy(center);
+      else if (state.districts.length !== this.districtCount) this.glide = center;
+      this.districtCount = state.districts.length;
+      if (first) this.fitLine(state);
     }
     this.syncBelts(state);
     this.syncDistricts(state);
@@ -375,7 +391,7 @@ export class FactoryScene {
     const p = at ? this.machinePos(at) : this.target.clone();
     this.droneTo.set(p.x, at ? (LABEL_Y[at.type] ?? 2) + 1.6 : 4, p.z + (at ? 0.4 : 0));
     if (first) this.drone.g.position.copy(this.droneTo);
-    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : (f?.tool ?? "foreman"));
+    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : f?.tool && f.targetId ? f.tool.replace(/_/g, " ") : "watching the floor");
   }
 
   private droneMode(): DroneMode {
@@ -402,25 +418,53 @@ export class FactoryScene {
     return machineId ? this.state?.stations?.find((st) => st.machineId === machineId) : undefined;
   }
 
-  // The click target under a screen point: a station id, "power" or "rework".
-  pick(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+  // What's under a screen point: the key of a labelled thing (machine, station, rework belt, district, drone).
+  keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(ndc, this.camera);
-    const targets: [THREE.Object3D, string][] = [];
-    for (const v of this.machines.values()) {
-      const id = v.kind ? this.stationAt(v.machine.id)?.id : POWER_TYPES.includes(v.machine.type) ? "power" : undefined;
-      if (id) targets.push([v.built.g, id]);
-    }
-    if (this.rework) targets.push([this.rework.built.g, "rework"]);
-    const hit = ray.intersectObjects(targets.map(([o]) => o), true)[0];
+    this.ray.setFromCamera(ndc, this.camera);
+    const targets = [...this.labels].filter((l) => l.key);
+    const hit = this.ray.intersectObjects(targets.map((l) => l.obj), true)[0];
     if (!hit) return undefined;
-    for (const [o, id] of targets) {
+    for (const l of targets) {
       let x: THREE.Object3D | null = hit.object;
-      while (x && x !== o) x = x.parent;
-      if (x) return id;
+      while (x && x !== l.obj) x = x.parent;
+      if (x) return l.key;
     }
     return undefined;
+  }
+
+  // The click target under a screen point: a station id, "m:<machine id>" or "rework".
+  pick(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+    const key = this.keyAt(clientX, clientY, rect);
+    return key && clickable(key) ? key : undefined;
+  }
+
+  // Hovering shows that thing's label (labels are off by default). Returns whether it's clickable.
+  hover(clientX: number, clientY: number, rect: DOMRect): boolean {
+    this.hovered = this.keyAt(clientX, clientY, rect);
+    return !!this.hovered && clickable(this.hovered);
+  }
+
+  clearHover() {
+    this.hovered = undefined;
+  }
+
+  setShowAllLabels(on: boolean) {
+    this.showAll = on;
+  }
+
+  // Fly the camera in on a picked thing, or back out to where it was (null).
+  focus(key: string | null) {
+    this.selected = key ?? undefined;
+    const l = key ? [...this.labels].find((x) => x.key === key) : undefined;
+    if (l) {
+      this.home ??= { target: this.target.clone(), zoom: this.zoom };
+      l.obj.getWorldPosition(this.v3);
+      this.camGoal = { target: new THREE.Vector3(this.v3.x, 0, this.v3.z), zoom: FOCUS_ZOOM };
+    } else if (this.home) {
+      this.camGoal = this.home;
+      this.home = null;
+    }
   }
 
   // ---------- world: island, districts, scenery ----------
@@ -431,6 +475,7 @@ export class FactoryScene {
     this.world.clear();
     this.waterTextures = [];
     this.rocks = [];
+    this.rising = [];
 
     const ms = state.machines.map((m) => this.machinePos(m));
     let x0 = Math.min(-8, ...ms.map((p) => p.x - 2.5));
@@ -451,9 +496,11 @@ export class FactoryScene {
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
-      model.group.position.set(cx, 0, cz);
+      const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
+      model.group.position.set(cx, isNew ? -2.5 : 0, cz);
+      if (isNew) this.rising.push(model.group);
       this.world.add(model.group);
-      const label = this.addLabel(model.group, model.labelY);
+      const label = this.addLabel(model.group, model.labelY, `d:${d.name}`);
       this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
       x0 = Math.min(x0, cx - w / 2 - 1.5);
       x1 = Math.max(x1, cx + w / 2 + 1.5);
@@ -499,7 +546,7 @@ export class FactoryScene {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
         const built = buildModel(m, power, kind);
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
-        const pick = kind ? this.stationAt(m.id)!.id : POWER_TYPES.includes(m.type) ? "power" : undefined;
+        const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
         this.machines.set(m.id, v);
         this.scene.add(built.g);
@@ -850,9 +897,10 @@ export class FactoryScene {
 
   // ---------- labels ----------
 
-  private addLabel(obj: THREE.Object3D, y: number, pick?: string): Label {
+  private addLabel(obj: THREE.Object3D, y: number, key?: string): Label {
     const el = document.createElement("div");
     el.className = "maplabel";
+    const pick = key && clickable(key) ? key : undefined;
     if (pick && this.onPick) {
       el.classList.add("pick");
       el.setAttribute("role", "button");
@@ -866,7 +914,7 @@ export class FactoryScene {
     const sub = document.createElement("i");
     el.append(title, sub);
     this.labelRoot.appendChild(el);
-    const l = { obj, y, el, title, sub };
+    const l = { key, obj, y, el, title, sub };
     this.labels.add(l);
     return l;
   }
@@ -894,7 +942,9 @@ export class FactoryScene {
       switch (m.type) {
         case "ore_deposit": {
           const kind = oreKind(m);
-          const n = count((i) => i.state === "ore");
+          // count this deposit's own source, and ore Spark hasn't started building yet
+          const src = { sentry: "sentry", inbox: "inbox", issues: "github_issue" }[kind];
+          const n = count((i) => i.source === src && (i.state === "ore" || i.state === "queued"));
           const name = { sentry: "SENTRY", inbox: "INBOX", issues: "ISSUES" }[kind];
           this.setLabel(v.label, name, `${n} waiting`, kind === "sentry" && n > 0);
           break;
@@ -960,7 +1010,8 @@ export class FactoryScene {
       this.v3.y += l.y;
       this.v3.project(this.camera);
       const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
-      const off = x < -60 || x > w + 60 || y < -40 || y > h + 40;
+      const shown = this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
+      const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
       l.el.style.display = off ? "none" : "flex";
       if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
     }
@@ -982,10 +1033,27 @@ export class FactoryScene {
     }
     if (this.rework) this.rework.built.update(t, dt, (this.state?.items.filter((i) => i.state === "rejected").length ?? 0) >= BACKED_UP ? "CLOGGED" : "FLOWING");
     if (this.glow.visible) (this.glow.material as THREE.MeshBasicMaterial).opacity = this.reduceMotion ? 0.4 : 0.25 + Math.abs(Math.sin(t * 2.4)) * 0.3;
+    if (this.camGoal) {
+      const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * 4);
+      this.target.lerp(this.camGoal.target, k);
+      this.zoom += (this.camGoal.zoom - this.zoom) * k;
+      if (this.target.distanceTo(this.camGoal.target) < 0.02 && Math.abs(this.zoom - this.camGoal.zoom) < 0.005) {
+        this.target.copy(this.camGoal.target);
+        this.zoom = this.camGoal.zoom;
+        this.camGoal = null;
+      }
+      this.applyCamera();
+    }
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterTextures) w.offset.y += dt * 1.6;
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+    for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
+    this.rising = this.rising.filter((g) => g.position.y < 0);
+    if (this.glide) {
+      this.target.lerp(this.glide, Math.min(1, dt * 3));
+      if (this.target.distanceTo(this.glide) < 0.05) this.glide = null;
+    }
 
     for (const v of this.items.values()) {
       if (v.path && v.s < v.stopAt) {
@@ -1021,7 +1089,7 @@ export class FactoryScene {
     this.drone.update(t, dt, this.droneMode());
 
     const drift = this.reduceMotion ? 0 : 1;
-    const dx = Math.sin(t * 0.07) * 0.8 * drift, dz = Math.cos(t * 0.05) * 0.6 * drift;
+    const dx = Math.sin(t * 0.07) * 0.25 * drift, dz = Math.cos(t * 0.05) * 0.2 * drift;
     const off = new THREE.Vector3(CAM_DIST * Math.cos(TILT) * Math.sin(YAW), CAM_DIST * Math.sin(TILT), CAM_DIST * Math.cos(TILT) * Math.cos(YAW));
     this.camera.position.set(this.target.x + dx + off.x, this.target.y + off.y, this.target.z + dz + off.z);
     this.camera.lookAt(this.target.x + dx, this.target.y, this.target.z + dz);
