@@ -321,7 +321,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 }
 @media (max-height: 500px) and (min-width: 561px) {
   /* phone on its side: the deck takes the left half, the map stays in view on the right */
-  .checkin { right: auto; width: min(420px, 52vw); height: calc(var(--vh) - 24px - var(--sat)); bottom: calc(8px + var(--sab, 0px)); }
+  .checkin { right: auto; width: min(420px, 52vw); height: calc(var(--vh) - 76px - var(--sat)); bottom: calc(8px + var(--sab, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .checkin, .ci-toast { transition: none; }
