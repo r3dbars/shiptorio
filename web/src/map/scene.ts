@@ -17,6 +17,7 @@ import {
   buildInspector,
   buildLaunchPad,
   buildOre,
+  buildCheck,
   buildOrbit,
   buildReview,
   buildRework,
@@ -217,7 +218,7 @@ function tintCheck(built: Built, color: number): Built {
 }
 
 function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built {
-  if (m.type === "inspector" && m.id.startsWith("check-")) return tintCheck(buildInspector(), CHECK_TINT[m.id.slice(6)] ?? 0x9b8cff);
+  if (m.type === "inspector" && m.id.startsWith("check-")) return tintCheck(buildCheck(m.id.slice(6)), CHECK_TINT[m.id.slice(6)] ?? 0x9b8cff);
   if (m.type === "inspector")
     switch (kind) {
       case "verify":
