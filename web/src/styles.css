@@ -174,7 +174,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 /* phones: the station panel is a bottom sheet over the Next Move card */
 @media (max-width: 760px), (max-height: 500px) {
   .stationpanel {
-    left: var(--sal); right: var(--sar); width: auto; top: auto; bottom: 0; z-index: 6;
+    left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); width: auto; top: auto; bottom: 0; z-index: 6;
     max-height: 70vh; overflow-y: auto; overscroll-behavior: contain;
     border-bottom: 0; outline: 0; padding-bottom: calc(12px + var(--sab));
   }
@@ -486,6 +486,8 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 @media (max-height: 500px) and (min-width: 561px) {
   .nextmove, .sheet { left: calc(12px + var(--sal)); transform: none; width: min(460px, 52vw); bottom: calc(12px + var(--sab)); max-height: calc(100vh - 80px); }
   .dock { left: auto; right: calc(12px + var(--sar)); transform: none; width: auto; flex-direction: column-reverse; bottom: calc(12px + var(--sab)); }
+  /* not enough height for four buttons under the bell: the bell joins the chips on the left */
+  .topbar .chips { flex: none; }
 }
 @media (prefers-reduced-motion: reduce) { .tray { animation: none; } }
 

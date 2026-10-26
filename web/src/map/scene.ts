@@ -279,6 +279,10 @@ export class FactoryScene {
   private showAll = false;
   private camGoal: { target: THREE.Vector3; zoom: number } | null = null;
   private home: { target: THREE.Vector3; zoom: number } | null = null;
+  // where the camera target sits on screen, as a fraction of width/height from center (+x right, +y up).
+  // On phones the HUD covers the bottom, so the island and picked things sit higher (or left, on a phone on its side).
+  private bias = { x: 0, y: 0 };
+  private biasGoal: { x: number; y: number } | null = null;
   private readonly ray = new THREE.Raycaster();
   // the one in-world ping: a pulsing dot on whatever needs you, tagged with the code it touches
   private ping?: { key: string; el: HTMLButtonElement; title: HTMLElement; code: HTMLElement };
@@ -318,6 +322,14 @@ export class FactoryScene {
     this.height = Math.max(1, height);
     this.renderer.setSize(this.width, this.height, false);
     this.applyCamera();
+    if (!this.camGoal) this.bias = this.biasFor(!!this.home);
+  }
+
+  private biasFor(focused: boolean) {
+    const phone = this.width <= 760 || this.height <= 500;
+    if (!phone) return { x: 0, y: 0 };
+    if (this.height <= 500 && this.width > this.height) return { x: focused ? -0.25 : 0, y: 0 }; // panel on the right
+    return { x: 0, y: focused ? 0.27 : 0.1 }; // bottom sheet / next-move card below
   }
 
   // factor > 1 zooms out
@@ -499,6 +511,7 @@ export class FactoryScene {
       this.camGoal = this.home;
       this.home = null;
     }
+    this.biasGoal = this.biasFor(!!this.home);
   }
 
   // ---------- world: island, districts, scenery ----------
@@ -1097,6 +1110,15 @@ export class FactoryScene {
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);
+    if (this.biasGoal) {
+      const k = this.reduceMotion ? 1 : Math.min(1, dt * 5);
+      this.bias.x += (this.biasGoal.x - this.bias.x) * k;
+      this.bias.y += (this.biasGoal.y - this.bias.y) * k;
+      if (Math.abs(this.biasGoal.x - this.bias.x) + Math.abs(this.biasGoal.y - this.bias.y) < 1e-3) {
+        this.bias = this.biasGoal;
+        this.biasGoal = null;
+      }
+    }
     if (this.glide) {
       this.target.lerp(this.glide, Math.min(1, dt * 3));
       if (this.target.distanceTo(this.glide) < 0.05) this.glide = null;
@@ -1136,8 +1158,13 @@ export class FactoryScene {
     this.drone.update(t, dt, this.droneMode());
 
     const drift = this.reduceMotion ? 0 : 1;
-    const dx = Math.sin(t * 0.07) * 0.25 * drift, dz = Math.cos(t * 0.05) * 0.2 * drift;
+    let dx = Math.sin(t * 0.07) * 0.25 * drift, dz = Math.cos(t * 0.05) * 0.2 * drift;
     const off = new THREE.Vector3(CAM_DIST * Math.cos(TILT) * Math.sin(YAW), CAM_DIST * Math.sin(TILT), CAM_DIST * Math.cos(TILT) * Math.cos(YAW));
+    // look a little right/down of the target so the target itself shows left/up (see bias)
+    const vw = this.camera.right - this.camera.left, vh = this.camera.top - this.camera.bottom;
+    const sr = -this.bias.x * vw, sd = (this.bias.y * vh) / Math.sin(TILT);
+    dx += sr * Math.cos(YAW) + sd * Math.sin(YAW);
+    dz += -sr * Math.sin(YAW) + sd * Math.cos(YAW);
     this.camera.position.set(this.target.x + dx + off.x, this.target.y + off.y, this.target.z + dz + off.z);
     this.camera.lookAt(this.target.x + dx, this.target.y, this.target.z + dz);
     this.sun.position.set(this.target.x + 14, 26, this.target.z + 8);
