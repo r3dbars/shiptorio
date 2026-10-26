@@ -6,6 +6,7 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
+import { CheckIn } from "./ui/CheckIn";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { useFactorySound } from "./sound/useFactorySound";
@@ -102,6 +103,10 @@ export function App() {
   useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
+  // ?checkin opens the deck on load, the way a phone check-in would.
+  const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
+  const [focus, setFocus] = useState<string | null>(null); // what the check-in wants the map to zoom to
+  const deck = state?.deck ?? (state?.move ? [state.move] : []);
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -268,7 +273,18 @@ export function App() {
           </section>
         </div>
 
-        <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
+        {checkin ? (
+          <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
+        ) : (
+          <>
+            <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
+            {deck.length > 1 && (
+              <button type="button" className="card ci-open" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
+                CHECK-IN · {deck.length}
+              </button>
+            )}
+          </>
+        )}
 
         {panel && state && <StationPanel id={panel} state={state} send={send} onClose={() => setPanel(null)} />}
 
