@@ -45,6 +45,12 @@ export function summarizeIsland(s: FactoryState, now = Date.now()): IslandSummar
   };
 }
 
+// A repo the player connected but never opened: an island with nothing on it yet.
+export const emptyIsland = (repo: string, now = Date.now()): IslandSummary => ({
+  repo, ready: false, rockets: 0, launches: 0, automated: 0, waiting: 0, inFlight: 0,
+  bottleneck: null, districts: [], permits: [], research: [], updatedAt: now,
+});
+
 // How badly an island is stuck: work piled up times how long it's waited. Cards on you count
 // extra, since the player is the bottleneck Shiptorio cares about most.
 export const stuckScore = (i: IslandSummary) =>

@@ -14,6 +14,7 @@ import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 
 export { Factory };
 
@@ -194,6 +195,22 @@ app.get("/api/repos", async (c) => {
     fullName: repo.full_name,
     blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
   })) });
+});
+
+// The empire overview: one small summary per repo this player can reach (shared/src/empire.ts).
+// Repos never opened come back as ready: false; the map still draws them as islands.
+app.get("/api/empire", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  const repos = (await reposFor(c.env, user)).slice(0, 24);
+  const islands = await Promise.all(repos.map(async (r): Promise<IslandSummary> => {
+    const summary = await Promise.race([
+      factory(c.env, r.full_name).summary().catch(() => null),
+      new Promise<null>((ok) => setTimeout(() => ok(null), 2500)),
+    ]);
+    return summary ?? emptyIsland(r.full_name);
+  }));
+  return c.json({ islands } satisfies Empire);
 });
 
 // ---------- the factory (browser websocket) ----------
