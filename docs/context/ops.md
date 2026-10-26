@@ -516,3 +516,37 @@ websocket disconnect. Test-only faults were injected by the browser test, not pr
 Production `SHIPTORIO_SENTRY_DSN` was absent when checked. No Sentry ingestion project/key was borrowed
 from a player's mine or the separate inbound-webhook verification. Configure the dedicated secret above,
 then verify the forced event in Sentry before calling production Sentry acceptance complete.
+
+### Goal 6 production acceptance — 2026-10-26
+
+- Logging/Sentry/admin PR [#171](https://github.com/r3dbars/shiptorio/pull/171) and rollout
+  compatibility fix [#196](https://github.com/r3dbars/shiptorio/pull/196) merged with green CI.
+  The latter falls back only when the new tracing RPC is missing, before any business
+  operation ran; it never retries a failed business operation. Worker and factory release
+  SHAs can differ during rollout. The admin snapshot exposes the factory's actual SHA.
+- [Deploy succeeded](https://github.com/r3dbars/shiptorio/actions/runs/40409576278) for
+  `017ee6708dfe21a4a29c258f5cfa7a253b5befea`, a verified descendant of both PRs.
+  Production `/api/version` returned that exact SHA and `/api/health` reported D1/KV/DO `ok`.
+  Signed-in `/admin` refreshed and read the existing testing factory's snapshot.
+- Created the dedicated **shiptorio** error-monitoring project in the existing r3dbars
+  Sentry organization and installed its DSN only as the `SHIPTORIO_SENTRY_DSN` secret on
+  the **shiptorio** Worker. No DSN value is recorded here. The isolated
+  `shiptorio-verification` project and incoming Sentry mine remain separate.
+- The production admin verification button returned event ID
+  `39ce175754824ef0837c6ec46b5009d2` and request ID
+  `2843bfbb-729f-447e-b066-751513ff1700`. The event was then observed indexed in
+  [SHIPTORIO-1](https://r3dbars.sentry.io/issues/7813781243/) with the matching `requestId`,
+  `user.id = r3dbars`, and release `017ee6708dfe21a4a29c258f5cfa7a253b5befea`.
+  The issue stream showed it within a minute. Production CSP includes only the configured
+  ingestion origin. Browser SDK/error-boundary/rejection/disconnect delivery was separately
+  verified against the isolated local envelope receiver.
+- Rollout verification caught a temporary old/new RPC mismatch. Audited the GitHub App's
+  original failed deliveries from 21:47–21:52 UTC, preserving their exact 64-bit IDs, and
+  redelivered all 93 matching events through GitHub. Every event was for r3dbars/shiptorio;
+  none targeted the testing job. A read-only production D1 query verified **93 done, zero
+  pending**, with zero rows written by the verification query. No factory data was reset,
+  and no runner or job was manually restarted or re-paired.
+
+The earlier missing-DSN checkpoint above is now resolved. Future operators can use the
+existing verification button and Sentry link; no additional auth token is needed to send
+an SDK verification error. Do not use a generic SDK flush result alone as proof of indexing.
