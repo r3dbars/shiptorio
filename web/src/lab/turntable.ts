@@ -5,11 +5,11 @@ import * as THREE from "three";
 import * as lab from "../map/itemlab";
 import { buildDrone } from "../map/drone";
 import { makeDistrict, makeIsland } from "../map/models";
-import { PALETTE } from "../map/palette";
 import { PixelPass } from "../map/pixel";
+import { applyLook, IRON, LOOK } from "../map/world";
+import { ironize, ironState, makeStatePost } from "../map/iron";
 
 THREE.ColorManagement.enabled = false;
-const L = Math.PI;
 const q = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (q.has(k) ? Number(q.get(k)) : d);
 
@@ -43,28 +43,35 @@ renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(PALETTE.void);
-scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * L));
-const under = new THREE.DirectionalLight(0x9fb2ff, 0.45 * L);
-under.position.set(10, -6, 14);
-const sun = new THREE.DirectionalLight(0xfff0d2, 0.95 * L);
-sun.position.set(14, 26, 8);
+const sun = applyLook(scene); // map/world.ts: ?world=iron or classic, same as the game
+sun.position.set(...LOOK.sun.offset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.bias = -0.0015;
 Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 });
-scene.add(under, sun, sun.target);
+scene.add(sun, sun.target);
 if (q.get("island") !== "0") scene.add(makeIsland(7, 7));
 
 const name = q.get("item") ?? "pad";
 const built = (ITEMS[name] ?? ITEMS.pad)();
 scene.add(built.g);
 const state = q.get("state") ?? "IDLE";
+// Black Iron: the same re-paint and caution post the game gives line machines
+const post = IRON && ["pad", "assembler", "splitter", "inspector", "verify", "review", "gate", "orbit", "check"].includes(name) ? makeStatePost() : null;
+if (IRON) ironize(built.g);
+if (post) {
+  post.g.position.set(1.35, 0, 1.45);
+  built.g.add(post.g);
+}
+const tick = (tt: number, d: number) => {
+  built.update(tt, d, state);
+  post?.set(ironState(q.get("machine") ?? "", state), tt, d);
+};
 
 const zoom = num("zoom", 1), yaw = (num("yaw", 45) * Math.PI) / 180, tilt = Math.PI / 6;
 const lookY = num("y", 1);
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200);
-const px = num("px", 2);
+const px = num("px", LOOK.pixel);
 const pass = new PixelPass();
 function size() {
   const w = innerWidth, h = innerHeight;
@@ -87,7 +94,7 @@ addEventListener("resize", size);
 const T = num("t", 0), dt = 1 / 60;
 let t = 0;
 if (q.get("freeze") === "1") {
-  while (t < T) { built.update(t, dt, state); lab.updateFx(dt); t += dt; }
+  while (t < T) { tick(t, dt); lab.updateFx(dt); t += dt; }
   place();
   pass.render(renderer, scene, camera);
   (window as unknown as { ready: boolean }).ready = true;
@@ -97,7 +104,7 @@ if (q.get("freeze") === "1") {
     const now = performance.now(), d = Math.min(0.05, (now - last) / 1000);
     last = now; t += d;
     spin += d * num("spin", 0);
-    built.update(t, d, state); lab.updateFx(d);
+    tick(t, d); lab.updateFx(d);
     place();
     pass.render(renderer, scene, camera);
     requestAnimationFrame(loop);

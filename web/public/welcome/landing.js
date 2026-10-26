@@ -19,22 +19,25 @@
 
   // The loop loads after the page does, so it never slows the first paint. Phones get a lighter cut
   // and wait for the first scroll or tap, so nobody pays 1MB of video just for opening the page.
-  var video = document.getElementById("loop"), toggle = document.getElementById("toggle");
+  var video = document.getElementById("loop"), toggle = document.getElementById("toggle"), reel = document.getElementById("reel");
+  // the nameplate reads like a machine chip: IDLE on the poster, WORKING while the loop runs
+  var show = function (on) { reel.className = "state" + (on ? " working" : ""); reel.firstChild.nodeValue = on ? "Working " : "Idle "; toggle.textContent = on ? "Pause" : "Play"; };
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
   var phone = matchMedia("(max-width: 759px)").matches, started = false;
   var start = function (play) {
     if (started) return;
     started = true;
     video.src = phone ? "/welcome/loop-640.mp4" : "/welcome/loop.mp4";
-    video.addEventListener("playing", function () { video.classList.add("on"); toggle.textContent = "Pause"; });
+    video.addEventListener("playing", function () { video.classList.add("on"); show(true); });
+    video.addEventListener("pause", function () { show(false); });
     if (!play) return;
-    video.play().catch(function () { toggle.textContent = "Play"; });
+    video.play().catch(function () { show(false); });
   };
   toggle.hidden = false;
   toggle.textContent = "Play";
   toggle.addEventListener("click", function () {
     if (!started) return start(true);
-    if (video.paused) video.play(); else { video.pause(); toggle.textContent = "Play"; }
+    if (video.paused) video.play(); else video.pause();
   });
   if (still) return;
   var go = function () { setTimeout(function () { start(true); }, 300); };
