@@ -118,3 +118,14 @@ test("later and never bind the visible card too, and a server-returned deferred 
   expect(f.sent[1]).toEqual({ type: "dismiss_move", moveId: b.id, why: "once" });
   expect(f.session.cards().map(m => m.id)).toEqual(["125"]);
 });
+
+test("a drag starting before same-id option changes cannot approve the new option on release", () => {
+  const a = card("125"), f = fixture([a]);
+  const startedOn = f.session.cards()[0];
+  const updated = { ...a, options: [{ ...a.options[0], id: "launch", label: "Launch now" }], evidence: [{ station: "ci", ok: true }] };
+  f.session.update([updated]);
+  expect(f.session.begin(startedOn, choose(startedOn), f.commit, () => {})).toBe(false);
+  f.flush();
+  expect(f.sent).toEqual([]);
+  expect(f.session.cards()[0]).toBe(updated);
+});

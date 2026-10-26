@@ -103,7 +103,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
   const [fly, setFly] = useState<Gesture | null>(null);
   const [tally, setTally] = useState({ yes: 0, later: 0, never: 0, rules: 0, grows: [] as string[] });
   const [toast, setToast] = useState<string | null>(null);
-  const start = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
+  const start = useRef<{ id: string; card: Move; x: number; y: number; moved: boolean } | null>(null);
   const firstDeal = useRef(deck.length);
 
   const cards = session.cards(deck);
@@ -148,12 +148,12 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
       setToast(o ? `${o.label}. On it.` : "On it.");
     });
 
-  const act = (g: Gesture) => {
-    if (!top || session.busy()) return;
+  const act = (g: Gesture, card = top) => {
+    if (!card || card.id !== top?.id || session.busy()) return;
     if (g === "up") return setSheet("details");
     if (g === "down") return setSheet("never");
-    if (g === "right") return choose(top, pickOf(top).id); // a locked card's pick is the missing check, never a merge
-    done(top, "left", { type: "defer_move", moveId: top.id }, () => {
+    if (g === "right") return choose(card, pickOf(card).id); // a locked card's pick is the missing check, never a merge
+    done(card, "left", { type: "defer_move", moveId: card.id }, () => {
       setTally((t) => ({ ...t, later: t.later + 1 }));
       setToast("Later. It'll come back around.");
     });
@@ -191,7 +191,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
 
   const down = (e: React.PointerEvent) => {
     if (!top || session.busy()) return;
-    start.current = { id: top.id, x: e.clientX, y: e.clientY, moved: false };
+    start.current = { id: top.id, card: top, x: e.clientX, y: e.clientY, moved: false };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const move = (e: React.PointerEvent) => {
@@ -209,7 +209,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     if (!s.moved) return toggleZoom();
     const g = drag && dirOf(drag.dx, drag.dy, SWIPE_PX);
     setDrag(null);
-    if (g) act(g);
+    if (g) act(g, s.card);
   };
 
   const leaning = drag ? dirOf(drag.dx, drag.dy, 30) : null;
