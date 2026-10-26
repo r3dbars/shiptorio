@@ -33,6 +33,11 @@ function Segs({ value, max = 8, color }: { value: number; max?: number; color: s
 }
 
 const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "ADVISOR", floor: "FLOOR", build: "BUILD", lights_out: "LIGHTS OUT" };
+// Subscriptions you can plug in. Each sign-in adds a solar plant and assemblers (docs/PRODUCT.md).
+const SLOTS = [
+  { harness: "claude_code", name: "Claude" },
+  { harness: "codex", name: "ChatGPT" },
+] as const;
 const UNDO_MS = 5 * 60_000;
 
 function fmtLead(ms?: number) {
@@ -190,6 +195,23 @@ export function App() {
                 <Segs value={p.online ? p.level * 8 : 0} color={POWER_COLOR[p.kind]} />
               </div>
             ))}
+            {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
+              const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
+              return (
+                <div className="hrow slot" key={sl.harness}>
+                  <span>SOLAR · {sl.name.toUpperCase()}</span>
+                  {opt && state?.move ? (
+                    <button type="button" className="slotbtn" onClick={() => send({ type: "choose_move", moveId: state.move!.id, optionId: opt.id })}>
+                      SIGN IN
+                    </button>
+                  ) : (
+                    <span className="locked" title="Run bunx shiptorio-runner pair on your machine to plug it in">
+                      SIGN IN TO UNLOCK
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </section>
 
           <section className="card" aria-label="Launch pad">

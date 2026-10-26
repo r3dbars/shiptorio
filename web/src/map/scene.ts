@@ -731,7 +731,8 @@ export class FactoryScene {
           this.setLabel(v.label, "SPLITTER", `Spark triage${st}`, blocked);
           break;
         case "assembler":
-          this.setLabel(v.label, HARNESS_NAME[m.harness ?? "spark"], `assembler · ${p?.kind ?? "steam"}${st}`, blocked);
+          if (!m.harness && !m.powerId) this.setLabel(v.label, "ASSEMBLER", "no power · sign in to build", true);
+          else this.setLabel(v.label, HARNESS_NAME[m.harness ?? "spark"], `assembler · ${p?.kind ?? "steam"}${st}`, blocked);
           break;
         case "inspector":
           this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);

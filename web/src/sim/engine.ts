@@ -53,6 +53,7 @@ interface Scenario {
   ores: Ore[];
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
+  unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -117,6 +118,21 @@ export const SCENARIOS = {
       { at: 24, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
     ],
   },
+  // Onboarding from docs/PRODUCT.md: Spark reads the repo, but nothing builds until you plug in a subscription.
+  "first-run": {
+    unplugged: true,
+    ores: [
+      {
+        at: 2,
+        title: "Checkout button spins forever on Safari",
+        kind: "bug",
+        district: "web",
+        ask: "Send it to your new assembler with Spark's plan: await the payment intent before enabling the button.",
+        spark: [{ tool: "triage", text: "Read the repo: web and server carry the risk, 1 open bug worth fixing first", reason: "repo scan" }],
+      },
+      { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
+    ],
+  },
 } satisfies Record<string, Scenario>;
 
 export type ScenarioName = keyof typeof SCENARIOS;
@@ -130,13 +146,15 @@ function initialState(sc: Scenario): FactoryState {
   const machines: Machine[] = [
     { id: "ore-issues", type: "ore_deposit", x: -6, y: 0, tier: 1, state: "idle" },
     { id: "splitter-1", type: "splitter", x: -3, y: 0, harness: "spark", powerId: "steam-spark", tier: 1, state: "idle" },
-    { id: "assembler-1", type: "assembler", x: 0, y: 0, harness, powerId: plant, tier: 1, state: "idle" },
+    sc.unplugged
+      ? { id: "assembler-1", type: "assembler", x: 0, y: 0, tier: 1, state: "blocked" }
+      : { id: "assembler-1", type: "assembler", x: 0, y: 0, harness, powerId: plant, tier: 1, state: "idle" },
     { id: "inspector-1", type: "inspector", x: 3, y: 0, tier: 1, state: "idle" },
     { id: "launch-pad", type: "launch_pad", x: 6, y: 0, tier: 1, state: "idle" },
     { id: "steam-spark", type: "steam", x: 0, y: 3, tier: 1, state: "idle" },
   ];
   const power: PowerSource[] = [{ id: "steam-spark", kind: "steam", name: "Muse Spark", level: 1, online: true }];
-  if (harness !== "spark") {
+  if (harness !== "spark" && !sc.unplugged) {
     machines.push({ id: plant, type: "solar", x: 3, y: 3, tier: 1, state: "idle" });
     power.push({ id: plant, kind: "solar", name: SOLAR_NAME[harness] ?? harness, level: 0.9, online: true });
   }
@@ -392,6 +410,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // The stage with the most value waiting, the way bottleneck.ts scores it.
   const findBottleneck = (): Bottleneck | null => {
+    if (!s.power.some((p) => p.kind !== "steam" && p.online) && s.machines.some((m) => m.type === "assembler" && !m.powerId))
+      return { stage: "resources", wip: s.items.length, ageMs: 0, throughputPerHour: 0, valueAtRisk: s.items.length, summary: "No subscription plugged in, so nothing can build" };
     const live = s.items.filter((i) => i.state !== "launched");
     if (!live.length) return null;
     const by = new Map<Stage, Item[]>();
@@ -503,8 +523,43 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (a.next?.level === "build") apply({ autonomy: { ...a, next: { ...a.next, have: a.next.have + 1 } } });
   };
 
+  // ---------- plugging in a subscription ----------
+
+  const plugIn = (harness: "claude_code" | "codex") => {
+    const name = SOLAR_NAME[harness]!;
+    const plant = `solar-${harness}`;
+    const n = s.power.filter((p) => p.kind === "solar").length;
+    const dark = s.machines.find((m) => m.type === "assembler" && !m.powerId);
+    const asm: Machine = dark
+      ? { ...dark, harness, powerId: plant, state: "idle" }
+      : { id: `assembler-${harness}`, type: "assembler", x: 0, y: 2 + n * 2, harness, powerId: plant, tier: 1, state: "idle" };
+    s.power = [...s.power, { id: plant, kind: "solar", name, level: 1, online: true }];
+    apply({
+      power: s.power,
+      machines: [{ id: plant, type: "solar", x: 3 + n * 3, y: 3, tier: 1, state: "idle" }, { id: `battery-${harness}`, type: "battery", x: 4 + n * 3, y: 5, powerId: plant, tier: 1, state: "idle" }, asm],
+    });
+    log("success", `${name} plugged in: solar plant online, ${harness === "codex" ? "Codex" : "Claude Code"} assembler lit`);
+  };
+
+  const askForPower = () => {
+    if (s.power.some((p) => p.kind === "solar")) return;
+    propose(
+      {
+        title: "Plug in power to start building",
+        why: "Spark has read the repo and lined up the first fix, but nothing can build yet. Your own subscriptions power the assemblers.",
+        stage: "resources",
+        options: [
+          { id: "claude_code", label: "Sign in with Claude", recommended: true, actions: [] },
+          { id: "codex", label: "Sign in with ChatGPT", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => plugIn(opt === "codex" ? "codex" : "claude_code"),
+    );
+  };
+
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
+  if (sc.unplugged) setTimeout(askForPower, TICK_MS * 1.5);
   const timer = setInterval(tick, TICK_MS);
 
   return {
