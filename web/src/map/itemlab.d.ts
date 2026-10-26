@@ -17,7 +17,7 @@ export function updateFx(dt: number): void;
 
 export function buildAssembler(o: BuildOpts): Built; // IDLE · WORKING · BLOCKED
 export function buildSplitter(): Built; // IDLE · SORTING
-export function buildInspector(): Built; // SCANNING · PASS · REJECT
+export function buildInspector(): Built; // SCANNING · PASS · REJECT · BACKED UP
 export function buildSteam(o: BuildOpts): Built; // IDLE · RUNNING · OVERLOAD
 export function buildGeo(o: BuildOpts): Built; // IDLE · INFERENCE · OVERHEAT
 export function buildTurret(): Built; // SCANNING · FIRING
@@ -27,3 +27,10 @@ export function buildLaunchPad(): Built; // IDLE · COUNTDOWN · LAUNCH
 export function buildSolar(o: BuildOpts): Built; // SUNNY · CAPPED
 export function buildBelt(): Built; // RUNNING · JAMMED
 export function buildOre(o: BuildOpts): Built; // RICH · DEPLETED
+
+// The verification gauntlet (docs/LOOP.md), art round 2
+export function buildVerify(): Built; // IDLE · VERIFYING · PASS · FAIL · BACKED UP
+export function buildReview(): Built; // IDLE · REVIEWING · APPROVED · CHANGES · BACKED UP
+export function buildGate(): Built; // WAITING · APPROVED · BACKED UP · REJECTED
+export function buildRework(): Built; // FLOWING · CLOGGED
+export function buildOrbit(): Built; // WATCHING · ALL CLEAR · ALERT

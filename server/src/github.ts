@@ -1,4 +1,5 @@
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
+import type { GitHubIssue } from "./sources/github";
 
 const API = "https://api.github.com";
 const UA = "shiptorio";
@@ -75,7 +76,7 @@ export interface AppCredentials {
   GITHUB_APP_PRIVATE_KEY: string;
 }
 
-async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(API + path, {
     signal: AbortSignal.timeout(20000),
     ...init,
@@ -127,6 +128,22 @@ export async function repoTree(
 export async function pullRequestFiles(token: string, fullName: string, number: number): Promise<string[]> {
   const files = await gh<{ filename: string }[]>(`/repos/${fullName}/pulls/${number}/files?per_page=100`, token);
   return files.map((f) => f.filename);
+}
+
+export async function openIssues(token: string, repo: string): Promise<GitHubIssue[]> {
+  const issues: GitHubIssue[] = [];
+  for (let page = 1; page <= 10 && issues.length < 50; page++) {
+    const batch = await gh<GitHubIssue[]>(`/repos/${repo}/issues?state=open&per_page=25&page=${page}`, token);
+    issues.push(...batch.filter((issue) => !issue.pull_request).slice(0, 50 - issues.length));
+    if (batch.length < 25) break;
+  }
+  return issues;
+}
+
+export async function issueReporters(token: string, repo: string, issue: GitHubIssue): Promise<string[]> {
+  if (!issue.reactions?.total_count) return issue.user ? [issue.user.login] : [];
+  const reactions = await gh<{ user?: { login: string } }[]>(`/repos/${repo}/issues/${issue.number}/reactions?per_page=100`, token);
+  return [...new Set([...(issue.user ? [issue.user.login] : []), ...reactions.flatMap((reaction) => reaction.user ? [reaction.user.login] : [])])];
 }
 
 export async function fileContent(token: string, fullName: string, path: string, ref: string): Promise<string | null> {

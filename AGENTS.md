@@ -3,6 +3,9 @@
 Context for coding agents (Codex, Claude Code, etc.) working on Shiptorio. Read this
 before you change anything.
 
+**North star first: read [`docs/VISION.md`](docs/VISION.md) before deciding what to build next.** It's Justin's
+high-level goals on one page, with a "how to decide what's next" checklist.
+
 **Shared context (decisions, open items, plan export, memory, design refs) lives in
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**
@@ -178,6 +181,10 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 - Never commit secrets. Local secrets go in `.dev.vars` (gitignored); deployed ones via
   `wrangler secret put`.
 - Work on a branch and open a PR. Don't push to `main`.
+- **Merge your own PR once CI is green** (Justin, 2026-10-26: "auto merge every thing"). Squash merge, then check
+  the Deploy run on `main` went green before calling it live. Don't merge drafts that are stale (#3, #4) or a PR
+  another agent is still working on. GitHub's repo auto-merge setting is not on yet; Justin can flip it in
+  Settings → General → "Allow auto-merge".
 - Only original art. The name leans on Factorio, so don't use any Factorio assets.
 
 ## Rules for every agent (from the plan)

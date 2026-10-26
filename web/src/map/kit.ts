@@ -1,5 +1,5 @@
 // Small helpers for building models out of primitives, plus the canvas textures
-// (stone paving, cliff faces, belts, water). Ported from docs/art-prototype.html.
+// (stone paving, belts, water). Ported from docs/art-prototype.html.
 
 import * as THREE from "three";
 
@@ -73,7 +73,6 @@ export function rep(tex: THREE.Texture, x: number, y: number) {
 
 interface Textures {
   stone: THREE.Texture;
-  cliff: THREE.Texture;
   belt: THREE.Texture;
   water: THREE.Texture;
 }
@@ -109,24 +108,6 @@ export function tex(): Textures {
       }
     }
   });
-  const cliff = canvasTex(64, 128, (g) => {
-    g.fillStyle = "#3a4268";
-    g.fillRect(0, 0, 64, 128);
-    for (let i = 0; i < 34; i++) {
-      g.fillStyle = rnd() < 0.5 ? "#465082" : "#2d3458";
-      g.fillRect(Math.floor(rnd() * 64), 0, 1 + Math.floor(rnd() * 3), 128);
-    }
-    for (let i = 0; i < 10; i++) {
-      g.fillStyle = "#272d4d";
-      g.fillRect(0, Math.floor(rnd() * 128), 64, 2);
-    }
-    g.fillStyle = "#4f7d3b";
-    g.fillRect(0, 0, 64, 8);
-    for (let i = 0; i < 26; i++) {
-      g.fillStyle = rnd() < 0.5 ? "#4f7d3b" : "#3e6630";
-      g.fillRect(Math.floor(rnd() * 64), 8, 2, 4 + Math.floor(rnd() * 26));
-    }
-  });
   const belt = canvasTex(16, 16, (g) => {
     g.fillStyle = "#2b2f36";
     g.fillRect(0, 0, 16, 16);
@@ -145,6 +126,6 @@ export function tex(): Textures {
       g.fillRect(Math.floor(rnd() * 8), Math.floor(rnd() * 32), 1, 3 + Math.floor(rnd() * 6));
     }
   });
-  textures = { stone, cliff, belt, water };
+  textures = { stone, belt, water };
   return textures;
 }

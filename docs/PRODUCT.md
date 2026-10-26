@@ -126,7 +126,7 @@ and 1–3 actions (one is Spark's pick). Full detail: `docs/LOOP.md`.
 Every ore chunk carries **who it hurts**. Spark attaches it during triage:
 
 - users affected (Sentry user count, PostHog sessions hitting that route)
-- who asked (email senders, issue reactions), and whether they're paying (later: Stripe)
+- who asked (email senders, issue reactions), and whether they're paying (later: Stripe, on hold)
 - linked items (this email is the same bug as this Sentry error)
 
 That context is what makes Spark's priorities real: a crash on `/checkout` that 112 people hit beats a
@@ -166,7 +166,52 @@ model guess, so it's stable and cheap. Spark's job is the next part: explain it 
 
 Always on screen, bottom center. It has: the bottleneck (one line, real numbers), why it matters (who it
 hurts), and 1 to 3 buttons. One button is always Spark's recommendation. If there's genuinely nothing to
-do, the card says what Spark is doing and what will need you next (never empty).
+do, the card says what Spark is doing and what will need you next (never empty). The card is the top of
+the **check-in deck** (below): open the deck to swipe through the next 8 to 12 at once.
+
+### Check-in: swipe the deck (Justin, 2026-10-26)
+
+In an agent loop **the human is the bottleneck**, so Shiptorio always points at you. A check-in is the
+quick way to unblock everything at once: open Shiptorio on your phone (or the web app, later by voice) and
+Spark deals a **deck of 8 to 12 cards**. Each card is one Next Move only you can unblock. You swipe through
+them in about two minutes and walk away. Because the gauntlet already checked the work, a fast yes is a safe
+yes. Mockup: https://claude.ai/artifact/5SvtzSthAEgSuozz2J8SVH.
+
+| Gesture | Means | What happens |
+| --- | --- | --- |
+| Swipe right | **Do it** | Runs Spark's pick (the recommended option). An as-is yes counts toward the next autonomy unlock |
+| Swipe left | **Later** | Back in the next check-in, re-ranked. Third "later" on one card asks "never, or let Spark decide?" |
+| Swipe down | **Never** | Gone for good, plus one tap on why: *just this one*, *not this kind* (becomes a rule, the class of card stops), *Spark, decide these* (counts as trust), *wrong call* (a scar for Spark). The Feedback Factory "reject and encode" idea |
+| Swipe up | **Details** | Sheet with Spark's plan, the gauntlet evidence, the other 1 to 2 options |
+| Tap | **Zoom** | The map flies to that spot: the station, the pile, the empty mine. Tap again to come back |
+| Undo | **Take it back** | 5 minutes, the same window as Spark's own moves in the floor log |
+
+Every gesture also has a button (✕ never, ↶ later, i details, ✓ do it) and an arrow key.
+
+**What gets dealt.** The deck is the next 8 to 12 Next Moves, ranked by value × wait like the single card,
+with a bonus for moves that **grow the loop**: add or promote a check (verify), connect a source (input),
+or hand Spark more autonomy (automate). Each card says what it grows ("+1 CHECK", "+1 SOURCE"). Card kinds:
+`unblock`, `build`, `verify`, `input`, `automate`, `ship`, `review`. Overnight autonomy shows up as one
+**morning review** card (keep, or swipe down to revert and encode why).
+
+**Swipe right only on proof.** A merge card shows its gauntlet stamps (CI, verify bay, AI review). If a
+station didn't pass or didn't run, the card is `locked`: Spark's pick becomes "run the missing check", and
+merging is only offered in details. That rule is what makes fast swiping trustworthy.
+
+**Earned autonomy = fewer cards.** Right swipes on one kind of card earn a permit card ("let Spark launch
+/docs on its own"). Every never-with-a-reason is a rule, every promoted check is a card class that stops
+needing you. The end screen shows tomorrow's deck size: the score isn't how many you cleared, it's how few
+need you tomorrow.
+
+**Voice (design note, not built).** "Hey Spark, check in." Spark reads one card in one sentence (title, who
+it hurts, its pick), and you answer **yes**, **later**, **never** (Spark asks why in a few words) or **tell me
+more**: the same four verbs as the swipes. Merge cards read their stamps out loud, and anything `locked` is
+held for the screen.
+
+**Contract.** `FactoryState.deck` is the ranked `Move[]` (max 12); `state.move` stays the top card.
+`Move` adds optional `kind`, `focus` (map id to zoom to), `grows[]`, `evidence[]` (station, ok, note),
+`locked`, `plan[]`. Web → server: `choose_move` (right / a details option), `defer_move {moveId}` (left),
+`dismiss_move {moveId, why}` (down).
 
 ## Spark, the Foreman: the agent loop
 
@@ -451,9 +496,9 @@ gate, orbit watch) with piles and a red rework belt back to Spark, a click-to-ac
 
 1. **Autonomy (Justin):** Spark asks first, never writes code, autonomy is earned by playing, and code runs
    on the player's own subscriptions. See the top of this doc.
-2. **Demo "money" (Justin OK'd the pick):** the demo shop runs Stripe test mode. A "checkout completed"
-   counter on the HUD drops when checkout breaks and climbs back after the fix ships. No real payments; a
-   real Stripe connector is later.
+2. **Demo "money" (updated 2026-10-26, Justin):** Stripe is **on hold**. The first signal sources are GitHub,
+   Sentry and PostHog. Real-world impact in the demo shows through PostHog (sessions / conversions on the
+   affected route recover after the fix ships) instead of a Stripe checkout counter. Stripe comes back later.
 3. **Customer replies (Justin OK'd the pick):** Spark drafts, the player clicks Send, always in v1. No
    autonomy level auto-sends customer email yet.
 4. **Pitch audience (Justin OK'd the pick):** solo founders and tiny teams with real users. The promise:

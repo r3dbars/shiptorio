@@ -63,6 +63,21 @@ export const CustomerContext = z.object({
 });
 export type CustomerContext = z.infer<typeof CustomerContext>;
 
+// The verification gauntlet (docs/LOOP.md): CI inspector → verify bay → AI review → merge gate → orbit watch.
+// Inspection.stages gate names map onto these: ci → ci, verify → verify, ai → review, human → merge.
+export const StationKind = z.enum(["ci", "verify", "review", "merge", "orbit", "custom"]);
+export type StationKind = z.infer<typeof StationKind>;
+
+// Why a fail rode the rework belt back to Spark. Spark re-plans with it; third strike goes to the player.
+export const ScarTag = z.object({
+  station: StationKind,
+  reason: z.string(), // "crash still repros with an empty cart"
+  evidenceUrl: z.string().optional(), // CI log, repro, review comment
+  strike: z.number().int().min(1), // 1, 2, 3
+  at: z.number().optional(),
+});
+export type ScarTag = z.infer<typeof ScarTag>;
+
 export const Item = z.object({
   id: z.string(),
   kind: ItemKind,
@@ -83,6 +98,7 @@ export const Item = z.object({
   value: z.number().optional(), // Spark's weight for this item; drives the bottleneck math
   ore: OreChunk.optional(),
   inspection: Inspection.optional(),
+  scars: z.array(ScarTag).optional(), // every fail so far, newest last
 });
 export type Item = z.infer<typeof Item>;
 
@@ -177,6 +193,7 @@ export type Actor = z.infer<typeof Actor>;
 
 export const Bottleneck = z.object({
   stage: Stage,
+  stationId: z.string().optional(), // when the jam is at one gauntlet station, it glows on the map
   wip: z.number().int(), // items waiting there
   ageMs: z.number(), // oldest item's wait
   throughputPerHour: z.number(),
@@ -201,6 +218,18 @@ export const MoveOption = z.object({
 });
 export type MoveOption = z.infer<typeof MoveOption>;
 
+// What a move does for the loop. The check-in deck favors verify, input and automate (docs/PRODUCT.md "Check-in").
+export const MoveKind = z.enum(["unblock", "build", "verify", "input", "automate", "ship", "review"]);
+export type MoveKind = z.infer<typeof MoveKind>;
+
+// One gauntlet stamp on a card: a station that passed, failed or never ran.
+export const MoveEvidence = z.object({
+  station: z.string(), // "CI", "Verify bay", or a Station id
+  ok: z.boolean(),
+  note: z.string().optional(), // "repro'd, then gone"
+});
+export type MoveEvidence = z.infer<typeof MoveEvidence>;
+
 // The Next Move card: the one thing holding the factory back, and 1 to 3 ways to act on it.
 export const Move = z.object({
   id: z.string(),
@@ -211,6 +240,13 @@ export const Move = z.object({
   itemId: z.string().optional(),
   url: z.string().optional(), // e.g. the PR to review
   createdAt: z.number(),
+  // Check-in deck fields. All optional; a plain Next Move card ignores them.
+  kind: MoveKind.optional(),
+  focus: z.string().optional(), // station, machine or district id the map zooms to on tap
+  grows: z.array(z.string()).optional(), // what yes adds to the loop: "+1 CHECK", "+1 SOURCE"
+  evidence: z.array(MoveEvidence).optional(), // gauntlet stamps on a merge card
+  locked: z.boolean().optional(), // not proven yet: swipe right runs the recommended option, never a merge
+  plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
 });
 export type Move = z.infer<typeof Move>;
 
@@ -264,6 +300,29 @@ export const Foreman = z.object({
 });
 export type Foreman = z.infer<typeof Foreman>;
 
+// A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
+export const StationAction = z.object({
+  id: z.string(),
+  label: z.string(), // "Build a second verify bay"
+  recommended: z.boolean().default(false), // Spark's pick
+});
+export type StationAction = z.infer<typeof StationAction>;
+
+export const Station = z.object({
+  id: z.string(),
+  kind: StationKind,
+  name: z.string(), // "Verify bay"
+  machineId: z.string().optional(), // the machine on the map that is this station
+  districts: z.array(z.string()).optional(), // districts whose launch permit needs it; absent = all
+  wip: z.number().int(), // items in line
+  oldestWaitMs: z.number().optional(),
+  passRate: z.number().min(0).max(1).optional(), // this week
+  caughtThisWeek: z.number().int(), // bugs it stopped before shipping; only goes up
+  lastLog: z.object({ who: z.string(), text: z.string(), ok: z.boolean() }).optional(),
+  actions: z.array(StationAction).max(3).default([]),
+});
+export type Station = z.infer<typeof Station>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -279,9 +338,11 @@ export const FactoryState = z.object({
   goal: z.string().optional(),
   bottleneck: Bottleneck.nullable().optional(),
   move: Move.nullable().optional(), // the open Next Move card
+  deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
   sources: z.array(SourceStatus).optional(),
+  stations: z.array(Station).optional(), // the gauntlet, in line order
 });
 export type FactoryState = z.infer<typeof FactoryState>;

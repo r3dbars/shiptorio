@@ -4,14 +4,22 @@ permissions:
 on:
   push:
     branches: [main]
+    # docs/*.html art pages are served at /art, so only markdown and notes skip the deploy
+    paths-ignore:
+      - "**/*.md"
+      - "docs/context/**"
+      - "docs/playtest/**"
   workflow_dispatch:
 jobs:
   deploy:
     # Off until the repo variable DEPLOY_ENABLED is set to "true" (see docs/SETUP.md).
     if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    concurrency: deploy
-    timeout-minutes: 15
+    # a newer merge cancels an in-flight deploy; the newest main is what ships
+    concurrency:
+      group: deploy
+      cancel-in-progress: true
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
