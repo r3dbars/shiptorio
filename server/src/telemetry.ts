@@ -78,8 +78,10 @@ export async function observedFetch(service: 'spark' | 'github', url: string, in
   if (trace) headers.set('X-Request-ID', trace.requestId);
   try {
     const response = await fetch(url, { ...init, headers });
-    if (!response.ok) Sentry.captureException(new Error(`${service} request failed (${response.status})`));
-    log(response.ok ? 'info' : 'error', `${service}.call`, { status: response.status, durationMs: Date.now() - start, method: init.method ?? 'GET' });
+    // 304 is a conditional-request cache hit, not a failure.
+    const failed = !response.ok && response.status !== 304;
+    if (failed) Sentry.captureException(new Error(`${service} request failed (${response.status})`));
+    log(failed ? 'error' : 'info', `${service}.call`, { status: response.status, durationMs: Date.now() - start, method: init.method ?? 'GET' });
     return response;
   } catch (error) {
     report(error, `${service}.call_failed`, { durationMs: Date.now() - start });
