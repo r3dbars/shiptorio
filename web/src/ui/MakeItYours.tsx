@@ -26,6 +26,7 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
   const insp = state.machines.find((m) => m.type === "inspector");
   const turrets = new Set(state.machines.filter((m) => m.type === "turret").map((m) => m.district));
   const folders = state.districts.filter((d) => !turrets.has(d.name)).slice(0, 4);
+  const permits = state.autonomy?.districts.filter((d) => d.permit) ?? [];
   const m = state.machines.find((x) => x.id === moving);
   const nudge = (dx: number, dy: number) => m && send({ type: "move_machine", id: m.id, x: m.x + dx, y: m.y + dy });
 
@@ -62,6 +63,29 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
           </span>
         </div>
       ))}
+
+      {permits.length > 0 && (
+        <>
+          <h3>{YOURS.permits}</h3>
+          <p className="empty">{YOURS.permitsWhy}</p>
+          {permits.map((d) => (
+            <div className="lrow" key={d.district}>
+              <span className="tt">
+                <code>/{d.district}</code>
+              </span>
+              <button
+                type="button"
+                className="btn"
+                style={{ flex: "none", minHeight: 36 }}
+                aria-label={YOURS.permitOffFor(d.district)}
+                onClick={() => send({ type: "set_autonomy", district: d.district, permit: false })}
+              >
+                {YOURS.permitOff}
+              </button>
+            </div>
+          ))}
+        </>
+      )}
 
       <h3>{YOURS.addCheck}</h3>
       <p className="empty">{YOURS.addCheckWhy}</p>
@@ -107,7 +131,7 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
 }
 
 // An empty mine on the map, tapped: what connecting it adds, and how.
-const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog };
+const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog, email: SOURCE.email };
 
 export function ConnectSource({ kind, state, send, onClose }: { kind: string; state: FactoryState; send: (m: WebToServer) => void; onClose: () => void }) {
   const copy = SOURCE_COPY[kind] ?? { name: kind, adds: "" };

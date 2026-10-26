@@ -234,9 +234,10 @@ interface Props {
   send: (msg: WebToServer) => void;
   onClose: () => void;
   jobs?: Map<string, string>; // item id -> power plant that built it, this session
+  live?: boolean; // live factories have no station_action handler yet, so their action buttons stay hidden
 }
 
-export function StationPanel({ id, state, log, send, onClose, jobs }: Props) {
+export function StationPanel({ id, state, log, send, onClose, jobs, live }: Props) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", key);
@@ -335,7 +336,7 @@ export function StationPanel({ id, state, log, send, onClose, jobs }: Props) {
           </ul>
         </div>
       )}
-      {p.actions.length > 0 && (
+      {!live && p.actions.length > 0 && (
         <div className="sp-actions">
           {p.actions.map((a) => (
             <button key={a.id} type="button" className={a.recommended ? "btn rec" : "btn"} onClick={() => send({ type: "station_action", stationId: p.sendAs ?? id, action: a.id })}>

@@ -18,12 +18,13 @@ interface Props {
 
   satellites?: SatelliteSpec[]; // the player's other repos, floating nearby
   empire?: boolean; // pulled back over every island (the empire overview)
+  summary?: string; // the floor in one sentence, for screen readers (ui/FactoryText.tsx has the full text view)
 }
 
 const NO_PINGS: Ping[] = [];
 const NO_SATS: SatelliteSpec[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -94,6 +95,28 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     const leave = () => scene.clearHover();
     canvas.addEventListener("pointerleave", leave);
     canvas.addEventListener("wheel", wheel, { passive: false });
+    // Keyboard: with the map focused, arrows pan, + and - zoom. The labels on it tab like buttons.
+    const keys = (e: KeyboardEvent) => {
+      const pan = ({ ArrowLeft: [60, 0], ArrowRight: [-60, 0], ArrowUp: [0, 60], ArrowDown: [0, -60] } as Record<string, number[]>)[e.key];
+      if (pan) scene.panBy(pan[0], pan[1]);
+      else if (e.key === "+" || e.key === "=") scene.zoomBy(0.85);
+      else if (e.key === "-" || e.key === "_") scene.zoomBy(1 / 0.85);
+      else return;
+      e.preventDefault();
+      e.stopPropagation(); // the deck's arrow keys stay with the deck
+    };
+    canvas.addEventListener("keydown", keys);
+    // While the keyboard is on the map, every label shows, so Tab can walk them.
+    const labels = labelsRef.current!;
+    const onMap = (el: EventTarget | null) => el instanceof Node && (el === canvas || labels.contains(el));
+    const focusIn = () => scene.setShowAllLabels(true);
+    const focusOut = (e: Event) => {
+      if (!onMap((e as FocusEvent).relatedTarget)) scene.setShowAllLabels(labelsOnRef.current);
+    };
+    for (const el of [canvas, labels]) {
+      el.addEventListener("focusin", focusIn);
+      el.addEventListener("focusout", focusOut);
+    }
     if (stateRef.current) scene.update(stateRef.current);
     return () => {
       ro.disconnect();
@@ -122,6 +145,8 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     wasEmpire.current = empire;
     // the overview refits when an island joins
   }, [empire, empire && satellites.length]);
+  const labelsOnRef = useRef(showLabels);
+  labelsOnRef.current = showLabels;
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
   useEffect(() => sceneRef.current?.setLift(lift), [lift]);
   const cosmeticsKey = JSON.stringify(cosmetics ?? null);
@@ -135,7 +160,18 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
 
   return (
     <>
-      <canvas ref={canvasRef} className="map" aria-label="Factory map" />
+      <canvas
+        ref={canvasRef}
+        className="map"
+        tabIndex={0}
+        role="application"
+        aria-roledescription="map"
+        aria-label="Factory map. Arrow keys pan, plus and minus zoom. Press T for the factory as text."
+        aria-describedby="map-summary"
+      />
+      <p id="map-summary" className="sr">
+        {summary}
+      </p>
       <div ref={labelsRef} className="maplabels" />
     </>
   );

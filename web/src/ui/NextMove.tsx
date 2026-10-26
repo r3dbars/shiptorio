@@ -6,6 +6,7 @@ import type { Bottleneck, Move, Station, WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
 import { NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { Icon } from "./icons";
+import type { Nudge, NudgeAction } from "./whatsNext";
 
 interface Props {
   move: Move | null | undefined;
@@ -13,9 +14,41 @@ interface Props {
   stations?: Station[];
   send: (msg: WebToServer) => void;
   onOpen?: (stationId: string) => void; // open the bottleneck station's panel
+  onPower?: () => void; // live local-agent setup opens Power, never a server connector action
+  // No card open: the "what's next" pick (ui/whatsNext.ts), so the game never goes quiet after a rocket.
+  nudge?: Nudge | null;
+  onNudge?: (action: NudgeAction) => void;
 }
 
-export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
+const plugsInAgent = (o: Move["options"][number]) => o.actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+
+export function NextMove({ move, bottleneck, stations, send, onOpen, onPower, nudge, onNudge }: Props) {
+  if (!move && nudge && onNudge) {
+    return (
+      <section className="card nextmove idle" aria-label="Next move" aria-live="polite" data-nudge={nudge.id}>
+        <div className="nm-head">
+          <span className="nm-kicker">
+            <Icon name="star" size={14} />
+            {nudge.kicker}
+          </span>
+          {nudge.grows && <span className="nm-grows">{nudge.grows}</span>}
+        </div>
+        <div className="nm-title">{nudge.title}</div>
+        <p className="nm-why">{nudge.why}</p>
+        <div className="nm-options">
+          <button type="button" className="btn rec" onClick={() => onNudge(nudge.cta.action)}>
+            {nudge.cta.label}
+            <span className="sugg">Suggested</span>
+          </button>
+          {nudge.alt && (
+            <button type="button" className="btn" onClick={() => onNudge(nudge.alt!.action)}>
+              {nudge.alt.label}
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
   if (!move) {
     if (!bottleneck) return null;
     const st = stations?.find((x) => x.id === bottleneck.stationId);
@@ -61,7 +94,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
             type="button"
             className={o.recommended ? "btn rec" : "btn"}
             title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined}
-            onClick={() => send({ type: "choose_move", moveId: move.id, optionId: o.id })}
+            onClick={() => (onPower && plugsInAgent(o) ? onPower() : send({ type: "choose_move", moveId: move.id, optionId: o.id }))}
           >
             {o.label}
             {o.recommended && <span className="sugg">{WORDS.suggested}</span>}

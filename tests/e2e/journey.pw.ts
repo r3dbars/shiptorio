@@ -57,6 +57,11 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await expect.poll(() => messages.some(m => m.type === 'patch' && m.patch.items?.some((i: any) => i.title === 'Fix cart total'))).toBe(true);
   const { token } = await post(`/api/repos/${repo}/runner/pair`);
   await post(`/api/runner/${repo}/claim`, { harnesses: ['codex'] }, token);
+  // Repo onboarding opens the runner connection sheet. Complete that UI step
+  // before interacting with the factory's next move underneath it.
+  const power = page.getByRole('region', { name: 'Power', exact: true });
+  await expect(power).toBeVisible();
+  await power.getByRole('button', { name: 'Close', exact: true }).click();
   const card = page.getByRole('region', { name: 'Next move', exact: true });
   await card.getByRole('button', { name: /Plan with Codex/ }).click();
   await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json()).length).toBe(1);

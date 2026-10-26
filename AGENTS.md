@@ -238,6 +238,21 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
   `docs/art-prototype.html`, `docs/item-lab.html` and `briefs/` (including `briefs/codex.md`).
   They win over this summary, except for the stack, which is Cloudflare.
 
+## Accessibility
+
+The game plays with a keyboard and a screen reader (PR "Accessibility pass"). Keep it that way when you add UI:
+
+- Every new control is a real `<button>`/`<a>` with a name that contains its visible text. New sheets use
+  `className="card sheet"` and an `<h2>`, so App.tsx moves focus into them and back out on close.
+- The 3D map has a text twin: `web/src/ui/FactoryText.tsx` (T, or the eye button). New things on the map
+  show up there too. The canvas pans with arrows and zooms with + and −; its labels tab like buttons.
+- Sounds that mean something get a line in `CAPTION` in `web/src/ui/SoundCaptions.tsx` (C shows them; screen
+  readers always hear them).
+- Motion: check `prefers-reduced-motion` before shakes, shockwaves, confetti and camera glides (`styles.css`
+  also has a global net). Text colors stay ≥ 4.5:1 on the panel; `--faint` is the lowest allowed.
+- Check: with `bun run dev:web` up, `bun run --filter './web' a11y` runs axe-core on 14 screens (zero
+  serious/critical) and a keyboard-only playthrough from the welcome tour to a launched rocket.
+
 ## Open questions
 
 - Does Muse Spark accept images (for visual QA)?
