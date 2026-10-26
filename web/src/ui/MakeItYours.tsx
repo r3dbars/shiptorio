@@ -123,6 +123,7 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
 const SOURCE_COPY: Record<string, { name: string; adds: string }> = {
   sentry: { name: "Sentry", adds: "Errors arrive as ore the moment they happen, and biters show which folder they hit. Fixes that kill biters score big." },
   posthog: { name: "PostHog", adds: "See what users really do. User signals weigh what gets built first, and your score counts the users each fix reached." },
+  email: { name: "support", adds: "Customer emails and Intercom chats come up at the support well. Each one is sorted, linked to the work it's about, and gets a reply drafted. You read it and tap Send; nothing goes out on its own. When a fix ships, you get an “it's fixed” reply to send." },
 };
 
 export function ConnectSource({ kind, state, send, onClose }: { kind: string; state: FactoryState; send: (m: WebToServer) => void; onClose: () => void }) {

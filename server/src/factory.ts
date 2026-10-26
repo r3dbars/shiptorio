@@ -960,7 +960,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const purpose = t.draft.purpose, kind = t.triage?.kind;
     const tracked = !!t.triage?.linkedItemId || !!t.issue;
     const done = purpose === "fixed" || !(kind === "bug" || kind === "feature") || !tracked;
-    const next: SupportTicket = { ...t, state: done ? "answered" : "waiting_fix", draft: undefined, sent: [...t.sent, { at: Date.now(), purpose, via: result.via }].slice(-20) };
+    const next: SupportTicket = { ...t, state: done ? "answered" : "waiting_fix", draft: undefined, sent: [...t.sent, { at: Date.now(), purpose, via: result.via, ...(result.via === "outbox" ? { text: t.draft.text } : {}) }].slice(-20) };
     const m = s.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
     const answered = done && kind !== "spam";
     await this.patch({ support: (s.support ?? []).map((x) => (x.id === t.id ? next : x)), ...(answered ? { metrics: { ...m, customersAnswered: m.customersAnswered + 1, shipScore: m.shipScore + 10 } } : {}) });

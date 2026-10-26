@@ -424,7 +424,8 @@ export const SupportTicket = z.object({
     by: z.enum(["spark", "fallback"]),
   }).optional(),
   draft: SupportDraft.optional(),
-  sent: z.array(z.object({ at: z.number(), purpose: z.enum(["answer", "fixed"]), via: z.enum(["email", "intercom", "outbox"]) })).default([]),
+  // via "outbox": no mail sender is connected, so the reply is kept here (text) for the player to copy.
+  sent: z.array(z.object({ at: z.number(), purpose: z.enum(["answer", "fixed"]), via: z.enum(["email", "intercom", "outbox"]), text: z.string().max(4000).optional() })).default([]),
   issue: z.object({ number: z.number().int(), url: z.string() }).optional(), // filed from this ticket
 });
 export type SupportTicket = z.infer<typeof SupportTicket>;

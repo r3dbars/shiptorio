@@ -9,6 +9,7 @@ import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
 import { CheckIn } from "./ui/CheckIn";
+import { SupportPanel } from "./ui/SupportPanel";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
@@ -598,7 +599,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         </nav>
         )}
 
-        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
+        {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />)}
 
         <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>
