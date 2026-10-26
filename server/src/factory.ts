@@ -35,6 +35,7 @@ import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppr
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
 import { linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
+import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
 export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
   PUBLIC_URL?: string;
@@ -599,9 +600,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     if (!(await this.load())) return;
     if (event === "push" && p.ref === `refs/heads/${p.repository?.default_branch}`) await this.refreshDistricts();
-    const pr = p.pull_request as { number?: number; merged?: boolean; head?: { sha: string; ref: string } } | undefined;
-    if (event === "pull_request" && p.action === "closed" && pr?.number) await this.onPullClosed(pr.number, !!pr.merged);
-    const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string } | undefined;
+    const pr = p.pull_request as { number?: number; merged?: boolean; merge_commit_sha?: string; title?: string; body?: string | null; html_url?: string; head?: { sha: string; ref: string } } | undefined;
+    if (event === "pull_request" && p.action === "closed" && pr?.number) await this.onPullClosed(pr.number, !!pr.merged, pr.merge_commit_sha);
+    if (event === "pull_request" && pr && ["opened", "reopened", "closed"].includes(p.action ?? "") && (p.action !== "closed" || pr.merged)) await this.orbitRevert(pr);
+    const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string; name?: string; html_url?: string; app?: { name?: string } } | undefined;
+    if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check?.head_sha && ["failure", "timed_out", "startup_failure"].includes(check.conclusion ?? "")) await this.orbitDeploy(check.head_sha, check.name ?? check.app?.name ?? "CI", check.html_url);
     if (["check_run", "check_suite"].includes(event) && ["completed", "queued", "in_progress", "requested", "rerequested"].includes(p.action ?? "") && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
   }
 
@@ -631,6 +634,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     const folded = foldSignal(existing, signal);
     if (folded === existing) return;
+    if (signal.source === "sentry") {
+      // Orbit watch: the error a launch just fixed fired again, or a new one is spiking on the folder it touched.
+      const comeback = !!existing && existing.state === "launched";
+      const watched = watchForSentry(s.items, folded, comeback, signal.occurredAt);
+      if (watched && comeback) return this.orbitTrip(folded, "sentry", `Sentry fired "${folded.title}" again`, signal.url);
+      if (watched) await this.orbitTrip(watched, "sentry", `New Sentry errors spiked on /${folded.district} ("${folded.title}", ${folded.ore?.count} events)`, signal.url);
+    }
     // New ore lands on the district its stack frame or route points at; triage can still move it.
     const item = existing || !signal.districtHint ? folded : { ...folded, district: matchDistrict(signal.districtHint, s.districts.map((d) => d.name)) };
     const kind = MINE_KIND[signal.source] ?? "github";
@@ -951,7 +961,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
   }
 
-  async onPullClosed(prNumber: number, merged: boolean): Promise<void> {
+  async onPullClosed(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     if (!(await this.load())) return;
     let item = this.state!.items.find((i) => i.prNumber === prNumber);
     // Recover pre-fix issue-close ordering from our durable job and GitHub's real issue.
@@ -982,7 +992,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const book = recordShip(before, item, auto);
     await this.ctx.storage.put("permits", book);
     await this.patch({
-      items: [{ ...item, state: "launched", updatedAt: Date.now() }],
+      items: [startWatch({ ...item, state: "launched", updatedAt: Date.now() }, Date.now(), mergeSha)],
       science: { ...s.science, [key]: s.science[key] + 1 },
       trust: Math.min(1, s.trust + 0.05),
       autonomy: autonomyView(book),
@@ -1108,14 +1118,14 @@ export class Factory extends DurableObject<FactoryEnv> {
         }
       }
       if (by === "autonomy") await this.ctx.storage.put(`autoLaunch:${item.id}`, item.prNumber);
-      await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
+      const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
       await this.patch({ items: [{ ...item, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" }, updatedAt: Date.now() }] });
       this.broadcast({ type: "log", level: "success", text: by === "autonomy" ? `Launching #${item.prNumber} on its own.` : `Launching #${item.prNumber}.`, at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: "request_merge", approvedBy: by === "autonomy" ? "autonomy" : "player", reason, itemId: item.id });
       if (this.state!.move?.itemId === item.id) await this.publishGauntletMove(null);
       if (this.state!.bottleneck?.stationId === "gate-1") await this.refreshDecisions();
-      await this.onPullClosed(item.prNumber, true);
+      await this.onPullClosed(item.prNumber, true, mergeSha);
     } catch (err) {
       if (by === "autonomy") {
         await this.ctx.storage.delete(`autoLaunch:${item.id}`);
@@ -1124,6 +1134,42 @@ export class Factory extends DurableObject<FactoryEnv> {
       const why = err instanceof Error && (err.message.startsWith("The PR changed") || err.message.startsWith("Current checks")) ? err.message : "GitHub didn't accept the merge. Open the PR to see why.";
       this.log("warn", why, item.id);
     }
+  }
+
+  // ---------- orbit watch (docs/LOOP.md station 5, src/orbit.ts) ----------
+
+  /** A comeback after launch: scar the item, send it back on the rework belt, revoke its lane's permit. */
+  private async orbitTrip(item: Item, signal: "sentry" | "revert" | "deploy", what: string, evidenceUrl?: string): Promise<void> {
+    const s = this.state!;
+    if (!isWatching(item)) return;
+    const back = regress(item, signal, what, evidenceUrl);
+    const m = s.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
+    await this.patch({ items: [back], metrics: { ...m, escapedDefects: m.escapedDefects + 1, shipScore: m.shipScore - 25 }, trust: Math.max(0, s.trust - 0.1) });
+    this.log("warn", `Orbit watch: ${back.orbit!.reason}. It's back on the rework belt with an orbit scar.`, item.id);
+    await this.noteRework(back, `#${back.orbit!.prNumber} came back in orbit (${signal === "sentry" ? "Sentry" : signal === "revert" ? "revert PR" : "red on main"})`);
+    if (s.move?.itemId === item.id) await this.publishGauntletMove(null);
+    await this.scheduleTick();
+  }
+
+  /** Someone opened or merged a revert of a watched launch. */
+  private async orbitRevert(pr: { number?: number; title?: string; body?: string | null; html_url?: string }): Promise<void> {
+    const reverted = this.meta && revertedPr(pr, this.meta.repo);
+    const watched = reverted ? watchForRevert(this.state!.items, reverted) : undefined;
+    if (watched) await this.orbitTrip(watched, "revert", `Revert PR #${pr.number} undoes it`, pr.html_url);
+  }
+
+  /** A check failed on a watched launch's merge commit on main. */
+  private async orbitDeploy(sha: string, name: string, url?: string): Promise<void> {
+    const watched = watchForSha(this.state!.items, sha);
+    if (watched) await this.orbitTrip(watched, "deploy", `"${name}" failed on main`, url);
+  }
+
+  /** Launches that made it 24h with no comeback. */
+  private async orbitExpire(): Promise<void> {
+    const clear = expired(this.state!.items);
+    if (!clear.length) return;
+    await this.patch({ items: clear });
+    for (const i of clear) this.log("success", `Orbit watch: #${i.orbit!.prNumber} held 24h with no comeback.`, i.id);
   }
 
   // ---------- launch permits (docs/PRODUCT.md "Autonomy is earned") ----------
@@ -1138,14 +1184,14 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */
-  private async noteRework(item: Item): Promise<void> {
+  private async noteRework(item: Item, why = `PR #${item.prNumber} needed rework`): Promise<void> {
     if (!item.lane) return;
     const { book, revoked } = recordRework(await this.permitBook(), item.lane);
     await this.savePermits(book);
     const card = this.state!.move;
     if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.district === item.lane) await this.publishGauntletMove(null);
     if (revoked) {
-      const text = `${item.lane} lost its launch permit: PR #${item.prNumber} needed rework. Its PRs wait for you again until the lane earns trust back.`;
+      const text = `${item.lane} lost its launch permit: ${why}. Its PRs wait for you again until the lane earns trust back.`;
       this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
       this.log("warn", text, item.id);
     }
@@ -1410,6 +1456,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
 
     await this.runGauntlet();
+    await this.orbitExpire();
     await this.autoLaunchPermitted();
     await this.offerGauntletMove();
     await this.offerPermitMove();

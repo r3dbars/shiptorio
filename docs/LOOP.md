@@ -46,7 +46,7 @@ only scale (more machines, more autonomy) once the checks are trustworthy.
 | 2 | **Verify bay** | Reproduce the bug on the real app before, prove it's gone after. The PR carries receipts: a failing test that turns green, a screenshot or log from the running app | "Passed CI, but the crash still happens with an empty cart" | **Yes (the demo moment)** |
 | 3 | **AI review** | A *different* model than the builder attacks the diff (Claude built → Codex reviews, and the reverse). Looks for what tests miss: wrong approach, swallowed errors, security, scope creep | "Hides the error instead of fixing the null" | Yes |
 | 4 | **Merge gate** | The player, with the receipts from 1–3 on the card. Merge = rocket. Districts earn launch permits over time | Player rejects with a reason | Yes |
-| 5 | **Orbit watch** | 24h after deploy: Sentry quiet, metric back, customer answered. A comeback reopens the ore and costs district trust | "Sentry #8812 fired again 3h after #38" | Stretch (Sentry-based) |
+| 5 | **Orbit watch** | 24h after deploy: Sentry quiet, metric back, customer answered. A comeback reopens the ore and costs district trust | "Sentry #8812 fired again 3h after #38" | **Yes (live, `server/src/orbit.ts`)**: Sentry comeback or spike on the folder, a revert PR, or red checks on the merge commit. A trip scars the item, sends it back on the rework belt and revokes the lane's launch permit |
 
 ### Fails go back to Spark, with a scar tag
 

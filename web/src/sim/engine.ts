@@ -53,6 +53,7 @@ interface Ore {
   linkTo?: string; // title of an earlier ore this is the same problem as; merges into it
   ask?: string; // Spark asks before building it; this is the card's question
   spark?: SparkLine[]; // what Spark logs when it reads this ore
+  comeback?: string; // orbit watch catches it after the first launch: "Sentry fired it again"
 }
 
 interface Scenario {
@@ -62,6 +63,7 @@ interface Scenario {
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
   checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
   onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
+  permits?: string[]; // lanes that start with a launch permit
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -170,6 +172,26 @@ export const SCENARIOS = {
       { at: 20, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
     ],
   },
+  // Orbit watch (docs/LOOP.md station 5): /checkout has a launch permit, a fix ships, and three hours later Sentry
+  // fires the same error again. The fix rides the rework belt with an orbit scar and /checkout loses its permit.
+  orbit: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    permits: ["checkout"],
+    ores: [
+      {
+        at: 2,
+        title: "TypeError: coupon.code is null",
+        kind: "bug",
+        district: "checkout",
+        source: "sentry",
+        users: 64,
+        comeback: 'Sentry fired "TypeError: coupon.code is null" again',
+        spark: [{ tool: "get_sentry_issue", text: "New error on /checkout: TypeError: coupon.code is null, 64 users", reason: "Sentry alert" }],
+      },
+      { at: 8, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
+    ],
+  },
   // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
   checkin: {
     districts: SHOP_DISTRICTS,
@@ -229,6 +251,7 @@ const GAUNTLET: StationDef[] = [
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
 const FOREMAN_IDLE_TICKS = 5; // quiet ticks before the drone goes back to its plant
 const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
+const COMEBACK_TICKS = 4; // a scripted comeback trips orbit watch this long after the launch
 
 function initialState(sc: Scenario): FactoryState {
   // Spark never writes code: without a scenario harness, the player is signed in with Claude
@@ -278,7 +301,7 @@ function initialState(sc: Scenario): FactoryState {
     metrics: { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0, checkouts: sc.districts ? 1240 : undefined },
     autonomy: {
       level: "advisor",
-      districts: districts.map((d) => ({ district: d.name, score: d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: false })),
+      districts: districts.map((d) => ({ district: d.name, score: sc.permits?.includes(d.name) ? 1 : d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: !!sc.permits?.includes(d.name) })),
       next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "suggestions approved as-is" },
       ranAlone: 0,
     },
@@ -322,6 +345,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const failAt = new Map<string, StationKind | undefined>(); // item id -> station that catches the scripted failure
   const builtBy = new Map<string, string | undefined>(); // item id -> assembler that built it
   const watching = new Map<string, number>(); // launched item id -> tick orbit watch stops
+  const comebacks = new Map<string, string>(); // item id -> what orbit watch will catch after its first launch
+  const trips = new Map<string, number>(); // launched item id -> tick its comeback lands
   const stats = new Map<string, { passed: number; failed: number; caught?: number; lastLog?: Station["lastLog"] }>();
   // ?autolaunch merges PRs on the pad by itself, for hands-off demo replays.
   const autoLaunch = new URLSearchParams(location.search).has("autolaunch");
@@ -580,6 +605,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     };
     fails.set(item.id, o.failFirst);
     failAt.set(item.id, o.failAt);
+    if (o.comeback) comebacks.set(item.id, o.comeback);
     byTitle.set(o.title, item.id);
     if (o.ask) asks.set(item.id, o.ask);
     apply({ items: [item] });
@@ -710,13 +736,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const changed = JSON.stringify(bottleneck && { ...bottleneck, ageMs: 0 }) !== JSON.stringify(s.bottleneck && { ...s.bottleneck, ageMs: 0 });
     if (changed) s.bottleneck = bottleneck;
     s.metrics = metrics;
-    // orbit watch: launched items stay watched for a while, then report all clear
+    // orbit watch: launched items stay watched for a while, then report all clear, unless the bug comes back
+    for (const [id, at] of trips) if (s.tick >= at) comeBack(id);
     for (const [id, until] of watching) {
       if (s.tick < until) continue;
       watching.delete(id);
       const it = s.items.find((i) => i.id === id);
-      stat("orbit-1").lastLog = { who: "Orbit watch", text: `#${it?.prNumber} all clear: no new errors since the launch.`, ok: true };
-      log("success", `Orbit watch: #${it?.prNumber} all clear after launch`, id);
+      if (it?.orbit) apply({ items: [{ ...it, orbit: { ...it.orbit, state: "clear", at: Date.now() } }] });
+      stat("orbit-1").lastLog = { who: "Orbit watch", text: `#${it?.prNumber} held 24h: no comeback.`, ok: true };
+      log("success", `Orbit watch: #${it?.prNumber} held 24h with no comeback`, id);
     }
     // Finishing the starter line should teach its next real decision, not strand the tour.
     if (sc.onboard && !growthOffered && !script.length && s.items.length && s.items.every(i => i.state === "launched") && !s.move && !pending.length) {
@@ -773,15 +801,44 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
   }
 
+  // A comeback in orbit: scar it, send it back for a fresh PR, take the lane's launch permit away.
+  const comeBack = (id: string) => {
+    trips.delete(id);
+    watching.delete(id);
+    const item = s.items.find((i) => i.id === id);
+    const what = comebacks.get(id);
+    comebacks.delete(id);
+    if (!item?.orbit || !what) return;
+    const now = Date.now();
+    const reason = `${what} 3h after #${item.prNumber} launched`;
+    const scar = { station: "orbit" as const, reason, strike: (item.scars ?? []).filter((x) => x.station === "orbit").length + 1, at: now };
+    fails.delete(id);
+    apply({ items: [{ ...item, state: "rejected", failure: reason, machineId: undefined, prNumber: undefined, prUrl: undefined, scars: [...(item.scars ?? []), scar], orbit: { ...item.orbit, state: "regressed", signal: "sentry", reason, at: now }, updatedAt: now }] });
+    record(ORBIT, false, `#${item.prNumber}: ${reason}`);
+    log("warn", `Orbit watch: ${reason}. It's back on the rework belt with an orbit scar.`, id);
+    const m = s.metrics!;
+    bumpMetrics({ escapedDefects: m.escapedDefects + 1 });
+    apply({ trust: Math.max(0, s.trust - 0.1) });
+    const a = s.autonomy!;
+    if (a.districts.some((d) => d.district === item.district && d.permit)) {
+      apply({ autonomy: { ...a, districts: a.districts.map((d) => (d.district === item.district ? { ...d, permit: false, score: 0 } : d)) } });
+      const text = `${item.district} lost its launch permit: #${item.prNumber} came back in orbit (Sentry). Its PRs wait for you again until the lane earns trust back.`;
+      emit({ type: "autonomy_unlocked", level: a.level, district: item.district, text });
+    }
+    spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the orbit scar: the fix didn't hold in production`, reason }, { itemId: id, target: "splitter-1" });
+  };
+
   const launch = (item: Item) => {
     const key = SCIENCE_FOR[item.kind];
+    const now = Date.now();
     apply({
-      items: [{ ...item, state: "launched", updatedAt: Date.now() }],
+      items: [{ ...item, state: "launched", updatedAt: now, orbit: { since: now, until: now + 24 * 3600_000, state: "watching", prNumber: item.prNumber } }],
       science: { ...s.science, [key]: s.science[key] + 1 },
       trust: Math.min(1, s.trust + 0.05),
     });
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
     watching.set(item.id, s.tick + WATCH_TICKS);
+    if (comebacks.has(item.id)) trips.set(item.id, s.tick + COMEBACK_TICKS);
     record(GAUNTLET[3], true, `#${item.prNumber} merged and launched.`);
     const m = s.metrics!;
     const users = item.customer?.usersAffected ?? 0;

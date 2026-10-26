@@ -1171,7 +1171,7 @@ export class FactoryScene {
         case "inspector": {
           const sta = this.stationAt(m.id);
           if (!sta) this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
-          else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : "all clear");
+          else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : sta.lastLog?.ok === false ? "caught a comeback" : "all clear");
           else {
             const hot = state.bottleneck?.stationId === sta.id;
             this.setLabel(v.label, sta.name.toUpperCase(), `${sta.wip} in line · caught ${sta.caughtThisWeek}`, hot);

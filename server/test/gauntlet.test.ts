@@ -58,7 +58,7 @@ describe("gauntlet rules", () => {
     const s = base();
     s.items = [setStage(pr(), "ci", "passed", "green"), setStage(pr({ id: "gh-2", prNumber: 100 }), "ci", "rework", "types: x")];
     const st = liveStations(s, 10);
-    expect(st.map((x) => x.id)).toEqual(["ci-1", "verify-1", "review-1", "gate-1"]);
+    expect(st.map((x) => x.id)).toEqual(["ci-1", "verify-1", "review-1", "gate-1", "orbit-1"]);
     expect(st.find((x) => x.id === "verify-1")?.wip).toBe(1);
     expect(st.find((x) => x.id === "ci-1")).toMatchObject({ wip: 1, caughtThisWeek: 1, passRate: 0.5 });
   });
