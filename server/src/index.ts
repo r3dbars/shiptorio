@@ -2,7 +2,7 @@ import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
-import { appJwt, gh, repoInstallationId } from "./github";
+import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { canSeeRepo, currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
@@ -140,7 +140,9 @@ async function installUrl(env: Env): Promise<string | null> {
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
   let slug = await env.CACHE?.get("app:slug");
   if (!slug) {
-    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug);
+    const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    await registerGithubCredential(jwt, env.DB, `github:app:${env.GITHUB_APP_ID}`);
+    slug = await gh<{ slug: string }>("/app", jwt).then((a) => a.slug);
     if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 });
   }
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
