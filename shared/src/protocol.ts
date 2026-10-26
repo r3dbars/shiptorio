@@ -1,7 +1,23 @@
 // Every message on the wire. Both lanes build against this file; change it in a PR both see.
 
 import { z } from "zod";
-import { Belt, District, FactoryState, Harness, Item, Machine, MachineType, PowerSource, Science } from "./model";
+import {
+  Actor,
+  Belt,
+  Bottleneck,
+  District,
+  DistrictTrust,
+  FactoryState,
+  Foreman,
+  Harness,
+  Item,
+  Machine,
+  MachineType,
+  Metrics,
+  Move,
+  PowerSource,
+  Science,
+} from "./model";
 
 // ---------- server → web ----------
 
@@ -15,6 +31,11 @@ export const Patch = z.object({
   science: Science.optional(),
   trust: z.number().optional(),
   tick: z.number().int().optional(),
+  goal: z.string().optional(),
+  bottleneck: Bottleneck.nullable().optional(),
+  districtTrust: z.array(DistrictTrust).optional(), // full replacement when present
+  metrics: Metrics.optional(),
+  foreman: Foreman.optional(),
 });
 export type Patch = z.infer<typeof Patch>;
 
@@ -23,7 +44,19 @@ export const LogLevel = z.enum(["info", "warn", "error", "success"]);
 export const ServerToWeb = z.discriminatedUnion("type", [
   z.object({ type: z.literal("snapshot"), state: FactoryState }),
   z.object({ type: z.literal("patch"), patch: Patch }),
-  z.object({ type: z.literal("log"), level: LogLevel, text: z.string(), at: z.number(), itemId: z.string().optional() }),
+  z.object({
+    type: z.literal("log"),
+    level: LogLevel,
+    text: z.string(),
+    at: z.number(),
+    itemId: z.string().optional(),
+    actor: Actor.optional(), // "spark" lines show in Spark's voice
+    tool: z.string().optional(), // the Spark tool call behind this line, e.g. "link_items"
+    reason: z.string().optional(), // why Spark did it
+    actionId: z.string().optional(), // set when the action can be undone
+  }),
+  z.object({ type: z.literal("move"), move: Move }), // a new Next Move card (replaces the open one)
+  z.object({ type: z.literal("move_resolved"), moveId: z.string(), optionId: z.string().optional(), actor: Actor }),
 ]);
 export type ServerToWeb = z.infer<typeof ServerToWeb>;
 
@@ -43,6 +76,10 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_module"), machineId: z.string(), module: z.string() }),
   z.object({ type: z.literal("launch_pr"), itemId: z.string() }),
   z.object({ type: z.literal("route_item"), itemId: z.string(), machineId: z.string() }), // drag ore onto a machine
+  z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
+  z.object({ type: z.literal("undo"), actionId: z.string() }),
+  z.object({ type: z.literal("revoke_permit"), district: z.string() }),
+  z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
 ]);
 export type WebToServer = z.infer<typeof WebToServer>;
 
