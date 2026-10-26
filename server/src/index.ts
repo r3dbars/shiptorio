@@ -202,6 +202,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   // Keys belong to one map, and only someone who can open that map may set them.
   if (!repo) return c.text("Open this page from the map you want to plug it into.", 400);
   if (!(await canSeeRepo(c.env, user, repo))) return c.text("You don't have access to that repo's factory.", 403);
+  if (await factoryDeleted(c.env.DB, repo)) return c.text("Factory deleted", 410);
   const connected = kind === "sentry" ? !!(await sentryCreds(c.env, repo)).clientSecret : !!(await postHogCreds(c.env, repo)).apiKey;
   const webhookUrl = sentryWebhookUrl(url, repo);
   if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl }));
@@ -344,7 +345,7 @@ app.post("/webhooks/github", async (c) => {
   if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
   if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
   const now = Date.now();
-  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('github', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('github', ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null).run();
   if (!inserted.meta.changes) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'github' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
@@ -381,7 +382,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
   const now = Date.now();
-  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('sentry', ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null).run();
   if (!inserted.meta.changes) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });

@@ -287,6 +287,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
   const settings = (
     <>
+      <a className="btn" href="/settings">Account &amp; data</a>
       <button type="button" className="credit-btn" onClick={() => { setTray(false); setSheet("thinks"); }}>
         powered by Meta Muse Spark · how it thinks
       </button>

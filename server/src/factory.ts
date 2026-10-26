@@ -3,7 +3,7 @@ import { factoryDeleted } from "./account-data";
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
 import { DurableObject } from "cloudflare:workers";
-import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { browserSessionActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -84,9 +84,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   private accountErased = false;
 
   /** An export is an allowlist of saved user data, never raw runner jobs or credentials. */
-  async exportAccountData() {
+  async exportAccountData(): Promise<string> {
     const state = await this.ctx.storage.get<FactoryState>("state") ?? null;
-    return {
+    return JSON.stringify({
       state,
       permits: await this.ctx.storage.get<PermitBook>("permits") ?? null,
       research: state?.research ?? null,
@@ -95,11 +95,11 @@ export class Factory extends DurableObject<FactoryEnv> {
         approvals: await this.ctx.storage.get<{kind: string; scope: string; at: number; actionId: string}[]>("approvalEvents") ?? [],
         stages: await this.ctx.storage.get<StageHistory[]>("stageHistory") ?? [],
       },
-    };
+    });
   }
 
   async accountConnectionStatus() {
-    return { paired: !!await this.ctx.storage.get("runnerPair"), presence: await this.ctx.storage.get("runnerPresence") ?? null };
+    return { paired: !!await this.ctx.storage.get("runnerPair"), presence: await this.ctx.storage.get<{harnesses: string[]; seenAt: number}>("runnerPresence") ?? null };
   }
 
   async closeAccountSockets(login: string) {
@@ -1582,7 +1582,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
-    if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
+    if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !await browserSessionActive(auth, this.env)) { ws.close(1008, "Sign in again"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     let value: unknown;

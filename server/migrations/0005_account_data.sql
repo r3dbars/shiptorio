@@ -9,3 +9,7 @@ CREATE TABLE deleted_factories (
   repo_hash TEXT PRIMARY KEY,
   deleted_at INTEGER NOT NULL
 );
+
+-- Delivery metadata can now be erased with the factory it belongs to.
+ALTER TABLE webhook_deliveries ADD COLUMN repo TEXT;
+CREATE INDEX webhook_deliveries_repo ON webhook_deliveries(repo);

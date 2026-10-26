@@ -1,3 +1,5 @@
+import { FactoryState } from "@shiptorio/shared";
+import { starterLine } from "../src/engine";
 import { describe, expect, it, mock } from "bun:test";
 import { testD1, signedInCookie } from "./d1-fixture";
 import { deleteAccount, exportAccount, factoryDeleted, ownedRepos } from "../src/account-data";
@@ -30,11 +32,11 @@ async function fixture() {
   }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => objects.get(repo)!.factory }, ASSETS: {fetch: async () => new Response("app")} } as unknown as Env;
   for (const repo of ["alice/app", "bob/app", "org/shared"]) {
     const record = { data: new Map<string, unknown>([
-      ["state", { repo, items: [{id: "gh-1", title: "Fix", state: "ore"}], research: {done: ["types"]}, brain: {thoughts: [{reason: "Test"}]} }],
+      ["state", FactoryState.parse({repo, baseBranch: "main", districts: [], ...starterLine(), items: [{id: "gh-1", kind: "bug", source: "github_issue", title: "Fix", district: "/", state: "ore", attempts: 0, updatedAt: 1}], science: {red: 0, green: 0, grey: 0, blue: 0}, trust: 0.5, tick: 0, research: {done: ["types"], spent: 0}})],
       ["meta", {repo, installationId: repo === "alice/app" ? 1 : 2}],
       ["permits", {lanes: {docs: {allowed: true}}}], ["runnerPair", "pair-secret"],
       ["runnerJob:1", {lease: "DO-NOT-EXPORT", token: "DO-NOT-EXPORT"}],
-      ["approvalEvents", [{kind: "test"}]], ["delivery:1", {payload: "private-event"}],
+      ["approvalEvents", [{kind: "test", scope: "/", at: 1, actionId: "approval-1"}]], ["delivery:1", {payload: "private-event"}],
       ["schemaVersion", 2], ["backup:old", {items: ["private"]}],
     ]), alarm: 10 as number | null, closed: 0, factory: null as unknown as InstanceType<typeof Factory> };
     const storage = {
@@ -66,10 +68,33 @@ describe("account data controls", () => {
     const result = await exportAccount(env, user);
     expect(result.factories.map(r => r.repo)).toEqual(["alice/app", "org/shared"]);
     expect(result.factories[0].data.permits).toBeTruthy();
-    expect(result.factories[0].data.research).toEqual({done: ["types"]});
-    expect(result.factories[0].data.logs.approvals).toEqual([{kind: "test"}]);
+    expect(result.factories[0].data.research).toEqual({done: ["types"], spent: 0});
+    expect(result.factories[0].data.logs.approvals).toEqual([{kind: "test", scope: "/", at: 1, actionId: "approval-1"}]);
     expect(JSON.stringify(result)).not.toContain("DO-NOT-EXPORT");
     expect(JSON.stringify(result)).not.toContain("pair-secret");
+  });
+  it("purges installation-scoped encrypted credentials and attributed webhook receipts", async () => {
+    const {env, user} = await fixture();
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS credentials (scope TEXT NOT NULL, kind TEXT NOT NULL, envelope TEXT, revoked INTEGER NOT NULL DEFAULT 0, linked INTEGER NOT NULL DEFAULT 0, updated_by TEXT, updated_at INTEGER NOT NULL, last_used_at INTEGER, PRIMARY KEY(scope, kind))").run();
+    await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, updated_by, updated_at) VALUES ('installation:1:repo:alice/app', 'sentry', 'encrypted-alice', 'alice', 1), ('installation:2:repo:bob/app', 'sentry', 'encrypted-bob', 'bob', 1)").run();
+    await env.DB.prepare("INSERT INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('github', 'alice-delivery', 1, 2, 'alice/app'), ('github', 'bob-delivery', 1, 2, 'bob/app')").run();
+    await deleteAccount(env, user, ["alice/app"]);
+    expect((await env.DB.prepare("SELECT envelope FROM credentials").all()).results).toEqual([{envelope: "encrypted-bob"}]);
+    expect((await env.DB.prepare("SELECT delivery_id FROM webhook_deliveries").all()).results).toEqual([{delivery_id: "bob-delivery"}]);
+  });
+  it("can retry a failed KV purge without reporting deletion complete early", async () => {
+    const {env, user, kv, objects} = await fixture();
+    const original = env.CACHE.delete.bind(env.CACHE);
+    let fail = true;
+    env.CACHE.delete = (async (key: string) => { if (fail) throw new Error("KV temporarily unavailable"); await original(key); }) as typeof env.CACHE.delete;
+    await expect(deleteAccount(env, user, ["alice/app"])).rejects.toThrow("unavailable");
+    expect(await factoryDeleted(env.DB, "alice/app")).toBe(true);
+    expect(objects.get("alice/app")!.data.size).toBe(0);
+    expect((await env.DB.prepare("SELECT * FROM account_deletion_receipts").all()).results).toHaveLength(0);
+    expect(await env.DB.prepare("SELECT * FROM users WHERE id = 11").first()).not.toBeNull();
+    fail = false;
+    expect((await deleteAccount(env, user, ["alice/app"])).deleted).toBe(true);
+    expect(kv.has("cred:sentry:alice/app")).toBe(false);
   });
   it("requires exact names and never treats collaborator access as ownership", async () => {
     const {env, user, objects} = await fixture();

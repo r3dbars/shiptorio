@@ -1,3 +1,5 @@
+import type { FactoryState } from "@shiptorio/shared";
+import type { PermitBook } from "./permits";
 import { reposFor, type User, type RepoRow } from "./accounts";
 import type { Env } from "./index";
 import { linkedRepo } from "./sources/creds";
@@ -19,17 +21,23 @@ export async function ownedRepos(env: Env, user: User): Promise<RepoRow[]> {
     .bind(user.login.toLowerCase()).all<RepoRow>()).results;
 }
 
+export interface AccountFactoryData {
+  state: FactoryState | null;
+  permits: PermitBook | null;
+  research: FactoryState["research"] | null;
+  logs: {thoughts: NonNullable<FactoryState["brain"]>["thoughts"]; approvals: {kind: string; scope: string; at: number; actionId: string}[]; stages: {itemId: string; stage: string; enteredAt: number; exitedAt?: number}[]};
+}
 export async function exportAccount(env: Env, user: User) {
   const repos = await reposFor(env, user);
   const factories = [];
-  for (const repo of repos) factories.push({ repo: repo.full_name, data: await factory(env, repo.full_name).exportAccountData() });
+  for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData });
   const prefs = await env.DB.prepare("SELECT key, value, updated_at FROM user_prefs WHERE user_id = ?").bind(user.id).all();
   return { format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
 }
 
 async function purgeKV(env: Env, repos: RepoRow[], login: string): Promise<void> {
   const names = new Set(repos.map(r => r.full_name.toLowerCase()));
-  const keys = new Set<string>();
+  const keys = new Set<string>(repos.flatMap(r => [`cred:sentry:${r.full_name.toLowerCase()}`, `cred:posthog:${r.full_name.toLowerCase()}`]));
   // Enumerate first, delete second: deleting during pagination can skip keys.
   let cursor: string | undefined;
   do {
@@ -41,7 +49,7 @@ async function purgeKV(env: Env, repos: RepoRow[], login: string): Promise<void>
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
   for (const kind of ["sentry", "posthog"] as const) {
-    if (names.has((await linkedRepo(env, kind)) ?? "")) {
+    if (names.has((await linkedRepo(env, kind)) ?? "r3dbars/shiptorio")) {
       keys.add(`cred:${kind}`); keys.add(`link:${kind}`);
     }
   }
@@ -60,7 +68,14 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   for (const repo of repos) await factory(env, repo.full_name).eraseAccountData();
   await purgeKV(env, repos, user.login);
   const statements: D1PreparedStatement[] = [];
+  const tables = new Set((await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{name: string}>()).results.map(t => t.name));
   for (const repo of repos) {
+    // Goal 3 uses installation/repository-bound encrypted envelopes in D1.
+    if (tables.has("credentials")) statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`installation:${repo.installation_id}:repo:${repo.full_name.toLowerCase()}`));
+    if (tables.has("webhook_deliveries")) {
+      const columns = await env.DB.prepare("PRAGMA table_info(webhook_deliveries)").all<{name: string}>();
+      if (columns.results.some(c => c.name === "repo")) statements.push(env.DB.prepare("DELETE FROM webhook_deliveries WHERE repo = ?").bind(repo.full_name));
+    }
     for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(repo.full_name));
     statements.push(env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(repo.full_name));
   }
@@ -70,6 +85,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
     statements.push(env.DB.prepare("DELETE FROM user_installations WHERE installation_id = ?").bind(id));
     statements.push(env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(id));
   }
+  if (tables.has("credentials")) statements.push(env.DB.prepare("DELETE FROM credentials WHERE lower(updated_by) = ?").bind(user.login.toLowerCase()));
   for (const table of ["sessions", "user_prefs", "user_repos", "user_installations"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE user_id = ?`).bind(user.id));
   statements.push(env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id));
   const receipt = crypto.randomUUID();
