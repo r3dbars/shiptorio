@@ -298,6 +298,18 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .sp-jobs .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-jobs .st { flex: none; font: 12px var(--pixel); color: var(--amber); align-self: center; }
 .sp-jobs .st.bad { color: var(--red); }
+/* the measure station: one experiment, before (A) vs after (B) */
+.sp-jobs li.sp-exp { flex-direction: column; gap: 4px; padding: 6px; }
+.sp-exp-top { display: flex; justify-content: space-between; gap: 8px; }
+.sp-exp.good .st { color: var(--green); }
+.sp-exp.flat .st { color: var(--amber); }
+.sp-exp-bars { display: grid; grid-template-columns: 14px 1fr 46px; align-items: center; gap: 3px 6px; font: 12px var(--pixel); }
+.sp-exp-bars .bar { height: 8px; min-width: 2px; background: var(--muted, #8a94a3); }
+.sp-exp-bars .bar.b { background: var(--green); }
+.sp-exp.bad .sp-exp-bars .bar.b { background: var(--red); }
+.sp-exp.flat .sp-exp-bars .bar.b { background: var(--amber); }
+.sp-exp-bars .num { text-align: right; }
+.sp-exp-line { margin: 0; font-size: 12px; color: var(--ink-dim, var(--ink)); white-space: normal; }
 .sp-jobs .more, .sp-empty { font-size: 13px; color: var(--dim); margin: 0; }
 .sp-flow { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .sp-flow b { font: 12px var(--pixel); color: var(--dim); display: inline-block; width: 30px; }

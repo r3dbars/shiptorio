@@ -19,6 +19,7 @@ import {
   buildOre,
   buildCheck,
   buildOrbit,
+  buildMeasure,
   buildReview,
   buildRework,
   buildSolar,
@@ -192,7 +193,7 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
 };
 
 // Gauntlet stations are inspector-type machines; the station kind picks the Item Lab model.
-const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4 };
+const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4, measure: 2.8 };
 const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
 const CAUGHT_SLAM_MS = 620; // the verify bay's ram slam in the sound (shiptorio:station), so the CAUGHT! lands on it
 const FOCUS_ZOOM = 0.5; // how close the camera flies in on a picked machine
@@ -231,6 +232,8 @@ function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built 
         return buildGate();
       case "orbit":
         return buildOrbit();
+      case "measure":
+        return buildMeasure();
     }
   switch (m.type) {
     case "ore_deposit":
@@ -461,7 +464,26 @@ export class FactoryScene {
     this.syncLabels(state);
     this.syncGhosts(state);
     this.syncGauntlet(state);
+    this.syncGrowth(state, first);
     this.syncDrone(state, first);
+  }
+
+  // The growth loop's payoff: when the measure station calls an experiment, the call pops over it.
+  private readonly called = new Set<string>();
+  private syncGrowth(state: FactoryState, first: boolean) {
+    const st = state.stations?.find((x) => x.kind === "measure");
+    const m = st && this.byId(st.machineId);
+    for (const e of state.experiments ?? []) {
+      if (e.state !== "won" && e.state !== "flat" && e.state !== "lost") continue;
+      if (this.called.has(e.id)) continue;
+      this.called.add(e.id);
+      if (first || !m) continue;
+      const at = this.machinePos(m).setY((STATION_LABEL_Y.measure ?? 2.4) + 0.6);
+      const pct = Math.round((e.lift ?? 0) * 100);
+      if (e.state === "won") this.pop(at, `+${pct}% LIFT`, "lift", e.step.label, 3.2);
+      else if (e.state === "lost") this.pop(at, `${pct}% HURT`, "fail", "roll it back", 3.2);
+      else this.pop(at, "NO LIFT", "flat", e.step.label, 3.2);
+    }
   }
 
   // ---------- the Foreman drone ----------
@@ -811,7 +833,7 @@ export class FactoryScene {
     this.beltGroup.clear();
     this.beltTextures = [];
     this.paths.clear();
-    const gauntlet = (state.stations ?? []).filter((st) => st.kind !== "orbit").map((st) => this.byId(st.machineId)).filter((m) => !!m);
+    const gauntlet = (state.stations ?? []).filter((st) => st.kind !== "orbit" && st.kind !== "measure").map((st) => this.byId(st.machineId)).filter((m) => !!m);
     for (const b of state.belts) {
       const from = this.byId(b.from), to = this.byId(b.to);
       if (!from || !to) continue;
@@ -1075,7 +1097,7 @@ export class FactoryScene {
   private verdict(machineId: string, item: Item) {
     const st = this.stationAt(machineId);
     const m = this.byId(machineId);
-    if (!st || !m || st.kind === "orbit") return;
+    if (!st || !m || st.kind === "orbit" || st.kind === "measure") return;
     const fail = item.state === "rejected";
     this.verdicts.set(machineId, { fail, until: this.t + (fail ? 3 : 1.6) });
     const at = this.machinePos(m).setY((STATION_LABEL_Y[st.kind] ?? 2.4) + 0.6);
@@ -1149,6 +1171,11 @@ export class FactoryScene {
         return failing ? "REJECTED" : backed ? "BACKED UP" : this.t < this.launchUntil ? "APPROVED" : "WAITING";
       case "orbit":
         return st.lastLog && !st.lastLog.ok ? "ALERT" : busy ? "WATCHING" : "ALL CLEAR";
+      case "measure": {
+        // the growth loop: the newest experiment past its launch sets the dial
+        const exp = this.state!.experiments?.find((e) => e.launchedAt);
+        return !exp ? "IDLE" : exp.state === "won" ? "LIFT" : exp.state === "lost" ? "HURT" : exp.state === "flat" ? "NO LIFT" : "MEASURING";
+      }
       default:
         return failing ? "REJECT" : backed ? "BACKED UP" : "SCANNING";
     }
@@ -1223,7 +1250,11 @@ export class FactoryScene {
         case "inspector": {
           const sta = this.stationAt(m.id);
           if (!sta) this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
-          else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : sta.lastLog?.ok === false ? "caught a comeback" : "all clear");
+          else if (sta.kind === "measure") {
+            const exp = state.experiments?.find((e) => e.launchedAt);
+            const sub = !exp ? "waiting for a growth launch" : exp.state === "measuring" ? `day ${Math.min(exp.windowDays, Math.floor(exp.daysWatched ?? 0) + 1)} of ${exp.windowDays} · ${exp.step.label}` : exp.state === "won" ? `+${Math.round((exp.lift ?? 0) * 100)}% lift · ${exp.step.label}` : exp.state === "lost" ? `hurt · ${exp.step.label}` : `no lift · ${exp.step.label}`;
+            this.setLabel(v.label, "MEASURE", sub, exp?.state === "measuring");
+          } else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : sta.lastLog?.ok === false ? "caught a comeback" : "all clear");
           else {
             const hot = state.bottleneck?.stationId === sta.id;
             this.setLabel(v.label, sta.name.toUpperCase(), `${sta.wip} in line · caught ${sta.caughtThisWeek}`, hot);
