@@ -827,3 +827,9 @@ export const PROGRESS = {
   notifyTitle: (n: number) => `${plural(n, "card")} waiting on you`,
   notifyBody: "The factory needs a decision.",
 };
+
+// Brand art alt text (web/src/ui/Logo.tsx).
+export const BRAND = {
+  wordmarkAlt: "Shiptorio",
+  markAlt: "Shiptorio",
+};
