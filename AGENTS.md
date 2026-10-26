@@ -35,35 +35,43 @@ Justin chose Cloudflare, since their domain already lives there. The current sha
 - Hono on the Worker for routes.
 - A **GitHub App** (not OAuth) for sign-in, installs, webhooks (`pull_request`, `push`,
   `check_suite`) and opening PRs as `shiptorio[bot]`.
-- Durable Objects: one per repo for live websocket fan-out, and a Factory Durable
-  Object as the factory engine (tick loop, queues, power-aware routing).
-- D1 database `shiptorio` (installs, repos, PR state). Schema in `migrations/`.
-- KV namespace `shiptorio-cache` (cached repo maps, dropped on every push to the default branch).
+- A **Factory Durable Object per repo** (`server/src/factory.ts`) is the factory engine:
+  it owns the state, runs the tick loop on an alarm, and talks to browsers over
+  websockets (`snapshot` / `patch` / `log`).
+- D1 database `shiptorio` (installs, repos). Schema in `server/migrations/`.
+- KV namespace `shiptorio-cache` (bound, not used yet).
 - Long agent runs go in the local runner, Cloudflare Workflows or GitHub Actions, never
   inside one request.
 
 The D1 database and KV namespace **already exist** on Justin's Cloudflare account and
-their ids are in `wrangler.jsonc`. The Worker is **not deployed yet**.
+their ids are in `server/wrangler.jsonc`. The Worker is **not deployed yet**.
 
-### Layout (in progress)
+### Layout
 
-PR #1 (`phase-1-scaffold`) has a working phase-1 Worker: `src/index.ts`,
-`src/github.ts`, `src/map.ts`, `src/room.ts`, a plain-JS canvas map in `public/`. It's
-being reshaped into the plan's layout:
+Bun workspaces:
 
 | Dir | Owns |
 | --- | --- |
-| `shared/` | zod model and the message protocol. The contract between lanes |
-| `server/` | Hono Worker, GitHub App, webhooks, Factory Durable Object, Spark client |
-| `runner/` | Local helper on the user's machine: finds `claude`/`codex`/Cursor/Grok CLIs and local model endpoints, runs jobs in git worktrees, pushes branches |
-| `web/` | Vite + React + Three.js pixel-art map, panels, sound |
+| `shared/` | zod model (`model.ts`) and the message protocol (`protocol.ts`). The contract between lanes |
+| `server/` | Hono Worker (`src/index.ts`), GitHub App + webhooks (`github.ts`, `auth.ts`), Factory Durable Object (`factory.ts`) with pure rules in `engine.ts`, Spark client (`spark.ts`), repo → districts layout (`map.ts`) |
+| `runner/` | Not started. Local helper on the user's machine: finds `claude`/`codex`/Cursor/Grok CLIs and local model endpoints, runs jobs in git worktrees, pushes branches |
+| `web/` | Vite + React + Three.js. `src/map/` (scene + pixel pass), `src/sim/` (fake factory), `src/source/` (sim or live), `src/store.ts` (applies snapshot/patch) |
 
-Check what's actually on `main` and open PRs before assuming a file exists.
+The Worker serves `web/dist` as static assets, so build `web/` before `wrangler dev` or deploy.
+
+What the server does today (first cut, the backend lane owns it from here): an `issues`
+webhook becomes ore. The splitter triages it with Spark (kind + district), with a keyword
+heuristic when there's no key. A Spark assembler picks up to 4 files, writes the change,
+commits it to `shiptorio/<item>` through the GitHub API, and opens a PR (`Closes #n`). A
+`check_suite` on the PR passes it to the pad or rejects it into the rework loop (3 tries).
+A merged PR launches the rocket and earns science. Spark may not write outside the repo
+or under `.github/` (`SAFE_PATH` in `engine.ts`).
 
 ### Protocol (`shared/src/protocol.ts`)
 
 - Server to web: `snapshot`, `patch`, `log`
-- Web to server: `place_machine`, `remove_machine`, `connect_belt`, `set_module`, `launch_pr`
+- Web to server: `place_machine`, `remove_machine`, `connect_belt`, `set_module`, `launch_pr`,
+  `route_item` (drag ore onto an assembler)
 - Runner to server: `hello {mode, harnesses, powerSources}`, `job_event`, `job_done`
 - Server to runner: `job_assign {jobId, repo, baseSha, token, harness, task}`
 - Item states: ore, queued, working, inspecting, rejected (with failure), passed, on pad, launched
@@ -128,20 +136,24 @@ The demo's winning beat: break the demo app on camera, Sentry fires, biters swar
 
 ## Running it
 
-From the `phase-1-scaffold` branch (PR #1) until it merges:
+Needs Bun.
 
 ```sh
-npm install
-npm run dev          # writes .dev.vars, sets up local D1, seeds a demo map
-# open http://localhost:8787/?repo=demo/shiptorio and hit Log in
-npm test
-npm run typecheck
+bun install
+bun run dev:web      # UI only, on :5173, with the simulator: http://localhost:5173/?source=sim
+bun run dev          # builds web/, then wrangler dev on :8787 (writes server/.dev.vars, local D1)
+bun test             # all tests
+bun run typecheck    # every workspace
+bun run spark:check  # needs META_API_KEY in the environment
 ```
 
-Local dev needs no GitHub App and no Cloudflare credentials. On localhost, login signs
-you in as `DEV_LOGIN`.
+Sim scenarios: `?source=sim&scenario=quiet-morning` or `rework-loop`. Add `&autolaunch`
+to have PRs on the pad merge by themselves. Live: `?source=live&repo=owner/name`.
 
-Going live (Justin does this, see `docs/SETUP.md`): `npx wrangler login`, `npm run deploy`,
+Local dev needs no GitHub App and no Cloudflare credentials. On localhost, `/auth/login`
+signs you in as `DEV_LOGIN`.
+
+Going live (Justin does this, see `docs/SETUP.md`): `npx wrangler login`, `bun run deploy`,
 then open `/setup` on the deployed URL to create the GitHub App and set its secrets with
 `wrangler secret put`. Spark needs `META_API_KEY` as a Worker secret.
 
@@ -175,5 +187,6 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 ## Open questions
 
 - Does Muse Spark accept images (for visual QA)?
-- Does Spark expose reasoning-effort levels? If not, "modules" become prompt and tool loadouts.
+- ~~Does Spark expose reasoning-effort levels?~~ Yes: `reasoning_effort` minimal/low/medium/high/xhigh
+  ("none" is a 400). Meta Model API is OpenAI-compatible at `https://api.meta.ai/v1`, model `muse-spark-1.3`.
 - Spark rate limits, credit balance, and whether `codex exec` handles Spark tool calls cleanly.

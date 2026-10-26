@@ -1,28 +1,30 @@
-import { describe, expect, it } from "vitest";
-import { FactorySchema, RunnerToServerSchema, ServerToRunnerSchema, ServerToWebSchema, WebToServerSchema } from "../src/protocol";
+import { describe, expect, it } from "bun:test";
+import { FactoryState, RunnerToServer, ServerToRunner, ServerToWeb, WebToServer } from "../src/index";
 
-describe("factory wire contract", () => {
-  const factory = { repo: "r3dbars/shiptorio", revision: 0, machines: [], items: [], belts: [] };
-  it("round trips the simulator's initial snapshot", () => {
-    const msg = { type: "snapshot", version: 1, factory };
-    expect(ServerToWebSchema.parse(JSON.parse(JSON.stringify(msg)))).toEqual(msg);
+const state = { repo: "r3dbars/shiptorio", baseBranch: "main", districts: [], machines: [], items: [], power: [], belts: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 };
+describe("shared simulator and live wire contract", () => {
+  it("round trips an initial snapshot using the frontend's state payload", () => {
+    const msg = { type: "snapshot", state };
+    expect(ServerToWeb.parse(JSON.parse(JSON.stringify(msg)))).toEqual(msg);
   });
-  it("rejects unsupported protocol versions and credentials in browser payloads", () => {
-    expect(ServerToWebSchema.safeParse({ type: "snapshot", version: 2, factory }).success).toBe(false);
-    expect(ServerToWebSchema.safeParse({ type: "snapshot", version: 1, factory, token: "secret" }).success).toBe(false);
+  it("strips undeclared credentials from browser snapshots", () => {
+    const parsed = ServerToWeb.parse({type:"snapshot",state:{...state,token:"private"},token:"private"});
+    expect(parsed).toEqual({type:"snapshot",state});
   });
-  it("rejects malformed identities, states and nonfinite coordinates", () => {
-    expect(FactorySchema.safeParse({ ...factory, repo: "../escape" }).success).toBe(false);
-    expect(FactorySchema.safeParse({ ...factory, items: [{ state: "done" }] }).success).toBe(false);
-    expect(WebToServerSchema.safeParse({type:"place_machine",machine:{id:"a",kind:"assembler",position:{x:Infinity,y:0},harness:"codex",powerSource:"solar",modules:[]}}).success).toBe(false);
+  it("accepts upsert patches and explicit removals used by the live frontend", () => {
+    const msg = {type:"patch",patch:{items:[],removed:[{kind:"machine",id:"a"}]}};
+    expect(ServerToWeb.parse(msg)).toEqual(msg);
   });
-  it("keeps tokens in runner assignments and forbids a successful job targeting main", () => {
-    expect(ServerToRunnerSchema.parse({ type:"job_assign",jobId:"job-1",repo:factory.repo,baseSha:"a".repeat(40),token:"runner-only",harness:"codex",task:"Fix the bug" }).token).toBe("runner-only");
-    expect(RunnerToServerSchema.safeParse({ type:"job_done",jobId:"job-1",result:{status:"passed",branch:"main",headSha:"a".repeat(40)} }).success).toBe(false);
-    expect(RunnerToServerSchema.safeParse({ type:"job_done",jobId:"job-1",result:{status:"passed",branch:"shiptorio/job-1",headSha:"a".repeat(40)} }).success).toBe(true);
+  it("rejects unknown commands, invalid machine types and nonfinite coordinates", () => {
+    expect(WebToServer.safeParse({type:"delete_everything"}).success).toBe(false);
+    expect(WebToServer.safeParse({type:"place_machine",machineType:"unknown",x:0,y:0}).success).toBe(false);
+    expect(WebToServer.safeParse({type:"place_machine",machineType:"assembler",x:Infinity,y:0}).success).toBe(false);
+    expect(FactoryState.safeParse({...state,items:[{state:"done"}]}).success).toBe(false);
   });
-  it("accepts failure events and collection replacement patches", () => {
-    expect(RunnerToServerSchema.parse({type:"job_done",jobId:"job-1",result:{status:"failed",failure:"Tests failed"}}).type).toBe("job_done");
-    expect(ServerToWebSchema.parse({type:"patch",version:1,repo:factory.repo,baseRevision:0,revision:1,changes:{items:[]}}).type).toBe("patch");
+  it("keeps job tokens on runner assignments and validates runner events", () => {
+    const msg={type:"job_assign",jobId:"j1",repo:state.repo,baseSha:"a".repeat(40),token:"private",harness:"codex",task:{title:"Fix bug",body:"Details",district:"/"}};
+    expect(ServerToRunner.parse(msg)).toEqual(msg);
+    expect(RunnerToServer.parse({type:"job_done",jobId:"j1",ok:false,summary:"Tests failed"}).type).toBe("job_done");
+    expect(RunnerToServer.safeParse({type:"hello",mode:"local",harnesses:["unknown"],powerSources:[]}).success).toBe(false);
   });
 });
