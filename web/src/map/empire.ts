@@ -12,6 +12,8 @@ import { buildLaunchPad } from "./itemlab.js";
 import { box, mat } from "./kit";
 import { makeDistrict, makeFloater, makeIsland } from "./models";
 import { PALETTE } from "./palette";
+import { ironize } from "./iron";
+import { IRON } from "./world";
 
 export interface SatelliteSpec {
   repo: string;
@@ -111,6 +113,7 @@ export function buildSatellite(spec: SatelliteSpec, seed: number): SatelliteView
     raw.add(model.group);
   });
   const pad = buildLaunchPad();
+  if (IRON) ironize(pad.g);
   pad.update(0, 0.016, "IDLE");
   pad.g.scale.setScalar(0.8);
   pad.g.position.set(w / 2 - 2.1, 0, d / 2 - 2.3);

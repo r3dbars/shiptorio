@@ -3,6 +3,8 @@
 
 import * as THREE from "three";
 import { box, canvasTex, cyl, hash01, mat, own, rep, tex } from "./kit";
+import { C as IC, ironize, iron, makeIronFloater, makeIronIsland, makeMoltenPour, M as IM, worldBox, worldMat } from "./iron";
+import { IRON } from "./world";
 
 // Island look (Justin, Oct 26, option A of the island mockup): a thick moss cap with a soft
 // rounded rim, a soil band, then chunky faceted rock that tapers to a blunt tip. Roots hang
@@ -79,7 +81,12 @@ function flatShape(pts: [number, number][], y: number, m: THREE.Material, parent
 // How far the rock hangs below the top, so waterfalls can be sized to match.
 export const islandDepth = (w: number, d: number) => 12.1 * Math.min(1.5, Math.max(1, Math.min(w, d) / 12));
 
+// Black Iron (map/world.ts) swaps the moss island for a cobbled foundry deck on a brick hull.
 export function makeIsland(w: number, d: number) {
+  return IRON ? makeIronIsland(w, d, islandDepth(w, d)) : makeMossIsland(w, d);
+}
+
+function makeMossIsland(w: number, d: number) {
   const g = new THREE.Group();
   const rand = seeded(7);
   const k = islandDepth(w, d) / 12.1;
@@ -165,6 +172,10 @@ export function makeIsland(w: number, d: number) {
 
 // A small mossy chunk of rock that floats next to the island.
 export function makeFloater(size: number, seed: number) {
+  return IRON ? makeIronFloater(size, seed) : makeMossFloater(size, seed);
+}
+
+function makeMossFloater(size: number, seed: number) {
   const rand = seeded(seed);
   const layers: Layer[] = [
     { y: 0, s: 1, c: MOSS.rim },
@@ -198,6 +209,10 @@ const fade = () =>
 // Waterfall pouring off the island's edge into a puff of mist.
 // Returns a tick so the scene can scroll the water and breathe the mist.
 export function makeWaterfall(parent: THREE.Object3D, x: number, z: number, rotY: number, w: number, len: number) {
+  return IRON ? makeMoltenPour(parent, x, z, rotY, w, len) : makeWater(parent, x, z, rotY, w, len);
+}
+
+function makeWater(parent: THREE.Object3D, x: number, z: number, rotY: number, w: number, len: number) {
   const t = rep(tex().water, 1, len / 3.75);
   const m = new THREE.Mesh(
     new THREE.PlaneGeometry(w, len),
@@ -251,17 +266,30 @@ export function districtKind(name: string): DistrictKind {
   return all[Math.floor(hash01(n) * all.length)];
 }
 
-const WALL: Record<DistrictKind, number[]> = {
-  shop: [0xd9cbb0, 0xc7b9a0, 0xe2d6bd],
-  servers: [0x7d8799, 0x6f798c, 0x8a94a6],
-  warehouse: [0xa8806a, 0x9a735e, 0xb48b73],
-  library: [0xd8cfc0, 0xcbc1b0, 0xe0d8ca],
-  lab: [0xe6eaee, 0xd9dee4, 0xf0f2f5],
-  hq: [0x6d7487, 0x5f6679, 0x7b8296],
-};
-const TRIM = 0x3a3f52;
-const GLASS = 0x8fd3ff;
-const DARK_GLASS = 0x2b3150;
+// Black Iron districts: sooty brick shopfronts, iron server halls, dark-brick warehouses, dressed-stone
+// libraries, verdigris labs and an iron HQ, every window lit warm from inside.
+const WALL: Record<DistrictKind, number[]> = IRON
+  ? {
+      shop: [0x8a4228, 0x7a3a24, 0x944a2e],
+      servers: [0x5a4c40, 0x52463b, 0x625446],
+      warehouse: [0x6a3020, 0x5e2a1c, 0x743424],
+      library: [0x8a7a64, 0x7e6e5a, 0x948470],
+      lab: [0x3e8a72, 0x367a64, 0x48967c],
+      hq: [0x463d35, 0x40382f, 0x504539],
+    }
+  : {
+      shop: [0xd9cbb0, 0xc7b9a0, 0xe2d6bd],
+      servers: [0x7d8799, 0x6f798c, 0x8a94a6],
+      warehouse: [0xa8806a, 0x9a735e, 0xb48b73],
+      library: [0xd8cfc0, 0xcbc1b0, 0xe0d8ca],
+      lab: [0xe6eaee, 0xd9dee4, 0xf0f2f5],
+      hq: [0x6d7487, 0x5f6679, 0x7b8296],
+    };
+const TRIM = IRON ? 0x2e2620 : 0x3a3f52;
+const GLASS: number | THREE.Material = IRON ? mat(0xffc070, 0x8a4a10) : 0x8fd3ff;
+const DARK_GLASS: number | THREE.Material = IRON ? mat(0xb05a20, 0x4a1c06) : 0x2b3150;
+// district roofs show health: fine, busy, under attack / rework
+export const ROOF = IRON ? { ok: 0x3e8a72, busy: 0xd8a018, bad: 0xc03a24 } : { ok: 0x4fae73, busy: 0xe39a2f, bad: 0xd94a3f };
 
 type Tick = (t: number) => void;
 
@@ -463,21 +491,27 @@ const BUILD: Record<DistrictKind, (l: Lot) => void> = { shop, servers, warehouse
 export function makeDistrict(w: number, d: number, buildings: number, name: string) {
   const g = new THREE.Group();
   const kind = districtKind(name);
-  const side = mat(0x8d7c5c);
-  const top = own(0xffffff);
-  top.map = rep(tex().stone, w / 7.2, d / 7.2);
-  box(w, 0.5, d, [side, side, top, side, side, side], 0, 0.25, 0, g);
-  const roof = own(0x4fae73);
+  if (IRON) worldBox(w, 0.5, d, worldMat("stone", 2.6), 0, 0.25, 0, g); // dressed stone, bakes with the island's
+  else {
+    const side = mat(0x8d7c5c);
+    const top = own(0xffffff);
+    top.map = rep(tex().stone, w / 7.2, d / 7.2);
+    box(w, 0.5, d, [side, side, top, side, side, side], 0, 0.25, 0, g);
+  }
+  const roof = own(ROOF.ok);
   const ticks: Tick[] = [];
   // a curb around the plinth, and a street lamp on each front corner that comes on in the evening glow
-  for (const sz of [-1, 1]) box(w + 0.06, 0.06, 0.08, 0xbfb5a2, 0, 0.52, (sz * d) / 2, g);
-  for (const sx of [-1, 1]) box(0.08, 0.06, d + 0.06, 0xbfb5a2, (sx * w) / 2, 0.52, 0, g);
-  const lampM = own(0xfff1c0, 0x3a2a08);
+  const curb = IRON ? IM.ironM : mat(0xbfb5a2);
+  for (const sz of [-1, 1]) box(w + 0.06, 0.06, 0.08, curb, 0, 0.52, (sz * d) / 2, g);
+  for (const sx of [-1, 1]) box(0.08, 0.06, d + 0.06, curb, (sx * w) / 2, 0.52, 0, g);
+  if (IRON) for (let x = -w / 2 + 0.2; x < w / 2; x += 0.5) box(0.05, 0.05, 0.04, IM.brassL, x, 0.4, d / 2 + 0.01, g).castShadow = false;
+  const lampM = IRON ? iron(IC.gas) : own(0xfff1c0, 0x3a2a08);
+  if (IRON) lampM.emissive = new THREE.Color(0xa06018);
   for (const sx of [-1, 1]) {
     const lx = sx * (w / 2 - 0.18), lz = d / 2 - 0.18;
-    cyl(0.025, 0.035, 0.8, 0x3a3f52, 6, lx, 0.9, lz, g);
+    cyl(0.025, 0.035, 0.8, TRIM, 6, lx, 0.9, lz, g);
     box(0.12, 0.08, 0.12, lampM, lx, 1.32, lz, g);
-    box(0.16, 0.03, 0.16, 0x3a3f52, lx, 1.37, lz, g);
+    box(0.16, 0.03, 0.16, IRON ? IM.brassD : TRIM, lx, 1.37, lz, g);
   }
   const cols = Math.max(1, Math.floor(w / 1.7));
   const rows = Math.max(1, Math.floor(d / 1.7));
@@ -491,6 +525,7 @@ export function makeDistrict(w: number, d: number, buildings: number, name: stri
     const s = Math.min(cw, cd) * 0.72;
     BUILD[kind]({ x, z, s, h, i, roof, g, ticks });
   }
+  if (IRON) ironize(g, new Set([roof]));
   return { group: g, roof, kind, labelY: 2.8, update: (t: number) => ticks.forEach((f) => f(t)) };
 }
 

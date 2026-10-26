@@ -5,11 +5,10 @@ import * as THREE from "three";
 import * as lab from "../map/itemlab";
 import { buildDrone } from "../map/drone";
 import { makeDistrict, makeIsland } from "../map/models";
-import { PALETTE } from "../map/palette";
 import { PixelPass } from "../map/pixel";
+import { applyLook, LOOK } from "../map/world";
 
 THREE.ColorManagement.enabled = false;
-const L = Math.PI;
 const q = new URLSearchParams(location.search);
 const num = (k: string, d: number) => (q.has(k) ? Number(q.get(k)) : d);
 
@@ -43,17 +42,13 @@ renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.BasicShadowMap;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(PALETTE.void);
-scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * L));
-const under = new THREE.DirectionalLight(0x9fb2ff, 0.45 * L);
-under.position.set(10, -6, 14);
-const sun = new THREE.DirectionalLight(0xfff0d2, 0.95 * L);
-sun.position.set(14, 26, 8);
+const sun = applyLook(scene); // map/world.ts: ?world=iron or classic, same as the game
+sun.position.set(...LOOK.sun.offset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.bias = -0.0015;
 Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 });
-scene.add(under, sun, sun.target);
+scene.add(sun, sun.target);
 if (q.get("island") !== "0") scene.add(makeIsland(7, 7));
 
 const name = q.get("item") ?? "pad";
@@ -64,7 +59,7 @@ const state = q.get("state") ?? "IDLE";
 const zoom = num("zoom", 1), yaw = (num("yaw", 45) * Math.PI) / 180, tilt = Math.PI / 6;
 const lookY = num("y", 1);
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200);
-const px = num("px", 2);
+const px = num("px", LOOK.pixel);
 const pass = new PixelPass();
 function size() {
   const w = innerWidth, h = innerHeight;

@@ -37,12 +37,14 @@ import {
   type Built,
 } from "./itemlab";
 import { buildDrone, type DroneMode } from "./drone";
-import { islandDepth, makeDistrict, makeFloater, makeGlassLake, makeGoldTrim, makeIsland, makeLantern, makeWaterfall } from "./models";
+import { islandDepth, ROOF, makeDistrict, makeFloater, makeGlassLake, makeGoldTrim, makeIsland, makeLantern, makeWaterfall } from "./models";
 
 import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type SatelliteView } from "./empire";
 import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
-import { pixelSizeFor, PixelPass } from "./pixel";
+import { PIXEL, pixelSizeFor, PixelPass } from "./pixel";
+import { applyLook, IRON, LOOK } from "./world";
+import { ironize } from "./iron";
 import { bakeModel, findDynamic, mergeStatic } from "./bake";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
@@ -56,8 +58,6 @@ const ZOOM_MIN = 0.4; // zoom > 1 means zoomed out
 const ZOOM_MAX = 2.6;
 const PORTRAIT_FIT = 0.84; // portrait phones frame the line this much closer than the padded fit
 const ITEM_SPEED = 1.6; // world units per second along a belt
-// three r155+ lights are physically based; × π matches the prototype's r128 light levels
-const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
 
 export const HARNESS_COLOR: Record<Harness, number> = {
@@ -207,8 +207,15 @@ const ART_STATES: Partial<Record<Machine["type"] | StationKind, string[]>> = {
 
 // A model with its static parts merged (bake.ts). The probe copy is built from the same random
 // seed, so it matches the real one and nothing after it shifts.
+// Black Iron re-paints the classic models in iron, brass and soot (iron.ts ironize); classic leaves them be.
+function paint<T extends { g: THREE.Object3D }>(b: T): T {
+  if (IRON) ironize(b.g);
+  return b;
+}
+
 function bakedItem(key: string, states: string[] | undefined, make: () => Built): Built {
   const before = getSeed();
+  make = ((build) => () => paint(build()))(make);
   const built = make();
   if (!states) return built;
   const after = getSeed();
@@ -324,7 +331,8 @@ export class FactoryScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200);
   private readonly pass = new PixelPass();
-  private readonly sun = new THREE.DirectionalLight(0xfff0d2, 0.95 * LEGACY_LIGHT);
+  private readonly sun: THREE.DirectionalLight;
+  private tier = 0; // the frame governor's last tier, so the pixel size and bloom follow it
   private readonly world = new THREE.Group(); // island + districts, rebuilt when districts change
   private readonly beltGroup = new THREE.Group();
   private readonly powerGroup = new THREE.Group(); // power lines from each plant to the assemblers it feeds
@@ -374,7 +382,7 @@ export class FactoryScene {
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
   // Spark, the Foreman, flying to whatever it's touching
-  private readonly drone = bakeModel("drone", buildDrone(), buildDrone, ["IDLE", "FLYING", "WORKING", "THINKING"]) as ReturnType<typeof buildDrone>;
+  private readonly drone = bakeModel("drone", paint(buildDrone()), () => paint(buildDrone()), ["IDLE", "FLYING", "WORKING", "THINKING"]) as ReturnType<typeof buildDrone>;
   private readonly droneTo = new THREE.Vector3(0, 4, 0);
   private droneLabel?: Label;
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
@@ -414,13 +422,8 @@ export class FactoryScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
     this.renderer.shadowMap.autoUpdate = false; // the frame governor (quality.ts) says when
-    this.scene.background = new THREE.Color(PALETTE.void);
-
-    this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
-    // cool bounce light from below, so the island's rock underside keeps its facets
-    const under = new THREE.DirectionalLight(0x9fb2ff, 0.45 * LEGACY_LIGHT);
-    under.position.set(10, -6, 14);
-    this.scene.add(under);
+    // sky, fog, hemisphere and the light from under the island (map/world.ts: Black Iron or classic)
+    this.sun = applyLook(this.scene);
     this.sun.castShadow = true;
     // phones and low-end machines get a smaller shadow map; the pixel pass hides the difference
     const small = window.matchMedia?.("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
@@ -510,8 +513,13 @@ export class FactoryScene {
     const vh = this.baseViewHeight() * this.zoom;
     Object.assign(this.camera, { left: (-vh * a) / 2, right: (vh * a) / 2, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
-    this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
+    this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom, this.pixelBase()));
     this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
+  }
+
+  // full-resolution pixels for Black Iron; a device the governor stepped down to tier 2 goes chunky again
+  private pixelBase() {
+    return IRON && this.tier >= 2 ? 2 : PIXEL.size;
   }
 
   update(raw: FactoryState) {
@@ -966,7 +974,7 @@ export class FactoryScene {
     for (const sp of spots) {
       let g = this.ghosts.get(sp.kind);
       if (!g) {
-        const built = buildOre({ variant: ORE_VARIANT[sp.kind] });
+        const built = paint(buildOre({ variant: ORE_VARIANT[sp.kind] }));
         built.g.traverse((o) => {
           const mesh = o as THREE.Mesh;
           if (!mesh.isMesh) return;
@@ -1166,7 +1174,7 @@ export class FactoryScene {
       const sentry = here.some((i) => i.source === "sentry" && (i.state === "ore" || i.state === "queued"));
       const busy = here.some((i) => i.state === "working" || i.state === "inspecting" || i.state === "queued");
       const status = sentry ? "under attack" : rework ? "rework" : busy ? "busy" : "healthy";
-      d.roof.color.setHex(sentry || rework ? 0xd94a3f : busy ? 0xe39a2f : 0x4fae73);
+      d.roof.color.setHex(sentry || rework ? ROOF.bad : busy ? ROOF.busy : ROOF.ok);
       this.setLabel(d.label, d.name === "/" ? "(ROOT)" : `/${d.name.toUpperCase()}`, `${d.files} files · ${status}`, sentry || rework);
     }
   }
@@ -1306,7 +1314,7 @@ export class FactoryScene {
     const ids = new Set(want.map((i) => i.id));
     for (const i of want) {
       if (this.biters.has(i.id)) continue;
-      const biter = buildBiter({ variant: ["MEDIUM · ERROR", 0xff5e52, 1] });
+      const biter = paint(buildBiter({ variant: ["MEDIUM · ERROR", 0xff5e52, 1] }));
       biter.g.scale.setScalar(0.8);
       const d = this.districts.get(i.district);
       const c = d?.center ?? new THREE.Vector3();
@@ -1649,6 +1657,11 @@ export class FactoryScene {
     const now = performance.now();
     if (!this.governor.draw(now, !!(this.camGoal || this.glide || this.launchCam || this.biasGoal))) return;
     perf.frame(now, this.renderer.info, this.governor.tier);
+    if (this.governor.tier !== this.tier) {
+      this.tier = this.governor.tier;
+      this.pass.setBloom(this.tier < 2);
+      this.applyCamera();
+    }
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
@@ -1758,7 +1771,8 @@ export class FactoryScene {
     dz += -sr * Math.sin(YAW) + sd * Math.cos(YAW);
     this.camera.position.set(this.target.x + dx + off.x, this.target.y + off.y, this.target.z + dz + off.z);
     this.camera.lookAt(this.target.x + dx, this.target.y, this.target.z + dz);
-    this.sun.position.set(this.target.x + 14, 26, this.target.z + 8);
+    const so = LOOK.sun.offset;
+    this.sun.position.set(this.target.x + so[0], so[1], this.target.z + so[2]);
     this.sun.target.position.copy(this.target);
 
     for (const sh of this.shocks) {
