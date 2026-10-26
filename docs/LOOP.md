@@ -14,7 +14,7 @@ rework belt back to Spark. Where stuff piles up is the bottleneck, and the bottl
  1 ORE            BRAIN        2 BUILD            3 THE GAUNTLET                                 4 SHIPPED
  mines ──belt──► Spark ──────► assemblers ──────► CI inspector ─► verify bay ─► review ─► merge gate ─► orbit watch
  (issues, Sentry,  (reads,      (your Claude Code    │           │            │          (you)        (24h real-world
-  email, Stripe)   restates,     / Codex, on your    ▼           ▼            ▼                        check)
+  PostHog, email)  restates,     / Codex, on your    ▼           ▼            ▼                        check)
   deduped into     plans,        subscriptions)   ◄──────────── REWORK BELT (scar tags) ◄─────────────────┘
   weighted chunks) routes)            ▲
                                  POWER: Claude plant, Codex plant (your usage left), Spark steam (brain only)
@@ -22,9 +22,9 @@ rework belt back to Spark. Where stuff piles up is the bottleneck, and the bottl
 
 ## The four stops
 
-1. **Ore (signals in).** Every source is a mine: GitHub issues, Sentry errors, customer email, Stripe events.
+1. **Ore (signals in).** Every source is a mine: GitHub issues, Sentry errors, PostHog events, customer email.
    Spark merges duplicates into one weighted chunk (40 crash reports about one bug = one chunk weighing 40).
-   More mines = more ore. Connect order: GitHub issues → Sentry → email → Stripe.
+   More mines = more ore. Connect order: GitHub issues → Sentry → PostHog → email. Stripe is on hold (Justin, 2026-10-26).
 2. **Power (AI compute).** Claude and ChatGPT sign-ins are power plants; the meter is the real usage left this
    week. Spark's own thinking runs on its steam plant (Meta API). Local models come later as geothermal.
    There is always more ore than power, so every station's power cost is visible.
