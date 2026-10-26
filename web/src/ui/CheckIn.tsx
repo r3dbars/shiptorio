@@ -6,6 +6,7 @@ import { because } from "./because";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
 import { CHECKIN, STAGE_LABEL, THINKS, WORDS } from "../copy";
+import { Icon } from "./icons";
 
 type Gesture = "right" | "left" | "down" | "up";
 type Why = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -257,7 +258,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
           ))}
         </div>
         <button type="button" className="ci-x" onClick={close} aria-label={CHECKIN.close}>
-          ×
+          <Icon name="cross" size={14} />
         </button>
       </header>
 
@@ -374,16 +375,16 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
       {top && (
         <div className="ci-actions">
           <button type="button" className="ci-act never" disabled={!!fly} onClick={() => act("down")}>
-            <span className="k">✕</span>{CHECKIN.buttons.never}
+            <span className="k"><Icon name="cross" size={16} /></span>{CHECKIN.buttons.never}
           </button>
           <button type="button" className="ci-act later" disabled={!!fly} onClick={() => act("left")}>
-            <span className="k">↶</span>{CHECKIN.buttons.later}
+            <span className="k"><Icon name="back" size={16} /></span>{CHECKIN.buttons.later}
           </button>
           <button type="button" className="ci-act more" disabled={!!fly} onClick={() => act("up")}>
-            <span className="k">i</span>{CHECKIN.buttons.details}
+            <span className="k"><Icon name="info" size={16} /></span>{CHECKIN.buttons.details}
           </button>
           <button type="button" className="ci-act do" disabled={!!fly} onClick={() => act("right")}>
-            <span className="k">✓</span>{CHECKIN.buttons.doIt}
+            <span className="k"><Icon name="check" size={16} /></span>{CHECKIN.buttons.doIt}
           </button>
         </div>
       )}

@@ -10,6 +10,7 @@ import type { LogLine } from "../store";
 import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
 import { GEO_COPY, MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
 import { HARNESS_NAME, PANEL, STATE_WORD, WORDS } from "../copy";
+import { Icon } from "./icons";
 
 function fmtWait(ms?: number) {
   if (ms === undefined) return "–";
@@ -252,12 +253,14 @@ export function StationPanel({ id, state, log, send, onClose, jobs, live }: Prop
   const ins = p.machineId ? state.belts.filter((b) => b.to === p.machineId).map((b) => nameOf(byId(b.from), state)) : [];
   const outs = p.machineId ? state.belts.filter((b) => b.from === p.machineId).map((b) => nameOf(byId(b.to), state)) : [];
   const recent = log.filter(p.match).slice(-4).reverse();
+  // IDLE / WORKING / BLOCKED, the Black Iron state words (docs/art/IRON-STYLE.md §6)
+  const machine = hot ? "BLOCKED" : p.now?.length ? "WORKING" : "IDLE";
   return (
     <section className={`card stationpanel${hot ? " hot" : ""}`} aria-label={p.title ?? p.copy.name}>
       <div className="sp-head">
         <span className="sp-zone">{p.copy.zone}</span>
         <button type="button" className="sp-close" onClick={onClose} aria-label={PANEL.closeLabel}>
-          ×
+          <Icon name="cross" size={14} />
         </button>
       </div>
       <div className="sp-name">
@@ -265,6 +268,7 @@ export function StationPanel({ id, state, log, send, onClose, jobs, live }: Prop
         <span className={`sp-tag ${color}`}>{tag}</span>
         {hot && <span className="sp-tag red">{PANEL.bottleneck}</span>}
       </div>
+      <span className="iron-state sp-state" data-s={machine}>{PANEL.machine[machine]}</span>
       {p.copy.what && <p className="sp-what">{p.copy.what}</p>}
       <dl className="sp-stats">
         {p.stats.map(([k, v]) => (
