@@ -15,6 +15,7 @@ const VERB: Record<ThoughtDecision, string> = {
   orbit: "Judged a comeback",
   research: "Picked a check",
   permit: "Weighed a permit",
+  route: "Picked the power plant",
 };
 
 const ago = (at: number) => {
