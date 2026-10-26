@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkSandbox } from "../src/sandbox";
 
-test.skipIf(process.platform === "darwin")("unsupported verification platforms fail closed", async () => {
+test.skipIf(process.platform === "darwin" || process.platform === "linux")("unsupported verification platforms fail closed", async () => {
   await expect(checkSandbox(process.cwd())).rejects.toThrow("no configured OS sandbox");
 });
 

@@ -20,4 +20,4 @@ export const FinishResponse = z.union([
   z.object({ status: z.literal("failed") }).strict(),
   z.object({ prUrl: z.string().url().regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/) }).strict(),
 ]);
-export const responseSchemas = { claim: ClaimResponse, renew: RenewResponse, finish: FinishResponse };
+export const responseSchemas = { heartbeat: z.object({ ok: z.literal(true) }).strict(), claim: ClaimResponse, renew: RenewResponse, finish: FinishResponse };
