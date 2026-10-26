@@ -153,7 +153,7 @@ describe("Factory lifecycle", () => {
     await f.factory.webSocketMessage({} as never, "not JSON");
     await f.factory.webSocketMessage({} as never, JSON.stringify({ type: "place_machine", machineType: "assembler", harness: "spark", x: 8, y: 0 }));
     expect(f.saved().machines.at(-1)?.powerId).toBe("steam-spark");
-    expect(f.saved().machines).toHaveLength(7);
+    expect(f.saved().machines).toHaveLength(starterLine().machines.length + 1);
   });
   it("stops rework after three attempts and never launches unmerged PRs", async () => {
     const f = fixture([item({ state: "rejected", attempts: 3 })]);
