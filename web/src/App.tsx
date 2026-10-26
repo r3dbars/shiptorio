@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AutonomyLevel, FactoryState, Item, PowerSource } from "@shiptorio/shared";
+import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import { css, KIND_COLOR } from "./map/palette";
 import { readConfig } from "./source";
@@ -26,6 +26,19 @@ const STATE_LABEL: Record<Item["state"], string> = {
 };
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#e8685c" };
+
+// What the ping on the map says, by where the work is stuck.
+const PING_WORD: Record<NonNullable<Move["stage"]>, string> = {
+  intake: "New work",
+  triage: "Sorting",
+  build: "Ready to build",
+  inspect: "Needs a look",
+  pad: "Ready to launch",
+  release: "Releasing",
+  impact: "Check impact",
+  power: "Needs power",
+  resources: "Needs power",
+};
 
 const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "Advisor", floor: "Floor", build: "Build", lights_out: "Lights out" };
 // Subscriptions you can plug in. Each sign-in adds a solar plant and assemblers (docs/PRODUCT.md).
@@ -82,8 +95,9 @@ export function App() {
   // ?checkin opens the deck on load, the way a phone check-in would.
   const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
   const [focus, setFocus] = useState<string | null>(null); // what the check-in wants the map to zoom to
-  // the map's pick keys: a station id as-is, any other machine as m:<id>
-  const pickKey = (id: string) => (state?.stations?.some((st) => st.id === id) || id === "rework" ? id : `m:${id}`);
+  // the map's pick keys: a station id as-is, a folder as d:<name>, any other machine as m:<id>
+  const pickKey = (id: string) =>
+    state?.stations?.some((st) => st.id === id) || id === "rework" || id.includes(":") ? id : state?.districts.some((d) => d.name === id) ? `d:${id}` : `m:${id}`;
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
@@ -97,6 +111,21 @@ export function App() {
   const autonomy = state?.autonomy;
   const permits = autonomy?.districts.filter((d) => d.permit).map((d) => `/${d.district}`) ?? [];
   const shipped = state ? state.science.red + state.science.green + state.science.grey + state.science.blue : 0;
+  // The ping: a pulsing dot on the thing that needs you, tagged with the part of the codebase it's about,
+  // so players learn what each part of their code does. Tap it for the details panel.
+  const ping = useMemo(() => {
+    if (!state) return null;
+    const move = state.move;
+    const station = state.stations?.find((st) => st.id === state.bottleneck?.stationId);
+    const item = state.items.find((i) => i.id === move?.itemId) ?? (station && state.items.find((i) => i.machineId === station.machineId && i.state !== "launched"));
+    const machine = item?.machineId && state.machines.find((m) => m.id === item.machineId);
+    const key = move?.focus ? pickKey(move.focus) : station ? station.id : machine ? pickKey(machine.id) : null;
+    if (!key) return null;
+    const stage = move?.stage ?? state.bottleneck?.stage;
+    const title = item?.state === "rejected" ? "Sent back" : stage ? PING_WORD[stage] : "Needs you";
+    return { key, title, code: item ? (item.district === "/" ? "/" : `/${item.district}`) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
 
   const launchItem = (item: Item) => {
@@ -188,7 +217,7 @@ export function App() {
   return (
     <div className="app">
       <main className="floor">
-        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} />
+        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} ping={show("line") ? ping : null} />
 
         <header className="topbar">
           <div className="chips">

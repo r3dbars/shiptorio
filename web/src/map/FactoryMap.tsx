@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
 import type { FactoryState } from "@shiptorio/shared";
-import { FactoryScene } from "./scene";
+import { FactoryScene, type Ping } from "./scene";
 
 interface Props {
   state: FactoryState | null;
   onPick?: (id: string) => void;
   focus?: string | null; // the picked thing the camera flies in on
   showLabels?: boolean; // all labels on; otherwise they show on hover
+  ping?: Ping | null; // the pulsing marker on whatever needs you
 }
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, ping = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -95,6 +96,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false }: 
   }, [state]);
   useEffect(() => sceneRef.current?.focus(focus), [focus]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
+  useEffect(() => sceneRef.current?.setPing(ping), [ping?.key, ping?.title, ping?.code, ping?.tone]);
 
   return (
     <>
