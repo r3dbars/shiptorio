@@ -2,6 +2,7 @@
 
 import { convertManifestCode } from "./github";
 import { isAllowed, makeSessionCookie } from "./session";
+import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
 
 // ---- login (GitHub App user-to-server OAuth) ----
@@ -12,11 +13,8 @@ export function publicUrl(url: URL, env: Env): string {
 
 export const isLocal = (url: URL) => url.hostname === "localhost" || url.hostname === "127.0.0.1";
 
-// Only same-site paths, so the login redirect can't be bounced elsewhere.
-const safeNext = (next: string | null | undefined) => (next && /^\/(?![/\\])/.test(next) ? next : "/");
-
 export async function login(url: URL, env: Env): Promise<Response> {
-  const next = safeNext(url.searchParams.get("next"));
+  const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   if (env.DEV_LOGIN && isLocal(url)) {
     return new Response(null, {
       status: 302,
@@ -59,7 +57,7 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
   return new Response(null, {
     status: 302,
-    headers: { location: safeNext(next && decodeURIComponent(next)), "set-cookie": await makeSessionCookie(env.SESSION_SECRET, login) },
+    headers: { location: sameOriginPath(next && decodeURIComponent(next), url.origin), "set-cookie": await makeSessionCookie(env.SESSION_SECRET, login) },
   });
 }
 
