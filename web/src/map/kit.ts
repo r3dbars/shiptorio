@@ -2,6 +2,7 @@
 // (stone paving, belts, water). Ported from docs/art-prototype.html.
 
 import * as THREE from "three";
+import { IRON } from "./world";
 
 export type Paint = number | THREE.Material | THREE.Material[];
 
@@ -111,13 +112,15 @@ export function tex(): Textures {
       }
     }
   });
+  // Black Iron belts: oily rubber with brass-capped slats between iron edges
+  const [bBase, bSlat, bEdge] = IRON ? ["#2a221c", "#7a6038", "#14100c"] : ["#2b2f36", "#4a505b", "#1b1d22"];
   const belt = canvasTex(16, 16, (g) => {
-    g.fillStyle = "#2b2f36";
+    g.fillStyle = bBase;
     g.fillRect(0, 0, 16, 16);
-    g.fillStyle = "#4a505b";
+    g.fillStyle = bSlat;
     g.fillRect(0, 2, 3, 12);
     g.fillRect(8, 2, 3, 12);
-    g.fillStyle = "#1b1d22";
+    g.fillStyle = bEdge;
     g.fillRect(0, 0, 16, 2);
     g.fillRect(0, 14, 16, 2);
   });
