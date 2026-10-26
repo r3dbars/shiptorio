@@ -1,3 +1,5 @@
+import { deleteAccount, exportAccount, ownedRepos, factoryDeleted } from "./account-data";
+import { settingsPage, legalPage } from "./account-pages";
 import { Hono, type Context, type Next } from "hono";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
@@ -57,6 +59,9 @@ app.use("*", async (c, next) => {
   await next();
   if (new URL(c.req.url).protocol === "https:") c.header("Strict-Transport-Security", "max-age=31536000");
 });
+
+app.get("/privacy", c => c.html(legalPage("privacy")));
+app.get("/terms", c => c.html(legalPage("terms")));
 
 app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
@@ -141,6 +146,49 @@ app.get("/api/sources", async (c) => {
   return c.json({ sources: [githubSource.status(c.env), sentryStatus(repo ? await sentryCreds(c.env, repo) : {}, url, repo), postHogStatus(repo ? await postHogCreds(c.env, repo) : {}, url, c.env.FAKE_POSTHOG === "1")] });
 });
 
+// ---------- account controls ----------
+app.use("/api/account/*", requireUser);
+app.get("/settings", requireUser, async c => {
+  const user = c.get("user");
+  const repos = await reposFor(c.env, user);
+  const rows = [];
+  for (const repo of repos) rows.push({ ...repo,
+    runner: await factory(c.env, repo.full_name).accountConnectionStatus(),
+    sentry: !!(await sentryCreds(c.env, repo.full_name)).clientSecret,
+    posthog: !!(await postHogCreds(c.env, repo.full_name)).apiKey,
+  });
+  const installs = await c.env.DB.prepare("SELECT installation_id, account_login FROM user_installations WHERE user_id = ? ORDER BY installation_id").bind(user.id).all<{installation_id: number; account_login: string}>();
+  return c.html(settingsPage(user, rows, user.dev ? [] : await ownedRepos(c.env, user), installs.results));
+});
+app.get("/api/account/export", async c => {
+  c.header("Content-Disposition", 'attachment; filename="shiptorio-data.json"');
+  return c.json(await exportAccount(c.env, c.get("user")));
+});
+app.post("/api/account/signout", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const user = c.get("user");
+  const repos = await reposFor(c.env, user);
+  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id).run();
+  for (const repo of repos) await factory(c.env, repo.full_name).closeAccountSockets(user.login);
+  return logout(c.req.raw, c.env);
+});
+app.post("/api/account/delete", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const text = await c.req.text();
+  if (text.length > 16384) return c.json({ error: "too large" }, 413);
+  const form = new URLSearchParams(text);
+  if (form.get("confirm") !== "delete") return c.json({ error: "confirm deletion" }, 400);
+  const user = c.get("user");
+  if (user.dev) return c.json({ error: "local development identity cannot be deleted" }, 403);
+  const owned = await ownedRepos(c.env, user);
+  const confirmation = form.getAll("repo");
+  if (JSON.stringify([...new Set(confirmation)].sort()) !== JSON.stringify(owned.map(r => r.full_name.toLowerCase()).sort())) return c.json({ error: "Type every owned repository name exactly" }, 400);
+  const result = await deleteAccount(c.env, user, confirmation);
+  c.header("Set-Cookie", "shiptorio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+  c.header("Content-Disposition", 'attachment; filename="shiptorio-deletion-archive.json"');
+  return c.json(result);
+});
+
 // ---------- connect a mine (Sentry, PostHog): paste the key once ----------
 
 app.on(["GET", "POST"], "/connect/:kind", async (c) => {
@@ -208,6 +256,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = factory(c.env, repo);
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
@@ -254,6 +303,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
     const installationId = await installationFor(c.env, repo).catch(() => null);
@@ -288,6 +338,7 @@ app.post("/webhooks/github", async (c) => {
   const installation = payload.installation?.id;
   if (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
+  if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('github', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
@@ -324,6 +375,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const delivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {

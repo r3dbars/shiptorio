@@ -44,6 +44,7 @@ it("authenticates, durably enqueues before 202, and deduplicates completed deliv
           if (!existed) rows.set(id, { state: "pending" });
           return { meta: { changes: existed ? 0 : 1 } };
         },
+        all: async () => ({ results: [] }),
         first: async () => rows.get(String(values[0])) ?? null,
       };
       return statement;

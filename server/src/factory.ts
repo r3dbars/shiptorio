@@ -1,3 +1,4 @@
+import { factoryDeleted } from "./account-data";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -79,6 +80,50 @@ export class Factory extends DurableObject<FactoryEnv> {
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
+
+  private accountErased = false;
+
+  /** An export is an allowlist of saved user data, never raw runner jobs or credentials. */
+  async exportAccountData() {
+    const state = await this.ctx.storage.get<FactoryState>("state") ?? null;
+    return {
+      state,
+      permits: await this.ctx.storage.get("permits") ?? null,
+      research: state?.research ?? null,
+      logs: {
+        thoughts: state?.brain?.thoughts ?? [],
+        approvals: await this.ctx.storage.get("approvalEvents") ?? [],
+        stages: await this.ctx.storage.get("stageHistory") ?? [],
+      },
+    };
+  }
+
+  async accountConnectionStatus() {
+    return { paired: !!await this.ctx.storage.get("runnerPair"), presence: await this.ctx.storage.get("runnerPresence") ?? null };
+  }
+
+  async closeAccountSockets(login: string) {
+    for (const ws of this.ctx.getWebSockets("web")) {
+      const auth = ws.deserializeAttachment() as { login?: string } | null;
+      if (auth?.login?.toLowerCase() === login.toLowerCase()) ws.close(1008, "Signed out everywhere");
+    }
+  }
+
+  async eraseAccountData() {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      this.accountErased = true;
+      for (const ws of this.ctx.getWebSockets()) ws.close(1008, "Factory deleted");
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      this.state = null; this.meta = null;
+      this.openMoves = null; this.deckBook = null; this.deckRules = null;
+      this.running.clear();
+    });
+  }
+
+  private async assertAccountActive(repo?: string) {
+    if (this.accountErased || repo && await factoryDeleted(this.env.DB, repo)) throw new Error("Factory deleted");
+  }
 
   private async decisionData() {
     if (!this.openMoves) this.openMoves = await this.ctx.storage.get<Move[]>("openMoves") ?? (this.state?.deck?.length ? [...this.state.deck] : this.state?.move ? [this.state.move] : []);
@@ -346,6 +391,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async pairRunner(): Promise<string> {
+    await this.assertAccountActive(this.meta?.repo);
     const pairId = crypto.randomUUID();
     await this.ctx.storage.put("runnerPair", pairId); // Re-pairing revokes the previous token.
     return pairId;
@@ -533,6 +579,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Acknowledge only after durable enqueue. No API calls, backfill or model work here. */
   async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
     const key = `delivery:${deliveryId}`;
+    await this.assertAccountActive(this.meta?.repo ?? "");
     if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0 });
     await this.scheduleTick();
   }
@@ -540,6 +587,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Same durable queue as GitHub, for the Sentry mine. `resource` is the Sentry-Hook-Resource header. */
   async enqueueSentry(deliveryId: string, resource: string, payload: SentryPayload): Promise<void> {
     const key = `delivery:sentry-${deliveryId}`;
+    await this.assertAccountActive(this.meta?.repo ?? "");
     if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0 });
     await this.scheduleTick();
   }
@@ -784,6 +832,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- state ----------
 
   private async load(): Promise<FactoryState | null> {
+    await this.assertAccountActive(this.meta?.repo);
     this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
       this.state = (await this.ctx.storage.get<FactoryState>("state")) ?? null;
@@ -802,6 +851,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async save() {
+    await this.assertAccountActive(this.meta?.repo);
     await this.ctx.storage.put("state", this.state);
   }
 
@@ -919,6 +969,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   async ensure(repo: string, installationId: number): Promise<void> {
+    await this.assertAccountActive(repo);
     if (await this.load()) {
       if (this.meta?.installationId !== installationId) {
         this.meta = { repo, installationId };
