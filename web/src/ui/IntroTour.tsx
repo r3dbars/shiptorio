@@ -292,7 +292,7 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
 
   const top = (
     <header className="topbar tour-top">
-      <div className="tour-segs" aria-label={TOUR.step(at + 1, BEATS.length)}>
+      <div className="tour-segs" role="progressbar" aria-label="Tour" aria-valuemin={1} aria-valuemax={BEATS.length} aria-valuenow={at + 1} aria-valuetext={TOUR.step(at + 1, BEATS.length)}>
         {BEATS.map((_, i) => (
           <i key={i} className={i < at ? "done" : i === at ? "now" : undefined} />
         ))}
