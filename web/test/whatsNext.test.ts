@@ -49,6 +49,11 @@ describe("whatsNext", () => {
     expect(n.title).not.toContain("passed every check");
   });
 
+  test("live missing gate opens check-in without inventing a station or launch", () => {
+    const n = whatsNext(factory({ items: [item("on_pad", 2)], stations: [] }), { live: true });
+    expect(n.cta.action).toEqual({ do: "checkin" });
+  });
+
   test("waiting cards send you to the check-in", () => {
     const deck = [{ id: "m1", title: "t", why: "w", options: [{ id: "a", label: "A", recommended: true, actions: [] }], createdAt: 0 }];
     expect(whatsNext(factory({ deck })).cta.action).toEqual({ do: "checkin" });

@@ -45,13 +45,14 @@ export function whatsNext(state: FactoryState, ctx: NudgeContext = {}): Nudge {
   // 1. A PR is ready: the fastest rocket there is.
   const onPad = state.items.find((i) => i.state === "on_pad");
   if (onPad) {
+    const mergeGate = state.stations?.find(st => st.kind === "merge");
     return {
       id: `launch:${onPad.id}`,
       kicker: "Next move · launch pad",
       title: ctx.live ? `Review #${onPad.prNumber ?? "PR"} at the merge gate` : `#${onPad.prNumber ?? "PR"} passed every check`,
       why: `"${onPad.title}" is on the pad. ${ctx.live ? "Open the merge gate to review its checks and approved launch options." : "Launch it."}`,
       cta: ctx.live
-        ? { label: "Open the merge gate", action: { do: "station", id: state.stations?.find(st => st.kind === "merge")?.id ?? "merge-1" } }
+        ? { label: mergeGate ? "Open the merge gate" : "Open check-in", action: mergeGate ? { do: "station", id: mergeGate.id } : { do: "checkin" } }
         : { label: "Launch it", action: { do: "launch", itemId: onPad.id } },
     };
   }
