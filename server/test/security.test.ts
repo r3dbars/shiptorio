@@ -68,6 +68,14 @@ describe("webhook signatures", () => {
       expect(changed.status).toBe(401);
     }
   });
+  it("per-repo Sentry signatures are bound to their credential scope without cookie or Origin", async () => {
+    const signature = await sign(body);
+    const env = { CACHE: { get: async (key: string) => key === "cred:sentry:one/app" ? { clientSecret: secret } : key === "cred:sentry:two/app" ? { clientSecret: "another-test-secret" } : null } };
+    const send = (repo: string, sig?: string) => app.fetch(request(`/webhooks/sentry/${repo}`, { method: "POST", headers: sig ? { "sentry-hook-signature": sig } : {}, body }), env as never);
+    expect((await send("one/app", signature)).status).toBe(200);
+    expect((await send("one/app")).status).toBe(401);
+    expect((await send("two/app", signature)).status).toBe(401);
+  });
 });
 
 describe("browser origin and response policy", () => {
