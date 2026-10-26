@@ -6,6 +6,7 @@ import type { FactoryState, Inspection, Item, Machine, Station } from "@shiptori
 import { sound, type Focus, type Sfx } from "./engine";
 import type { ScapeKind } from "./scapes";
 import { celebrateShip } from "./ship";
+import type { MusicInput } from "./music";
 
 // Each gauntlet station's verdict sounds: [pass, fail].
 const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
@@ -100,6 +101,22 @@ export function focusFor(key: string | null | undefined, state: FactoryState): F
 
 const MOVING: Item["state"][] = ["queued", "working", "inspecting", "rejected"];
 
+// What the adaptive score hears from one state. Bottleneck comes from the server's engine; when it
+// has none yet, the busiest gauntlet station stands in so a jam still sounds like a jam.
+export function musicInput(state: FactoryState): MusicInput {
+  const busiest = (state.stations ?? []).reduce((m, st) => Math.max(m, st.wip), 0);
+  return {
+    moving: state.items.filter((i) => MOVING.includes(i.state)).length,
+    working: state.machines.filter((m) => m.state === "working").length,
+    stationsBusy: state.stations?.filter((st) => st.wip > 0).length ?? 0,
+    rejected: state.items.filter((i) => i.state === "rejected").length,
+    bottleneck: state.bottleneck ?? (busiest ? { stage: "inspect", wip: busiest, ageMs: 0 } : null),
+  };
+}
+
+// Sounds that mean a station caught something bad. They tense the score up.
+const CAUGHT: Sfx[] = ["ci_buzz", "verify_caught", "orbit_alarm", "permit_revoke", "stamp_fail"];
+
 // Sounds for one tick's worth of changes, in the order they should play.
 export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
   const out: Sfx[] = [];
@@ -182,14 +199,17 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     const p = prev.current;
     prev.current = state;
     if (!state) return;
-    const moving = state.items.filter((i) => MOVING.includes(i.state)).length;
-    sound.setAmbience(moving / 6, state.machines.filter((m) => m.state === "working").length);
-    sound.setStationsBusy(state.stations?.filter((st) => st.wip > 0).length ?? 0);
+    const mi = musicInput(state);
+    sound.setAmbience(mi.moving / 6, mi.working);
+    sound.setStationsBusy(mi.stationsBusy);
+    sound.setMusic(mi);
     // first snapshot (or a new repo/scenario) sets the scene silently
     if (!p || p.repo !== state.repo) return;
     // so the art's station effects (stamp flash, ram slam, gate swing) can land on the same beat
     for (const v of stationVerdicts(p, state)) window.dispatchEvent(new CustomEvent<StationVerdict>(STATION_EVENT, { detail: v }));
-    diffSounds(p, state).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
+    const sfx = diffSounds(p, state);
+    sfx.forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
+    if (sfx.some((s) => CAUGHT.includes(s))) sound.musicAlert();
     // each PR that just launched gets the full celebration (event for the art + launch, fanfare, streak)
     const was = new Map(p.items.map((i) => [i.id, i.state]));
     state.items.filter((i) => i.state === "launched" && was.get(i.id) !== "launched").forEach((i, n) => celebrateShip(i, n * 0.4));
