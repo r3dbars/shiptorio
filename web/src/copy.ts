@@ -705,3 +705,90 @@ export const ONBOARD = {
   skip: "skip to the sandbox",
   simRepoBlurb: "Demo shop · sample issues",
 };
+
+// ---------- your empire: every repo is an island ----------
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+export const EMPIRE = {
+  title: "Your empire",
+  notOpened: "not opened yet",
+  auto: (pct: number) => ` · ${pct}% auto`,
+  waiting: (n: number, auto: string) => `${n} waiting on you${auto}`,
+  clear: (rockets: number, auto: string) => `all clear · ${rockets} shipped${auto}`,
+  island: "island",
+  chipLabel: (name: string, total: number, waitingElsewhere: number) =>
+    `Your islands: on ${name}, ${total} in all${waitingElsewhere ? `, ${waitingElsewhere} waiting on other islands` : ""}`,
+  islands: "islands",
+  shipped: "shipped",
+  automated: "automated",
+  onYou: "on you",
+  mostStuck: "Most stuck",
+  cardsWaiting: (n: number) => `${plural(n, "card")} waiting on you`,
+  here: "Here",
+  go: "Go",
+  youreHere: "you're here",
+  permits: (folders: string) => `Ships on its own in ${folders}`,
+  waitingOnYou: "waiting on you",
+  checksElsewhere: (n: number) => ` ${plural(n, "check")} researched on your other islands ${n === 1 ? "isn't" : "aren't"} running here yet.`,
+  connect: "Connect another repo",
+  connectLive: "Every repo you add becomes a new island.",
+  connectSim: "In the live game, every repo you add becomes a new island.",
+};
+
+// ---------- progression: level, streak, morning brief ----------
+// Unlock names and level titles live with the rules in shared/src/progression.ts.
+
+const daysAgo = (n: number) => plural(n, "day");
+
+export const PROGRESS = {
+  chipLabel: (level: number, streak: number) => `Level ${level}, ${streak}-day streak. Open progress`,
+  chipTitle: (title: string, have: number, need: number, next: number) => `${title} · ${have}/${need} XP to level ${next}`,
+  days: (n: number) => (n === 1 ? "day" : "days"),
+  lv: (level: number) => `Lv ${level}`,
+  xp: (n: number) => `+${n} XP`,
+  levelUp: (level: number, title: string) => `Level ${level} · ${title}`,
+  unlocked: (name: string) => `Unlocked: ${name}`,
+  today: "today",
+  trendEmpty: "Cards waiting on you each morning. Play a few days and watch it shrink as trust grows.",
+  trendDown: (n: number, days: number) => `${n} fewer card${n === 1 ? "" : "s"} waiting on you than ${daysAgo(days)} ago. Trust is growing.`,
+  trendUp: (n: number, days: number) => `${n} more than ${daysAgo(days)} ago. New work came in. Clean ships and new checks shrink it.`,
+  trendSame: "Same as before. Clean ships, new checks and launch permits shrink it.",
+  tally: { ships: "shipped", cards: "cards answered", xp: "XP today" },
+  hello: (hour: number) => (hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"),
+  briefLabel: "Today",
+  streak: (n: number) => `${n}-day streak`,
+  streakSuffix: "-day streak",
+  nothing: "Nothing is waiting on you. The factory's running.",
+  cardsToday: (n: number) => `${plural(n, "card")} waiting on you today.`,
+  lastTime: (ships: number, cards: number, autoPct: number) =>
+    `Last time: ${ships} shipped, ${cards} cards answered${autoPct ? `, ${autoPct}% launched on their own` : ""}.`,
+  keepStreak: (n: number) => ` One move today keeps your streak at ${n}.`,
+  startStreak: "Answer a card or ship a PR every day to start a streak. Streaks unlock things for your island.",
+  checkin: (n: number) => `Check in · ${n}`,
+  twoMinutes: "about two minutes",
+  later: "Later",
+  back: "Back to the floor",
+  sheet: "Progress",
+  sheetTitle: (level: number, title: string) => `Level ${level} · ${title}`,
+  toLevel: (have: number, need: number, next: number) => `${have}/${need} XP to level ${next}`,
+  best: (n: number) => `Best ${n}`,
+  shields: (n: number) => ` · ${plural(n, "shield")}`,
+  week: "This week",
+  todayHead: "Today",
+  waitingEachDay: "Waiting on you each day",
+  unlocks: "Unlocks",
+  yours: "Yours",
+  needLevel: (n: number) => `Level ${n}`,
+  needStreak: (n: number) => `${n}-day streak`,
+  next: (name: string, gap: string) => `Next: ${name} at ${gap}.`,
+  nudges: "Nudges",
+  nudgeAsk: "Tell me when I'm the bottleneck",
+  nudge: { on: "On", off: "Off", blocked: "Blocked", unsupported: "n/a" },
+  nudgeBlocked: "Notifications are blocked for this site in your browser settings.",
+  nudgeUnsupported: "This browser can't show notifications. On iPhone, add Shiptorio to your home screen first.",
+  nudgeWhat: "One quiet notification when new cards land and you're not looking. Never more than one every 15 minutes.",
+  xpRule: "XP only comes from real results: ships, clean ships, launches that hold, checks you add, cards you answer.",
+  notifyTitle: (n: number) => `${plural(n, "card")} waiting on you`,
+  notifyBody: "The factory needs a decision.",
+};
