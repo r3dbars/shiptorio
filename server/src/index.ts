@@ -3,7 +3,12 @@ import { lifecycleEvents } from "./github-lifecycle";
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
+
 import { Redactor } from "./redact";
+import * as Sentry from "@sentry/cloudflare";
+import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
+import { adminRoutes } from "./admin";
+
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
@@ -12,7 +17,9 @@ import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 import { isAllowed } from "./session";
-import { previewAccess, secureTransport } from "./access";
+import { previewAccess, publicRoute, secureTransport } from "./access";
+import { joinWaitlist } from "./waitlist";
+import { landingPage, publicFile } from "./landing";
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
@@ -48,7 +55,21 @@ export interface Env extends FactoryEnv, SignupEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = repositoryFactory;
+const factory = async (env: Env, repo: string) => {
+  const stub = await repositoryFactory(env, repo);
+  const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
+  // Capture per call, never put mutable request identity on a shared DO instance.
+  return new Proxy(stub, { get(target, method) {
+    if (method === "then") return undefined;
+    if (method === "fetch") return (request: Request) => {
+      const headers = new Headers(request.headers);
+      headers.set("X-Request-ID", trace.requestId);
+      return target.fetch(new Request(request, { headers }));
+    };
+    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+  } }) as typeof stub;
+};
+
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
@@ -62,10 +83,30 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 };
 
 app.use("*", async (c, next) => {
+  const trace: Trace = { requestId: crypto.randomUUID() };
+  const match = c.req.path.match(/^\/api\/repos\/([\w.-]+\/[\w.-]+)/);
+  if (match) trace.repo = match[1].toLowerCase();
+  const start = Date.now();
+  return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
+    c.header("X-Request-ID", trace.requestId);
+    const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+    if (user) { trace.userId = user.login; Sentry.setUser({ id: user.login }); }
+    await next();
+    // A response can be replaced by auth, assets, or a websocket upgrade.
+    c.header("X-Request-ID", trace.requestId);
+    log(c.res.status >= 500 ? "error" : "info", c.req.path.startsWith("/webhooks/") ? "webhook.delivery" : "http.request", {
+      method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - start,
+      ...(c.req.path.startsWith("/webhooks/") ? { deliveryId: c.req.header("x-github-delivery") ?? c.req.header("request-id"), webhookEvent: c.req.header("x-github-event") ?? c.req.header("sentry-hook-resource") } : {}),
+    });
+  });
+});
+
+app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
   if (redirect) c.res = redirect;
   else await next();
-  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist"))) c.header(key, value);
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN))) c.header(key, value);
+
 });
 
 app.use("*", async (c, next) => {
@@ -103,6 +144,10 @@ app.use("*", async (c, next) => {
     return;
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
+  const open = await publicRoute(c.req.raw, c.env);
+  if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
+  if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
+  if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
   const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
@@ -110,13 +155,15 @@ app.use("*", async (c, next) => {
 });
 
 app.onError((err, c) => {
-  console.error(new Redactor(c.env).value({ error: "Request failed" }));
-  return c.json({ error: "internal server error" }, 500);
+  report(err, "http.exception");
+  return c.json({ error: "Something broke. Please reload.", requestId: currentTrace()?.requestId }, 500);
+
 });
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
   await next();
+
 });
 
 app.use("*", async (c, next) => {
@@ -443,6 +490,8 @@ app.post("/webhooks/github", async (c) => {
   if (event !== "github_app_authorization" && (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo)))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !lifecycleEvents.includes(event)) return c.json({ error: "repo required" }, 400);
   if (!await admit(c.env,`webhook:github:${installation ?? payload.sender?.id ?? "app"}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
+  if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
+
   if (event === 'installation' && payload.action === 'created') {
     const account = payload.installation?.account?.login?.toLowerCase();
     if (!account || !await admit(c.env,`install:${account}`,10,3600000,'many installs from one account')) return c.json({error:'installation throttled'},429);
@@ -495,8 +544,11 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
   if (!await admit(c.env,`webhook:sentry:${repo.toLowerCase()}`,300,60000,"Sentry webhook flood")) return c.json({error:"webhook throttled"},429);
+
   const delivery = `${repo}:${sourceDelivery}`;
+
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
@@ -510,8 +562,11 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   return c.json({ ok: true, queued: true }, 202);
 }
 
+adminRoutes(app, factory);
+
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());
+
 
 // Everything else is the web app.
 app.all("*", async (c) => {
@@ -526,4 +581,5 @@ app.all("*", async (c) => {
   return response;
 });
 
-export default app;
+export { app }; // Unwrapped Hono app for route tests.
+export default Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app.fetch });

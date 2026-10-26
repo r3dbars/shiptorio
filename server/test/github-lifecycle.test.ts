@@ -32,7 +32,7 @@ function fixture() {
     const data = new Map<string, any>();
     let alarm: number | null = null;
     const storage = { async get(key: string) { return structuredClone(data.get(key)); }, async put(key: string, value: unknown) { data.set(key, structuredClone(value)); }, async delete(key: string) { return data.delete(key); }, async deleteAll() { data.clear(); }, async list(options?: { prefix?: string; limit?: number }) { return new Map([...data].filter(([key]) => key.startsWith(options?.prefix ?? "")).slice(0, options?.limit)); }, async getAlarm() { return alarm; }, async setAlarm(at: number) { alarm = at; }, async deleteAlarm() { alarm = null; }, async transaction(fn: (tx: any) => any) { return fn(storage); } };
-    const ctx = { storage, getWebSockets: () => [], blockConcurrencyWhile: (fn: () => any) => fn() };
+    const ctx = { storage, getWebSockets: () => [], waitUntil: (task: Promise<unknown>) => task, blockConcurrencyWhile: (fn: () => any) => fn() };
     return { data, alarm: () => alarm, factory: new Factory(ctx as never, env) };
   }
   const seed = (name = "octo-org/demo", key = "repo:501") => {
@@ -175,7 +175,7 @@ describe("GitHub lifecycle fixture payloads", () => {
   });
 });
 
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 it("empire summaries resolve the repository ID before calling the factory", async () => {
   const f = fixture(); await install(f);
   const cookie = await signedInCookie(f.env, "test-player", ["octo-org/demo"]);

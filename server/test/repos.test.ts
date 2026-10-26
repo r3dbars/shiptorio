@@ -7,7 +7,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const secret = "test-repo-session", password = "test-repo-preview";
 const preview = async () => (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
 const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", FACTORY: unlimitedFactory, CACHE: membershipCache, DB: testD1() });

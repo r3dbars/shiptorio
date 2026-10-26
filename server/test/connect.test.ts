@@ -6,7 +6,7 @@ import { makeSessionCookie } from "../src/session";
 import { readConfig } from "../../web/src/source";
 import { signedInCookie, testD1 } from "./d1-fixture";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { ctx: unknown; env: unknown; constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; } } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const backUrl = (html: string) => new URL(html.match(/href="([^"]+)">Back to the factory/)![1].replaceAll("&#38;", "&"), "https://shiptorio.com");
 
 test("saving either source returns the signed-in player to the actual live repo", async () => {
@@ -23,7 +23,7 @@ test("saving either source returns the signed-in player to the actual live repo"
     expect(response.status).toBe(200);
     const destination = backUrl(await response.text());
     expect(readConfig(destination.search)).toMatchObject({ kind: "live", repo: "example/shop" });
-    expect(writes).toEqual([]);
+    expect(writes.filter(key => !key.startsWith("ops:"))).toEqual([]);
     expect(connections).toEqual([`repo:501:${kind}`]);
 
   }
@@ -37,7 +37,7 @@ test("a player can't set keys for a repo they can't reach", async () => {
   const env = { DB, CRED_MASTER_KEY: btoa("a".repeat(32)), SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "stranger", FACTORY: unlimitedFactory, CACHE: { get: membershipCache.get, delete: async () => {}, put: async (key: string) => { writes.push(key); } } };
   const response = await app.fetch(new Request("https://shiptorio.com/connect/sentry?repo=example/shop", { method: "POST", headers: { cookie, origin: "https://shiptorio.com" }, body: new URLSearchParams({ clientSecret: "sample_test_secret_only" }) }), env as never);
   expect(response.status).toBe(403);
-  expect(writes).toEqual([]);
+  expect(writes.filter(key => !key.startsWith("ops:"))).toEqual([]);
 });
 
 test("source success pages without a valid target return home without labeling a simulator as that repo", () => {

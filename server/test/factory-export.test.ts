@@ -9,7 +9,8 @@ mock.module("cloudflare:workers", () => ({DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 }}));
-const { default: app, Factory } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
+const { Factory } = await import("../src/index");
 
 function fixture(connected = true, populated = true) {
   const data = new Map<string, unknown>(populated ? [["state", structuredClone(original)], ["meta", {repo: "owner/repo", installationId: 1}], ["runnerPair", "private-pair"], ["runnerJob:secret", {lease: "private-lease"}]] : []);

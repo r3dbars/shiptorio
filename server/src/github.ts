@@ -1,4 +1,6 @@
+import { observedFetch } from "./telemetry";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
+
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -116,7 +118,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
     init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
   }
-  const send = (credential: string) => fetch(API + path, {
+  const send = (credential: string) => observedFetch("github", API + path, {
     signal: AbortSignal.timeout(20000), ...init,
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${credential}`, "user-agent": UA,
       "x-github-api-version": "2022-11-28", ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers },
@@ -158,6 +160,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     if (error instanceof RetryExhausted && error.cause instanceof GitHubError && [401, 403, 404].includes(error.cause.status)) throw error.cause;
     throw error;
   }
+
 }
 
 interface InstallationTokenScope {
@@ -381,7 +384,7 @@ export async function convertManifestCode(code: string): Promise<{
   pem: string;
   webhook_secret: string;
 }> {
-  const res = await fetch(`${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const res = await observedFetch("github", `${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: { accept: "application/vnd.github+json", "user-agent": UA },
   });
