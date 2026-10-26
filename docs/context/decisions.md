@@ -100,6 +100,7 @@ The connection and automatic deployment checkpoints above supersede that initial
 
 | When (2026-10-26, UTC) | Decision | Who |
 | --- | --- | --- |
+| 18:47 | **Push often.** Commit and push WIP after every meaningful step; open draft PRs early. | Justin |
 | 18:44 | **Auto-merge everything.** Every agent (Claude threads and Codex) merges its own PR as soon as CI is green, then confirms the Deploy on `main` is green. Skip stale drafts (#3, #4) and PRs another agent is still on. | Justin |
 | 17:37 | **First sources = GitHub, Sentry, PostHog. Stripe on hold.** Demo impact shows via PostHog, not a Stripe checkout counter. North star now in `docs/VISION.md`; every agent reads it first. | Justin |
 | 17:00 | Product calls locked: demo money = Stripe test mode in the demo shop (checkout counter on the HUD); customer replies = Spark drafts, player clicks Send; pitch = solo founders and tiny teams. See `docs/PRODUCT.md` | Justin |
