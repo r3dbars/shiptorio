@@ -40,7 +40,7 @@ import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } 
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
-import { linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
+import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
 export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
@@ -683,6 +683,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       return status;
     }
     await this.ctx.storage.put(`${kind}Linked`, true);
+    await this.ctx.storage.delete(`${kind}Disconnected`);
     await linkRepo(this.env, kind, this.state!.repo);
     const deposit = `ore-${kind}`;
     const splitter = this.state!.machines.find((m) => m.type === "splitter");
@@ -697,8 +698,22 @@ export class Factory extends DurableObject<FactoryEnv> {
     return status;
   }
 
+  /** Keys set as Worker secrets (no paste on /connect) still plug in: the first map that opens gets the mine,
+   * unless the player unplugged it here or it's pinned/linked to another repo. */
+  private async autoConnectMines(): Promise<void> {
+    const repo = this.state?.repo?.toLowerCase();
+    if (!repo) return;
+    for (const kind of ["sentry", "posthog"] as const) {
+      if ((await this.ctx.storage.get(`${kind}Linked`)) || (await this.ctx.storage.get(`${kind}Disconnected`))) continue;
+      const linked = await linkedRepo(this.env, kind);
+      if (linked && linked !== repo) continue;
+      if ((await this.mineStatus(kind)).state === "connected") await this.connectMine(kind);
+    }
+  }
+
   async disconnectMine(kind: MineKind): Promise<void> {
     await this.ctx.storage.delete(`${kind}Linked`);
+    await this.ctx.storage.put(`${kind}Disconnected`, true);
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
     await linkRepo(this.env, kind, null);
@@ -887,6 +902,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.meta = { repo, installationId };
         await this.ctx.storage.put("meta", this.meta);
       }
+      await this.autoConnectMines().catch(() => undefined);
       await this.scheduleTick();
       return;
     }
