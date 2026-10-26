@@ -1,0 +1,363 @@
+<title>Shiptorio Black Iron</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* One-screen game view. The factory fills the screen; HUD top-left, machine status chips float over
+   each machine, the event ticker bottom-left, view + sim controls bottom-right.
+   Single dark look on purpose (it's a game screen), every color set explicitly. */
+:root {
+  --bg: #0b0806;
+  --panel: rgba(14, 10, 8, 0.9);
+  --line: #5a4434;
+  --ink: #f4ead8;
+  --dim: #b8a48a;
+  --amber: #ffb020;
+  --ok: #46e07a;
+  --bad: #ff4a32;
+  --idle: #8fa2c8;
+  --focus: #6fb2ff;
+  --pixel: 'Silkscreen', 'Courier New', monospace;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); overflow: hidden; }
+body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
+#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; cursor: grab; }
+#stage:active { cursor: grabbing; }
+.card { background: var(--panel); border: 2px solid var(--line); outline: 2px solid #000; }
+.eyebrow { font: 400 9px/1.2 var(--pixel); letter-spacing: 0.14em; color: var(--dim); }
+.tbtn { font: 400 10px/1 var(--pixel); letter-spacing: 0.06em; color: var(--ink); background: rgba(20, 14, 10, 0.94); border: 2px solid var(--line); min-height: 30px; padding: 0 9px; cursor: pointer; white-space: nowrap; }
+.tbtn:hover { border-color: var(--dim); }
+.tbtn[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: #120c02; }
+.tbtn:focus-visible, .chip button:focus-visible, #alert:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+#hud { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; z-index: 6; max-width: calc(100% - 20px); }
+#hud h1 { font: 700 18px/1 var(--pixel); letter-spacing: 0.08em; margin: 0; }
+#counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+#counts span { font: 400 9px var(--pixel); letter-spacing: 0.08em; color: var(--dim); }
+#counts b { font: 700 13px var(--mono); color: var(--ink); margin-left: 4px; }
+#counts .ship b { color: var(--ok); } #counts .rw b { color: var(--bad); } #counts .need b { color: var(--amber); }
+
+#alert { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 7; font: 700 11px/1 var(--pixel); letter-spacing: 0.08em; color: #140c02; background: var(--amber); border: 2px solid #000; padding: 9px 14px; cursor: pointer; animation: ping 1s infinite; }
+@keyframes ping { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(255, 176, 32, 0); } }
+
+#chips, #tags { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.chip { position: absolute; left: 0; top: 0; pointer-events: auto; min-width: 150px; max-width: 220px; padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; background: rgba(14, 10, 8, 0.92); border: 2px solid var(--line); outline: 2px solid #000; cursor: pointer; }
+.chip .nm { display: flex; align-items: center; gap: 6px; font: 700 9px/1.1 var(--pixel); letter-spacing: 0.08em; }
+.chip .dot { width: 8px; height: 8px; flex: none; background: var(--idle); }
+.chip .st { font: 700 11px/1 var(--pixel); letter-spacing: 0.06em; color: var(--idle); }
+.chip .det { font-size: 10.5px; color: var(--dim); line-height: 1.35; }
+.chip .pr { font-size: 10.5px; line-height: 1.35; color: #fff1d0; }
+.chip .acts { display: flex; gap: 4px; margin-top: 2px; }
+.chip button { font: 400 9px/1 var(--pixel); letter-spacing: 0.06em; padding: 6px 7px; border: 2px solid #000; cursor: pointer; }
+.chip .rs { background: var(--amber); color: #140c02; }
+.chip .sl { background: transparent; color: var(--dim); border-color: var(--line); }
+.chip[data-s="WORKING"] { border-color: #2f7a46; } .chip[data-s="WORKING"] .dot { background: var(--ok); animation: blink 0.9s infinite; } .chip[data-s="WORKING"] .st { color: var(--ok); }
+.chip[data-s="BLOCKED"] { border-color: var(--amber); animation: ping 1s infinite; } .chip[data-s="BLOCKED"] .dot { background: var(--bad); animation: blink 0.4s infinite; } .chip[data-s="BLOCKED"] .st { color: var(--amber); }
+@keyframes blink { 50% { opacity: 0.25; } }
+.tag { position: absolute; left: 0; top: 0; font: 700 9px/1 var(--pixel); letter-spacing: 0.04em; padding: 3px 4px; background: rgba(10, 7, 5, 0.85); border: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+.tag.k-pass { border-color: #2f9a56; color: #9affc0; } .tag.k-reject { border-color: #a0261a; color: #ffb0a0; } .tag.held { border-color: var(--amber); color: var(--amber); }
+.tag.fol { border-color: var(--focus); color: #cfe6ff; }
+
+#ticker { position: fixed; left: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: 330px; max-width: calc(100% - 20px); padding: 7px 10px; display: flex; flex-direction: column; gap: 3px; z-index: 5; }
+#ticker div { font-size: 10.5px; line-height: 1.35; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ticker .k-in { color: #e8d8b8; } #ticker .k-good { color: #8ff0b0; } #ticker .k-bad { color: #ff9a88; } #ticker .k-warn { color: var(--amber); } #ticker .k-ship { color: #b8ffcf; font-weight: 600; }
+
+#ctrl { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 5px; padding: 6px; z-index: 5; align-items: flex-end; }
+#ctrl .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; }
+#ctrl .eyebrow { margin: 0 2px 0 6px; }
+#followBar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(56px + env(safe-area-inset-top, 0px)); z-index: 6; padding: 6px 10px; font-size: 11px; max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#followBar b { font: 700 10px var(--pixel); letter-spacing: 0.06em; color: #cfe6ff; margin-right: 6px; }
+
+@media (max-width: 760px) {
+  #hud { padding: 6px 8px; } #hud h1 { font-size: 13px; } #hud .eyebrow { display: none; }
+  #counts b { font-size: 11px; }
+  #ticker { width: auto; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); padding: 5px 8px; }
+  #ticker div:nth-child(n+3) { display: none; }
+  #ctrl { left: max(6px, env(safe-area-inset-left, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); align-items: stretch; }
+  #ctrl .row { justify-content: center; }
+  #ctrl .tbtn { min-height: 28px; padding: 0 6px; font-size: 9px; }
+  #ctrl .eyebrow { display: none; }
+  .chip { min-width: 0; max-width: 150px; padding: 4px 6px; }
+  .chip .nm span.full { display: none; }
+  .chip .det { display: none; }
+  #alert { top: auto; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+  #followBar { top: auto; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) { #alert, .chip, .chip .dot { animation: none !important; } }
+</style>
+
+<canvas id="stage" aria-label="Black Iron: a pixel-art factory line where issues are mined, built into PRs, reviewed by Spark and launched"></canvas>
+<div id="tags"></div>
+<div id="chips"></div>
+<div id="hud" class="card">
+  <span class="eyebrow">COGWORKS · BLACK IRON</span>
+  <h1>SHIPTORIO</h1>
+  <div id="counts"></div>
+</div>
+<button id="alert" hidden></button>
+<div id="followBar" class="card" hidden></div>
+<div id="ticker" class="card" aria-live="polite"></div>
+<div id="ctrl" class="card">
+  <div class="row"><span class="eyebrow">VIEW</span>
+    <button class="tbtn" data-view="line">LINE</button><button class="tbtn" data-view="deck">DECK</button><button class="tbtn" data-view="under">UNDERSIDE</button><button class="tbtn" data-view="follow">FOLLOW WORK</button>
+  </div>
+  <div class="row"><span class="eyebrow">PIXELS</span>
+    <button class="tbtn" data-px="1">1X</button><button class="tbtn" data-px="2">2X</button><button class="tbtn" data-px="3">3X</button><button class="tbtn" data-px="0">SMOOTH</button>
+    <span class="eyebrow">SIM</span>
+    <button class="tbtn" id="b-speed">1X</button><button class="tbtn" id="b-intake" aria-pressed="true">INTAKE</button><button class="tbtn" id="b-auto" aria-pressed="true" title="Decisions resolve themselves after a few seconds">AUTO-RESOLVE</button><button class="tbtn" id="b-tags" aria-pressed="true">TAGS</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/*@@CORE@@*/
+</script>
+/*@@MODULES@@*/
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const I = window.IRON, L = I.LOOK;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const canvas = $('stage');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+  renderer.setPixelRatio(1);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.BasicShadowMap;
+
+  // ---------- pixel pass ----------
+  const rt = new THREE.WebGLRenderTarget(2, 2, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  const post = new THREE.ShaderMaterial({
+    uniforms: {
+      tDiffuse: { value: rt.texture }, res: { value: new THREE.Vector2(2, 2) }, smoothMode: { value: 0 }, pxs: { value: 1 },
+      levels: { value: 48 }, dither: { value: 0 }, outline: { value: 0.5 }, thresh: { value: 0.1 }, ink: { value: new THREE.Color(0) },
+      sat: { value: 1 }, contrast: { value: 1 }, bloom: { value: 0.5 }, bloomThresh: { value: 0.6 }, vignette: { value: 0.3 },
+      grade: { value: 0 }, shadowT: { value: new THREE.Color(0x808080) }, highT: { value: new THREE.Color(0x808080) }, scan: { value: 0 }
+    },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: [
+      'uniform sampler2D tDiffuse; uniform vec2 res; uniform float smoothMode, pxs, levels, dither, outline, thresh, sat, contrast, bloom, bloomThresh, vignette, grade, scan;',
+      'uniform vec3 ink, shadowT, highT; varying vec2 vUv;',
+      'float b2(vec2 a){ a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }',
+      'float b4(vec2 a){ return b2(0.5 * a) * 0.25 + b2(a); }',
+      'float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }',
+      'vec3 tap(vec2 uv){ return texture2D(tDiffuse, uv).rgb; }',
+      'void main(){',
+      '  vec2 p = floor(vUv * res); vec2 uv = (p + 0.5) / res; vec2 t = 1.0 / res;',
+      '  vec3 c = tap(uv); float l = lum(c);',
+      '  float n = max(max(lum(tap(uv + vec2(t.x, 0.0))), lum(tap(uv - vec2(t.x, 0.0)))), max(lum(tap(uv + vec2(0.0, t.y))), lum(tap(uv - vec2(0.0, t.y)))));',
+      '  vec3 acc = vec3(0.0); float br = 2.0 / pxs;',
+      '  if (bloom > 0.0) { for (int i = 0; i < 12; i++) { float a = (float(i) + b4(p)) * 0.5236; vec2 d = vec2(cos(a), sin(a));',
+      '    vec3 s1 = tap(uv + d * t * 2.0 * br); vec3 s2 = tap(uv + d * t * 4.5 * br); vec3 s3 = tap(uv + d * t * 8.0 * br);',
+      '    acc += s1 * max(0.0, lum(s1) - bloomThresh) * 1.2 + s2 * max(0.0, lum(s2) - bloomThresh) * 0.8 + s3 * max(0.0, lum(s3) - bloomThresh) * 0.5; } }',
+      '  c = mix(c, ink, outline * step(thresh, n - l) * (1.0 - smoothMode));',
+      '  c += acc * bloom * 0.16;',
+      '  c = mix(vec3(lum(c)), c, sat); c = (c - 0.5) * contrast + 0.5;',
+      '  float Lm = clamp(lum(c), 0.0, 1.0); vec3 tg = mix(shadowT, highT, smoothstep(0.05, 0.85, Lm));',
+      '  c *= 1.0 + grade * (tg - vec3(lum(tg))) * 1.6;',
+      '  vec2 q = vUv - 0.5; c *= 1.0 - vignette * smoothstep(0.3, 0.8, length(q * vec2(1.0, 0.85)));',
+      '  c *= 1.0 - scan * step(1.0, mod(p.y, 2.0)) * (1.0 - smoothMode);',
+      '  if (smoothMode < 0.5) { float d = (b4(p) - 0.5) * dither; c = floor(c * levels + d + 0.5) / levels; }',
+      '  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);',
+      '}'
+    ].join('\n'),
+    depthTest: false, depthWrite: false
+  });
+  const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), post); quad.frustumCulled = false; postScene.add(quad);
+
+  // ---------- scene ----------
+  const scene = new THREE.Scene();
+  const root = new THREE.Group(); root.rotation.y = Math.PI / 4; scene.add(root);
+  I.build(scene, root);  // modules may call IRON.look() while building
+  const F = L.finish, U = post.uniforms;
+  for (const k of ['levels', 'dither', 'outline', 'thresh', 'sat', 'contrast', 'bloom', 'bloomThresh', 'vignette', 'grade', 'scan']) if (F[k] !== undefined) U[k].value = F[k];
+  U.ink.value.set(F.ink || '#000000'); U.shadowT.value.set(F.shadow || '#808080'); U.highT.value.set(F.high || '#808080');
+  const sky = L.sky;
+  const bg = I.K.canvasTex(2, 256, (g) => { const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, sky.top); gr.addColorStop(1, sky.bottom); g.fillStyle = gr; g.fillRect(0, 0, 2, 256); });
+  bg.magFilter = bg.minFilter = THREE.LinearFilter; scene.background = bg;
+  if (sky.fog) scene.fog = new THREE.Fog(sky.fog, sky.fogNear || 70, sky.fogFar || 140);
+  const hemi = new THREE.HemisphereLight(L.light.hemiSky, L.light.hemiGnd, L.light.hemiI); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(L.light.sun, L.light.sunI);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 160 });
+  sun.shadow.bias = -0.0006; scene.add(sun, sun.target);
+  const sunDir = new THREE.Vector3().fromArray(L.light.sunDir);
+
+  // ---------- camera ----------
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -300, 500);
+  const yaw = Math.PI / 4, tilt = 30 * Math.PI / 180, D = 80;
+  const tgt = new THREE.Vector3(), tgtGoal = new THREE.Vector3();
+  let viewH = 22, viewGoal = 22, W = 2, H = 2, pxSel = 1, view = 'line', followItem = null, focusId = null;
+  const rootToWorld = (x, y, z, out) => root.localToWorld((out || new THREE.Vector3()).set(x, y, z));
+  const mobile = () => W < 760;
+  function presetGoal() {
+    const a = W / H;
+    if (view === 'line') { rootToWorld(0, -3.5, 1.0, tgtGoal); viewGoal = Math.max(22, 40 / a); }
+    else if (view === 'deck') { rootToWorld(0, 2.2, 0.5, tgtGoal); viewGoal = Math.max(12.5, 37 / a); }
+    else if (view === 'under') { rootToWorld(-2, -10, 5, tgtGoal); viewGoal = Math.max(19, 34 / a); }
+    else if (view === 'station' && focusId) { rootToWorld(I.SLOTS[focusId], 2.4, 0.4, tgtGoal); viewGoal = mobile() ? 13 : 10; }
+  }
+  function setView(v, id) {
+    view = v; focusId = id || null; if (v !== 'follow') followItem = null;
+    document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === v));
+    presetGoal();
+  }
+  I.setView = setView;
+  document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => setView(b.dataset.view));
+  function pickFollow() {
+    const live = I.items.filter((it) => !it.hidden);
+    if (!live.length) return null;
+    // the item furthest along the journey keeps the camera on the action
+    const rank = (it) => it.owner === 'launch' ? 9 : it.path && it.path.name === 'pass' ? 8 : it.owner === 'splitter' ? 7 : it.path && (it.path.name === 'feed' || it.path.name === 'tube') ? 6 : it.owner === 'assembler' ? 5 : it.path && it.path.name === 'ore' ? 4 : it.path && it.path.name === 'lift' ? 3 : 1;
+    live.sort((a, b) => rank(b) - rank(a) || a.id - b.id);
+    return live[0];
+  }
+
+  // pan with drag, zoom with wheel / pinch
+  const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, zoom = 1, dragMoved = 0;
+  const right = new THREE.Vector3(), up = new THREE.Vector3();
+  canvas.addEventListener('pointerdown', (e) => { ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); canvas.setPointerCapture(e.pointerId); dragMoved = 0; if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = zoom; } });
+  canvas.addEventListener('pointermove', (e) => {
+    const p = ptrs.get(e.pointerId); if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0 > 0) zoom = Math.max(0.35, Math.min(3, zoom0 * pinch0 / d)); return; }
+    dragMoved += Math.abs(dx) + Math.abs(dy);
+    if (dragMoved < 4) return;
+    if (view !== 'free') { view = 'free'; followItem = null; document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', 'false')); }
+    const k = (viewH * zoom) / H;
+    right.setFromMatrixColumn(cam.matrixWorld, 0); up.setFromMatrixColumn(cam.matrixWorld, 1);
+    tgtGoal.addScaledVector(right, -dx * k).addScaledVector(up, dy * k); tgt.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+  });
+  const end = (e) => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch0 = 0; };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoom = Math.max(0.35, Math.min(3, zoom * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+  function resize() { W = window.innerWidth; H = window.innerHeight; renderer.setSize(W, H, false); if (view !== 'free' && view !== 'follow') presetGoal(); }
+  window.addEventListener('resize', resize);
+
+  // ---------- HUD ----------
+  const NAMES = { assembler: ['CLOCKWORK', 'ASSEMBLER'], splitter: ['AETHER SPLITTER', '· SPARK'], launch: ['IRON', 'LAUNCH PAD'] };
+  const chips = {};
+  ['assembler', 'splitter', 'launch'].forEach((id) => {
+    const el = document.createElement('div'); el.className = 'chip'; el.tabIndex = 0;
+    el.innerHTML = '<div class="nm"><i class="dot"></i><span>' + NAMES[id][0] + '</span> <span class="full">' + NAMES[id][1] + '</span></div><span class="st"></span><span class="det"></span><span class="pr" hidden></span><div class="acts"><button class="rs" hidden>RESOLVE</button><button class="sl">STALL</button></div>';
+    el.querySelector('.rs').onclick = (e) => { e.stopPropagation(); I.resolve(id); };
+    el.querySelector('.sl').onclick = (e) => { e.stopPropagation(); I.stall(id); };
+    el.onclick = () => setView('station', id);
+    $('chips').appendChild(el); chips[id] = { el, st: el.querySelector('.st'), det: el.querySelector('.det'), pr: el.querySelector('.pr'), rs: el.querySelector('.rs'), sl: el.querySelector('.sl'), last: '' };
+  });
+  const STATE_WORD = { IDLE: 'IDLE', WORKING: 'WORKING', BLOCKED: 'NEEDS YOU' };
+  function syncChips() {
+    for (const id in chips) {
+      const c = chips[id], st = I.stations[id]; const s = st.blocked ? 'BLOCKED' : st.state;
+      const sig = s + '|' + st.detail + '|' + st.prompt;
+      if (sig === c.last) continue; c.last = sig;
+      c.el.dataset.s = s; c.st.textContent = STATE_WORD[s] || s; c.det.textContent = st.detail || '';
+      c.pr.hidden = !st.blocked; c.pr.textContent = st.prompt || ''; c.rs.hidden = !st.blocked; c.sl.hidden = st.blocked;
+    }
+  }
+  const cv = new THREE.Vector3();
+  function project(x, y, z) { rootToWorld(x, y, z, cv); cv.project(cam); return [(cv.x + 1) / 2 * W, (1 - cv.y) / 2 * H, cv.z]; }
+  const CHIP_AT = { assembler: [-10, 6.0, -0.6], splitter: [0, 8.2, -0.4], launch: [10, 8.4, -0.6] };
+  function placeChips() {
+    const hud = $('hud').getBoundingClientRect();
+    for (const id in chips) {
+      const a = CHIP_AT[id]; let [x, y] = project(a[0], a[1], a[2]); const el = chips[id].el; const w = el.offsetWidth, h = el.offsetHeight;
+      x = Math.max(w / 2 + 8, Math.min(W - w / 2 - 8, x));
+      let minY = h + 8; if (x - w / 2 < hud.right + 6) minY = Math.max(minY, hud.bottom + h + 6);
+      const al = $('alert'); if (!al.hidden) { const ar = al.getBoundingClientRect(); if (x + w / 2 > ar.left - 4 && x - w / 2 < ar.right + 4) minY = Math.max(minY, ar.bottom + h + 6); }
+      y = Math.max(minY, Math.min(H - 8, y));
+      el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px) translate(-50%,-100%)';
+    }
+  }
+  let showTags = window.innerWidth >= 760;
+  const tagEls = new Map();
+  function placeTags() {
+    const seen = new Set();
+    I.items.forEach((it) => {
+      const held = it.owner && I.stations[it.owner].blocked, fol = it === followItem;
+      if (!(showTags || held || fol) || it.hidden) return;
+      seen.add(it);
+      let el = tagEls.get(it); if (!el) { el = document.createElement('span'); el.className = 'tag'; $('tags').appendChild(el); tagEls.set(it, el); }
+      const txt = it.label() + (fol ? ' ' + it.title : ''); if (el.textContent !== txt) el.textContent = txt;
+      el.className = 'tag k-' + it.kind + (held ? ' held' : '') + (fol ? ' fol' : '');
+      const p = it.mesh.position; const [x, y] = project(p.x, p.y + 0.75, p.z);
+      el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px) translate(-50%,-100%)';
+    });
+    tagEls.forEach((el, it) => { if (!seen.has(it)) { el.remove(); tagEls.delete(it); } });
+  }
+  function syncHud() {
+    const need = Object.values(I.stations).filter((s) => s.blocked);
+    const c = I.counters;
+    const html = '<span>MINED<b>' + c.mined + '</b></span><span>ON LINE<b>' + I.items.length + '</b></span><span class="ship">SHIPPED<b>' + c.shipped + '</b></span><span class="rw">REWORK<b>' + c.rework + '</b></span><span class="need">NEEDS YOU<b>' + need.length + '</b></span>';
+    if ($('counts').innerHTML !== html) $('counts').innerHTML = html;
+    const al = $('alert');
+    if (need.length) { al.hidden = false; const txt = '⚠ ' + need.length + (need.length > 1 ? ' MACHINES NEED' : ' MACHINE NEEDS') + ' YOU'; if (al.textContent !== txt) al.textContent = txt; al.onclick = () => setView('station', need[0].id); }
+    else al.hidden = true;
+    const fb = $('followBar');
+    if (view === 'follow' && followItem) { fb.hidden = false; const h = '<b>FOLLOWING ' + followItem.label() + '</b>' + followItem.title + ' · ' + (followItem.owner ? I.stations[followItem.owner].detail || followItem.stage : followItem.stage); if (fb.innerHTML !== h) fb.innerHTML = h; }
+    else fb.hidden = true;
+  }
+  function syncTicker() {
+    const t = $('ticker'); const rows = I.log.slice(0, 4);
+    const html = rows.map((r) => '<div class="k-' + r.kind + '"></div>').join('');
+    if (t.children.length !== rows.length) t.innerHTML = html;
+    rows.forEach((r, i) => { const d = t.children[i]; if (d.textContent !== r.text) { d.textContent = r.text; d.className = 'k-' + r.kind; } });
+  }
+
+  // ---------- controls ----------
+  document.querySelectorAll('[data-px]').forEach((b) => b.onclick = () => { pxSel = +b.dataset.px; syncPx(); });
+  function syncPx() { document.querySelectorAll('[data-px]').forEach((b) => b.setAttribute('aria-pressed', +b.dataset.px === pxSel)); }
+  const speeds = [1, 2, 4]; let si = 0;
+  $('b-speed').onclick = () => { si = (si + 1) % speeds.length; I.policy.speed = speeds[si]; $('b-speed').textContent = speeds[si] + 'X'; };
+  const tog = (id, fn) => { $(id).onclick = (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on); fn(on); }; };
+  tog('b-intake', (on) => (I.policy.intake = on));
+  tog('b-auto', (on) => (I.policy.autoResolve = on));
+  tog('b-tags', (on) => (showTags = on));
+  $('b-tags').setAttribute('aria-pressed', showTags);
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setView('line'); });
+
+  // ---------- loop ----------
+  resize(); syncPx();
+  setView(mobile() ? 'follow' : 'line');
+  presetGoal(); tgt.copy(tgtGoal); viewH = viewGoal;
+  let last = performance.now(), t = 0, hudT = 0;
+  const tmp = new THREE.Vector3();
+  I.renderer = renderer;
+  I.render = function () {
+    const a = W / H, vh = viewH * zoom;
+    cam.left = -vh * a / 2; cam.right = vh * a / 2; cam.top = vh / 2; cam.bottom = -vh / 2; cam.updateProjectionMatrix();
+    cam.position.set(tgt.x + D * Math.cos(tilt) * Math.sin(yaw), tgt.y + D * Math.sin(tilt), tgt.z + D * Math.cos(tilt) * Math.cos(yaw)); cam.lookAt(tgt);
+    cam.updateMatrixWorld();
+    sun.position.set(tgt.x + sunDir.x, sunDir.y, tgt.z + sunDir.z); sun.target.position.set(tgt.x, 0, tgt.z);
+    const px = pxSel === 0 ? 1 : pxSel;
+    const rw = Math.max(1, Math.ceil(W / px)), rh = Math.max(1, Math.ceil(H / px));
+    if (rt.width !== rw || rt.height !== rh) rt.setSize(rw, rh);
+    U.res.value.set(rw, rh); U.smoothMode.value = pxSel === 0 ? 1 : 0; U.pxs.value = px;
+    renderer.setRenderTarget(rt); renderer.render(scene, cam);
+    renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+    placeChips(); placeTags();
+  };
+  I.camStep = function (dt) {
+    if (view === 'follow') {
+      if (!followItem || !I.items.includes(followItem) || followItem.hidden) followItem = pickFollow();
+      if (followItem) { followItem.mesh.getWorldPosition(tgtGoal); tgtGoal.y += 0.6; viewGoal = mobile() ? 11 : 9; }
+    } else if (view !== 'free') presetGoal();
+    const k = 1 - Math.exp(-dt * (view === 'follow' ? 3 : 5)); tgt.lerp(tgtGoal, k); viewH += (viewGoal - viewH) * k;
+  };
+  I.hudStep = function () { syncChips(); syncHud(); syncTicker(); };
+  function frame(now) {
+    const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; t += dt * I.policy.speed; I._t = t;
+    I.step(t, dt);
+    I.camStep(dt);
+    hudT -= dt; if (hudT <= 0) { hudT = 0.15; I.hudStep(); }
+    I.render();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
