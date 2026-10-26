@@ -4,7 +4,7 @@ import { signedInCookie, testD1 } from './d1-fixture';
 import { admit, signupAllowed, redeemInvite, hash, resourceQuota, runQuota, turnstile, addPending } from '../src/signup';
 import { browserSocketAuth, browserSocketActive } from '../src/browser-socket';
 mock.module('cloudflare:workers',()=>({DurableObject:class {ctx:unknown;env:unknown;constructor(ctx:unknown,env:unknown){this.ctx=ctx;this.env=env;}}}));
-const {default:app}=await import('../src/index');
+const {testApp:app}=await import('./app-fixture');
 const realFetch=globalThis.fetch;
 afterEach(()=>{globalThis.fetch=realFetch;});
 const env = () => ({FACTORY:unlimitedFactory,SIGNUP_GATE_MODE:'waitlist',DB:testD1(),SESSION_SECRET:'signup-test-secret',ALLOWED_LOGINS:'r3dbars',ADMIN_LOGINS:'r3dbars',TURNSTILE_SITE_KEY:'public-test',TURNSTILE_SECRET_KEY:'private-test',ASSETS:{fetch:async()=>new Response('factory app')}});

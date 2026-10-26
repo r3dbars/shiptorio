@@ -1,6 +1,6 @@
 import { introEnabled } from "../flags";
 // The first screens of the game (docs/PRODUCT.md, Onboarding): sign in with GitHub, pick a repo.
-// Then the map takes over: Spark scans the repo, proposes the starter factory, and asks for power.
+// Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
 import { Component, useEffect, useState, type ReactNode } from "react";
@@ -8,6 +8,7 @@ import { App } from "../App";
 import type { SourceConfig } from "../source";
 import { IslandBackdrop } from "./IslandBackdrop";
 import { savePref, seedPrefs, type PrefKey } from "../account";
+import { CREDIT, ONBOARD } from "../copy";
 
 // An older phone without WebGL must still be able to sign in.
 class IslandFallback extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -26,7 +27,7 @@ interface Repo {
 
 // Only the sandbox uses sample repositories; live reads the App's installed repos.
 const SIM_REPOS: Repo[] = [
-  { fullName: "you/demo-shop", blurb: "Demo shop · sample issues", issues: 3 },
+  { fullName: "you/demo-shop", blurb: ONBOARD.simRepoBlurb, issues: 3 },
 ];
 
 // The welcome tour plays on the real map, a demo shop in the sim (ui/IntroTour.tsx). New players see it
@@ -98,9 +99,9 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   return (
     <div className="onboard">
       <IslandFallback><IslandBackdrop /></IslandFallback>
-      <section className="card ob-card" aria-label="Welcome to Shiptorio">
+      <section className="card ob-card" aria-label={ONBOARD.label}>
         <div className="ob-steps" aria-hidden="true">
-          {["WELCOME", "SIGN IN", "PICK A REPO", "BUILD"].map((s, n) => (
+          {ONBOARD.steps.map((s, n) => (
             <span key={s} className={n === at ? "on" : n < at ? "done" : undefined}>
               {n + 1} {s}
             </span>
@@ -109,32 +110,29 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
         {step === "hello" && (
           <>
-            <div className="ptitle ob-title">SHIPTORIO</div>
-            <p className="psub">The factory must grow.</p>
-            <Coach>
-              Let's build your factory. Your factory is one codebase. We start small: one machine, one fix, one rocket, and each
-              piece shows up when you need it.
-            </Coach>
+            <div className="ptitle ob-title">{ONBOARD.brand}</div>
+            <p className="psub">{ONBOARD.tagline}</p>
+            <Coach>{ONBOARD.hello}</Coach>
             <div className="nm-options">
-              <button type="button" className="btn rec nm-btn" onClick={signIn} autoFocus={!matchMedia("(pointer: coarse)").matches}>
-                SIGN IN WITH GITHUB
+              <button type="button" className="btn rec nm-btn" onClick={signIn} autoFocus={typeof matchMedia === "undefined" || !matchMedia("(pointer: coarse)").matches}>
+                {ONBOARD.signIn}
               </button>
             </div>
             <button hidden={!introEnabled} type="button" className="linkish ob-replay" onClick={() => setStep("intro")}>
-              Watch the intro again
+              {ONBOARD.replay}
             </button>
-            {!live && <p className="psub ob-sim-note">Sandbox tour · sample repo and issues · no real sign-in</p>}
-            <p className="ob-credit">powered by Meta Muse Spark</p>
+            {!live && <p className="psub ob-sim-note">{ONBOARD.simNote}</p>}
+            <p className="ob-credit">{CREDIT}</p>
           </>
         )}
 
         {step === "repo" && (
           <>
-            <div className="ptitle small">PICK A REPO</div>
+            <div className="ptitle small">{ONBOARD.pickTitle}</div>
             <Coach>
-              {login ? `Hey ${login}. ` : ""}Which repo is the factory? {live ? "We'll read its tree, open issues and CI, then suggest a starter line." : "This sandbox uses a demo shop with sample issues; your real repo stays untouched."}
+              {login ? ONBOARD.pickHey(login) : ""}{ONBOARD.pickAsk}{live ? ONBOARD.pickLive : ONBOARD.pickSim}
             </Coach>
-            {repos === null && <p className="psub">Looking for repos…</p>}
+            {repos === null && <p className="psub">{ONBOARD.looking}</p>}
             {repos && repos.length > 0 && (
               <ul className="ob-repos">
                 {repos.map((r) => (
@@ -142,7 +140,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                     <button type="button" className="ob-repo" onClick={() => onDone(r.fullName)}>
                       <b>{r.fullName}</b>
                       <i>
-                        {r.blurb}{typeof r.issues === "number" && <> · {r.issues} open issue{r.issues === 1 ? "" : "s"}</>}
+                        {r.blurb}{typeof r.issues === "number" && ONBOARD.issues(r.issues)}
                       </i>
                     </button>
                   </li>
@@ -158,7 +156,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                 }}
               >
                 <input
-                  aria-label="Repo, as owner/name"
+                  aria-label={ONBOARD.repoLabel}
                   placeholder="owner/name"
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
@@ -166,20 +164,20 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                   autoFocus
                 />
                 <button type="submit" className="btn rec nm-btn" disabled={!valid}>
-                  OPEN
+                  {ONBOARD.open}
                 </button>
               </form>
             )}
             <p className="psub">
               {/* the list is the repos your GitHub account reaches through the App; installing on more adds them */}
-              Not there? <a href={installUrl ?? "https://github.com/settings/installations"}>Install the Shiptorio app</a> on the repo
-              {live && login ? <>, then <a href={`/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`}>refresh</a></> : " first"}.
+              {ONBOARD.notThere}<a href={installUrl ?? "https://github.com/settings/installations"}>{ONBOARD.install}</a>{ONBOARD.onRepo}
+              {live && login ? <>{ONBOARD.then}<a href={`/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`}>{ONBOARD.refresh}</a></> : ONBOARD.first}.
             </p>
           </>
         )}
       </section>
       <a className="ob-skip" href="?source=sim&scenario=quiet-morning">
-        skip to the sandbox
+        {ONBOARD.skip}
       </a>
     </div>
   );

@@ -8,7 +8,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 
 it("runner transport authenticates independently without opening the preview or other repos", async () => {
   let claims = 0;

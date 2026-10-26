@@ -3,24 +3,11 @@
 // a real factory command, so the server (or the sim) has the final say on what fits.
 
 import { useState } from "react";
-import type { FactoryState, Harness, Machine, WebToServer } from "@shiptorio/shared";
+import type { FactoryState, Harness, WebToServer } from "@shiptorio/shared";
 import { Icon } from "./icons";
+import { MACHINE_NAME as NAME, SOURCE, WORDS, YOURS } from "../copy";
 
-const AGENTS: { harness: Harness; name: string }[] = [
-  { harness: "claude_code", name: "Claude Code" },
-  { harness: "codex", name: "Codex" },
-];
-
-const NAME: Partial<Record<Machine["type"], string>> = {
-  splitter: "Splitter",
-  assembler: "Assembler",
-  inspector: "Check",
-  launch_pad: "Launch pad",
-  solar: "Solar",
-  battery: "Battery",
-  turret: "Test turret",
-  steam: "Planner",
-};
+const AGENTS: readonly { harness: Harness; name: string }[] = YOURS.agents;
 
 // first free cell near (x, y), two cells apart like the rest of the line
 export function freeNear(state: FactoryState, x: number, y: number) {
@@ -43,30 +30,30 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
   const nudge = (dx: number, dy: number) => m && send({ type: "move_machine", id: m.id, x: m.x + dx, y: m.y + dy });
 
   return (
-    <section className="card sheet yours" aria-label="Make it yours">
+    <section className="card sheet yours" aria-label={YOURS.title}>
       <div className="sheet-top">
-        <h2>Make it yours</h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <h2>{YOURS.title}</h2>
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
 
-      <h3>Who builds</h3>
-      {assemblers.length === 0 && <p className="empty">No assemblers yet.</p>}
+      <h3>{YOURS.whoBuilds}</h3>
+      {assemblers.length === 0 && <p className="empty">{YOURS.noAssemblers}</p>}
       {assemblers.map((a) => (
         <div className="lrow" key={a.id}>
           <span className="tt">
             {a.id}
-            <code>{a.district ? `/${a.district}` : "any folder"}</code>
+            <code>{a.district ? `/${a.district}` : YOURS.anyFolder}</code>
           </span>
-          <span className="seg" role="group" aria-label={`Agent for ${a.id}`}>
+          <span className="seg" role="group" aria-label={YOURS.agentFor(a.id)}>
             {AGENTS.map((ag) => (
               <button
                 key={ag.harness}
                 type="button"
                 aria-pressed={a.harness === ag.harness}
                 disabled={a.state === "working"}
-                title={plugged(ag.harness) ? undefined : `${ag.name} isn't plugged in yet: pair the runner`}
+                title={plugged(ag.harness) ? undefined : YOURS.notPlugged(ag.name)}
                 onClick={() => send({ type: "set_harness", machineId: a.id, harness: ag.harness })}
               >
                 {ag.name}
@@ -76,14 +63,14 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
         </div>
       ))}
 
-      <h3>Add a check</h3>
-      <p className="empty">A test turret makes every PR in that folder pass its tests before it reaches you.</p>
+      <h3>{YOURS.addCheck}</h3>
+      <p className="empty">{YOURS.addCheckWhy}</p>
       {folders.map((d) => {
         const spot = insp ? freeNear(state, insp.x, insp.y) : null;
         return (
           <div className="lrow" key={d.name}>
             <span className="tt">
-              Test turret
+              {YOURS.turret}
               <code>/{d.name}</code>
             </span>
             <button
@@ -93,26 +80,26 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
               disabled={!spot}
               onClick={() => spot && send({ type: "place_machine", machineType: "turret", x: spot.x, y: spot.y, district: d.name })}
             >
-              + Add
+              {YOURS.add}
             </button>
           </div>
         );
       })}
 
-      <h3>Move a machine</h3>
+      <h3>{YOURS.move}</h3>
       <div className="lrow">
-        <select className="pickm" aria-label="Machine to move" value={moving} onChange={(e) => setMoving(e.target.value)}>
+        <select className="pickm" aria-label={YOURS.moveWhich} value={moving} onChange={(e) => setMoving(e.target.value)}>
           {movable.map((x) => (
             <option key={x.id} value={x.id}>
               {NAME[x.type] ?? x.type} · {x.id}
             </option>
           ))}
         </select>
-        <span className="seg" role="group" aria-label="Move">
-          <button type="button" onClick={() => nudge(-2, 0)} aria-label="Move left">←</button>
-          <button type="button" onClick={() => nudge(0, -2)} aria-label="Move up">↑</button>
-          <button type="button" onClick={() => nudge(0, 2)} aria-label="Move down">↓</button>
-          <button type="button" onClick={() => nudge(2, 0)} aria-label="Move right">→</button>
+        <span className="seg" role="group" aria-label={YOURS.moveGroup}>
+          <button type="button" onClick={() => nudge(-2, 0)} aria-label={YOURS.moveLeft}>←</button>
+          <button type="button" onClick={() => nudge(0, -2)} aria-label={YOURS.moveUp}>↑</button>
+          <button type="button" onClick={() => nudge(0, 2)} aria-label={YOURS.moveDown}>↓</button>
+          <button type="button" onClick={() => nudge(2, 0)} aria-label={YOURS.moveRight}>→</button>
         </span>
       </div>
     </section>
@@ -120,20 +107,17 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
 }
 
 // An empty mine on the map, tapped: what connecting it adds, and how.
-const SOURCE_COPY: Record<string, { name: string; adds: string }> = {
-  sentry: { name: "Sentry", adds: "Errors arrive as ore the moment they happen, and biters show which folder they hit. Fixes that kill biters score big." },
-  posthog: { name: "PostHog", adds: "See what users really do. User signals weigh what gets built first, and your score counts the users each fix reached." },
-};
+const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog };
 
 export function ConnectSource({ kind, state, send, onClose }: { kind: string; state: FactoryState; send: (m: WebToServer) => void; onClose: () => void }) {
   const copy = SOURCE_COPY[kind] ?? { name: kind, adds: "" };
   const status = state.sources?.find((x) => (x.kind as string) === kind);
   const connected = status?.state === "connected" || state.machines.some((m) => m.id === `ore-${kind}`);
   return (
-    <section className="card sheet" aria-label={`Connect ${copy.name}`}>
+    <section className="card sheet" aria-label={SOURCE.connect(copy.name)}>
       <div className="sheet-top">
-        <h2>{connected ? `${copy.name} is connected` : `Connect ${copy.name}`}</h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <h2>{connected ? SOURCE.connected(copy.name) : SOURCE.connect(copy.name)}</h2>
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
@@ -150,14 +134,14 @@ export function ConnectSource({ kind, state, send, onClose }: { kind: string; st
           )}
           {status.setup.actionUrl && (
             <a className="btn rec" href={status.setup.actionUrl} target="_blank" rel="noreferrer">
-              Open {copy.name}
+              {SOURCE.open(copy.name)}
             </a>
           )}
         </>
       )}
       {!connected && !status?.setup.actionUrl && (
         <button type="button" className="btn rec" onClick={() => send({ type: "connect_source", kind: kind as never })}>
-          Connect {copy.name}
+          {SOURCE.connect(copy.name)}
         </button>
       )}
     </section>

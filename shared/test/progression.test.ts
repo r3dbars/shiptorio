@@ -109,3 +109,17 @@ test("observing more than 200 visible launches never repays old clean bonuses", 
     p = next.progress;
   }
 });
+
+describe("progress across devices", () => {
+  test("strict read refuses junk, merge keeps the further copy plus every unlock", async () => {
+    const { validProgress, mergeProgress } = await import("../src/progression");
+    expect(validProgress("{}")).toBeNull();
+    expect(validProgress(JSON.stringify(emptyProgress()))).not.toBeNull();
+    const a = { ...emptyProgress(), xp: 300, best: 2, unlocked: ["lanterns"] };
+    const b = { ...emptyProgress(), xp: 100, best: 5, unlocked: ["glass-lake"] };
+    const m = mergeProgress(b, a);
+    expect(m.xp).toBe(300);
+    expect(m.best).toBe(5);
+    expect(m.unlocked.sort()).toEqual(["glass-lake", "lanterns"]);
+  });
+});
