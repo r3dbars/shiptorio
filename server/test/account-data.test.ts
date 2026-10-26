@@ -32,7 +32,7 @@ async function fixture() {
     delete: async (key: string) => { kv.delete(key); },
     list: async ({cursor, prefix}: {cursor?: string; prefix?: string}) => { const keys = [...kv.keys()].filter(key => !prefix || key.startsWith(prefix)).sort(); const offset = Number(cursor ?? 0); return { keys: keys.slice(offset, offset + 2).map(name => ({name})), list_complete: offset + 2 >= keys.length, cursor: String(offset + 2) }; },
   }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => objects.get(repo)!.factory }, ASSETS: {fetch: async () => new Response("app")} } as unknown as Env;
-  for (const repo of ["alice/app", "bob/app", "org/shared", await securityObjectName("user:11"), await securityObjectName("user:alice")]) {
+  for (const repo of ["alice/app", "bob/app", "org/shared", "github-installations", await securityObjectName("user:11"), await securityObjectName("user:alice")]) {
     const record = { data: new Map<string, unknown>([
       ["state", FactoryState.parse({repo, baseBranch: "main", districts: [], ...starterLine(), items: [{id: "gh-1", kind: "bug", source: "github_issue", title: "Fix", district: "/", state: "ore", attempts: 0, updatedAt: 1}], science: {red: 0, green: 0, grey: 0, blue: 0}, trust: 0.5, tick: 0, research: {done: ["types"], spent: 0}})],
       ["meta", {repo, installationId: repo === "alice/app" ? 1 : 2}],
@@ -47,6 +47,7 @@ async function fixture() {
       list: async () => new Map(record.data),
       deleteAlarm: async () => { record.alarm = null; },
       deleteAll: async () => { record.data.clear(); },
+      delete: async (key: string) => record.data.delete(key),
     };
     const ctx = { id: {toString: () => repo}, storage, blockConcurrencyWhile: <T>(f: () => Promise<T>) => f(), getWebSockets: () => [{close: () => {record.closed++;}, deserializeAttachment: () => ({login: "alice"})}] };
     record.factory = new Factory(ctx as never, env);
@@ -183,6 +184,8 @@ describe("account data controls", () => {
     await env.DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('repo:101', 77, 'Archived', 'closed')").run();
     await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, updated_at) VALUES ('archived:repo:101:installation:1:repo:alice/old-name', 'sentry', 'encrypted-archived', 1)").run();
     await env.DB.prepare("DELETE FROM user_repos WHERE repo = 'alice/app'").run();
+    const kv = (env.CACHE as unknown as {get(key: string): Promise<string|null>});
+    await env.CACHE.put("cred:support:1:101", "encrypted-support-key");
     const legacy = objects.get("alice/app")!;
     const data = new Map(legacy.data);
     legacy.data.clear(); legacy.data.set("migratedTo", "repo:101");
@@ -193,6 +196,7 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).factories[0].data.state?.items).toHaveLength(1);
     await deleteAccount(env, user, ["alice/app"]);
     expect(data.size).toBe(0); expect(legacy.data.size).toBe(0); expect(alarm).toBeNull();
+    expect(await kv.get("cred:support:1:101")).toBeNull();
     expect((await env.DB.prepare("SELECT * FROM pull_requests WHERE repo = 'repo:101'").all()).results).toEqual([]);
     expect((await env.DB.prepare("SELECT * FROM credentials WHERE scope GLOB 'archived:repo:101:*'").all()).results).toEqual([]);
   });
@@ -206,6 +210,23 @@ describe("account data controls", () => {
     expect(data.size).toBe(0);
     await expect(fresh.pairRunner()).rejects.toThrow("Factory deleted");
     expect(data.size).toBe(0);
+  });
+  it("purges only this account's coordinator payloads and blocks a delayed installation replay", async () => {
+    const {env, user, objects, kv} = await fixture();
+    const shared = objects.get("github-installations")!.data;
+    shared.set("delivery:alice", {payload: {installation: {id: 1}, sender: {id: 11}}});
+    shared.set("failed:delivery:alice", {payload: {installation: {id: 1}}});
+    shared.set("delivery:bob", {payload: {installation: {id: 2}, sender: {id: 22}}});
+    kv.set("cred:support:alice/app", "encrypted-support-key");
+    await env.DB.prepare("INSERT INTO webhook_deliveries (source, delivery_id, received_at, expires_at, installation_id) VALUES ('github', 'install-alice', 1, 2, 1), ('github', 'install-bob', 1, 2, 2)").run();
+    await deleteAccount(env, user, ["alice/app"]);
+    expect(shared.has("delivery:alice")).toBe(false); expect(shared.has("failed:delivery:alice")).toBe(false); expect(shared.has("delivery:bob")).toBe(true);
+    expect(kv.has("cred:support:alice/app")).toBe(false);
+    expect((await env.DB.prepare("SELECT delivery_id FROM webhook_deliveries").all()).results).toEqual([{delivery_id: "install-bob"}]);
+    const {handleLifecycle} = await import("../src/github-lifecycle");
+    await handleLifecycle(env, "installation", {action: "created", installation: {id: 1, account: {login: "alice"}}, repositories: [{id: 101, full_name: "alice/app"}]});
+    expect(await env.DB.prepare("SELECT * FROM installations WHERE id = 1").first()).toBeNull();
+    expect(await env.DB.prepare("SELECT * FROM repos WHERE full_name = 'alice/app'").first()).toBeNull();
   });
   it("can retry a failed KV purge without reporting deletion complete early", async () => {
     const {env, user, kv, objects} = await fixture();

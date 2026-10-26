@@ -159,6 +159,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
+  async pruneAccountDeliveries(installationIds: number[], userId: number) {
+    const owned = new Set(installationIds);
+    await this.ctx.blockConcurrencyWhile(async () => {
+      for (const prefix of ["delivery:", "failed:delivery:"]) {
+        const entries = await this.ctx.storage.list<{payload?: GitHubPayload}>({prefix});
+        for (const [key, value] of entries) if (key.startsWith(prefix) && (owned.has(value.payload?.installation?.id ?? -1) || value.payload?.sender?.id === userId)) await this.ctx.storage.delete(key);
+      }
+    });
+  }
+
   async eraseAccountData() {
     return this.ctx.blockConcurrencyWhile(async () => {
       this.accountErased = true;

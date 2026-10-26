@@ -552,6 +552,7 @@ app.post("/webhooks/github", async (c) => {
   if (!delivery || !/^[a-zA-Z0-9_-]{1,200}$/.test(delivery)) return c.json({ error: "delivery id required" }, 400);
   const repo = payload.repository?.full_name;
   const installation = payload.installation?.id;
+  if (installation && await factoryDeleted(c.env.DB, `installation:${installation}`)) return c.json({ok: true, ignored: true, reason: "account deleted"});
   if (event !== "github_app_authorization" && (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo)))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !lifecycleEvents.includes(event)) return c.json({ error: "repo required" }, 400);
   if (!await admit(c.env,`webhook:github:${installation ?? payload.sender?.id ?? "app"}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
@@ -564,7 +565,7 @@ app.post("/webhooks/github", async (c) => {
   }
 
   const now = Date.now();
-  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('github', ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null).run();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo, installation_id) VALUES ('github', ?, ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null, installation ?? null).run();
   if (!inserted.meta.changes) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'github' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
@@ -618,7 +619,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   const delivery = `${repo}:${sourceDelivery}`;
 
   const now = Date.now();
-  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('sentry', ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null).run();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo, installation_id) VALUES ('sentry', ?, ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null, installation.installation_id).run();
   if (!inserted.meta.changes) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });

@@ -1,3 +1,4 @@
+import { purgeInstallationTokens } from "./github";
 import { repoAccess, type AccessUser } from "./authorization";
 import { securityObjectName } from "./rate-limit";
 import type { FactoryState } from "@shiptorio/shared";
@@ -66,9 +67,10 @@ export async function exportAccount(env: Env, user: User) {
   return { profile, installations, progress, activity, format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
 }
 
-async function purgeKV(env: Env, repos: RepoRow[], login: string, userId: number): Promise<void> {
+async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[], login: string, userId: number): Promise<void> {
   const names = new Set(repos.map(r => r.full_name.toLowerCase()));
-  const keys = new Set<string>(repos.flatMap(r => [`cred:sentry:${r.full_name.toLowerCase()}`, `cred:posthog:${r.full_name.toLowerCase()}`]));
+  const keys = new Set<string>(repos.flatMap(r => [`cred:sentry:${r.full_name.toLowerCase()}`, `cred:posthog:${r.full_name.toLowerCase()}`, `cred:support:${r.full_name.toLowerCase()}`]));
+  for (const repo of repos) if (repo.repo_id) keys.add(`cred:support:${repo.installation_id}:${repo.repo_id}`);
   // Enumerate first, delete second: deleting during pagination can skip keys.
   let cursor: string | undefined;
   do {
@@ -96,6 +98,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   const expected = repos.map(r => r.full_name.toLowerCase()).sort();
   if (JSON.stringify([...new Set(confirmations)].sort()) !== JSON.stringify(expected)) throw new Error("Type every owned repository name exactly to confirm deletion");
   // The archive goes only to the requesting browser, never into a retained server backup.
+  const installs = await env.DB.prepare("SELECT id FROM installations WHERE lower(account_login) = ?").bind(user.login.toLowerCase()).all<{id: number}>();
   const archive = await exportAccount(env, user);
   // Revoked GitHub reach must not prevent an owner from archiving their own stored data.
   for (const repo of repos) if (!archive.factories.some(f => f.repo === repo.full_name)) archive.factories.push({repo: repo.full_name, data: JSON.parse(await (await accountFactory(env, repo.full_name)).exportAccountData()) as AccountFactoryData});
@@ -105,6 +108,11 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
     const identifiers = [repo.full_name, ...[repo.full_name.toLowerCase(), await accountObjectName(env, repo.full_name)].map(name => `object:${env.FACTORY.idFromName(name).toString()}`)];
     for (const identifier of identifiers) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(identifier), now).run();
   }
+  for (const {id} of installs.results) {
+    await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(`installation:${id}`), now).run();
+    purgeInstallationTokens(id);
+  }
+  await env.FACTORY.get(env.FACTORY.idFromName("github-installations")).pruneAccountDeliveries(installs.results.map(i => i.id), user.id);
   for (const repo of repos) {
     const primary = await accountFactory(env, repo.full_name);
     await primary.eraseAccountData();
@@ -130,8 +138,9 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
     statements.push(env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(repo.full_name));
   }
   // Remove installs owned by this account, including ones with no remaining repos.
-  const installs = await env.DB.prepare("SELECT id FROM installations WHERE lower(account_login) = ?").bind(user.login.toLowerCase()).all<{id: number}>();
+
   for (const { id } of installs.results) {
+    statements.push(env.DB.prepare("DELETE FROM webhook_deliveries WHERE installation_id = ?").bind(id));
     statements.push(env.DB.prepare("DELETE FROM user_installations WHERE installation_id = ?").bind(id));
     statements.push(env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(id));
   }
