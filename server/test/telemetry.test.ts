@@ -65,3 +65,24 @@ it('queries separate recent error and webhook indexes', async () => {
   await recentLogs(env as never, 'webhooks');
   expect(prefixes).toEqual(['ops:errors:all:', 'ops:webhooks:all:']);
 });
+
+it('allows only the configured Sentry origin through the browser connection policy', async () => {
+  const { securityHeaders } = await import('../src/security');
+  const request = new Request('https://shiptorio.com');
+  const policy = securityHeaders(request, undefined, 'https://public@o123.ingest.us.sentry.io/123')['Content-Security-Policy'];
+  expect(policy).toContain('https://o123.ingest.us.sentry.io');
+  expect(policy).not.toContain('https://*');
+  expect(securityHeaders(request, undefined, 'http://untrusted.example/1')['Content-Security-Policy']).not.toContain('untrusted.example');
+});
+
+it('keeps business requests working when diagnostic persistence fails', async () => {
+  const warn = spyOn(console, 'warn').mockImplementation(() => {});
+  const info = spyOn(console, 'info').mockImplementation(() => {});
+  const pending: Promise<unknown>[] = [];
+  try {
+    const env = { CACHE: new Proxy({}, { get() { throw new Error('offline'); } }) };
+    expect(inTrace({ requestId: 'kv-offline' }, env as never, p => pending.push(p), () => { log('info', 'business.ok'); return 'business result'; })).toBe('business result');
+    await Promise.all(pending);
+    expect(warn).toHaveBeenCalledTimes(1);
+  } finally { warn.mockRestore(); info.mockRestore(); }
+});

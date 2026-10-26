@@ -1,3 +1,4 @@
+import { log } from "./telemetry";
 import { Hono } from "hono";
 import type { Env } from "./index";
 import { FLAG_DEFAULTS, flagKey, flagName, readFlags } from "./flags";
@@ -59,6 +60,6 @@ ops.post("/api/admin/flags", async c => {
   if (!flagName(name) || !["true", "false", "inherit"].includes(value ?? "") || (user && !/^[a-z0-9-]{1,39}$/.test(user))) return c.json({ error: "invalid flag override" }, 400);
   if (value === "inherit") await c.env.CACHE.delete(flagKey(name, user));
   else await c.env.CACHE.put(flagKey(name, user), value!);
-  console.info(JSON.stringify({ event: "flag_changed", actor: c.get("admin"), flag: name, user: user ?? "global", value }));
+  log("info", "flag.changed", { actor: c.get("admin"), flag: name, user: user ?? "global", value });
   return c.redirect("/admin/flags", 303);
 });

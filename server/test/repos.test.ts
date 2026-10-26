@@ -1,4 +1,5 @@
 import { expect, mock, test } from "bun:test";
+import { unlimitedFactory } from "./browser-fixture";
 import { makeSessionCookie } from "../src/session";
 import { signedInCookie, testD1 } from "./d1-fixture";
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
@@ -8,7 +9,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
 const { testApp: app } = await import("./app-fixture");
 const secret = "test-repo-session", password = "test-repo-preview";
 const preview = async () => (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
-const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", DB: testD1() });
+const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", FACTORY: unlimitedFactory, DB: testD1() });
 const get = (env: object, path: string, cookie: string) => app.fetch(new Request(`https://shiptorio.com${path}`, { headers: { cookie } }), env as never);
 
 test("a player's repo cards list only the repos their GitHub account reaches, with legacy fields", async () => {
@@ -36,7 +37,7 @@ test("preview access alone, disallowed logins, pre-accounts cookies, signed-out 
 });
 
 test("a factory is only served to players who can reach its repo", async () => {
-  const env = { ...baseEnv(), FACTORY: { idFromName: (r: string) => r, get: () => ({ fetch: async () => new Response("factory"), runnerJobs: async () => ({ jobs: [] }) }) } };
+  const env = { ...baseEnv(), FACTORY: { idFromName: (r: string) => r, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), fetch: async () => new Response("factory"), runnerJobs: async () => ({ jobs: [] }) }) } };
   const mine = `${await signedInCookie(env, "r3dbars", ["r3dbars/shiptorio"])}; ${await preview()}`;
   const theirs = `${await signedInCookie(env, "friend", ["friend/app"])}; ${await preview()}`;
   expect((await get(env, "/api/repos/r3dbars/shiptorio/runner/jobs", mine)).status).toBe(200);

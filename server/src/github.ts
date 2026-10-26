@@ -1,4 +1,6 @@
 import { observedFetch } from "./telemetry";
+import { retry, OutboundError, RetryExhausted } from "./reliability";
+
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -79,20 +81,42 @@ export interface AppCredentials {
 }
 
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const res = await observedFetch("github", API + path, {
-    signal: AbortSignal.timeout(20000),
-    ...init,
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "user-agent": UA,
-      "x-github-api-version": "2022-11-28",
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
-  return res.json() as Promise<T>;
+  const comment = init.method === "POST" && /\/issues\/\d+\/comments$/.test(path) && typeof init.body === "string";
+  let marker: string | undefined;
+  if (comment) {
+    const payload = JSON.parse(init.body as string) as { body: string };
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.body));
+    marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
+    init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
+  }
+  const request = async () => {
+    if (marker) {
+      for (let page = 1; ; page++) {
+        if (page > 20) throw new OutboundError(409); // do not post if duplicate history cannot be checked within budget
+        const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
+        const existing = comments.find(c => c.body?.includes(marker!));
+        if (existing) return existing as T;
+        if (comments.length < 100) break;
+      }
+    }
+    const res = await observedFetch("github", API + path, {
+      signal: AbortSignal.timeout(20000),
+      ...init,
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        "user-agent": UA,
+        "x-github-api-version": "2022-11-28",
+        ...(init.body ? { "content-type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    if (!res.ok) throw new OutboundError(res.status);
+    return res.status === 204 ? undefined as T : res.json() as Promise<T>;
+  };
+  // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
+  return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
+
 }
 
 interface InstallationTokenScope {
@@ -194,8 +218,9 @@ export async function fileContent(token: string, fullName: string, path: string,
     if (f.encoding !== "base64" || f.content == null) return null;
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
   }
 }
 
@@ -203,8 +228,9 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
   try {
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
   }
 }
 
@@ -243,9 +269,14 @@ export async function commitToBranch(
       body: JSON.stringify({ sha: commit.sha }),
     });
   } else {
-    await gh(`/repos/${fullName}/git/refs`, token, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    await retry("Create branch", async () => {
+      const recovered = await branchSha(token, fullName, branch);
+      if (recovered === commit.sha) return;
+      if (recovered) throw new OutboundError(409);
+      await gh(`/repos/${fullName}/git/refs`, token, {
+        method: "POST",
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+      });
     });
   }
   return commit.sha;
@@ -258,12 +289,14 @@ export async function openPullRequest(
 ): Promise<{ number: number; html_url: string }> {
   // A crash can occur after GitHub accepts the PR but before the Factory saves it.
   // Recover the existing PR on retry rather than opening another one.
-  const owner = fullName.split("/")[0];
-  const existing = await gh<{ number: number; html_url: string }[]>(
-    `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
-  );
-  if (existing[0]) return existing[0];
-  return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  return retry("Open pull request", async () => {
+    const owner = fullName.split("/")[0];
+    const existing = await gh<{ number: number; html_url: string }[]>(
+      `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
+    );
+    if (existing[0]) return existing[0];
+    return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  });
 }
 
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */
