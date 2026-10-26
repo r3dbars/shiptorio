@@ -60,7 +60,7 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const url = new URL(request.url);
   const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
-  if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry") return null;
+  if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;
