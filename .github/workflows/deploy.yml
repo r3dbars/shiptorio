@@ -18,10 +18,11 @@ jobs:
     # Off until the repo variable DEPLOY_ENABLED is set to "true" (see docs/SETUP.md).
     if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # a newer merge cancels an in-flight deploy; the newest main is what ships
+    # one deploy at a time: the running one finishes, and only the newest waiting merge runs next (GitHub drops
+    # older pending runs). Cancelling in-flight runs starved prod when merges landed faster than a deploy takes.
     concurrency:
       group: deploy
-      cancel-in-progress: true
+      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
