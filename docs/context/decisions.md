@@ -185,6 +185,8 @@ create a permit or silently authorize a build/merge. No web or workflow changes.
 
 - 2026-10-26: Keep the onboarding sandbox honest: its picker offers the demo shop whose sample issues it actually runs, with an explicit sandbox note below sign-in. Real repository choices remain in live mode. Let the rocket clear its 3.4-second launch before a compact celebration card arrives at the screen edge; the launch is the main event. Bounded web fixes authorized by Justin's request to fix all open playtest issues.
 
+- 2026-10-26: Reframe the actual machine footprint when it changes, including both layout axes, so building the starter line brings its launch pad into view. Portrait framing may zoom closer than the old baseline. Tour lessons pin the exact district and gauntlet labels they name, then clear them when dismissed; touch players do not need hover. Phone news captions are limited to two lines. Sign-in and repo selection retain the island backdrop from the concurrent art pass, with a rendering fallback that keeps forms usable on phones without WebGL. These bounded web fixes follow Justin's explicit all-issues cleanup request.
+
 Playtest checkpoint: the reusable seeded runner covers every simulator scenario with
 both a full journey and disconnect lifecycle. Keep its reports distinct from CUA
 rendered checks and real GitHub/runner acceptance. Extract source-mine placement into
@@ -200,3 +202,4 @@ first-run regression must observe that connect-source decision after its rockets
 Rendered smoke tests accept the line panel as the primary interaction while the
 simulator is building automatically; waiting for a suggested merge before CI is done
 is not itself an app failure. Console findings belong only to the current navigation.
+- 2026-10-26: Name the dock action Place so it cannot be confused with the Build view. The field-guide tooltip counts concepts found, separate from the tour step count.

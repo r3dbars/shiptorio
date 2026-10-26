@@ -625,6 +625,17 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
 .sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
 
+/* Pin the concepts the current tour lesson names, including on touch screens. */
+.maplabel.teaching { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(242,169,59,0.2); max-width: 100px; white-space: normal; text-align: center; animation: teach-label 1.6s ease-in-out infinite; }
+.maplabel.teaching b { font-size: 11px; }
+.maplabel.teaching i { display: none; }
+@keyframes teach-label { 50% { box-shadow: 0 0 0 4px rgba(242,169,59,0.35); } }
+@media (max-width: 760px) {
+  .caption .ptitle { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; }
+  .caption .psub { display: none; }
+  .caption { padding: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .maplabel.teaching { animation: none; } }
 /* v3 pass over the older cards (check-in deck, station panel, setup bits): same rounded glass, one sentence-case
    font, small caps only for section labels, pills for tags. Overrides the original rules above. */
 .ci-open { border-radius: 999px; font: 600 14px var(--mono); letter-spacing: 0; }
