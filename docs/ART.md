@@ -54,3 +54,24 @@ every item's model, states and animation. Port builders from there.
   spinning anemometer. Sunny: rows track the sun and a light sweep runs across the cells. Capped: rows stow flat, cells
   go dark, a cloud parks overhead, the meter blinks red.
 
+
+### Inspection stations (round 2, locked by Justin on Oct 26)
+
+The verification gauntlet from `docs/LOOP.md`, one visible machine per check. Each station has a backed-up state
+(a pile of crates at its input, so the bottleneck shows at a glance) and a small shield board with five pips for
+"caught this week".
+
+- **CI inspector**: the existing inspector, renamed. Adds a backed-up state.
+- **Verify bay**: a glass containment chamber where the original bug runs as a small biter. A scan ring sweeps it.
+  Pass: the bug bursts into green pixels. Fail: it survives, rams the glass, the chamber flashes red. A side monitor
+  shows the app under test.
+- **AI review**: a desk where the diff scrolls between rollers under a scanning eye on a gantry. Yellow flags pop up
+  on risky lines. The sign on top lights a green check (approved) or a red X (changes). It's a different model from
+  the builder (Claude builds, Codex reviews).
+- **Merge gate**: the human check. PR crates wait at a striped barrier next to a booth with a "needs you" sign and a
+  little worker at the button. Approve: the boom lifts and the crate rolls on. Reject: the crate goes in the red bin.
+- **Rework loop**: a red-railed U-turn belt carrying failed crates back to Spark at the start of the line, each one
+  with a scar tag. Clogged: the crates bunch up and the light blinks red.
+- **Orbit watch**: after the launch pad. A radar mast and an orbiting satellite watch the deploy for 24 hours,
+  shown as a ring of 24 hour pips around the base. A console shows a Sentry sparkline. Alert: the ring flashes red
+  and the sparkline spikes.
