@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { expect, mock, test } from "bun:test";
 import { flagEnabled, flagKey, readFlags } from "../src/flags";
 import { makeSessionCookie } from "../src/session";
@@ -64,12 +65,12 @@ test("admin flag write requires admin session and same origin; validates and res
 });
 test("DO health probe reads storage without initializing a factory or scheduling work", async () => {
   const reads: string[] = [];
-  const factory = new Factory({ storage: { get: async (key: string) => { reads.push(key); } } } as never, {} as never);
+  const factory = new Factory({ storage: { get: async (key: string) => { reads.push(key); } } } as never, credentialEnv({}) as never);
   expect(await factory.health()).toEqual({ ok: true });
   expect(reads).toEqual(["ops-health"]);
 });
 test("permit kill switch blocks existing autonomous launches before any GitHub request", async () => {
-  const factory = new Factory({} as never, { CACHE: { get: async () => "false" } } as never);
+  const factory = new Factory({} as never, credentialEnv({ CACHE: { get: async () => "false" } }) as never);
   (factory as unknown as { meta: unknown }).meta = { repo: "test/repo", installationId: 1 };
   const launch = factory as unknown as { launch(item: unknown, by: string): Promise<void> };
   // Would read meta/token if the guard were absent. No initialized repo is needed to stop it.

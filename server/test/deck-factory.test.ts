@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
@@ -40,7 +41,7 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
-  const reload = () => new Factory(ctx as never, { ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) } as never);
+  const reload = () => new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) }) as never);
   const factory = reload();
   const send = (value: unknown, instance = factory) => instance.webSocketMessage(authorizedSocket(), JSON.stringify(value));
   const checkin = async (instance = factory) => {

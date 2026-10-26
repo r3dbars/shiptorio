@@ -311,3 +311,14 @@ lane owns their final storage integration (PR #155). Factory-generated PRs remai
 launchable only through the game. See [security.md](security.md) for the inventory.
 
 - 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.
+
+Credential isolation (Oct 26, goal 3): mine credentials move from global/per-repo KV
+plaintext to installation + repo + kind D1 envelopes. AES-GCM uses fresh data keys
+wrapped by CRED_MASTER_KEY; scope/kind/version are authenticated. First authorized
+read migrates and deletes plaintext; revocation tombstones prevent stale KV or operator
+secret fallback from restoring access. Claude accounts #160 supplies session/user/repo
+membership. Worker-secret overrides stay with the pinned/legacy operator map. Keys
+never enter factory messages, provider errors, logs, or connection responses; shared
+redaction covers those output boundaries. The requested master key was generated directly into Wrangler after confirming
+authorized access and an absent binding, only on shiptorio. No value was printed
+or saved to a file; setup command is in docs/context/encrypted-credentials.md.

@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { expect, it, mock } from 'bun:test';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { repoAccess, requireUser } from '../src/authorization';
@@ -120,7 +121,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   let closed = 0, sent = 0;
   const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env as never), repo: 'bob/private' };
   const ws = { deserializeAttachment: () => auth, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
-  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, f.env as never);
+  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(f.env) as never);
   for (const repo of ['bob/private', 'alice/private']) {
     const response = await factory.fetch(new Request(`${origin}/api/repos/${repo}/factory`, { headers: { origin, upgrade: 'websocket', cookie: await cookies('bob') } }));
     expect(response.status).toBe(403);
@@ -167,7 +168,7 @@ it('real account logout immediately revokes existing sockets and runner grants e
   let closed = 0, sent = 0;
   const attachment = { user: user!, login: 'alice', expiresAt: user!.expiresAt, epoch: await browserSocketEpoch(env), repo: state.repo };
   const ws = { deserializeAttachment: () => attachment, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
-  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, env as never);
+  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(env) as never);
   await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(11).run();
   expect(await repoAccess(env as never, user!, state.repo)).toBeNull();
   expect(await requireUser(new Request(origin, { headers: { cookie: loginCookie } }), env as never)).toBeNull();
@@ -188,8 +189,8 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
     await DB.prepare('INSERT INTO repos (full_name, installation_id) VALUES (?, ?)').bind(repo, id).run();
   }
   const queued: string[] = [];
-  const env = { ...fixture().env, DB, GITHUB_WEBHOOK_SECRET: 'test-github-hook-secret',
-    CACHE: { get: async (key: string) => key === 'cred:sentry:alice/private' ? { clientSecret: 'alice-secret' } : key === 'cred:sentry:bob/private' ? { clientSecret: 'bob-secret' } : null },
+  const env = { ...fixture().env, DB, CRED_MASTER_KEY: btoa('a'.repeat(32)), GITHUB_WEBHOOK_SECRET: 'test-github-hook-secret',
+    CACHE: { delete: async () => {}, get: async (key: string) => key === 'cred:sentry:alice/private' ? { clientSecret: 'alice-secret' } : key === 'cred:sentry:bob/private' ? { clientSecret: 'bob-secret' } : null },
     FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({
       enqueueGitHub: async (_id: string, _event: string, payload: { repository: { full_name: string } }) => { expect(repo).toBe(payload.repository.full_name); queued.push(`github:${repo}`); },
       enqueueSentry: async (id: string) => { queued.push(`sentry:${repo}:${id}`); },
