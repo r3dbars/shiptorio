@@ -20,7 +20,9 @@ import { handleLifecycle, lifecycleEvents, RETENTION_MS } from "./github-lifecyc
 import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
+import { pollDevice, type DeviceRecord } from "./device-pairing";
 import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
@@ -200,7 +202,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["ensure", "connectMine", "disconnectMine", "pairRunner", "revokeRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets"];
+    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
       const start = Date.now();
@@ -490,6 +493,63 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch { this.log("warn", "This work is already queued or has changed. Refresh to see its latest state.", item.id); }
   }
 
+  async allowDeviceStart() {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const now = Date.now();
+      const saved = await this.ctx.storage.get<{ count: number; expires: number }>("deviceRate");
+      const rate = saved && saved.expires > now ? saved : { count: 0, expires: now + 10 * 60_000 };
+      if (rate.count >= 10) return false;
+      rate.count++;
+      await this.accountPut("deviceRate", rate); await this.accountAlarm(rate.expires);
+      return true;
+    });
+  }
+  async startDevice(secret: string, expires: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.ctx.storage.get("device")) return false;
+      await this.accountPut("device", { secret, expires } satisfies DeviceRecord);
+      await this.accountAlarm(expires);
+      return true;
+    });
+  }
+  async approveDevice(approved: NonNullable<DeviceRecord["approved"]>) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      if (!record || record.expires <= Date.now() || record.delivered || record.approved) return false;
+      record.approved = approved;
+      await this.accountPut("device", record);
+      return true;
+    });
+  }
+  async readyDevice() {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      if (record) { record.ready = true; await this.accountPut("device", record); }
+    });
+  }
+  async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
+    if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
+    await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
+  }
+  async pollDevice(secret: string) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      const result = pollDevice(record, secret);
+      if (record) await this.accountPut("device", record);
+      return result;
+    });
+  }
+  async runnerStatus() {
+    const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
+    const jobs = await this.runnerJobs();
+    const lastId = await this.ctx.storage.get<string>("runnerLastJobId");
+    const last = jobs.find(job => job.id === lastId);
+    const paired = !!await this.ctx.storage.get("runnerPair");
+    return { paired, online: paired && !!presence && Date.now() - presence.seenAt < 20000,
+      seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
+      lastJob: last ? { id: last.id, status: last.status } : null };
+  }
+  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); }
   async pairRunner(): Promise<string> {
     await this.assertAccountActive(this.meta?.repo);
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
@@ -540,6 +600,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
       if (currentTrace()) await this.accountPut(`trace:${item.id}`, currentTrace());
       await this.accountPut(`runnerJob:${id}`, job);
+      await this.accountPut("runnerLastJobId", id);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
       await this.scheduleTick();
@@ -674,6 +735,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.accountPut(`runnerJob:${job.id}`, job);
         return null;
       }
+      await this.accountPut("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + 30 * 60 * 1000 });
       await this.accountPut(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
@@ -2237,6 +2299,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async alarm(): Promise<void> {
     try { await this.assertAccountActive(); } catch (error) { if (this.accountErased) return; throw error; }
+    if (await this.ctx.storage.get("device") || await this.ctx.storage.get("deviceRate")) { await this.ctx.storage.deleteAll(); return; }
     if (await this.ctx.storage.get("migratedTo")) { await this.ctx.storage.deleteAlarm(); return; }
     const lifecycle = await this.ctx.storage.get<{ deleteAt?: number }>("githubLifecycle");
     if (lifecycle) {
