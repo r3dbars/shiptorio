@@ -13,7 +13,8 @@ const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
 const harnessPath = (h: "codex" | "claude_code") => Bun.which(h === "codex" ? "codex" : "claude");
 // Geothermal: a local OpenAI-compatible model (Ollama etc.), offered only when it answers.
-const local = localModelConfig(process.env);
+const localFile = Bun.file(resolve(root, "local-model.json"));
+const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
 const localStatus = local ? await detectLocalModel(local) : null;
 const available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
 if (process.argv[2] === "paths") {
@@ -27,6 +28,15 @@ async function command(args: string[], cwd: string, env = cleanEnv, timeout = 12
   clearTimeout(timer);
   if (code !== 0) throw new Error(`Command ${args[0].split("/").at(-1)} ${args[1]} failed (${code}): ${(err || out).slice(-2000)}`);
   return out.trim();
+}
+if (process.argv[2] === "geothermal") {
+  // bun run runner geothermal MODEL [URL]: save local-model settings, then check the endpoint answers.
+  const config = localModelConfig({ SHIPTORIO_LOCAL_MODEL: process.argv[3] ?? "", SHIPTORIO_LOCAL_MODEL_URL: process.argv[4] ?? "" });
+  if (!config) throw new Error("Usage: runner geothermal MODEL [URL], e.g. runner geothermal qwen2.5-coder:7b");
+  const status = await detectLocalModel(config);
+  await Bun.write(resolve(root, "local-model.json"), JSON.stringify({ model: config.model, url: config.baseUrl }, null, 2) + "\n");
+  console.log(status.ok ? `Geothermal online: ${config.model} at ${config.baseUrl}. Restart the runner to offer it.` : `Saved, but not ready yet: ${status.reason}`);
+  process.exit(0);
 }
 if (process.argv[2] === "doctor") {
   if (local) console.log(localStatus?.ok ? `local: ${local.model} at ${local.baseUrl} (geothermal power)` : `local: ${local.model} not ready: ${localStatus?.reason}`);

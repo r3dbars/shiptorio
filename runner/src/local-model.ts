@@ -19,12 +19,15 @@ export function assertLocalEndpoint(raw: string): string {
   return url.toString().replace(/\/+$/, "");
 }
 
-export function localModelConfig(env: NodeJS.ProcessEnv): LocalModelConfig | null {
-  const model = env.SHIPTORIO_LOCAL_MODEL?.trim();
+/** Env vars win; otherwise `local-model.json` ({ "model", "url" }) in the runner root, which survives re-pairing. */
+export function localModelConfig(env: NodeJS.ProcessEnv, file?: { model?: unknown; url?: unknown } | null): LocalModelConfig | null {
+  const model = (env.SHIPTORIO_LOCAL_MODEL || (typeof file?.model === "string" ? file.model : ""))?.trim();
   if (!model) return null;
-  if (!/^[\w.:/@-]{1,120}$/.test(model)) throw new Error("SHIPTORIO_LOCAL_MODEL has unexpected characters");
-  return { baseUrl: assertLocalEndpoint(env.SHIPTORIO_LOCAL_MODEL_URL?.trim() || OLLAMA_URL), model };
+  if (!/^[\w.:/@-]{1,120}$/.test(model)) throw new Error("Local model name has unexpected characters");
+  const url = env.SHIPTORIO_LOCAL_MODEL_URL || (typeof file?.url === "string" ? file.url : "");
+  return { baseUrl: assertLocalEndpoint(url.trim() || OLLAMA_URL), model };
 }
+export const LOCAL_MODEL_FILE = "local-model.json";
 
 /** Ollama, llama.cpp and LM Studio all answer GET /v1/models with { data: [{ id }] }. */
 export async function detectLocalModel(config: LocalModelConfig, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; models: string[]; reason?: string }> {

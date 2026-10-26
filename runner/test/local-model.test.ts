@@ -17,6 +17,9 @@ test("config is opt-in, defaults to Ollama, and refuses endpoints off this machi
   for (const ok of ["http://localhost:1234/v1", "http://127.0.0.1:8080/v1", "http://192.168.1.20:11434/v1", "http://gpu-box.local:8000/v1", "http://[::1]:11434/v1"]) expect(() => assertLocalEndpoint(ok)).not.toThrow();
   for (const bad of ["https://api.openai.com/v1", "http://8.8.8.8/v1", "http://user:pw@localhost/v1", "file:///etc/passwd", "http://localhost.evil.com/v1", "nope"]) expect(() => assertLocalEndpoint(bad)).toThrow();
   expect(() => localModelConfig({ SHIPTORIO_LOCAL_MODEL: "x; rm -rf /" })).toThrow();
+  expect(localModelConfig({}, { model: "llama3.2:3b", url: "http://127.0.0.1:8080/v1" })).toEqual({ baseUrl: "http://127.0.0.1:8080/v1", model: "llama3.2:3b" });
+  expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: "a" }, { model: "b" })?.model).toBe("a");
+  expect(() => localModelConfig({}, { model: "m", url: "https://api.example.com/v1" })).toThrow();
 });
 
 test("detection reports a loaded model and explains a missing one", async () => {
