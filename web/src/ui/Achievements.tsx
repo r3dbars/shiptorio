@@ -39,6 +39,8 @@ export interface Toast {
 export interface ProgressLink {
   streak: number;
   onUnlock?: (a: Achievement) => void;
+  /** true while something owns the top of the screen (the first-run coach card): unlocks queue until it's gone */
+  hold?: boolean;
 }
 
 export function useAchievements(state: FactoryState | null, live: boolean, quiet: boolean, sendRaw: (m: WebToServer) => void, link: { current: ProgressLink } | undefined, profile: string) {
@@ -121,13 +123,14 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     const tick = setInterval(() => {
       const now = Date.now();
       if (shownAt.current) {
-        if (now - shownAt.current < TOAST_MS) return;
+        // a coach card taking the top of the screen clears the toast early; the badge is in the sheet either way
+        if (now - shownAt.current < TOAST_MS && !link?.current.hold) return;
         shownAt.current = 0;
         setToast(null);
         return; // a beat between toasts
       }
       const head = queue.current[0];
-      if (!head || (now < quietUntil.current && now - head.key < MAX_WAIT_MS)) return;
+      if (!head || link?.current.hold || (now < quietUntil.current && now - head.key < MAX_WAIT_MS)) return;
       queue.current.shift();
       shownAt.current = now;
       setToast(head);
