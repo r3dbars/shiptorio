@@ -180,7 +180,9 @@ export function ProgressChip({ p, onOpen }: { p: Progress; onOpen: () => void })
   const streak = liveStreak(p, Date.now());
   const today = p.last === dayKey(Date.now());
   return (
-    <button type="button" className="chip lvl-chip" onClick={onOpen} aria-label={PROGRESS.chipLabel(lv.level, streak)} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
+    <button type="button" className="chip lvl-chip" onClick={onOpen} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
+      {/* the name is what the chip shows plus this, so voice control can say what it sees */}
+      <span className="sr">{PROGRESS.chipLabel(lv.level, streak)}</span>
       <span className={`badge flame${today ? " lit" : ""}`}>
         <Icon name="flame" size={14} />
       </span>

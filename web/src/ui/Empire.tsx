@@ -161,7 +161,8 @@ export function IslandChip({ e, open, onToggle }: { e: EmpireView; open: boolean
   const waitingElsewhere = e.others.reduce((n, i) => n + i.waiting, 0);
   const name = e.here ? shortName(e.here.repo) : EMPIRE.island;
   return (
-    <button type="button" className="island-chip" aria-pressed={open} onClick={onToggle} aria-label={EMPIRE.chipLabel(name, e.others.length + 1, waitingElsewhere)}>
+    <button type="button" className="island-chip" aria-pressed={open} onClick={onToggle}>
+      <span className="sr">{EMPIRE.chipLabel(name, e.others.length + 1, waitingElsewhere)}</span>
       <Icon name="island" size={16} />
       <span className="ic-name">{name}</span>
       <span className="ic-n">{e.others.length + 1}</span>
