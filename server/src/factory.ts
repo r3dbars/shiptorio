@@ -44,7 +44,10 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
+import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { emptyBrain, recordThought, scoreShip } from "./brain";
+import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
+import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
 import { foldSignal, matchDistrict } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
@@ -540,16 +543,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-<<<<<<< HEAD
-        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${job.harness === "codex" ? "Codex" : "Claude Code"} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
-=======
-        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
->>>>>>> origin/main
+        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;

@@ -32,11 +32,11 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
         <div><b>{share}%</b>{THINKS.byModel}</div>
         <div><b>{brain?.fallbacks ?? 0}</b>{THINKS.fallbacks}</div>
       </div>
-      <h3>Scorecard</h3>
+      <h3>{THINKS.scoreTitle}</h3>
       <div className="thinks-stats score">
-        <div><b>{pct(card.planSuccess)}</b>plans shipped<small>{card.shipped} of {card.plans}</small></div>
-        <div><b>{pct(card.catchRate)}</b>reviews caught a problem<small>{card.catches} of {card.reviews}</small></div>
-        <div><b>{pct(card.fallbackRate)}</b>calls a rule had to make</div>
+        <div><b>{pct(card.planSuccess)}</b>{THINKS.scorePlans}<small>{THINKS.scoreRatio(card.shipped, card.plans)}</small></div>
+        <div><b>{pct(card.catchRate)}</b>{THINKS.scoreReviews}<small>{THINKS.scoreRatio(card.catches, card.reviews)}</small></div>
+        <div><b>{pct(card.fallbackRate)}</b>{THINKS.scoreFallbacks}</div>
       </div>
       {!brain?.online && !simulated && <p className="empty warn">{THINKS.noPower}</p>}
       <h3>{THINKS.latest(!!simulated)}</h3>

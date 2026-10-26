@@ -468,6 +468,11 @@ export const MACHINE_NAME: Partial<Record<Machine["type"], string>> = {
 // ---------- sheets ----------
 
 export const THINKS = {
+  scoreTitle: "Scorecard",
+  scorePlans: "plans shipped",
+  scoreReviews: "reviews caught a problem",
+  scoreFallbacks: "calls a rule had to make",
+  scoreRatio: (done: number, total: number) => `${done} of ${total}`,
   title: "How it thinks",
   intro: "One model sorts your work, plans every job, reviews every PR and picks your next card. Your Claude or ChatGPT sign-ins build what it plans. It never writes code or skips a check.",
   decisions: "decisions",
