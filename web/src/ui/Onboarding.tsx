@@ -2,8 +2,19 @@
 // Then the map takes over: Spark scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
+import type { FactoryState } from "@shiptorio/shared";
+import { FactoryMap } from "../map/FactoryMap";
 import { Intro } from "./Intro";
+
+// Scenery only: no invented repo, open issues, machines, or operational metrics.
+const WELCOME_ISLAND: FactoryState = { repo: "Your factory", baseBranch: "main", districts: [], machines: [], belts: [], power: [], items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0, tick: 0 };
+// An older phone without WebGL must still be able to sign in.
+class IslandFallback extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? null : this.props.children; }
+}
 
 export type OnboardStep = "hello" | "intro" | "repo";
 
@@ -79,6 +90,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
   return (
     <div className="onboard">
+      <div className="ob-world" aria-hidden="true"><IslandFallback><FactoryMap state={WELCOME_ISLAND} /></IslandFallback></div>
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
           {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (

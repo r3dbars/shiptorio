@@ -615,3 +615,18 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .seg button:disabled { opacity: 0.4; cursor: default; }
 .pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
 .sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
+
+/* The same island welcomes you before sign-in. Forms remain above the scenery. */
+.ob-world { position: absolute; inset: 0; pointer-events: none; opacity: 0.8; }
+.onboard > .ob-card, .onboard > .ob-skip { position: relative; z-index: 1; }
+.maplabel.teaching { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(242,169,59,0.2); max-width: 100px; white-space: normal; text-align: center; animation: teach-label 1.6s ease-in-out infinite; }
+.maplabel.teaching b { font-size: 11px; }
+.maplabel.teaching i { display: none; }
+@keyframes teach-label { 50% { box-shadow: 0 0 0 4px rgba(242,169,59,0.35); } }
+@media (max-width: 760px) {
+  .caption .ptitle { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; }
+  .caption .psub { display: none; }
+  .caption { padding: 8px 12px; }
+  .ob-world { opacity: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) { .maplabel.teaching { animation: none; } }

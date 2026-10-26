@@ -1217,13 +1217,16 @@ export class FactoryScene {
 
   private placeLabels() {
     const w = this.width, h = this.height;
+    let teachingRow = 0;
     for (const l of this.labels) {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y;
       this.v3.project(this.camera);
-      const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
+      const x = ((this.v3.x + 1) / 2) * w;
+      let y = ((1 - this.v3.y) / 2) * h;
       const teaching = !!l.key && this.teachingKeys.has(l.key);
       l.el.classList.toggle("teaching", teaching);
+      if (teaching) y -= (teachingRow++ % 3) * 24;
       const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
       l.el.style.display = off ? "none" : "flex";
