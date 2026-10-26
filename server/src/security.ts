@@ -45,10 +45,10 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
 export function browserMutationAllowed(request: Request, routePath = new URL(request.url).pathname): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return true;
   const url = new URL(request.url);
-  if (["/webhooks/github", "/webhooks/sentry", "/access"].includes(routePath)
+  if (["/webhooks/github", "/webhooks/sentry", "/access", "/api/runner-device/start", "/api/runner-device/poll"].includes(routePath)
     || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(routePath)
     || /^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(routePath) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(routePath)
-    || /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(claim|finish|renew)$/.test(routePath)) return true;
+    || /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(claim|finish|renew|heartbeat)$/.test(routePath)) return true;
   return request.headers.get("origin") === url.origin && request.headers.get("sec-fetch-site") !== "cross-site";
 }
 

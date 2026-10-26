@@ -353,7 +353,7 @@ export const Brain = z.object({
     shipped: z.number().int(), // of those, merged and launched
     reviews: z.number().int(), // PR verdicts it gave
     catches: z.number().int(), // of those, sent back for rework
-    open: z.array(z.string()).max(50), // planned item ids not shipped yet
+    open: z.array(z.string()), // outstanding planned items must not lose eventual launch credit
   }).optional(),
 });
 export type Brain = z.infer<typeof Brain>;
