@@ -1,3 +1,4 @@
+import { RetryExhausted } from "./reliability";
 import type { SourceStatus } from "@shiptorio/shared";
 import { gh, GitHubError, purgeInstallationTokens, repoInstallationId } from "./github";
 import { byRepoId, migrateRepository, type RepoRecord, type RepositoryEnv } from "./repository";
@@ -74,7 +75,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     if (p.action === "deleted") { if (row) await archive(env, row, "repository deleted", repo.id); return; }
     if (!["renamed", "transferred"].includes(p.action ?? "")) return;
     // A transfer can remove access or move it to a DIFFERENT installation. Never trust the old ID.
-    const current = await repoInstallationId(env, repo.full_name).catch(error => { if (error instanceof GitHubError && [403, 404].includes(error.status)) return null; throw error; });
+    const current = await repoInstallationId(env, repo.full_name).catch(error => { const cause = error instanceof RetryExhausted ? error.cause : error; if (cause instanceof GitHubError && [403, 404].includes(cause.status)) return null; throw error; });
     if (!current) { if (row) await archive(env, row, "repository transferred out of installation", repo.id); return; }
     await env.DB.prepare("INSERT OR IGNORE INTO installations (id, account_login) VALUES (?, ?)").bind(current, repo.full_name.split("/")[0]).run();
     await upsert(env, repo, current);

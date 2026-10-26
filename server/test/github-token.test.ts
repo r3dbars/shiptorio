@@ -41,14 +41,14 @@ describe("installation token lifecycle", () => {
     let issued = 0; const used: string[] = [];
     globalThis.fetch = (async (url: any, init?: RequestInit) => {
       if (String(url).endsWith("/access_tokens")) return Response.json({ token: `success-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() });
-      used.push((init?.headers as Record<string, string>).authorization!);
+      used.push(new Headers(init?.headers).get("authorization")!);
       return used.length === 1 ? new Response(null, { status: 401 }) : Response.json({ ok: true });
     }) as unknown as typeof fetch;
     try { expect(await gh("/test", await installationToken(env, 11))).toEqual({ ok: true }); expect(used).toEqual(["Bearer success-1", "Bearer success-2"]); } finally { globalThis.fetch = original; }
   });
   it("cross-isolate generation changes refresh even tokens held by an ongoing operation; suspension fails closed", async () => {
     let version = 1, status = "active", issued = 0, calls = 0;
-    const env = { ...await credentials(), DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: version, status }) }) }) } };
+    const env = { ...await credentials(), DB: { prepare: () => ({ bind: () => ({ run: async () => ({}), first: async () => ({ token_version: version, status }) }) }) } };
     const original = globalThis.fetch;
     globalThis.fetch = (async (url: any) => String(url).endsWith("/access_tokens") ? Response.json({ token: `generation-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() }) : (calls++, Response.json({ ok: true }))) as unknown as typeof fetch;
     try {

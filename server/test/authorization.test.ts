@@ -26,6 +26,8 @@ function fixture() {
     async first() {
       if (/github_authorization_revocations|SELECT permissions|token_version|SELECT archived_at/.test(sql)) return null;
       if (sql === 'SELECT * FROM repos WHERE full_name = ?') return repos.has(String(args[0])) ? { full_name: args[0], repo_id: repos.get(String(args[0])), installation_id: repos.get(String(args[0])) } : null;
+      if (sql.includes("api_limits")) return { next_at: Date.now(), failures: 0 };
+
       if (sql.startsWith('SELECT enabled')) return null;
       if (sql.startsWith('INSERT INTO signup_counters')) return {count:1};
       if (sql.startsWith('SELECT factories')) return null;
@@ -38,6 +40,7 @@ function fixture() {
       if (sql === 'SELECT id FROM installations WHERE id = ?') return installs.has(Number(args[0])) ? { id: args[0] } : null;
       throw new Error(`Unexpected query ${sql}`);
     },
+    run: async () => ({ success: true }),
     all: async () => ({ results: [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
   }; return stmt; } };
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',

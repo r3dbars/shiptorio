@@ -79,6 +79,7 @@ values; hashed token fingerprints retain only refresh metadata for outstanding c
 A GitHub **401 or 403** on an installation-authenticated request invalidates the cached
 token and refetches/retries **once**, then throws the final status. Authorization errors
 are not swallowed as missing files/branches. JWT/user-token calls do not enter that retry.
+Rate-limit 403/429 responses honor the shared cooldown instead of rotating credentials.
 
 Required permissions: `contents: write`, `pull_requests: write`, `issues: write`,
 `checks: read`, `statuses: read`, `metadata: read`. Missing permissions pause production

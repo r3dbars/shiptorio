@@ -1,0 +1,36 @@
+// Frame stats for perf work: `window.__shipPerf()` in the console (or from a Playwright run)
+// returns fps, ms of JS + GL submit per frame, draw calls and triangles. ?perf shows them live.
+import type * as THREE from "three";
+
+let frames = 0, since = performance.now(), fps = 0, workMs = 0, workSum = 0;
+let info: THREE.WebGLInfo | null = null;
+let last = { calls: 0, triangles: 0, tier: 0 };
+let el: HTMLElement | null = null;
+
+export const perf = {
+  frame(now: number, i: THREE.WebGLInfo, tier = 0) {
+    info = i;
+    last = { calls: i.render.calls, triangles: i.render.triangles, tier };
+    i.reset();
+    frames++;
+    if (now - since >= 1000) {
+      fps = (frames * 1000) / (now - since);
+      workMs = workSum / frames;
+      frames = 0; workSum = 0; since = now;
+      if (el) el.textContent = `${fps.toFixed(0)} fps · ${workMs.toFixed(1)} ms · ${last.calls} calls · ${(last.triangles / 1000).toFixed(0)}k tris · q${last.tier}`;
+    }
+  },
+  work(ms: number) { workSum += ms; },
+  // ?perf also hands the scene to the console as window.__shipScene
+  watch(scene: THREE.Scene) { if (el) (window as unknown as { __shipScene: THREE.Scene }).__shipScene = scene; },
+  stats() {
+    return { fps, workMs, ...last, geometries: info?.memory.geometries ?? 0, textures: info?.memory.textures ?? 0, programs: info?.programs?.length ?? 0 };
+  },
+};
+
+(window as unknown as { __shipPerf: () => unknown }).__shipPerf = perf.stats;
+if (new URLSearchParams(location.search).has("perf")) {
+  el = document.createElement("div");
+  el.style.cssText = "position:fixed;left:6px;bottom:6px;z-index:99;font:11px monospace;color:#fff;background:#000a;padding:2px 6px;pointer-events:none";
+  document.body.append(el);
+}

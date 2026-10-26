@@ -1,3 +1,4 @@
+import { githubCooldown, RateLimitError } from "./rate-limit";
 import { observedFetch } from "./telemetry";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
 
@@ -107,9 +108,82 @@ async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
   }
   return row?.token_version ?? 0;
 }
+// In-isolate queues serialize each credential; D1 also spaces requests and preserves cooldowns
+// across isolates/restarts for installation credentials. Keys are hashes, never stored tokens.
+const queues = new Map<string, Promise<unknown>>();
+const queued = new Map<string, number>();
+const contexts = new Map<string, { db: D1Database; scope: string }>();
+const cooldowns = new Map<string, { next: number; failures: number }>();
+const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
+async function credentialKey(token: string) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
+  if (map.size >= 500 && !map.has(key)) map.delete(map.keys().next().value!);
+  map.set(key, value);
+}
+export async function registerGithubCredential(token: string, db: D1Database, scope: string) {
+  boundedSet(contexts, await credentialKey(token), { db, scope });
+}
+async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
+  if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
+  queued.set(scope, (queued.get(scope) ?? 0) + 1);
+  const previous = queues.get(scope) ?? Promise.resolve();
+  const request = previous.catch(() => {}).then(async () => {
+    let state = cooldowns.get(scope) ?? { next: 0, failures: 0 };
+    if (context) {
+      const row = await context.db.prepare("SELECT next_at, failures FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number; failures: number }>();
+      if (row) state = { next: Math.max(state.next, row.next_at), failures: Math.max(state.failures, row.failures) };
+    }
+    if (state.next > Date.now() + 5000) throw new RateLimitError(state.next);
+    if (context) {
+      const slot = await context.db.prepare(`INSERT INTO api_limits(scope, next_at) VALUES (?, ?)
+        ON CONFLICT(scope) DO UPDATE SET next_at = MAX(next_at, ?) + 1000 RETURNING next_at`)
+        .bind(scope, Date.now() + 1000, Date.now()).first<{ next_at: number }>();
+      state.next = Math.max(state.next, (slot?.next_at ?? Date.now() + 1000) - 1000);
+    }
+    const delay = state.next - Date.now();
+    if (delay > 5000) throw new RateLimitError(state.next);
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+    // Another isolate may have discovered a cooldown while this request waited for its slot.
+    if (context) {
+      const latest = await context.db.prepare("SELECT next_at FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number }>();
+      if (latest && latest.next_at > Date.now() + 5000) throw new RateLimitError(latest.next_at);
+    }
+    const cacheKey = `${key}:${path}`;
+    const cached = (init.method ?? "GET") === "GET" ? etags.get(cacheKey) : undefined;
+    const headers = new Headers({ accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": UA, "x-github-api-version": "2022-11-28" });
+    if (init.body) headers.set("content-type", "application/json");
+    new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+    if (cached && cached.expires > Date.now()) headers.set("if-none-match", cached.etag);
+    const res = await observedFetch("github", API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
+    const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
+    const next = githubCooldown(res, Date.now(), state.failures, secondary);
+    const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
+    boundedSet(cooldowns, scope, { next, failures });
+    if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
+    if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
+    if (res.status === 304 && cached) return structuredClone(cached.value) as T;
+    if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
+    if (res.status === 204) return undefined as T;
+    const value = await res.json();
+    if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
+    return value as T;
+  });
+  queues.set(scope, request);
+  try { return await request; } finally {
+    const left = (queued.get(scope) ?? 1) - 1;
+    if (left) queued.set(scope, left); else queued.delete(scope);
+    if (queues.get(scope) === request) queues.delete(scope);
+  }
+}
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const owner = tokenOwners.get(await tokenFingerprint(token));
   let authRetried = false;
+
+
   const comment = init.method === "POST" && /\/issues\/\d+\/comments$/.test(path) && typeof init.body === "string";
   let marker: string | undefined;
   if (comment) {
@@ -118,11 +192,6 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
     init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
   }
-  const send = (credential: string) => observedFetch("github", API + path, {
-    signal: AbortSignal.timeout(20000), ...init,
-    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${credential}`, "user-agent": UA,
-      "x-github-api-version": "2022-11-28", ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers },
-  });
   const request = async (): Promise<T> => {
     if (owner) {
       const version = await tokenVersion(owner.env, owner.installationId);
@@ -143,21 +212,19 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
         if (comments.length < 100) break;
       }
     }
-    let res = await send(token);
-    if (owner && !authRetried && [401, 403].includes(res.status)) {
+    try { return await ghRequest<T>(path, token, init); }
+    catch (error) {
+      if (!owner || authRetried || !(error instanceof OutboundError) || ![401, 403].includes(error.status)) throw error;
       authRetried = true;
-      await res.body?.cancel();
       purgeInstallationTokens(owner.installationId);
       token = await installationToken(owner.env, owner.installationId, owner.scope);
-      res = await send(token); // exactly one auth retry across transient retries
+      return ghRequest<T>(path, token, init);
     }
-    if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
-    return res.status === 204 ? undefined as T : res.json() as Promise<T>;
   };
   try {
-    return await retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
+    return await retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { shouldRetry: error => !(error instanceof RateLimitError), attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
   } catch (error) {
-    if (error instanceof RetryExhausted && error.cause instanceof GitHubError && [401, 403, 404].includes(error.cause.status)) throw error.cause;
+    if (error instanceof RetryExhausted && error.cause instanceof GitHubError && (error.cause.status === 404 || owner && [401, 403].includes(error.cause.status))) throw error.cause;
     throw error;
   }
 
@@ -177,12 +244,14 @@ export async function installationToken(env: AppCredentials, installationId: num
   if (pendingTokens.has(pendingKey)) return pendingTokens.get(pendingKey)!;
   const pending = (async () => {
     const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
     const res = await gh<{ token: string; expires_at?: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
       method: "POST", ...(scope ? { body: JSON.stringify(scope) } : {}),
     });
     if (await tokenVersion(env, installationId) !== version) throw new Error("GitHub installation changed while issuing token");
     const entry = { token: res.token, expiresAt: Date.parse(res.expires_at ?? "") || Date.now(), installationId, version, env, scope };
-    tokenCache.set(key, entry);
+    boundedSet(tokenCache, key, entry);
+    if (env.DB) await registerGithubCredential(res.token, env.DB, `github:installation:${installationId}`);
     for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
     const { token: _, ...metadata } = entry;
     tokenOwners.set(await tokenFingerprint(res.token), metadata);
@@ -190,6 +259,7 @@ export async function installationToken(env: AppCredentials, installationId: num
   })();
   pendingTokens.set(pendingKey, pending);
   try { return await pending; } finally { pendingTokens.delete(pendingKey); }
+
 }
 
 // Publishing credentials stay inside one repository and cannot create PRs.
@@ -205,6 +275,7 @@ export async function runnerInstallationToken(env: AppCredentials, installationI
 
 export async function repoInstallationId(env: AppCredentials, fullName: string): Promise<number> {
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  if (env.DB) await registerGithubCredential(jwt, env.DB, `github:app:${env.GITHUB_APP_ID}`);
   const res = await gh<{ id: number }>(`/repos/${fullName}/installation`, jwt);
   return res.id;
 }
