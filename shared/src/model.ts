@@ -78,6 +78,24 @@ export const ScarTag = z.object({
 });
 export type ScarTag = z.infer<typeof ScarTag>;
 
+// Orbit watch: the last station. For 24h after a launch it watches the real world. A comeback (the same Sentry
+// error, a new error spike on that folder, a revert PR, main going red on the merge commit) scars the item,
+// sends it back on the rework belt and revokes its lane's launch permit.
+export const OrbitSignal = z.enum(["sentry", "revert", "deploy"]);
+export type OrbitSignal = z.infer<typeof OrbitSignal>;
+export const OrbitWatch = z.object({
+  since: z.number(), // launch time
+  until: z.number(), // watch ends
+  mergeSha: z.string().optional(), // the commit on main the deploy and CI run on
+  state: z.enum(["watching", "clear", "regressed"]),
+  signal: OrbitSignal.optional(), // what tripped it
+  reason: z.string().optional(), // "Sentry #8812 fired again 3h after the launch"
+  evidenceUrl: z.string().optional(),
+  at: z.number().optional(), // when it cleared or regressed
+  prNumber: z.number().int().optional(), // the launched PR (the item gets a new one on rework)
+});
+export type OrbitWatch = z.infer<typeof OrbitWatch>;
+
 export const Item = z.object({
   id: z.string(),
   kind: ItemKind,
@@ -100,6 +118,7 @@ export const Item = z.object({
   ore: OreChunk.optional(),
   inspection: Inspection.optional(),
   scars: z.array(ScarTag).optional(), // every fail so far, newest last
+  orbit: OrbitWatch.optional(), // set at launch; orbit watch's verdict on the last launch
 });
 export type Item = z.infer<typeof Item>;
 
@@ -303,6 +322,33 @@ export const Foreman = z.object({
 });
 export type Foreman = z.infer<typeof Foreman>;
 
+// One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
+// and so does every time a rule had to stand in because Spark was down or unconfigured.
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank"]);
+export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
+export const Thought = z.object({
+  id: z.string(),
+  at: z.number(),
+  decision: ThoughtDecision,
+  by: z.enum(["spark", "fallback"]), // fallback = a fixed rule decided because Spark couldn't
+  model: z.string(), // e.g. "muse-spark-1.3"
+  ms: z.number(), // how long the call took
+  itemId: z.string().optional(),
+  title: z.string(), // what it looked at: "Checkout button does nothing on Safari"
+  outcome: z.string(), // what it decided: "bug → web"
+  reason: z.string(), // why, in its own words
+  simulated: z.boolean().optional(), // sim mode only; never set by the live server
+});
+export type Thought = z.infer<typeof Thought>;
+export const Brain = z.object({
+  model: z.string(),
+  online: z.boolean(), // the Meta key is set
+  decisions: z.number().int(), // Spark decisions since the factory started counting
+  fallbacks: z.number().int(),
+  thoughts: z.array(Thought).max(40), // newest first
+});
+export type Brain = z.infer<typeof Brain>;
+
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
   id: z.string(),
@@ -345,6 +391,7 @@ export const FactoryState = z.object({
   autonomy: Autonomy.optional(),
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
+  brain: Brain.optional(), // the planner's decision log (powered by Meta Muse Spark)
   sources: z.array(SourceStatus).optional(),
   stations: z.array(Station).optional(), // the gauntlet, in line order
 });

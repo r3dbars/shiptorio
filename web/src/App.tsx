@@ -14,6 +14,7 @@ import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
+import { HowItThinks } from "./ui/HowItThinks";
 import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
@@ -141,7 +142,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | null>(null);
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   const [source, setSource] = useState<string | null>(null); // an empty mine you tapped
   // map picks: an empty mine opens its connect sheet, anything else its panel
   const pickOnMap = (k: string | null) => {
@@ -224,7 +225,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show });
@@ -274,6 +275,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
   const settings = (
     <>
+      <button type="button" className="credit-btn" onClick={() => { setTray(false); setSheet("thinks"); }}>
+        powered by Meta Muse Spark · how it thinks
+      </button>
       <SoundControl />
       {show("labels") && (
         <div className="row2">
@@ -429,6 +433,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <ConnectSource kind={source} state={state} send={send} onClose={() => setSource(null)} />
         ) : sheet === "yours" && state ? (
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
+        ) : sheet === "thinks" ? (
+          <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
@@ -481,7 +487,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
-            <p className="empty">Your sign-ins power the builders. More sign-ins, more builders.</p>
+            <p className="empty">Your sign-ins power the builders. More sign-ins, more builders. The planner decides what they build.</p>
             {(state?.power ?? []).map((p) => (
               <div className="lrow" key={p.id}>
                 <span className="tt">
@@ -494,6 +500,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <span className="pill">{p.online ? `${Math.round(p.level * 100)}%` : "offline"}</span>
               </div>
             ))}
+            <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>See how the planner thinks</button>
             {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
               const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
               return (

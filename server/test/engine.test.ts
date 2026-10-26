@@ -18,7 +18,7 @@ const state = (): FactoryState =>
 describe("starter line", () => {
   it("is a valid factory with one connected line through the gauntlet", () => {
     const s = state();
-    expect(s.machines.map((m) => m.type)).toEqual(["ore_deposit", "splitter", "assembler", "inspector", "inspector", "inspector", "inspector", "launch_pad", "steam"]);
+    expect(s.machines.map((m) => m.type)).toEqual(["ore_deposit", "splitter", "assembler", "inspector", "inspector", "inspector", "inspector", "launch_pad", "inspector", "steam"]);
     expect(s.belts.map((b) => `${b.from}>${b.to}`)).toEqual([
       "ore-issues>splitter-1",
       "splitter-1>assembler-1",

@@ -46,6 +46,7 @@ describe("Factory lifecycle", () => {
       const url = String(input);
       const json = (value: unknown) => Response.json(value);
       if (url.endsWith("/access_tokens")) return json({ token: "fake-install-token" });
+      if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
       if (url.endsWith("/chat/completions") && browserPlanning) {
         browserCall++;
         const action = browserCall === 1 ? { files: ["server/src/engine.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Read guard" } : { tool: "assign_job", reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
@@ -75,6 +76,7 @@ describe("Factory lifecycle", () => {
       await f.factory.alarm();
       expect((await f.factory.runnerJobs())[0].baseSha).toBe(base);
       expect((await f.factory.runnerJobs())[0].plan).toContain("regression test");
+      expect(f.saved().brain?.thoughts.some(t => t.decision === "plan" && t.by === "spark")).toBe(true);
       await expect(f.factory.claimRunner("wrong-pair", ["codex"])).rejects.toThrow("revoked");
       expect(await f.factory.claimRunner(pair, ["claude_code"])).toBeNull();
       const claimed = await Promise.all([f.factory.claimRunner(pair, ["codex"]), f.factory.claimRunner(pair, ["codex"])]);
