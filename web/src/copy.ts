@@ -544,7 +544,7 @@ export const GUIDE = {
   /** Entries no lesson teaches yet. */
   extra: {
     sentry: { title: "Biters", text: "Sentry errors attack the folder they hit. Fixes that kill biters score big.", hint: "Connect Sentry" },
-    feedback: { title: "Feedback", text: "Customer emails arrive as ore, linked to the errors they describe.", hint: "Coming soon" },
+    feedback: { title: "Feedback", text: "Customer emails arrive as ore, linked to the errors they describe.", hint: "Connect your support inbox" },
     users: { title: "Users", text: "PostHog shows how many real users each fix reached.", hint: "Connect PostHog" },
     station: { title: "Checks", text: "Add checks to the gauntlet. Every check makes a yes safer.", hint: "Ship a few PRs" },
     permit: { title: "Launch permits", text: "A folder that keeps shipping clean earns the right to ship on its own.", hint: "Earn trust in one folder" },
@@ -559,6 +559,9 @@ export const YOURS = {
   anyFolder: "any folder",
   agentFor: (id: string) => `Agent for ${id}`,
   notPlugged: (name: string) => `${name} isn't plugged in yet: pair the runner`,
+  level: "Autonomy",
+  levelNow: (level: string) => `The planner is at ${level}. Turn it down and it asks first again. Going back up is earned on a card.`,
+  levelDown: (level: string) => `Down to ${level}`,
   permits: "Launch permits",
   permitsWhy: "These folders ship on their own once every check passes. Turn one off and its PRs wait for you again.",
   permitOff: "Turn off",

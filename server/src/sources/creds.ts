@@ -1,3 +1,4 @@
+import { factoryDeleted } from "../account-lifecycle";
 import type { PostHogCreds, PostHogSourceEnv } from "./posthog";
 import type { SentryCreds, SentrySourceEnv } from "./sentry";
 import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./credential-crypto";
@@ -25,6 +26,14 @@ export async function legacyRepo(env: CredsEnv, kind: MineKind): Promise<string>
 function override(env: CredsEnv, kind: MineKind): Creds {
   return kind === "sentry" ? { clientSecret: env.SENTRY_CLIENT_SECRET } : { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
 }
+/** A racing credential write must not recreate data after account deletion. */
+async function discardDeleted(env: CredsEnv, scope: CredentialScope): Promise<boolean> {
+  if (!await factoryDeleted(env.DB, scope.repo)) return false;
+  await env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(scopeKey(scope)).run();
+  for (const kind of ["sentry", "posthog"] as const) await env.CACHE?.delete(`cred:${kind}:${scope.repo.toLowerCase()}`);
+  return true;
+}
+
 async function row(env: CredsEnv, scope: CredentialScope, kind: MineKind): Promise<Row | null> {
   return env.DB.prepare("SELECT envelope, revoked, linked, last_used_at FROM credentials WHERE scope = ? AND kind = ?").bind(scopeKey(scope), kind).first<Row>();
 }
@@ -51,7 +60,7 @@ async function migrate(env: CredsEnv, scope: CredentialScope, kind: MineKind): P
   return current;
 }
 export async function readCreds(env: CredsEnv, kind: MineKind, scope?: CredentialScope, redactor?: Redactor, used = false): Promise<Creds> {
-  if (!scope) return {}; // Never resolve credentials without an installation boundary.
+  if (!scope || await discardDeleted(env, scope)) return {}; // Never resolve deleted or unscoped credentials.
   const current = await migrate(env, scope, kind);
   if (current?.revoked) return {};
   const ownFactory = scope.repo.toLowerCase() === await legacyRepo(env, kind);
@@ -68,27 +77,33 @@ export async function readCreds(env: CredsEnv, kind: MineKind, scope?: Credentia
   }
   redactor?.register(creds);
   if (used && (creds.apiKey || creds.clientSecret)) await markUsed(env, kind, scope);
-  return creds;
+  return await discardDeleted(env, scope) ? {} : creds;
 }
 export const sentryCreds = (env: CredsEnv, scope?: CredentialScope, redactor?: Redactor) => readCreds(env, "sentry", scope, redactor);
 export const postHogCreds = (env: CredsEnv, scope?: CredentialScope, redactor?: Redactor) => readCreds(env, "posthog", scope, redactor);
 export async function saveCreds(env: CredsEnv, kind: MineKind, creds: Creds, scope: CredentialScope): Promise<void> {
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
   const envelope = await encryptCredential(env, binding(scope, kind), creds);
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, ?, 0, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = excluded.envelope, revoked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at, last_used_at = NULL")
     .bind(scopeKey(scope), kind, JSON.stringify(envelope), scope.user ?? null, Date.now()).run();
   await env.CACHE?.delete(`cred:${kind}:${scope.repo.toLowerCase()}`);
   if (scope.repo.toLowerCase() === await legacyRepo(env, kind)) await env.CACHE?.delete(`cred:${kind}`);
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
 }
 export async function revokeCreds(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, NULL, 1, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = NULL, revoked = 1, linked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
     .bind(scopeKey(scope), kind, scope.user ?? null, Date.now()).run();
   await env.CACHE?.delete(`cred:${kind}:${scope.repo.toLowerCase()}`);
   if (scope.repo.toLowerCase() === await legacyRepo(env, kind)) await env.CACHE?.delete(`cred:${kind}`);
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
 }
 export async function markUsed(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
   // Record use of a pinned Worker override too, without storing its plaintext.
   await env.DB.prepare("INSERT INTO credentials (scope, kind, updated_at, last_used_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET last_used_at = excluded.last_used_at WHERE credentials.revoked = 0")
     .bind(scopeKey(scope), kind, Date.now(), Date.now()).run();
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
 }
 export async function credentialStatus(env: CredsEnv, kind: MineKind, scope: CredentialScope) {
   const creds = await readCreds(env, kind, scope);
@@ -104,6 +119,8 @@ export async function linkedRepo(env: CredsEnv, kind: MineKind, scope?: Credenti
   return current?.linked || scope.repo.toLowerCase() === await legacyRepo(env, kind) ? scope.repo.toLowerCase() : null;
 }
 export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null, scope: CredentialScope): Promise<void> {
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
   await env.DB.prepare("INSERT INTO credentials (scope, kind, linked, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET linked = excluded.linked WHERE credentials.revoked = 0")
     .bind(scopeKey(scope), kind, repo ? 1 : 0, Date.now()).run();
+  if (await discardDeleted(env, scope)) throw new Error("Factory deleted");
 }
