@@ -3,6 +3,10 @@
 Context for coding agents (Codex, Claude Code, etc.) working on Shiptorio. Read this
 before you change anything.
 
+**Shared context (decisions, open items, plan export, memory, design refs) lives in
+[`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
+so check open PRs and recent `main` commits before you start.**
+
 ## What Shiptorio is
 
 Shiptorio turns a codebase into a Factorio-style factory. User feedback is the ore,
