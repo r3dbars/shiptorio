@@ -8,7 +8,7 @@ import { FactoryState } from '@shiptorio/shared';
 import { starterLine } from '../src/engine';
 import { pairToken } from '../src/runner-auth';
 mock.module('cloudflare:workers', () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
-const { default: app } = await import('../src/index');
+const { testApp: app } = await import('./app-fixture');
 const { Factory } = await import('../src/factory');
 const origin = 'https://shiptorio.com';
 const secret = 'test-isolation-session', password = 'test-isolation-preview';
@@ -24,6 +24,7 @@ function fixture() {
   const DB = { prepare(sql: string) { let args: unknown[] = []; const stmt = {
     bind(...values: unknown[]) { args = values; return stmt; },
     async first() {
+      if (sql.includes("api_limits")) return { next_at: Date.now(), failures: 0 };
       if (sql.startsWith('SELECT enabled')) return null;
       if (sql.startsWith('INSERT INTO signup_counters')) return {count:1};
       if (sql.startsWith('SELECT factories')) return null;
@@ -35,10 +36,11 @@ function fixture() {
       if (sql === 'SELECT id FROM installations WHERE id = ?') return installs.has(Number(args[0])) ? { id: args[0] } : null;
       throw new Error(`Unexpected query ${sql}`);
     },
+    run: async () => ({ success: true }),
     all: async () => ({ results: [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
   }; return stmt; } };
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',
-    CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async () => { writes++; } },
+    CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async (key: string) => { if (!key.startsWith("ops:")) writes++; } },
     ASSETS: { fetch: async () => new Response('static shell') },
     FACTORY: { idFromName: (name: string) => name, get: (name: string) => { if (name.startsWith("security:")) return { securityLimit: async () => ({ allowed: true, retryAfter: 0 }) }; factoryCalls++; return { runnerJobs: async () => [], fetch: async () => new Response('private factory') }; } },
   };

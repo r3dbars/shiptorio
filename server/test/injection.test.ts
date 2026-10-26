@@ -1,3 +1,4 @@
+import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, expect, test } from "bun:test";
 import fixture from "./fixtures/injection-issue.json";
 import { gameMaster, judgeOrbit, judgePermit, pickFiles, pickResearch, planLocalTask, triage, writeFix } from "../src/spark";
@@ -7,7 +8,7 @@ import { assemblerPrompt, harnessArgs, validateChanges } from "../../runner/src/
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
-const env = { META_API_KEY: "test" };
+const env = sparkTestEnv();
 const paths = ["server/src/cart.ts", "server/test/cart.test.ts"];
 function replies(script: unknown[], requests: { messages: { role: string; content: string }[] }[] = []) {
   let n = 0;

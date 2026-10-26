@@ -1,7 +1,15 @@
 // One response policy for assets, API errors, redirects and the preview gate.
-export function securityHeaders(request: Request, artNonce?: string, turnstile = false): Record<string, string> {
+export function securityHeaders(request: Request, artNonce?: string, turnstile = false, sentryDsn?: string): Record<string, string> {
+
   const url = new URL(request.url);
   const local = ["localhost", "127.0.0.1"].includes(url.hostname);
+  let telemetryOrigin = '';
+  try {
+    if (sentryDsn) {
+      const target = new URL(sentryDsn);
+      if (target.protocol === 'https:' || local && target.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(target.hostname)) telemetryOrigin = ` ${target.origin}`;
+    }
+  } catch { /* An invalid monitoring DSN must not broaden the browser policy. */ }
   const socket = `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
   const csp = [
     "default-src 'none'",
@@ -11,8 +19,9 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
-    `connect-src 'self' ${socket}${turnstile ? " https://challenges.cloudflare.com" : ""}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
+    `connect-src 'self' ${socket}${turnstile ? " https://challenges.cloudflare.com" : ""}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}${telemetryOrigin}`,
     ...(turnstile ? ["frame-src https://challenges.cloudflare.com"] : []),
+
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
     "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'",
@@ -40,4 +49,11 @@ export function browserMutationAllowed(request: Request, routePath = new URL(req
     || /^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(routePath) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(routePath)
     || /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(claim|finish|renew)$/.test(routePath)) return true;
   return request.headers.get("origin") === url.origin && request.headers.get("sec-fetch-site") !== "cross-site";
+}
+
+// Only authenticated content-hashed assets are immutable. Gates/errors/pages stay private and fresh.
+export function browserCacheControl(request: Request, status: number): string {
+  const hash = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
+  return ["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && hash.test(new URL(request.url).pathname)
+    ? "private, max-age=31536000, immutable" : "no-store";
 }

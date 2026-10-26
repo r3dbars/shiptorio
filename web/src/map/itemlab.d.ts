@@ -14,6 +14,8 @@ export interface BuildOpts {
 
 export function setNight(on: boolean): void;
 export function updateFx(dt: number): void;
+export function getSeed(): number;
+export function setSeed(s: number): void;
 
 export function buildAssembler(o: BuildOpts): Built; // IDLE · WORKING · BLOCKED
 export function buildSplitter(): Built; // IDLE · SORTING

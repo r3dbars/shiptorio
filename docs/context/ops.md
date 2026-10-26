@@ -87,7 +87,7 @@ rotation is not undone safely by a code rollback: verify bindings/secrets afterw
 
 ## Feature flags
 
-Sign in as a GitHub login explicitly listed in `ADMIN_LOGINS`, then open `/admin`
+Sign in as a GitHub login explicitly listed in `ADMIN_LOGINS`, then open `/admin/flags`
 (also behind preview access). `ALLOWED_LOGINS` alone does not grant admin access.
 Global overrides and per-user overrides live only in that environment's KV under
 `flags:v1:global:NAME` and `flags:v1:user:LOGIN:NAME`. Logins normalize to lowercase.
@@ -111,7 +111,7 @@ local test/simulator fixtures without the binding retain defaults.
 Admin `GET /api/admin/flags?user=LOGIN` returns stored overrides and effective flags;
 `POST /api/admin/flags` takes URL-encoded `name`, `value=true|false|inherit`, optional
 `user`, a valid admin session, preview cookie and same-origin Origin. Admin writes
-emit `flag_changed` with actor/scope/value (no credentials). Reload `/admin` after
+emit structured `flag.changed` with actor/scope/value (no credentials). Reload `/admin/flags` after
 propagation to see globals; use the admin API to inspect personal overrides.
 
 ## Rollback (code/assets, not data)
@@ -234,7 +234,7 @@ export over populated tables. Exports can contain private data; encrypt/restrict
 access and never commit them.
 
 D1 restore does not restore KV mine credentials/flags or Factory DO state. KV flags
-can be reapplied through `/admin`; mine secrets must be rotated/reconnected. There
+can be reapplied through `/admin/flags`; mine secrets must be rotated/reconnected. There
 is no complete DO snapshot/export/restore tooling in this change. Do not reset a
 namespace to recover: it can lose leases, receipts and merge accounting. Preserve
 DO data, reconcile GitHub merge/head state and use the data backup and recovery procedure below
@@ -415,3 +415,104 @@ considering a production recovery. Never import old SQL into the populated produ
   The migration aborts on orphans and keeps their rows; repair against GitHub evidence and back up before
   retrying. Do not delete them to make deployment pass. Numbering is checked by CI; rebase/renumber
   unapplied migrations if another PR takes the next number.
+
+## Production observability (Goal 6)
+
+Goal 6 / Oct 26 checkpoint. Applies only to the `shiptorio` Worker. Never target another Worker.
+
+## Find a failure in under a minute
+
+1. Open `/admin` (feature flags remain at `/admin/flags`) as **r3dbars** (a live GitHub session is required). Choose a factory and refresh.
+2. Check **errors**, then use its `requestId` to correlate **events**, **spark**, and **webhooks**.
+   The snapshot includes the DO release SHA and shows machines, belts, item states, power, and the Foreman decision log. It excludes
+   source credentials, runner grants/receipts, issue bodies, and private code.
+3. In Sentry, filter `requestId:<id>` or `user.id:r3dbars`; `release` is the deployed git SHA.
+4. If persistence is delayed, tail the Worker live using the commands below.
+
+The admin page is read-only except for an explicit, same-origin **Send verification error to Sentry**
+button. This returns the Sentry event ID, request ID and SDK flush result. A successful flush alone
+is not proof that Sentry indexed the event: check the event in the Shiptorio project.
+Admin access is separate from the player allowlist; it uses a live, revocable account session and
+only the GitHub login `r3dbars`. Unauthorized requests receive 403.
+
+## Configure Shiptorio's own Sentry project
+
+This monitors **Shiptorio itself**, separate from the Sentry mine that feeds errors from a player's repo.
+Create/select a dedicated Shiptorio Sentry project. From the repo root, enter its DSN at the secure prompt:
+
+```sh
+cd server
+bunx wrangler secret put SHIPTORIO_SENTRY_DSN --name shiptorio
+```
+
+No DSN value or auth token belongs in git. The browser retrieves this public ingestion DSN, release,
+validated GitHub login and request ID at `/api/telemetry/config`, behind the preview gate. Browser and
+Worker share the project and release; the server secret is the single configuration point.
+SDK setup is disabled when the DSN is absent. No Sentry management/auth token is required.
+
+The Worker, Durable Object RPCs, alarms, websocket handlers and browser use the official Sentry SDKs.
+React's error boundary offers Reload. The browser SDK's default GlobalHandlers capture unhandled
+promise rejections. Unexpected factory socket closes report their repo, close code, and clean status;
+intentional disposal produces no disconnect event. Browser API breadcrumbs carry response request IDs.
+A three-second config timeout keeps telemetry availability from blocking the game indefinitely.
+
+## Logs and retention
+
+`server/wrangler.jsonc` enables Workers Logs with full invocation sampling. Every JSON log contains
+`level`, ISO `ts`, `requestId`, and `event`; known `userId`, `repo`, `itemId`, and measured `durationMs`
+are included where applicable. Request IDs are generated by the Worker (untrusted inbound IDs are not
+accepted), returned as `X-Request-ID`, and propagated across factory RPCs, Spark and GitHub calls.
+Queued webhook delivery and runner planning preserve the initiating trace across alarms. Alarm-only
+work has a fresh request ID and the factory repo; an actorless webhook/alarm never invents a human user.
+Spark/GitHub logs record duration, method and status, never request bodies or auth headers.
+
+The existing `shiptorio-cache` KV holds immutable, redacted diagnostic events for **7 days**. Separate
+indexes retain errors, Spark calls, and webhook events even when normal requests are busy. Admin reads
+the last 50 entries per category, using a separate index for each selected factory and bulk KV reads. KV is eventually
+consistent: cross-location readers can lag about 60 seconds. Workers live tail and Sentry are the faster
+path. This is a bounded recent-history view, not a complete audit archive. State snapshots read the DO
+but do not boot a new factory, dispatch jobs, or mutate game state.
+
+Redaction runs before console output, KV writes and Sentry transport, including error messages/stacks
+and breadcrumbs. It removes credential fields, bearer grants, common token formats, private keys,
+cookies, email addresses and labelled URL/query secrets. Sentry request objects are dropped entirely.
+Do not add payloads, code, raw headers or prompts to diagnostic fields.
+
+```sh
+cd server
+bunx wrangler tail shiptorio --format json
+bunx wrangler tail shiptorio --format json --status error
+bunx wrangler tail shiptorio --format json --search '"level":"error"'
+bunx wrangler tail shiptorio --format json --search '"event":"spark.call"'
+bunx wrangler tail shiptorio --format json --search '"event":"webhook.processing_failed"'
+bunx wrangler tail shiptorio --format json --search '<requestId>'
+```
+
+`--status error` selects failed invocations; caught failures may still return 2xx, so also filter structured
+error logs. Workers Logs is enabled; no Logpush destination is provisioned. Logpush requires an explicit
+storage destination and account entitlement; configure one separately if long-term export is needed.
+
+## Verify a release
+
+Merge only this human-authored PR after green CI. Never merge `shiptorio[bot]` PRs in this workflow.
+Wait for GitHub Actions **Deploy** to succeed, then GET `/api/version` through the preview gate and
+compare `commit` with the merged SHA. Open `/admin`, choose a real factory, send one verification error,
+and confirm its event in Sentry has the same `requestId`, `user.id`, and deployed release SHA.
+
+For local Workers verification with recent Wrangler versions, use
+`bunx wrangler dev --local --infer-origin-from-routes false` so localhost is not rewritten to a custom
+domain. Local test DSNs and fake credentials belong only in ignored `.dev.vars`.
+
+
+### Goal 6 verification
+
+Full local checks passed: tests (one existing platform skip), typechecks and web build. In a real local
+Workers runtime, the SDK delivered event `bb7fd4379e684c0c9307f69e4d5034bb` to an isolated local envelope
+receiver with matching request ID `0b781aa8-14d3-45d0-a4df-e362958ceaee`, `user.id=r3dbars`, and the local
+release marker. Browser Playwright checks verified admin refresh/factory selection, simulator rendering,
+the React reload boundary, and real SDK envelopes for React errors, unhandled promise rejection and
+websocket disconnect. Test-only faults were injected by the browser test, not production endpoints.
+
+Production `SHIPTORIO_SENTRY_DSN` was absent when checked. No Sentry ingestion project/key was borrowed
+from a player's mine or the separate inbound-webhook verification. Configure the dedicated secret above,
+then verify the forced event in Sentry before calling production Sentry acceptance complete.

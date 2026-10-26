@@ -197,12 +197,7 @@ export const Science = z.object({
 });
 export type Science = z.infer<typeof Science>;
 
-export const SCIENCE_FOR: Record<ItemKind, keyof Science> = {
-  bug: "red",
-  feature: "green",
-  cleanup: "grey",
-  tests: "blue",
-};
+export { SCIENCE_FOR } from "./science";
 
 // ---------- the foreman layer (docs/PRODUCT.md) ----------
 
