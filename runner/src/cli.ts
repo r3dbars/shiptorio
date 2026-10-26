@@ -2,8 +2,9 @@ import { mkdir, lstat } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
+import { TEST_PATH, verifyRegression } from "./verify";
 
-interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number }
+interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
 const root = resolve(import.meta.dir, "..");
 const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
@@ -47,7 +48,7 @@ async function renewPairing() {
   await chmod(file, 0o600);
 }
 async function execute(job: Job) {
-  if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || job.branch !== `shiptorio/runner-${job.id}` || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
+  if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || (!job.reworkPr && job.branch !== `shiptorio/runner-${job.id}` || !!job.reworkPr && (!Number.isInteger(job.reworkPr) || job.reworkPr < 1 || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(job.branch))) || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
   const work = resolve(root, ".work", job.id);
   const gitEnv = { ...cleanEnv, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${job.token}`).toString("base64")}`, GIT_TERMINAL_PROMPT: "0" };
   let summary = "";
@@ -73,12 +74,20 @@ async function execute(job: Job) {
     await command([process.execPath, "install", "--frozen-lockfile", "--ignore-scripts"], work, cleanEnv);
     const checks = ["typecheck", "test", "build"] as const;
     for (const check of checks) { console.log(`Supervisor check: ${check}`); await command([process.execPath, "run", check], work, cleanEnv, 180000); }
+    const verifyPaths = [...new Set([...paths, ...(job.prTestFiles ?? [])])].filter(p => TEST_PATH.test(p));
+    const docsOnly = !job.reworkPr && paths.every(p => /\.(md|mdx|txt)$|(^|\/)docs\//i.test(p));
+    const proof = docsOnly ? undefined : await verifyRegression(work, job.verifyBaseSha ?? job.baseSha, verifyPaths, cleanEnv);
+    if (proof) {
+      await Bun.write(resolve(root, ".work", `${job.id}.verify.log`), proof.logTail);
+      console.log(`Verify bay: base fails=${proof.failsOnBase}, head passes=${proof.passesOnHead}`);
+      if (verifyPaths.length && !proof.passesOnHead) throw new Error("Regression recipe failed on the fix commit");
+    }
     if (await command(["git", "diff", "--name-only"], work)) throw new Error("Checks changed tracked files");
     await command(["git", "-c", "user.name=Shiptorio local runner", "-c", "user.email=shiptorio@users.noreply.github.com", "commit", "-m", "Execute Spark-approved issue plan with local subscription agent"], work);
     const sha = await command(["git", "rev-parse", "HEAD"], work);
     await command(["git", "push", "origin", `HEAD:refs/heads/${job.branch}`], work, gitEnv);
     summary = `Approved paths: ${paths.join(", ")}. Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
-    const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks };
+    const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
     await Bun.write(resolve(root, ".work", `${job.id}.receipt.json`), JSON.stringify(receipt));
     console.log(JSON.stringify(await api("finish", receipt)));
   } catch (error) {

@@ -19,7 +19,7 @@ import { layoutMap } from "./map";
 import { pickFiles, planLocalTask, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal } from "./ore";
-import { diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, reviewComment, reviewDiff, reworkMove, setStage, stageOf, verifyFromDiff } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, reviewComment, reviewDiff, reworkMove, setStage, stageOf, verifyFromDiff } from "./gauntlet";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 
@@ -34,6 +34,7 @@ export interface FactoryEnv extends AppCredentials, SparkEnv {
 
 const TICK_MS = 2000;
 const MAX_ATTEMPTS = 3;
+const workRevision = (item: Item) => issueRevision(item.title, JSON.stringify({ body: item.body ?? "", failure: item.failure ?? "", scars: item.scars ?? [] }));
 
 interface Meta {
   repo: string;
@@ -82,13 +83,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     const move = this.state?.move;
     if (!move || move.id !== moveId || !move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
     const item = this.state!.items.find(i => i.id === move.itemId);
-    if (!item || item.prNumber || !["ore", "queued", "rejected"].includes(item.state)) return;
+    if (!item || item.prNumber && item.state !== "rejected" || !["ore", "queued", "rejected"].includes(item.state)) return;
     const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.status === "awaiting_approval");
     if (job) {
       await this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
         if (!stored || stored.status !== "awaiting_approval" || this.state?.move?.id !== moveId) return;
-        if (stored.inputRevision !== await issueRevision(item.title, item.body)) {
+        if (stored.inputRevision !== await workRevision(item)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.ctx.storage.put(`runnerJob:${stored.id}`, stored);
           await this.publishRunnerMove(null);
@@ -133,7 +134,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
-      if (!item || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber) throw new Error("Item is not available to build");
+      const rework = !!item?.prNumber && item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-");
+      if (!item || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) throw new Error("Item is not available to build");
+      if (rework && (!input.needsApproval || !canRework(item))) throw new Error("This PR requires player escalation, not another automatic rework offer");
       if (!input.allowedPaths.every(runnerPathAllowed)) throw new Error("Unsafe approved path");
       const jobs = await this.runnerJobs();
       for (const old of jobs.filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now())) {
@@ -144,7 +147,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
-      job.inputRevision = await issueRevision(item.title, item.body);
+      if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
+      job.inputRevision = await workRevision(item);
       await this.ctx.storage.put(`runnerJob:${id}`, job);
       await this.patch({ bottleneck: { stage: "triage", wip: 1, ageMs: 0, throughputPerHour: 0, valueAtRisk: item.value ?? 0, summary: "Preparing your plan. No build has started." } });
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
@@ -166,19 +170,30 @@ export class Factory extends DurableObject<FactoryEnv> {
       const token = await installationToken(this.env, this.meta.installationId);
       const tree = await repoTree(token, this.meta.repo);
       job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
+      job.verifyBaseSha = job.baseSha;
+      job.baseBranch = tree.branch;
+      let changedFiles: Awaited<ReturnType<typeof prFiles>> = [];
+      if (job.reworkPr) {
+        const pr = await gh<{ head: { sha: string; ref: string }; base: { sha: string; ref: string }; state: string; merged: boolean }>(`/repos/${job.repo}/pulls/${job.reworkPr}`, token);
+        if (pr.merged || pr.state !== "open" || pr.head.ref !== job.branch) throw new Error("Rework PR is no longer available");
+        job.baseSha = pr.head.sha;
+        job.verifyBaseSha = pr.base.sha;
+        job.baseBranch = pr.base.ref;
+        changedFiles = await prFiles(token, job.repo, job.reworkPr);
+        job.prTestFiles = changedFiles.filter(f => f.status !== "removed" && runnerPathAllowed(f.filename) && /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/i.test(f.filename)).map(f => f.filename);
+      }
       job.steps = [];
       if (job.needsApproval) {
-        const candidates = tree.entries.filter(e => e.type === "blob" && runnerPathAllowed(e.path)).map(e => e.path);
-        job.allowedPaths = await pickFiles(this.env, { title: item.title, body: item.body ?? "", district: item.district }, candidates);
+        const candidates = [...new Set([...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)])].filter(runnerPathAllowed);
+        job.allowedPaths = await pickFiles(this.env, { title: item.title, body: item.body ?? "", district: item.district, failure: item.failure, scars: item.scars }, candidates);
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-      job.plan = await planLocalTask(this.env, { title: item.title, body: item.body ?? "", district: item.district, failure: item.failure }, job.allowedPaths,
+      job.plan = await planLocalTask(this.env, { title: item.title, body: item.body ?? "", district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
         });
-      job.baseBranch = tree.branch;
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
         const move: Move = { id: crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before your local ${job.harness === "codex" ? "Codex" : "Claude"} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...job.plan.split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${job.harness === "codex" ? "Codex" : "Claude"}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
@@ -210,7 +225,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
       if (!job) return null;
       const currentItem = this.state?.items.find(i => i.id === job.itemId);
-      if (!currentItem || job.inputRevision && job.inputRevision !== await issueRevision(currentItem.title, currentItem.body)) {
+      if (!currentItem || job.inputRevision && job.inputRevision !== await workRevision(currentItem)) {
         job.status = "failed"; job.error = "Issue changed before dispatch; request a fresh plan.";
         await this.ctx.storage.put(`runnerJob:${job.id}`, job);
         return null;
@@ -260,11 +275,21 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (head.object.sha !== receipt.sha) throw new Error("Pushed head mismatch");
     const diff = await gh<{ status: string; ahead_by: number; files: { filename: string; status: string; previous_filename?: string; changes: number }[] }>(`/repos/${job.repo}/compare/${job.baseSha}...${receipt.sha}`, token);
     if (diff.status !== "ahead" || diff.ahead_by !== 1 || !diff.files.length || diff.files.length > 10 || diff.files.some(f => !job.allowedPaths.includes(f.filename) || !runnerPathAllowed(f.filename) || f.status === "renamed" || f.status === "removed") || diff.files.reduce((n, f) => n + f.changes, 0) > 500) throw new Error("Pushed diff exceeds the approved scope");
-    const pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\nHuman review and merge required. Independent verification/review stations remain pending.` });
-    job.status = "completed"; job.prUrl = pr.html_url;
+    if (receipt.proof && (receipt.proof.headSha !== receipt.sha || receipt.proof.baseSha !== (job.verifyBaseSha ?? job.baseSha))) throw new Error("Verify proof is not bound to this base/head");
+    const evidence = receipt.proof ? proofComment(receipt.proof) : "";
+    let pr: { number: number; html_url: string };
+    if (job.reworkPr) {
+      const existing = await gh<{ number: number; html_url: string; state: string; merged: boolean; body: string | null; head: { ref: string; sha: string } }>(`/repos/${job.repo}/pulls/${job.reworkPr}`, token);
+      if (existing.state !== "open" || existing.merged || existing.head.ref !== job.branch || existing.head.sha !== receipt.sha || item.prNumber !== job.reworkPr) throw new Error("Rework PR changed or closed");
+      if (evidence && !existing.body?.includes(`shiptorio-proof:${receipt.sha}`)) await gh(`/repos/${job.repo}/pulls/${job.reworkPr}`, token, { method: "PATCH", body: JSON.stringify({ body: `${existing.body ?? ""}\n\n${evidence}` }) });
+      pr = { number: existing.number, html_url: existing.html_url };
+    } else {
+      pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\n${evidence}\n\nHuman review and merge required.` });
+    }
+    job.status = "completed"; job.prUrl = pr.html_url; job.headSha = receipt.sha; job.proof = receipt.proof;
     await this.ctx.storage.put(`runnerJob:${job.id}`, job);
-    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", machineId: "ci-1", inspection: freshInspection(receipt.sha), updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
-    this.log("success", `Local ${job.harness} opened PR #${pr.number}; waiting for CI and independent verification.`, item.id);
+    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", failure: undefined, machineId: "ci-1", inspection: freshInspection(receipt.sha), updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
+    this.log("success", `Local ${job.harness} ${job.reworkPr ? "updated" : "opened"} PR #${pr.number}; waiting for CI and independent verification.`, item.id);
     return { prUrl: pr.html_url };
   }
 
@@ -579,11 +604,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const files = await prFiles(token, this.meta.repo, pr);
-      const job = (await this.runnerJobs()).find((j) => j.itemId === item.id && j.prUrl?.endsWith(`/pull/${pr}`));
+      const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
+      if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
+      const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
       const current = () => this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
       if (gate === "verify") {
-        const v = verifyFromDiff(files.map((f) => f.filename), !!job);
+        const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
         const now = current();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
@@ -628,7 +655,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-") && item.scars?.length) {
         if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) continue;
         await this.ctx.storage.put(`gauntletOffered:${item.id}`, item.scars.length);
-        await this.publishGauntletMove(reworkMove(item, now));
+        const builder = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
+        await this.publishGauntletMove(reworkMove(item, now, builder));
         return;
       }
     }
@@ -647,6 +675,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (s.bottleneck?.stationId === "gate-1") await this.patch({ bottleneck: null });
       return true;
     }
+    if (optionId.startsWith("rework-") && move.options.some(o => o.id === optionId)) return false;
     const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed";
     const overrule = optionId === "overrule" && item.state === "rejected";
     if (!ready && !overrule) return true;
