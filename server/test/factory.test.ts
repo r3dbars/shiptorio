@@ -2,6 +2,7 @@ import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture"
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { freshInspection, setStage, stageOf } from "../src/gauntlet";
 import { normalizeGitHub } from "../src/sources/github";
 
 // Exercise the real Factory transitions with storage and transport substitutes.
@@ -458,3 +459,55 @@ it("GitHub cooldown preserves durable deliveries without exhausting processing r
   expect(f.data.get("delivery:rate-limited")).toMatchObject({ attempts: 0, nextAt: retryAt });
   expect(f.data.has("failed:delivery:rate-limited")).toBe(false);
 });
+
+for (const outcome of ["pass", "error", "comment"] as const) {
+  it(`discards an old-head AI review when the head moves during ${outcome === "comment" ? "comment publication" : outcome === "error" ? "a failed review" : "review"}`, async () => {
+    const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+    const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+    const oldHead = "b".repeat(40), newHead = "c".repeat(40);
+    const reviewing = (sha: string) => setStage(setStage(item({ state: "inspecting", branch: "shiptorio/runner-1", inspection: freshInspection(sha) }), "ci", "passed", "green"), "verify", "passed", "proof");
+    const f = fixture([reviewing(oldHead)], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test" });
+    const internals = f.factory as unknown as { load(): Promise<unknown>; runGauntlet(): Promise<void>; patch(patch: { items: Item[] }): Promise<void>; think: (...args: unknown[]) => Promise<unknown> };
+    let release!: () => void, started!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const comments: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/comments?")) return Response.json([]);
+      if (url.endsWith("/access_tokens")) return Response.json({ token: "test" });
+      if (url.includes("/files?")) return Response.json([{ filename: "server/src/cart.ts", status: "modified", patch: "-old\n+fixed" }]);
+      if (url.endsWith("/issues/42/comments")) {
+        comments.push(JSON.parse(String(init?.body)).body);
+        if (outcome === "comment") { started(); await waiting; }
+        return Response.json({ id: 1 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }) as typeof fetch;
+    internals.think = async () => {
+      if (outcome !== "comment") { started(); await waiting; }
+      if (outcome === "error") throw new Error("Old review failed");
+      return { verdict: "pass", reason: "Old diff is correct", findings: [] };
+    };
+    try {
+      await internals.load();
+      const run = internals.runGauntlet();
+      await entered;
+      // A new head has completed CI and proof while the previous review is still awaiting I/O.
+      await internals.patch({ items: [reviewing(newHead)] });
+      release();
+      await run;
+      expect(f.saved().items[0].inspection?.headSha).toBe(newHead);
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
+      expect(f.saved().items[0].state).toBe("inspecting");
+      expect(f.saved().items[0].scars ?? []).toHaveLength(0);
+      expect(comments).toHaveLength(outcome === "comment" ? 1 : 0);
+      if (comments.length) expect(comments[0]).toContain(`shiptorio-review-head:${oldHead}`);
+      // The replacement commit still receives its own review on the next run.
+      await internals.runGauntlet();
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe(outcome === "error" ? "rework" : "passed");
+      if (outcome !== "error") expect(comments.at(-1)).toContain(`shiptorio-review-head:${newHead}`);
+    } finally { release(); globalThis.fetch = original; }
+  });
+}
