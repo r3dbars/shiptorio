@@ -92,8 +92,8 @@ app.use("*", async (c, next) => {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew|heartbeat)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
-    if (!await factory(c.env, identity.repo).isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
     if (!identity.user || !isAllowed(c.env.ALLOWED_LOGINS, identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({ error: "repository access denied" }, 403);
+    if (!await factory(c.env, identity.repo).isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
 
     c.set("runner", identity);
     await next();
