@@ -3,10 +3,10 @@ import { Database } from "bun:sqlite";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 const dir = join(import.meta.dir, "../migrations");
-const pending = readFileSync(join(import.meta.dir, "../scripts/durability-schema.sql"), "utf8");
+const pending = readFileSync(join(dir, readdirSync(dir).find(f => f.endsWith("_durability.sql"))!), "utf8");
 function fixture(orphan = false) {
   const db = new Database(":memory:"); db.run("PRAGMA foreign_keys=ON");
-  for (const file of readdirSync(dir).filter(f => f.endsWith(".sql")).sort()) db.exec(readFileSync(join(dir,file), "utf8"));
+  for (const file of readdirSync(dir).filter(f => f.endsWith(".sql") && !f.endsWith("_durability.sql")).sort()) db.exec(readFileSync(join(dir,file), "utf8"));
   db.run("INSERT INTO installations(id,account_login,created_at) VALUES (1,'owner','2026-10-26 01:00:00')");
   db.run("INSERT INTO repos(full_name,installation_id,default_branch,updated_at) VALUES ('owner/repo',?,'main','2026-10-26 02:00:00')", [orphan ? 9 : 1]);
   db.run("INSERT INTO pull_requests(repo,number,title,state) VALUES ('owner/repo',1,'Preserve me','open')");

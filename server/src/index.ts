@@ -254,7 +254,7 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
 app.get("/api/repos/:owner/:repo/export", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  if (c.get("login").toLowerCase() !== c.req.param("owner").toLowerCase()) return c.json({ error: "owner required" }, 403);
+  if (c.get("user").login.toLowerCase() !== c.req.param("owner").toLowerCase()) return c.json({ error: "owner required" }, 403);
   const connected = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first();
   if (!connected) return c.json({ error: "factory not found" }, 404);
   const data = await factory(c.env, repo).exportState();

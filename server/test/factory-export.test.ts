@@ -1,5 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { makeSessionCookie } from "../src/session";
+import { signedInCookie, testD1 } from "./d1-fixture";
 import original from "./fixtures/factory-state/unversioned-original.json";
 import { loadFactoryState, migrateFactoryState, saveFactoryState } from "../src/state-storage";
 mock.module("cloudflare:workers", () => ({DurableObject: class {
@@ -16,9 +17,17 @@ function fixture(connected = true, populated = true) {
     delete: async (key: string) => data.delete(key),
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage),
   };
-  const env = { SESSION_SECRET: "export-test", ALLOWED_LOGINS: "owner,other", DB: {prepare: () => ({bind: () => ({first: async () => connected ? {installation_id: 1} : null})})}, FACTORY: {idFromName: (repo: string) => repo, get: (_id: string) => factory} };
+  const env = { SESSION_SECRET: "export-test", APP_PASSWORD: "export-preview", ALLOWED_LOGINS: "owner,other", DB: testD1(), FACTORY: {idFromName: (repo: string) => repo, get: (_id: string) => factory} };
   const factory = new Factory({storage, getWebSockets: () => []} as never, env as never);
-  const request = async (login: string | null, path = "owner/repo") => app.fetch(new Request(`https://shiptorio.com/api/repos/${path}/export`, {headers: login ? {cookie: (await makeSessionCookie(env.SESSION_SECRET, login)).split(";")[0]} : {}}), env as never);
+  const request = async (login: string | null, path = "owner/repo") => {
+    if (connected) {
+      await env.DB.prepare("INSERT OR IGNORE INTO installations(id,account_login) VALUES(1,'owner')").run();
+      await env.DB.prepare("INSERT OR IGNORE INTO repos(full_name,installation_id) VALUES('owner/repo',1)").run();
+    }
+    const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
+    const cookie = login ? `${await signedInCookie(env, login, ["owner/repo"])}; ${preview}` : preview;
+    return app.fetch(new Request(`https://shiptorio.com/api/repos/${path}/export`, {headers: {cookie}}), env as never);
+  };
   return {request, data};
 }
 
