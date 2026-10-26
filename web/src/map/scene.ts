@@ -102,6 +102,14 @@ export interface Ping {
   title: string; // a few words: "Needs a look", "Ready to launch"
   code?: string; // the part of the codebase: "/web", "src/sync"
   tone?: "warn" | "ok";
+  quiet?: boolean; // a small tag on a busy machine (no pulse), not the one thing that needs you
+}
+
+interface PingEl {
+  key: string;
+  el: HTMLButtonElement;
+  title: HTMLElement;
+  code: HTMLElement;
 }
 
 interface Label {
@@ -284,8 +292,8 @@ export class FactoryScene {
   private bias = { x: 0, y: 0 };
   private biasGoal: { x: number; y: number } | null = null;
   private readonly ray = new THREE.Raycaster();
-  // the one in-world ping: a pulsing dot on whatever needs you, tagged with the code it touches
-  private ping?: { key: string; el: HTMLButtonElement; title: HTMLElement; code: HTMLElement };
+  // in-world pings: a pulsing dot on whatever needs you, plus quiet tags on busy machines, each naming the code it touches
+  private pings: PingEl[] = [];
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -471,32 +479,32 @@ export class FactoryScene {
     this.showAll = on;
   }
 
-  // Pin the ping to a pick key (station id, "m:<machine id>", "d:<district>", "rework"), or clear it.
-  setPing(p: Ping | null) {
-    if (!p) {
-      this.ping?.el.remove();
-      this.ping = undefined;
-      return;
-    }
-    if (!this.ping) {
-      const el = document.createElement("button");
-      el.type = "button";
-      el.className = "mapping";
-      const dot = document.createElement("i");
-      const tag = document.createElement("span");
-      const title = document.createElement("b");
-      const code = document.createElement("code");
-      tag.append(title, code);
-      el.append(dot, tag);
-      el.addEventListener("click", () => this.ping && this.onPick?.(this.ping.key));
-      this.labelRoot.appendChild(el);
-      this.ping = { key: p.key, el, title, code };
-    }
-    this.ping.key = p.key;
-    this.ping.el.classList.toggle("ok", p.tone === "ok");
-    this.ping.el.setAttribute("aria-label", `${p.title}${p.code ? ` in ${p.code}` : ""}`);
-    if (this.ping.title.textContent !== p.title) this.ping.title.textContent = p.title;
-    if (this.ping.code.textContent !== (p.code ?? "")) this.ping.code.textContent = p.code ?? "";
+  // Pin pings to pick keys (station id, "m:<machine id>", "d:<district>", "rework"). An empty list clears them.
+  setPings(list: Ping[]) {
+    while (this.pings.length > list.length) this.pings.pop()!.el.remove();
+    list.forEach((p, n) => {
+      let pe = this.pings[n];
+      if (!pe) {
+        const el = document.createElement("button");
+        el.type = "button";
+        const dot = document.createElement("i");
+        const tag = document.createElement("span");
+        const title = document.createElement("b");
+        const code = document.createElement("code");
+        tag.append(title, code);
+        el.append(dot, tag);
+        pe = { key: p.key, el, title, code };
+        const me = pe;
+        el.addEventListener("click", () => this.onPick?.(me.key));
+        this.labelRoot.appendChild(el);
+        this.pings.push(pe);
+      }
+      pe.key = p.key;
+      pe.el.className = `mapping${p.quiet ? " quiet" : ""}${p.tone === "ok" ? " ok" : ""}`;
+      pe.el.setAttribute("aria-label", `${p.title}${p.code ? ` in ${p.code}` : ""}`);
+      if (pe.title.textContent !== p.title) pe.title.textContent = p.title;
+      if (pe.code.textContent !== (p.code ?? "")) pe.code.textContent = p.code ?? "";
+    });
   }
 
   // Fly the camera in on a picked thing, or back out to where it was (null).
@@ -1061,19 +1069,20 @@ export class FactoryScene {
       l.el.style.display = off ? "none" : "flex";
       if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
     }
-    if (this.ping) {
-      const l = [...this.labels].find((x) => x.key === this.ping!.key);
-      if (!l) this.ping.el.style.display = "none";
-      else {
-        l.obj.getWorldPosition(this.v3);
-        this.v3.y += l.y * 0.55;
-        this.v3.project(this.camera);
-        const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
-        this.ping.el.style.display = "flex";
-        this.ping.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
-        // keep the tag on screen: flip it to the dot's left near the right edge
-        this.ping.el.classList.toggle("flip", x > w - 220);
+    for (const pe of this.pings) {
+      const l = [...this.labels].find((x) => x.key === pe.key);
+      if (!l) {
+        pe.el.style.display = "none";
+        continue;
       }
+      l.obj.getWorldPosition(this.v3);
+      this.v3.y += l.y * 0.55;
+      this.v3.project(this.camera);
+      const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
+      pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
+      pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      // keep the tag on screen: flip it to the dot's left near the right edge
+      pe.el.classList.toggle("flip", x > w - 220);
     }
   }
 
@@ -1175,7 +1184,7 @@ export class FactoryScene {
   };
 
   dispose() {
-    this.ping?.el.remove();
+    for (const pe of this.pings) pe.el.remove();
     cancelAnimationFrame(this.raf);
     for (const l of this.labels) l.el.remove();
     this.labels.clear();

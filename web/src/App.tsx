@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
+import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
 import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
@@ -42,6 +43,10 @@ const PING_WORD: Record<NonNullable<Move["stage"]>, string> = {
   power: "Needs power",
   resources: "Needs power",
 };
+
+// What a quiet tag on a busy machine says.
+const BUSY_WORD: Partial<Record<Item["state"], string>> = { working: "Building", inspecting: "Checking", rejected: "Reworking" };
+const codePath = (district: string) => (district === "/" ? "/" : `/${district}`);
 
 const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "Advisor", floor: "Floor", build: "Build", lights_out: "Lights out" };
 // Subscriptions you can plug in. Each sign-in adds a solar plant and assemblers (docs/PRODUCT.md).
@@ -152,9 +157,22 @@ export function App() {
     if (!key) return null;
     const stage = move?.stage ?? state.bottleneck?.stage;
     const title = item?.state === "rejected" ? "Sent back" : stage ? PING_WORD[stage] : "Needs you";
-    return { key, title, code: item ? (item.district === "/" ? "/" : `/${item.district}`) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
+    return { key, title, code: item ? codePath(item.district) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
+  // Quiet tags on every other busy machine, naming the code it's working in, so the whole line reads as your codebase.
+  const pings = useMemo(() => {
+    if (!state) return [];
+    const out: Ping[] = ping ? [ping] : [];
+    for (const i of state.items) {
+      const word = i.machineId ? BUSY_WORD[i.state] : undefined;
+      const key = i.machineId && pickKey(i.machineId);
+      if (!word || !key || out.some((p) => p.key === key)) continue;
+      out.push({ key, title: word, code: codePath(i.district), quiet: true });
+      if (out.length >= 5) break;
+    }
+    return out;
+  }, [state, ping]);
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
 
   const launchItem = (item: Item) => {
@@ -247,7 +265,7 @@ export function App() {
   return (
     <div className={panel ? "app picked" : "app"}>
       <main className="floor">
-        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} ping={show("line") ? ping : null} />
+        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} pings={show("line") ? pings : undefined} />
         <ShipCelebration state={state} />
 
         <header className="topbar">
@@ -289,34 +307,38 @@ export function App() {
               </div>
             )}
           </div>
-          {world && (
-            <div className="lens" role="group" aria-label="View">
-              <button type="button" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
-                Check in
-              </button>
-              <button type="button" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
-                Build
-              </button>
-            </div>
-          )}
-          <button
-            type="button"
-            className={`checkin-chip guide-chip${met.size > seenGuide ? " new" : ""}`}
-            onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
-            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
-          >
-            Guide · {met.size}/{GUIDE_TOTAL}
-          </button>
-          {show("checkin") && deck.length > 1 && !checkin && (
+          {!world && show("checkin") && deck.length > 1 && !checkin && (
             <button type="button" className="checkin-chip" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
               Check in · {deck.length}
             </button>
           )}
+          <button
+            type="button"
+            className={`hud-iconbtn guide-btn${met.size > seenGuide ? " new" : ""}`}
+            aria-pressed={sheet === "guide"}
+            onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
+            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
+            title={`Field guide · ${met.size}/${GUIDE_TOTAL}`}
+          >
+            {met.size > seenGuide && <span className="n">{met.size - seenGuide}</span>}
+            <Icon name="book" size={20} />
+          </button>
           <button type="button" className="hud-iconbtn" aria-label={`Activity, ${waiting} waiting on you`} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
             {waiting > 0 && <span className="n">{waiting}</span>}
             <Icon name="bell" size={20} />
           </button>
         </header>
+
+        {world && (
+          <div className="lens" role="group" aria-label="View">
+            <button type="button" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
+              Check in{deck.length > 0 && <span className="lens-n">{deck.length}</span>}
+            </button>
+            <button type="button" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
+              Build
+            </button>
+          </div>
+        )}
 
         {tour.lesson && (
           <section className="card coachcard" aria-label="Tour">

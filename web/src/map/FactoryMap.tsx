@@ -7,10 +7,12 @@ interface Props {
   onPick?: (id: string) => void;
   focus?: string | null; // the picked thing the camera flies in on
   showLabels?: boolean; // all labels on; otherwise they show on hover
-  ping?: Ping | null; // the pulsing marker on whatever needs you
+  pings?: Ping[]; // the pulsing marker on whatever needs you, then quiet tags on busy machines
 }
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, ping = null }: Props) {
+const NO_PINGS: Ping[] = [];
+
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -96,7 +98,9 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   }, [state]);
   useEffect(() => sceneRef.current?.focus(focus), [focus]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
-  useEffect(() => sceneRef.current?.setPing(ping), [ping?.key, ping?.title, ping?.code, ping?.tone]);
+  const pingKey = JSON.stringify(pings);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => sceneRef.current?.setPings(pings), [pingKey]);
 
   return (
     <>
