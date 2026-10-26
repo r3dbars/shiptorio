@@ -228,3 +228,27 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 /* sound: mute + volume */
 .sound > span:first-child { width: auto; }
 .sound input[type="range"] { flex: 1; min-width: 60px; accent-color: var(--amber); height: 4px; }
+
+/* Detail view: what a clicked thing is doing right now, its belts, recent history */
+.sp-sec { display: flex; flex-direction: column; gap: 4px; }
+.sp-h { font: 9px var(--pixel); letter-spacing: 0.06em; color: var(--dim); }
+.sp-jobs, .sp-recent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sp-jobs li { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 3px 6px; background: #1b2244; }
+.sp-jobs .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-jobs .st { flex: none; font: 9px var(--pixel); color: var(--amber); align-self: center; }
+.sp-jobs .more, .sp-empty { font-size: 11px; color: var(--dim); margin: 0; }
+.sp-flow { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.sp-flow b { font: 9px var(--pixel); color: var(--dim); display: inline-block; width: 30px; }
+.sp-recent li { font-size: 11px; color: var(--dim); }
+.sp-recent li.success { color: var(--green); }
+.sp-recent li.warn { color: var(--amber); }
+.stationpanel { max-height: calc(100vh - 130px); overflow: auto; }
+
+/* Labels are off by default and show on hover; this turns them all on */
+.labeltoggle {
+  position: absolute; right: 190px; bottom: 36px; min-height: 34px; padding: 0 10px;
+  font: 10px var(--pixel); letter-spacing: 0.06em; color: var(--ink); cursor: pointer;
+  background: #1b2244; border: 2px solid #3a4677;
+}
+.labeltoggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+@media (max-width: 760px) { .labeltoggle { display: none; } }
