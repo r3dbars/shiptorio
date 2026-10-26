@@ -11,6 +11,7 @@ import {
   researchBlocked,
   suggestResearch,
   techById,
+  TECHS,
   type Belt,
   type FactoryState,
   type Item,
@@ -26,7 +27,7 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought } from "./brain";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal, matchDistrict } from "./ore";
@@ -644,7 +645,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const comeback = !!existing && existing.state === "launched";
       const watched = watchForSentry(s.items, folded, comeback, signal.occurredAt);
       if (watched && comeback) return this.orbitTrip(folded, "sentry", `Sentry fired "${folded.title}" again`, signal.url);
-      if (watched) await this.orbitTrip(watched, "sentry", `New Sentry errors spiked on /${folded.district} ("${folded.title}", ${folded.ore?.count} events)`, signal.url);
+      if (watched && await this.orbitCaused(watched, folded)) await this.orbitTrip(watched, "sentry", `New Sentry errors spiked on /${folded.district} ("${folded.title}", ${folded.ore?.count} events)`, signal.url);
     }
     // New ore lands on the district its stack frame or route points at; triage can still move it.
     const item = existing || !signal.districtHint ? folded : { ...folded, district: matchDistrict(signal.districtHint, s.districts.map((d) => d.name)) };
@@ -1207,6 +1208,32 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.scheduleTick();
   }
 
+  /**
+   * A new error spiked on the folder a launch touched. The spike rule says "maybe"; Spark reads the launch's files
+   * and the error and says whether it's really the launch. Unsure or unreachable means the rule's trip stands.
+   */
+  private async orbitCaused(watched: Item, error: Item): Promise<boolean> {
+    const pr = watched.orbit?.prNumber ?? watched.prNumber;
+    const title = `#${pr} vs "${error.title}"`;
+    if (!sparkConfigured(this.env) || !this.meta || !pr) {
+      await this.note({ decision: "orbit", by: "fallback", ms: 0, itemId: watched.id, title, outcome: "Tripped on the spike rule", reason: "No Meta API key, so any spike on the folder counts.", model: "spike rule" });
+      return true;
+    }
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      const files = (await prFiles(token, this.meta.repo, pr)).map(f => f.filename).slice(0, 60);
+      const since = watched.orbit!.since, now = Date.now();
+      const v = await this.think("orbit", { title, itemId: watched.id, target: "orbit-1" }, () => judgeOrbit(this.env, {
+        launch: { pr, title: watched.title, district: watched.district, files, launchedMinutesAgo: Math.round((now - since) / 60000) },
+        error: { title: error.title, district: error.district, events: error.ore?.count ?? 1, firstSeenMinutesAfterLaunch: Math.round(((error.ore?.firstSeen ?? now) - since) / 60000), culprit: error.body?.slice(0, 300) },
+      }), v => ({ outcome: v.caused ? `#${pr} caused it: back to rework` : `Not #${pr}'s fault: launch stays up`, reason: v.reason }));
+      if (!v.caused) this.broadcast({ type: "log", level: "info", text: `Orbit watch: "${error.title}" spiked on /${error.district}, but it isn't #${pr}'s doing. The launch stays up.`, at: Date.now(), itemId: watched.id, actor: "spark", tool: "orbit_verdict", reason: v.reason });
+      return v.caused;
+    } catch {
+      return true; // think() already logged the fallback
+    }
+  }
+
   /** Someone opened or merged a revert of a watched launch. */
   private async orbitRevert(pr: { number?: number; title?: string; body?: string | null; html_url?: string }): Promise<void> {
     const reverted = this.meta && revertedPr(pr, this.meta.repo);
@@ -1267,7 +1294,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const s = this.state;
     if (!s) return;
     const ready = permitReady(await this.permitBook());
-    if (ready) await this.publishGauntletMove(permitMove(ready));
+    if (ready) await this.publishGauntletMove(await this.advisePermit(permitMove(ready), ready.lane, ready.streak));
   }
 
   private async grantPermit(lane: string, permit: boolean, by: "card" | "toggle"): Promise<void> {
@@ -1313,13 +1340,67 @@ export class Factory extends DurableObject<FactoryEnv> {
   private async offerResearchMove(): Promise<void> {
     const s = this.state;
     if (!s) return;
-    const suggest = suggestResearch(s);
+    const suggest = await this.sparkResearch(suggestResearch(s));
     if (JSON.stringify(suggest) !== JSON.stringify(s.research?.suggest)) await this.patch({ research: { ...(s.research ?? emptyResearch()), suggest } });
     if (!suggest || researchBlocked(s, suggest.tech)) return;
     const offered = (await this.ctx.storage.get<string[]>("researchOffered")) ?? [];
     if (offered.includes(suggest.tech)) return; // one card per tech; the tree keeps the pick after that
     await this.ctx.storage.put("researchOffered", [...offered, suggest.tech]);
     await this.publishGauntletMove(researchMove(suggest.tech, suggest.why));
+  }
+
+  /**
+   * The streak rule says a lane earned its permit card. Spark reads what actually shipped there and picks which
+   * option the card suggests. It can only advise: the player still taps, and one rework still revokes it.
+   */
+  private async advisePermit(move: Move, lane: string, streak: number): Promise<Move> {
+    const s = this.state!;
+    const inLane = s.items.filter(i => i.lane === lane);
+    const title = `Launch permit for ${lane === "docs" ? "docs" : `/${lane}`}`;
+    if (!sparkConfigured(this.env)) {
+      await this.note({ decision: "permit", by: "fallback", ms: 0, title, outcome: "Suggested Allow", reason: `${streak} clean ships in a row met the streak rule.`, model: "streak rule" });
+      return move;
+    }
+    try {
+      const a = await this.think("permit", { title, target: "gate-1" }, () => judgePermit(this.env, {
+        lane, streak, need: streak,
+        ships: inLane.filter(i => i.state === "launched").sort((x, y) => y.updatedAt - x.updatedAt).slice(0, streak).map(i => ({ title: i.title.slice(0, 120), review: i.inspection?.stages.find(st => st.gate === "ai")?.reason })),
+        openRisks: inLane.filter(i => i.state !== "launched").slice(0, 10).map(i => ({ title: i.title.slice(0, 120), state: i.state })),
+      }), a => ({ outcome: a.recommend ? "Suggested Allow" : "Suggested Not yet", reason: a.why || (a.recommend ? "The streak looks representative." : "Not enough real risk shipped yet.") }));
+      return { ...move, why: a.why || move.why, options: move.options.map(o => ({ ...o, recommended: o.id === (a.recommend ? "allow" : "not_yet") })) };
+    } catch {
+      return move;
+    }
+  }
+
+  /**
+   * Spark reads the whole scar pile and picks the check worth researching. The tree's regex pick is the fallback,
+   * and Spark is only asked when the scar pile changes.
+   */
+  private async sparkResearch(rule: ReturnType<typeof suggestResearch>): Promise<ReturnType<typeof suggestResearch>> {
+    const s = this.state!;
+    const scars = s.items.flatMap(i => (i.scars ?? []).filter(sc => sc.station !== "custom").map(sc => ({ station: sc.station, reason: sc.reason.slice(0, 200) })));
+    if (scars.length < 2) return rule;
+    const key = `${scars.length}:${(s.research?.done ?? []).join(",")}`;
+    const cached = await this.ctx.storage.get<{ key: string; pick: ReturnType<typeof suggestResearch> | null }>("sparkResearch");
+    if (cached?.key === key) return cached.pick ?? undefined;
+    if (!sparkConfigured(this.env)) {
+      await this.note({ decision: "research", by: "fallback", ms: 0, title: `${scars.length} scars`, outcome: rule ? `Suggested ${techById(rule.tech)?.name}` : "Nothing to research yet", reason: "No Meta API key, so the tree matched scar text to checks.", model: "scar rule" });
+      await this.ctx.storage.put("sparkResearch", { key, pick: rule ?? null });
+      return rule;
+    }
+    const r = s.research ?? emptyResearch();
+    const techs = TECHS.filter(t => !r.done.includes(t.id) && !t.soon).map(t => ({ id: t.id, name: t.name, what: t.what, cost: t.cost, affordable: !researchBlocked(s, t.id) }));
+    try {
+      const pick = await this.think("research", { title: `${scars.length} scars on the rework belt`, target: "ci-1" }, () => pickResearch(this.env, { scars: scars.slice(-40), techs }),
+        p => ({ outcome: p.tech ? `Suggested ${techById(p.tech)?.name}` : "Nothing worth researching yet", reason: p.why || "No check fits the scars." }));
+      const out = pick.tech ? { tech: pick.tech, why: pick.why || rule?.why || `${techById(pick.tech)?.name} would have caught these.` } : undefined;
+      await this.ctx.storage.put("sparkResearch", { key, pick: out ?? null });
+      return out;
+    } catch {
+      await this.ctx.storage.put("sparkResearch", { key, pick: rule ?? null });
+      return rule;
+    }
   }
 
   /** Handles the research card. Returns false for every other move. */
