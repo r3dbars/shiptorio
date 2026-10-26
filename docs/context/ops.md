@@ -70,8 +70,8 @@ bunx wrangler secret put META_API_KEY --env staging --cwd server
 ```
 
 The initial staging access/session secrets were generated locally, sent directly to
-Cloudflare and retained only in this chat's worktree `server/.dev.vars` (ignored,
-mode 0600). They are unique to staging. GitHub/Spark secrets are intentionally not
+Cloudflare and retained only in `/Users/redbars/.config/shiptorio/staging.env` (outside git,
+mode 0600; parent directory 0700). They are unique to staging. GitHub/Spark secrets are intentionally not
 copied. Open `/setup` behind the preview gate to create a separate staging App,
 then set its returned secrets with `--env staging`; the setup page's generic commands
 must be given that environment. Add its installation only to a disposable repo.
@@ -149,9 +149,15 @@ revision and deploy its artifact with the **current environment bindings/routes*
 production data or reclaim shiptorio.dev. From a checkout with current config:
 
 ```sh
-# Copy the prior source/build into an isolated checkout with current config first.
+# Run from a current checkout. Choose an unused recovery directory and a reviewed SHA.
+git worktree add --detach /tmp/shiptorio-recovery PREVIOUS_SHA
+cp server/wrangler.jsonc /tmp/shiptorio-recovery/server/wrangler.jsonc
+cd /tmp/shiptorio-recovery
+bun install --frozen-lockfile
+bun run build
 bunx wrangler deploy --cwd server --dry-run
-bunx wrangler deploy --cwd server --var BUILD_SHA:PREVIOUS_SHA
+bunx wrangler deploy --cwd server --var BUILD_SHA:$(git rev-parse HEAD)
+# For staging, add --env staging to both Wrangler commands above.
 ```
 
 Do not automatically run migrations from the old SHA. Forward-fix incompatible
@@ -234,4 +240,30 @@ backup guarantee.
 
 ## Acceptance evidence
 
-Live check results and deployed versions are appended after the staging drill.
+Verified 2026-10-26, approximately 4:28 PM CT:
+
+- [PR #162](https://github.com/r3dbars/shiptorio/pull/162) merged as
+  `97831d9227df0bf39d6e350135caf0c29ffae7a3` after
+  [CI passed](https://github.com/r3dbars/shiptorio/actions/runs/40404287047).
+  Full local check: 234 passed, one platform-specific skip, zero failures;
+  typechecks and web build passed.
+- [Production Deploy passed](https://github.com/r3dbars/shiptorio/actions/runs/40404450563).
+  Both https://shiptorio.com/api/health and https://shiptorio.dev/api/health returned
+  200 with D1/KV/DO all `ok` after deployment.
+- Staging version `72348b57-23c7-4b4a-b48b-0d6c0c065e9d` served the merged SHA.
+  `/admin` returned 200; its real same-origin POST wrote a personal `newFeatures=true`
+  override and the read API returned it. This used a temporary seeded staging
+  account/session, not an OAuth login or production account. No repos were linked.
+- Deployed staging drill version `33f66e14-2a5a-4418-a1ed-0e204d43bdfe` with
+  `BUILD_SHA=rollback-drill-97831d9`; observed that marker through `/api/version`.
+  Ran the documented one-command `wrangler rollback` to version
+  `72348b57-23c7-4b4a-b48b-0d6c0c065e9d`. Afterward `/api/version` returned the
+  merged SHA, `/api/health` stayed 200, and the KV flag remained true.
+- Reset the override through the admin POST to `inherit`; observed no stored override
+  and effective false. Deleted the temporary staging user and session afterward.
+- Staging resources are isolated and reachable; no production factory data or secrets
+  were copied. Separate staging GitHub/Spark integration secrets still need setup.
+  External email monitor setup and email delivery have **not** been performed.
+  Rollback was tested through Wrangler, not by spending a separate Actions run.
+- No new automatic Actions triggers: Staging/Rollback are manual dispatch only.
+  The follow-up evidence edit is docs-only and uses the existing #68 skip rules.
