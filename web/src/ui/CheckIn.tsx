@@ -2,7 +2,7 @@
 // Right = do it (Spark's pick), left = later, down = never (+ one tap on why), up = details, tap = zoom.
 // Every gesture also has a button and an arrow key.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
 
 type Gesture = "right" | "left" | "down" | "up";
@@ -34,28 +34,86 @@ function dirOf(dx: number, dy: number, min: number): Gesture | null {
   return dy > 0 ? "down" : "up";
 }
 
+type CardMessage = Extract<WebToServer, { type: "choose_move" | "defer_move" | "dismiss_move" }>;
+
+/** Keep identity stable while refreshing the actual server-owned proof and options. */
+export function createCheckInSession(initial: Move[], clock = {
+  later: (fn: () => void) => setTimeout(fn, 260),
+  cancel: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+}) {
+  let live = initial;
+  let pinned: string | null = initial[0]?.id ?? null;
+  let closed = false;
+  const gone = new Set<string>();
+  type Flight = { moveId: string; message: CardMessage; stamp: string; timer?: ReturnType<typeof setTimeout>; abort: () => void };
+  let flight: Flight | null = null;
+  const cards = (deck = live) => {
+    const remaining = deck.filter((move) => !gone.has(move.id));
+    const current = remaining.find((move) => move.id === pinned);
+    return current ? [current, ...remaining.filter((move) => move.id !== pinned)] : remaining;
+  };
+  const stamp = (move: Move) => JSON.stringify({ itemId: move.itemId, stage: move.stage, url: move.url,
+    kind: move.kind, focus: move.focus, locked: move.locked, plan: move.plan, evidence: move.evidence, options: move.options });
+  const cancel = (notify: boolean) => {
+    const pending = flight; flight = null;
+    if (pending?.timer !== undefined) clock.cancel(pending.timer);
+    if (notify) pending?.abort();
+  };
+  return {
+    cards,
+    busy: () => flight !== null,
+    open() { closed = false; },
+    close() { closed = true; cancel(false); },
+    update(deck: Move[]) {
+      live = deck;
+      const ids = new Set(deck.map((move) => move.id));
+      for (const id of gone) if (!ids.has(id)) gone.delete(id);
+      pinned = cards()[0]?.id ?? null;
+      if (flight) {
+        const current = live.find((move) => move.id === flight!.moveId);
+        if (!current || stamp(current) !== flight.stamp) cancel(true);
+      }
+      return cards();
+    },
+    begin(move: Move, message: CardMessage, commit: (message: CardMessage) => void, abort: () => void) {
+      const current = cards()[0];
+      if (closed || flight || !current || current.id !== move.id || message.moveId !== move.id || stamp(current) !== stamp(move)) return false;
+      if (message.type === "choose_move" && !current.options.some((option) => option.id === message.optionId)) return false;
+      const pending: Flight = { moveId: move.id, message: { ...message }, stamp: stamp(move), abort };
+      flight = pending; // synchronous guard: two events in one render still schedule only once
+      pending.timer = clock.later(() => {
+        if (closed || flight !== pending) return;
+        const latest = live.find((candidate) => candidate.id === pending.message.moveId);
+        if (!latest || stamp(latest) !== pending.stamp) { cancel(true); return; }
+        flight = null;
+        gone.add(pending.moveId);
+        pinned = cards()[0]?.id ?? null;
+        commit(pending.message);
+      });
+      return true;
+    },
+  };
+}
+
 export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
-  const [gone, setGone] = useState<Set<string>>(new Set()); // swiped, waiting for the server to drop them
+  const [session] = useState(() => createCheckInSession(deck));
   const [sheet, setSheet] = useState<"details" | "never" | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null);
   const [fly, setFly] = useState<Gesture | null>(null);
   const [tally, setTally] = useState({ yes: 0, later: 0, never: 0, rules: 0, grows: [] as string[] });
   const [toast, setToast] = useState<string | null>(null);
-  const start = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const start = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
   const firstDeal = useRef(deck.length);
 
-  const cards = deck.filter((m) => !gone.has(m.id));
+  const cards = session.cards(deck);
   const top = cards[0];
 
-  // Forget swiped ids once the server has dropped them, so a deferred card can come back around.
-  useEffect(() => {
-    setGone((g) => {
-      const live = new Set(deck.map((m) => m.id));
-      const next = new Set([...g].filter((id) => live.has(id)));
-      return next.size === g.size ? g : next;
-    });
-  }, [deck]);
+  // Reconcile committed props before paint. New top-ranked cards cannot replace the
+  // card under the player's finger; same-id proof/options still update immediately.
+  useLayoutEffect(() => { session.update(deck); }, [deck, session]);
+  useLayoutEffect(() => { session.open(); return () => session.close(); }, [session]);
+  const close = () => { session.close(); onClose(); };
 
   useEffect(() => {
     if (!toast) return;
@@ -64,53 +122,53 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
   }, [toast]);
 
   // A new top card starts zoomed out.
-  useEffect(() => {
+  useLayoutEffect(() => {
     setZoomed(false);
+    setSheet(null);
+    setDrag(null);
+    start.current = null;
     onFocus(null);
   }, [top?.id]);
 
-  const done = (m: Move, g: Gesture, then: () => void) => {
+  const done = (m: Move, g: Gesture, message: CardMessage, then: () => void) => {
+    const reset = () => { setFly(null); setDrag(null); start.current = null; };
+    if (!session.begin(m, message, (boundMessage) => {
+      reset();
+      send(boundMessage); // exactly the card and option that were visible at gesture start
+      then();
+    }, reset)) return;
     setFly(g);
     setSheet(null);
-    setTimeout(() => {
-      setGone((s) => new Set(s).add(m.id));
-      setFly(null);
-      setDrag(null);
-      then();
-    }, 260);
   };
 
   const choose = (m: Move, optionId: string) =>
-    done(m, "right", () => {
-      send({ type: "choose_move", moveId: m.id, optionId });
+    done(m, "right", { type: "choose_move", moveId: m.id, optionId }, () => {
       const o = m.options.find((x) => x.id === optionId);
       setTally((t) => ({ ...t, yes: t.yes + 1, grows: o?.recommended ? [...t.grows, ...(m.grows ?? [])] : t.grows }));
       setToast(o ? `${o.label}. On it.` : "On it.");
     });
 
   const act = (g: Gesture) => {
-    if (!top) return;
+    if (!top || session.busy()) return;
     if (g === "up") return setSheet("details");
     if (g === "down") return setSheet("never");
     if (g === "right") return choose(top, pickOf(top).id); // a locked card's pick is the missing check, never a merge
-    done(top, "left", () => {
-      send({ type: "defer_move", moveId: top.id });
+    done(top, "left", { type: "defer_move", moveId: top.id }, () => {
       setTally((t) => ({ ...t, later: t.later + 1 }));
       setToast("Later. It'll come back around.");
     });
   };
 
   const never = (why: Why) => {
-    if (!top) return;
-    done(top, "down", () => {
-      send({ type: "dismiss_move", moveId: top.id, why });
+    if (!top || session.busy()) return;
+    done(top, "down", { type: "dismiss_move", moveId: top.id, why }, () => {
       setTally((t) => ({ ...t, never: t.never + 1, rules: t.rules + (why === "once" ? 0 : 1) }));
       setToast(why === "once" ? "Gone." : why === "kind" ? "Rule saved. No more cards like it." : why === "spark" ? "Handled without asking from now on." : "Scar logged.");
     });
   };
 
   const toggleZoom = () => {
-    if (!top) return;
+    if (!top || session.busy()) return;
     const on = !zoomed;
     setZoomed(on);
     onFocus(on ? top.focus ?? null : null);
@@ -118,7 +176,8 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return sheet ? setSheet(null) : onClose();
+      if (e.key === "Escape") return sheet ? setSheet(null) : close();
+      if (e.repeat) return;
       if (sheet) return;
       const g = ({ ArrowRight: "right", ArrowLeft: "left", ArrowUp: "up", ArrowDown: "down" } as const)[e.key as string];
       if (g) {
@@ -131,12 +190,13 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
   });
 
   const down = (e: React.PointerEvent) => {
-    start.current = { x: e.clientX, y: e.clientY, moved: false };
+    if (!top || session.busy()) return;
+    start.current = { id: top.id, x: e.clientX, y: e.clientY, moved: false };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const move = (e: React.PointerEvent) => {
     const s = start.current;
-    if (!s) return;
+    if (!s || s.id !== top?.id || session.busy()) return;
     const dx = e.clientX - s.x;
     const dy = e.clientY - s.y;
     if (Math.abs(dx) + Math.abs(dy) > 6) s.moved = true;
@@ -145,7 +205,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
   const up = () => {
     const s = start.current;
     start.current = null;
-    if (!s) return;
+    if (!s || s.id !== top?.id || session.busy()) return;
     if (!s.moved) return toggleZoom();
     const g = drag && dirOf(drag.dx, drag.dy, SWIPE_PX);
     setDrag(null);
@@ -176,7 +236,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
             <i key={i} className={i < swiped ? "done" : i === swiped && top ? "cur" : ""} />
           ))}
         </div>
-        <button type="button" className="ci-x" onClick={onClose} aria-label="Close the check-in">
+        <button type="button" className="ci-x" onClick={close} aria-label="Close the check-in">
           ×
         </button>
       </header>
@@ -196,6 +256,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                 <article
                   key={m.id}
                   className="ci-card card"
+                  aria-busy={!!fly}
                   style={cardStyle()}
                   tabIndex={0}
                   aria-label={m.title}
@@ -281,7 +342,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
               </div>
             )}
             <p className="ci-quote">The score isn't how many you cleared. It's how few need you tomorrow.</p>
-            <button type="button" className="nm-btn" onClick={onClose}>
+            <button type="button" className="nm-btn" onClick={close}>
               Back to the floor
             </button>
           </div>
@@ -290,16 +351,16 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
 
       {top && (
         <div className="ci-actions">
-          <button type="button" className="ci-act never" onClick={() => act("down")}>
+          <button type="button" className="ci-act never" disabled={!!fly} onClick={() => act("down")}>
             <span className="k">✕</span>Never ↓
           </button>
-          <button type="button" className="ci-act later" onClick={() => act("left")}>
+          <button type="button" className="ci-act later" disabled={!!fly} onClick={() => act("left")}>
             <span className="k">↶</span>Later ←
           </button>
-          <button type="button" className="ci-act more" onClick={() => act("up")}>
+          <button type="button" className="ci-act more" disabled={!!fly} onClick={() => act("up")}>
             <span className="k">i</span>Details ↑
           </button>
-          <button type="button" className="ci-act do" onClick={() => act("right")}>
+          <button type="button" className="ci-act do" disabled={!!fly} onClick={() => act("right")}>
             <span className="k">✓</span>Do it →
           </button>
         </div>
@@ -323,7 +384,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
           )}
           <div className="ci-sec">PICK ONE</div>
           {top.options.map((o) => (
-            <button key={o.id} type="button" className={o.recommended ? "ci-opt rec" : "ci-opt"} title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined} onClick={() => choose(top, o.id)}>
+            <button key={o.id} type="button" disabled={!!fly} className={o.recommended ? "ci-opt rec" : "ci-opt"} title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined} onClick={() => choose(top, o.id)}>
               {o.recommended ? "★ " : ""}
               {o.label}
             </button>
@@ -343,7 +404,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
           </button>
           <div className="ci-title small">Never: why? One tap.</div>
           {NEVER.map((n) => (
-            <button key={n.why} type="button" className="ci-opt why" onClick={() => never(n.why)}>
+            <button key={n.why} type="button" disabled={!!fly} className="ci-opt why" onClick={() => never(n.why)}>
               <b>{n.label}</b>
               {n.text}
             </button>
