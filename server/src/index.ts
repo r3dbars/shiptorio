@@ -5,7 +5,7 @@ import { ops } from "./ops";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
-import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
+import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 import { isAllowed } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
@@ -153,6 +153,23 @@ app.put("/api/me/prefs", async (c) => {
   let body: unknown;
   try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
+  return c.json({ ok: true });
+});
+
+// Progression (levels, streak, unlocks) follows the player across devices. The web merges, then writes the whole blob.
+app.get("/api/me/progress", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  return c.json({ progress: await readProgress(c.env, user) });
+});
+
+app.put("/api/me/progress", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const text = await c.req.text();
+  if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
+  if (!(await writeProgress(c.env, user, text))) return c.json({ error: "invalid progress" }, 400);
   return c.json({ ok: true });
 });
 
