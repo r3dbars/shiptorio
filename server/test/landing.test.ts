@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { previewAccess, publicRoute } from "../src/access";
 import { joinWaitlist } from "../src/waitlist";
+import { withRange } from "../src/landing";
 
 const env = { APP_PASSWORD: "test-preview-password", SESSION_SECRET: "test-session-secret" };
 const at = (path: string, init?: RequestInit) => new Request(`https://shiptorio.com${path}`, init);
@@ -65,5 +66,22 @@ describe("waitlist", () => {
     const response = await joinWaitlist(at("/api/waitlist", { method: "POST", headers: { origin: "https://shiptorio.com", "content-type": "application/x-www-form-urlencoded" }, body: "email=sam%40b.co" }), kv());
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe("/?joined=1#join");
+  });
+});
+
+describe("video byte ranges", () => {
+  const file = () => new Response(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), { headers: { "content-type": "video/mp4" } });
+  const get = (range?: string) => new Request("https://shiptorio.com/welcome/loop.mp4", { headers: range ? { range } : {} });
+  it("answers Safari's range probes with 206 and the right slice", async () => {
+    const probe = await withRange(get("bytes=0-1"), file());
+    expect(probe.status).toBe(206);
+    expect(probe.headers.get("content-range")).toBe("bytes 0-1/10");
+    expect([...new Uint8Array(await probe.arrayBuffer())]).toEqual([0, 1]);
+    const open = await withRange(get("bytes=7-"), file());
+    expect([...new Uint8Array(await open.arrayBuffer())]).toEqual([7, 8, 9]);
+    const tail = await withRange(get("bytes=-2"), file());
+    expect([...new Uint8Array(await tail.arrayBuffer())]).toEqual([8, 9]);
+    expect((await withRange(get("bytes=20-"), file())).status).toBe(416);
+    expect((await withRange(get(), file())).status).toBe(200);
   });
 });

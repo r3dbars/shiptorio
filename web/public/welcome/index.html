@@ -16,12 +16,12 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%231b2448'/%3E%3Crect x='7' y='2' width='2' height='2' fill='%23e8685c'/%3E%3Crect x='6' y='4' width='4' height='6' fill='%23ece7dc'/%3E%3Crect x='4' y='9' width='2' height='3' fill='%23e8685c'/%3E%3Crect x='10' y='9' width='2' height='3' fill='%23e8685c'/%3E%3Crect x='7' y='10' width='2' height='4' fill='%23e3a33f'/%3E%3C/svg%3E">
 <link rel="preload" href="/welcome/barlow-sc-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/welcome/barlow-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" as="image" href="/welcome/poster.webp" imagesrcset="/welcome/poster-640.webp 640w, /welcome/poster.webp 1280w" imagesizes="(min-width: 960px) 760px, 100vw" fetchpriority="high">
+<link rel="preload" as="image" href="/welcome/poster.webp" imagesrcset="/welcome/poster-640.webp 640w, /welcome/poster-960.webp 960w, /welcome/poster.webp 1280w" imagesizes="(min-width: 960px) 620px, 100vw" fetchpriority="high">
 <style>
-@font-face{font-family:"Barlow";font-weight:400;font-display:swap;src:url(/welcome/barlow-400.woff2) format("woff2")}
-@font-face{font-family:"Barlow";font-weight:500;font-display:swap;src:url(/welcome/barlow-500.woff2) format("woff2")}
-@font-face{font-family:"Barlow Semi Condensed";font-weight:600;font-display:swap;src:url(/welcome/barlow-sc-600.woff2) format("woff2")}
-@font-face{font-family:"Barlow Semi Condensed";font-weight:700;font-display:swap;src:url(/welcome/barlow-sc-700.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:400;font-display:optional;src:url(/welcome/barlow-400.woff2) format("woff2")}
+@font-face{font-family:"Barlow";font-weight:500;font-display:optional;src:url(/welcome/barlow-500.woff2) format("woff2")}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:600;font-display:optional;src:url(/welcome/barlow-sc-600.woff2) format("woff2")}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:700;font-display:optional;src:url(/welcome/barlow-sc-700.woff2) format("woff2")}
 /* Same tokens as the game's HUD (web/src/styles.css) so the page reads as the game, not a template. */
 :root{
   --stone:#c9b48a;--moss:#4f7d3b;--grass:#8fd14f;--amber:#e3a33f;--green:#6cc28c;--red:#e8685c;--blue:#7aa7d9;
@@ -50,9 +50,9 @@ header.bar{display:flex;align-items:center;justify-content:space-between;gap:12p
 
 /* hero */
 .hero{display:grid;gap:28px;padding:20px 0 40px;align-items:center}
-@media (min-width:960px){.hero{grid-template-columns:minmax(0,1fr) 760px;gap:36px;padding:36px 0 64px}}
+@media (min-width:960px){.hero{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:40px;padding:36px 0 64px}}
 .kicker{font:600 15px/1 var(--pixel);letter-spacing:.14em;text-transform:uppercase;color:var(--grass);margin:0 0 14px}
-h1{font:700 clamp(40px,7vw,64px)/1.02 var(--pixel);margin:0 0 18px;letter-spacing:-.01em}
+h1{font:700 clamp(40px,5.6vw,60px)/1.02 var(--pixel);margin:0 0 18px;letter-spacing:-.01em}
 h1 em{font-style:normal;color:var(--amber)}
 .lede{color:var(--dim);font-size:19px;margin:0 0 24px;max-width:34em}
 .lede b{color:var(--ink);font-weight:500}
@@ -140,7 +140,7 @@ footer .row{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-betw
         <p class="enter">Early access is invite only. Have the password? <a href="/access?next=%2F">Enter the factory</a>.</p>
       </div>
       <div class="screen">
-        <img src="/welcome/poster.webp" srcset="/welcome/poster-640.webp 640w, /welcome/poster.webp 1280w" sizes="(min-width: 960px) 760px, 100vw" width="1280" height="720" alt="A floating island factory in Shiptorio: belts carry work from ore fields through machines and inspection stations to a rocket pad" fetchpriority="high">
+        <img src="/welcome/poster.webp" srcset="/welcome/poster-640.webp 640w, /welcome/poster-960.webp 960w, /welcome/poster.webp 1280w" sizes="(min-width: 960px) 620px, 100vw" width="1280" height="720" alt="A floating island factory in Shiptorio: belts carry work from ore fields through machines and inspection stations to a rocket pad" fetchpriority="high">
         <video id="loop" muted loop playsinline preload="none" width="1280" height="720" aria-label="30 seconds of a Shiptorio factory: issues come in, agents build fixes, checks run, and a merged pull request launches as a rocket"></video>
         <span class="tag"><span class="dot" aria-hidden="true"></span>Real game, 30 second loop</span>
         <button type="button" id="toggle" hidden>Pause</button>
@@ -181,8 +181,6 @@ footer .row{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-betw
       </div>
     </section>
 
-    <section id="pricing" hidden></section>
-
     <section aria-labelledby="cta">
       <h2 id="cta">Build a factory that ships</h2>
       <p class="sub">Shiptorio is in private preview for solo founders and tiny teams. Join the waitlist and we'll send an invite when there's room on the island.</p>
@@ -217,20 +215,29 @@ footer .row{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-betw
       .then(function () { button.disabled = false; });
   });
 
-  // The loop loads after the page does, so it never slows the first paint.
+  // The loop loads after the page does, so it never slows the first paint. Phones get a lighter cut
+  // and wait for the first scroll or tap, so nobody pays 1MB of video just for opening the page.
   var video = document.getElementById("loop"), toggle = document.getElementById("toggle");
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
-  var start = function () {
-    video.src = "/welcome/loop.mp4";
-    video.addEventListener("playing", function () { video.classList.add("on"); }, { once: true });
-    toggle.hidden = false;
-    if (still) { toggle.textContent = "Play"; return; }
+  var phone = matchMedia("(max-width: 759px)").matches, started = false;
+  var start = function (play) {
+    if (started) return;
+    started = true;
+    video.src = phone ? "/welcome/loop-640.mp4" : "/welcome/loop.mp4";
+    video.addEventListener("playing", function () { video.classList.add("on"); toggle.textContent = "Pause"; });
+    if (!play) return;
     video.play().catch(function () { toggle.textContent = "Play"; });
   };
+  toggle.hidden = false;
+  toggle.textContent = "Play";
   toggle.addEventListener("click", function () {
-    if (video.paused) { video.play(); toggle.textContent = "Pause"; } else { video.pause(); toggle.textContent = "Play"; }
+    if (!started) return start(true);
+    if (video.paused) video.play(); else { video.pause(); toggle.textContent = "Play"; }
   });
-  if (document.readyState === "complete") setTimeout(start, 300); else addEventListener("load", function () { setTimeout(start, 300); });
+  if (still) return;
+  var go = function () { setTimeout(function () { start(true); }, 300); };
+  if (phone) ["scroll", "touchstart", "pointerdown", "keydown"].forEach(function (e) { addEventListener(e, function () { start(true); }, { once: true, passive: true }); });
+  else if (document.readyState === "complete") go(); else addEventListener("load", go);
 })();
 </script>
 </body>
