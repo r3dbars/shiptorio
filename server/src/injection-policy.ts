@@ -33,7 +33,7 @@ export function validatePlan(plan: string, paths: string[]): void {
 }
 
 export function suspiciousDiff(diff: string): string[] {
-  const added = diff.split("\n").filter(l => l.startsWith("+") && !l.startsWith("+++")).join("\n");
+  const added = diff.split("\n").filter(l => l.startsWith("+") && !/^\+\+\+ (?:b\/|\/dev\/null$)/.test(l)).join("\n");
   const findings: string[] = [];
   if (injectionAttempt(added)) findings.push("Suspicious diff: prompt injection in added content.");
   if (unsafeInstructions(added) || /\b(?:fetch|XMLHttpRequest|WebSocket)\s*\(|\b(?:https?|net|dns)\s*\.\s*(?:request|get|connect|resolve)|\b(?:axios|requests)\s*\.|https?:\/\/|\b(?:child_process|execSync|spawnSync|eval)\b|\b(?:exec|spawn)\s*\(/i.test(added)) findings.push("Suspicious diff: new network, process execution or credential access requires human security review.");
@@ -49,7 +49,7 @@ export function suspiciousDiff(diff: string): string[] {
 
 export function validatePatch(paths: string[], allowed: string[], diff: string): void {
   if (!paths.length || paths.length > 10 || paths.some(p => !pathAllowed(p) || !allowed.includes(p))) throw new Error("Agent changed paths outside the approved scope");
-  if (diff.length > 200000 || diff.split("\n").filter(l => /^[+-](?![+-])/.test(l)).length > 500) throw new Error("Agent patch exceeds 500 changed lines or size limit");
+  if (diff.length > 200000 || diff.split("\n").filter(l => /^[+-]/.test(l) && !/^(?:\+\+\+ b\/|--- a\/)/.test(l)).length > 500) throw new Error("Agent patch exceeds 500 changed lines or size limit");
   const findings = suspiciousDiff(diff);
   if (findings.length) throw new Error(findings.join(" "));
 }
