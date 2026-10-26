@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
@@ -30,8 +31,8 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
   const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
-  const factory = new Factory(ctx as never, { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never);
-  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never), saved: () => data.get("state") as FactoryState };
+  const factory = new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never);
+  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never), saved: () => data.get("state") as FactoryState };
 
 }
 

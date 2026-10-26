@@ -1,3 +1,5 @@
+import { credentialEnv } from "./credential-fixture";
+import { credentialDB } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
 import { foldSignal, matchDistrict } from "../src/ore";
@@ -93,6 +95,7 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
     } },
     FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:501"); queued.push(`${id}:${resource}`); } }) },
   };
+  env.DB = credentialDB(env.DB);
   const body = JSON.stringify(fakeSentry("issue.created"));
   const send = async (signature: string, id = "req-1") => app.fetch(new Request("https://shiptorio.com/webhooks/sentry", { method: "POST", headers: { "sentry-hook-signature": signature, "sentry-hook-resource": "issue", "request-id": id }, body }), env as never, { waitUntil: (_p: Promise<unknown>) => {} } as never);
   expect((await send("0".repeat(64))).status).toBe(401);
@@ -130,7 +133,7 @@ function factoryFixture(env: Record<string, unknown>) {
     SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop",
     ...env,
   };
-  const factory = new Factory(ctx as never, fullEnv as never);
+  const factory = new Factory(ctx as never, credentialEnv(fullEnv) as never);
   return { factory, kv, events, saved: () => data.get("state") as FactoryState, data };
 }
 
@@ -158,7 +161,7 @@ it("Factory: Sentry mine opens a deposit, spawns biters on the right district, g
   expect(f.saved().sources?.find((s) => s.kind === "sentry")?.state).toBe("connected");
   // Our fix shipped, then Sentry resolves it: biters killed.
   f.data.set("state", { ...f.saved(), items: f.saved().items.map((i) => ({ ...i, state: "launched" })) });
-  const fresh = new Factory((f.factory as unknown as { ctx: never }).ctx, (f.factory as unknown as { env: never }).env);
+  const fresh = new Factory((f.factory as unknown as { ctx: never }).ctx, credentialEnv((f.factory as unknown as { env: never }).env) as never);
   await fresh.enqueueSentry("d3", "issue", fakeSentry("issue.resolved"));
   await fresh.alarm();
   expect((f.data.get("state") as { metrics?: { bitersKilled: number } }).metrics?.bitersKilled).toBe(1);
@@ -192,4 +195,47 @@ it("Factory: keys set as Worker secrets plug the mines in when the map opens, an
   const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other" });
   await other.factory.ensure("example/shop", 1);
   expect(other.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
+});
+
+
+it("encrypted mines keep secret-bearing provider errors, ore, logs and browser patches redacted", async () => {
+  const { saveCreds, revokeCreds } = await import("../src/sources/creds");
+  const secret = "private-mine-key-never-publish-12345";
+  const f = factoryFixture({ CRED_MASTER_KEY: btoa("a".repeat(32)) });
+  const env = (f.factory as unknown as { env: import("../src/sources/creds").CredsEnv }).env;
+  const scope = { repo: "example/shop", installationId: 1 };
+  await saveCreds(env, "sentry", { clientSecret: secret }, scope);
+  expect((await f.factory.connectMine("sentry"))?.state).toBe("connected");
+  const payload = fakeSentry("issue.created");
+  payload.data!.issue!.title = `Provider accidentally echoed ${secret}`;
+  await f.factory.enqueueSentry("redact-1", "issue", payload);
+  await f.factory.alarm();
+  expect(f.saved().items[0].title).toContain("[REDACTED]");
+  expect(JSON.stringify(f.saved())).not.toContain(secret);
+  expect(JSON.stringify(f.events)).not.toContain(secret);
+  await revokeCreds(env, "sentry", scope);
+  await f.factory.enqueueSentry("redact-2", "issue", fakeSentry("issue.created", "4502"));
+  await f.factory.alarm();
+  expect(f.saved().items.some(i => i.id === "sentry:4502")).toBe(false);
+
+  const apiKey = "phx_private_mine_key_never_publish";
+  const posthog = factoryFixture({ CRED_MASTER_KEY: btoa("a".repeat(32)) });
+  const postEnv = (posthog.factory as unknown as { env: import("../src/sources/creds").CredsEnv }).env;
+  await saveCreds(postEnv, "posthog", { apiKey, projectId: "123" }, scope);
+  await posthog.factory.connectMine("posthog");
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => { throw new Error(`Provider rejected ${apiKey}`); }) as unknown as typeof fetch;
+  try { await posthog.factory.alarm(); } finally { globalThis.fetch = original; }
+  expect(JSON.stringify(posthog.saved())).not.toContain(apiKey);
+  expect(JSON.stringify(posthog.events)).not.toContain(apiKey);
+  expect(posthog.saved().sources?.find(s => s.kind === "posthog")?.detail).toContain("[REDACTED]");
+});
+
+it("a failed credential hydration cannot leak state on a second request", async () => {
+  const f = factoryFixture({});
+  f.kv.set("cred:sentry:example/shop", JSON.stringify({ clientSecret: "unmigrated-secret-12345" }));
+  await expect(f.factory.connectMine("sentry")).rejects.toThrow("Credential encryption key unavailable");
+  await expect(f.factory.runnerJobs()).rejects.toThrow("Credential encryption key unavailable");
+  expect(f.events).toHaveLength(0);
+  expect(f.kv.has("cred:sentry:example/shop")).toBe(true);
 });

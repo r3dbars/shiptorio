@@ -90,8 +90,8 @@ Existing installations without stored permission metadata are checked on first u
 
 ## App setup and verification
 
-New `/setup` manifests subscribe to `repository` and `github_app_authorization` alongside
-the existing issue/PR/check/push events. GitHub automatically sends installation lifecycle
+New `/setup` manifests subscribe to `repository` alongside
+the existing issue/PR/check/push events. GitHub automatically sends installation lifecycle and authorization-revocation
 events. **For an already-created App**, its owner must enable Repository events in
 GitHub App settings; deploying a new manifest does not alter an existing App registration.
 

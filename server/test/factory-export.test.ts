@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { membershipCache } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { makeSessionCookie } from "../src/session";
@@ -19,7 +20,7 @@ function fixture(connected = true, populated = true) {
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage),
   };
   const env = { SESSION_SECRET: "export-test", APP_PASSWORD: "export-preview", ALLOWED_LOGINS: "owner,other", CACHE: membershipCache, DB: testD1(), FACTORY: {idFromName: (repo: string) => repo, get: (_id: string) => factory} };
-  const factory = new Factory({storage, getWebSockets: () => []} as never, env as never);
+  const factory = new Factory({storage, getWebSockets: () => []} as never, credentialEnv(env) as never);
   const request = async (login: string | null, path = "owner/repo") => {
     if (connected) {
       await env.DB.prepare("INSERT OR IGNORE INTO installations(id,account_login,permissions) VALUES(1,'owner','{}')").run();

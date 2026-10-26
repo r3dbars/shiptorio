@@ -87,7 +87,7 @@ export function appManifest(publicUrl: string) {
     // Agents only ever open PRs; a human merge launches the rocket.
     default_permissions: { contents: "write", pull_requests: "write", issues: "write", checks: "read", statuses: "read", metadata: "read" },
     // Installation lifecycle events are delivered automatically to every GitHub App.
-    default_events: ["issues", "issue_comment", "pull_request", "pull_request_review", "check_suite", "check_run", "push", "repository", "github_app_authorization"],
+    default_events: ["issues", "issue_comment", "pull_request", "pull_request_review", "check_suite", "check_run", "push", "repository"],
   };
 }
 
