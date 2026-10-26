@@ -27,9 +27,10 @@ export function log(level: LogEntry['level'], event: string, fields: Record<stri
     const suffix = `${String(9999999999999 - Date.now()).padStart(13, '0')}:${crypto.randomUUID()}`;
     const categories = ['events', ...(level === 'error' ? ['errors'] : []), ...(event.startsWith('spark.') ? ['spark'] : []), ...(event.startsWith('webhook.') ? ['webhooks'] : [])];
     const groups = categories.flatMap(group => [`${group}:all`, ...(entry.repo ? [`${group}:repo:${entry.repo}`] : [])]);
-    ctx.waitUntil(Promise.resolve().then(() => Promise.all(groups.map(group => ctx.env.CACHE!.put(`ops:${group}:${suffix}`, JSON.stringify(entry), { expirationTtl: 7 * 86400 })))).catch(() => {
+    const persist = Promise.resolve().then(() => Promise.all(groups.map(group => ctx.env.CACHE!.put(`ops:${group}:${suffix}`, JSON.stringify(entry), { expirationTtl: 7 * 86400 })))).catch(() => {
       console.warn(JSON.stringify({ level: 'warn', event: 'telemetry.persist_failed', ts: new Date().toISOString(), requestId: entry.requestId }));
-    }));
+    });
+    try { ctx.waitUntil(persist); } catch { /* Missing/closed execution context must not break the business request. */ }
   }
   return entry;
 }

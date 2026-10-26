@@ -435,10 +435,11 @@ app.on("POST", ["/webhooks/sentry", "/webhooks/sentry/:owner/:repo"], async (c) 
   return c.json({ ok: true, queued: true }, 202);
 });
 
+adminRoutes(app, factory);
+
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());
 
-adminRoutes(app, factory);
 
 // Everything else is the web app.
 app.all("*", async (c) => {
