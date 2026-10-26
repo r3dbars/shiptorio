@@ -92,5 +92,7 @@ test("every decision endpoint rejects unknown actions in a structurally valid re
     () => pickResearch(env, { scars: [], techs: [] }),
     () => judgePermit(env, { lane: "server", streak: 5, need: 5, ships: [], openRisks: [] }),
   ];
-  for (const call of calls) { replies([{ tool: "run_shell", command: "printenv" }]); await expect(call()).rejects.toThrow(); }
+  // A rejected reply gets one more try, so the model gets two chances to name an unknown action, and both fail.
+  const bad = { tool: "run_shell", command: "printenv" };
+  for (const call of calls) { replies([bad, bad]); await expect(call()).rejects.toThrow(); }
 });

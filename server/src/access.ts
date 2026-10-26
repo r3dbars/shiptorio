@@ -60,7 +60,7 @@ async function validForm(request: Request, secret: string, token: string | null)
 
 // shiptorio.com is public: anyone without the preview cookie gets the landing page at "/"
 // (web/public/welcome/), its files, robots/sitemap and the waitlist. Everything else stays gated.
-const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|robots\.txt|sitemap\.xml)$/;
+const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|fonts\/[\w.-]+|brand\/[\w.-]+|robots\.txt|sitemap\.xml)$/;
 export type PublicRoute = "landing" | "file" | "waitlist";
 export async function publicRoute(request: Request, env: AccessEnv): Promise<PublicRoute | null> {
   const url = new URL(request.url);

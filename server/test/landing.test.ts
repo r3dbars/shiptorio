@@ -30,9 +30,9 @@ describe("public landing page", () => {
     expect(await publicRoute(at("/", { headers: { cookie: "shiptorio_session=abc" } }), waitlist)).toBeNull();
   });
   it("opens only the landing files and the waitlist; the app stays gated", async () => {
-    for (const path of ["/welcome/", "/welcome/loop.mp4", "/welcome/index.html", "/robots.txt", "/sitemap.xml"]) expect(await publicRoute(at(path), env)).toBe("file");
+    for (const path of ["/welcome/", "/welcome/loop.mp4", "/welcome/index.html", "/robots.txt", "/sitemap.xml", "/fonts/silkscreen-400.woff2", "/brand/logo.svg"]) expect(await publicRoute(at(path), env)).toBe("file");
     expect(await publicRoute(at("/api/waitlist", { method: "POST" }), env)).toBe("waitlist");
-    for (const path of ["/index.html", "/assets/app.js", "/api/me", "/api/waitlist", "/setup", "/art/", "/welcome/../index.html", "/welcome/a/b"]) {
+    for (const path of ["/index.html", "/assets/app.js", "/api/me", "/api/waitlist", "/setup", "/art/", "/welcome/../index.html", "/welcome/a/b", "/fonts/a/b", "/brand/../index.html"]) {
       expect(await publicRoute(at(path), env)).toBeNull();
     }
     expect(await publicRoute(at("/", { method: "POST" }), env)).toBeNull();

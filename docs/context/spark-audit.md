@@ -65,6 +65,12 @@ permission stay deterministic so the automation earned by playing is provable.
    rate (Spark verdicts that sent the PR back), and fallback share. Shared math: `scorecard()` in
    `shared/src/model.ts`.
 
+9. Live Testing run (2026-10-26 22:25) showed triage and rank falling back on "schema validation failed"
+   and malformed JSON → triage prompt now states its JSON shape, read-only judge replies drop unknown keys
+   instead of rejecting them (planner and fix replies stay strict), off-list kinds/districts fall back
+   per field, `parseJsonReply` repairs trailing commas and smart quotes, and `sparkJson` asks once more
+   with the rejection reason before the fixed rule decides.
+
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.
 
