@@ -33,6 +33,7 @@ import {
 import { buildDrone, type DroneMode } from "./drone";
 import { islandDepth, makeDistrict, makeFloater, makeIsland, makeWaterfall } from "./models";
 import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type SatelliteView } from "./empire";
+import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
 
@@ -613,6 +614,7 @@ export class FactoryScene {
   private clearSatellites() {
     for (const sat of this.sats) {
       this.scene.remove(sat.view.g, sat.route.g);
+      disposeOwnedGeometries(sat.view.g);
       sat.route.dispose();
       this.dropLabel(sat.label);
     }
