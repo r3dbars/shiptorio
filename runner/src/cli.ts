@@ -3,6 +3,8 @@ import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
+import { checkSandbox, type CheckSandbox } from "./sandbox";
+import { snapshotApproved, publishApproved } from "./publication";
 
 interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
 const root = resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(import.meta.dir, ".."));
@@ -56,28 +58,37 @@ async function execute(job: Job) {
   const work = resolve(root, ".work", job.id);
   const gitEnv = { ...cleanEnv, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${job.token}`).toString("base64")}`, GIT_TERMINAL_PROMPT: "0" };
   let summary = "";
+  let sandbox: CheckSandbox | undefined;
+  const checked = async (args: string[], install = false): Promise<string> => {
+    if (!sandbox) throw new Error("Verification sandbox not prepared");
+    const result = await sandbox.run(args, work, { install });
+    if (result.code) throw new Error(`Sandboxed ${args[0].split("/").at(-1)} ${args[1]} failed (${result.code}): ${(result.err || result.out).slice(-2000)}`);
+    return result.out.trim();
+  };
   try {
     await mkdir(resolve(root, ".work"), { recursive: true });
     // Fresh clone contains tracked files only: no primary checkout secrets, hooks or local edits.
     await command(["git", "clone", "--no-checkout", "--", `https://github.com/${job.repo}.git`, work], checkout, gitEnv);
-    await command(["git", "checkout", "--detach", job.baseSha], work);
+    sandbox = await checkSandbox(work);
+    await checked(["git", "checkout", "--detach", job.baseSha]);
     const prompt = `You are Shiptorio's ${job.harness} assembler, executing Muse Spark's approved plan.\n${job.plan}\n\nOnly edit these exact paths: ${job.allowedPaths.join(", ")}. Read AGENTS.md and relevant product docs. Make the smallest fix and a regression test. Do not commit, push, deploy, access secrets, invoke other agents, change settings, or write outside this checkout. The supervisor will run checks and publish the branch. Return a short summary.\n`;
     console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
     const output = await command([harnessPath(job.harness)!, ...harnessArgs(job.harness, prompt)], work, cleanEnv, 15 * 60 * 1000);
     // Preserve local evidence; never forward raw agent output to the server/browser.
     await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output);
     if (job.harness === "claude_code" && JSON.parse(output).is_error) throw new Error("Claude reported an agent error");
-    if (await command(["git", "rev-parse", "HEAD"], work) !== job.baseSha) throw new Error("Agent changed checkout history");
-    const paths = (await command(["git", "ls-files", "--modified", "--others", "--exclude-standard"], work)).split("\n").filter(Boolean);
+    if (await checked(["git", "rev-parse", "HEAD"]) !== job.baseSha) throw new Error("Agent changed checkout history");
+    const paths = (await checked(["git", "ls-files", "--modified", "--others", "--exclude-standard"])).split("\n").filter(Boolean);
     for (const path of paths) if (!(await lstat(resolve(work, path))).isFile()) throw new Error("Non-regular patch file");
     // Stage only approved regular files, including newly created tests, then validate the complete diff.
     if (!paths.length || paths.some(p => !job.allowedPaths.includes(p))) throw new Error("Unexpected or empty agent changes");
-    await command(["git", "add", "--", ...paths], work);
-    const diff = await command(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"], work);
+    await checked(["git", "add", "--", ...paths]);
+    const diff = await checked(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"]);
     validateChanges(paths, job.allowedPaths, diff);
-    await command([process.execPath, "install", "--frozen-lockfile", "--ignore-scripts"], work, cleanEnv);
+    const frozen = await snapshotApproved(sandbox, paths);
+    await checked([process.execPath, "install", "--frozen-lockfile", "--ignore-scripts"], true);
     const checks = ["typecheck", "test", "build"] as const;
-    for (const check of checks) { console.log(`Supervisor check: ${check}`); await command([process.execPath, "run", check], work, cleanEnv, 180000); }
+    for (const check of checks) { console.log(`Supervisor check: ${check}`); await checked([process.execPath, "run", check]); }
     const verifyPaths = [...new Set([...paths, ...(job.prTestFiles ?? [])])].filter(p => TEST_PATH.test(p));
     const docsOnly = !job.reworkPr && paths.every(p => /\.(md|mdx|txt)$|(^|\/)docs\//i.test(p));
     const proof = docsOnly ? undefined : await verifyRegression(work, job.verifyBaseSha ?? job.baseSha, verifyPaths, cleanEnv);
@@ -86,10 +97,9 @@ async function execute(job: Job) {
       console.log(`Verify bay: base fails=${proof.failsOnBase}, head passes=${proof.passesOnHead}`);
       if (verifyPaths.length && !proof.passesOnHead) throw new Error("Regression recipe failed on the fix commit");
     }
-    if (await command(["git", "diff", "--name-only"], work)) throw new Error("Checks changed tracked files");
-    await command(["git", "-c", "user.name=Shiptorio local runner", "-c", "user.email=shiptorio@users.noreply.github.com", "commit", "-m", "Execute Spark-approved issue plan with local subscription agent"], work);
-    const sha = await command(["git", "rev-parse", "HEAD"], work);
-    await command(["git", "push", "origin", `HEAD:refs/heads/${job.branch}`], work, gitEnv);
+    if (JSON.stringify(await snapshotApproved(sandbox, paths)) !== JSON.stringify(frozen)) throw new Error("Checks changed approved files");
+    // Publication is rebuilt from a fresh trusted clone; hostile hooks/config never see credentials.
+    const sha = await publishApproved(job, frozen);
     summary = `Approved paths: ${paths.join(", ")}. Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
     await Bun.write(resolve(root, ".work", `${job.id}.receipt.json`), JSON.stringify(receipt));
@@ -99,7 +109,7 @@ async function execute(job: Job) {
     const receipt = Bun.file(resolve(root, ".work", `${job.id}.receipt.json`));
     if (!(await receipt.exists())) await api("finish", { jobId: job.id, lease: job.lease, ok: false, summary: "Local runner stopped; inspect local evidence and approve another attempt.", checks: [] }).catch(() => {});
     throw error;
-  } finally { job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
+  } finally { await sandbox?.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 }
 if (process.argv[2] !== "retry") console.log(`Local runner ready for ${repo}: ${available.join(", ") || "no installed agents"}. Only approved jobs run.`);
 if (process.argv[2] === "retry") {
