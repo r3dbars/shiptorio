@@ -57,7 +57,7 @@ async function loginHarness(h: Job["harness"]) {
   if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
 }
 if (["doctor", "setup", "login"].includes(process.argv[2])) {
-  await mkdir(authHome, { recursive: true, mode: 0o700 });
+  await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
   if (!available.length) throw new Error("Install Codex CLI or Claude Code first, then rerun the installer. See https://shiptorio.com/docs/runner");
   if (process.argv[2] === "login") {
     const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
@@ -124,7 +124,7 @@ async function execute(job: Job, pair: Pairing) {
     return result.out.trim();
   };
   try {
-    await mkdir(authHome, { recursive: true, mode: 0o700 });
+    await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
     if (await realpath(authHome) !== authHome) throw new Error("Agent home must not be a symlink");
     // Fresh clone contains tracked files only: no primary checkout secrets, hooks or local edits.
     const source = resolve(jobRoot, "source.git");
@@ -199,7 +199,7 @@ async function connections() {
   }
   return pairs;
 }
-await mkdir(authHome, { recursive: true, mode: 0o700 });
+await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 const readyHarnesses: Job["harness"][] = [];
 for (const h of available) if (await signedInHarness(h)) readyHarnesses.push(h);
 available = readyHarnesses;
