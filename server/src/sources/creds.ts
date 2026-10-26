@@ -12,23 +12,23 @@ export interface CredsEnv extends SentrySourceEnv, PostHogSourceEnv {
   POSTHOG_REPO?: string;
 }
 
-async function stored<T>(env: CredsEnv, kind: MineKind): Promise<Partial<T>> {
-  return ((await env.CACHE?.get<T>(`cred:${kind}`, "json").catch(() => null)) ?? {}) as Partial<T>;
+async function stored<T>(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<Partial<T>> {
+  return ((await env.CACHE?.get<T>(repo ? `cred:${kind}:${repo.toLowerCase()}` : `cred:${kind}`, "json").catch(() => null)) ?? {}) as Partial<T>;
 }
 
-export async function sentryCreds(env: CredsEnv): Promise<SentryCreds> {
-  if (env.SENTRY_CLIENT_SECRET) return { clientSecret: env.SENTRY_CLIENT_SECRET };
-  return stored<SentryCreds>(env, "sentry");
+export async function sentryCreds(env: CredsEnv, repo?: string | null): Promise<SentryCreds> {
+  if (env.SENTRY_CLIENT_SECRET && (!repo || repo.toLowerCase() === await linkedRepo(env, "sentry"))) return { clientSecret: env.SENTRY_CLIENT_SECRET };
+  return stored<SentryCreds>(env, "sentry", repo);
 }
 
-export async function postHogCreds(env: CredsEnv): Promise<PostHogCreds> {
-  if (env.POSTHOG_API_KEY && env.POSTHOG_PROJECT_ID) return { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
-  return stored<PostHogCreds>(env, "posthog");
+export async function postHogCreds(env: CredsEnv, repo?: string | null): Promise<PostHogCreds> {
+  if (env.POSTHOG_API_KEY && env.POSTHOG_PROJECT_ID && (!repo || repo.toLowerCase() === await linkedRepo(env, "posthog"))) return { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
+  return stored<PostHogCreds>(env, "posthog", repo);
 }
 
-export async function saveCreds(env: CredsEnv, kind: MineKind, creds: SentryCreds | PostHogCreds): Promise<void> {
+export async function saveCreds(env: CredsEnv, kind: MineKind, creds: SentryCreds | PostHogCreds, repo: string): Promise<void> {
   if (!env.CACHE) throw new Error("no KV binding");
-  await env.CACHE.put(`cred:${kind}`, JSON.stringify(creds));
+  await env.CACHE.put(repo ? `cred:${kind}:${repo.toLowerCase()}` : `cred:${kind}`, JSON.stringify(creds));
 }
 
 /** The one repo whose factory a mine feeds (Shiptorio is single-player for now). */
@@ -37,8 +37,6 @@ export async function linkedRepo(env: CredsEnv, kind: MineKind): Promise<string 
   return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`).catch(() => null)) ?? null);
 }
 
-export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null): Promise<void> {
-  if (!env.CACHE) return;
-  if (repo) await env.CACHE.put(`link:${kind}`, repo.toLowerCase());
-  else await env.CACHE.delete(`link:${kind}`);
+export async function linkRepo(_env: CredsEnv, _kind: MineKind, _repo: string | null): Promise<void> {
+  // Connection state is owned by the repo's DO. Legacy global links are read-only.
 }

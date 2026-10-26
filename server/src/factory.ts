@@ -1,3 +1,4 @@
+import { repoAccess, validRepo } from "./authorization";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -672,7 +673,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env), this.publicUrl()) : postHogStatus(await postHogCreds(this.env), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, this.meta?.repo ?? this.state?.repo), this.publicUrl()) : postHogStatus(await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     // The connect page needs to know which map to plug the mine into.
     const repo = this.meta?.repo ?? this.state?.repo;
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
@@ -745,7 +746,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
-    const creds = await postHogCreds(this.env);
+    const creds = await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo);
     try {
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
@@ -1474,6 +1475,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
     if (!auth) return new Response("login required", { status: 401 });
+    const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
+    const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
+    await this.load();
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, auth, repo)) return new Response("repository access denied", { status: 403 });
+    Object.assign(auth, { repo });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
@@ -1490,10 +1496,14 @@ export class Factory extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
+    await this.load();
+    const repo = this.meta?.repo ?? this.state?.repo;
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !await repoAccess(this.env, auth, repo)) { ws.close(1008, "Repository access revoked"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
+    if (value && typeof value === "object" && "repo" in value && (value as { repo: unknown }).repo !== repo) { ws.close(1008, "Repository mismatch"); return; }
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
