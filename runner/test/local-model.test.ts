@@ -77,3 +77,47 @@ test("assembler refuses big jobs, symlink escapes, empty edits and endpoint erro
   server = fakeOllama(() => new Response("model not found", { status: 404 }));
   await expect(runLocalAssembler({ plan: "x", allowedPaths: ["same.md"] }, work, config())).rejects.toThrow("404");
 });
+
+test("local discovery and source-bearing requests refuse 307/308 redirects", async () => {
+  const work = await checkout();
+  await writeFile(join(work, "README.md"), "synthetic approved source");
+  let escaped = 0;
+  const destination = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => { escaped++; return Response.json({}); } });
+  try {
+    for (const status of [307, 308]) {
+      const origin = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(null, { status, headers: { location: `${destination.url}escaped` } }) });
+      try {
+        const config = { baseUrl: origin.url.toString().replace(/\/$/, ""), model: "synthetic" };
+        expect((await detectLocalModel(config)).ok).toBe(false);
+        await expect(runLocalAssembler({ plan: "synthetic plan", allowedPaths: ["README.md"] }, work, config)).rejects.toThrow();
+        expect(await readFile(join(work, "README.md"), "utf8")).toBe("synthetic approved source");
+      } finally { origin.stop(true); }
+    }
+    expect(escaped).toBe(0);
+  } finally { destination.stop(true); }
+});
+
+test("HTTP envelope caps reject oversized discovery and completion before edits", async () => {
+  const work = await checkout();
+  await writeFile(join(work, "README.md"), "original synthetic file");
+  // Padding, rather than message content, bypassed the previous inner-message check.
+  const oversized = JSON.stringify({ choices: [{ message: { content: edits([{ path: "README.md", content: "changed" }]) } }], padding: "x".repeat(900_000) });
+  for (const declaredLength of [false, true]) {
+    const endpoint = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => {
+      const bytes = new TextEncoder().encode(oversized);
+      const stream = new ReadableStream<Uint8Array>({ start(controller) {
+        for (let at = 0; at < bytes.length; at += 8192) controller.enqueue(bytes.slice(at, at + 8192));
+        controller.close();
+      } });
+      return new Response(stream, { headers: declaredLength ? { "content-length": String(bytes.length) } : {} });
+    } });
+    try {
+      const config = { baseUrl: endpoint.url.toString().replace(/\/$/, ""), model: "synthetic" };
+      const detection = await detectLocalModel(config);
+      expect(detection.ok).toBe(false);
+      expect(detection.reason).toContain("too large");
+      await expect(runLocalAssembler({ plan: "synthetic", allowedPaths: ["README.md"] }, work, config)).rejects.toThrow("HTTP response is too large");
+      expect(await readFile(join(work, "README.md"), "utf8")).toBe("original synthetic file");
+    } finally { endpoint.stop(true); }
+  }
+});
