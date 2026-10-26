@@ -6,6 +6,7 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
+import { Coach, useTutorial } from "./ui/tutorial";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { useFactorySound } from "./sound/useFactorySound";
@@ -104,6 +105,9 @@ export function App() {
   const cfg = useMemo(() => readConfig(), []);
   const { state, log, status, send } = useFactory(cfg);
   const caption = useCaption(log);
+  // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
+  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
+  const { show } = tour;
   useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
@@ -131,15 +135,15 @@ export function App() {
   };
 
   // L toggles labels; A and B do what the round buttons say. Ignored while typing.
-  const keys = useRef({ launch, build });
-  keys.current = { launch, build };
+  const keys = useRef({ launch, build, show });
+  keys.current = { launch, build, show };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
-      else if (k === "b") keys.current.launch();
-      else if (k === "a") keys.current.build();
+      else if (k === "b" && keys.current.show("launch")) keys.current.launch();
+      else if (k === "a" && keys.current.show("build")) keys.current.build();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -156,7 +160,10 @@ export function App() {
             {cfg.kind === "sim" ? `sim · ${cfg.scenario}` : `${cfg.repo} · ${state?.baseBranch ?? "main"}`}
             <span className={`status ${status}`}> · {status}</span>
           </div>
-          {metrics ? (
+          {tour.lesson && (
+            <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? "your repo"} onDismiss={tour.dismiss} onSkip={tour.skip} />
+          )}
+          {!show("score") ? null : metrics ? (
             <>
               <div className="score" title="users unblocked + 10 × customers answered + rockets − 25 × escaped defects">
                 <span>SHIP SCORE</span>
@@ -191,7 +198,7 @@ export function App() {
               <Segs value={shipped % 8 || (shipped ? 8 : 0)} color="#5bd18b" />
             </div>
           )}
-          {autonomy ? (
+          {!show("autonomy") ? null : autonomy ? (
             <div className="hrow" title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}>
               <span>
                 AUTONOMY · {LEVEL_LABEL[autonomy.level]}
@@ -210,7 +217,8 @@ export function App() {
               <Segs value={(state?.trust ?? 0) * 8} color="#f2a93b" />
             </div>
           )}
-          {permits.length > 0 && <div className="psub">LAUNCH PERMIT: {permits.join(", ")}</div>}
+          {show("autonomy") && permits.length > 0 && <div className="psub">LAUNCH PERMIT: {permits.join(", ")}</div>}
+          {show("science") && (
           <div className="science" aria-label="Science">
             {(["red", "green", "grey", "blue"] as const).map((k) => (
               <span key={k} className={`sci ${k}`} title={`${SCIENCE_LABEL[k]} shipped (${k} science)`}>
@@ -219,6 +227,7 @@ export function App() {
               </span>
             ))}
           </div>
+          )}
           <SoundControl />
         </section>
 
@@ -227,6 +236,7 @@ export function App() {
             <span>POWER · PAD · LINE · LOG</span>
             <b>{sheet ? "▾" : "▴"}</b>
           </button>
+          {show("power") && (
           <section className="card" aria-label="Power">
             <div className="ptitle small">POWER</div>
             {(state?.power ?? []).map((p) => (
@@ -255,7 +265,9 @@ export function App() {
               );
             })}
           </section>
+          )}
 
+          {show("line") && (
           <section className="card" aria-label="Launch pad">
             <div className="ptitle small">ON THE PAD</div>
             {pad.length === 0 && <p className="psub">Nothing on the pad.</p>}
@@ -275,7 +287,9 @@ export function App() {
               ))}
             </ul>
           </section>
+          )}
 
+          {show("line") && (
           <section className="card" aria-label="On the line">
             <div className="ptitle small">ON THE LINE</div>
             {inFlight.length === 0 && <p className="psub">The line is quiet.</p>}
@@ -289,7 +303,9 @@ export function App() {
               ))}
             </ul>
           </section>
+          )}
 
+          {show("log") && (
           <section className="card log" aria-label="Floor log">
             <button type="button" className="ptitle small linkish" aria-expanded={showLog} onClick={() => setShowLog((v) => !v)}>
               LOG {showLog ? "−" : "+"}
@@ -302,6 +318,7 @@ export function App() {
               </ol>
             )}
           </section>
+          )}
         </div>
 
         <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
@@ -313,7 +330,7 @@ export function App() {
           <div className="psub">{caption.sub}</div>
         </div>
 
-        {cfg.kind === "sim" && (
+        {cfg.kind === "sim" && show("scenarios") && (
           <nav className="card scenarios" aria-label="Scenarios">
             {Object.keys(SCENARIOS).map((name) => (
               <a key={name} href={`?source=sim&scenario=${name}`} aria-current={name === cfg.scenario ? "page" : undefined}>
@@ -324,14 +341,19 @@ export function App() {
           </nav>
         )}
 
+        {show("labels") && (
         <button type="button" className="labeltoggle" aria-pressed={showLabels} onClick={() => setShowLabels((v) => !v)} title="Show every label (L)">
           LABELS {showLabels ? "ON" : "OFF"}
         </button>
+        )}
 
         <div className="buttons">
+          {show("launch") && (
           <button type="button" className="rbtn amber" onClick={launch} disabled={pad.length === 0} aria-label="Launch the PR on the pad">
             <b>B</b>launch
           </button>
+          )}
+          {show("build") && (
           <button
             type="button"
             className="rbtn"
@@ -342,6 +364,7 @@ export function App() {
           >
             <b>A</b>build
           </button>
+          )}
         </div>
       </main>
     </div>

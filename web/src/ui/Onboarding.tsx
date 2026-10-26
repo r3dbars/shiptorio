@@ -74,8 +74,8 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
             <div className="ptitle ob-title">SHIPTORIO</div>
             <p className="psub">The factory must grow.</p>
             <Spark>
-              I'm Spark. I run the floor and you call the shots. Sign in with GitHub and I'll turn your repo into a factory: folders become
-              districts, issues become ore, and every merged PR is a rocket.
+              I'm Spark. I'll help you build a factory, and your factory is one codebase. We'll start small: one machine, one fix, one
+              rocket. I'll show you each piece as you need it.
             </Spark>
             <div className="nm-options">
               <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>

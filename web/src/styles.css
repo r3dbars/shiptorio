@@ -378,3 +378,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .maplabels.far .maplabel i { display: none; }
 .hrow .next { font-style: normal; color: var(--dim); font-size: 10px; }
 .sci small { font-size: 9px; color: var(--dim); }
+
+/* Spark's coach card for the first-run tour (ui/tutorial.tsx), inside the top-left HUD */
+.coach { border-left: 3px solid var(--blue); padding: 4px 0 2px 10px; display: flex; flex-direction: column; gap: 6px; animation: coach-in 0.3s steps(3); }
+.coach-head { display: flex; justify-content: space-between; gap: 8px; font: 700 9px var(--pixel); letter-spacing: 0.06em; }
+.coach-head .who { color: var(--blue); }
+.coach-step { color: #5d668a; }
+.coach p { margin: 0; font-size: 12px; line-height: 1.5; }
+.coach-btns { display: flex; align-items: center; gap: 12px; }
+.coach-btns .nm-btn { min-height: 28px; font-size: 10px; }
+.coach-skip { font: 9px var(--pixel); letter-spacing: 0.06em; color: var(--dim); }
+@keyframes coach-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .coach { animation: none; } }
