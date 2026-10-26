@@ -126,7 +126,7 @@ and 1–3 actions (one is Spark's pick). Full detail: `docs/LOOP.md`.
 Every ore chunk carries **who it hurts**. Spark attaches it during triage:
 
 - users affected (Sentry user count, PostHog sessions hitting that route)
-- who asked (email senders, issue reactions), and whether they're paying (later: Stripe)
+- who asked (email senders, issue reactions), and whether they're paying (later: Stripe, on hold)
 - linked items (this email is the same bug as this Sentry error)
 
 That context is what makes Spark's priorities real: a crash on `/checkout` that 112 people hit beats a
@@ -451,9 +451,9 @@ gate, orbit watch) with piles and a red rework belt back to Spark, a click-to-ac
 
 1. **Autonomy (Justin):** Spark asks first, never writes code, autonomy is earned by playing, and code runs
    on the player's own subscriptions. See the top of this doc.
-2. **Demo "money" (Justin OK'd the pick):** the demo shop runs Stripe test mode. A "checkout completed"
-   counter on the HUD drops when checkout breaks and climbs back after the fix ships. No real payments; a
-   real Stripe connector is later.
+2. **Demo "money" (updated 2026-10-26, Justin):** Stripe is **on hold**. The first signal sources are GitHub,
+   Sentry and PostHog. Real-world impact in the demo shows through PostHog (sessions / conversions on the
+   affected route recover after the fix ships) instead of a Stripe checkout counter. Stripe comes back later.
 3. **Customer replies (Justin OK'd the pick):** Spark drafts, the player clicks Send, always in v1. No
    autonomy level auto-sends customer email yet.
 4. **Pitch audience (Justin OK'd the pick):** solo founders and tiny teams with real users. The promise:
