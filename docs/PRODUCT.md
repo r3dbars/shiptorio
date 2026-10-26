@@ -51,7 +51,7 @@ Next Move card.
 | ChatGPT | Solar plant + battery, Codex assemblers | `codex exec` in the local runner on your login |
 | Sentry, feedback inbox, PostHog | New ore patches (crater, well, roads) | Webhooks / API keys |
 | Later: Cursor, Grok | More solar plants and assemblers | Their CLIs in the local runner |
-| Later: **local AI inference** | Geothermal plant: free, always on, capped throughput, best on smaller items | A model on your own hardware (Mac with MLX / Glimmer, a GPU box with llama.cpp or Ollama) exposed to the runner as an OpenAI-compatible endpoint |
+| **Local AI inference** (PR #175) | Geothermal plant: free, always on, capped throughput, best on smaller items. A fixed guard (1-3 files, nothing sensitive, first try only) decides what it may build; the planner picks among allowed plants | A model on your own hardware (Mac with MLX / Glimmer, a GPU box with llama.cpp or Ollama) exposed to the runner as an OpenAI-compatible endpoint. Setup: [runner-local-models.md](runner-local-models.md) |
 
 The Spark steam plant (Meta API, paid by Shiptorio) powers only the brain: triage, planning, routing,
 judging. It doesn't run assemblers. With no subscription plugged in, the factory can read, plan and show

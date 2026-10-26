@@ -6,11 +6,15 @@ export interface AccessEnv {
   APP_PASSWORD?: string;
   SESSION_SECRET: string;
   DEV_LOGIN?: string;
+  SIGNUP_GATE_MODE?: string;
 }
 
 const COOKIE = "shiptorio_access";
 const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'self'", "x-content-type-options": "nosniff" };
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The docs site (/docs/*): static pages about how the game works, no factory data. */
+export const isPublicDocs = (path: string) => path === "/docs" || path.startsWith("/docs/");
 
 // Secure cookies cannot authenticate an HTTP page. Redirect before showing the form,
 // otherwise a successful password POST looks like a silent return to the same gate.
@@ -54,6 +58,29 @@ async function validForm(request: Request, secret: string, token: string | null)
   return signature === await formSignature(secret, new URL(request.url).origin, `${expires}.${nonce}`);
 }
 
+// shiptorio.com is public: anyone without the preview cookie gets the landing page at "/"
+// (web/public/welcome/), its files, robots/sitemap and the waitlist. Everything else stays gated.
+const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|robots\.txt|sitemap\.xml)$/;
+export type PublicRoute = "landing" | "file" | "waitlist";
+export async function publicRoute(request: Request, env: AccessEnv): Promise<PublicRoute | null> {
+  const url = new URL(request.url);
+  const read = request.method === "GET" || request.method === "HEAD";
+  if (read && PUBLIC_FILE.test(url.pathname)) return "file";
+  if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
+  if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;
+  // App deep links (/?onboard=repo&source=live from the GitHub install, ?source=sim, ...) still go to the
+  // password form, which keeps them as next; only a bare visit or a campaign link gets the landing page.
+  if ([...url.searchParams.keys()].some((key) => !/^(?:utm_\w+|ref|joined)$/.test(key))) return null;
+  // Waitlist mode: anyone signed in with GitHub goes on to the signup gate (the app, or "pending approval").
+  if (env.SIGNUP_GATE_MODE === "waitlist") return /(?:^|;\s*)shiptorio_session=/.test(request.headers.get("cookie") ?? "") ? null : "landing";
+  return (await hasPreviewAccess(request, env)) ? null : "landing";
+}
+async function hasPreviewAccess(request: Request, env: AccessEnv): Promise<boolean> {
+  if (!env.APP_PASSWORD || !env.SESSION_SECRET) return false;
+  const cookie = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_access=([^;]+)/)?.[1];
+  return !!(await readSession(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, cookie ? `shiptorio_session=${cookie}` : null));
+}
+
 export async function previewAccess(request: Request, env: AccessEnv): Promise<Response | null> {
   const secure = secureTransport(request);
   if (secure) return secure;
@@ -61,6 +88,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
+  // The docs site is public.
+  if (isPublicDocs(url.pathname) && ["GET", "HEAD"].includes(request.method)) return null;
   // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.
   if (url.pathname === "/api/version" && request.method === "GET") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
@@ -101,5 +130,6 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
     return gate(request, secret, "Your browser did not keep the sign-in cookie. Enable cookies for this site, then try again.", next);
   }
   if (url.pathname.startsWith("/api/")) return new Response("Preview password required", { status: 401, headers: { "cache-control": "no-store" } });
-  return gate(request, secret, "", url.pathname + url.search);
+  // The landing page links to /access?next=/, so the form sends players straight on to next.
+  return gate(request, secret, "", url.pathname === "/access" ? next : url.pathname + url.search);
 }

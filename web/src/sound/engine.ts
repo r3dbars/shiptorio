@@ -39,18 +39,20 @@ export type Sfx =
   | "finale";
 
 import { SCAPES, type Focus } from "./scapes";
+import { MusicPlayer } from "./musicPlayer";
+import type { MusicInput } from "./music";
 
 export type { Focus };
-type Settings = { muted: boolean; volume: number };
+type Settings = { muted: boolean; volume: number; music: boolean };
 const KEY = "shiptorio.sound";
 const MIN_GAP_MS = 90; // same effect can't stack faster than this
 
 function load(): Settings {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    if (s && typeof s.muted === "boolean" && typeof s.volume === "number") return s;
+    if (s && typeof s.muted === "boolean" && typeof s.volume === "number") return { music: true, ...s };
   } catch {}
-  return { muted: false, volume: 0.5 };
+  return { muted: false, volume: 0.5, music: true };
 }
 
 class SoundEngine {
@@ -61,6 +63,8 @@ class SoundEngine {
   private floor: GainNode | null = null;
   private floorLp: BiquadFilterNode | null = null;
   private near: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private music = new MusicPlayer(this);
   private focus: Focus | null = null;
   private scapeStop: (() => void) | null = null;
   private step = 0;
@@ -94,7 +98,7 @@ class SoundEngine {
     document.addEventListener("visibilitychange", () => {
       if (!this.ctx) return;
       if (document.hidden) void this.ctx.suspend();
-      else void this.ctx.resume();
+      else if (!this.off) void this.ctx.resume();
     });
   }
 
@@ -114,6 +118,8 @@ class SoundEngine {
     this.near = ctx.createGain();
     this.near.gain.value = 0;
     this.near.connect(this.master);
+    this.musicBus = ctx.createGain();
+    this.musicBus.connect(this.master);
     this.applyVolume();
     // 1s of white noise, sampled at a low rate later for that crunchy 8-bit texture
     const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -123,6 +129,7 @@ class SoundEngine {
     this.startHum();
     this.workTimer = window.setInterval(() => this.workTick(), 260);
     window.setInterval(() => this.scapeTick(), 125);
+    this.music.attach(this.musicBus);
     const f = this.focus;
     this.focus = null;
     this.setFocus(f);
@@ -145,14 +152,49 @@ class SoundEngine {
     return () => void this.listeners.delete(f);
   }
 
+  private get off() {
+    return this.settings.muted || this.settings.volume <= 0;
+  }
+
   private applyVolume() {
     if (!this.ctx || !this.master) return;
-    const v = this.settings.muted ? 0 : this.settings.volume ** 2 * 0.6; // squared feels linear to the ear
-    this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03);
+    const ctx = this.ctx;
+    const v = this.off ? 0 : this.settings.volume ** 2 * 0.6; // squared feels linear to the ear
+    this.master.gain.setTargetAtTime(v, ctx.currentTime, 0.03);
+    // muted: once the fade is done, suspend the whole context so the drones and the music pad stop costing battery
+    if (this.off) window.setTimeout(() => this.off && ctx.state === "running" && void ctx.suspend(), 200);
+    else if (!document.hidden && ctx.state !== "running") void ctx.resume();
   }
 
   private get live() {
-    return !!this.ctx && !!this.master && !this.settings.muted && this.settings.volume > 0 && this.ctx.state === "running";
+    return !!this.ctx && !!this.master && !this.off && this.ctx.state === "running";
+  }
+
+  get canPlay() {
+    return this.live;
+  }
+
+  // ---------- music ----------
+
+  // What the adaptive score listens to. See music.ts for how this becomes layers and tension.
+  setMusic(i: MusicInput) {
+    this.music.setInput(i);
+  }
+
+  // A station caught something: the score tenses up.
+  musicAlert() {
+    this.music.alert();
+  }
+
+  // A PR launched: the score ducks under the roar and cadences home.
+  musicResolve(delay = 0) {
+    if (this.ctx) this.music.resolve(delay);
+  }
+
+  // For tests and the dev overlay: what the score is doing right now.
+  musicState() {
+    const m = this.music;
+    return { intensity: m.intensity, tension: m.tension, layers: m.layers, chord: m.chord };
   }
 
   // ---------- ambience ----------
@@ -254,6 +296,7 @@ class SoundEngine {
     const t = this.ctx.currentTime;
     this.floorLp.frequency.setTargetAtTime(f ? 650 : 18000, t, f ? 0.25 : 0.4);
     this.floor.gain.setTargetAtTime(f ? 0.35 : 1, t, f ? 0.25 : 0.4);
+    this.musicBus?.gain.setTargetAtTime(f ? 0.45 : 1, t, f ? 0.25 : 0.4);
     if (same) return;
     // fade the old scape out, then start the new one
     const old = this.scapeStop;

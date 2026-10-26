@@ -3,19 +3,8 @@
 
 import type { Bottleneck, Move, Station, WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
+import { NEXT_MOVE, STAGE_LABEL, WORDS } from "../copy";
 import { Icon } from "./icons";
-
-const STAGE_LABEL: Record<Bottleneck["stage"], string> = {
-  intake: "intake",
-  triage: "triage",
-  build: "build",
-  inspect: "inspector",
-  pad: "launch pad",
-  release: "release",
-  impact: "impact",
-  power: "power",
-  resources: "no power",
-};
 
 interface Props {
   move: Move | null | undefined;
@@ -30,15 +19,15 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
     if (!bottleneck) return null;
     const st = stations?.find((x) => x.id === bottleneck.stationId);
     return (
-      <section className="card nextmove quiet" aria-label="Bottleneck">
+      <section className="card nextmove quiet" aria-label={NEXT_MOVE.bottleneck}>
         <div className="nm-head">
-          <span className="nm-kicker">Bottleneck · {st?.name ?? STAGE_LABEL[bottleneck.stage]}</span>
+          <span className="nm-kicker">{NEXT_MOVE.bottleneckAt(st?.name ?? STAGE_LABEL[bottleneck.stage])}</span>
         </div>
         <p className="nm-why">{bottleneck.summary}</p>
         {st && onOpen && (
           <div className="nm-options">
             <button type="button" className="btn" onClick={() => onOpen(st.id)}>
-              Open the {lc(st.name)}
+              {NEXT_MOVE.open(lc(st.name))}
             </button>
           </div>
         )}
@@ -47,11 +36,11 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
   }
   const stage = move.stage ?? bottleneck?.stage;
   return (
-    <section className="card nextmove" aria-label="Next move" aria-live="polite">
+    <section className="card nextmove" aria-label={NEXT_MOVE.label} aria-live="polite">
       <div className="nm-head">
         <span className="nm-kicker">
           <Icon name="star" size={14} />
-          Next move
+          {NEXT_MOVE.label}
         </span>
         {stage && <span className="nm-stage">{STAGE_LABEL[stage]}</span>}
       </div>
@@ -59,7 +48,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
       <p className="nm-why">{move.why}</p>
       {!!move.plan?.length && (
         <details className="nm-plan">
-          <summary>Review plan and files</summary>
+          <summary>{NEXT_MOVE.plan}</summary>
           <ol>{move.plan.map((step, i) => <li key={i}>{step}</li>)}</ol>
         </details>
       )}
@@ -73,12 +62,12 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
             onClick={() => send({ type: "choose_move", moveId: move.id, optionId: o.id })}
           >
             {o.label}
-            {o.recommended && <span className="sugg">Suggested</span>}
+            {o.recommended && <span className="sugg">{WORDS.suggested}</span>}
           </button>
         ))}
         {move.url && (
           <a className="nm-link" href={move.url} target="_blank" rel="noreferrer">
-            PR ↗
+            {WORDS.prLink}
           </a>
         )}
       </div>

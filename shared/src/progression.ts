@@ -65,6 +65,26 @@ const StoredProgress = z.object({
   unlocked: z.array(z.string()), equip: z.record(z.string(), z.boolean()),
 });
 
+/** Strict read: null when the blob isn't a valid Progress (the server refuses those). */
+export function validProgress(raw: string): Progress | null {
+  try {
+    const parsed = StoredProgress.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Two copies of one player's progress (this browser, the server): keep the further-along one, and never
+ * lose an unlock or a best streak either side earned.
+ */
+export function mergeProgress(a: Progress, b: Progress): Progress {
+  const [hi, lo] = a.xp >= b.xp ? [a, b] : [b, a];
+  const unlocked = [...hi.unlocked, ...lo.unlocked.filter((u) => !hi.unlocked.includes(u))];
+  return { ...hi, best: Math.max(hi.best, lo.best), unlocked, equip: { ...lo.equip, ...hi.equip } };
+}
+
 /** Corrupt or incompatible browser data starts fresh before reaching rendering/math. */
 export function parseProgress(raw: string | null | undefined): Progress {
   if (!raw) return emptyProgress();

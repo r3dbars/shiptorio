@@ -7,7 +7,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const secret = "test-repo-session", password = "test-repo-preview";
 const preview = async () => (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
 const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", FACTORY: unlimitedFactory, CACHE: membershipCache, DB: testD1() });
@@ -79,4 +79,30 @@ test("achievements get a bigger pref, still capped", async () => {
   expect((await put(JSON.stringify({ intro: "x".repeat(65) }))).status).toBe(400);
   const me = (await (await get(env, "/api/me", cookie)).json()) as { prefs: Record<string, string> };
   expect(me.prefs.achievements).toBe(earned);
+});
+
+test("admin budget usage requires a live operator session and includes daily limits", async () => {
+  const env = { ...baseEnv(), ADMIN_LOGINS: "r3dbars" };
+  const operator = `${await signedInCookie(env, "r3dbars", [], 11)}; ${await preview()}`;
+  const player = `${await signedInCookie(env, "friend", [], 12)}; ${await preview()}`;
+  expect((await get(env, "/admin?format=json", player)).status).toBe(403);
+  const response = await get(env, "/admin?format=json", operator);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ limits: { calls: 200, tokens: 500000, jobs: 1 }, usage: [] });
+  await env.DB.prepare("DELETE FROM sessions").run();
+  expect((await get(env, "/admin", operator)).status).toBe(403);
+});
+test("progress follows the player, validated by the shared schema", async () => {
+  const env = baseEnv();
+  const cookie = `${await signedInCookie(env, "r3dbars")}; ${await preview()}`;
+  const put = (body: string, origin = "https://shiptorio.com") => app.fetch(new Request("https://shiptorio.com/api/me/progress", { method: "PUT", headers: { cookie, origin }, body }), env as never);
+  const { emptyProgress } = await import("@shiptorio/shared");
+  const p = { ...emptyProgress(), xp: 120, streak: 2, best: 2 };
+  expect((await (await get(env, "/api/me/progress", cookie)).json())).toEqual({ progress: null });
+  expect((await put(JSON.stringify(p))).status).toBe(200);
+  expect((await put(JSON.stringify({ v: 1, xp: "lots" }))).status).toBe(400);
+  expect((await put(JSON.stringify(p), "https://evil.example")).status).toBe(403);
+  const got = (await (await get(env, "/api/me/progress", cookie)).json()) as { progress: unknown };
+  expect(got.progress).toMatchObject({ xp: 120, streak: 2 });
+  expect((await get(env, "/api/me/progress", "")).status).toBe(401);
 });

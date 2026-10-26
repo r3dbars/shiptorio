@@ -2,14 +2,9 @@
 // new gauntlet stations. Each one really runs on every PR, right after CI. Repeated scars put a "Suggested"
 // tag on the tech that would have caught them.
 
-import { sciencePacks, techById, techStatus, TECHS, type FactoryState, type Tech, type WebToServer } from "@shiptorio/shared";
+import { sciencePacks, techById, techStatus, TECHS, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { Icon, type IconName } from "./icons";
-
-const TIER_LABEL: Record<Tech["tier"], string> = {
-  1: "Tier 1 · instant checks",
-  2: "Tier 2 · stricter gates",
-  3: "Tier 3 · real-world checks",
-};
+import { RESEARCH, WORDS } from "../copy";
 
 /** Something new to spend on: the flask glows. */
 export function researchReady(state: FactoryState | null): boolean {
@@ -26,10 +21,10 @@ export function Research({ state, send, onClose, onResearched }: { state: Factor
     onResearched(tech);
   };
   return (
-    <section className="card sheet research" aria-label="Research">
+    <section className="card sheet research" aria-label={RESEARCH.title}>
       <div className="sheet-top">
-        <h2>Research</h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <h2>{RESEARCH.title}</h2>
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
@@ -38,20 +33,20 @@ export function Research({ state, send, onClose, onResearched }: { state: Factor
           <Icon name="flask" size={22} />
         </span>
         <span>
-          <b>{have}</b> science pack{have === 1 ? "" : "s"}
-          <small>Every PR you ship is one. Spend them on new checks.</small>
+          <b>{have}</b> {RESEARCH.packs(have)}
+          <small>{RESEARCH.packsSub}</small>
         </span>
       </div>
       {pick && techStatus(pick, state).state !== "done" && (
         <div className="rs-pick">
-          <span className="rs-tag">Suggested</span>
+          <span className="rs-tag">{WORDS.suggested}</span>
           <p>{suggest.why}</p>
         </div>
       )}
       <div className="rs-tree">
         {([1, 2, 3] as const).map((tier) => (
           <div className="rs-tier" key={tier}>
-            <h3>{TIER_LABEL[tier]}</h3>
+            <h3>{RESEARCH.tier[tier]}</h3>
             {TECHS.filter((t) => t.tier === tier).map((t) => {
               const st = techStatus(t, state);
               const picked = suggest?.tech === t.id && st.state !== "done";
@@ -63,21 +58,21 @@ export function Research({ state, send, onClose, onResearched }: { state: Factor
                   <span className="rs-body">
                     <span className="rs-name">
                       {t.name}
-                      {picked && <em>Suggested</em>}
+                      {picked && <em>{WORDS.suggested}</em>}
                     </span>
                     <span className="rs-what">{t.what}</span>
-                    <span className="rs-catch">Catches {t.catches}</span>
+                    <span className="rs-catch">{RESEARCH.catches(t.catches)}</span>
                   </span>
                   {st.state === "ready" ? (
                     <button type="button" className={`btn${picked ? " rec" : ""} rs-go`} onClick={() => go(t.id)}>
-                      Research
+                      {RESEARCH.go}
                       <small>
                         <Icon name="flask" size={10} /> {t.cost}
                       </small>
                     </button>
                   ) : st.state === "done" ? (
                     <span className="pill rs-done">
-                      <Icon name="check" size={10} /> Running
+                      <Icon name="check" size={10} /> {RESEARCH.running}
                     </span>
                   ) : (
                     <span className="rs-why">

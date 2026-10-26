@@ -10,6 +10,7 @@ import {
   dayKey,
   levelOf,
   liveStreak,
+  mergeProgress,
   nextUnlock,
   observe,
   openDay,
@@ -85,16 +86,51 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
     setPop(null);
   }, [key]);
 
+  // Signed in: progress follows you across devices. Pull once, merge, and push changes a few seconds later.
+  const synced = on && profile.startsWith("github:") && profile !== "github:signed-out";
+  const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pull = useRef(false);
+  const push = useCallback(() => {
+    if (!synced) return;
+    if (pushTimer.current) clearTimeout(pushTimer.current);
+    pushTimer.current = setTimeout(() => {
+      if (!pull.current) return; // never overwrite the server copy before reading it
+      fetch("/api/me/progress", { method: "PUT", body: JSON.stringify(cur.current), headers: { "content-type": "application/json" } }).catch(() => {});
+    }, 3000);
+  }, [synced]);
+  useEffect(() => {
+    if (!synced) return;
+    let live = true;
+    pull.current = false;
+    fetch("/api/me/progress")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: { progress: Progress | null } | null) => {
+        if (!live || !body) return;
+        pull.current = true;
+        const server = body.progress ? parseProgress(JSON.stringify(body.progress)) : null;
+        const next = server ? mergeProgress(cur.current, server) : cur.current;
+        cur.current = next;
+        setP(next);
+        store.set(key, JSON.stringify(next));
+        push();
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [synced, key, push]);
+
   const apply = useCallback(
     (step: Step) => {
       cur.current = step.progress;
       setP(step.progress);
       store.set(key, JSON.stringify(step.progress));
+      push();
       if (!step.gains.length && !step.unlocked.length) return;
       setPop({ id: ++seq.current, gains: step.gains, levelUp: step.levelUp, unlocked: step.unlocked });
       if (step.levelUp || step.unlocked.length) sound.play("level_up");
     },
-    [key],
+    [key, push],
   );
 
   useEffect(() => {
