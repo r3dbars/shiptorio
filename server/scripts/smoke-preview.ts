@@ -9,7 +9,7 @@ const credentials = JSON.parse(readFileSync(new URL("../.env.deploy-secrets", im
 let count = 0;
 const check = (ok: unknown, text: string) => { if (!ok) throw new Error(text); count++; console.log(`PASS ${text}`); };
 let response = await fetch(base);
-check(response.status === 401 && (await response.text()).includes("private preview password"), "anonymous visitor receives password gate");
+check(response.status === 401 && (await response.text()).includes('aria-label="Password"'), "anonymous visitor receives password gate");
 response = await fetch(base + "/api/setup/status");
 check(response.status === 401, "anonymous API is protected");
 response = await fetch(base + "/access", { method: "POST", headers: { origin: url.origin }, body: new URLSearchParams({ password: credentials.APP_PASSWORD }), redirect: "manual" });
