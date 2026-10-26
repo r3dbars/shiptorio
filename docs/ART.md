@@ -106,3 +106,17 @@ The verification gauntlet from `docs/LOOP.md`, one visible machine per check. Ea
 - **Orbit watch**: after the launch pad. A radar mast and an orbiting satellite watch the deploy for 24 hours,
   shown as a ring of 24 hour pips around the base. A console shows a Sentry sparkline. Alert: the ring flashes red
   and the sparkline spikes.
+
+
+## Art direction pick (Oct 26, Justin): Black Iron
+
+After the Style Lab (`/art/style-lab.html`), three diorama worlds (`/art/dioramas.html`: Cogworks, Neon Tokyo,
+Wildwood) and three gritty Cogworks variations (`/art/cogworks.html`), Justin picked **Black Iron**: a dark, oily,
+dirty steampunk foundry, brightened to read on a phone, at **1x pixels**. Kept from the other variations: height
+(a high rework line, Undercroft) and the aether look (teal conduits with traveling pulses, tesla coils feeding the
+rocket, Aether Foundry). The underside of the island is a full scene (mines, ore lift, slag furnaces, a docked
+airship).
+
+The point of the art is that **the work visibly moves**: every item is a real simulated work item with a number and
+title, every handoff is an animation, and every machine has unmistakable IDLE / WORKING / BLOCKED states (blocked =
+needs a human decision). Live: `/art/black-iron.html`. Source, contract and tooling: `docs/art/black-iron/`.

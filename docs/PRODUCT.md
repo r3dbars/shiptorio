@@ -51,7 +51,7 @@ Next Move card.
 | ChatGPT | Solar plant + battery, Codex assemblers | `codex exec` in the local runner on your login |
 | Sentry, feedback inbox, PostHog | New ore patches (crater, well, roads) | Webhooks / API keys |
 | Later: Cursor, Grok | More solar plants and assemblers | Their CLIs in the local runner |
-| Later: **local AI inference** | Geothermal plant: free, always on, capped throughput, best on smaller items | A model on your own hardware (Mac with MLX / Glimmer, a GPU box with llama.cpp or Ollama) exposed to the runner as an OpenAI-compatible endpoint |
+| **Local AI inference** (PR #175) | Geothermal plant: free, always on, capped throughput, best on smaller items. A fixed guard (1-3 files, nothing sensitive, first try only) decides what it may build; the planner picks among allowed plants | A model on your own hardware (Mac with MLX / Glimmer, a GPU box with llama.cpp or Ollama) exposed to the runner as an OpenAI-compatible endpoint. Setup: [runner-local-models.md](runner-local-models.md) |
 
 The Spark steam plant (Meta API, paid by Shiptorio) powers only the brain: triage, planning, routing,
 judging. It doesn't run assemblers. With no subscription plugged in, the factory can read, plan and show
@@ -400,9 +400,15 @@ The headline number is **Ship Score** for the week: `users unblocked + 10 × cus
 minus `25 × escaped defects`. It's simple, it only goes up by shipping good work, and it goes down hard when
 you ship bad work. (Tune the weights later; the shape is what matters.)
 
-Achievements tie to real milestones: **Zero-day** (Sentry error to merged fix in under 10 min), **Lights out**
-(8 h unattended with no escaped defects), **Green belt** (20 PRs with no rework), **First customer saved**
-(a customer email answered with a shipped fix).
+Achievements tie to real milestones, never to clicking. Live now (`shared/src/achievements.ts`, PR #174): Liftoff
+(first PR shipped), Production line (10 shipped), New check (first research), Error miner / Traffic miner (Sentry /
+PostHog connected), Caught it (the verify bay stopped a bad fix before prod), Back on the belt (a reworked PR
+shipped), Permit to launch, Hands off (first auto-launch, nobody tapped), All clear (a launch held its orbit watch),
+Biter down (a live Sentry error killed), Ten clean (10 launches in a row with no rework), Week on the line (7-day
+streak), Lights out. Each pays XP into progression, unlocks with a toast and its own sound, and lives on the
+player's account (`achievements` pref), so it follows them across browsers. The sim keeps them in memory only.
+Later: **Zero-day** (Sentry error to merged fix in under 10 min), **Green belt** (20 PRs with no rework), **First
+customer saved** (a customer email answered with a shipped fix).
 
 ## How a decision cascades to the real world
 

@@ -133,6 +133,14 @@ small { color: var(--dim); }
     <div class="card"><h3>Nothing hidden</h3><p>Every Spark call lands in the in-game "How it thinks" log: what it looked at, what it decided, why, and how long it took. Every time a rule had to stand in, that's counted too.</p></div>
   </div>
 
+  <h2>Is it any good? The scorecard</h2>
+  <p>Counting calls only shows Spark is busy. The scorecard in "How it thinks" shows whether its calls hold up, measured from what really happened on GitHub.</p>
+  <div class="grid">
+    <div class="card"><h3>Plans shipped</h3><p>Of the jobs Spark planned, how many merged and launched. A re-plan after a failed check is the same job, so retries can't pad it. Jobs still on the line count as not shipped yet.</p></div>
+    <div class="card"><h3>Reviews that caught a problem</h3><p>Of the PRs Spark reviewed, how many it sent back for rework. Zero would mean it rubber-stamps; the rework belt shows what each catch was.</p></div>
+    <div class="card"><h3>Calls a rule had to make</h3><p>The share of decisions where Spark didn't answer and a fixed rule stood in. Lower is better, and it's never hidden.</p></div>
+  </div>
+
   <h2>Check it yourself</h2>
   <div class="card">
     <p><b>On GitHub:</b> each planned issue gets a comment with Spark's triage reason, each tool call and the plan. Each reviewed PR gets a “Muse Spark reviewing X's work” comment.</p>

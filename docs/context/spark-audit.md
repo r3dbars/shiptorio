@@ -54,6 +54,15 @@ permission stay deterministic so the automation earned by playing is provable.
 4. The live drone never moved (server never set `foreman`) → set on every Spark call.
 5. Spark's plan was invisible in GitHub → issue comment.
 
+6. Cards said what but not why → the game master writes a one-sentence `because` per card
+   (`Move.because`), shown as the "Why:" line; falls back to the suggested option's reason.
+7. "Never" swipes only hid cards → the dismiss rules and wrong-call corrections go into the plan call as
+   `playerFeedback`; Spark returns `heeded` and the plan text lists "Respects your past calls".
+8. No measure of quality → `Brain.score` scorecard in the panel and on the judge page: plans shipped
+   (distinct Spark-planned jobs that merged, via `scoreShip` in the launch transaction), review catch
+   rate (Spark verdicts that sent the PR back), and fallback share. Shared math: `scorecard()` in
+   `shared/src/model.ts`.
+
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.
 

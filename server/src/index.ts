@@ -1,10 +1,17 @@
+import { repositoryFactory } from "./repository";
+import { lifecycleEvents } from "./github-lifecycle";
+import { factoryRpc } from "./factory-rpc";
+
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
+
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
+
 
 import { Redactor } from "./redact";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
 import { adminRoutes } from "./admin";
+
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
@@ -12,10 +19,12 @@ import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, se
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
+
 import { isAllowed } from "./session";
-import { previewAccess, publicRoute, secureTransport } from "./access";
+import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
 import { joinWaitlist } from "./waitlist";
 import { landingPage, publicFile } from "./landing";
+
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
@@ -25,9 +34,13 @@ import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { installationToken } from "./github";
+import { CODE_RE, DEVICE_TTL, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
 import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
+
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
+
 
 export { Factory };
 
@@ -51,19 +64,21 @@ export interface Env extends FactoryEnv, SignupEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = (env: Env, repo: string) => {
-  const stub = env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
+const factory = async (env: Env, repo: string) => {
+  const stub = await repositoryFactory(env, repo);
   const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
   // Capture per call, never put mutable request identity on a shared DO instance.
   return new Proxy(stub, { get(target, method) {
+    if (method === "then") return undefined;
     if (method === "fetch") return (request: Request) => {
       const headers = new Headers(request.headers);
       headers.set("X-Request-ID", trace.requestId);
       return target.fetch(new Request(request, { headers }));
     };
-    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+    return (...args: unknown[]) => factoryRpc(target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }, String(method), args, trace);
   } }) as typeof stub;
 };
+
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
@@ -120,18 +135,24 @@ app.use("*", async (c, next) => {
 });
 
 app.use("*", async (c, next) => {
+  // Installer and device exchange have no browser cookies. Device approval still requires
+  // the normal preview + user session and same-origin form submission below.
+  if (["/install.sh", "/runner.mjs", "/runner-manifest.json", "/api/runner-device/start", "/api/runner-device/poll"].includes(c.req.path)) {
+    await next(); c.header("Cache-Control", "no-store"); return;
+  }
   if (c.req.path.startsWith("/api/runner/")) {
-    const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
+    const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew|heartbeat)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
       return c.json({error:'runner authentication required'},401);
     }
     if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({error:'repository access denied'},403);
-    if (!await factory(c.env,identity.repo).isRunnerPaired(identity.pairId)) {
+    if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
       return c.json({error:'runner pairing revoked'},401);
     }
+
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
@@ -142,10 +163,13 @@ app.use("*", async (c, next) => {
   if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
   if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
   if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
-  const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
+  const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  c.header("Cache-Control", browserCacheControl(c.req.raw, c.res.status));
+  // Docs are public static content; authenticated build assets retain their private immutable policy.
+  c.header("Cache-Control", isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method) && c.res.ok
+    ? "public, max-age=300" : browserCacheControl(c.req.raw, c.res.status));
 });
 
 app.onError((err, c) => {
@@ -224,13 +248,13 @@ app.get("/api/me", async (c) => {
   return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
 });
 
-// Settings that follow the player across browsers (intro seen, guide progress).
+// Settings that follow the player across browsers (intro seen, guide progress, achievements).
 app.put("/api/me/prefs", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
-  if (text.length > 1024) return c.json({ error: "too large" }, 413);
+  if (text.length > 6144) return c.json({ error: "too large" }, 413); // a bounded achievements record, with room for JSON escaping
   let body: unknown;
   try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
@@ -300,6 +324,73 @@ app.get("/api/sources", async (c) => {
   return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env, scope), url, scope.repo), postHogStatus(await postHogCreds(c.env, scope), url, c.env.FAKE_POSTHOG === "1")] });
 });
 
+// Device-code flow. No subscription credential or browser cookie crosses to the runner.
+const device = (env: Env, code: string) => env.FACTORY.get(env.FACTORY.idFromName(`device:${code.toLowerCase()}`));
+async function deviceRepoAccess(env: Env, user: import("./authorization").AccessUser, repo: string): Promise<number | null> {
+  if (!REPO_RE.test(repo) || repo.split("/").some(p => p === "." || p === "..")) return null;
+  const installation = await repoAccess(env, user, repo);
+  if (!installation) return null;
+  try {
+    const token = await installationToken(env, installation);
+    const permission = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(user.login)}/permission`, token);
+    return permission.user?.id === user.id && ["write", "maintain", "admin"].includes(permission.permission) ? installation : null;
+  } catch { return null; }
+}
+app.post("/api/runner-device/start", async c => {
+  const bucket = await secretHash(c.req.header("cf-connecting-ip") ?? "local");
+  if (!await device(c.env, `rate:${bucket}`).allowDeviceStart()) return c.json({ error: "Too many pairing requests. Try again in 10 minutes." }, 429);
+  // No client input: high-entropy human code and secret are generated by the server.
+  const code = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase().match(/.{4}/g)!.join("-");
+  const secret = crypto.randomUUID() + crypto.randomUUID();
+  const expires = Date.now() + DEVICE_TTL;
+  if (!await device(c.env, code).startDevice(await secretHash(secret), expires)) return c.json({ error: "Try again" }, 409);
+  return c.json({ code, secret, expires, interval: 3, verificationUri: `${publicUrl(new URL(c.req.url), c.env)}/runner/pair?code=${code}` });
+});
+app.post("/api/runner-device/poll", async c => {
+  const raw = await c.req.text();
+  if (raw.length > 512) return c.json({ error: "too large" }, 413);
+  let body: { code?: string; secret?: string };
+  try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  if (typeof body?.code !== "string" || !CODE_RE.test(body.code) || typeof body.secret !== "string" || body.secret.length !== 72) return c.json({ error: "invalid device" }, 400);
+  return c.json(await device(c.env, body.code).pollDevice(await secretHash(body.secret)));
+});
+app.on(["GET", "POST"], "/runner/pair", async c => {
+  const user = await resolveUser(c.req.raw, c.env);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  const code = normalizeCode(c.req.query("code") ?? "");
+  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
+  if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
+  if (c.req.method === "POST") {
+    if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
+    const raw = await c.req.text();
+    if (raw.length > 1024) return c.text("too large", 413);
+    const repo = String(new URLSearchParams(raw).get("repo") ?? "").trim().toLowerCase();
+    const installation = await deviceRepoAccess(c.env, user, repo);
+    if (!installation) return c.html(runnerPage("Repository unavailable", "<p>You need write access and a Shiptorio GitHub App installation for this repo. Go back and choose another.</p>"), 403, headers);
+    // Reserve approval before rotating the repo credential: concurrent approvals must not
+    // rotate a second token after the first has already been delivered to the runner.
+    if (!await resourceQuota(c.env, user.login, "repo", repo) || !await resourceQuota(c.env, user.login, "factory", repo)) return c.json({ error: "repository/factory quota reached" }, 429);
+    if (!await admit(c.env, `pair:${user.id}`, 5, 600000, "repeated browser pairing requests")) return c.json({ error: "pairing throttled" }, 429);
+    const f = await factory(c.env, repo);
+    await f.ensure(repo, installation);
+    const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+    const token = await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user });
+    if (!await device(c.env, code).approveDevice({ repo, token, expires })) return c.html(runnerPage("Code expired or already used", "<p>Run shiptorio-runner pair for a new code.</p>"), 409, headers);
+    await f.activateRunner(pairId);
+    await device(c.env, code).readyDevice();
+    return c.html(runnerPage("Machine approved", `<p>Your terminal will confirm connection to <b>${htmlEscape(repo)}</b>. Return there to finish pairing, then <a href="/?source=live&repo=${encodeURIComponent(repo)}">open your factory</a>. The planner asks you to approve a plan before any code runs.</p>`), 200, headers);
+  }
+  const wanted = c.req.query("repo") ?? "";
+  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Claude and Codex sign-ins stay on your computer.</p>`), 200, headers);
+});
+app.get("/api/repos/:owner/:repo/runner/status", async c => {
+  const user = await resolveUser(c.req.raw, c.env);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!user || !await deviceRepoAccess(c.env, user, repo)) return c.json({ error: "repository access required" }, 403);
+  return c.json(await (await factory(c.env, repo)).runnerStatus());
+});
+
+
 // ---------- connect a mine (Sentry, PostHog): paste the key once ----------
 
 app.on(["GET", "POST"], "/connect/:kind", async (c) => {
@@ -321,7 +412,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (field("action") === "revoke") {
     await revokeCreds(c.env, kind, scope);
-    await factory(c.env, repo).disconnectMine(kind);
+    await (await factory(c.env, repo)).disconnectMine(kind);
     return c.html(connectPage({ kind, repo, connected: false, webhookUrl, revoked: true }));
   }
   const { connected, workerOverride } = await credentialStatus(c.env, kind, scope);
@@ -340,8 +431,9 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, scope);
   }
   // Plug it straight into the map it came from.
-  await factory(c.env, repo).ensure(repo, scope.installationId);
-  await factory(c.env, repo).connectMine(kind);
+  await (await factory(c.env, repo)).ensure(repo, scope.installationId);
+  await (await factory(c.env, repo)).connectMine(kind);
+
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
@@ -366,7 +458,7 @@ app.get("/api/empire", async (c) => {
   const repos = (await reposFor(c.env, user)).slice(0, 24);
   const islands = await Promise.all(repos.map(async (r): Promise<IslandSummary> => {
     const summary = await Promise.race([
-      factory(c.env, r.full_name).summary().catch(() => null),
+      factory(c.env, r.full_name).then(f => f.summary()).catch(() => null),
       new Promise<null>((ok) => setTimeout(() => ok(null), 2500)),
     ]);
     return summary ?? emptyIsland(r.full_name);
@@ -380,12 +472,17 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  const f = factory(c.env, repo);
+  const f = await factory(c.env, repo);
   if (c.req.param("action") === "revoke") {
     await f.revokeRunner();
     return c.json({ revoked: true });
   }
+
   await f.ensure(repo, await installationFor(c.env, repo));
+  if (c.req.param("action") === "disconnect") {
+    if (!await deviceRepoAccess(c.env, (await resolveUser(c.req.raw, c.env))!, repo)) return c.json({ error: "repository access required" }, 403);
+    await f.revokeRunner(); return c.json({ ok: true });
+  }
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
@@ -404,20 +501,32 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   }
 });
 
-app.get("/api/repos/:owner/:repo/runner/jobs", async (c) => c.json(await factory(c.env, `${c.req.param("owner")}/${c.req.param("repo")}`).runnerJobs()));
+app.get("/api/repos/:owner/:repo/runner/jobs", async (c) => c.json(await (await factory(c.env, `${c.req.param("owner")}/${c.req.param("repo")}`)).runnerJobs()));
 
 app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const identity = c.get("runner");
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   const raw = JSON.parse(body);
-  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
-  return c.json({ job: await factory(c.env, identity.repo).claimRunner(identity.pairId, raw.harnesses) });
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  return c.json({ job: await (await factory(c.env, identity.repo)).claimRunner(identity.pairId, raw.harnesses) });
+
+});
+
+app.post("/api/runner/:owner/:repo/heartbeat", async c => {
+  const identity = c.get("runner");
+  const body = await c.req.text();
+  if (body.length > 1024) return c.json({ error: "too large" }, 413);
+  let raw: { harnesses?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  const f = await factory(c.env, identity.repo);
+  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
+  await f.heartbeatRunner(identity.pairId, raw.harnesses); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
   const identity = c.get("runner");
-  if (!(await factory(c.env, identity.repo).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
+  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
   const expires = Date.now() + 8 * 60 * 60 * 1000;
   return c.json({ token: await pairToken(c.env.SESSION_SECRET, { ...identity, expires }), expires });
 });
@@ -428,7 +537,7 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   if (body.length > 16384) return c.json({ error: "too large" }, 413);
   const parsed = RunnerReceipt.safeParse(JSON.parse(body));
   if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
-  return c.json(await factory(c.env, identity.repo).finishRunner(identity.pairId, parsed.data));
+  return c.json(await (await factory(c.env, identity.repo)).finishRunner(identity.pairId, parsed.data));
 });
 
 // Exports are stricter than map access: only the repository owner can download them.
@@ -438,7 +547,7 @@ app.get("/api/repos/:owner/:repo/export", async (c) => {
   if (c.get("user").login.toLowerCase() !== c.req.param("owner").toLowerCase()) return c.json({ error: "owner required" }, 403);
   const connected = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first();
   if (!connected) return c.json({ error: "factory not found" }, 404);
-  const data = await factory(c.env, repo).exportState();
+  const data = await (await factory(c.env, repo)).exportState();
   if (!data) return c.json({ error: "factory not found" }, 404);
   c.header("Content-Disposition", `attachment; filename="${repo.replace("/", "-")}-factory.json"`);
   c.header("X-Content-Type-Options", "nosniff");
@@ -449,7 +558,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  const f = factory(c.env, repo);
+  const f = await factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
     const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
@@ -475,16 +584,17 @@ app.post("/webhooks/github", async (c) => {
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
   const event = c.req.header("x-github-event") ?? "";
-  const supported = ["installation", "installation_repositories", "issues", "issue_comment", "pull_request", "pull_request_review", "check_run", "check_suite", "push"];
+  const supported = [...lifecycleEvents, "issues", "issue_comment", "pull_request", "pull_request_review", "check_run", "check_suite", "push"];
   if (!supported.includes(event)) return c.json({ ok: true, ignored: true });
   const delivery = c.req.header("x-github-delivery");
   if (!delivery || !/^[a-zA-Z0-9_-]{1,200}$/.test(delivery)) return c.json({ error: "delivery id required" }, 400);
   const repo = payload.repository?.full_name;
   const installation = payload.installation?.id;
-  if (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo))) return c.json({ error: "invalid installation or repo" }, 400);
-  if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
+  if (event !== "github_app_authorization" && (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo)))) return c.json({ error: "invalid installation or repo" }, 400);
+  if (!repo && !lifecycleEvents.includes(event)) return c.json({ error: "repo required" }, 400);
+  if (!await admit(c.env,`webhook:github:${installation ?? payload.sender?.id ?? "app"}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
   if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
-  if (!await admit(c.env,`webhook:github:${installation}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
+
   if (event === 'installation' && payload.action === 'created') {
     const account = payload.installation?.account?.login?.toLowerCase();
     if (!account || !await admit(c.env,`install:${account}`,10,3600000,'many installs from one account')) return c.json({error:'installation throttled'},429);
@@ -497,7 +607,12 @@ app.post("/webhooks/github", async (c) => {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   // Persistence is acknowledged before returning; API and model work run in the DO alarm.
-  await factory(c.env, ["installation", "installation_repositories"].includes(event) ? "github-installations" : repo!).enqueueGitHub(delivery, event, payload);
+  const target = lifecycleEvents.includes(event)
+    ? c.env.FACTORY.get(c.env.FACTORY.idFromName("github-installations"))
+    : await factory(c.env, repo!);
+  if (lifecycleEvents.includes(event)) await factoryRpc(target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }, "enqueueGitHub", [delivery, event, payload], { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID() });
+  else await target.enqueueGitHub(delivery, event, payload);
+
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true, duplicate: !inserted.meta.changes }, 202);
 });
@@ -544,8 +659,10 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  await factory(c.env, repo).enqueueSentry(delivery, resource, redactor.value(payload));
+  await (await factory(c.env, repo)).enqueueSentry(delivery, resource, redactor.value(payload));
+
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
+
   return c.json({ ok: true, queued: true }, 202);
 }
 

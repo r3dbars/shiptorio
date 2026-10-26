@@ -24,11 +24,15 @@ function fixture() {
   const DB = { prepare(sql: string) { let args: unknown[] = []; const stmt = {
     bind(...values: unknown[]) { args = values; return stmt; },
     async first() {
+      if (/github_authorization_revocations|SELECT permissions|token_version|SELECT archived_at/.test(sql)) return null;
+      if (sql === 'SELECT * FROM repos WHERE full_name = ?') return repos.has(String(args[0])) ? { full_name: args[0], repo_id: repos.get(String(args[0])), installation_id: repos.get(String(args[0])) } : null;
       if (sql.includes("api_limits")) return { next_at: Date.now(), failures: 0 };
+
       if (sql.startsWith('SELECT enabled')) return null;
       if (sql.startsWith('INSERT INTO signup_counters')) return {count:1};
       if (sql.startsWith('SELECT factories')) return null;
       if (sql.startsWith('INSERT OR IGNORE INTO signup_resources')) return {resource:'fixture'};
+
       if (sql.startsWith('SELECT u.id, u.login FROM sessions')) return { id: args[1], login: args[1] === 11 ? 'alice' : 'bob' };
       if (sql.includes('FROM user_repos WHERE')) return String(args[1]).startsWith(args[0] === 11 ? 'alice/' : 'bob/') ? { installation_id: args[0] } : null;
       if (sql.includes('FROM user_installations WHERE')) return args[0] === args[1] ? { installation_id: args[1] } : null;
@@ -100,7 +104,7 @@ it('GitHub refresh checks installation identity and effective user permission; e
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname; paths.push(path);
     if (fail) return new Response('{}', { status: 503 });
-    return Response.json(path.endsWith('/installation') ? { id: installed } : path.endsWith('/access_tokens') ? { token: 'test-install-token' } : { permission, user: { id: 22 } });
+    return Response.json(path.endsWith('/installation') ? { id: installed } : path.endsWith('/access_tokens') ? { token: 'test-install-token', expires_at: new Date(Date.now() + 3600000).toISOString() } : { permission, user: { id: 22 } });
   }) as typeof fetch;
   try {
     expect(await repoAccess(f.env as never, user, 'BOB/PRIVATE')).toBe(22);
@@ -187,14 +191,14 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
   const { testD1 } = await import('./d1-fixture');
   const DB = testD1();
   for (const [repo, id] of [['alice/private', 11], ['bob/private', 22]] as const) {
-    await DB.prepare('INSERT INTO installations (id, account_login) VALUES (?, ?)').bind(id, repo.split('/')[0]).run();
-    await DB.prepare('INSERT INTO repos (full_name, installation_id) VALUES (?, ?)').bind(repo, id).run();
+    await DB.prepare("INSERT INTO installations (id, account_login, permissions) VALUES (?, ?, '{}')").bind(id, repo.split('/')[0]).run();
+    await DB.prepare('INSERT INTO repos (full_name, installation_id, repo_id) VALUES (?, ?, ?)').bind(repo, id, id).run();
   }
   const queued: string[] = [];
   const env = { ...fixture().env, DB, CRED_MASTER_KEY: btoa('a'.repeat(32)), GITHUB_WEBHOOK_SECRET: 'test-github-hook-secret',
     CACHE: { delete: async () => {}, get: async (key: string) => key === 'cred:sentry:alice/private' ? { clientSecret: 'alice-secret' } : key === 'cred:sentry:bob/private' ? { clientSecret: 'bob-secret' } : null },
     FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({
-      enqueueGitHub: async (_id: string, _event: string, payload: { repository: { full_name: string } }) => { expect(repo).toBe(payload.repository.full_name); queued.push(`github:${repo}`); },
+      enqueueGitHub: async (_id: string, _event: string, payload: { repository: { full_name: string } }) => { expect(repo).toBe(`repo:${payload.repository.full_name.startsWith("alice") ? 11 : 22}`); queued.push(`github:${repo}`); },
       enqueueSentry: async (id: string) => { queued.push(`sentry:${repo}:${id}`); },
     }) },
   };
@@ -208,12 +212,12 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
   expect(queued).toEqual([]);
   expect((await sentry('alice/private', 'alice-secret')).status).toBe(202);
   expect((await sentry('bob/private', 'bob-secret')).status).toBe(202);
-  expect(queued).toEqual(['sentry:alice/private:alice/private:same-event', 'sentry:bob/private:bob/private:same-event']);
+  expect(queued).toEqual(['sentry:repo:11:alice/private:same-event', 'sentry:repo:22:bob/private:same-event']);
   const githubBody = JSON.stringify({ action: 'opened', installation: { id: 22 }, repository: { full_name: 'bob/private' }, issue: { number: 1, title: 'Test' } });
   const github = async (sig: string) => app.fetch(new Request(`${origin}/webhooks/github`, { method: 'POST', headers: { 'x-hub-signature-256': sig, 'x-github-event': 'issues', 'x-github-delivery': 'test-github-delivery' }, body: githubBody }), env as never, { waitUntil() {} } as never);
   expect((await github('sha256=invalid')).status).toBe(401);
   expect((await github('sha256=' + await sign(env.GITHUB_WEBHOOK_SECRET, githubBody))).status).toBe(202);
-  expect(queued.at(-1)).toBe('github:bob/private');
+  expect(queued.at(-1)).toBe('github:repo:22');
 });
 
 it('broadcast shares checks per session within a frame but rechecks revocation on the next frame', async () => {

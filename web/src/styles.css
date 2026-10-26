@@ -302,6 +302,18 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .sp-jobs .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-jobs .st { flex: none; font: 12px var(--pixel); color: var(--amber); align-self: center; }
 .sp-jobs .st.bad { color: var(--red); }
+/* the measure station: one experiment, before (A) vs after (B) */
+.sp-jobs li.sp-exp { flex-direction: column; gap: 4px; padding: 6px; }
+.sp-exp-top { display: flex; justify-content: space-between; gap: 8px; }
+.sp-exp.good .st { color: var(--green); }
+.sp-exp.flat .st { color: var(--amber); }
+.sp-exp-bars { display: grid; grid-template-columns: 14px 1fr 46px; align-items: center; gap: 3px 6px; font: 12px var(--pixel); }
+.sp-exp-bars .bar { height: 8px; min-width: 2px; background: var(--muted, #8a94a3); }
+.sp-exp-bars .bar.b { background: var(--green); }
+.sp-exp.bad .sp-exp-bars .bar.b { background: var(--red); }
+.sp-exp.flat .sp-exp-bars .bar.b { background: var(--amber); }
+.sp-exp-bars .num { text-align: right; }
+.sp-exp-line { margin: 0; font-size: 12px; color: var(--ink-dim, var(--ink)); white-space: normal; }
 .sp-jobs .more, .sp-empty { font-size: 13px; color: var(--dim); margin: 0; }
 .sp-flow { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .sp-flow b { font: 12px var(--pixel); color: var(--dim); display: inline-block; width: 30px; }
@@ -422,6 +434,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .pill.hot { color: var(--dark); background: var(--amber); }
 .meter { flex: none; width: 90px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .meter i { display: block; height: 100%; border-radius: 3px; }
+/* power sheet: one block per plant, name and cost on top, headroom meter and jobs under it */
+.plant { padding: 8px 0 10px; border-bottom: 1px solid var(--hair); }
+.plant .plant-top { display: flex; align-items: center; gap: 10px; }
+.plant .sq { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.plant-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0 0 20px; }
+.plant-bar .meter { flex: 1; width: auto; }
+.plant-num { flex: none; font: 600 12px var(--mono); color: var(--dim); white-space: nowrap; }
+.plant-note { margin: 8px 0 0 20px; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.plant.geothermal .plant-note { border-left: 2px solid #ff7a2a; padding-left: 8px; }
 .empty { margin: 0; color: var(--dim); font-size: 15px; }
 
 /* activity tray */
@@ -701,6 +722,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .thinks-stats { display: flex; gap: 8px; }
 .thinks-stats > div { flex: 1; background: var(--chip); border-radius: 10px; padding: 8px 10px; font: 500 12px var(--mono); color: var(--dim); }
 .thinks-stats b { display: block; font: 600 20px var(--mono); color: var(--ink); }
+.thinks-stats small { display: block; margin-top: 2px; font: 500 11px var(--mono); color: var(--dim); opacity: 0.8; }
 .think { padding: 8px 0 10px; border-bottom: 1px solid var(--hair); display: grid; gap: 2px; }
 .think:last-of-type { border-bottom: 0; }
 .think-top { display: flex; justify-content: space-between; gap: 8px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -753,6 +775,41 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   .rs-why { max-width: 96px; }
 }
 
+/* Achievements (ui/Achievements.tsx): a toast that drops in under the top bar, and a sheet of badges. */
+.ach-badge { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: rgba(0, 0, 0, 0.3); color: var(--faint); flex: none; border: 2px solid transparent; }
+.ach-badge.got.bronze { color: #e0a370; border-color: rgba(224, 163, 112, 0.45); background: rgba(224, 163, 112, 0.12); }
+.ach-badge.got.silver { color: #d6dde8; border-color: rgba(214, 221, 232, 0.45); background: rgba(214, 221, 232, 0.1); }
+.ach-badge.got.gold { color: var(--amber); border-color: rgba(227, 163, 63, 0.6); background: rgba(227, 163, 63, 0.14); box-shadow: 0 0 14px rgba(227, 163, 63, 0.25); }
+.ach-toast-wrap { position: absolute; top: calc(70px + var(--sat)); left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 45; padding: 0 12px; }
+.ach-toast {
+  pointer-events: auto; cursor: pointer; display: flex; flex-direction: row; align-items: center; gap: 12px; text-align: left; color: var(--ink);
+  width: min(420px, 100%); padding: 10px 14px; border-radius: 14px; border: 1px solid var(--amber); font: inherit;
+  box-shadow: 0 0 0 2px rgba(227, 163, 63, 0.18), 0 10px 30px rgba(0, 0, 0, 0.45);
+  animation: ach-drop 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both, ach-out 0.35s ease-in 3.85s both;
+}
+.ach-toast .ach-badge { width: 48px; height: 48px; animation: ach-spin 0.6s steps(6) 0.15s both; }
+.ach-tbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ach-kicker { font: 700 11px var(--pixel); letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
+.ach-tname { font: 700 18px/1.15 var(--pixel); letter-spacing: 0.02em; }
+.ach-twhat { font-size: 13px; color: var(--dim); line-height: 1.3; }
+.ach-xp { flex: none; font: 700 14px var(--pixel); color: var(--dark); background: var(--amber); padding: 3px 8px; border-radius: 999px; }
+@keyframes ach-drop { from { transform: translateY(-24px) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ach-out { to { transform: translateY(-12px); opacity: 0; } }
+@keyframes ach-spin { from { transform: rotateY(180deg) scale(0.6); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .ach-toast, .ach-toast .ach-badge { animation: none; } }
+.ach-btn.new { border-color: var(--amber); color: var(--amber); }
+.achievements { max-height: min(72vh, 640px); }
+.ach-head { background: rgba(227, 163, 63, 0.14); color: var(--amber); }
+.ach-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.ach-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--chip); }
+.ach-row:not(.got) { opacity: 0.7; }
+.ach-tier { font: 700 10px var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px; border-radius: 999px; font-style: normal; background: rgba(255, 255, 255, 0.08); color: var(--dim); }
+.ach-row.got .ach-tier.bronze { color: #e0a370; } .ach-row.got .ach-tier.silver { color: #d6dde8; } .ach-row.got .ach-tier.gold { color: var(--amber); }
+.ach-meter { width: 100%; max-width: 220px; height: 5px; margin-top: 3px; }
+.ach-meter i { background: var(--amber); }
+.ach-side { flex: none; font: 600 13px var(--pixel); color: var(--dim); text-align: right; }
+.ach-row.got .ach-side { color: var(--green); }
+@media (max-width: 560px) { .ach-toast-wrap { top: calc(62px + var(--sat)); } .ach-toast { padding: 8px 12px; } .ach-tname { font-size: 16px; } }
 /* progression (ui/Progress.tsx): level + streak chip, XP pops, morning brief, progress sheet */
 .lvl-chip { cursor: pointer; color: var(--ink); }
 .lvl-chip:hover { border-color: rgba(255, 255, 255, 0.25); }
@@ -874,3 +931,6 @@ input, select, textarea { font-size: max(16px, 1em); } /* iOS zooms the page int
   .ob-card { width: min(440px, 56vw); gap: 8px; padding: 12px 16px; }
   .ob-title { font-size: 26px; }
 }
+/* the planner's one-line why on every card */
+.why-line { margin: 4px 0 0; font: 400 13px/1.4 var(--mono); color: var(--ink); opacity: .85; }
+.why-line b { color: var(--blue); font-weight: 600; }

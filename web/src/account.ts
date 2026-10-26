@@ -2,9 +2,9 @@
 // localStorage stays the fast local copy; the server copy only matters in live mode, and every
 // call fails quietly so the sim, private windows and signed-out visits behave as before.
 
-export type PrefKey = "intro" | "guideSeen";
+export type PrefKey = "intro" | "guideSeen" | "achievements"; // achievements: web/src/ui/Achievements.tsx reads and merges its own
 
-const LOCAL: Record<PrefKey, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };
+const LOCAL: Record<Exclude<PrefKey, "achievements">, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };
 const live = () => new URLSearchParams(location.search).get("source") === "live";
 
 /** Copies the account's settings into this browser. Guide progress only moves forward. */

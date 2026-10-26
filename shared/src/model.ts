@@ -67,7 +67,7 @@ export type CustomerContext = z.infer<typeof CustomerContext>;
 
 // The verification gauntlet (docs/LOOP.md): CI inspector → verify bay → AI review → merge gate → orbit watch.
 // Inspection.stages gate names map onto these: ci → ci, verify → verify, ai → review, human → merge.
-export const StationKind = z.enum(["ci", "verify", "review", "merge", "orbit", "custom"]);
+export const StationKind = z.enum(["ci", "verify", "review", "merge", "orbit", "custom", "measure"]);
 export type StationKind = z.infer<typeof StationKind>;
 
 // Why a fail rode the rework belt back to Spark. Spark re-plans with it; third strike goes to the player.
@@ -265,6 +265,7 @@ export const Move = z.object({
   evidence: z.array(MoveEvidence).optional(), // gauntlet stamps on a merge card
   locked: z.boolean().optional(), // not proven yet: swipe right runs the recommended option, never a merge
   plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
+  because: z.string().optional(), // one plain sentence on why the suggested option is the right call
 });
 export type Move = z.infer<typeof Move>;
 
@@ -322,7 +323,7 @@ export type Foreman = z.infer<typeof Foreman>;
 
 // One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
 // and so does every time a rule had to stand in because Spark was down or unconfigured.
-export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit"]);
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "route", "growth"]);
 export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
 export const Thought = z.object({
   id: z.string(),
@@ -344,8 +345,31 @@ export const Brain = z.object({
   decisions: z.number().int(), // Spark decisions since the factory started counting
   fallbacks: z.number().int(),
   thoughts: z.array(Thought).max(40), // newest first
+  // The scorecard: how good its calls turn out, not just how many it makes.
+  score: z.object({
+    plans: z.number().int(), // distinct jobs it planned
+    shipped: z.number().int(), // of those, merged and launched
+    reviews: z.number().int(), // PR verdicts it gave
+    catches: z.number().int(), // of those, sent back for rework
+    open: z.array(z.string()), // outstanding planned items must not lose eventual launch credit
+  }).optional(),
 });
 export type Brain = z.infer<typeof Brain>;
+
+export interface Scorecard { planSuccess: number | null; catchRate: number | null; fallbackRate: number | null; plans: number; shipped: number; reviews: number; catches: number }
+
+/** Plan success, review catch rate and fallback share, as 0..1 (null until there's something to measure). */
+export function scorecard(brain: Brain | undefined): Scorecard {
+  const sc = brain?.score ?? { plans: 0, shipped: 0, reviews: 0, catches: 0 };
+  const total = (brain?.decisions ?? 0) + (brain?.fallbacks ?? 0);
+  return {
+    // Jobs still on the line count as not shipped yet, so the rate only climbs as PRs merge.
+    planSuccess: sc.plans ? sc.shipped / sc.plans : null,
+    catchRate: sc.reviews ? sc.catches / sc.reviews : null,
+    fallbackRate: total ? (brain?.fallbacks ?? 0) / total : null,
+    plans: sc.plans, shipped: sc.shipped, reviews: sc.reviews, catches: sc.catches,
+  };
+}
 
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
@@ -379,6 +403,44 @@ export const Research = z.object({
 });
 export type Research = z.infer<typeof Research>;
 
+// The growth loop (shared/src/growth.ts, docs/context/growth-loop.md). A funnel step from PostHog drops, the
+// planner proposes one small experiment, it ships through the gauntlet, and the measure station calls the result.
+export const FunnelStep = z.object({
+  from: z.string(), // route people enter on: "/cart"
+  to: z.string(), // route that counts as converting: "/checkout"
+  label: z.string(), // "/cart → /checkout"
+});
+export type FunnelStep = z.infer<typeof FunnelStep>;
+export const ExperimentChange = z.enum(["copy", "cta", "onboarding", "layout"]);
+export type ExperimentChange = z.infer<typeof ExperimentChange>;
+export const ExperimentVerdict = z.enum(["too_early", "lift", "no_lift", "hurt", "inconclusive"]);
+export type ExperimentVerdict = z.infer<typeof ExperimentVerdict>;
+const StepCounts = z.object({ entered: z.number().int().nonnegative(), converted: z.number().int().nonnegative(), days: z.number().int().nonnegative() }).refine(c => c.converted <= c.entered, "Converted people must belong to the entered cohort");
+export const Experiment = z.object({
+  id: z.string(),
+  step: FunnelStep,
+  title: z.string(), // "Clearer checkout button on /cart"
+  hypothesis: z.string(), // what should happen and by how much
+  change: ExperimentChange,
+  district: z.string(), // where the PR lands
+  // proposed → building (yes on the card) → measuring (launched) → won / flat / lost; dropped = player said no
+  state: z.enum(["proposed", "building", "measuring", "won", "flat", "lost", "dropped", "inconclusive"]),
+  itemId: z.string().optional(), // the factory item that ships it
+  prNumber: z.number().int().optional(),
+  baseline: StepCounts, // the step before the change
+  after: StepCounts.optional(), // the step since the launch
+  windowDays: z.number().int().positive(),
+  daysWatched: z.number().nonnegative().optional(),
+  lift: z.number().optional(), // relative, 0.16 = +16%
+  p: z.number().min(0).max(1).optional(),
+  verdict: ExperimentVerdict.optional(),
+  line: z.string().optional(), // the measure station's plain sentence
+  proposedAt: z.number(),
+  launchedAt: z.number().optional(),
+  decidedAt: z.number().optional(),
+});
+export type Experiment = z.infer<typeof Experiment>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -402,5 +464,6 @@ export const FactoryState = z.object({
   sources: z.array(SourceStatus).optional(),
   stations: z.array(Station).optional(), // the gauntlet, in line order
   research: Research.optional(),
+  experiments: z.array(Experiment).max(20).optional(), // the growth loop, newest first
 });
 export type FactoryState = z.infer<typeof FactoryState>;
