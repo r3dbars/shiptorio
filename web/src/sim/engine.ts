@@ -5,6 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
+import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
   type Autonomy,
@@ -634,8 +635,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // taking the job on, logged with undo, the way a real station action would be queued.
   const stationAction = (stationId: string, action: string) => {
     const def = [...GAUNTLET, ORBIT].find((g) => g.id === stationId);
-    const label = def?.actions.find((a) => a.id === action)?.label ?? action;
-    const target = def?.id ?? (stationId === "power" ? "steam-spark" : "splitter-1");
+    const machine = s.machines.find((m) => m.id === stationId);
+    const label = def?.actions.find((a) => a.id === action)?.label ?? actionLabel(action) ?? action;
+    const target = def?.id ?? machine?.id ?? (stationId === "power" ? "steam-spark" : "splitter-1");
     if (stationId === "gate-1" && action === "merge") {
       const item = s.items.filter((i) => i.state === "on_pad").sort((a, b) => (since.get(a.id) ?? 0) - (since.get(b.id) ?? 0))[0];
       if (!item) return log("info", "Nothing at the merge gate yet");
@@ -656,7 +658,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       spark({ tool: "escalate", text: `Sending #${item.prNumber ?? item.title} to you with its scar tags`, reason: item.scars?.at(-1)?.reason }, { itemId: item.id, target, approvedBy: "player" });
       return;
     }
-    spark({ tool: "station_action", text: `On it: ${label.toLowerCase()}`, reason: `You asked from the ${def ? lc(def.name) : stationId} panel` }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${label.toLowerCase()}`) });
+    spark({ tool: "station_action", text: `On it: ${label.toLowerCase()}`, reason: `You asked from the ${def ? lc(def.name) : (machine?.type.replace("_", " ") ?? stationId)} panel` }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${label.toLowerCase()}`) });
   };
 
   // ---------- plugging in a subscription ----------

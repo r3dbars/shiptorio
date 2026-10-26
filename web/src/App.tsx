@@ -102,6 +102,14 @@ export function App() {
   useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(false);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "l" && !(e.target instanceof HTMLInputElement)) setShowLabels((v) => !v);
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -124,7 +132,7 @@ export function App() {
   return (
     <div className="app">
       <main className="floor">
-        <FactoryMap state={state} onPick={setPanel} />
+        <FactoryMap state={state} onPick={setPanel} focus={panel} showLabels={showLabels} />
 
         <section className="card hud-left" aria-label="Factory">
           <div className="ptitle">SHIPTORIO</div>
@@ -270,7 +278,7 @@ export function App() {
 
         <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
 
-        {panel && state && <StationPanel id={panel} state={state} send={send} onClose={() => setPanel(null)} />}
+        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
 
         <div className={`card caption${caption ? " on" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption?.title}</div>
@@ -287,6 +295,10 @@ export function App() {
             <a href="/art/">ART</a>
           </nav>
         )}
+
+        <button type="button" className="labeltoggle" aria-pressed={showLabels} onClick={() => setShowLabels((v) => !v)} title="Show every label (L)">
+          LABELS {showLabels ? "ON" : "OFF"}
+        </button>
 
         <div className="buttons">
           <button type="button" className="rbtn amber" onClick={launch} disabled={pad.length === 0} aria-label="Launch the PR on the pad">
