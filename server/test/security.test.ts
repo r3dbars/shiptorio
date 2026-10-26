@@ -138,6 +138,16 @@ describe("browser origin and response policy", () => {
     expect(securityHeaders(request("/setup"))["Content-Security-Policy"]).toContain("form-action 'self' https://github.com");
     expect(securityHeaders(request("/art/prototype.html"), "testnonce")["Content-Security-Policy"]).toContain("'nonce-testnonce'");
   });
+
+  it("caches hashed assets for a year only once access is granted; pages, gates and misses stay no-store", async () => {
+    const env = { ...baseEnv(), ASSETS: { fetch: async (r: Request) => new URL(r.url).pathname === "/assets/gone.js" ? new Response("", { status: 404 }) : new Response("x") } };
+    const cookie = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
+    const get = (path: string, withCookie = true) => app.fetch(request(path, withCookie ? { headers: { cookie } } : {}), env as never);
+    expect((await get("/assets/app-abc12345.js")).headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+    expect((await get("/assets/app-abc12345.js", false)).headers.get("cache-control")).toBe("no-store");
+    expect((await get("/assets/gone.js")).headers.get("cache-control")).toBe("no-store");
+    expect((await get("/")).headers.get("cache-control")).toBe("no-store");
+  });
 });
 
 describe("durable per-IP and per-user rate limits", () => {

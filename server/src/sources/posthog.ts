@@ -1,3 +1,4 @@
+import { retryAfterMs } from "../rate-limit";
 // PostHog mine: pull, not push. The Factory polls a HogQL query on its alarm and turns
 // sharp drops in a key event (or a spike in $exception) on a route into ore on that district.
 // It only reports what changed; Spark decides if it's real and links it to Sentry or issue ore.
@@ -115,10 +116,11 @@ export async function fetchRouteDays(creds: Required<Pick<PostHogCreds, "apiKey"
   const keyEvent = creds.keyEvent && keyEventOk(creds.keyEvent) ? creds.keyEvent : "$pageview";
   const res = await fetch(`${host}/api/projects/${creds.projectId}/query/`, {
     method: "POST",
+    signal: AbortSignal.timeout(20000),
     headers: { authorization: `Bearer ${creds.apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({ query: { kind: "HogQLQuery", query: postHogQuery(keyEvent) } }),
   });
-  if (res.status === 429) throw Object.assign(new Error("PostHog rate limit"), { retryAfter: Number(res.headers.get("retry-after")) || 60 });
+  if (res.status === 429) throw Object.assign(new Error("PostHog rate limit"), { retryAfter: retryAfterMs(res.headers.get("retry-after")) / 1000 });
   if (!res.ok) throw new Error(`PostHog query failed (${res.status})`);
   return parseRows(await res.json());
 }
