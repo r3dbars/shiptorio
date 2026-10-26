@@ -65,14 +65,14 @@ body { background: var(--void); color: var(--ink); font: 14px/1.5 var(--mono); o
 .hrow { display: flex; align-items: center; gap: 8px; font: 12px var(--pixel); letter-spacing: 0.03em; }
 .hrow > span:first-child { width: 150px; color: var(--dim); }
 .segs { display: flex; gap: 3px; }
-.segs i { width: 12px; height: 8px; background: rgba(255,255,255,0.1); }
+.segs i { width: 10px; height: 8px; background: var(--iron-soot); outline: 1px solid var(--iron-line); }
 
 .slot > span:first-child { color: var(--faint); }
 .slot .locked { font: 12px var(--pixel); color: var(--faint); letter-spacing: 0.03em; }
 .slotbtn {
   min-height: 24px; padding: 0 8px; cursor: pointer;
-  font: 12px var(--pixel); letter-spacing: 0.03em; color: var(--dark);
-  background: var(--amber); border: 1px solid transparent;
+  font: 400 11px var(--pixel); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dark);
+  background: var(--amber); border: 2px solid #000; border-radius: 0;
 }
 .status { color: var(--dim); }
 .status.live { color: var(--green); }
@@ -80,7 +80,7 @@ body { background: var(--void); color: var(--ink); font: 14px/1.5 var(--mono); o
 
 .science { display: flex; gap: 12px; font-weight: 600; }
 .sci { display: inline-flex; align-items: center; gap: 5px; }
-.sci i { width: 10px; height: 10px; border: 1px solid #05070f; }
+.sci i { width: 10px; height: 10px; border: 2px solid #000; }
 .sci.red i { background: var(--red); }
 .sci.green i { background: var(--green); }
 .sci.grey i { background: var(--steel); }
@@ -91,7 +91,7 @@ body { background: var(--void); color: var(--ink); font: 14px/1.5 var(--mono); o
 .caption {
   position: absolute; top: 18px; left: 50%;
   transform: translate(-50%, -8px); opacity: 0;
-  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+  transition: opacity 0.16s steps(3), transform 0.16s steps(3);
   text-align: center; pointer-events: none; padding: 10px 22px;
   max-width: min(560px, calc(100vw - 32px));
 }
@@ -109,19 +109,17 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
   position: absolute; left: 0; top: 0;
   display: flex; flex-direction: column; align-items: center; gap: 1px;
   padding: 3px 7px 4px; white-space: nowrap;
-  background: var(--panel); border: 1px solid var(--hair);
+  background: var(--panel); border: 2px solid var(--iron-line);
 }
-.maplabel b { font: 700 12px var(--pixel); letter-spacing: 0.03em; }
-.maplabel i { font-style: normal; font-size: 12px; color: var(--dim); }
-.maplabel.hot { border-color: var(--red); }
+.maplabel i { font-style: normal; color: var(--dim); }
 
 @media (prefers-reduced-motion: reduce) {
   .caption { transition: none; }
 }
 
-/* Spark's drone label */
-.maplabel.drone { border-color: var(--blue); }
-.maplabel.drone b { color: var(--blue); }
+/* the planner's drone label: the aether accent */
+.maplabel.drone { border-color: var(--iron-aether); }
+.maplabel.drone b { color: var(--iron-aether); }
 
 /* Onboarding: sign in, pick a repo (ui/Onboarding.tsx). Styles live in ui/onboarding.css (Black Iron). */
 .nm-btn:disabled { opacity: 0.45; cursor: default; }
@@ -527,6 +525,7 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .sound { display: flex; align-items: center; gap: 10px; }
 .sound > span:first-child { flex: 1; color: var(--dim); font: 400 11px var(--pixel); letter-spacing: 0.1em; text-transform: uppercase; }
 .sound .slotbtn { min-height: 36px; padding: 0 12px; border-radius: 0; font: 400 11px var(--pixel); letter-spacing: 0.06em; text-transform: uppercase; border: 2px solid #000; }
+.sound .slotbtn[aria-pressed="false"] { color: var(--ink); background: var(--iron-plate); border-color: var(--iron-line); }
 .sound input[type="range"] { width: 120px; flex: none; }
 
 /* map labels and the station panel: the same iron */

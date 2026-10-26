@@ -12,8 +12,8 @@ export function SoundControl() {
       <button type="button" className="slotbtn" aria-pressed={!off} title={SETTINGS.mute} onClick={() => sound.set({ muted: !s.muted, volume: s.volume || 0.5 })}>
         {off ? SETTINGS.soundOff : SETTINGS.soundOn}
       </button>
-      <button type="button" className="slotbtn" aria-pressed={s.music} title="Music" onClick={() => sound.set({ music: !s.music })}>
-        {s.music ? "♪ ON" : "♪ OFF"}
+      <button type="button" className="slotbtn" aria-pressed={s.music} title={SETTINGS.music} onClick={() => sound.set({ music: !s.music })}>
+        {s.music ? SETTINGS.musicOn : SETTINGS.musicOff}
       </button>
       <input
         type="range"
