@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-import { StrictMode, useEffect, useState } from "react";
-=======
 import { loadFeatureFlags } from "./flags";
-import { StrictMode, useState } from "react";
->>>>>>> origin/main
+import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { Onboarding, type OnboardStep } from "./ui/Onboarding";
