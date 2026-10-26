@@ -1,10 +1,11 @@
 import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
+import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
 import { Redactor } from "./redact";
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
+import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
 import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
@@ -25,7 +26,7 @@ import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
 
-export interface Env extends FactoryEnv {
+export interface Env extends FactoryEnv, SignupEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   CACHE: KVNamespace;
@@ -64,7 +65,7 @@ app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
   if (redirect) c.res = redirect;
   else await next();
-  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce")))) c.header(key, value);
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist"))) c.header(key, value);
 });
 
 app.use("*", async (c, next) => {
@@ -90,15 +91,22 @@ app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
-    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
-    if (!identity.user || !isAllowed(c.env.ALLOWED_LOGINS, identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({ error: "repository access denied" }, 403);
+    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
+      if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
+      return c.json({error:'runner authentication required'},401);
+    }
+    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({error:'repository access denied'},403);
+    if (!await factory(c.env,identity.repo).isRunnerPaired(identity.pairId)) {
+      if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
+      return c.json({error:'runner pairing revoked'},401);
+    }
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
     return;
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
-  const denied = await previewAccess(c.req.raw, c.env);
+  const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
   c.header("Cache-Control", "no-store");
@@ -128,6 +136,7 @@ app.use("*", async (c, next) => {
     if (!user) return c.json({ error: "login required" }, 401);
     const repo = match ? `${match[1]}/${match[2]}` : c.req.query("repo") ?? "";
     if (!validRepo(repo) || !await repoAccess(c.env, user, repo)) return c.json({ error: "repository access denied" }, 403);
+    if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
   await next();
@@ -137,9 +146,37 @@ app.route("/", ops);
 
 // ---------- auth + setup ----------
 
-app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
+app.get("/auth/login", (c) => signupMode(c.env) === 'password' ? login(new URL(c.req.url), c.env) : signupPage(c.env));
+app.post('/auth/login', async c => {
+  if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
+  if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
+  const raw = await c.req.text();
+  if (raw.length>4096) return c.text('Too large',413);
+  const form = new URLSearchParams(raw);
+  if (!await turnstile(c.req.raw,c.env,form,'signin')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
+  const response = await login(new URL(c.req.url),c.env);
+  // Store invite on the OAuth path; never include it in GitHub URLs or logs.
+  const invite = form.get('invite') || '';
+  if (invite.length <=100 && invite) response.headers.append('set-cookie',`shiptorio_invite=${encodeURIComponent(invite)}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  return response;
+});
+app.get('/waitlist',c => signupPage(c.env));
+app.post('/waitlist',async c => {
+  if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
+  if (!await admit(c.env,await ipScope(c.req.raw,'waitlist'),5,3600000,'waitlist flood')) return c.text('Try again later',429);
+  const raw = await c.req.text();
+  if (raw.length>4096) return c.text('Too large',413);
+  const form=new URLSearchParams(raw),email=(form.get('email')||'').trim().toLowerCase();
+  if (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return signupPage(c.env,'Enter a valid email.',400);
+  if (!await turnstile(c.req.raw,c.env,form,'waitlist')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
+  await addPending(c.env,email,'email');
+  return signupPage(c.env,'You are on the waitlist. Justin will review your request.');
+});
+app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
+app.post('/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
@@ -338,6 +375,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   }
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
+    if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
     const expires = Date.now() + 8 * 60 * 60 * 1000;
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
@@ -347,7 +385,11 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (text.length > 8192) return c.json({ error: "too large" }, 413);
   const parsed = EnqueueRunner.safeParse(JSON.parse(text));
   if (!parsed.success) return c.json({ error: "invalid job" }, 400);
-  return c.json(await f.enqueueRunner(parsed.data), 202);
+  try { return c.json(await f.enqueueRunner(parsed.data,c.get("user").login), 202); }
+  catch (error) {
+    if (error instanceof Error && error.message.includes('Daily run quota reached')) return c.json({error:'daily run quota reached'},429);
+    throw error;
+  }
 });
 
 app.get("/api/repos/:owner/:repo/runner/jobs", async (c) => c.json(await factory(c.env, `${c.req.param("owner")}/${c.req.param("repo")}`).runnerJobs()));
@@ -431,6 +473,11 @@ app.post("/webhooks/github", async (c) => {
   if (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
   if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
+  if (!await admit(c.env,`webhook:github:${installation}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
+  if (event === 'installation' && payload.action === 'created') {
+    const account = payload.installation?.account?.login?.toLowerCase();
+    if (!account || !await admit(c.env,`install:${account}`,10,3600000,'many installs from one account')) return c.json({error:'installation throttled'},429);
+  }
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('github', ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null).run();
   if (!inserted.meta.changes) {
@@ -475,6 +522,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
+  if (!await admit(c.env,`webhook:sentry:${repo.toLowerCase()}`,300,60000,"Sentry webhook flood")) return c.json({error:"webhook throttled"},429);
   const delivery = `${repo}:${sourceDelivery}`;
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo) VALUES ('sentry', ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null).run();
