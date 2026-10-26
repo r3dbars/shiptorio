@@ -1,3 +1,4 @@
+import { REQUIRED_PERMISSIONS } from "../src/github-lifecycle";
 import { Database } from "bun:sqlite";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,6 +25,13 @@ export function testD1(): D1Database {
 /** Signs a GitHub user in the way /auth/callback does and returns their Cookie header value. */
 export async function signedInCookie(env: AccountsEnv, login: string, repos: string[] = [], id = Math.floor(Math.random() * 1e9)): Promise<string> {
   await upsertUser(env, { id, login });
+  for (const repo of repos) {
+    await env.DB.prepare("INSERT OR IGNORE INTO installations (id, account_login) VALUES (1, 'test')").run();
+    await env.DB.prepare("INSERT OR IGNORE INTO repos (full_name, installation_id) VALUES (?, 1)").bind(repo.toLowerCase()).run();
+    await env.DB.prepare("INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login) VALUES (?, 1, 'test')").bind(id).run();
+  }
+  await env.DB.prepare("UPDATE installations SET permissions = ? WHERE id = 1 AND permissions IS NULL").bind(JSON.stringify(REQUIRED_PERMISSIONS)).run();
+  await env.DB.prepare("UPDATE repos SET repo_id = rowid WHERE repo_id IS NULL").run();
   for (const repo of repos) await env.DB.prepare("INSERT INTO user_repos (user_id, repo, installation_id) VALUES (?, ?, 1)").bind(id, repo.toLowerCase()).run();
   return (await createSession(env, { id, login }, null)).split(";")[0];
 }

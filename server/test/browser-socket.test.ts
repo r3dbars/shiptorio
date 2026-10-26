@@ -1,3 +1,4 @@
+import { authorizedDB, membershipCache } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch } from "../src/browser-socket";
 import { makeSessionCookie } from "../src/session";
@@ -31,7 +32,7 @@ describe("privileged browser socket lifetime", () => {
     expect(browserSocketAllowed(undefined, browserEnv, epoch)).toBe(false);
     expect(browserSocketAllowed(auth, browserEnv, epoch, auth!.expiresAt)).toBe(false);
     expect(browserSocketAllowed(auth, { ...browserEnv, ALLOWED_LOGINS: "another-player" }, epoch)).toBe(false);
-    for (const env of [{ ...browserEnv, APP_PASSWORD: "rotated" }, { ...browserEnv, SESSION_SECRET: "rotated" }, { ...browserEnv, ALLOWED_LOGINS: "test-player,another-player" }]) {
+    for (const env of [{ ...browserEnv, APP_PASSWORD: "rotated" }, { ...browserEnv, CACHE: membershipCache, SESSION_SECRET: "rotated" }, { ...browserEnv, CACHE: membershipCache, ALLOWED_LOGINS: "test-player,another-player" }]) {
       expect(browserSocketAllowed(auth, env, await browserSocketEpoch(env))).toBe(false);
     }
   });
@@ -39,13 +40,14 @@ describe("privileged browser socket lifetime", () => {
     const state = FactoryState.parse({ repo: "owner/repo", baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
     const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }]]);
     const sent: string[] = [], closed: number[] = [];
-    const active = authorizedSocket(raw => sent.push(raw));
+    const active = authorizedSocket(raw => sent.push(raw), "owner/repo");
     const expired = authorizedSocket(() => { throw new Error("Expired connection received private data"); });
     expired.serializeAttachment({ ...expired.deserializeAttachment(), expiresAt: Date.now() - 1 });
     expired.close = (code?: number) => { closed.push(code!); };
     const legacy = { deserializeAttachment: () => null, close: (code: number) => closed.push(code) } as unknown as WebSocket;
-    const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ first: async () => null, all: async () => ({ results: [] }) }) }) } };
+    const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }) }) }) } };
     const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); }, list: async () => new Map(), getAlarm: async () => null, setAlarm: async () => {} };
+    env.DB = authorizedDB(env.DB);
 
     const f = new Factory({ storage, getWebSockets: () => [active, expired], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, env as never);
     const action = JSON.stringify({ type: "place_machine", machineType: "assembler", x: 22, y: 22 });

@@ -7,6 +7,7 @@ import { handleLifecycle, RETENTION_MS } from "../src/github-lifecycle";
 import { migrateRepository, repositoryFactory, type RepoRecord } from "../src/repository";
 import { authorizationRevoked, makeSessionCookie, readSessionDetails } from "../src/session";
 import payload from "./fixtures/github/lifecycle.json";
+import { signedInCookie } from "./d1-fixture";
 import { browserEnv } from "./browser-fixture";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { Factory } = await import("../src/factory");
@@ -159,6 +160,16 @@ describe("GitHub lifecycle fixture payloads", () => {
 });
 
 const { default: app } = await import("../src/index");
+it("empire summaries resolve the repository ID before calling the factory", async () => {
+  const f = fixture(); await install(f);
+  const cookie = await signedInCookie(f.env, "test-player", ["octo-org/demo"]);
+  const preview = (await makeSessionCookie(`${f.env.SESSION_SECRET}:${f.env.APP_PASSWORD}`, "preview")).split(";")[0]!.replace("shiptorio_session=", "shiptorio_access=");
+  const response = await app.fetch(new Request("https://shiptorio.com/api/empire", { headers: { cookie: `${cookie}; ${preview}` } }), f.env);
+  expect(response.status).toBe(200);
+  const body = await response.json() as { islands: { repo: string; ready: boolean }[] };
+  expect(body.islands[0]).toMatchObject({ repo: "octo-org/demo", ready: true });
+});
+
 it("signed intake queues every lifecycle event, including revocation without installation or repo", async () => {
   const f = fixture();
   f.env.GITHUB_WEBHOOK_SECRET = "fixture-signature-secret";
