@@ -31,18 +31,21 @@ export function readConfig(search = location.search): SourceConfig {
 
 export function connect(cfg: SourceConfig, onMessage: Listener, onStatus: StatusListener): Source {
   if (cfg.kind === "sim") return connectSim(cfg.scenario, onMessage, onStatus, cfg.repo || undefined);
-  // live loads on demand: it brings zod (the message schemas), which the sim and the first paint don't need
+  // live loads on demand: it brings zod (the message schemas), which the sim and the first paint don't
+  // need. Until it's loaded, sends are dropped, the same as live drops them while its socket isn't open.
   onStatus("connecting");
   let src: Source | null = null;
   let closed = false;
-  const queue: WebToServer[] = [];
-  import("./live").then(({ connectLive }) => {
-    if (closed) return;
-    src = connectLive(cfg.repo, onMessage, onStatus);
-    for (const m of queue.splice(0)) src.send(m);
-  });
+  import("./live").then(
+    ({ connectLive }) => {
+      if (!closed) src = connectLive(cfg.repo, onMessage, onStatus);
+    },
+    () => !closed && onStatus("offline"), // the chunk didn't load (offline, or a deploy replaced it): reload to retry
+  );
   return {
-    send: (m) => (src ? src.send(m) : queue.push(m)),
+    send: (m) => {
+      if (!closed) src?.send(m);
+    },
     close: () => {
       closed = true;
       src?.close();

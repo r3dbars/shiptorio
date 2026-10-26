@@ -102,7 +102,11 @@ app.use("*", async (c, next) => {
   const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  c.header("Cache-Control", "no-store");
+  // Vite content-hashes everything under /assets/, so once access is granted the browser keeps those
+  // for a year (private: the site sits behind the gate) and a returning player only downloads what a
+  // deploy changed. Everything else, pages and errors included, stays no-store.
+  const hashed = c.req.path.startsWith("/assets/") && c.res.status === 200;
+  c.header("Cache-Control", hashed ? "private, max-age=31536000, immutable" : "no-store");
 });
 
 app.onError((err, c) => {
@@ -493,12 +497,7 @@ app.all("*", async (c) => {
     c.set("artNonce", nonce);
     return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
   }
-  // Vite content-hashes everything under /assets/, so the browser keeps those for a year (private:
-  // the site sits behind the preview gate) and a returning player only downloads what a deploy changed.
-  if (!response.ok || !c.req.path.startsWith("/assets/")) return response;
-  const cached = new Response(response.body, response);
-  cached.headers.set("Cache-Control", "private, max-age=31536000, immutable");
-  return cached;
+  return response;
 });
 
 export default app;
