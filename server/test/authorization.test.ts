@@ -76,6 +76,7 @@ it('no session, preview-only cookies, invalid repo, unknown API and setup cannot
   expect(await requireUser(new Request(origin), f.env as never)).toBeNull();
   for (const path of ['/connect/sentry', '/connect/sentry?repo=alice%2F..', '/api/repos/alice/private/admin']) expect((await f.send(path)).status).toBe(403);
   expect((await f.send('/api/debug')).status).toBe(404);
+  for (const path of ['/admin', '/api/admin/flags?user=alice']) expect((await f.send(path)).status).toBe(403);
   expect((await f.send('/setup')).status).toBe(404);
   expect(await (await f.send('/assets/app.js')).text()).toBe('static shell');
 });

@@ -59,7 +59,10 @@ survive user expiry, allowlist removal or processed repo uninstall.
 | `POST /webhooks/sentry/:owner/:repo` (also `?repo=...`) | No user cookie; installed target repo and its own Sentry signature secret; target query cannot select another tenant's secret |
 | Legacy `/webhooks/sentry` | Only the deployment's pinned/previously linked legacy repo; never first-reader assignment |
 | Static assets/SPA | Preview gate; static shell contains no live repo state. Unknown `/api/*` and `/connect/*` return 404 rather than the SPA |
-| Admin/debug routes | None exposed. New repo routes inherit the common middleware; new global data routes must explicitly authorize |
+| `/admin`, `/api/admin/flags` | Accounts session plus explicit `ADMIN_LOGINS`; global/per-user feature flag administration only, no factory state |
+| `/api/flags` | Effective flags for caller only; query parameters cannot select another user |
+| `/api/health` | Coarse D1/KV/health-probe status only; no repo state, credentials or names |
+| New data/debug routes | Repo routes inherit shared middleware; global data routes must explicitly authorize |
 
 Source credentials are scoped by canonical repo, with global deployment secrets
 available only to the explicitly pinned/previously linked legacy repo. Connecting
