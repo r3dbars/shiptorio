@@ -1,5 +1,8 @@
 // TEST ENTRY ONLY. Production wrangler.jsonc never imports this module.
 import app, { Factory as ProductionFactory, type Env } from '../../server/src/index';
+import { makeSessionCookie } from '../../server/src/session';
+import { createSession, upsertUser, saveReach } from '../../server/src/accounts';
+const knownRepos = new Set<string>();
 export class Factory extends ProductionFactory {
   // Use the real alarm body, with test-controlled pacing to avoid card-ID races.
   async alarm() { await super.alarm(); await this.ctx.storage.deleteAlarm(); }
@@ -33,8 +36,12 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     else throw new Error(`Unstubbed Meta prompt: ${dev.slice(0, 80)}`);
     return reply({ choices: [{ message: { content: JSON.stringify(out) } }] });
   }
+  if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return reply({ access_token: 'fixture-user-token' });
   if (url.hostname !== 'api.github.com') throw new Error(`External fetch blocked: ${url.hostname}`);
   const p = url.pathname;
+  if (p === '/user') return reply({ id: 123, login: 'fixture', name: 'Fixture Player' });
+  if (p === '/user/installations') return reply({ installations: [{ id: 1, account: { login: 'fixture' } }] });
+  if (p === '/user/installations/1/repositories') return reply({ repositories: [...knownRepos].map(full_name => ({ full_name, default_branch: 'main' })) });
   if (p.endsWith('/access_tokens')) return reply({ token: 'fixture-installation-token' });
   if (p.endsWith('/installation')) return reply({ id: 1 });
   if (p.includes('/git/trees/')) return reply({ sha: BASE, tree: files.map(f => ({ path: f.filename, type: 'blob', size: 100 })), truncated: false });
@@ -45,7 +52,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p.endsWith('/status')) return reply({ total_count: 0, statuses: [] });
   if (p.endsWith('/files')) return reply(files);
   if (p.endsWith('/merge')) return reply({ merged: true, sha: HEAD, message: 'Fixture merge' });
-  if (p.endsWith('/comments')) return reply({ id: 1 });
+  if (p.endsWith('/comments')) return reply(init?.method === 'POST' ? { id: 1 } : []);
   if (/\/issues\/1$/.test(p)) return reply({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', state: 'open', user: { login: 'fixture' }, html_url: 'https://github.com/fixture/demo/issues/1' });
   if (p.endsWith('/pulls/99')) return reply({ number: 99, head: { sha: HEAD }, base: { sha: BASE }, merged: false, state: 'open' });
   if (p.endsWith('/pulls')) return init?.method === 'POST' ? reply({ number: 99, html_url: 'https://github.com/fixture/demo/pull/99' }) : reply([]);
@@ -56,12 +63,21 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(req.url);
+    if (url.pathname === '/__test/access' || url.pathname === '/__test/session') {
+      const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, 'preview')).replace('shiptorio_session=', 'shiptorio_access=');
+      if (url.pathname === '/__test/access') return Response.json({ ok: true }, { headers: { 'set-cookie': preview } });
+      await upsertUser(env, { id: 123, login: 'fixture' });
+      await saveReach(env, 123, { installations: [{ id: 1, account: 'fixture' }], repos: [...knownRepos].map(repo => ({ repo, installationId: 1, defaultBranch: 'main' })) });
+      const session = await createSession(env, { id: 123, login: 'fixture' }, 'load fixture');
+      return reply({ cookie: `${session.split(';')[0]}; ${preview.split(';')[0]}` });
+    }
     const match = url.pathname.match(/^\/__test\/([\w-]+)\/([\w-]+)\/(seed|tick|check)$/);
     if (match) {
       const repo = `${match[1]}/${match[2]}`;
       const f = env.FACTORY.get(env.FACTORY.idFromName(repo));
       if (req.method !== 'POST') return new Response('POST required', { status: 405 });
       if (match[3] === 'seed') {
+        knownRepos.add(repo);
         await env.DB.prepare('INSERT OR REPLACE INTO repos (full_name, installation_id, default_branch) VALUES (?, 1, ?)').bind(repo, 'main').run();
         await f.ensure(repo, 1);
         await f.ingestIssue({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', labels: ['bug'], url: `https://github.com/${repo}/issues/1` });
@@ -69,6 +85,6 @@ export default {
       else await (f as unknown as { testTick(): Promise<void> }).testTick();
       return reply({ ok: true });
     }
-    return app.fetch(req, env, ctx);
+    return app.fetch(req, { ...env, DEV_LOGIN: undefined }, ctx);
   },
 };

@@ -3,12 +3,13 @@ import { ServerToWeb } from '../../shared/src';
 
 test('intro → sign in → repo → approve → PR → gauntlet → launch → rocket', async ({ page }, info) => {
   const repo = `fixture/${info.project.name}`;
+  let signedIn = false;
   const errors: string[] = [], wireErrors: string[] = [], messages: any[] = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => {
-    // Repo discovery before sign-in intentionally returns 401. All other console errors fail.
-    if (m.location().url.endsWith('/api/repos') && m.text().includes('401')) return;
-    if (m.type() === 'error' || m.text().includes('bad message from server')) errors.push(m.text()); });
+    // Repo discovery and saving intro-seen before an account exists return 401.
+    if (!signedIn && /\/api\/(repos|me\/prefs)$/.test(m.location().url) && m.text().includes('401')) return;
+    if (m.type() === 'error' || m.text().includes('bad message from server')) errors.push(`${m.text()} ${m.location().url}`); });
   page.on('websocket', ws => ws.on('framereceived', ({ payload }) => {
     if (typeof payload !== 'string') return;
     const raw = JSON.parse(payload);
@@ -23,6 +24,17 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     return res.json();
   };
   await post(`/__test/${repo}/seed`);
+  await post('/__test/access');
+  // Stub only GitHub's authorization screen. The Worker callback validates real OAuth state,
+  // exchanges the fake code and creates the real D1 account/session/repo membership.
+  await page.route('**/auth/login?**', async route => {
+    const response = await route.fetch({ maxRedirects: 0 });
+    expect(response.status()).toBe(302);
+    const authorization = new URL(response.headers().location);
+    expect(authorization.origin).toBe('https://github.com');
+    const state = authorization.searchParams.get('state');
+    await route.fulfill({ response, headers: { ...response.headers(), location: `http://localhost:8799/auth/callback?code=fixture&state=${state}` } });
+  });
   await page.goto('/?onboard=hello&source=live');
   await expect(page).toHaveTitle(/Shiptorio/i);
   await expect(page.getByRole('region', { name: 'Welcome tour' })).toBeVisible();
@@ -34,12 +46,12 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await expect(welcome).toHaveScreenshot('sign-in.png');
   await page.getByRole('button', { name: 'SIGN IN WITH GITHUB' }).click();
   await expect(page.getByRole('button', { name: repo })).toBeVisible();
+  signedIn = true;
   await page.getByRole('button', { name: repo }).click();
   await expect(page).toHaveURL(/source=live&repo=/);
   await expect.poll(() => messages.some(m => m.type === 'snapshot' && m.state.items.some((i: any) => i.title === 'Fix cart total'))).toBe(true);
   const { token } = await post(`/api/repos/${repo}/runner/pair`);
   await post(`/api/runner/${repo}/claim`, { harnesses: ['codex'] }, token);
-  await post(`/__test/${repo}/tick`);
   const card = page.getByRole('region', { name: 'Next move', exact: true });
   await card.getByRole('button', { name: /Plan with Codex/ }).click();
   await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json()).length).toBe(1);
@@ -70,9 +82,10 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
 });
 
 test('sim rework scenario renders and responds', async ({ page }) => {
+  await page.request.post('/__test/access');
   await page.goto('/?source=sim&scenario=rework-loop&tour=0');
   await expect(page.locator('canvas').first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Build', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Line$/ }).click();
-  await expect(page.locator('#root')).toContainText('Rework');
+  await expect(page.getByText('The line', { exact: true })).toBeVisible();
 });

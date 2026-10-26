@@ -23,10 +23,9 @@ try {
     if (Date.now() > until || server.exitCode !== null) throw new Error('Wrangler failed to start; see load-worker.log');
     await Bun.sleep(200);
   }
-  const login = await fetch(origin + '/auth/login', { redirect: 'manual' });
-  const cookie = login.headers.get('set-cookie')!.split(';')[0];
   const repos = ['load/crowd', ...Array.from({ length: 50 }, (_, i) => `load/factory-${i}`)];
   await Promise.all(repos.map(repo => post(`/__test/${repo}/seed`)));
+  const { cookie } = await (await fetch(origin + '/__test/session', { method: 'POST' })).json() as { cookie: string };
   const sentAt = new Map<string, number>();
   const failures: string[] = [];
   const connect = async (repo: string) => {
