@@ -24,10 +24,7 @@ export interface RunnerJob {
   baseSha?: string; baseBranch?: string; branch: string; plan?: string;
   lease?: string; pairId?: string; deadline?: number; prUrl?: string; error?: string;
 }
-export const runnerPathAllowed = (path: string) => /^[\w./@+-]+$/.test(path)
-  && !path.startsWith("/") && !path.includes("..")
-  && !path.split("/").some(p => /^(?:\.git.*|\.env.*|\.dev\.vars.*|node_modules|\.wrangler)$/i.test(p))
-  && !/\.(?:pem|key|p12|pfx)$/i.test(path);
+export { pathAllowed as runnerPathAllowed } from "./injection-policy";
 export function validLease(job: RunnerJob, pairId: string, lease: string, now = Date.now()): boolean {
   return job.status === "running" && job.pairId === pairId && job.lease === lease && !!job.deadline && job.deadline > now;
 }

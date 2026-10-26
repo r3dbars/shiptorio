@@ -34,7 +34,14 @@ if (action === "install") {
   await mkdir(dirname(plist), { recursive: true });
   await writeFile(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${esc(a)}</string>`).join("")}</array><key>WorkingDirectory</key><string>${esc(support)}</string><key>EnvironmentVariables</key><dict><key>HOME</key><string>${esc(process.env.HOME!)}</string><key>PATH</key><string>${esc(path)}</string><key>SHIPTORIO_RUNNER_ROOT</key><string>${esc(support)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${esc(resolve(support, "service.log"))}</string><key>StandardErrorPath</key><string>${esc(resolve(support, "service-error.log"))}</string></dict></plist>`, { mode: 0o600 });
   await launch(["bootout", `${domain}/${label}`], false);
-  await launch(["bootstrap", domain, plist]);
+  // bootout returns before launchd lets go of the label, so an immediate bootstrap fails with
+  // "5: Input/output error" when an older runner was loaded. Wait for it to unload, then retry.
+  for (let attempt = 1; ; attempt++) {
+    if ((await launch(["print", `${domain}/${label}`], false)).code === 0 && attempt <= 10) { await Bun.sleep(500); continue; }
+    const r = await launch(["bootstrap", domain, plist], attempt >= 5);
+    if (!r.code) break;
+    await Bun.sleep(1000);
+  }
   console.log("Shiptorio runner installed and started for this Mac user. Only approved jobs can run.");
 } else if (action === "stop") {
   await launch(["bootout", `${domain}/${label}`]); console.log("Shiptorio runner stopped.");

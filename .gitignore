@@ -10,3 +10,5 @@ dist/
 runner/.work/
 runner/local-model.json
 playtest-results/
+
+runner/.agent-home/

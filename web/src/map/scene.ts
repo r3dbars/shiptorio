@@ -33,6 +33,8 @@ import {
 } from "./itemlab";
 import { buildDrone, type DroneMode } from "./drone";
 import { islandDepth, makeDistrict, makeFloater, makeIsland, makeWaterfall } from "./models";
+import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type SatelliteView } from "./empire";
+import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
 
@@ -288,6 +290,12 @@ export class FactoryScene {
   private readonly launched = new Set<string>();
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
+  // the empire: other repos as satellite islands, and the sky rails to them (map/empire.ts)
+  private satSpecs: SatelliteSpec[] = [];
+  private satKey = "";
+  private sats: { view: SatelliteView; label: Label; route: Route; y: number }[] = [];
+  private readonly outer = { x0: -10, x1: 10, z0: -10, z1: 10 }; // pan limits: the main island plus satellites
+  private zoomMax = ZOOM_MAX;
   private worldKey = "";
   private districtCount = 0;
   private lineKey = "";
@@ -392,7 +400,7 @@ export class FactoryScene {
   zoomBy(factor: number) {
     this.dropLaunchCam();
     this.camGoal = null;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
+    this.zoom = Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
@@ -404,7 +412,7 @@ export class FactoryScene {
     const down = new THREE.Vector3(Math.sin(YAW), 0, Math.cos(YAW));
     this.target.addScaledVector(right, -dx * k);
     this.target.addScaledVector(down, (-dy * k) / Math.sin(TILT));
-    const b = this.bounds;
+    const b = this.outer;
     this.target.x = Math.max(b.x0, Math.min(b.x1, this.target.x));
     this.target.z = Math.max(b.z0, Math.min(b.z1, this.target.z));
   }
@@ -594,6 +602,87 @@ export class FactoryScene {
     this.biasGoal = this.biasFor(!!this.home);
   }
 
+  // ---------- the empire ----------
+
+  // Other repos float nearby as satellite islands. Rebuilt only when the set of islands or their
+  // districts change; label text updates in place.
+  setSatellites(specs: SatelliteSpec[]) {
+    this.satSpecs = specs;
+    const key = JSON.stringify(specs.map((s) => [s.repo, s.districts.map((d) => d.name), Math.min(6, s.rockets), s.hot]));
+    if (key !== this.satKey) {
+      this.satKey = key;
+      this.layoutSatellites();
+    } else for (const sat of this.sats) {
+      const sp = specs.find((x) => x.repo === sat.view.repo);
+      if (sp) this.setLabel(sat.label, sp.title, sp.sub, sp.hot);
+    }
+  }
+
+  private clearSatellites() {
+    for (const sat of this.sats) {
+      this.scene.remove(sat.view.g, sat.route.g);
+      disposeOwnedGeometries(sat.view.g);
+      sat.route.dispose();
+      this.dropLabel(sat.label);
+    }
+    this.sats = [];
+  }
+
+  private layoutSatellites() {
+    this.clearSatellites();
+    const b = this.bounds;
+    const center = new THREE.Vector3((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2);
+    const mainHalf = Math.hypot(b.x1 - b.x0, b.z1 - b.z0) / 2;
+    Object.assign(this.outer, b);
+    this.satSpecs.forEach((spec, i) => {
+      const view = buildSatellite(spec, i);
+      const at = satelliteSpot(i, this.satSpecs.length, center, mainHalf * 0.8, view.half, YAW);
+      view.g.position.copy(at);
+      this.scene.add(view.g);
+      // the rail leaves the main island's edge toward the satellite and lands on its near rim
+      const dir = at.clone().sub(center).setY(0).normalize();
+      const from = center.clone().addScaledVector(dir, mainHalf * 0.62).setY(0.6);
+      const to = at.clone().addScaledVector(dir, -view.half * 0.7).setY(at.y + 0.6);
+      const route = new Route(from, to, spec.hot);
+      this.scene.add(route.g);
+      const label = this.addLabel(view.g, view.labelY, view.key);
+      label.el.classList.add("island");
+      this.setLabel(label, spec.title, spec.sub, spec.hot);
+      this.sats.push({ view, label, route, y: at.y });
+      const r = view.half + 2;
+      Object.assign(this.outer, { x0: Math.min(this.outer.x0, at.x - r), x1: Math.max(this.outer.x1, at.x + r), z0: Math.min(this.outer.z0, at.z - r), z1: Math.max(this.outer.z1, at.z + r) });
+    });
+    this.zoomMax = this.sats.length ? Math.max(ZOOM_MAX, this.empireZoom() * 1.6) : ZOOM_MAX;
+  }
+
+  private empireZoom() {
+    const b = this.outer;
+    const span = (b.x1 - b.x0) * Math.cos(YAW) + (b.z1 - b.z0) * Math.sin(YAW);
+    const tall = ((b.x1 - b.x0) * Math.sin(YAW) + (b.z1 - b.z0) * Math.cos(YAW)) * Math.sin(TILT) + 14; // islands hang below their tops
+    return Math.max(span / (this.baseViewHeight() * (this.width / this.height)), tall / this.baseViewHeight()) * 1.08;
+  }
+
+  // Leave the empire overview: back to the main island's line.
+  backToLine() {
+    this.wideShot = false;
+    if (this.state) this.fitLine(this.state);
+  }
+
+  // Pull all the way back so every island shows: the empire overview.
+  empireView() {
+    this.wideShot = true;
+    this.dropLaunchCam();
+    this.selected = undefined;
+    this.home = null;
+    this.glide = null;
+    const b = this.outer;
+    // the overview sheet sits on the left on wide screens and along the bottom on phones; the islands take the rest
+    const phone = this.width <= 760;
+    const room = phone ? 0.95 : 1.3;
+    this.camGoal = { target: new THREE.Vector3((b.x0 + b.x1) / 2, -2, (b.z0 + b.z1) / 2), zoom: Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.empireZoom() * room)) };
+    this.biasGoal = phone ? { x: 0, y: 0.27 } : { x: 0.17, y: 0 };
+  }
+
   // Pull back over the whole island, eased like focus (the welcome tour's wide shots). scale > 1 sits further out.
   overview(scale = 1) {
     this.wideShot = true;
@@ -684,6 +773,7 @@ export class FactoryScene {
     });
 
     Object.assign(this.bounds, { x0, x1, z0, z1 });
+    this.layoutSatellites();
     const half = Math.max(w, d) / 2 + 6;
     Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 120 });
     this.sun.shadow.camera.updateProjectionMatrix();
@@ -1344,7 +1434,7 @@ export class FactoryScene {
       const teaching = !!l.key && this.teachingKeys.has(l.key);
       l.el.classList.toggle("teaching", teaching);
       if (teaching) y -= (teachingRow++ % 3) * 24;
-      const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
+      const shown = teaching || this.showAll || l.el.classList.contains("hot") || l.el.classList.contains("island") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
       l.el.style.display = off ? "none" : "flex";
       // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
@@ -1420,6 +1510,10 @@ export class FactoryScene {
     for (const w of this.waterfalls) w(dt, t);
     for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+    for (const sat of this.sats) {
+      sat.view.g.position.y = sat.y + (this.reduceMotion ? 0 : Math.sin(t * 0.4 + sat.view.bob) * 0.25);
+      if (!this.reduceMotion) sat.route.update(t);
+    }
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);
     if (this.biasGoal) {
@@ -1497,6 +1591,7 @@ export class FactoryScene {
   };
 
   dispose() {
+    this.clearSatellites();
     for (const pe of this.pings) pe.el.remove();
     for (const p of this.pops) p.el.remove();
     cancelAnimationFrame(this.raf);

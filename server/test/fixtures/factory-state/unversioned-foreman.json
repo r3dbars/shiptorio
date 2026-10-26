@@ -1,0 +1,57 @@
+{
+  "repo": "owner/repo",
+  "baseBranch": "main",
+  "districts": [],
+  "machines": [
+    {
+      "id": "inspector-1",
+      "type": "inspector",
+      "x": 3,
+      "y": 0,
+      "tier": 1,
+      "state": "idle"
+    },
+    {
+      "id": "launch-pad",
+      "type": "launch_pad",
+      "x": 6,
+      "y": 0,
+      "tier": 1,
+      "state": "idle"
+    }
+  ],
+  "belts": [
+    {
+      "id": "old-belt",
+      "to": "launch-pad",
+      "from": "inspector-1"
+    }
+  ],
+  "items": [
+    {
+      "id": "gh-1",
+      "kind": "bug",
+      "source": "github_issue",
+      "title": "Keep the checkout fix",
+      "district": "/",
+      "state": "queued",
+      "attempts": 0,
+      "updatedAt": 1
+    }
+  ],
+  "power": [],
+  "science": {
+    "red": 3,
+    "green": 2,
+    "grey": 1,
+    "blue": 0
+  },
+  "trust": 0.5,
+  "tick": 24,
+  "goal": "Fix checkout",
+  "foreman": {
+    "thinking": false
+  },
+  "deck": [],
+  "move": null
+}

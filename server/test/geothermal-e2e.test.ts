@@ -1,4 +1,5 @@
-import { authorizedSocket, browserEnv } from "./browser-fixture";
+import { credentialEnv } from "./credential-fixture";
+import { authorizedSocket, browserEnv, membershipCache } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
     expect(body.messages[1].content).toContain("Run bun isntall");
     return JSON.stringify({ summary: "Fixed the install typo.", files: [{ path: "README.md", content: "# Demo\n\nRun bun install\n" }] });
   });
-  let pushed = "", prBody = "", plannerCall = 0, routed = 0;
+  let pushed = "", patch = "", prBody = "", plannerCall = 0, routed = 0;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input), json = (x: unknown) => Response.json(x);
     if (url.endsWith("/access_tokens")) return json({ token: "test-install-token" });
@@ -44,7 +45,7 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
     if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
     if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: pushed } });
     if (url.includes("/contents/")) return json({ encoding: "base64", content: btoa("# Demo\n\nRun bun isntall\n") });
-    if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "README.md", status: "modified", changes: 2 }] });
+    if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "README.md", status: "modified", changes: patch.split("\n").filter(l => /^[+-]/.test(l)).length, patch }] });
     if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix typo in README setup steps", body: "It says isntall", state: "open", html_url: "https://github.com/r3dbars/demo/issues/1" });
     if (url.includes("/issues/1/comments")) return json(init?.method === "POST" ? { id: 1 } : []);
     if (url.includes("/pulls?")) return json([]);
@@ -59,13 +60,13 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
     }
     throw new Error(`Unexpected request ${url}`);
   }) as typeof fetch;
-  const item = { id: "gh-1", kind: "cleanup", source: "github_issue", title: "Fix typo in README setup steps", body: "It says isntall", district: "docs", state: "queued", attempts: 0, updatedAt: 1 } as Item;
+  const item = { id: "gh-1", kind: "cleanup", source: "github_issue", title: "Fix typo in README setup steps", body: "It says isntall", district: "docs", state: "queued", attempts: 0, updatedAt: Date.now() } as Item;
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [item], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
   const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }], ["runnerPair", "pair"]]);
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };
-  const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+  const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
   const saved = () => data.get("state") as FactoryState;
   const choose = async (optionId: string) => f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: saved().move!.id, optionId }));
   try {
@@ -103,6 +104,7 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
     validateChanges(out.paths, assigned.allowedPaths, await git(work, "diff", "--cached"));
     await git(work, "commit", "-qm", "Execute plan with local model");
     pushed = await git(work, "rev-parse", "HEAD");
+    patch = (await git(work, "diff", "HEAD~1", "--", "README.md")).split("\n").slice(4).join("\n"); // GitHub-style hunk, no file headers
     const receipt = RunnerReceipt.parse({ jobId: assigned.id, lease: assigned.lease, ok: true, sha: pushed, summary: out.summary, checks: ["typecheck", "test", "build"] });
 
     expect((await f.finishRunner("pair", receipt)).prUrl).toBe("https://github.com/r3dbars/demo/pull/7");

