@@ -44,6 +44,9 @@ test("first-factory initialization coalesces, retries failure, and cannot resurr
     expect(trees).toBe(1);
     expect((data.get("state") as { items: { id: string }[] }).items.map(item => item.id)).toEqual(["gh-1"]);
     await expect(factory.ensure("different/repo", 1)).rejects.toThrow("Repository mismatch");
+    await Promise.all([factory.ensure("example/shop", 1), factory.ensure("example/shop", 2)]);
+    expect((data.get("meta") as { installationId: number }).installationId).toBe(2);
+    expect(trees).toBe(1);
     data.clear(); fail = true; held = null;
     const retry = make();
     const rejected = await Promise.allSettled([retry.ensure("example/shop", 1), retry.ensure("example/shop", 1)]);

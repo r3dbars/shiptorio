@@ -9,6 +9,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
   const state = {
     user: { id: 4242001, login: "fresh-stranger", name: "Fresh Stranger", avatar_url: null },
     repo: "fresh-stranger/lemonade-stand",
+    repoId: 4242999, // stable numeric identity supplied by actual GitHub repository responses/webhooks
     installation: null, // set when the stranger clicks Install on the fake GitHub page
     calls: [],
   };
@@ -28,7 +29,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
     if (url.host !== "api.github.com") return new Response("blocked by the stranger stub", { status: 599 });
     if (p === "/user") return json(state.user);
     if (p === "/user/installations") return json({ total_count: state.installation ? 1 : 0, installations: state.installation ? [{ id: state.installation, account: { login: state.user.login } }] : [] });
-    if (p === `/user/installations/${state.installation}/repositories`) return json({ total_count: 1, repositories: [{ full_name: state.repo, default_branch: "main" }] });
+    if (p === `/user/installations/${state.installation}/repositories`) return json({ total_count: 1, repositories: [{ id: state.repoId, full_name: state.repo, default_branch: "main" }] });
     if (p === "/app") return json({ slug: "shiptorio-stub" });
     if (/^\/app\/installations\/\d+\/access_tokens$/.test(p)) return json({ token: "ghs_stub_installation_token", expires_at: new Date(Date.now() + 3600e3).toISOString() }, 201);
     // Production revalidates the signed-in user's current repo permission before listing/opening it.
@@ -38,7 +39,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
       return json({ permission: "admin", user: { id: state.user.id, login: state.user.login } });
     }
     if (p === `/repos/${state.repo}/installation`) return state.installation ? json({ id: state.installation }) : json({ message: "Not Found" }, 404);
-    if (p === `/repos/${state.repo}`) return json({ full_name: state.repo, default_branch: "main" });
+    if (p === `/repos/${state.repo}`) return json({ id: state.repoId, full_name: state.repo, default_branch: "main" });
     if (p.startsWith(`/repos/${state.repo}/git/trees/`)) return json({ sha: "stubtree", tree, truncated: false });
     if (p.startsWith(`/repos/${state.repo}/git/ref/heads/`)) return json({ object: { sha: "stubsha" } });
     if (p === `/repos/${state.repo}/issues`) return json(url.searchParams.get("page") === "1" || !url.searchParams.get("page") ? issues : []);
@@ -54,7 +55,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
     const body = JSON.stringify({
       action: "created",
       installation: { id: state.installation, account: { login: state.user.login } },
-      repositories: [{ full_name: state.repo }],
+      repositories: [{ id: state.repoId, full_name: state.repo }],
       sender: { id: state.user.id, login: state.user.login },
     });
     const sig = "sha256=" + createHmac("sha256", webhookSecret).update(body).digest("hex");
