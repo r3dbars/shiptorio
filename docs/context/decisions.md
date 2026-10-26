@@ -100,6 +100,7 @@ The connection and automatic deployment checkpoints above supersede that initial
 
 | When (2026-10-26, UTC) | Decision | Who |
 | --- | --- | --- |
+| 18:44 | **Auto-merge everything.** Every agent (Claude threads and Codex) merges its own PR as soon as CI is green, then confirms the Deploy on `main` is green. Skip stale drafts (#3, #4) and PRs another agent is still on. | Justin |
 | 17:37 | **First sources = GitHub, Sentry, PostHog. Stripe on hold.** Demo impact shows via PostHog, not a Stripe checkout counter. North star now in `docs/VISION.md`; every agent reads it first. | Justin |
 | 17:00 | Product calls locked: demo money = Stripe test mode in the demo shop (checkout counter on the HUD); customer replies = Spark drafts, player clicks Send; pitch = solo founders and tiny teams. See `docs/PRODUCT.md` | Justin |
 | 16:57 | **Spark is the brain / game master, not a coder.** It plans, routes, judges and asks; it never writes PRs. Code is written by the player's own subscriptions (Claude Code, Codex) through the local runner, and each sign-in unlocks more machines and power. Spark asks before acting by default; autonomy is earned the more you play. See `docs/PRODUCT.md` | Justin |
