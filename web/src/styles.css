@@ -309,8 +309,14 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   flex-direction: row; padding: 6px 10px; font: 10px var(--pixel); letter-spacing: 0.05em; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
 }
 .ci-toast.on { opacity: 1; transform: translate(-50%, 0); }
-@media (max-width: 760px) {
-  .checkin { bottom: 8px; height: min(480px, calc(100vh - 230px)); }
+/* Phones: dock where the Next Move card docks (it replaces it), clear of #53's top bar. Vars fall back to 0. */
+@media (max-width: 760px), (max-height: 500px) {
+  .checkin {
+    left: calc(8px + var(--sal, 0px)); right: calc(8px + var(--sar, 0px)); width: auto; transform: none;
+    bottom: calc(var(--handle, 0px) + 8px + var(--sab, 0px)); height: min(480px, calc(100vh - 230px));
+  }
+  .checkin.zoomed { transform: translateY(calc(100% - 150px)); }
+  .ci-open { top: calc(128px + var(--sat, 0px)); left: calc(8px + var(--sal, 0px)); transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .checkin, .ci-toast { transition: none; }
