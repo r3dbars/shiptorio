@@ -96,8 +96,11 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   useEffect(() => {
     if (!waiting) return;
     const timer = setInterval(loadRepos, 3000);
+    // coming back to this tab from GitHub's checks right away
+    const back = () => { if (document.visibilityState === "visible") loadRepos(); };
     window.addEventListener("focus", loadRepos);
-    return () => { clearInterval(timer); window.removeEventListener("focus", loadRepos); };
+    document.addEventListener("visibilitychange", back);
+    return () => { clearInterval(timer); window.removeEventListener("focus", loadRepos); document.removeEventListener("visibilitychange", back); };
   }, [waiting]);
 
   const signIn = () => {
