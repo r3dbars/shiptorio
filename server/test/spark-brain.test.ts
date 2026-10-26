@@ -145,6 +145,16 @@ describe("tolerant replies (live Testing run, 2026-10-26)", () => {
     expect(call.reason).toBe('Ship "Fix receipt" first, it\'s green.');
     expect(call.because.ship).toBe('The "2 items" bug is fixed: [tests] pass.');
   });
+  it("keeps what arrived when a reply is cut off mid-sentence, without the half sentence", async () => {
+    sequence(['{"order": ["bottleneck:review-1", "ship"], "reason": "Review is the jam.", "because": {"bottleneck:review-1": "Two fixes wait.", "ship": "It passed every sta']);
+    const call = await gameMaster(env, brief);
+    expect(call.order).toEqual(["bottleneck:review-1", "ship"]);
+    expect(call.because).toEqual({ "bottleneck:review-1": "Two fixes wait." });
+  });
+  it("skips chatter with braces before the JSON", async () => {
+    sequence(['Looking at {cards} and {stations} first. {"order": ["ship"], "reason": "Ship it."}']);
+    expect((await gameMaster(env, brief)).order).toEqual(["ship"]);
+  });
   it("asks once more with the reason when a reply is malformed, then uses the good one", async () => {
     const seen: string[] = [];
     sequence(['{"order": ["ship" "bottleneck:review-1"]}', JSON.stringify({ order: ["ship"], reason: "Ship it." })], seen);
