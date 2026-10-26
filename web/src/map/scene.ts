@@ -646,6 +646,7 @@ export class FactoryScene {
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
+      trimShadows(model.group);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
@@ -659,6 +660,7 @@ export class FactoryScene {
 
     const w = x1 - x0, d = z1 - z0;
     const island = makeIsland(w, d);
+    trimShadows(island);
     island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     this.world.add(island);
     // waterfalls sit just past the moss cap's bulge and fall a bit past the rock's tip
