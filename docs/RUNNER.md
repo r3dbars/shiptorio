@@ -68,6 +68,8 @@ execution, scars and usage telemetry remain later checkpoints.
 
 Runner publishing tokens must name only the assigned repository and request only
 `contents: write` and `metadata: read`. PR creation and merging use separate server
-credentials. GitHub installation tokens cannot restrict writes to one branch: protect
+credentials in the normal application flow. Contents-write also permits direct PR
+merges: removing pull-request permissions does not remove merge authority. GitHub
+installation tokens cannot restrict writes to one branch: protect
 `main` and other sensitive branches with GitHub rules that apply to this App. A
 repository-scoped token alone does not enforce the supervisor's branch policy.

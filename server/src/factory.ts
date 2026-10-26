@@ -2,6 +2,7 @@
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
 import { DurableObject } from "cloudflare:workers";
+import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -32,7 +33,7 @@ import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sen
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
 import { linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 
-export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv {
+export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
   PUBLIC_URL?: string;
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -57,6 +58,7 @@ interface Meta {
 export class Factory extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
+  private socketEpoch: string | null = null;
   private running = new Set<string>(); // item ids with a job in flight
 
   private batchingDecisions = false;
@@ -526,7 +528,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const pr = p.pull_request as { number?: number; merged?: boolean; head?: { sha: string; ref: string } } | undefined;
     if (event === "pull_request" && p.action === "closed" && pr?.number) await this.onPullClosed(pr.number, !!pr.merged);
     const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string } | undefined;
-    if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
+    if (["check_run", "check_suite"].includes(event) && ["completed", "queued", "in_progress", "requested", "rerequested"].includes(p.action ?? "") && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
   }
 
   async disconnectGitHub(): Promise<void> {
@@ -655,6 +657,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- state ----------
 
   private async load(): Promise<FactoryState | null> {
+    this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
       this.state = (await this.ctx.storage.get<FactoryState>("state")) ?? null;
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
@@ -678,6 +681,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const text = JSON.stringify(msg);
     for (const ws of this.ctx.getWebSockets("web")) {
       try {
+        if (!browserSocketAllowed(ws.deserializeAttachment(), this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); continue; }
         ws.send(text);
       } catch {
         // gone; the runtime cleans up
@@ -783,9 +787,15 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!(await this.load()) || !this.meta) return;
     const token = await installationToken(this.env, this.meta.installationId);
     for (const item of this.state!.items) {
-      if (item.state !== "inspecting" || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
+      if (!["inspecting", "on_pad", "passed"].includes(item.state) || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
       const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
-      if (result.state === "pending") continue;
+      if (result.stale) continue;
+      if (result.state === "pending") {
+        if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed") {
+          await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha), updatedAt: Date.now() }] });
+        }
+        continue;
+      }
       if (item.branch?.startsWith("shiptorio/runner-") && !item.lane) {
         const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(files.map((f) => f.filename))).catch(() => null);
         if (lane) item.lane = lane;
@@ -794,7 +804,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (item.branch?.startsWith("shiptorio/runner-")) {
           // Every check run reports in; only a new head (or the first green) restarts the gauntlet.
           if (stageOf(item, "ci")?.state === "passed" && (!headSha || headSha === item.inspection?.headSha)) continue;
-          const fresh = { ...item, inspection: freshInspection(headSha ?? item.inspection?.headSha ?? "unknown") };
+          const fresh = { ...item, inspection: freshInspection(result.headSha) };
           await this.patch({ items: [setStage(fresh, "ci", "passed", result.summary)] });
           this.log("success", `CI inspector passed PR #${item.prNumber}. On to the verify bay.`, item.id);
           await this.scheduleTick();
@@ -957,7 +967,20 @@ export class Factory extends DurableObject<FactoryEnv> {
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
-      if (by !== "overrule" && item.inspection?.headSha !== head) throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+      if (by !== "overrule") {
+        if (item.inspection?.headSha !== head) {
+          await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
+          throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+        }
+        const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head);
+        if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
+        if (checks.state !== "passed") {
+          const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
+          await this.patch({ items: [current] });
+          if (checks.state === "failed") await this.noteRework(current);
+          throw new Error("Current checks have not passed. The PR is back at CI.");
+        }
+      }
       if (by === "autonomy") await this.ctx.storage.put(`autoLaunch:${item.id}`, item.prNumber);
       await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
@@ -972,7 +995,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         await this.ctx.storage.delete(`autoLaunch:${item.id}`);
         await this.ctx.storage.put(`autoLaunchFailed:${item.id}`, item.inspection?.headSha); // falls back to the launch card
       }
-      const why = err instanceof Error && err.message.startsWith("The PR changed") ? err.message : "GitHub didn't accept the merge. Open the PR to see why.";
+      const why = err instanceof Error && (err.message.startsWith("The PR changed") || err.message.startsWith("Current checks")) ? err.message : "GitHub didn't accept the merge. Open the PR to see why.";
       this.log("warn", why, item.id);
     }
   }
@@ -1046,16 +1069,24 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
+    const auth = await browserSocketAuth(request, this.env);
+    if (!auth) return new Response("login required", { status: 401 });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
+    server.serializeAttachment(auth);
     const state = await this.load();
     if (state) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
-    if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
+    if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
+    else if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(_ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+  async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    this.socketEpoch = await browserSocketEpoch(this.env);
+    let auth: unknown;
+    try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
+    if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     let value: unknown;
