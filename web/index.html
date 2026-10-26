@@ -9,8 +9,9 @@
 <title>Shiptorio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- fonts load without blocking the first paint; display=swap shows system text until they land -->
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<!-- the font CSS starts downloading now but only blocks what comes after its <link> in <body>,
+     so the boot splash paints first (the CSP has no inline handlers, so no media="print" trick) -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <style>
   /* painted before any JS: the game's void with a loading belt, replaced when React mounts */
   html, body { margin: 0; height: 100%; background: #1b2448; }
@@ -22,6 +23,7 @@
 </head>
 <body>
 <div id="root"><div class="boot">Shiptorio<i></i></div></div>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

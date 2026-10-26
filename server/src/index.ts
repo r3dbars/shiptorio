@@ -493,7 +493,12 @@ app.all("*", async (c) => {
     c.set("artNonce", nonce);
     return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
   }
-  return response;
+  // Vite content-hashes everything under /assets/, so the browser keeps those for a year (private:
+  // the site sits behind the preview gate) and a returning player only downloads what a deploy changed.
+  if (!response.ok || !c.req.path.startsWith("/assets/")) return response;
+  const cached = new Response(response.body, response);
+  cached.headers.set("Cache-Control", "private, max-age=31536000, immutable");
+  return cached;
 });
 
 export default app;
