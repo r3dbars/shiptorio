@@ -10,7 +10,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
 } }));
 const { Factory } = await import("../src/factory");
 
-function fixture(items: Item[] = []) {
+function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items, science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
   const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
   let alarm: number | null = null;
@@ -23,14 +23,68 @@ function fixture(items: Item[] = []) {
     async getAlarm() { return alarm; },
     async setAlarm(value: number) { alarm = value; },
   };
-  const ctx = { storage, getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-  const factory = new Factory(ctx as never, { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) } } as never);
+  let exclusive: Promise<unknown> = Promise.resolve();
+  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
+  const factory = new Factory(ctx as never, { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) }, ...extraEnv } as never);
   return { factory, data, events, saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("runs Spark planning, exclusive runner claim, scoped branch verification and idempotent PR receipts", async () => {
+    const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+    const der = await crypto.subtle.exportKey("pkcs8", keys.privateKey);
+    const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(der).toString("base64")}\n-----END PRIVATE KEY-----`;
+    const originalFetch = globalThis.fetch;
+    const base = "a".repeat(40), head = "b".repeat(40);
+    let opened = 0, sparkCalls = 0;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const json = (value: unknown) => Response.json(value);
+      if (url.endsWith("/access_tokens")) return json({ token: "fake-install-token" });
+      if (url.endsWith("/chat/completions")) { sparkCalls++; return json({ choices: [{ message: { content: JSON.stringify(sparkCalls === 1 ? { tool: "read_issue", reason: "Understand the approved issue" } : sparkCalls === 2 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect the existing guard" } : { tool: "assign_job", reason: "The scope is clear", plan: "Reject credential paths and add a regression test.", acceptance: ["Ordinary code paths remain accepted", "Secret paths are refused"] }) } }] }); }
+      if (url.includes("/contents/")) return json({ content: btoa("export const SAFE_PATH = /.+/;"), encoding: "base64" });
+      if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
+      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [], truncated: false });
+      if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
+      if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
+      if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
+      if (url.includes("/pulls?")) return json([]);
+      if (url.endsWith("/pulls") && init?.method === "POST") { opened++; return json({ number: 99, html_url: "https://github.com/r3dbars/demo/pull/99" }); }
+      throw new Error(`Unexpected test request ${url}`);
+    }) as typeof fetch;
+    try {
+      const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
+      const pair = await f.factory.pairRunner();
+      const job = await f.factory.enqueueRunner({ itemId: "gh-1", harness: "codex", allowedPaths: ["server/src/engine.ts"] });
+      expect(job.status).toBe("planning");
+      await expect(f.factory.enqueueRunner({ itemId: "gh-1", harness: "codex", allowedPaths: ["server/src/engine.ts"] })).rejects.toThrow("active runner job");
+      await f.factory.alarm();
+      expect((await f.factory.runnerJobs())[0].baseSha).toBe(base);
+      expect((await f.factory.runnerJobs())[0].plan).toContain("regression test");
+      await expect(f.factory.claimRunner("wrong-pair", ["codex"])).rejects.toThrow("revoked");
+      expect(await f.factory.claimRunner(pair, ["claude_code"])).toBeNull();
+      const claimed = await Promise.all([f.factory.claimRunner(pair, ["codex"]), f.factory.claimRunner(pair, ["codex"])]);
+      expect(claimed.filter(Boolean)).toHaveLength(1);
+      const assigned = claimed.find(Boolean)!;
+      expect(assigned.token).toBe("fake-install-token");
+      expect(f.saved().items[0].state).toBe("working");
+      const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };
+      await expect(f.factory.finishRunner(pair, { ...receipt, checks: [] })).rejects.toThrow("check receipts");
+      await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");
+      const result = await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
+      expect(result.prUrl).toEndWith("/99");
+      await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
+      expect(opened).toBe(1);
+      expect(sparkCalls).toBe(3);
+      expect((await f.factory.runnerJobs())[0].steps?.map(s => s.tool)).toEqual(["read_issue", "read_file", "assign_job"]);
+      expect(f.saved().items[0].state).toBe("inspecting");
+      expect((await f.factory.runnerJobs())[0].lease).toBeUndefined();
+      await f.factory.pairRunner();
+      await expect(f.factory.claimRunner(pair, ["codex"])).rejects.toThrow("revoked");
+    } finally { globalThis.fetch = originalFetch; }
+  });
   it("durably queues delivery work and folds it before acknowledgment", async () => {
     const f = fixture();
     const payload = { action: "opened", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 9, title: "Broken checkout", body: "Customer context", html_url: "https://github.com/r3dbars/demo/issues/9", user: { login: "example-user" }, updated_at: "2026-10-26T12:00:00Z" } };

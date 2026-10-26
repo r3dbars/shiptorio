@@ -6,6 +6,8 @@ import { isAllowed, readSession } from "./session";
 import { previewAccess } from "./access";
 import { githubSource } from "./sources";
 import type { GitHubPayload } from "./sources/github";
+import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
+import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 
 export { Factory };
 
@@ -29,9 +31,18 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
-const app = new Hono<{ Bindings: Env; Variables: { login: string } }>();
+const app = new Hono<{ Bindings: Env; Variables: { login: string; runner: RunnerIdentity } }>();
 
 app.use("*", async (c, next) => {
+  if (c.req.path.startsWith("/api/runner/")) {
+    const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish)$/);
+    const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
+    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
+    c.set("runner", identity);
+    await next();
+    c.header("Cache-Control", "no-store");
+    return;
+  }
   const denied = await previewAccess(c.req.raw, c.env);
   if (denied) return denied;
   await next();
@@ -84,6 +95,45 @@ app.use("/api/repos/*", async (c, next) => {
   if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
   c.set("login", login);
   await next();
+});
+
+app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  const f = factory(c.env, repo);
+  await f.ensure(repo, await installationFor(c.env, repo));
+  if (c.req.param("action") === "pair") {
+    const pairId = await f.pairRunner();
+    const expires = Date.now() + 8 * 60 * 60 * 1000;
+    return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires }), expires });
+  }
+  if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
+  const text = await c.req.text();
+  if (text.length > 8192) return c.json({ error: "too large" }, 413);
+  const parsed = EnqueueRunner.safeParse(JSON.parse(text));
+  if (!parsed.success) return c.json({ error: "invalid job" }, 400);
+  return c.json(await f.enqueueRunner(parsed.data), 202);
+});
+
+app.get("/api/repos/:owner/:repo/runner/jobs", async (c) => c.json(await factory(c.env, `${c.req.param("owner")}/${c.req.param("repo")}`).runnerJobs()));
+
+app.post("/api/runner/:owner/:repo/claim", async (c) => {
+  const identity = c.get("runner");
+  const body = await c.req.text();
+  if (body.length > 1024) return c.json({ error: "too large" }, 413);
+  const raw = JSON.parse(body);
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  return c.json({ job: await factory(c.env, identity.repo).claimRunner(identity.pairId, raw.harnesses) });
+});
+
+app.post("/api/runner/:owner/:repo/finish", async (c) => {
+  const identity = c.get("runner");
+  const body = await c.req.text();
+  if (body.length > 8192) return c.json({ error: "too large" }, 413);
+  const parsed = RunnerReceipt.safeParse(JSON.parse(body));
+  if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
+  return c.json(await factory(c.env, identity.repo).finishRunner(identity.pairId, parsed.data));
 });
 
 app.get("/api/repos/:owner/:repo/factory", async (c) => {
