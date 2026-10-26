@@ -42,8 +42,8 @@ function fixture() {
       if (sql === 'SELECT id FROM installations WHERE id = ?') return installs.has(Number(args[0])) ? { id: args[0] } : null;
       throw new Error(`Unexpected query ${sql}`);
     },
-    run: async () => ({ success: true }),
-    all: async () => ({ results: [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
+    run: async () => ({success: true}),
+    all: async () => ({ results: sql.includes("FROM deleted_factories") ? [] : [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
   }; return stmt; } };
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',
     CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async (key: string) => { if (!key.startsWith("ops:")) writes++; } },

@@ -1,3 +1,4 @@
+import { factoryDeleted } from "../account-lifecycle";
 import type { PostHogCreds, PostHogSourceEnv } from "./posthog";
 import type { SentryCreds, SentrySourceEnv } from "./sentry";
 import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./credential-crypto";
@@ -29,6 +30,7 @@ async function identity(env: CredsEnv, scope?: CredentialScope): Promise<BoundSc
   const row = await env.DB.prepare("SELECT r.repo_id, r.installation_id FROM repos r JOIN installations i ON i.id = r.installation_id WHERE r.full_name = ? AND r.installation_id = ? AND r.archived_at IS NULL AND i.status = 'active'")
     .bind(scope.repo.toLowerCase(), scope.installationId).first<{ repo_id: number; installation_id: number }>();
   if (!row || !Number.isSafeInteger(row.repo_id) || row.repo_id <= 0 || row.installation_id !== scope.installationId || scope.repoId !== undefined && scope.repoId !== row.repo_id) return null;
+  if (await factoryDeleted(env.DB, scope.repo)) return null;
   return { ...scope, repo: scope.repo.toLowerCase(), repoId: row.repo_id };
 }
 function pin(env: CredsEnv, kind: MineKind) {
@@ -48,7 +50,7 @@ export async function legacyRepo(env: CredsEnv, kind: MineKind): Promise<string 
   if (!expected) return null;
   const row = await env.DB.prepare("SELECT r.full_name FROM repos r JOIN installations i ON i.id = r.installation_id WHERE r.repo_id = ? AND r.installation_id = ? AND r.archived_at IS NULL AND i.status = 'active'")
     .bind(expected.repoId, expected.installationId).first<{ full_name: string }>();
-  return row?.full_name ?? null;
+  return row?.full_name && !await factoryDeleted(env.DB, row.full_name) ? row.full_name : null;
 }
 async function legacyName(env: CredsEnv, kind: MineKind, _scope: BoundScope): Promise<string | null> {
   const name = (kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO) || await env.CACHE?.get(`link:${kind}`);
@@ -57,6 +59,14 @@ async function legacyName(env: CredsEnv, kind: MineKind, _scope: BoundScope): Pr
 function override(env: CredsEnv, kind: MineKind): Creds {
   return kind === "sentry" ? { clientSecret: env.SENTRY_CLIENT_SECRET } : { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
 }
+/** A racing credential write must not recreate data after account deletion. */
+async function discardDeleted(env: CredsEnv, scope: CredentialScope): Promise<boolean> {
+  if (!await factoryDeleted(env.DB, scope.repo)) return false;
+  await env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(scopeKey(scope)).run();
+  for (const kind of ["sentry", "posthog"] as const) await env.CACHE?.delete(`cred:${kind}:${scope.repo.toLowerCase()}`);
+  return true;
+}
+
 async function row(env: CredsEnv, scope: CredentialScope, kind: MineKind): Promise<Row | null> {
   return env.DB.prepare("SELECT envelope, revoked, linked, last_used_at FROM credentials WHERE scope = ? AND kind = ?").bind(scopeKey(scope), kind).first<Row>();
 }
@@ -96,8 +106,9 @@ async function migrate(env: CredsEnv, scope: BoundScope, kind: MineKind): Promis
 }
 export async function readCreds(env: CredsEnv, kind: MineKind, scope?: CredentialScope, redactor?: Redactor, used = false): Promise<Creds> {
   const bound = await identity(env, scope);
-  if (!bound) return {};
+  if (!bound || await discardDeleted(env, bound)) return {};
   const current = await migrate(env, bound, kind);
+  if (await discardDeleted(env, bound)) return {};
   if (current?.revoked) return {};
   const ownFactory = credentialPinMatches(env, kind, bound);
   const admin = ownFactory ? override(env, kind) : {};
@@ -113,13 +124,14 @@ export async function readCreds(env: CredsEnv, kind: MineKind, scope?: Credentia
   }
   redactor?.register(creds);
   if (used && (creds.apiKey || creds.clientSecret)) await markUsed(env, kind, bound);
-  return creds;
+  return await discardDeleted(env, bound) ? {} : creds;
 }
 export const sentryCreds = (env: CredsEnv, scope?: CredentialScope, redactor?: Redactor) => readCreds(env, "sentry", scope, redactor);
 export const postHogCreds = (env: CredsEnv, scope?: CredentialScope, redactor?: Redactor) => readCreds(env, "posthog", scope, redactor);
 export async function saveCreds(env: CredsEnv, kind: MineKind, creds: Creds, scope: CredentialScope): Promise<void> {
   const bound = await identity(env, scope);
   if (!bound) throw new Error("Repository identity unavailable; reconnect GitHub");
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
   const envelope = await encryptCredential(env, binding(bound, kind), creds);
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, ?, 0, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = excluded.envelope, revoked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at, last_used_at = NULL")
     .bind(scopeKey(bound), kind, JSON.stringify(envelope), scope.user ?? null, Date.now()).run();
@@ -127,23 +139,28 @@ export async function saveCreds(env: CredsEnv, kind: MineKind, creds: Creds, sco
     await env.CACHE?.delete(`cred:${kind}:${bound.repo}`);
     if (await legacyCredentialOwner(env, kind, bound)) await env.CACHE?.delete(`cred:${kind}`);
   }
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
 }
 export async function revokeCreds(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
   const bound = await identity(env, scope);
   if (!bound) throw new Error("Repository identity unavailable; reconnect GitHub");
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, NULL, 1, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = NULL, revoked = 1, linked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
     .bind(scopeKey(bound), kind, scope.user ?? null, Date.now()).run();
   if (credentialPinMatches(env, kind, bound) && await legacyName(env, kind, bound) === bound.repo) {
     await env.CACHE?.delete(`cred:${kind}:${bound.repo}`);
     if (await legacyCredentialOwner(env, kind, bound)) await env.CACHE?.delete(`cred:${kind}`);
   }
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
 }
 export async function markUsed(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
   const bound = await identity(env, scope);
   if (!bound) throw new Error("Repository identity unavailable; reconnect GitHub");
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
   // Record use of a pinned Worker override too, without storing its plaintext.
   await env.DB.prepare("INSERT INTO credentials (scope, kind, updated_at, last_used_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET last_used_at = excluded.last_used_at WHERE credentials.revoked = 0")
     .bind(scopeKey(bound), kind, Date.now(), Date.now()).run();
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
 }
 export async function credentialStatus(env: CredsEnv, kind: MineKind, scope: CredentialScope) {
   const bound = await identity(env, scope);
@@ -165,8 +182,10 @@ export async function linkedRepo(env: CredsEnv, kind: MineKind, scope?: Credenti
 export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null, scope: CredentialScope): Promise<void> {
   const bound = await identity(env, scope);
   if (!bound) throw new Error("Repository identity unavailable; reconnect GitHub");
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
   await env.DB.prepare("INSERT INTO credentials (scope, kind, linked, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET linked = excluded.linked WHERE credentials.revoked = 0")
     .bind(scopeKey(bound), kind, repo ? 1 : 0, Date.now()).run();
+  if (await discardDeleted(env, bound)) throw new Error("Factory deleted");
 }
 
 export async function legacyCredentialOwner(env: CredsEnv, kind: MineKind, scope: { installationId: number; repoId: number; repo: string }): Promise<boolean> {

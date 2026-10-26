@@ -1,3 +1,4 @@
+import { factoryDeleted } from "../account-lifecycle";
 // Support mine: customer email and Intercom chats. Each conversation is one support ticket on the
 // support well; Spark sorts it and drafts a reply, and the player sends it (docs/context/support-mine.md).
 //
@@ -56,6 +57,7 @@ export async function supportIdentity(env: SupportEnv, repo: string): Promise<Su
   try {
     const row = await env.DB?.prepare("SELECT r.repo_id, r.installation_id, r.archived_at, i.status FROM repos r JOIN installations i ON i.id = r.installation_id WHERE r.full_name = ?").bind(repo.toLowerCase()).first<{ repo_id: number; installation_id: number; archived_at: number | null; status: string }>();
     if (!row || row.archived_at != null || row.status !== "active" || !Number.isSafeInteger(row.repo_id) || row.repo_id <= 0 || !Number.isSafeInteger(row.installation_id) || row.installation_id <= 0) return null;
+    if (await factoryDeleted(env.DB!, repo)) return null;
     return { repoId: row.repo_id, installationId: row.installation_id };
   } catch { return null; }
 }
@@ -74,6 +76,7 @@ export async function supportCreds(env: SupportEnv, repo?: string | null): Promi
   // Legacy name-only envelopes and operator settings have no proven identity: reconnect explicitly.
   const own = await stored(env, id);
   const operator = operatorIdentity(env, id);
+  if (env.DB && await factoryDeleted(env.DB, repo!)) return {};
   return {
     inboundToken: (operator ? env.SUPPORT_INBOUND_TOKEN : undefined) || own.inboundToken,
     intercomClientSecret: (operator ? env.INTERCOM_CLIENT_SECRET : undefined) || own.intercomClientSecret,
@@ -88,6 +91,10 @@ export async function saveSupportCreds(env: SupportEnv, repo: string, patch: Sup
   if (!id) throw new Error("Support requires an active repository identity; reconnect the GitHub App");
   const next = { ...(await stored(env, id)), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v)) };
   await env.CACHE.put(supportCredentialKey(id), JSON.stringify({ envelope: await encryptCredential(env, binding(id), next) }));
+  if (env.DB && await factoryDeleted(env.DB, repo)) {
+    await env.CACHE.delete(supportCredentialKey(id));
+    throw new Error("Factory deleted");
+  }
   return next;
 }
 
