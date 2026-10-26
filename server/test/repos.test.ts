@@ -65,3 +65,15 @@ test("prefs follow the player and only accept known short keys", async () => {
   const me = await (await get(env, "/api/me", cookie)).json();
   expect(me).toMatchObject({ login: "r3dbars", allowed: true, prefs: { intro: "1", guideSeen: "4" } });
 });
+
+test("admin budget usage requires a live operator session and includes daily limits", async () => {
+  const env = { ...baseEnv(), ADMIN_LOGINS: "r3dbars" };
+  const operator = `${await signedInCookie(env, "r3dbars", [], 11)}; ${await preview()}`;
+  const player = `${await signedInCookie(env, "friend", [], 12)}; ${await preview()}`;
+  expect((await get(env, "/admin?format=json", player)).status).toBe(403);
+  const response = await get(env, "/admin?format=json", operator);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ limits: { calls: 200, tokens: 500000, jobs: 1 }, usage: [] });
+  await env.DB.prepare("DELETE FROM sessions").run();
+  expect((await get(env, "/admin", operator)).status).toBe(403);
+});

@@ -82,6 +82,7 @@ export interface AppCredentials {
 // In-isolate queues serialize each credential; D1 also spaces requests and preserves cooldowns
 // across isolates/restarts for installation credentials. Keys are hashes, never stored tokens.
 const queues = new Map<string, Promise<unknown>>();
+const queued = new Map<string, number>();
 const contexts = new Map<string, { db: D1Database; scope: string }>();
 const cooldowns = new Map<string, { next: number; failures: number }>();
 const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
@@ -94,8 +95,13 @@ function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
   if (map.size >= 500 && !map.has(key)) map.delete(map.keys().next().value!);
   map.set(key, value);
 }
+export async function registerGithubCredential(token: string, db: D1Database, scope: string) {
+  boundedSet(contexts, await credentialKey(token), { db, scope });
+}
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
+  if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
+  queued.set(scope, (queued.get(scope) ?? 0) + 1);
   const previous = queues.get(scope) ?? Promise.resolve();
   const request = previous.catch(() => {}).then(async () => {
     let state = cooldowns.get(scope) ?? { next: 0, failures: 0 };
@@ -130,11 +136,15 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
     if (res.status === 204) return undefined as T;
     const value = await res.json();
-    if ((init.method ?? "GET") === "GET" && res.headers.has("etag")) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
+    if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
     return value as T;
   });
   queues.set(scope, request);
-  try { return await request; } finally { if (queues.get(scope) === request) queues.delete(scope); }
+  try { return await request; } finally {
+    const left = (queued.get(scope) ?? 1) - 1;
+    if (left) queued.set(scope, left); else queued.delete(scope);
+    if (queues.get(scope) === request) queues.delete(scope);
+  }
 }
 
 interface InstallationTokenScope {
@@ -170,6 +180,7 @@ export async function runnerInstallationToken(env: AppCredentials, installationI
 
 export async function repoInstallationId(env: AppCredentials, fullName: string): Promise<number> {
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  if (env.DB) await registerGithubCredential(jwt, env.DB, `github:app:${env.GITHUB_APP_ID}`);
   const res = await gh<{ id: number }>(`/repos/${fullName}/installation`, jwt);
   return res.id;
 }

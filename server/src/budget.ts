@@ -10,13 +10,18 @@ export const limit = (value: string | undefined, fallback: number) => value !== 
 export const budgetLimits = (env: BudgetEnv) => ({ calls: limit(env.SPARK_DAILY_CALLS, 200), tokens: limit(env.SPARK_DAILY_TOKENS, 500000), output: Math.min(limit(env.SPARK_MAX_OUTPUT_TOKENS, 2048), 16384), jobs: limit(env.FACTORY_CONCURRENT_JOBS, 1), disabled: env.SPARK_DISABLED === "1" });
 export class BudgetError extends Error {}
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
-export async function budgetAccount(db: D1Database, installationId: number): Promise<string> {
-  const row = await db.prepare("SELECT account_login FROM installations WHERE id = ?").bind(installationId).first<{ account_login: string }>();
-  if (!row?.account_login) throw new BudgetError("Budget account unavailable; Spark paused");
-  return row.account_login.toLowerCase();
+export async function budgetAccount(db: D1Database, repo: string): Promise<string> {
+  await db.prepare(`INSERT INTO factory_budget_owners(repo, user_id)
+    SELECT repo, user_id FROM user_repos WHERE repo = ? ORDER BY user_id LIMIT 1
+    ON CONFLICT(repo) DO NOTHING`).bind(repo.toLowerCase()).run();
+  const row = await db.prepare("SELECT user_id FROM factory_budget_owners WHERE repo = ?").bind(repo.toLowerCase()).first<{ user_id: number }>();
+  if (!row || !Number.isSafeInteger(row.user_id)) throw new BudgetError("Budget owner unavailable; sign in and connect this repo to resume Spark");
+  return `user:${row.user_id}`;
 }
+
 export async function reserveSpark(env: BudgetEnv, account: string, tokens: number) {
   const caps = budgetLimits(env), day = utcDay();
+  if (!Number.isSafeInteger(tokens) || tokens <= 0) throw new BudgetError("Invalid token reservation");
   if (caps.disabled) throw new BudgetError("Spark budget: global kill switch is on");
   if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
   const row = await env.DB.prepare(`INSERT INTO spark_usage(account, day, calls, tokens)
@@ -31,7 +36,7 @@ export async function settleSpark(env: BudgetEnv, reservation: { account: string
   // Failed/ambiguous calls keep their entire reservation. Never refund calls.
   if (typeof actual !== "number" || !Number.isSafeInteger(actual) || actual < 0) return;
   await env.DB!.prepare("UPDATE spark_usage SET tokens = MAX(0, tokens - ?) WHERE account = ? AND day = ?")
-    .bind(Math.max(0, reservation.tokens - actual), reservation.account, reservation.day).run();
+    .bind(reservation.tokens - actual, reservation.account, reservation.day).run();
 }
 export async function budgetUsage(env: BudgetEnv, account: string) {
   const day = utcDay();

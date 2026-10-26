@@ -28,7 +28,7 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-  const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
+  const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
   const factory = new Factory(ctx as never, env as never);
   return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
 }
@@ -272,4 +272,24 @@ it("offers local runner plans only for real GitHub issues and refuses source-onl
     for (const item of external) await expect(f.factory.enqueueRunner({ itemId: item.id, harness: "codex", allowedPaths: ["server/src/factory.ts"], needsApproval: true })).rejects.toThrow("not available");
     expect(await f.factory.runnerJobs()).toEqual([]);
   }
+});
+
+it("enforces a zero job cap and kill switch before admitting runner work", async () => {
+  for (const extraEnv of [{ FACTORY_CONCURRENT_JOBS: "0" }, { SPARK_DISABLED: "1" }]) {
+    const f = fixture([item({ state: "queued", prNumber: undefined })], extraEnv);
+    await expect(f.factory.enqueueRunner({ itemId: "gh-1", harness: "codex", allowedPaths: ["server/src/engine.ts"] })).rejects.toThrow("job budget");
+    expect(await f.factory.runnerJobs()).toEqual([]);
+  }
+});
+
+it("a budget-denied triage logs exactly one honest fallback with the budget reason", async () => {
+  const { testD1 } = await import("./d1-fixture");
+  const db = testD1();
+  await db.prepare("INSERT INTO user_repos(user_id, repo, installation_id) VALUES (1, 'r3dbars/demo', 1)").run();
+  const f = fixture([], { DB: db, META_API_KEY: "test", SPARK_DAILY_CALLS: "0" });
+  const splitter = f.factory as unknown as { load(): Promise<unknown>; sparkTriage(item: { title: string; body: string }, districts: string[]): Promise<unknown> };
+  await splitter.load();
+  expect(await splitter.sparkTriage({ title: "Fix a bug", body: "" }, ["/"])).toMatchObject({ kind: "bug" });
+  expect(f.saved().brain?.fallbacks).toBe(1);
+  expect(f.saved().brain?.thoughts[0].reason).toContain("budget exhausted");
 });

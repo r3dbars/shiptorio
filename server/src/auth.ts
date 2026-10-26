@@ -1,6 +1,6 @@
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
-import { gh, convertManifestCode } from "./github";
+import { gh, registerGithubCredential, convertManifestCode } from "./github";
 import { isAllowed, makeSessionCookie } from "./session";
 import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
 import { sameOriginPath } from "./redirect";
@@ -53,6 +53,7 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const user = await gh<GitHubUser>("/user", access_token);
   if (!Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
   if (!isAllowed(env.ALLOWED_LOGINS, user.login)) return new Response(`${user.login} isn't on the allow list`, { status: 403 });
+  await registerGithubCredential(access_token, env.DB, `github:user:${user.id}`);
   await upsertUser(env, user);
   await saveReach(env, user.id, await fetchReach(access_token));
   const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];

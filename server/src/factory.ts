@@ -78,13 +78,13 @@ export class Factory extends DurableObject<FactoryEnv> {
   private running = new Set<string>(); // item ids with a job in flight
 
   private sparkEnv(): SparkEnv {
-    return { ...this.env, budgetAccount: () => budgetAccount(this.env.DB, this.meta!.installationId) };
+    return { ...this.env, budgetAccount: () => budgetAccount(this.env.DB, this.meta!.repo) };
   }
 
   async usage() {
     await this.load();
     if (!this.meta) throw new Error("Factory not initialized");
-    return budgetUsage(this.env, await budgetAccount(this.env.DB, this.meta.installationId));
+    return budgetUsage(this.env, await budgetAccount(this.env.DB, this.meta.repo));
   }
 
   private batchingDecisions = false;

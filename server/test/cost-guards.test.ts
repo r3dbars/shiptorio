@@ -15,8 +15,8 @@ it("atomically enforces a shared account's daily call cap across concurrent fact
   expect(results.filter(r => r.status === "fulfilled")).toHaveLength(3);
   expect(await budgetUsage(env, "owner")).toMatchObject({ calls: 3, tokens: 30 });
   await expect(reserveSpark(env, "other-user", 10)).resolves.toMatchObject({ account: "other-user" });
-  expect(await budgetAccount(db, 1)).toBe("owner");
-  await expect(budgetAccount(db, 99)).rejects.toThrow("unavailable");
+  expect(await budgetAccount(db, "owner/repo")).toBe("user:1");
+  await expect(budgetAccount(db, "owner/missing")).rejects.toThrow("unavailable");
 });
 it("enforces tokens before fetch, refunds measured usage only, and retains ambiguous reservations", async () => {
   const env = { DB: budgetDb().db, SPARK_DAILY_TOKENS: "100" };
@@ -49,7 +49,7 @@ it("Spark reserves every outbound call, caps output, and never fetches when disa
 });
 it("Spark retains reservations on provider 429 and network failures", async () => {
   const env = sparkTestEnv();
-  globalThis.fetch = (async () => new Response("", { status: 429 })) as typeof fetch;
+  globalThis.fetch = (async () => new Response("", { status: 429 })) as unknown as typeof fetch;
   await expect(sparkChat(env, [])).rejects.toThrow("429");
   const used = await budgetUsage(env, "owner");
   expect(used.calls).toBe(1);
@@ -57,7 +57,7 @@ it("Spark retains reservations on provider 429 and network failures", async () =
 });
 it("GitHub blocks queued calls after 429 and honors primary reset on a successful final request", async () => {
   let requests = 0;
-  globalThis.fetch = (async () => { requests++; return new Response("", { status: 429, headers: { "retry-after": "120" } }); }) as typeof fetch;
+  globalThis.fetch = (async () => { requests++; return new Response("", { status: 429, headers: { "retry-after": "120" } }); }) as unknown as typeof fetch;
   await expect(gh("/test", "429-test")).rejects.toThrow("rate limit");
   await expect(gh("/test", "429-test")).rejects.toThrow("rate limit");
   expect(requests).toBe(1);
@@ -65,14 +65,14 @@ it("GitHub blocks queued calls after 429 and honors primary reset on a successfu
   expect(githubCooldown(new Response("{}", { headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.ceil((now + 600000) / 1000)) } }), now, 0, false)).toBeGreaterThanOrEqual(now + 600000);
 });
 it("GitHub recognizes secondary 403 without treating permission errors as rate limits", async () => {
-  globalThis.fetch = (async () => Response.json({ message: "You have exceeded a secondary rate limit." }, { status: 403 })) as typeof fetch;
+  globalThis.fetch = (async () => Response.json({ message: "You have exceeded a secondary rate limit." }, { status: 403 })) as unknown as typeof fetch;
   await expect(gh("/secondary", "secondary-test")).rejects.toThrow("rate limit");
-  globalThis.fetch = (async () => Response.json({ message: "Resource not accessible" }, { status: 403 })) as typeof fetch;
+  globalThis.fetch = (async () => Response.json({ message: "Resource not accessible" }, { status: 403 })) as unknown as typeof fetch;
   await expect(gh("/permissions", "permission-test")).rejects.toThrow("failed (403)");
 });
 it("GitHub polling sends an ETag and returns the cached body only on 304", async () => {
   let calls = 0, conditional = "";
-  globalThis.fetch = (async (_url, init) => { calls++; conditional = new Headers(init?.headers).get("if-none-match") ?? ""; return calls === 1 ? Response.json({ value: 42 }, { headers: { etag: '"v1"' } }) : new Response(null, { status: 304 }); }) as typeof fetch;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => { calls++; conditional = new Headers(init?.headers).get("if-none-match") ?? ""; return calls === 1 ? Response.json({ value: 42 }, { headers: { etag: '"v1"' } }) : new Response(null, { status: 304 }); }) as unknown as typeof fetch;
   expect(await gh("/etag", "etag-test")).toEqual({ value: 42 });
   expect(await gh("/etag", "etag-test")).toEqual({ value: 42 });
   expect(conditional).toBe('"v1"');
@@ -82,11 +82,40 @@ it("PostHog 429 respects seconds and HTTP dates; jitter never shortens retry dea
   expect(retryAfterMs("120", now)).toBe(120000);
   expect(retryAfterMs(new Date(now + 120000).toUTCString(), now)).toBeGreaterThan(119000);
   for (const retry of ["120", new Date(now + 120000).toUTCString()]) {
-    globalThis.fetch = (async () => new Response("", { status: 429, headers: { "retry-after": retry } })) as typeof fetch;
+    globalThis.fetch = (async () => new Response("", { status: 429, headers: { "retry-after": retry } })) as unknown as typeof fetch;
     try { await fetchRouteDays({ apiKey: "fake", projectId: "1" }); throw new Error("expected 429"); }
     catch (e) { expect((e as { retryAfter: number }).retryAfter).toBeGreaterThan(119); }
   }
   expect(pollDelay(300000, 1, 1200000, () => 0.5)).toBe(1230000);
   expect(pollDelay(300000, 0, 0, () => 0)).toBe(300000);
   expect(pollDelay(300000, 0, 0, () => 0.9)).toBeGreaterThan(300000);
+});
+it("one player's factories share a budget identity and collaborators cannot reset it", async () => {
+  const { db, sqlite } = budgetDb();
+  const account = await budgetAccount(db, "owner/repo");
+  sqlite.exec("INSERT INTO user_repos VALUES('owner/another', 1), ('owner/repo', 0)");
+  expect(await budgetAccount(db, "owner/another")).toBe(account);
+  expect(await budgetAccount(db, "owner/repo")).toBe(account);
+  await reserveSpark({ DB: db, SPARK_DAILY_CALLS: "1" }, account, 10);
+  await expect(reserveSpark({ DB: db, SPARK_DAILY_CALLS: "1" }, await budgetAccount(db, "owner/another"), 10)).rejects.toThrow("exhausted");
+});
+it("persisted GitHub cooldown applies to a replacement credential and Worker context", async () => {
+  const { registerGithubCredential } = await import("../src/github");
+  const { db } = budgetDb();
+  const scope = `github:test:${crypto.randomUUID()}`;
+  await registerGithubCredential("old-credential", db, scope);
+  let requests = 0;
+  globalThis.fetch = (async () => { requests++; return new Response("", { status: 429, headers: { "retry-after": "180" } }); }) as unknown as typeof fetch;
+  await expect(gh("/limited", "old-credential")).rejects.toThrow("rate limit");
+  const saved = await db.prepare("SELECT next_at FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number }>();
+  expect(saved!.next_at).toBeGreaterThan(Date.now() + 179000);
+  // A different local scope with copied persistent state models a new isolate with no in-memory cooldown.
+  await db.prepare("INSERT INTO api_limits(scope, next_at, failures) SELECT ?, next_at, failures FROM api_limits WHERE scope = ?").bind(scope + ":new-isolate", scope).run();
+  await registerGithubCredential("replacement-credential", db, scope + ":new-isolate");
+  await expect(gh("/limited", "replacement-credential")).rejects.toThrow("rate limit");
+  expect(requests).toBe(1);
+});
+it("Spark fails closed without its ledger or user identity", async () => {
+  globalThis.fetch = (() => { throw new Error("must never fetch"); }) as unknown as typeof fetch;
+  await expect(sparkChat({ META_API_KEY: "test" }, [])).rejects.toThrow("ledger/account unavailable");
 });
