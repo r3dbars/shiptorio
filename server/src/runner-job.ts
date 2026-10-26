@@ -8,6 +8,7 @@ export interface RunnerJob {
   id: string; itemId: string; repo: string; harness: z.infer<typeof RunnerHarness>;
   allowedPaths: string[]; status: "planning" | "ready" | "running" | "completed" | "failed";
   steps?: { tool: string; reason: string; result: string; at: number }[];
+  planningStarted?: boolean;
   baseSha?: string; baseBranch?: string; branch: string; plan?: string;
   lease?: string; pairId?: string; deadline?: number; prUrl?: string; error?: string;
 }

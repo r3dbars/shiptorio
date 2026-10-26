@@ -61,6 +61,11 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (!item || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber) throw new Error("Item is not available to build");
       if (!input.allowedPaths.every(runnerPathAllowed)) throw new Error("Unsafe approved path");
       const jobs = await this.runnerJobs();
+      for (const old of jobs.filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now())) {
+        const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${old.id}`);
+        if (stored) await this.ctx.storage.put(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
+        old.status = "failed";
+      }
       if (jobs.some(j => ["planning", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
@@ -76,6 +81,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
     try {
+      if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
+      job.planningStarted = true;
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       const item = this.state.items.find(i => i.id === job.itemId);
       if (!item) throw new Error("Item removed");
       const token = await installationToken(this.env, this.meta.installationId);
