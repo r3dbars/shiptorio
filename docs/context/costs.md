@@ -8,7 +8,7 @@ Goal 10, 2026-10-26. Advances the Oct 30 power/resource guard checkpoint.
 | --- | --- | --- |
 | `SPARK_DAILY_CALLS` | `200` | Outbound Meta calls per player per UTC day |
 | `SPARK_DAILY_TOKENS` | `500000` | Input + output tokens, including in-flight reservations |
-| `SPARK_MAX_OUTPUT_TOKENS` | `2048` | `max_completion_tokens` per request; hard ceiling 16384 |
+| `SPARK_MAX_OUTPUT_TOKENS` | `6144` | `max_completion_tokens` per request, reasoning included (2048 cut game master replies off mid-JSON in the Testing run); hard ceiling 16384 |
 | `FACTORY_CONCURRENT_JOBS` | `1` | Planning/awaiting approval/ready/running runner jobs plus hosted jobs per factory |
 | `SPARK_DISABLED` | unset | Set `1` to stop all outbound Spark requests and new job admission/claims |
 | `ADMIN_LOGINS` | `r3dbars` in Wrangler config | Comma-separated operator logins allowed to read `/admin` |

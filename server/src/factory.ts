@@ -713,8 +713,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (job.needsApproval) await this.publishRunnerMove(this.runnerApprovalMove(job, item));
       await this.save();
       this.log("success", job.needsApproval ? "Your plan is ready to review. Nothing builds until you approve." : `Plan ready for ${job.harness}. Waiting for the local runner.`, item.id);
-    } catch {
-      job.status = "failed"; job.error = "Planning failed. Check the setup, then approve a new try.";
+    } catch (e) {
+      // Keep the cause on the job and in the log, so a failed plan says why instead of just failing.
+      const why = e instanceof Error ? e.message.replace(/\s+/g, " ").slice(0, 240) : "unknown error";
+      job.status = "failed"; job.error = `Planning failed: ${why}. Check the setup, then approve a new try.`;
       await this.accountPut(`runnerJob:${job.id}`, job);
       this.log("error", job.error, job.itemId);
     }
