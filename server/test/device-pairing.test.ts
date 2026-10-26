@@ -24,7 +24,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
   const key = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", key.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
   const stores = new Map<string, Map<string, any>>(), instances = new Map<string, InstanceType<typeof Factory>>();
-  const env = { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get(name: string) {
+  const env = { ASSETS: { fetch: async () => new Response("static runner docs: uninstall") }, ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get(name: string) {
     if (!instances.has(name)) {
       const data = new Map<string, any>(); stores.set(name, data);
       let serial: Promise<unknown> = Promise.resolve();
