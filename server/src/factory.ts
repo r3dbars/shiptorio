@@ -62,11 +62,19 @@ export class Factory extends DurableObject<FactoryEnv> {
     else if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
   }
 
+  private runnerApprovalMove(job: RunnerJob, item: Item): Move {
+    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before your local ${job.harness === "codex" ? "Codex" : "Claude"} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${job.harness === "codex" ? "Codex" : "Claude"}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
+  }
+
   private async offerRunnerPlan(): Promise<void> {
     if (!(await this.load())) return;
     const s = this.state!;
     if (s.move && s.move.stage !== "resources") return;
-    if ((await this.runnerJobs()).some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
+    const jobs = await this.runnerJobs();
+    const awaiting = jobs.find(j => j.status === "awaiting_approval" && j.plan && j.approvalMoveId);
+    const awaitingItem = awaiting && s.items.find(i => i.id === awaiting.itemId);
+    if (awaiting && awaitingItem) { await this.publishRunnerMove(this.runnerApprovalMove(awaiting, awaitingItem)); return; }
+    if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     let item: Item | undefined;
@@ -196,7 +204,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         });
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
-        const move: Move = { id: crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before your local ${job.harness === "codex" ? "Codex" : "Claude"} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...job.plan.split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${job.harness === "codex" ? "Codex" : "Claude"}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
+        const move = this.runnerApprovalMove(job, item);
         job.approvalMoveId = move.id;
         this.state.move = move;
       }
@@ -835,11 +843,13 @@ export class Factory extends DurableObject<FactoryEnv> {
       const m = pickAssembler(s, item);
       if (!m) continue;
       if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
+        const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
+        if (presence?.harnesses.length && Date.now() - presence.seenAt < 20000 || jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
         await this.patch({
           machines: [{ ...m, state: "blocked" }],
           bottleneck: { stage: "resources", wip: s.items.filter((i) => i.state === "queued").length, ageMs: Math.max(0, now - item.updatedAt), throughputPerHour: 0, valueAtRisk: s.items.reduce((total, i) => total + (i.value ?? 0), 0), summary: "Plug in Claude or ChatGPT to start building." },
         });
-        if (!s.move || s.move.stage !== "resources") {
+        if (!s.move) {
           s.move = { id: crypto.randomUUID(), title: "Plug in Claude or ChatGPT to start building.", why: "Spark directs the factory; your local subscription agents write the code.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
           await this.save();
           this.broadcast({ type: "move", move: s.move });
