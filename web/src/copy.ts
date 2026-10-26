@@ -288,6 +288,7 @@ export const PANEL = {
   in: "IN",
   out: "OUT",
   lately: "Lately",
+  machine: { IDLE: "Idle", WORKING: "Working", BLOCKED: "Needs you" },
   stats: {
     onBelt: "On the belt",
     topScar: "Top scar",
