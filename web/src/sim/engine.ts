@@ -430,7 +430,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "patch", patch: { foreman: s.foreman } });
     // The sim's decision log mirrors the live one, tagged simulated so nobody mistakes it for a real model call.
     const decision = THOUGHT_FOR[line.tool];
-    if (line.tool === "start_job" && opts.itemId) score((sc) => sc.open.includes(opts.itemId!) ? sc : { ...sc, plans: sc.plans + 1, open: [opts.itemId!, ...sc.open].slice(0, 50) });
+    if (line.tool === "start_job" && opts.itemId) planned(opts.itemId);
     if (decision && s.brain) {
       const item = opts.itemId ? s.items.find((i) => i.id === opts.itemId) : undefined;
       s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
@@ -444,6 +444,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     s.brain = { ...s.brain, score: fn(s.brain.score ?? { plans: 0, shipped: 0, reviews: 0, catches: 0, open: [] }) };
     emit({ type: "patch", patch: { brain: s.brain } });
   };
+
+  const planned = (id: string) => score((sc) => (sc.open.includes(id) ? sc : { ...sc, plans: sc.plans + 1, open: [id, ...sc.open].slice(0, 50) }));
 
   const apply = (p: Patch) => {
     for (const it of p.items ?? []) {
@@ -756,6 +758,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (!a) continue;
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
+          planned(item.id);
           break;
         }
         case "working": {
