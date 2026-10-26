@@ -1,6 +1,7 @@
 // Reversible macOS background service; credentials stay in the existing gitignored vars file.
 import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { pairingConfig } from "../src/service-config";
 const runnerRoot = resolve(import.meta.dir, "..");
 const support = resolve(process.env.HOME!, "Library/Application Support/Shiptorio");
 const label = "com.shiptorio.runner";
@@ -20,7 +21,9 @@ if (action === "install") {
   await mkdir(support, { recursive: true, mode: 0o700 });
   const bundled = await Bun.build({ entrypoints: [resolve(runnerRoot, "src/cli.ts")], target: "bun", outdir: support, naming: "runner.mjs" });
   if (!bundled.success) throw new Error("Unable to bundle the background runner");
-  await copyFile(resolve(runnerRoot, ".dev.vars"), resolve(support, ".dev.vars"));
+  const vars = Bun.file(resolve(support, ".dev.vars"));
+  const config = pairingConfig(await Bun.file(resolve(runnerRoot, ".dev.vars")).text(), await vars.exists() ? await vars.text() : undefined);
+  await writeFile(resolve(support, ".dev.vars"), config, { mode: 0o600 });
   await chmod(resolve(support, ".dev.vars"), 0o600);
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

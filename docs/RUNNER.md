@@ -35,6 +35,12 @@ revokes renewal too. An already-expired token needs owner pairing again. The Mac
 be awake and the subscription CLI signed in. These are connection requirements, not
 per-plan terminal commands.
 
+The installed helper is bundled into `~/Library/Application Support/Shiptorio`, with a
+private `.dev.vars` and isolated `.work` checkouts there. It does not run code from the
+mutable development checkout. Updating it preserves a newer renewed token for the same
+pairing; a new owner pairing replaces the old one. `runner paths` reports non-secret
+data roots for diagnosis. Re-run service install after updating the runner code.
+
 ## Advanced operator commands
 
 Run from the repository with Bun installed (or prefix these with `npx --yes`):

@@ -10,6 +10,10 @@ const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
 const harnessPath = (h: Job["harness"]) => Bun.which(h === "codex" ? "codex" : "claude");
 const available = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+if (process.argv[2] === "paths") {
+  console.log(JSON.stringify({ root, checkout, harnesses: available }));
+  process.exit(0);
+}
 async function command(args: string[], cwd: string, env = cleanEnv, timeout = 120000): Promise<string> {
   const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => p.kill(), timeout);
