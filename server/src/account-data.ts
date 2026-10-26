@@ -145,7 +145,10 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
     }
     const dataKeys = [repo.full_name, ...(repo.repo_id ? [`repo:${repo.repo_id}`] : [])];
     for (const dataKey of dataKeys) for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(dataKey));
-    if (repo.repo_id) statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope GLOB ?").bind(`archived:repo:${repo.repo_id}:installation:*`));
+    if (repo.repo_id) {
+      statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope GLOB ?").bind(`archived:repo:${repo.repo_id}:installation:*`));
+      statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`installation:${repo.installation_id}:repo-id:${repo.repo_id}`));
+    }
     statements.push(env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(repo.full_name));
   }
   // Remove installs owned by this account, including ones with no remaining repos.

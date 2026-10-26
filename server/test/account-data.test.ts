@@ -185,7 +185,7 @@ describe("account data controls", () => {
     if (!columns.results.some(c => c.name === "repo_id")) await env.DB.prepare("ALTER TABLE repos ADD COLUMN repo_id INTEGER").run();
     await env.DB.prepare("UPDATE repos SET repo_id = 101, archived_at = 1 WHERE full_name = 'alice/app'").run();
     await env.DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('repo:101', 77, 'Archived', 'closed')").run();
-    await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, updated_at) VALUES ('archived:repo:101:installation:1:repo:alice/old-name', 'sentry', 'encrypted-archived', 1)").run();
+    await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, updated_at) VALUES ('archived:repo:101:installation:1:repo:alice/old-name', 'sentry', 'encrypted-archived', 1), ('installation:1:repo-id:101', 'posthog', 'encrypted-stable', 1)").run();
     await env.DB.prepare("DELETE FROM user_repos WHERE repo = 'alice/app'").run();
     const kv = (env.CACHE as unknown as {get(key: string): Promise<string|null>});
     await env.CACHE.put("cred:support:1:101", "encrypted-support-key");
@@ -201,7 +201,7 @@ describe("account data controls", () => {
     expect(data.size).toBe(0); expect(legacy.data.size).toBe(0); expect(alarm).toBeNull();
     expect(await kv.get("cred:support:1:101")).toBeNull();
     expect((await env.DB.prepare("SELECT * FROM pull_requests WHERE repo = 'repo:101'").all()).results).toEqual([]);
-    expect((await env.DB.prepare("SELECT * FROM credentials WHERE scope GLOB 'archived:repo:101:*'").all()).results).toEqual([]);
+    expect((await env.DB.prepare("SELECT * FROM credentials WHERE scope GLOB 'archived:repo:101:*' OR scope = 'installation:1:repo-id:101'").all()).results).toEqual([]);
   });
   it("a cold factory cannot revive after erasure even without saved repo metadata", async () => {
     const {env, user} = await fixture();
