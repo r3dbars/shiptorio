@@ -196,3 +196,4 @@ and delayed deals after source close. Browser smoke checks reuse the authorized 
 handle and always choose explicit simulator mode; no real PR is created by playtests.
 
 - 2026-10-26: Name the dock action Place so it cannot be confused with the Build view. The field-guide tooltip counts concepts found, separate from the tour step count.
+- 2026-10-26: Local supervisor checks need an OS boundary, not just an environment allowlist. macOS verification uses deny-default sandbox-exec with checkout/private scratch writes, isolated HOME, and offline checks; unsupported platforms fail closed. Dependency installation is an explicit scripts-disabled network phase. Publication must not trust repository-controlled Git hooks/configuration after agent/test execution.

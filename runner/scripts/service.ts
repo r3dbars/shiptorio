@@ -28,7 +28,7 @@ if (action === "install") {
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const args = [runtime, `--env-file=${resolve(support, ".dev.vars")}`, resolve(support, "runner.mjs"), "watch"];
-  const path = [...new Set([dirname(runtime), ...[Bun.which("codex"), Bun.which("claude")].filter(Boolean).map(p => dirname(p!)), "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
+  const path = [...new Set([dirname(runtime), ...[Bun.which("codex"), Bun.which("claude"), Bun.which("node")].filter(Boolean).map(p => dirname(p!)), "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
   await mkdir(dirname(plist), { recursive: true });
   await writeFile(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${esc(a)}</string>`).join("")}</array><key>WorkingDirectory</key><string>${esc(support)}</string><key>EnvironmentVariables</key><dict><key>HOME</key><string>${esc(process.env.HOME!)}</string><key>PATH</key><string>${esc(path)}</string><key>SHIPTORIO_RUNNER_ROOT</key><string>${esc(support)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${esc(resolve(support, "service.log"))}</string><key>StandardErrorPath</key><string>${esc(resolve(support, "service-error.log"))}</string></dict></plist>`, { mode: 0o600 });
   await launch(["bootout", `${domain}/${label}`], false);
