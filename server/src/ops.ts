@@ -1,3 +1,4 @@
+import { budgetReport } from "./budget";
 import { Hono } from "hono";
 import type { Env } from "./index";
 import { FLAG_DEFAULTS, flagKey, flagName, readFlags } from "./flags";
@@ -39,11 +40,14 @@ for (const path of ["/admin", "/api/admin/*"]) ops.use(path, async (c, next) => 
   await next();
 });
 ops.get("/admin", async c => {
+  const budget = await budgetReport(c.env);
+  if (c.req.query("format") === "json") return c.json(budget);
   const flags = await readFlags(c.env);
   const rows = Object.entries(flags).map(([name, enabled]) => `<tr><td>${name}</td><td>${enabled}</td><td><form method="post" action="/api/admin/flags"><input type="hidden" name="name" value="${name}"><input name="user" aria-label="GitHub login" placeholder="Global (or GitHub login)"><select name="value"><option>true</option><option>false</option><option>inherit</option></select><button>Save</button></form></td></tr>`).join("");
   c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-  return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Shiptorio flags</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}td{padding:12px}input,select,button{padding:8px}</style><h1>Feature flags</h1><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table><p>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</p></html>`);
+  return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Shiptorio flags</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}td{padding:12px}input,select,button{padding:8px}</style><h1>Feature flags</h1><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table><p>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</p><h2>Spark budget</h2><p>UTC daily usage including in-flight reservations, shared across each player’s factories.</p><pre>${escape(JSON.stringify(budget, null, 2))}</pre></html>`);
 });
+ops.get("/api/admin/budget", async c => c.json(await budgetReport(c.env)));
 ops.get("/api/admin/flags", async c => {
   const user = c.req.query("user");
   if (user && !/^[a-zA-Z0-9-]{1,39}$/.test(user)) return c.json({ error: "invalid user" }, 400);

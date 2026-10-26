@@ -43,3 +43,9 @@ export async function budgetUsage(env: BudgetEnv, account: string) {
   const usage = await env.DB!.prepare("SELECT calls, tokens FROM spark_usage WHERE account = ? AND day = ?").bind(account, day).first<{ calls: number; tokens: number }>();
   return { day, account, calls: usage?.calls ?? 0, tokens: usage?.tokens ?? 0, limits: budgetLimits(env) };
 }
+
+export async function budgetReport(env: BudgetEnv) {
+  const day = utcDay();
+  const rows = await env.DB!.prepare("SELECT account, calls, tokens FROM spark_usage WHERE day = ? ORDER BY account").bind(day).all();
+  return { day, limits: budgetLimits(env), usage: rows.results };
+}

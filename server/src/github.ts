@@ -119,6 +119,11 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     const delay = state.next - Date.now();
     if (delay > 5000) throw new RateLimitError(state.next);
     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+    // Another isolate may have discovered a cooldown while this request waited for its slot.
+    if (context) {
+      const latest = await context.db.prepare("SELECT next_at FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number }>();
+      if (latest && latest.next_at > Date.now() + 5000) throw new RateLimitError(latest.next_at);
+    }
     const cacheKey = `${key}:${path}`;
     const cached = (init.method ?? "GET") === "GET" ? etags.get(cacheKey) : undefined;
     const headers = new Headers({ accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": UA, "x-github-api-version": "2022-11-28" });

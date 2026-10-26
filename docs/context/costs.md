@@ -11,7 +11,7 @@ Goal 10, 2026-10-26. Advances the Oct 30 power/resource guard checkpoint.
 | `SPARK_MAX_OUTPUT_TOKENS` | `2048` | `max_completion_tokens` per request; hard ceiling 16384 |
 | `FACTORY_CONCURRENT_JOBS` | `1` | Planning/awaiting approval/ready/running runner jobs plus hosted jobs per factory |
 | `SPARK_DISABLED` | unset | Set `1` to stop all outbound Spark requests and new job admission/claims |
-| `ADMIN_LOGINS` | `r3dbars` | Comma-separated operator logins allowed to read `/admin` |
+| `ADMIN_LOGINS` | `r3dbars` in Wrangler config | Comma-separated operator logins allowed to read `/admin` |
 
 Set overrides in `server/wrangler.jsonc` vars and deploy through the normal reviewed CI path.
 For local development use ignored `server/.dev.vars`. These are non-secret controls; never put API
@@ -44,8 +44,8 @@ existing honest `brain.fallbacks` counter records the denial and its specific re
 longer records the same failed Spark call twice. Successful thoughts append a small `Budget: calls/cap,
 tokens/cap today (UTC)` line in **how it thinks**, using the existing thought payload; no protocol/UI
 contract change. `/admin` shows current-day usage and limits (`?format=json` for machine-readable data),
-and requires a live operator session. The accounts goal landed before this work; its admin dashboard
-has not landed, so this is a minimal server-rendered budget view for it to incorporate.
+and requires a live operator session. The budget section is integrated into the existing ops dashboard,
+with `/api/admin/budget` for operators. Missing `ADMIN_LOGINS` denies admin access.
 
 Standalone `bun run spark:check` uses a separate persistent SQLite ledger at
 `~/.cache/shiptorio/spark-check.sqlite`, with the same defaults and shell variable overrides. It never
@@ -75,7 +75,8 @@ bypasses reservation checks and does not share the deployed D1 ledger. No creden
   spend or outbound 429 loop to protect. Durable webhook retries already back off. Any future Sentry
   poller must use `retryAfterMs`/`pollDelay` and persist its schedule like PostHog.
 
-References: [GitHub rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api),
+References: [Meta completion limits](https://dev.meta.ai/docs/protocols/chat-completions),
+[GitHub rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api),
 [GitHub conditional requests](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api),
 [PostHog API](https://posthog.com/docs/api).
 

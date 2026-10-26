@@ -1,6 +1,4 @@
-import { budgetLimits, utcDay } from "./budget";
 import { Hono, type Context, type Next } from "hono";
-import { isAllowed } from "./session";
 import { ops } from "./ops";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
@@ -146,18 +144,6 @@ app.get("/api/sources", async (c) => {
   const asked = (c.req.query("repo") ?? "").toLowerCase();
   const repo = REPO_RE.test(asked) && (await canSeeRepo(c.env, user, asked)) ? asked : null;
   return c.json({ sources: [githubSource.status(c.env), sentryStatus(repo ? await sentryCreds(c.env, repo) : {}, url, repo), postHogStatus(repo ? await postHogCreds(c.env, repo) : {}, url, c.env.FAKE_POSTHOG === "1")] });
-});
-
-// Budget operations are restricted to explicit operators, separate from map access.
-app.get("/admin", async (c) => {
-  const user = await signedIn(c);
-  const login = user?.login;
-  if (!login || !isAllowed(c.env.ADMIN_LOGINS ?? "r3dbars", login)) return c.text("admin login required", 403);
-  const rows = await c.env.DB.prepare("SELECT account, calls, tokens FROM spark_usage WHERE day = ? ORDER BY account").bind(utcDay()).all();
-  const report = { day: utcDay(), limits: budgetLimits(c.env), usage: rows.results };
-  if (c.req.query("format") === "json") return c.json(report);
-  const escaped = JSON.stringify(report, null, 2).replace(/[&<>]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[char]!);
-  return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><title>Shiptorio budget</title><h1>Factory budget</h1><p>UTC daily Spark calls and tokens, including in-flight reservations. Account budgets are shared across its factories.</p><pre>${escaped}</pre></html>`);
 });
 
 // ---------- connect a mine (Sentry, PostHog): paste the key once ----------
