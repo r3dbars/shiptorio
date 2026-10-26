@@ -1,3 +1,4 @@
+import { securityObjectName } from "../src/rate-limit";
 import { FactoryState } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { describe, expect, it, mock } from "bun:test";
@@ -30,7 +31,7 @@ async function fixture() {
     delete: async (key: string) => { kv.delete(key); },
     list: async ({cursor}: {cursor?: string}) => { const keys = [...kv.keys()].sort(); const offset = Number(cursor ?? 0); return { keys: keys.slice(offset, offset + 2).map(name => ({name})), list_complete: offset + 2 >= keys.length, cursor: String(offset + 2) }; },
   }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => objects.get(repo)!.factory }, ASSETS: {fetch: async () => new Response("app")} } as unknown as Env;
-  for (const repo of ["alice/app", "bob/app", "org/shared"]) {
+  for (const repo of ["alice/app", "bob/app", "org/shared", await securityObjectName("user:11"), await securityObjectName("user:alice")]) {
     const record = { data: new Map<string, unknown>([
       ["state", FactoryState.parse({repo, baseBranch: "main", districts: [], ...starterLine(), items: [{id: "gh-1", kind: "bug", source: "github_issue", title: "Fix", district: "/", state: "ore", attempts: 0, updatedAt: 1}], science: {red: 0, green: 0, grey: 0, blue: 0}, trust: 0.5, tick: 0, research: {done: ["types"], spent: 0}})],
       ["meta", {repo, installationId: repo === "alice/app" ? 1 : 2}],
@@ -131,6 +132,7 @@ describe("account data controls", () => {
     expect(await env.DB.prepare("SELECT * FROM installations WHERE id = 1").first()).toBeNull();
     expect(objects.get("alice/app")!.data.size).toBe(0);
     expect(objects.get("alice/app")!.alarm).toBeNull();
+    expect(objects.get(await securityObjectName("user:11"))!.data.size).toBe(0);
     expect(objects.get("alice/app")!.closed).toBeGreaterThan(0);
     expect([...kv.keys()].sort()).toEqual(["cred:sentry:bob/app", "unrelated"]);
     expect(await currentUser(env, aliceCookie)).toBeNull();

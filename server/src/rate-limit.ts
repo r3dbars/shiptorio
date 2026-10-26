@@ -26,10 +26,14 @@ export async function consumeBudget(storage: Storage, budget: Budget, now = Date
 }
 
 interface LimiterEnv { FACTORY: { idFromName(name: string): DurableObjectId; get(id: DurableObjectId): { securityLimit(budget: Budget): Promise<LimitResult> } } }
-export async function rateLimit(env: LimiterEnv, subject: string, budget: Budget): Promise<LimitResult> {
+export async function securityObjectName(subject: string): Promise<string> {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(subject));
   const hash = [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join("");
-  return env.FACTORY.get(env.FACTORY.idFromName(`security:${hash}`)).securityLimit(budget);
+  return `security:${hash}`;
+}
+
+export async function rateLimit(env: LimiterEnv, subject: string, budget: Budget): Promise<LimitResult> {
+  return env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).securityLimit(budget);
 }
 
 // Cloudflare overwrites this header at the edge. Never use X-Forwarded-For,

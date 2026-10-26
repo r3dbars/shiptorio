@@ -1,3 +1,4 @@
+import { securityObjectName } from "./rate-limit";
 import type { FactoryState } from "@shiptorio/shared";
 import type { PermitBook } from "./permits";
 import { reposFor, type User, type RepoRow } from "./accounts";
@@ -67,6 +68,9 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   for (const repo of repos) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(repo.full_name), now).run();
   for (const repo of repos) await factory(env, repo.full_name).eraseAccountData();
   await purgeKV(env, repos, user.login);
+  for (const subject of [`user:${user.id}`, `user:${user.login.toLowerCase()}`]) {
+    await env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).eraseAccountData();
+  }
   const statements: D1PreparedStatement[] = [];
   const tables = new Set((await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{name: string}>()).results.map(t => t.name));
   for (const repo of repos) {
