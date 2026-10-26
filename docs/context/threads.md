@@ -1,4 +1,4 @@
-# Claude project threads (as of 2026-10-26 ~19:40 UTC)
+# Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
@@ -41,9 +41,24 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 | #73 | Live ship loop: gauntlet stations, AI review, verify bay, merge gate | merged |
 | #84 | New onboarding (welcome intro, two worlds, field guide) | merged |
 | #81, #82, #83, #86 | Codex: in-game plan approval, scar-driven rework + real verify receipts, approval card fix, runner independent of checkout | merged |
-| #85 | Codex: repeatable whole-game playtests + papercut reports | draft, Codex working |
-| #87 | Made by the game itself (Spark plan → local Codex → verify bay): direnv path guard | green, on the launch pad for Justin |
-| #3, #4 | Old pre-#1 drafts | stale, close them |
+| #85 | Codex: repeatable whole-game playtests + papercut reports | merged |
+| #87 | Made by the game itself (Spark plan → local Codex → verify bay): direnv path guard | merged |
+| #89, #91 | Sound for every gauntlet station; stations feel alive (verdict beats, CAUGHT! moment) | merged |
+| #90, #97 | PostHog + Sentry mines: errors and traffic drops become ore | merged |
+| #92 | Launch permits for real: earn, auto-launch, revoke, Automated % | merged |
+| #93, #112 | Map tags name the code each machine works on; v3 consistency pass | merged |
+| #94, #114 | Intro off by default, empty mines, Make it yours tools; welcome tour on the real map (`?intro=1`) | merged |
+| #99, #102, #110, #115, #116 | Art passes 1–4: real rocket, calm paving, mechanical machines + stations, conveyor frames | merged |
+| #109, #120, #121 | Playtest round 3, dogfood friction log, Spark capture plan | merged |
+| #122 | Orbit watch: last station watches every launch for 24h | merged |
+| #124 | Muse Spark visibly drives the factory: decision log, game master, plan comments | merged |
+| #127 | Research tree: unlock real checks with science packs | merged |
+| #95, #98, #101, #111 | Codex: phone + Firefox login, security hardening, fresh CI before merge | merged |
+| #96 | Codex: live bottleneck + check-in deck from factory state | merged |
+| #100, #103, #117 | Codex: mobile/onboarding papercuts, first-run loop never idles | merged |
+| #104, #123, #126 | Codex: sandboxed local verify, release receipts, orbit replay deadlines | merged |
+| #118, #119 | Codex: live repo picker, disposed factories stop reconnecting | merged |
+| #3, #4 | Old pre-#1 drafts | closed |
 
 ## Codex (outside the Claude project)
 
