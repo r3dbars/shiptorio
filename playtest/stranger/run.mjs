@@ -88,8 +88,9 @@ const page = await context.newPage();
 const consoleErrors = [];
 const consoleWarnings = [];
 const socketMessages = [];
+let sawFactoryWork = false;
 page.on("websocket", socket => {
-  socket.on("framereceived", frame => { try { const value = JSON.parse(String(frame.payload)); socketMessages.push({ type: value.type, text: value.text, itemCount: value.state?.items?.length, move: value.state?.move?.title }); } catch {} });
+  socket.on("framereceived", frame => { try { const value = JSON.parse(String(frame.payload)); if (value.state?.items?.length || value.patch?.items?.length) sawFactoryWork = true; socketMessages.push({ type: value.type, text: value.text, itemCount: value.state?.items?.length ?? value.patch?.items?.length, move: value.state?.move?.title ?? value.move?.title }); } catch {} });
   socket.on("close", () => socketMessages.push({ type: "socket-closed" }));
 });
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
@@ -152,12 +153,19 @@ try {
     // the live map is up when the top bar shows and the factory has its folders
     await page.locator(".topbar").waitFor({ timeout: 30000 });
   });
-  await step("first move says: plug in Claude or ChatGPT", async () => {
-    await page.getByText(/plug in claude or chatgpt/i).first().waitFor({ timeout: 20000 });
+  await step("real factory work reaches the agent handoff", async () => {
+    await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: 20000 });
+    // A sheet opened by URL alone is insufficient: real signed-install backlog must reach the browser.
+    await new Promise((resolve, reject) => {
+      const poll = setInterval(() => { if (sawFactoryWork) { clearInterval(poll); clearTimeout(deadline); resolve(); } }, 25);
+      const deadline = setTimeout(() => { clearInterval(poll); reject(new Error("No real factory backlog arrived over the live socket")); }, 10000);
+    });
+    report.powerOpenedAutomatically = await page.getByRole("region", { name: "Power", exact: true }).isVisible();
   });
-  await step("the suggested button opens Power, not a dead end", async () => {
-    await page.getByRole("button", { name: /connect a local agent/i }).click();
-    await page.getByRole("region", { name: "Power" }).waitFor({ timeout: 5000 });
+  await step("the agent handoff reaches Power, not a dead end", async () => {
+    // Current onboarding opens Power immediately on a first repo; older flows use the suggested card.
+    if (!report.powerOpenedAutomatically) await page.getByRole("button", { name: /connect a local agent/i }).click();
+    await page.getByRole("region", { name: "Power", exact: true }).waitFor({ timeout: 5000 });
   });
   // Past here a stranger needs the runner on their own computer (Codex goal 11, PR #166) and a real
   // Spark key, then the first rocket: see docs/context/new-user-path.md for what's left.

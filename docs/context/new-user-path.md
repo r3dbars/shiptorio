@@ -72,3 +72,9 @@ The real Worker/browser dry run then completed all eight steps locally in 15.4 s
 the installed repo appeared automatically in 3 seconds. That observation is desktop fixture
 proof, not a physical-phone or real-GitHub account claim. Current-main full `bun run check`
 passes (549 tests, two platform skips); the Linux Stranger workflow is the release gate.
+
+After the runner-onboarding merge, the first repo intentionally opens Power with
+`connect=1`. The final desktop run accepts that immediate handoff or the visible
+agent card, and additionally requires real issue data received over the live socket;
+a URL-only empty Power sheet cannot satisfy it. All eight current-main steps passed
+in 26.0 seconds. Linux CI must run this updated acceptance path before merge.

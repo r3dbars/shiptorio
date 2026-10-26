@@ -1335,6 +1335,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (pending) {
       if (pending.repo !== repo.toLowerCase()) throw new Error("Repository mismatch");
       await pending.promise;
+      if (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase()) throw new Error("Repository mismatch");
       if (this.meta?.installationId !== installationId) await this.ensure(repo, installationId);
       return;
     }
