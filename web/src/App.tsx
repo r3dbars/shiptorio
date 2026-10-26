@@ -13,6 +13,8 @@ import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, useTutorial } from "./ui/tutorial";
 import { useFactorySound } from "./sound/useFactorySound";
+import { sound } from "./sound/engine";
+import { ShipCelebration } from "./ui/ShipCelebration";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -129,6 +131,7 @@ export function App() {
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
 
   const launchItem = (item: Item) => {
+    sound.play("arm");
     if (cfg.kind === "sim") send({ type: "launch_pr", itemId: item.id });
     else if (item.prUrl) window.open(item.prUrl, "_blank", "noreferrer");
   };
@@ -218,6 +221,7 @@ export function App() {
     <div className="app">
       <main className="floor">
         <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} ping={show("line") ? ping : null} />
+        <ShipCelebration state={state} />
 
         <header className="topbar">
           <div className="chips">
