@@ -49,6 +49,9 @@ Justin chose Cloudflare, since their domain already lives there. The current sha
 - One Cloudflare Worker named `shiptorio`. It serves the web app as static assets and
   the API on the same origin.
 - Hono on the Worker for routes.
+- **Accounts**: GitHub sign-in through the App's user-to-server OAuth, D1 `users` / `sessions` /
+  `user_repos`, and a factory is only served to players whose GitHub account reaches its repo
+  (`server/src/accounts.ts`, `requireUser`). **API summary: [`docs/context/accounts.md`](docs/context/accounts.md).**
 - A **GitHub App** (not OAuth) for sign-in, installs, webhooks (`pull_request`, `push`,
   `check_suite`) and opening PRs as `shiptorio[bot]`.
 - A **Factory Durable Object per repo** (`server/src/factory.ts`) is the factory engine:
@@ -187,6 +190,8 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
   the Deploy run on `main` went green before calling it live. Don't merge drafts that are stale (#3, #4) or a PR
   another agent is still working on. GitHub's repo auto-merge setting is not on yet; Justin can flip it in
   Settings → General → "Allow auto-merge".
+- **D1 migrations:** before you merge, merge `main` into your branch and renumber your `server/migrations/NNNN_*.sql` to
+  the next free number. `server/test/migrations.test.ts` fails CI on a duplicate or gap. Deploy applies them to prod.
 - **Never merge a PR the factory built** (runner PRs from `shiptorio[bot]` / `shiptorio/runner-*` branches, or anything
   in r3dbars/Testing) directly on GitHub. Those go through the in-game gauntlet and the Launch card, or auto-launch
   via a launch permit. A green CI is not enough: the verify bay and AI review can still flag them (#128 got merged

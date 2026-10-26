@@ -24,7 +24,7 @@ import {
   type Thought,
   type ThoughtDecision,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
@@ -60,6 +60,8 @@ const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
+const REVIEW_COMMENT_TRIES = 5;
+interface PendingComment { pr: number; body: string; itemId?: string; tries: number }
 const workRevision = (item: Item) => issueRevision(item.title, JSON.stringify({ body: item.body ?? "", failure: item.failure ?? "", scars: item.scars ?? [] }));
 
 interface Meta {
@@ -375,7 +377,6 @@ export class Factory extends DurableObject<FactoryEnv> {
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
-      job.inputRevision = await workRevision(item);
       await this.ctx.storage.put(`runnerJob:${id}`, job);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
@@ -392,8 +393,9 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
       job.planningStarted = true;
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
-      const item = this.state.items.find(i => i.id === job.itemId);
+      let item = this.state.items.find(i => i.id === job.itemId);
       if (!item) throw new Error("Item removed");
+      const beforeRefresh = await workRevision(item);
       const token = await installationToken(this.env, this.meta.installationId);
       const tree = await repoTree(token, this.meta.repo);
       job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
@@ -409,6 +411,14 @@ export class Factory extends DurableObject<FactoryEnv> {
         changedFiles = await prFiles(token, job.repo, job.reworkPr);
         job.prTestFiles = changedFiles.filter(f => f.status !== "removed" && runnerPathAllowed(f.filename) && /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/i.test(f.filename)).map(f => f.filename);
       }
+      // Refresh persisted input before planning, never an already-approved/ready job.
+      const input = await freshIssueInput(token, job.repo, Number(item.id.slice(3)));
+      const current = this.state.items.find(i => i.id === job.itemId);
+      if (!current || beforeRefresh !== await workRevision(current) || this.state.items.find(i => i.id === job.itemId) !== current) throw new Error("Issue changed during input refresh");
+      item = { ...current, title: input.title.slice(0, 500), body: input.body.slice(0, 16000), url: input.url };
+      await this.patch({ items: [item] });
+      job.inputRevision = await workRevision(item);
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       job.steps = [];
       await this.decisionData();
       const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
@@ -570,13 +580,27 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (!installationId) return;
       const removed = p.action === "deleted" ? await this.env.DB.prepare("SELECT full_name FROM repos WHERE installation_id = ?").bind(installationId).all<{ full_name: string }>() : { results: p.repositories_removed ?? [] };
       if (p.action === "deleted") {
-        await this.env.DB.batch([this.env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId), this.env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId)]);
+        await this.env.DB.batch([
+          this.env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId),
+          this.env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId),
+          this.env.DB.prepare("DELETE FROM user_repos WHERE installation_id = ?").bind(installationId),
+          this.env.DB.prepare("DELETE FROM user_installations WHERE installation_id = ?").bind(installationId),
+        ]);
       } else {
         const added = p.repositories ?? p.repositories_added ?? [];
         await this.env.DB.batch([
           this.env.DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (?, ?)").bind(installationId, p.installation?.account?.login ?? ""),
           ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES (?, ?)").bind(r.full_name.toLowerCase(), installationId)),
         ]);
+        // Whoever installed it can open those maps right away, without signing in again. Only a
+        // Shiptorio account gets rows; anyone else picks the repos up from GitHub when they sign in.
+        const sender = p.sender?.id;
+        if (Number.isSafeInteger(sender) && added.length) {
+          await this.env.DB.batch([
+            this.env.DB.prepare("INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login) SELECT id, ?, ? FROM users WHERE id = ?").bind(installationId, p.installation?.account?.login ?? "", sender!),
+            ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO user_repos (user_id, repo, installation_id) SELECT id, ?, ? FROM users WHERE id = ?").bind(r.full_name.toLowerCase(), installationId, sender!)),
+          ]);
+        }
         for (const r of added) {
           const factory = this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase()));
           await factory.enqueueGitHub(`install-${installationId}-${r.full_name}-${p.action}`, "shiptorio_install", { repository: { full_name: r.full_name }, installation: p.installation });
@@ -584,6 +608,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       for (const r of removed.results) {
         await this.env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(r.full_name.toLowerCase()).run();
+        await this.env.DB.prepare("DELETE FROM user_repos WHERE repo = ?").bind(r.full_name.toLowerCase()).run();
         await this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase())).disconnectGitHub();
       }
       return;
@@ -670,9 +695,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env), this.publicUrl()) : postHogStatus(await postHogCreds(this.env), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
-    // The connect page needs to know which map to plug the mine into.
+    // The connect page needs to know which map to plug the mine into, and keys are per map.
     const repo = this.meta?.repo ?? this.state?.repo;
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, repo), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
   }
 
@@ -688,7 +713,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     await this.ctx.storage.put(`${kind}Linked`, true);
     await this.ctx.storage.delete(`${kind}Disconnected`);
-    await linkRepo(this.env, kind, this.state!.repo);
+    // The legacy shared keys stay with the first map that linked them; per-repo keys don't need a link.
+    if (!(await linkedRepo(this.env, kind))) await linkRepo(this.env, kind, this.state!.repo);
     const deposit = `ore-${kind}`;
     const splitter = this.state!.machines.find((m) => m.type === "splitter");
     const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
@@ -720,7 +746,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put(`${kind}Disconnected`, true);
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
-    await linkRepo(this.env, kind, null);
+    if ((await linkedRepo(this.env, kind)) === this.state!.repo.toLowerCase()) await linkRepo(this.env, kind, null);
     const deposit = `ore-${kind}`;
     await this.patch({
       sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
@@ -743,7 +769,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
-    const creds = await postHogCreds(this.env);
+    const creds = await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo);
     try {
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
@@ -1068,6 +1094,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.scheduleOrbitDeadline();
     await this.refreshDecisions();
     this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);
+    // A merge on GitHub doesn't wait for the gauntlet. Say which stations never got to look, so a missing review is explained.
+    const skipped = (launched.inspection?.stages ?? []).filter(st => st.gate !== "human" && st.state !== "passed").map(st => st.gate === "ai" ? "AI review" : st.gate === "ci" ? "CI" : "the verify bay");
+    if (skipped.length) this.log("warn", `PR #${prNumber} was merged before ${skipped.join(" and ")} finished, so ${skipped.length === 1 ? "it" : "they"} never signed off.`, launched.id);
     if (this.state!.move?.itemId === launched.id) await this.publishGauntletMove(null);
   }
 
@@ -1116,16 +1145,46 @@ export class Factory extends DurableObject<FactoryEnv> {
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = current();
         if (!now) return;
-        await gh(`/repos/${this.meta.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body: reviewComment(verdict, builder) }) }).catch(() => null);
+        await this.postReviewComment(token, pr, reviewComment(verdict, builder), item.id);
         await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
-    } catch {
-      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr}. It will retry on the next event.`, item.id);
+    } catch (e) {
+      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr} (${e instanceof Error ? e.message : "unknown error"}). It will retry on the next event.`, item.id);
     } finally {
       this.gauntletRunning = false;
+    }
+  }
+
+  /**
+   * Spark's review verdict goes on the PR as a comment so it's checkable in GitHub. A failed post is never silent:
+   * it's logged, shows in "how it thinks", and is queued to retry on the next ticks.
+   */
+  private async postReviewComment(token: string, pr: number, body: string, itemId?: string, tries = 0): Promise<boolean> {
+    try {
+      await gh(`/repos/${this.meta!.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body }) });
+      if (tries) this.log("success", `AI review comment posted on PR #${pr} after ${tries} ${tries === 1 ? "retry" : "retries"}.`, itemId);
+      return true;
+    } catch (e) {
+      const why = e instanceof Error ? e.message : "unknown error";
+      const queue = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
+      const giveUp = tries + 1 >= REVIEW_COMMENT_TRIES;
+      await this.ctx.storage.put("pendingReviewComments", [...queue.filter(c => c.pr !== pr), ...(giveUp ? [] : [{ pr, body, itemId, tries: tries + 1 }])]);
+      this.log(giveUp ? "error" : "warn", giveUp ? `AI review comment on PR #${pr} still won't post (${why}). Gave up after ${REVIEW_COMMENT_TRIES} tries; check the app's pull request and issue write permission.` : `AI review comment on PR #${pr} didn't post (${why}). Retrying.`, itemId);
+      await this.note({ decision: "review", by: "spark", ms: 0, itemId, title: `Comment on PR #${pr}`, outcome: giveUp ? "Verdict made, but the comment never reached GitHub" : "Verdict made, comment didn't post yet; retrying", reason: why });
+      return false;
+    }
+  }
+
+  private async retryReviewComments(): Promise<void> {
+    const queue = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
+    if (!queue.length || !this.meta) return;
+    const token = await installationToken(this.env, this.meta.installationId);
+    for (const c of queue) if (await this.postReviewComment(token, c.pr, c.body, c.itemId, c.tries)) {
+      const left = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
+      await this.ctx.storage.put("pendingReviewComments", left.filter(x => x.pr !== c.pr));
     }
   }
 
@@ -1601,6 +1660,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.processDeliveries();
     if (!(await this.load())) return;
     await this.pollPostHog();
+    await this.retryReviewComments().catch(() => null); // each failure already logs itself
     await this.planRunnerJobs();
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
