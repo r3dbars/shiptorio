@@ -312,6 +312,8 @@ launchable only through the game. See [security.md](security.md) for the invento
 
 - 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.
 
+- 2026-10-26: Progression remains opt-in behind ?progress=1. Browser progress and morning briefs are scoped to the signed-in GitHub identity (simulator separate); card XP waits for authoritative deck removal. Stored progression is validated before rendering, level math is constant-time, and visible launch bonuses are retained instead of repaid after a 200-record rollover.
+
 Credential isolation (Oct 26, goal 3): mine credentials move from global/per-repo KV
 plaintext to installation + repo + kind D1 envelopes. AES-GCM uses fresh data keys
 wrapped by CRED_MASTER_KEY; scope/kind/version are authenticated. First authorized
