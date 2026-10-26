@@ -503,6 +503,7 @@ export const THINKS = {
     orbit: "Judged a comeback",
     research: "Picked a check",
     permit: "Weighed a permit",
+    support: "Read a customer message",
     route: "Picked the power plant",
     growth: "Picked an experiment",
   } as Record<ThoughtDecision, string>,
@@ -543,7 +544,7 @@ export const GUIDE = {
   /** Entries no lesson teaches yet. */
   extra: {
     sentry: { title: "Biters", text: "Sentry errors attack the folder they hit. Fixes that kill biters score big.", hint: "Connect Sentry" },
-    feedback: { title: "Feedback", text: "Customer emails arrive as ore, linked to the errors they describe.", hint: "Coming soon" },
+    feedback: { title: "Feedback", text: "Customer emails arrive as ore, linked to the errors they describe.", hint: "Connect your support inbox" },
     users: { title: "Users", text: "PostHog shows how many real users each fix reached.", hint: "Connect PostHog" },
     station: { title: "Checks", text: "Add checks to the gauntlet. Every check makes a yes safer.", hint: "Ship a few PRs" },
     permit: { title: "Launch permits", text: "A folder that keeps shipping clean earns the right to ship on its own.", hint: "Earn trust in one folder" },
@@ -558,6 +559,9 @@ export const YOURS = {
   anyFolder: "any folder",
   agentFor: (id: string) => `Agent for ${id}`,
   notPlugged: (name: string) => `${name} isn't plugged in yet: pair the runner`,
+  level: "Autonomy",
+  levelNow: (level: string) => `The planner is at ${level}. Turn it down and it asks first again. Going back up is earned on a card.`,
+  levelDown: (level: string) => `Down to ${level}`,
   permits: "Launch permits",
   permitsWhy: "These folders ship on their own once every check passes. Turn one off and its PRs wait for you again.",
   permitOff: "Turn off",
@@ -583,6 +587,7 @@ export const YOURS = {
 export const SOURCE = {
   sentry: { name: "Sentry", adds: "Errors land as ore the moment they happen, and biters show which folder they hit. Fixes that kill biters score big." },
   posthog: { name: "PostHog", adds: "See what users really do. User signals decide what gets built first, and your score counts the users each fix reached." },
+  email: { name: "support", adds: "Customer emails and Intercom chats come up at the support well. Each one is sorted, linked to the work it's about, and gets a reply drafted. You read it and tap Send; nothing goes out on its own. When a fix ships, you get an “it's fixed” reply to send." },
   connected: (name: string) => `${name} is connected`,
   connect: (name: string) => `Connect ${name}`,
   open: (name: string) => `Open ${name}`,
@@ -821,4 +826,21 @@ export const PROGRESS = {
   xpRule: "XP only comes from real results: ships, clean ships, launches that hold, checks you add, cards you answer.",
   notifyTitle: (n: number) => `${plural(n, "card")} waiting on you`,
   notifyBody: "The factory needs a decision.",
+};
+
+// The crash screen (ErrorBoundary): a blown boiler plate with one way back.
+export const CRASH = {
+  eyebrow: "Boiler room · fault",
+  state: "Blocked",
+  title: "Boiler blew",
+  body: "Something in this screen overheated and the gauges went dark. Your repo, its PRs and every card you answered are untouched.",
+  hint: "Restart relights the furnace and puts you back on the map.",
+  restart: "Restart",
+  ref: (id: string) => `Fault ${id.slice(0, 8)}`,
+};
+
+// Brand art alt text (web/src/ui/Logo.tsx).
+export const BRAND = {
+  wordmarkAlt: "Shiptorio",
+  markAlt: "Shiptorio",
 };

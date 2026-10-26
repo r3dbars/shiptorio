@@ -1,6 +1,7 @@
 import { isLocal } from "./auth";
 import { sameOriginPath } from "./redirect";
 import { makeSessionCookie, readSession } from "./session";
+import { gatePage } from "./gate-page";
 
 export interface AccessEnv {
   APP_PASSWORD?: string;
@@ -28,7 +29,7 @@ export function secureTransport(request: Request): Response | null {
   return new Response(null, { status: stalePost ? 303 : 308, headers: { location: url.toString(), "cache-control": "no-store" } });
 }
 
-const page = (error = "", next = "/", csrf = "") => `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shiptorio</title><style>body{background:#1b2448;color:#e6e1d6;font:18px system-ui;display:grid;place-items:center;min-height:95vh}main{max-width:340px;padding:24px}input,button{box-sizing:border-box;width:100%;padding:14px;margin-top:16px;font:inherit;border-radius:8px;border:0}button{background:#f2a93b;color:#1b2448;cursor:pointer}p{line-height:1.5}small{color:#ff9d9d}</style><main><h1>Shiptorio</h1><p>The factory must grow.</p><form method="post" action="/access"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><input type="hidden" name="next" value="${escapeHtml(next)}"><input aria-label="Password" id="password" name="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required autofocus><button type="submit">Enter the factory</button><small role="alert">${error}</small></form></main></html>`;
+const page = (error = "", next = "/", csrf = "", nonce = "") => gatePage(error, escapeHtml(next), escapeHtml(csrf), nonce);
 
 // Signed double-submit proof lets privacy browsers submit without Origin/Referer.
 // It contains no credentials, expires after ten minutes, and is bound to this host.
@@ -43,7 +44,10 @@ async function formSignature(secret: string, origin: string, payload: string): P
 async function gate(request: Request, secret: string, error = "", next = "/", status = 401): Promise<Response> {
   const payload = `${Date.now() + FORM_TTL}.${crypto.randomUUID()}`;
   const token = `${payload}.${await formSignature(secret, new URL(request.url).origin, payload)}`;
-  return new Response(page(error, next, token), { status, headers: { ...headers,
+  // Per-response nonce: the page's one inline script runs, nothing injected can.
+  const nonce = crypto.randomUUID().replace(/-/g, "");
+  return new Response(page(error, next, token, nonce), { status, headers: { ...headers,
+    "content-security-policy": `${headers["content-security-policy"]}; script-src 'nonce-${nonce}'`,
     "set-cookie": `${FORM_COOKIE}=${token}; Path=/access; HttpOnly; Secure; SameSite=Strict; Max-Age=600`,
   } });
 }
@@ -88,6 +92,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
+  // The support inlets: email carries its own secret token in the path, Intercom signs with HMAC.
+  if (/^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(url.pathname) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
   // The docs site is public.
   if (isPublicDocs(url.pathname) && ["GET", "HEAD"].includes(request.method)) return null;
   // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.

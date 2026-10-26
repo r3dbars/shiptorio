@@ -6,10 +6,20 @@ const migration = readFileSync(new URL("../migrations/0006_encrypted_credentials
 export function credentialDB(original?: { prepare(sql: string): unknown }) {
   const sqlite = new Database(":memory:");
   sqlite.exec(migration);
+  sqlite.exec("CREATE TABLE deleted_factories (repo_hash TEXT PRIMARY KEY, deleted_at INTEGER)");
+  sqlite.exec("CREATE TABLE credential_test_repos (full_name TEXT, repo_id INTEGER, installation_id INTEGER); INSERT INTO credential_test_repos VALUES ('alice/shop', 501, 12), ('r3dbars/testing', 502, 1), ('example/shop', 503, 1), ('r3dbars/demo', 504, 1), ('owner/repo', 505, 1)");
   return {
     sqlite,
     prepare(sql: string): any {
-      if (!/\bcredentials\b/.test(sql)) return original!.prepare(sql);
+      if (sql.startsWith("SELECT r.repo_id, r.installation_id FROM repos")) {
+        let args: any[] = [];
+        return { bind(...values: any[]) { args = values; return this; }, async first() { return sqlite.query("SELECT repo_id, installation_id FROM credential_test_repos WHERE full_name = ? AND installation_id = ?").get(...args); } };
+      }
+      if (sql.startsWith("SELECT r.full_name FROM repos")) {
+        let args: any[] = [];
+        return { bind(...values: any[]) { args = values; return this; }, async first() { return sqlite.query("SELECT full_name FROM credential_test_repos WHERE repo_id = ? AND installation_id = ?").get(...args); } };
+      }
+      if (!/\b(credentials|deleted_factories)\b/.test(sql)) return original!.prepare(sql);
       let values: any[] = [];
       const statement = {
         bind(...args: any[]) { values = args; return statement; },

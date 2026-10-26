@@ -10,6 +10,9 @@ dist/
 runner/.work/
 runner/local-model.json
 playtest-results/
+.test-runtime/
+test-results/
+playwright-report/
 
 runner/.agent-home/
 web/test/a11y/out/

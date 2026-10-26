@@ -8,6 +8,7 @@ import { isAllowed, makeSessionCookie, ownerProof } from "./session";
 import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
 import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
+import { ironPage } from "./ironPage";
 
 // ---- login (GitHub App user-to-server OAuth) ----
 
@@ -40,7 +41,7 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const expected = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_oauth_state=([^;]+)/)?.[1];
-  if (!code || !state || state !== expected) return new Response("bad login state, try again", { status: 400 });
+  if (!code || !state || state !== expected) return signInJam("Sign-in jammed", "The sign-in ticket didn't match this browser (bad login state). It happens if the tab sat open too long or cookies are blocked. Try again.", 400);
   const tokenRes = await observedFetch("github", "https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
@@ -52,9 +53,9 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
     }),
   });
   const { access_token } = (await tokenRes.json()) as { access_token?: string };
-  if (!access_token) return new Response("GitHub login failed", { status: 401 });
+  if (!access_token) return signInJam("GitHub login failed", "GitHub didn't hand back a sign-in. Nothing was changed. Try again.", 401);
   const user = await gh<GitHubUser>("/user", access_token);
-  if (!Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
+  if (!Number.isSafeInteger(user.id) || typeof user.login !== "string") return signInJam("GitHub login failed", "GitHub sent back an account we couldn't read. Nothing was changed. Try again.", 401);
   await registerGithubCredential(access_token, env.DB, `github:user:${user.id}`);
   user.login = user.login.toLowerCase();
   const invite = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_invite=([^;]+)/)?.[1];
@@ -99,6 +100,9 @@ export function appManifest(publicUrl: string) {
     url: publicUrl,
     hook_attributes: { url: `${publicUrl}/webhooks/github` },
     redirect_url: `${publicUrl}/setup/callback`,
+    // after installing, GitHub sends the player back to pick their repo instead of leaving them on GitHub
+    setup_url: `${publicUrl}/github/installed`,
+    setup_on_update: true,
     callback_urls: [`${publicUrl}/auth/callback`],
     public: false,
     // Agents only ever open PRs; a human merge launches the rocket.
@@ -110,19 +114,23 @@ export function appManifest(publicUrl: string) {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// A failed GitHub round trip lands on an iron plate with one way back in, not a bare text line.
+function signInJam(title: string, detail: string, status: number): Response {
+  return new Response(ironPage({ title, eyebrow: "Sign-in", alarm: true, body: `<h1>${escapeHtml(title)}</h1><p>${escapeHtml(detail)}</p><a class="btn" href="/auth/login">Try again</a><a class="btn ghost" href="/">Back to the front door</a>` }),
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
 export function setupPage(base: string, env: Env): Response {
   if (env.GITHUB_APP_ID) return new Response("Shiptorio's GitHub App is already set up.", { status: 404 });
   const manifest = escapeHtml(JSON.stringify(appManifest(base)));
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Shiptorio setup</title>
-<body style="font-family:system-ui;background:#1B1A18;color:#E6E1D6;padding:40px">
-<h1>Create the Shiptorio GitHub App</h1>
+    ironPage({ title: "Setup", eyebrow: "Owner · setup", body: `<h1>Create the Shiptorio GitHub App</h1>
 <p>This sends you to GitHub with everything pre-filled. You just confirm.</p>
 <form action="https://github.com/settings/apps/new" method="post">
 <input type="hidden" name="manifest" value="${manifest}">
-<button style="font-size:18px;padding:10px 18px">Create GitHub App</button>
-</form></body>`,
-    { headers: { "content-type": "text/html" } },
+<button>Create GitHub App</button>
+</form>` }),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
   );
 }
 
@@ -136,17 +144,14 @@ export async function setupCallback(url: URL, env: Env): Promise<Response> {
   };
   const cmd = (name: string) => `npx wrangler secret put ${name}`;
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Shiptorio setup</title>
-<body style="font-family:system-ui;background:#1B1A18;color:#E6E1D6;padding:40px;max-width:900px">
-<h1>App created: ${escapeHtml(app.slug)}</h1>
+    ironPage({ title: "Setup", eyebrow: "Owner · setup", wide: true, body: `<h1>App created: ${escapeHtml(app.slug)}</h1>
 <p>GitHub only shows these once. Run each command and paste the value. Then
-<a style="color:#FFA200" href="${escapeHtml(app.html_url)}/installations/new">install the app on your repos</a>.</p>
+<a href="${escapeHtml(app.html_url)}/installations/new">install the app on your repos</a>.</p>
 <h3>${cmd("GITHUB_APP_ID")}</h3><pre>${app.id}</pre>
 <h3>${cmd("GITHUB_CLIENT_ID")}</h3><pre>${escapeHtml(app.client_id)}</pre>
 <h3>${cmd("GITHUB_CLIENT_SECRET")}</h3><pre>${escapeHtml(app.client_secret)}</pre>
 <h3>${cmd("GITHUB_WEBHOOK_SECRET")}</h3><pre>${escapeHtml(app.webhook_secret)}</pre>
-<h3>${cmd("GITHUB_APP_PRIVATE_KEY")}</h3><pre>${escapeHtml(app.pem)}</pre>
-</body>`,
-    { headers: { "content-type": "text/html", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } },
+<h3>${cmd("GITHUB_APP_PRIVATE_KEY")}</h3><pre>${escapeHtml(app.pem)}</pre>` }),
+    { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff" } },
   );
 }

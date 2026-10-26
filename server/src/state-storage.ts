@@ -59,6 +59,12 @@ async function readState(storage: Pick<Storage, "get">): Promise<unknown> {
   return JSON.parse(text);
 }
 
+/** Read-only export: includes chunked state without writing migrations during account deletion. */
+export async function readFactoryState(storage: Pick<Storage, "get">): Promise<StoredFactoryState | null> {
+  const raw = await readState(storage);
+  return raw == null ? null : migrateFactoryState(raw);
+}
+
 export async function loadFactoryState(storage: Storage): Promise<StoredFactoryState | null> {
   return storage.transaction(async tx => {
     const raw = await readState(tx);
@@ -70,18 +76,19 @@ export async function loadFactoryState(storage: Storage): Promise<StoredFactoryS
   });
 }
 
-async function writeState(storage: Pick<Storage, "get" | "put" | "delete">, state: StoredFactoryState) {
+async function writeState(storage: Pick<Storage, "get" | "put" | "delete">, state: StoredFactoryState, assertActive: () => void = () => {}) {
   const previous = await storage.get<unknown>("state");
   const text = JSON.stringify(state), bytes = new TextEncoder().encode(text).byteLength;
   const chunks = bytes > INLINE_BYTES ? Math.ceil(text.length / CHUNK_CHARS) : 0;
-  for (let i = 0; i < chunks; i++) await storage.put(chunkKey(i), text.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS));
+  for (let i = 0; i < chunks; i++) { assertActive(); await storage.put(chunkKey(i), text.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS)); }
+  assertActive();
   await storage.put("state", chunks ? { format: CHUNK_FORMAT, chunks, bytes, schemaVersion: STATE_SCHEMA_VERSION } : state);
   if (isChunks(previous)) for (let i = chunks; i < previous.chunks; i++) await storage.delete(chunkKey(i));
 }
 
-export async function saveFactoryState(storage: Storage, state: FactoryState): Promise<void> {
+export async function saveFactoryState(storage: Storage, state: FactoryState, assertActive: () => void = () => {}): Promise<void> {
   const next = persistedState(state);
-  await storage.transaction(tx => writeState(tx, next));
+  await storage.transaction(tx => writeState(tx, next, assertActive));
 }
 
 export function stateSize(state: FactoryState) {
