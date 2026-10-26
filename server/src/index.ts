@@ -332,6 +332,20 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   return c.json(await factory(c.env, identity.repo).finishRunner(identity.pairId, parsed.data));
 });
 
+// Exports are stricter than map access: only the repository owner can download them.
+app.get("/api/repos/:owner/:repo/export", async (c) => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (c.get("user").login.toLowerCase() !== c.req.param("owner").toLowerCase()) return c.json({ error: "owner required" }, 403);
+  const connected = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first();
+  if (!connected) return c.json({ error: "factory not found" }, 404);
+  const data = await factory(c.env, repo).exportState();
+  if (!data) return c.json({ error: "factory not found" }, 404);
+  c.header("Content-Disposition", `attachment; filename="${repo.replace("/", "-")}-factory.json"`);
+  c.header("X-Content-Type-Options", "nosniff");
+  return c.json(data);
+});
+
 app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
