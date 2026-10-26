@@ -6,7 +6,7 @@ import { join } from "node:path";
 export interface LocalModelConfig { baseUrl: string; model: string }
 export const OLLAMA_URL = "http://localhost:11434/v1";
 /** Runner-side guardrails. The server routes conservatively too; this is the second lock. */
-export const LOCAL_LIMITS = { maxFiles: 3, maxFileBytes: 64_000, maxOutputBytes: 400_000, timeoutMs: 10 * 60 * 1000 } as const;
+export const LOCAL_LIMITS = { maxFiles: 3, maxFileBytes: 64_000, maxOutputBytes: 400_000, maxResponseBytes: 800_000, maxDiscoveryBytes: 64_000, timeoutMs: 10 * 60 * 1000 } as const;
 
 const PRIVATE_HOST = /^(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|[\w-]+\.local)$/i;
 
@@ -29,12 +29,41 @@ export function localModelConfig(env: NodeJS.ProcessEnv, file?: { model?: unknow
 }
 export const LOCAL_MODEL_FILE = "local-model.json";
 
+/** Cap the whole HTTP envelope before parsing, including unknown fields and chunked bodies. */
+async function boundedJson(response: Response, limit: number): Promise<unknown> {
+  const declared = response.headers.get("content-length");
+  if (declared && /^\d+$/.test(declared) && Number(declared) > limit) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error("Local model HTTP response is too large");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Local model HTTP response is empty");
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > limit) throw new Error("Local model HTTP response is too large");
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally { reader.releaseLock(); }
+  const body = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  return JSON.parse(new TextDecoder().decode(body));
+}
+
 /** Ollama, llama.cpp and LM Studio all answer GET /v1/models with { data: [{ id }] }. */
 export async function detectLocalModel(config: LocalModelConfig, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; models: string[]; reason?: string }> {
   try {
-    const r = await fetchImpl(`${config.baseUrl}/models`, { signal: AbortSignal.timeout(3000) });
+    const r = await fetchImpl(`${config.baseUrl}/models`, { signal: AbortSignal.timeout(3000), redirect: "error" });
     if (!r.ok) return { ok: false, models: [], reason: `endpoint answered ${r.status}` };
-    const body = await r.json() as { data?: { id?: unknown }[] };
+    const body = await boundedJson(r, LOCAL_LIMITS.maxDiscoveryBytes) as { data?: { id?: unknown }[] };
     const models = (body.data ?? []).map(m => m.id).filter((id): id is string => typeof id === "string");
     // Some servers serve exactly one model and name it oddly; accept that case.
     const ok = models.includes(config.model) || models.length === 1;
@@ -112,11 +141,11 @@ export async function runLocalAssembler(job: { plan: string; allowedPaths: strin
   if (!job.allowedPaths.length || job.allowedPaths.length > LOCAL_LIMITS.maxFiles) throw new Error(`Local power takes 1-${LOCAL_LIMITS.maxFiles} files; route this job to a subscription`);
   const files = await readScope(work, job.allowedPaths);
   const r = await fetchImpl(`${config.baseUrl}/chat/completions`, {
-    method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(LOCAL_LIMITS.timeoutMs),
+    redirect: "error", method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(LOCAL_LIMITS.timeoutMs),
     body: JSON.stringify({ model: config.model, messages: localMessages(job.plan, files), temperature: 0.1, stream: false, response_format: { type: "json_object" } }),
   });
   if (!r.ok) throw new Error(`Local model failed (${r.status})`);
-  const reply = await r.json() as { choices?: { message?: { content?: unknown } }[] };
+  const reply = await boundedJson(r, LOCAL_LIMITS.maxResponseBytes) as { choices?: { message?: { content?: unknown } }[] };
   const content = reply.choices?.[0]?.message?.content;
   if (typeof content !== "string") throw new Error("Local model reply has no message");
   const edits = parseLocalEdits(content, job.allowedPaths);
