@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback Factory · belts</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFA200}a:hover{color:#FFC14D}
+.bh,.bv{display:flex;background-color:#262523;background-image:repeating-linear-gradient(90deg,#1C1B19 0 2px,transparent 2px 7px);box-shadow:inset 0 0 0 2px #121110,4px 5px 0 rgba(0,0,0,.35)}
+.bh{flex-direction:column}
+.bv{flex-direction:row;background-image:repeating-linear-gradient(0deg,#1C1B19 0 2px,transparent 2px 7px)}
+.bh>div,.bv>div{flex:1;opacity:.9}
+@keyframes mx{to{background-position:20px 0}}
+@keyframes md{to{background-position:0 20px}}
+@keyframes mu{to{background-position:0 -20px}}
+.cA{background-image:repeating-linear-gradient(45deg,transparent 0 10px,#D4A017 10px 14.14px);animation:mx .45s linear infinite}
+.cB{background-image:repeating-linear-gradient(135deg,transparent 0 10px,#D4A017 10px 14.14px);animation:mx .45s linear infinite}
+.dL{background-image:repeating-linear-gradient(45deg,transparent 0 10px,#D4A017 10px 14.14px);animation:md .45s linear infinite}
+.dR{background-image:repeating-linear-gradient(135deg,transparent 0 10px,#D4A017 10px 14.14px);animation:md .45s linear infinite}
+.uL{background-image:repeating-linear-gradient(135deg,transparent 0 10px,#D4A017 10px 14.14px);animation:mu .45s linear infinite}
+.uR{background-image:repeating-linear-gradient(45deg,transparent 0 10px,#D4A017 10px 14.14px);animation:mu .45s linear infinite}
+@keyframes sx{from{transform:translateX(0)}to{transform:translateX(var(--len))}}
+@keyframes sy{from{transform:translateY(0)}to{transform:translateY(var(--len))}}
+.sx{animation-name:sx;animation-timing-function:linear;animation-iteration-count:infinite}
+.sy{animation-name:sy;animation-timing-function:linear;animation-iteration-count:infinite}
+.mach{background:linear-gradient(#7A776E,#5E5B53);border:2px solid #171614;box-sizing:border-box;box-shadow:inset 0 2px 0 #A3A096,inset 0 -14px 0 #3E3C37,inset 0 -16px 0 #2A2925,10px 12px 0 rgba(0,0,0,.38)}
+@keyframes swing{0%,15%{transform:rotate(0deg)}50%,65%{transform:rotate(180deg)}100%{transform:rotate(360deg)}}
+.arm{animation:swing 1.6s ease-in-out infinite;transform-origin:50% 100%}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 2s linear infinite}
+.spinslow{animation:spin 5s linear infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:.25}}
+.blink{animation:blink 1s steps(1) infinite}
+@keyframes furnace{0%,100%{opacity:1}50%{opacity:.7}}
+.furnace{animation:furnace .5s ease-in-out infinite}
+@keyframes steam{0%{transform:translate(0,0) scale(.6);opacity:.75}100%{transform:translate(-20px,-80px) scale(2.4);opacity:0}}
+.steam{filter:blur(3px);animation:steam 3.2s ease-out infinite}
+@keyframes bot{0%{transform:translate(0,0)}50%{transform:translate(260px,40px)}100%{transform:translate(0,0)}}
+.bot{animation:bot 7s ease-in-out infinite}
+@keyframes launch{0%{transform:translateY(0)}15%{transform:translateY(4px)}100%{transform:translateY(-620px)}}
+.launch{animation:launch 3.5s cubic-bezier(.6,0,.9,.6) forwards}
+@keyframes flame{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.5)}}
+.flame{animation:flame .12s linear infinite;transform-origin:top center}
+@keyframes alert{0%,100%{opacity:1}50%{opacity:.4}}
+.alert{animation:alert .9s ease-in-out infinite}
+@keyframes ripple{to{background-position:30px 12px}}
+.water{animation:ripple 4s linear infinite}
+@keyframes sway{0%,100%{transform:translate(0,0)}50%{transform:translate(1px,-1px)}}
+.sway{animation:sway 3s ease-in-out infinite}
+</style>
+</helmet>
+<div style="width: 1120px; height: 840px; box-sizing: border-box; padding: 24px; background: #1B1A18; color: #E6E1D6; font-family: 'Titillium Web', sans-serif; display: flex; flex-direction: column; gap: 10px; overflow: hidden">
+
+  <header style="height: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; background: #313031; border: 2px solid #111; box-shadow: inset 0 1px 0 #4A4847; padding: 0 14px">
+    <span style="font-size: 20px; font-weight: 700; color: #FFE6C0">Feedback Factory</span>
+    <div style="display: flex; gap: 18px; font-size: 15px; font-weight: 600">
+      <span>Feedback <span style="color: #FFA200">{{feedRate}}/min</span></span>
+      <span>Fixes built <span style="color: #FFA200">{{built}}</span></span>
+      <span>Released <span style="color: #6CCB3C">{{released}}</span></span>
+      <span>Rockets <span style="color: #6CCB3C">{{rockets}}</span></span>
+    </div>
+  </header>
+
+  <div style="position: relative; height: 560px; border: 2px solid #111; overflow: hidden; background-color: #5F6630; background-image: radial-gradient(circle at 18% 22%, rgba(130,112,52,.7), transparent 30%), radial-gradient(circle at 78% 70%, rgba(66,92,38,.7), transparent 35%), radial-gradient(circle at 45% 88%, rgba(118,88,46,.55), transparent 28%), radial-gradient(circle at 92% 12%, rgba(84,104,44,.6), transparent 30%), radial-gradient(rgba(0,0,0,.18) 1px, transparent 1.6px), radial-gradient(rgba(170,160,90,.22) 1px, transparent 1.6px); background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 6px 6px, 9px 9px; background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 3px 4px">
+
+    <div class="water" style="position: absolute; left: 896px; top: 404px; width: 220px; height: 190px; border-radius: 60px 0 0 0; background-color: #2F7E93; background-image: radial-gradient(ellipse at 30% 20%, rgba(255,255,255,.14) 2px, transparent 4px), linear-gradient(160deg, #3B97AC, #24627A); background-size: 30px 12px, 100% 100%; box-shadow: 0 0 0 5px #4E5A2C, 0 0 0 9px #6E6438, inset 6px 6px 14px rgba(0,0,0,.35)"></div>
+
+    <sc-for list="{{ores}}" as="o" hint-placeholder-count="3">
+      <div style="position: absolute; left: 12px; top: {{o.top}}px; width: 146px; height: 144px; border-radius: 40% 50% 45% 55%; background-image: radial-gradient(circle at 35% 35%, {{o.hi}} 0 2px, {{o.color}} 3px 5px, transparent 6px), radial-gradient(circle at 40% 40%, {{o.hi}} 0 1.5px, {{o.dark}} 2.5px 4px, transparent 5px); background-size: 15px 14px, 11px 12px; background-position: 0 0, 6px 5px; filter: drop-shadow(2px 3px 0 rgba(0,0,0,.35))"></div>
+      <span style="position: absolute; left: 16px; top: {{o.labelTop}}px; font-size: 12px; font-weight: 600; color: {{o.color}}; background: rgba(0,0,0,.6); padding: 0 5px">{{o.name}}</span>
+    </sc-for>
+
+    <div style="position: absolute; left: 168px; top: 28px; width: 702px; height: 496px; background-color: #4B4944; background-image: linear-gradient(#34322E 2px, transparent 2px), linear-gradient(90deg, #34322E 2px, transparent 2px), radial-gradient(rgba(255,255,255,.05) 1px, transparent 1.5px); background-size: 18px 18px, 36px 18px, 5px 5px; background-position: 0 0, 0 0, 0 0"></div>
+    <div style="position: absolute; left: 168px; top: 28px; width: 702px; height: 496px; background-image: linear-gradient(90deg, #34322E 2px, transparent 2px); background-size: 36px 36px; background-position: 18px 18px; opacity: .8"></div>
+
+    <sc-for list="{{walls}}" as="w" hint-placeholder-count="8">
+      <div style="position: absolute; left: {{w.left}}px; top: {{w.top}}px; width: {{w.w}}px; height: {{w.h}}px; background: linear-gradient(#A8A397 0 55%, #6B675E 55% 100%); border: 1px solid #1E1D1A; box-shadow: 6px 7px 0 rgba(0,0,0,.35)"></div>
+    </sc-for>
+
+    <div style="position: absolute; left: 872px; top: 172px; width: 192px; height: 196px; background-color: #6E6B62; background-image: linear-gradient(#57544D 2px, transparent 2px), linear-gradient(90deg, #57544D 2px, transparent 2px); background-size: 24px 24px; box-shadow: 5px 6px 0 rgba(0,0,0,.3)"></div>
+
+    <sc-for list="{{trees}}" as="t" hint-placeholder-count="10">
+      <div style="position: absolute; left: {{t.sx}}px; top: {{t.sy}}px; width: {{t.d}}px; height: {{t.d}}px; border-radius: 50%; background: rgba(0,0,0,.38); filter: blur(3px)"></div>
+      <div class="sway" style="position: absolute; left: {{t.x}}px; top: {{t.y}}px; width: {{t.d}}px; height: {{t.d}}px; border-radius: 46% 54% 50% 50%; background: radial-gradient(circle at 35% 30%, {{t.hi}}, {{t.c}} 55%, {{t.dk}} 100%); animation-delay: {{t.delay}}s"></div>
+    </sc-for>
+
+    <sc-for list="{{belts}}" as="b" hint-placeholder-count="16">
+      <div class="{{b.cls}}" style="position: absolute; left: {{b.left}}px; top: {{b.top}}px; width: {{b.w}}px; height: {{b.h}}px">
+        <div class="{{b.a}}"></div>
+        <div class="{{b.b}}"></div>
+      </div>
+    </sc-for>
+
+    <sc-for list="{{items}}" as="it" hint-placeholder-count="30">
+      <div class="{{it.cls}}" style="position: absolute; left: {{it.left}}px; top: {{it.top}}px; width: 8px; height: 8px; background: radial-gradient(circle at 30% 30%, {{it.hi}}, {{it.color}} 60%); border: 1px solid rgba(0,0,0,.7); border-radius: {{it.radius}}; box-shadow: 1px 2px 0 rgba(0,0,0,.45); --len: {{it.len}}px; animation-duration: {{it.dur}}s; animation-delay: {{it.delay}}s"></div>
+    </sc-for>
+
+    <sc-for list="{{drills}}" as="d" hint-placeholder-count="3">
+      <div class="mach" style="position: absolute; left: 58px; top: {{d.top}}px; width: 66px; height: 70px">
+        <div style="position: absolute; left: 12px; top: 8px; width: 38px; height: 38px; border-radius: 50%; background: #2E2D29; box-shadow: inset 0 0 0 3px #4A4843"></div>
+        <div class="spin" style="position: absolute; left: 12px; top: 8px; width: 38px; height: 38px">
+          <div style="position: absolute; left: 16px; top: 2px; width: 6px; height: 34px; background: #8E8A80"></div>
+          <div style="position: absolute; left: 2px; top: 16px; width: 34px; height: 6px; background: #8E8A80"></div>
+        </div>
+        <div class="blink" style="position: absolute; right: 4px; top: 4px; width: 6px; height: 6px; background: #6CCB3C; box-shadow: 0 0 6px #6CCB3C"></div>
+      </div>
+    </sc-for>
+
+    <sc-for list="{{arms}}" as="a" hint-placeholder-count="6">
+      <div style="position: absolute; left: {{a.left}}px; top: {{a.top}}px; width: 18px; height: 18px; background: #3A3832; border: 2px solid #121110; box-sizing: border-box; border-radius: 3px; box-shadow: 3px 4px 0 rgba(0,0,0,.35)">
+        <div class="arm" style="position: absolute; left: 5px; top: -16px; width: 5px; height: 24px; background: linear-gradient(90deg, {{a.color}}, {{a.dark}}); border-radius: 2px; animation-delay: {{a.delay}}s">
+          <div style="position: absolute; left: -3px; top: -3px; width: 11px; height: 6px; background: #2A2925; border-radius: 1px"></div>
+        </div>
+      </div>
+    </sc-for>
+
+    <div class="mach" style="position: absolute; left: 296px; top: 220px; width: 100px; height: 104px">
+      <div style="position: absolute; left: 28px; top: 14px; width: 44px; height: 44px; background: #1E1D1A; border: 2px solid #111; border-radius: 4px; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(185,140,255,.5)">
+        <svg class="spinslow" width="28" height="28" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:#B98CFF;stroke-width:2.2;stroke-linecap:round"><path d="M4 6h16M7 12h10M10 18h4"></path></svg>
+      </div>
+      <div style="position: absolute; left: 8px; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: #3E3C37; box-shadow: inset 0 0 0 2px #2A2925"></div>
+      <div style="position: absolute; right: 8px; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: #3E3C37; box-shadow: inset 0 0 0 2px #2A2925"></div>
+    </div>
+    <span style="position: absolute; left: 290px; top: 330px; width: 112px; text-align: center; font-size: 12px; font-weight: 700; color: #E3D4FF; background: rgba(0,0,0,.6)">Claude sorter</span>
+
+    <sc-for list="{{assemblers}}" as="m" hint-placeholder-count="2">
+      <div class="mach" style="position: absolute; left: 490px; top: {{m.top}}px; width: 112px; height: 116px">
+        <div class="spinslow" style="position: absolute; left: 8px; top: 8px; width: 28px; height: 28px; border: 5px dashed #2A2925; border-radius: 50%; box-sizing: border-box"></div>
+        <div style="position: absolute; right: 10px; top: 8px; width: 10px; height: 30px; background: linear-gradient(90deg, #5A574F, #8E8A80, #5A574F); border-radius: 2px"></div>
+        <div style="position: absolute; left: 36px; top: 26px; width: 40px; height: 40px; background: rgba(0,0,0,.6); border: 2px solid {{m.color}}; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: {{m.color}}">{{m.icon}}</div>
+        <div class="furnace" style="position: absolute; left: 40px; top: 78px; width: 32px; height: 10px; background: linear-gradient(#FFD27A, #FF8A00); border: 2px solid #2A1A08; box-shadow: 0 0 10px 2px rgba(255,140,0,.7)"></div>
+        <div class="blink" style="position: absolute; right: 6px; top: 46px; width: 7px; height: 7px; background: #6CCB3C; box-shadow: 0 0 6px #6CCB3C"></div>
+        <div style="position: absolute; left: 6px; right: 6px; bottom: 4px; height: 6px; background: #121110"><div style="height: 6px; width: {{m.pct}}%; background: #6CCB3C"></div></div>
+      </div>
+      <div class="steam" style="position: absolute; left: 584px; top: {{m.steamTop}}px; width: 16px; height: 16px; border-radius: 50%; background: rgba(230,230,225,.7)"></div>
+      <div class="steam" style="position: absolute; left: 588px; top: {{m.steamTop}}px; width: 14px; height: 14px; border-radius: 50%; background: rgba(230,230,225,.6); animation-delay: 1.1s"></div>
+      <div class="steam" style="position: absolute; left: 582px; top: {{m.steamTop}}px; width: 18px; height: 18px; border-radius: 50%; background: rgba(230,230,225,.5); animation-delay: 2.2s"></div>
+      <div style="position: absolute; left: 478px; top: {{m.labelTop}}px; width: 136px; text-align: center; font-size: 12px; line-height: 1.25; background: rgba(0,0,0,.65); padding: 2px 4px">
+        <b style="color: {{m.color}}">{{m.name}}</b><br>{{m.job}}
+      </div>
+    </sc-for>
+
+    <div class="mach" style="position: absolute; left: 798px; top: 244px; width: 50px; height: 52px; background: linear-gradient(#8A867C, #6A665D)">
+      <div style="position: absolute; left: 8px; top: 16px; width: 30px; height: 4px; background: #34332F"></div>
+      <span style="position: absolute; right: -10px; bottom: -10px; min-width: 20px; height: 20px; padding: 0 3px; box-sizing: border-box; background: #111; color: #FFE6C0; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{chestCount}}</span>
+    </div>
+    <span style="position: absolute; left: 768px; top: 306px; width: 110px; text-align: center; font-size: 12px; background: rgba(0,0,0,.65)">Review chest</span>
+
+    <div class="mach" style="position: absolute; left: 888px; top: 186px; width: 160px; height: 164px; background: linear-gradient(#6A675F, #4E4B45)">
+      <div style="position: absolute; left: 18px; top: 16px; width: 120px; height: 116px; background: #141311; border: 3px solid #0B0B0A; box-sizing: border-box; box-shadow: inset 0 0 18px rgba(0,0,0,.9)"></div>
+      <div style="position: absolute; left: 6px; top: 6px; width: 10px; height: 10px; background: #FFA200; box-shadow: 0 0 8px #FFA200"></div>
+      <div style="position: absolute; right: 6px; top: 6px; width: 10px; height: 10px; background: #FFA200; box-shadow: 0 0 8px #FFA200"></div>
+      <div class="{{rocketClass}}" style="position: absolute; left: 63px; top: 18px; width: 30px; height: 118px">
+        <div style="position: absolute; left: 6px; top: 0; width: 18px; height: 18px; background: #E2DED3; clip-path: polygon(50% 0, 100% 100%, 0 100%)"></div>
+        <div style="position: absolute; left: 6px; top: 18px; width: 18px; height: 78px; background: linear-gradient(90deg, #A8A498, #E2DED3 40%, #B8B4A8)"></div>
+        <div style="position: absolute; left: 9px; top: 34px; width: 12px; height: 4px; background: #D9443B"></div>
+        <div style="position: absolute; left: 0; top: 76px; width: 30px; height: 20px; background: #8A877E; clip-path: polygon(20% 0, 80% 0, 100% 100%, 0 100%)"></div>
+        <sc-if value="{{launching}}" hint-placeholder-val="{{false}}">
+          <div class="flame" style="position: absolute; left: 8px; top: 96px; width: 14px; height: 30px; background: linear-gradient(#FFF2B0, #FFA200 50%, rgba(255,80,0,0)); border-radius: 0 0 50% 50%; box-shadow: 0 0 16px 6px rgba(255,162,0,.6)"></div>
+        </sc-if>
+      </div>
+    </div>
+    <span style="position: absolute; left: 888px; top: 354px; width: 160px; text-align: center; font-size: 12px; background: rgba(0,0,0,.65)">Launch pad · {{parts}}/3 fixes loaded</span>
+
+    <sc-for list="{{poles}}" as="pl" hint-placeholder-count="4">
+      <div style="position: absolute; left: {{pl.x}}px; top: {{pl.y}}px; width: 5px; height: 26px; background: #4A3220; box-shadow: 7px 6px 0 rgba(0,0,0,.35)">
+        <div style="position: absolute; left: -6px; top: 0; width: 17px; height: 4px; background: #5E4028"></div>
+      </div>
+    </sc-for>
+    <svg width="1072" height="560" viewBox="0 0 1072 560" aria-hidden="true" style="position: absolute; left: 0; top: 0; pointer-events: none; fill: none; stroke-width: 1.6">
+      <path d="M182 46 Q340 78 498 46" stroke="#E0902A"></path>
+      <path d="M182 44 Q340 70 498 44" stroke="#C8473A"></path>
+      <path d="M498 46 Q620 74 742 46" stroke="#E0902A"></path>
+      <path d="M498 44 Q620 66 742 44" stroke="#5FAF4A"></path>
+      <path d="M742 46 Q812 120 860 168" stroke="#E0902A"></path>
+      <path d="M182 46 Q190 260 182 474" stroke="#E0902A"></path>
+    </svg>
+
+    <div class="bot" style="position: absolute; left: 560px; top: 22px">
+      <div style="position: absolute; left: 18px; top: 26px; width: 12px; height: 7px; border-radius: 50%; background: rgba(0,0,0,.35); filter: blur(1.5px)"></div>
+      <div style="width: 13px; height: 8px; background: linear-gradient(#E2DED3, #9C988C); border: 1px solid #111; border-radius: 2px"></div>
+    </div>
+    <div class="bot" style="position: absolute; left: 600px; top: 196px; animation-delay: 2.3s">
+      <div style="position: absolute; left: 18px; top: 26px; width: 12px; height: 7px; border-radius: 50%; background: rgba(0,0,0,.35); filter: blur(1.5px)"></div>
+      <div style="width: 13px; height: 8px; background: linear-gradient(#E2DED3, #9C988C); border: 1px solid #111; border-radius: 2px"></div>
+    </div>
+    <div class="bot" style="position: absolute; left: 540px; top: 326px; animation-delay: 4.1s">
+      <div style="position: absolute; left: 18px; top: 26px; width: 12px; height: 7px; border-radius: 50%; background: rgba(0,0,0,.35); filter: blur(1.5px)"></div>
+      <div style="width: 13px; height: 8px; background: linear-gradient(#E2DED3, #9C988C); border: 1px solid #111; border-radius: 2px"></div>
+    </div>
+
+    <sc-if value="{{night}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: rgba(8,14,36,.62); pointer-events: none"></div>
+      <sc-for list="{{lamps}}" as="lp" hint-placeholder-count="6">
+        <div style="position: absolute; left: {{lp.x}}px; top: {{lp.y}}px; width: 180px; height: 180px; margin: -90px 0 0 -90px; border-radius: 50%; background: radial-gradient(circle, rgba(255,196,110,.42), rgba(255,170,70,.12) 45%, transparent 70%); mix-blend-mode: screen; pointer-events: none"></div>
+      </sc-for>
+    </sc-if>
+
+    <div style="position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end">
+      <sc-if value="{{chestFull}}" hint-placeholder-val="{{false}}">
+        <div class="alert" style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.75); border: 1px solid #E04B3A; padding: 3px 8px; font-size: 13px; font-weight: 600; color: #FF8A7A">
+          <span style="width: 14px; height: 14px; background: #E04B3A; color: #111; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">!</span>
+          Review chest full. Machines stalling.
+        </div>
+      </sc-if>
+      <sc-if value="{{hasChest}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,.75); border: 1px solid #FFA200; padding: 3px 8px; font-size: 13px; font-weight: 600; color: #FFC14D">
+          <span style="width: 14px; height: 14px; background: #FFA200; color: #111; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center">!</span>
+          {{chestCount}} fixes waiting on you
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 260px 250px; gap: 10px">
+    <section style="background: #313031; border: 2px solid #111; box-shadow: inset 0 1px 0 #4A4847; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 15px; font-weight: 700; color: #FFE6C0">Review chest</span>
+      <div style="display: flex; gap: 12px">
+        <div style="display: grid; grid-template-columns: repeat(4, 40px); gap: 3px">
+          <sc-for list="{{slots}}" as="sl" hint-placeholder-count="8">
+            <div style="width: 40px; height: 40px; box-sizing: border-box; background: #1E1D1A; border: 2px solid {{sl.border}}; box-shadow: inset 0 2px 3px rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{sl.full}}" hint-placeholder-val="{{false}}">
+                <div style="width: 22px; height: 22px; background: radial-gradient(circle at 30% 30%, #A8E87A, #4E9A2A 70%); border: 2px solid #23460F; box-sizing: border-box; border-radius: 3px"></div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <sc-if value="{{hasChest}}" hint-placeholder-val="{{true}}">
+            <span style="font-size: 13px; color: #A8A498">{{sel.pr}} · {{sel.agent}}</span>
+            <span style="font-size: 17px; font-weight: 700; line-height: 1.2">{{sel.title}}</span>
+            <span style="font-size: 13px; color: #CFCBC0">{{sel.why}}</span>
+            <span style="font-size: 13px; color: #6CCB3C">Tests pass · {{sel.diff}}</span>
+          </sc-if>
+          <sc-if value="{{noChest}}" hint-placeholder-val="{{false}}">
+            <span style="font-size: 15px; color: #A8A498">Chest is empty. The assemblers are working.</span>
+          </sc-if>
+          <div style="flex-grow: 1"></div>
+          <div style="display: flex; gap: 8px">
+            <button type="button" onClick="{{merge}}" disabled="{{cantMerge}}" style="flex-grow: 1; min-height: 40px; background: #5EB663; border: 2px solid; border-color: #8FD993 #2F6B32 #2F6B32 #8FD993; color: #111; font-family: 'Titillium Web', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer">Load into rocket</button>
+            <button type="button" onClick="{{back}}" disabled="{{noChest}}" style="flex-grow: 1; min-height: 40px; background: #8E8E8E; border: 2px solid; border-color: #BDBDBD #4F4F4F #4F4F4F #BDBDBD; color: #111; font-family: 'Titillium Web', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer">Send back</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section style="background: #313031; border: 2px solid #111; box-shadow: inset 0 1px 0 #4A4847; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 15px; font-weight: 700; color: #FFE6C0">Rocket</span>
+      <span style="font-size: 13px; color: #CFCBC0">Load 3 fixes, launch a release to the App Store.</span>
+      <div style="height: 14px; background: #1E1D1A; border: 1px solid #111"><div style="height: 14px; width: {{partsPct}}%; background: #FFA200; transition: width .3s"></div></div>
+      <span style="font-size: 13px">{{rocketText}}</span>
+      <div style="flex-grow: 1"></div>
+      <span style="font-size: 13px; color: #A8A498">{{rockets}} launched · {{released}} fixes live</span>
+    </section>
+
+    <section style="background: #313031; border: 2px solid #111; box-shadow: inset 0 1px 0 #4A4847; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 15px; font-weight: 700; color: #FFE6C0">Research</span>
+      <span style="font-size: 14px; font-weight: 600">{{tech}}</span>
+      <div style="height: 14px; background: #1E1D1A; border: 1px solid #111"><div style="height: 14px; width: {{techPct}}%; background: #4FA3FF"></div></div>
+      <span style="font-size: 13px; color: #CFCBC0">Every launch speeds up research.</span>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"night":{"editor":"boolean","default":false},"$preview":{"width":1120,"height":840}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.JOBS = [
+      { title: 'Retry recording after background', short: 'Bg rec', why: 'Fixes 14 reports of recordings vanishing' },
+      { title: 'Keep speaker names stable', short: 'Speak', why: 'Fixes 9 reports of swapped speakers' },
+      { title: 'Clear error on cellular sync', short: 'Sync', why: 'Fixes 4 silent sync failures' },
+      { title: 'Notion export for action items', short: 'Notion', why: '6 people asked for it' },
+      { title: 'Lazy-load long transcripts', short: 'Scroll', why: 'Fixes 5 reports of scroll lag' }
+    ];
+    this.TECH = ['Faster assemblers', 'Duplicate filter', 'Third assembler', 'Auto-review small fixes'];
+    this.state = {
+      prog: [0.5, 0.2], job: [0, 1], nextJob: 2, nextPr: 145,
+      chest: [{ id: 142, job: 3, agent: 'Claude Code' }, { id: 143, job: 4, agent: 'Codex' }],
+      parts: 1, launching: false, released: 12, rockets: 4, built: 14, tech: 0, techP: 0.35
+    };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      this.setState((s) => {
+        if (s.chest.length >= 8) return null;
+        const prog = s.prog.slice(), job = s.job.slice();
+        const chest = s.chest.slice();
+        let nextJob = s.nextJob, nextPr = s.nextPr, built = s.built;
+        const rates = [0.011, 0.008];
+        for (let i = 0; i < 2; i += 1) {
+          prog[i] += rates[i];
+          if (prog[i] >= 1 && chest.length < 8) {
+            chest.push({ id: nextPr, job: job[i], agent: i ? 'Codex' : 'Claude Code' });
+            nextPr += 1; built += 1; prog[i] = 0; job[i] = nextJob % this.JOBS.length; nextJob += 1;
+          }
+        }
+        return { prog, job, chest, nextJob, nextPr, built };
+      });
+    }, 100);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    clearTimeout(this.launchTimer);
+  }
+
+  merge() {
+    this.setState((s) => {
+      if (!s.chest.length || s.launching) return null;
+      const parts = s.parts + 1;
+      return { chest: s.chest.slice(1), parts, launching: parts >= 3 };
+    }, () => {
+      if (this.state.launching && !this.launchTimer) {
+        this.launchTimer = setTimeout(() => {
+          this.launchTimer = null;
+          this.setState((s) => {
+            let techP = s.techP + 0.4, tech = s.tech;
+            if (techP >= 1) { techP = 0; tech = (tech + 1) % this.TECH.length; }
+            return { launching: false, parts: 0, released: s.released + 3, rockets: s.rockets + 1, techP, tech };
+          });
+        }, 3600);
+      }
+    });
+  }
+
+  back() {
+    this.setState((s) => {
+      if (!s.chest.length) return null;
+      const i = s.chest[0].agent === 'Codex' ? 1 : 0;
+      const prog = s.prog.slice();
+      prog[i] = Math.min(prog[i], 0.3);
+      return { chest: s.chest.slice(1), prog };
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const ore = [
+      { c: '#4FA3FF', hi: '#CDE6FF', dk: '#2E6FB8' },
+      { c: '#3DD6B0', hi: '#C8FFF0', dk: '#1F8C72' },
+      { c: '#E8A33B', hi: '#FFE2B0', dk: '#9A6418' }
+    ];
+    const sorted = { c: '#B98CFF', hi: '#EADCFF' }, pr = { c: '#5FBF35', hi: '#C8F5A8' };
+    const stalled = s.chest.length >= 8;
+    const H = (left, top, w) => ({ cls: 'bh', a: 'cA', b: 'cB', left, top, w, h: 20 });
+    const D = (left, top, h) => ({ cls: 'bv', a: 'dL', b: 'dR', left, top, w: 20, h });
+    const U = (left, top, h) => ({ cls: 'bv', a: 'uL', b: 'uR', left, top, w: 20, h });
+    const belts = [
+      H(124, 100, 86), H(124, 260, 86), H(124, 420, 86),
+      D(200, 100, 170), U(200, 270, 170),
+      H(220, 260, 76), H(396, 260, 24),
+      U(420, 110, 160), D(420, 270, 160),
+      H(440, 110, 30), H(440, 410, 30),
+      H(622, 110, 98), H(622, 410, 98),
+      D(720, 110, 160), U(720, 270, 160),
+      H(740, 260, 58)
+    ];
+    const items = [];
+    const seg = (cls, left, top, len, dur, col, n, radius) => {
+      for (let k = 0; k < n; k += 1) items.push({ cls, left, top, len, dur, delay: -(dur / n) * k, color: col.c, hi: col.hi, radius: radius || '2px' });
+    };
+    seg('sx', 126, 102, 76, 1.6, ore[0], 4); seg('sx', 126, 111, 76, 1.6, ore[0], 3);
+    seg('sx', 126, 262, 76, 1.6, ore[1], 4); seg('sx', 126, 271, 76, 1.6, ore[1], 3);
+    seg('sx', 126, 422, 76, 1.6, ore[2], 4); seg('sx', 126, 431, 76, 1.6, ore[2], 3);
+    seg('sy', 202, 102, 160, 2.6, ore[0], 4); seg('sy', 211, 102, 160, 2.6, ore[1], 3);
+    seg('sy', 202, 430, -160, 2.6, ore[2], 4);
+    seg('sx', 222, 262, 70, 1.4, ore[1], 3); seg('sx', 222, 271, 70, 1.4, ore[0], 3);
+    seg('sy', 422, 262, -148, 2.4, sorted, 4); seg('sy', 431, 272, 150, 2.4, sorted, 4);
+    if (!stalled) {
+      seg('sx', 624, 112, 92, 1.8, pr, 3, '50%'); seg('sx', 624, 121, 92, 1.8, pr, 3, '50%');
+      seg('sx', 624, 412, 92, 1.8, pr, 3, '50%'); seg('sx', 624, 421, 92, 1.8, pr, 3, '50%');
+      seg('sy', 722, 112, 150, 2.4, pr, 3, '50%');
+      seg('sy', 731, 420, -150, 2.4, pr, 3, '50%');
+      seg('sx', 742, 262, 52, 1.2, pr, 2, '50%'); seg('sx', 742, 271, 52, 1.2, pr, 2, '50%');
+    }
+    const treeSpots = [
+      [890, 10, 46], [936, 30, 40], [990, 6, 52], [1030, 60, 44], [900, 84, 38], [960, 100, 50],
+      [1010, 130, 34], [870, 470, 40], [176, 528, 34], [250, 534, 30], [330, 530, 36], [640, 532, 32]
+    ];
+    const greens = [['#9BC25A', '#4E7A2A', '#2C4A16'], ['#B7B25A', '#6E7A2E', '#3A4418'], ['#C98F4A', '#8A5A2A', '#4A2E14']];
+    const trees = treeSpots.map((t, i) => {
+      const g = greens[i % 3 === 2 && i > 6 ? 2 : i % 2];
+      return { x: t[0], y: t[1], d: t[2], sx: t[0] + 10, sy: t[1] + 9, hi: g[0], c: g[1], dk: g[2], delay: (i % 5) * 0.4 };
+    });
+    const head = s.chest[0];
+    const J = head ? this.JOBS[head.job] : null;
+    const slots = [];
+    for (let k = 0; k < 8; k += 1) slots.push({ full: k < s.chest.length, border: k === 0 && s.chest.length ? '#FFA200' : '#111' });
+    return {
+      night: !!this.props.night,
+      feedRate: 12,
+      built: s.built,
+      released: s.released,
+      rockets: s.rockets,
+      ores: [
+        { top: 40, labelTop: 44, name: 'App Store', color: ore[0].c, hi: ore[0].hi, dark: ore[0].dk },
+        { top: 200, labelTop: 204, name: 'TestFlight', color: ore[1].c, hi: ore[1].hi, dark: ore[1].dk },
+        { top: 360, labelTop: 364, name: 'Support', color: ore[2].c, hi: ore[2].hi, dark: ore[2].dk }
+      ],
+      walls: [
+        { left: 168, top: 24, w: 702, h: 12 },
+        { left: 168, top: 516, w: 702, h: 12 },
+        { left: 164, top: 24, w: 10, h: 72 },
+        { left: 164, top: 124, w: 10, h: 132 },
+        { left: 164, top: 284, w: 10, h: 132 },
+        { left: 164, top: 444, w: 10, h: 84 },
+        { left: 866, top: 24, w: 10, h: 232 },
+        { left: 866, top: 284, w: 10, h: 244 }
+      ],
+      trees,
+      belts,
+      items,
+      drills: [{ top: 76 }, { top: 236 }, { top: 396 }],
+      arms: [
+        { left: 470, top: 112, color: '#F5C542', dark: '#B08420', delay: 0 },
+        { left: 470, top: 412, color: '#F5C542', dark: '#B08420', delay: 0.6 },
+        { left: 604, top: 112, color: '#F5C542', dark: '#B08420', delay: 0.3 },
+        { left: 604, top: 412, color: '#F5C542', dark: '#B08420', delay: 0.9 },
+        { left: 278, top: 262, color: '#C9A6FF', dark: '#7D55C2', delay: 0.2 },
+        { left: 856, top: 262, color: '#7FBFFF', dark: '#3C78B8', delay: 0.4 }
+      ],
+      assemblers: [0, 1].map((i) => ({
+        top: i ? 364 : 62,
+        labelTop: i ? 486 : 184,
+        steamTop: i ? 352 : 50,
+        color: i ? '#7AA7FF' : '#FFA200',
+        name: i ? 'Codex' : 'Claude Code',
+        icon: this.JOBS[s.job[i]].short,
+        job: stalled ? 'Output full' : this.JOBS[s.job[i]].title,
+        pct: Math.round(s.prog[i] * 100)
+      })),
+      poles: [{ x: 180, y: 40 }, { x: 496, y: 40 }, { x: 740, y: 40 }, { x: 858, y: 162 }, { x: 180, y: 468 }],
+      lamps: [{ x: 546, y: 120 }, { x: 546, y: 422 }, { x: 346, y: 272 }, { x: 822, y: 270 }, { x: 968, y: 268 }, { x: 210, y: 270 }, { x: 92, y: 270 }],
+      chestCount: s.chest.length,
+      hasChest: s.chest.length > 0,
+      noChest: s.chest.length === 0,
+      chestFull: stalled,
+      cantMerge: s.chest.length === 0 || s.launching,
+      slots,
+      sel: head ? { pr: 'PR #' + head.id, agent: head.agent, title: J.title, why: J.why, diff: '+' + (20 + (head.id * 7) % 80) + ' −' + (3 + (head.id * 3) % 20) } : { pr: '', agent: '', title: '', why: '', diff: '' },
+      parts: Math.min(s.parts, 3),
+      partsPct: (Math.min(s.parts, 3) / 3) * 100,
+      launching: s.launching,
+      rocketClass: s.launching ? 'launch' : '',
+      rocketText: s.launching ? 'Launching. 3 fixes heading to users.' : (3 - s.parts) + ' more to launch',
+      tech: this.TECH[s.tech],
+      techPct: Math.round(s.techP * 100),
+      merge: () => this.merge(),
+      back: () => this.back()
+    };
+  }
+}
+</script>
+</body>
+</html>

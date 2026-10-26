@@ -26,5 +26,5 @@ of each section. If you decide something, add it here in the same PR.
 | Open `/setup` on the deployed URL to create the GitHub App, then `wrangler secret put` its secrets | Justin, after deploy |
 | `META_API_KEY` as a Worker secret (and locally for `bun run spark:check`) | Justin |
 | Codex PRs #3 (shared protocol) and #4 (factory API + issue ingestion) were built before #1 merged. They need porting onto `main`'s `shared/` + `server/` layout | Codex |
-| PR #5 (plan, architecture, art docs, prototypes from `~/omni/shiptorio`) | Review + merge |
+| PR #7: new launch pad base + solar panel in the Item Lab. Say "lock it" or what to change | Justin |
 | Does Spark accept images (visual QA)? Rate limits, credit balance? | Anyone with a key |
