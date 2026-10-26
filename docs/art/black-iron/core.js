@@ -88,7 +88,7 @@ window.IRON = (function () {
   function spawn(p, x, y, z, vx, vy, vz, color, life, size, grav, add) {
     if (fx.length > 1100) return null;
     const m = new THREE.Mesh(fxGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: !add, fog: !add }));
-    m.position.set(x, y, z); m.scale.setScalar(size); p.add(m);
+    m.position.set(x, y, z); m.scale.setScalar(size); m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); p.add(m);
     const f = { m, p, vx, vy, vz, life, max: life, grav, size }; fx.push(f); return f;
   }
   function updateFx(dt) {
@@ -154,7 +154,7 @@ window.IRON = (function () {
   // CAUTION BEACON: a hazard post with a rotating amber beacon and a "!" sign that flips up when BLOCKED,
   // plus a pinging ring on the floor. Every machine places one where it's easy to see.
   function caution(p, x, y, z, s) {
-    s = s || 1;
+    s = (s || 1) * 1.3;
     const g = group(p, x, y, z); g.scale.setScalar(s);
     const iron = mat(0x2b2520, { shine: 20 });
     cyl(0.07, 0.09, 1.5, iron, 8, 0, 0.75, 0, g);
@@ -336,7 +336,7 @@ window.IRON = (function () {
     const it = this;
     it.id = nextNum++; it.src = src; it.title = TITLES[src][Math.floor(Math.random() * TITLES[src].length)];
     it.kind = 'issue'; it.attempts = 0; it.stage = 'Mined'; it.reason = null; it.path = null; it.s = 0; it.atEnd = false;
-    it.owner = null; it.followObj = null; it.followOff = new V3(); it.hidden = false; it.born = performance.now(); it.carrierMeshes = {};
+    it.owner = null; it.followObj = null; it.followOff = new V3(); it.hidden = false; it.born = performance.now(); it.carrierMeshes = {}; it.qT = new THREE.Quaternion(); it.emerge = null;
     it.mesh = makeItemMesh(it); itemsRoot.add(it.mesh);
     it.setKind(it.kind, true);
   }
@@ -363,29 +363,55 @@ window.IRON = (function () {
   Item.prototype.label = function () { return '#' + this.id; };
   I.Item = Item;
 
+  // A new issue: its cart rolls OUT of the mine tunnel (from 2.4 units inside the rock) onto the rail.
+  // 'spawn' fires at the start with { item, src, s, from, to, dur } so the mine can light up / animate.
+  const TUNNEL_DEPTH = 2.4, EMERGE_DUR = 1.8;
   function spawnItem(src) {
     const rail = I.paths.rail; const x0 = rail.points[0][0];
     const s = Math.max(0, x0 - I.MINES[src].x);
-    if (rail.items.some((o) => Math.abs(o.s - s) < rail.gap * 1.4)) return null;
-    const it = new Item(src); it.stage = 'Mined from ' + I.MINES[src].label; it.minedAt = s;
-    I.items.push(it); enterPath(it, rail, s); I.counters.mined++;
+    if (rail.items.some((o) => Math.abs(o.s - s) < rail.gap * 1.6) || I.items.some((o) => o.emerge && o.src === src)) return null;
+    const it = new Item(src); it.stage = 'Leaving the ' + I.MINES[src].label + ' mine'; it.minedAt = s;
+    I.items.push(it); I.counters.mined++;
+    const to = new V3(); rail.at(s, to); const from = to.clone(); from.z -= TUNNEL_DEPTH;
+    it.emerge = { t: 0, dur: EMERGE_DUR, s, from, to };
+    showCarrier(it, 'cart'); it.mesh.position.copy(from); it.qT.setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0, 'YZX')); it.mesh.quaternion.copy(it.qT);
     log(it.label() + ' ' + I.MINES[src].label.toLowerCase() + ': ' + it.title, 'in');
-    I.emit('spawn', { item: it, src, s });
+    I.emit('spawn', { item: it, src, s, from: from.clone(), to: to.clone(), dur: EMERGE_DUR });
     return it;
   }
-  function enterPath(it, path, s) {
-    it.path = path; it.s = s || 0; it.atEnd = false; it.owner = null; it.followObj = null; path.items.push(it);
-    it.stage = path.label;
+  function stepEmerge(dt) {
+    I.items.forEach((it) => {
+      const e = it.emerge; if (!e) return;
+      e.t += dt; const k = smooth(Math.min(1, e.t / e.dur));
+      it.mesh.position.copy(e.from).lerp(e.to, k);
+      if (e.t >= e.dur) { const rail = I.paths.rail; if (!rail.items.some((o) => Math.abs(o.s - e.s) < rail.gap)) { it.emerge = null; enterPath(it, rail, e.s, true); } }
+    });
+  }
+  function showCarrier(it, name) {
     for (const k in it.carrierMeshes) it.carrierMeshes[k].visible = false;
-    if (path.carrier && I.carriers[path.carrier]) {
-      if (!it.carrierMeshes[path.carrier]) { const cm = I.carriers[path.carrier].make(I.K, it); it.mesh.add(cm); it.carrierMeshes[path.carrier] = cm; }
-      it.carrierMeshes[path.carrier].visible = true;
+    if (name && I.carriers[name]) {
+      if (!it.carrierMeshes[name]) { const cm = I.carriers[name].make(I.K, it); it.mesh.add(cm); it.carrierMeshes[name] = cm; }
+      it.carrierMeshes[name].visible = true;
     }
   }
-  function leavePath(it) { if (!it.path) return; const a = it.path.items; a.splice(a.indexOf(it), 1); it.path = null; for (const k in it.carrierMeshes) it.carrierMeshes[k].visible = false; }
+  // Carrier handoffs fire events so the module that owns the carrier can draw an empty stand-in that
+  // carries on moving (no pop): 'carrierDrop' when an item leaves a path with a carrier (pos/quat = the
+  // carrier's root-space pose at that moment), 'carrierPick' when it boards one.
+  function enterPath(it, path, s, keepCarrier) {
+    it.path = path; it.s = s || 0; it.atEnd = false; it.owner = null; it.followObj = null; path.items.push(it);
+    it.stage = path.label;
+    if (!keepCarrier || path.carrier) showCarrier(it, path.carrier);
+    if (path.carrier) I.emit('carrierPick', { item: it, carrier: path.carrier, path: path.name, pos: it.mesh.position.clone(), quat: it.mesh.quaternion.clone() });
+  }
+  function leavePath(it) {
+    if (!it.path) return; const path = it.path; const a = path.items; a.splice(a.indexOf(it), 1); it.path = null;
+    for (const k in it.carrierMeshes) it.carrierMeshes[k].visible = false;
+    if (path.carrier) I.emit('carrierDrop', { item: it, carrier: path.carrier, path: path.name, pos: it.mesh.position.clone(), quat: it.mesh.quaternion.clone() });
+  }
+  I.queueFor = (id) => I.pathList.filter((p) => p.port === id + '.in').reduce((n, p) => n + p.items.length, 0);
   function entryFree(path) { return !path.items.some((o) => o.s < path.gap); }
 
-  const tmpV = new V3();
+  const tmpV = new V3(), tmpO = new V3(), tmpE = new THREE.Euler();
   function stepPaths(dt) {
     I.pathList.forEach((path) => {
       const arr = path.items.slice().sort((a, b) => b.s - a.s);
@@ -403,17 +429,20 @@ window.IRON = (function () {
       const front = arr[0];
       const stuck = front && front.atEnd && front.path === path;
       path.jamT = stuck && arr.length >= 2 ? path.jamT + dt : 0;
-      path.jammed = path.jamT > 1.2;
+      path.jammed = path.jamT > 0.35;
       path.moving = moved;
       path.flow += ((path.jammed ? 0 : 1) - path.flow) * Math.min(1, dt * 3);
     });
-    // place path-riding items
+    // place path-riding items; orientation eases toward the path direction (no snapping at corners/handoffs)
+    const ease = 1 - Math.exp(-dt * 10);
     I.pathList.forEach((path) => path.items.forEach((it) => {
       const sg = path.at(it.s, tmpV); it.mesh.position.copy(tmpV);
-      if (path.kind === 'belt' || path.kind === 'rail') { it.mesh.rotation.order = 'YZX'; it.mesh.rotation.set(0, sg.yaw, sg.pitch); }
-      else if (path.kind === 'tube') { it.mesh.rotation.order = 'YZX'; it.mesh.rotation.set(0, sg.yaw, sg.pitch); it.mesh.position.y -= 0.2; }
-      else { it.mesh.rotation.set(0, it.mesh.rotation.y, 0); }
+      if (path.kind === 'belt' || path.kind === 'rail' || path.kind === 'tube') { tmpE.set(0, sg.yaw, sg.pitch, 'YZX'); it.qT.setFromEuler(tmpE); }
+      else { tmpE.setFromQuaternion(it.qT, 'YZX'); tmpE.set(0, tmpE.y, 0, 'YZX'); it.qT.setFromEuler(tmpE); }
+      it.mesh.quaternion.slerp(it.qT, ease);
+      if (path.kind === 'tube') { tmpO.set(0, -0.2, 0).applyQuaternion(it.qT); it.mesh.position.add(tmpO); }
     }));
+    I.items.forEach((it) => { if (it.emerge) it.mesh.quaternion.slerp(it.qT, ease); });
   }
 
   // =====================================================================
@@ -539,18 +568,55 @@ window.IRON = (function () {
       if (r < 0.16) { o.castShadow = false; culled++; }
     });
     I.perf = { shadowCulled: culled };
-    // seed the line so it's alive from the first frame
-    ['github', 'sentry', 'inbox'].forEach((s) => spawnItem(s));
+    // STATE AURA: a ring on the floor around each machine (dim blue idle, green working, pulsing amber/red
+    // blocked) plus a tall amber beacon beam when blocked, so state reads from the art at any zoom.
+    for (const id in I.stations) {
+      const st = I.stations[id], h = st.holder;
+      const aura = group(h);
+      const ringM = glow(0x8fa2c8, 0.12, true);
+      const ring = torus(3.75, 0.07, ringM, 4, 64, 0, 0.14, 0, aura); ring.rotation.x = Math.PI / 2;
+      const ping = torus(3.75, 0.06, glow(0xffb020, 0.8, true), 4, 64, 0, 0.15, 0, aura); ping.rotation.x = Math.PI / 2; ping.visible = false;
+      const beam = cyl(0.14, 0.14, 16, glow(0xffb020, 0.4, true), 8, 0, 16, 0, aura); beam.visible = false;
+      const beamCore = cyl(0.05, 0.05, 16, glow(0xfff0c0, 0.7, true), 6, 0, 16, 0, aura); beamCore.visible = false;
+      [ring, ping, beam, beamCore].forEach((m) => { m.castShadow = false; m.receiveShadow = false; m.userData.noBake = true; });
+      st.aura = { ring, ringM, ping, beam, beamCore };
+    }
+    // WARM START: put work at every stage so the line is busy from the first second
+    const put = (src, pathName, frac, kind) => {
+      const pth = I.paths[pathName]; const it = new Item(src); I.items.push(it); I.counters.mined++;
+      if (kind) it.setKind(kind, true);
+      enterPath(it, pth, pth.L * frac); const sg = pth.at(it.s, tmpV); it.mesh.position.copy(tmpV);
+      tmpE.set(0, sg.yaw, pth.kind === 'lift' ? 0 : sg.pitch, 'YZX'); it.qT.setFromEuler(tmpE); it.mesh.quaternion.copy(it.qT);
+      return it;
+    };
+    put('github', 'ore', 0.97); put('sentry', 'ore', 0.45); put('inbox', 'lift', 0.5);
+    put('github', 'feed', 0.9, 'capsule'); put('sentry', 'pass', 0.92, 'pass'); put('github', 'pass', 0.35, 'pass');
+    spawnItem('sentry');
+    log('The line is running. Issues are mined below the island.', 'info');
   };
   const fv = new V3();
   I.step = function (t, dt) {
     if (!built) return;
     dt *= I.policy.speed;
     if (I.policy.intake) { spawnT -= dt; if (spawnT <= 0) { const r = Math.random(); spawnItem(r < 0.4 ? 'sentry' : r < 0.8 ? 'github' : 'inbox'); spawnT = lerp(I.CFG.spawnEvery[0], I.CFG.spawnEvery[1], Math.random()); } }
+    stepEmerge(dt);
     stepPaths(dt);
     stepStations(dt);
     I.updaters.forEach(({ name, u }) => { try { u.update(t, dt); } catch (e) { if (!u._err) { console.error('[IRON] ' + name + ' update:', e); u._err = 1; } } });
     for (const id in I.stations) { const st = I.stations[id]; try { st.inst.update(t, dt); } catch (e) { if (!st._err) { console.error('[IRON] ' + id + ' update:', e); st._err = 1; } } }
+    for (const id in I.stations) {
+      const st = I.stations[id], a = st.aura; if (!a) continue;
+      const s = st.blocked ? 'BLOCKED' : st.state;
+      if (s === 'BLOCKED') {
+        const on = Math.sin(t * 8) > 0; a.ringM.color.setHex(on ? 0xffb020 : 0xff3a20); a.ringM.opacity = 0.75 + Math.sin(t * 8) * 0.2;
+        const k = (t * 0.8) % 1; a.ping.visible = true; a.ping.scale.setScalar(1 + k * 0.45); a.ping.material.opacity = 0.8 * (1 - k);
+        a.beam.visible = a.beamCore.visible = true; a.beam.material.opacity = 0.28 + Math.sin(t * 8) * 0.14; a.beamCore.material.opacity = 0.5 + Math.sin(t * 8) * 0.25;
+      } else {
+        a.ping.visible = false; a.beam.visible = a.beamCore.visible = false;
+        if (s === 'WORKING') { a.ringM.color.setHex(0x46e07a); a.ringM.opacity = 0.2 + Math.sin(t * 3) * 0.06; }
+        else { a.ringM.color.setHex(0x8fa2c8); a.ringM.opacity = 0.09 + Math.sin(t * 1.2) * 0.03; }
+      }
+    }
     // items held by stations follow their objects
     I.items.forEach((it) => { if (it.followObj) { it.followObj.getWorldPosition(fv); I.root.worldToLocal(fv); it.mesh.position.copy(fv).add(it.followOff); } });
     // halos pulse; items held by a blocked station blink amber

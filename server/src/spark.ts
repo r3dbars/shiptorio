@@ -72,9 +72,28 @@ export function parseJsonReply<T>(text: string): T {
   try {
     return JSON.parse(raw) as T;
   } catch {
-    const repaired = raw.replace(/[\u201c\u201d]/g, '"').replace(/,\s*([}\]])/g, "$1");
+    const repaired = escapeStrayQuotes(raw.replace(/[\u201c\u201d]/g, '"')).replace(/,\s*([}\]])/g, "$1");
     try { return JSON.parse(repaired) as T; } catch (e) { throw new SparkError(`malformed JSON: ${e instanceof Error ? e.message : "parse failed"}`); }
   }
+}
+
+/**
+ * Escapes a double quote inside a string value that the model forgot to escape, as in
+ * "because": "Ship "Fix receipt" first". A quote only closes a string when the next non-space
+ * character can follow a JSON string (, : } ] or the end; another quote means a missing comma);
+ * any other quote is part of the text.
+ */
+export function escapeStrayQuotes(json: string): string {
+  let out = "", inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (inString && c === "\\") { out += c + (json[++i] ?? ""); continue; }
+    if (c !== '"') { out += c; continue; }
+    if (!inString) { inString = true; out += c; continue; }
+    const next = json.slice(i + 1).match(/^\s*(.)/)?.[1];
+    if (next === undefined || ',:}]"'.includes(next)) { inString = false; out += c; } else out += '\\"';
+  }
+  return out;
 }
 
 const issues = (e: z.ZodError) => e.issues.slice(0, 3).map(i => `${i.path.join(".") || "reply"}: ${i.message}`).join("; ");
@@ -89,7 +108,7 @@ async function sparkJson<S extends z.ZodType>(env: SparkEnv, schema: S, develope
     const text = await sparkChat(
       env,
       [
-        { role: "developer", content: `${developer}\nReply with a single JSON object and nothing else.${rejected ? ` Your previous reply was rejected (${rejected}). Use exactly the keys and values described.` : ""}` },
+        { role: "developer", content: `${developer}\nReply with a single JSON object and nothing else. When a sentence quotes something, use single quotes inside it.${rejected ? ` Your previous reply was rejected (${rejected}). Use exactly the keys and values described.` : ""}` },
         { role: "user", content: user },
       ],
       effort,

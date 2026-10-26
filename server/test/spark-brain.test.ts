@@ -139,6 +139,12 @@ describe("tolerant replies (live Testing run, 2026-10-26)", () => {
     sequence(['{“kind”: "bug", "district": "src", "reason": "Wrong total.",}']);
     expect(await triage(env, { title: "Receipt says 2 items", body: "", labels: [] }, ["/", "src"])).toEqual({ kind: "bug", district: "src", reason: "Wrong total." });
   });
+  it("escapes a double quote the model forgot to escape inside a sentence", async () => {
+    sequence(['{"order": ["ship"], "reason": "Ship "Fix receipt" first, it\'s green.", "because": {"ship": "The "2 items" bug is fixed: [tests] pass."}}']);
+    const call = await gameMaster(env, brief);
+    expect(call.reason).toBe('Ship "Fix receipt" first, it\'s green.');
+    expect(call.because.ship).toBe('The "2 items" bug is fixed: [tests] pass.');
+  });
   it("asks once more with the reason when a reply is malformed, then uses the good one", async () => {
     const seen: string[] = [];
     sequence(['{"order": ["ship" "bottleneck:review-1"]}', JSON.stringify({ order: ["ship"], reason: "Ship it." })], seen);

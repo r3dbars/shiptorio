@@ -14,6 +14,7 @@ something, add it here and push.
 | --- | --- |
 | [../VISION.md](../VISION.md) | **North star**: Justin's goals, principles, non-goals, current focus, and how to decide what's next. Read first |
 | [../PRODUCT.md](../PRODUCT.md) | **Product spec**: Spark as the Foreman agent, core loop, bottleneck engine, tools, trust, score, onboarding, demo scope |
+| [testing.md](testing.md) | Fast, contract, Wrangler E2E/visual and manual load regression suites |
 | [costs.md](costs.md) | Spark budgets, GitHub rate limits, polling backoff and operator controls |
 | [ops.md](ops.md) | Production diagnostics, Sentry setup, tracing, backup and recovery runbooks |
 | [decisions.md](decisions.md) | Decisions made so far and open items (who's blocked on what) |

@@ -838,3 +838,9 @@ export const CRASH = {
   restart: "Restart",
   ref: (id: string) => `Fault ${id.slice(0, 8)}`,
 };
+
+// Brand art alt text (web/src/ui/Logo.tsx).
+export const BRAND = {
+  wordmarkAlt: "Shiptorio",
+  markAlt: "Shiptorio",
+};

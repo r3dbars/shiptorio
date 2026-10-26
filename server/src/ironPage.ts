@@ -117,7 +117,7 @@ export interface IronPageOptions {
 /** A full Black Iron HTML page: one riveted iron plate on the furnace sky. */
 export function ironPage(o: IronPageOptions): string {
   const head = `<header class="iron-head${o.alarm ? " alarm" : ""}">${COG}<a href="${esc(o.home ?? "/")}">Shiptorio</a>${o.nav ? `<nav class="iron-nav">${o.nav}</nav>` : ""}${o.eyebrow ? `<span class="iron-eyebrow">${esc(o.eyebrow)}</span>` : ""}</header>`;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1c120c"><title>${esc(o.title)} · Shiptorio</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1c120c"><link rel="icon" href="/brand/favicon.svg" type="image/svg+xml"><title>${esc(o.title)} · Shiptorio</title>
 <style>${o.fonts === false ? "" : FONT_FACES}
 ${IRON_CSS}</style>${o.head ?? ""}</head>
 <body><main class="iron${o.wide ? " wide" : ""}${o.doc ? " doc" : ""}">${o.alarm ? `<div class="iron-stripe" aria-hidden="true"></div>` : ""}${head}<div class="iron-body">${o.body}</div></main></body></html>`;
