@@ -29,14 +29,13 @@ is the only copy agents outside it (Codex) can see.
 
 ## Codex (outside the Claude project)
 
-Only what Codex has pushed is visible here, not its live session. All Codex commits are
-authored "J B". As of ~16:55 UTC its last push was 16:42.
+Only what Codex has pushed is visible here, not its live session. Codex commits show as "J B" or "Redbars". As of ~17:20 UTC:
 
-| Branch / PR | What | State |
+| PR | What | State |
 | --- | --- | --- |
-| `codex/shared-protocol` / #3 | Protocol proposal. Last commit (16:42) merged #1's layout in and kept only `shared/README.md` + `shared/test/protocol.test.ts` on top of main's contract | Draft. Close to mergeable: needs main merged in (it predates the docs PRs) |
-| `codex/backend-setup` / #4 | Persistent Factory DO, authenticated routes, websocket snapshots/patches, signed `issues` webhook ingestion with delivery dedup, rejects unset webhook secret | Draft, still on the old single-Worker scaffold. **Overlaps main's `server/src/factory.ts` + `index.ts`**, so it has to be ported, not merged |
+| #13 | Private preview (password gate), hardened issue → Spark → PR → inspector/rework loop, bounded alarm jobs, stale-check handling | merged. Supersedes #4's fixes |
+| #19, #21 | Auto-deploy of `main` verified, `/api/version` shows the live SHA, shiptorio.com + shiptorio.dev live | merged |
+| #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
 
-Overlap to watch: #4 vs main's server (same features, two implementations). Codex owns
-`server/`, so the port should keep main's structure and add #4's extras (delivery dedup,
-secret check, origin checks, tests). Claude threads aren't working in `server/` right now.
+Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
+Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.
