@@ -594,7 +594,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 @media (max-width: 760px), (max-height: 500px) {
   .lens { top: calc(66px + var(--sat)); left: calc(12px + var(--sal)); transform: none; }
   .lens button { min-height: 34px; padding: 0 14px; font-size: 14px; }
-  .coachcard { top: calc(112px + var(--sat)); }
+  .coachcard, .caption { top: calc(112px + var(--sat)); }
 }
 
 /* quiet map tags on busy machines: a small steady dot and the code path, no pulse */
