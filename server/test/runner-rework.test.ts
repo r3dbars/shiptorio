@@ -57,7 +57,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
       const request = JSON.parse(String(init?.body));
       if (request.messages[0].content.includes("hostile reviewer")) return json({ choices: [{ message: { content: JSON.stringify({ verdict: "pass", reason: "Regression is fixed with direct coverage.", findings: [] }) } }] });
       plans.push(String(init?.body)); plannerCall++;
-      const action = plannerCall === 1 ? { files: ["server/src/engine.ts", "server/test/engine.test.ts"] } : plannerCall === 2 ? { tool: "read_issue", reason: "Read the failed verify scar" } : plannerCall === 3 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect failed branch code" } : { tool: "assign_job", reason: "Fix the failed proof", plan: "Address missing repro with an actual base-failing regression and fix.", acceptance: ["Regression fails on base and passes on head"] };
+      const action = plannerCall === 1 ? { files: ["server/src/engine.ts", "server/test/engine.test.ts"] } : plannerCall === 2 ? { tool: "read_issue", reason: "Read the failed verify scar" } : plannerCall === 3 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect failed branch code" } : { tool: "assign_job", files: ["server/src/engine.ts", "server/test/engine.test.ts"], reason: "Fix the failed proof", plan: "Address missing repro with an actual base-failing regression and fix.", acceptance: ["Regression fails on base and passes on head"] };
       return json({ choices: [{ message: { content: JSON.stringify(action) } }] });
     }
     if (url.includes("/pulls?")) return json([]);
