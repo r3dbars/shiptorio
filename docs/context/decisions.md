@@ -184,3 +184,11 @@ create a permit or silently authorize a build/merge. No web or workflow changes.
 - 2026-10-26: Header-stripping Firefox privacy modes can authenticate using a hidden HMAC form token plus matching HttpOnly SameSite=Strict cookie, bound to the origin and expiring in ten minutes. Missing/opaque Origin can use that proof; explicit foreign Origin or cross-site Fetch Metadata cannot. Gate responses forbid framing and third-party form targets.
 
 - 2026-10-26: Keep the onboarding sandbox honest: its picker offers the demo shop whose sample issues it actually runs, with an explicit sandbox note below sign-in. Real repository choices remain in live mode. Let the rocket clear its 3.4-second launch before a compact celebration card arrives at the screen edge; the launch is the main event. Bounded web fixes authorized by Justin's request to fix all open playtest issues.
+
+Playtest checkpoint: the reusable seeded runner covers every simulator scenario with
+both a full journey and disconnect lifecycle. Keep its reports distinct from CUA
+rendered checks and real GitHub/runner acceptance. Extract source-mine placement into
+a pure module so the simulator does not import WebGL at module load; this preserves
+placement behavior while allowing headless protocol tests. Suppress queued callbacks
+and delayed deals after source close. Browser smoke checks reuse the authorized CUA
+handle and always choose explicit simulator mode; no real PR is created by playtests.
