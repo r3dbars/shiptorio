@@ -188,3 +188,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 /* Spark's drone label */
 .maplabel.drone { border-color: var(--blue); }
 .maplabel.drone b { color: var(--blue); }
+
+/* sound: mute + volume */
+.sound > span:first-child { width: auto; }
+.sound input[type="range"] { flex: 1; min-width: 60px; accent-color: var(--amber); height: 4px; }
