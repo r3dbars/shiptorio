@@ -348,6 +348,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
   const held = new Set<string>(); // queued items waiting on the player's yes
   const parked = new Set<string>(); // items the player said "not now" to
+  let growthOffered = false;
   let lastSpark = 0; // tick of Spark's last tool call
   const byTitle = new Map<string, string>(); // ore title -> item id, for linking
   const onChoose = new Map<string, (optionId: string) => void>(); // move id -> what each answer does
@@ -753,6 +754,18 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       stat("orbit-1").lastLog = { who: "Orbit watch", text: `#${it?.prNumber} all clear: no new errors since the launch.`, ok: true };
       log("success", `Orbit watch: #${it?.prNumber} all clear after launch`, id);
     }
+    // Finishing the starter line should teach its next real decision, not strand the tour.
+    if (sc.onboard && !growthOffered && !script.length && s.items.length && s.items.every(i => i.state === "launched") && !s.move && !pending.length) {
+      const kind = ghostSpots(s)[0]?.kind;
+      if (kind) {
+        growthOffered = true;
+        const label = kind === "sentry" ? "Sentry" : "PostHog";
+        propose({ title: `Your first fixes shipped. Connect ${label} next?`, why: "The line is caught up. Add another input so future customer signals can become the next fix.", stage: "intake", kind: "input", focus: `src:${kind}`, grows: ["+1 SOURCE"], plan: [`Open the ${label} mine on this sandbox island.`, "Future signals can feed the splitter; connecting a mine does not invent a customer problem."], options: [{ id: "connect", label: `Connect ${label}`, recommended: true, actions: [{ tool: "connect_source", args: { kind }, reason: "Grow the input loop after your first shipments." }] }, { id: "later", label: "Watch the factory for now", recommended: false, actions: [] }] }, option => {
+          if (option === "connect") connectMine(kind);
+          else log("info", "All caught up. Watching the connected mines for the next signal.");
+        });
+      }
+    }
     const stations = stationsNow();
     const stationsChanged = JSON.stringify(stations) !== JSON.stringify(s.stations);
     if (stationsChanged) s.stations = stations;
@@ -803,6 +816,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let introAt = 0; // next tick the tour drops ore
   let introN = 0;
   let lightsOut = false;
+  const introCues = new Set<string>();
   const introFeed = (now: number) => {
     if (s.tick < introAt) return;
     const inFlight = s.items.filter((i) => i.state !== "on_pad" && i.state !== "launched").length;
@@ -814,6 +828,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     introAt = s.tick + (lightsOut ? 2 : 3);
   };
   const introCue = (cue: string) => {
+    if (!["build", "catch", "lights"].includes(cue) || introCues.has(cue)) return;
+    introCues.add(cue);
     if (cue === "build" && clock0 === Infinity) {
       // the starter line drops in machine by machine, already plugged in, then the ore starts
       const full = initialState({ ...sc, onboard: false });
@@ -1071,6 +1087,23 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     );
   };
 
+  function connectMine(kind: string) {
+          // sim: the empty mine fills in where the map showed it, and feeds the splitter
+          if (kind !== "sentry" && kind !== "posthog") return;
+          const id = `ore-${kind}`;
+          if (s.machines.some((m) => m.id === id)) return;
+          const spot = ghostSpots(s).find((g) => g.kind === kind);
+          if (!spot) return;
+          const splitter = s.machines.find((m) => m.type === "splitter");
+          apply({
+            machines: [{ id, type: "ore_deposit", x: spot.x, y: spot.y, tier: 1, state: "idle" }],
+            belts: splitter ? [{ id: `belt-${id}`, from: id, to: splitter.id }] : [],
+          });
+          // Only the explicitly guided local demo introduces fixture errors on connection.
+          if (sc.intro && kind === "sentry") INTRO_SENTRY.forEach((o, n) => script.push({ ...o, at: s.tick - clock0 + 2 + n * 5 }));
+          spark({ tool: "connect_source", text: kind === "sentry" ? "Sentry mine open. Future errors can feed your line." : "PostHog mine open. Future user signals can feed your line.", reason: "You chose to grow the input loop" }, { target: id, approvedBy: "player" });
+  }
+
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
   if (sc.checkin) later(TICK_MS, dealCheckIn);
@@ -1080,6 +1113,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   return {
     send(msg: WebToServer) {
+      if (closed) return;
       switch (msg.type) {
         case "launch_pr": {
           const item = s.items.find((i) => i.id === msg.itemId);
@@ -1139,24 +1173,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           log("info", `${m.id} now runs on ${SOLAR_NAME[msg.harness] ?? msg.harness}`, m.id);
           break;
         }
-        case "connect_source": {
-          // sim: the empty mine fills in where the map showed it, and feeds the splitter
-          const kind = msg.kind as string; // posthog lands in SourceKind with the mines PR
-          if (kind !== "sentry" && kind !== "posthog") break;
-          const id = `ore-${kind}`;
-          if (s.machines.some((m) => m.id === id)) break;
-          const spot = ghostSpots(s).find((g) => g.kind === kind);
-          if (!spot) break;
-          const splitter = s.machines.find((m) => m.type === "splitter");
-          apply({
-            machines: [{ id, type: "ore_deposit", x: spot.x, y: spot.y, tier: 1, state: "idle" }],
-            belts: splitter ? [{ id: `belt-${id}`, from: id, to: splitter.id }] : [],
-          });
-// the tour: Sentry's errors start arriving right away
-          if (sc.intro && kind === "sentry") INTRO_SENTRY.forEach((o, n) => script.push({ ...o, at: s.tick - clock0 + 2 + n * 5 }));
-          log("success", kind === "sentry" ? "Sentry connected: errors now arrive as ore, and biters show where they hit" : "PostHog connected: user signals now weigh what gets built first");
+        case "connect_source":
+          connectMine(msg.kind);
           break;
-        }
         case "connect_belt":
           apply({ belts: [{ id: `belt-${s.tick}-${msg.from}`, from: msg.from, to: msg.to, carries: msg.carries }] });
           break;

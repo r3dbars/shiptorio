@@ -18,7 +18,7 @@ await qa.smoke({ tab, baseUrl: 'http://localhost:5173',
 ```
 
 This browser driver uses the existing CUA handle, visits explicit simulator URLs,
-checks meaningful content/error overlays, clicks a visible suggested action, records
+checks meaningful content/error overlays, clicks a visible suggested action (or opens the line while builds run), records
 console errors, and saves screenshots plus the resulting accessibility state. It
 never visits the live factory or creates real issues/PRs. Screenshots need human or
 agent visual inspection; passing protocol checks do not prove layout correctness.

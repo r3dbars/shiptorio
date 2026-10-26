@@ -195,5 +195,12 @@ placement behavior while allowing headless protocol tests. Suppress queued callb
 and delayed deals after source close. Browser smoke checks reuse the authorized CUA
 handle and always choose explicit simulator mode; no real PR is created by playtests.
 
+First-run idle follow-up (#105): once the sandbox's initial fixes have all shipped,
+offer one explicit input-growth card for an unconnected Sentry/PostHog mine. Opening
+a mine adds its actual map deposit/belt; it does not invent customer ore. The seeded
+first-run regression must observe that connect-source decision after its rockets.
+Rendered smoke tests accept the line panel as the primary interaction while the
+simulator is building automatically; waiting for a suggested merge before CI is done
+is not itself an app failure. Console findings belong only to the current navigation.
 - 2026-10-26: Name the dock action Place so it cannot be confused with the Build view. The field-guide tooltip counts concepts found, separate from the tour step count.
 - 2026-10-26: Local supervisor checks need an OS boundary, not just an environment allowlist. macOS verification uses deny-default sandbox-exec with checkout/private scratch writes, isolated HOME, and offline checks; unsupported platforms fail closed. Dependency installation is an explicit scripts-disabled network phase. Publication must not trust repository-controlled Git hooks/configuration after agent/test execution.
