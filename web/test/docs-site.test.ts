@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildDocs, loadDocs, resolveDocsPath } from "../docs-site";
+import { buildDocs, loadDocs, publicFile, resolveDocsPath } from "../docs-site";
 
 // The docs link checker: every internal link, anchor and image on every page has to resolve in the built site.
 const APP_PATHS = new Set(["/", "/art/spark.html"]); // non-docs pages the docs may link to
@@ -26,6 +26,7 @@ test("every internal link, anchor and image resolves", () => {
       if (!path) { if (hash && !html.includes(`id="${hash}"`)) broken.push(`${name}: #${hash}`); continue; }
       const clean = path.split("?")[0];
       if (APP_PATHS.has(clean)) continue;
+      if (/^\/(fonts|brand)\//.test(clean)) { if (!publicFile(clean)) broken.push(`${name}: ${ref}`); continue; }
       const target = resolveDocsPath(clean, files);
       if (!target) { broken.push(`${name}: ${ref}`); continue; }
       if (hash && !(files.get(target) as string).includes(`id="${hash}"`)) broken.push(`${name}: ${ref} (no #${hash})`);
@@ -41,4 +42,12 @@ test("search covers every page and every section heading", () => {
     expect(index.some((e) => e.url.startsWith(p.slug === "index" ? "/docs/" : `/docs/${p.slug}`))).toBe(true);
     for (const t of p.toc) expect(index.some((e) => e.url.endsWith(`#${t.id}`))).toBe(true);
   }
+});
+
+test("the docs stylesheet only loads self-hosted fonts that exist", () => {
+  const css = buildDocs().get("docs/docs.css") as string;
+  expect(css).not.toContain("fonts.googleapis");
+  const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map((m) => m[1]);
+  expect(urls.length).toBeGreaterThan(0);
+  for (const u of urls) expect(publicFile(u)).toBe(true);
 });
