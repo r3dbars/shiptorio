@@ -252,3 +252,11 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 }
 .labeltoggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
 @media (max-width: 760px) { .labeltoggle { display: none; } }
+
+/* playtest fixes: log scrolls inside its card, labels thin out when zoomed out, HUD hints */
+.log { display: flex; flex-direction: column; }
+.log ol { flex: 1; min-height: 0; overflow: auto; }
+.log li:not(.spark):not(.success):not(.warn):not(.error) { opacity: 0.75; }
+.maplabels.far .maplabel i { display: none; }
+.hrow .next { font-style: normal; color: var(--dim); font-size: 10px; }
+.sci small { font-size: 9px; color: var(--dim); }

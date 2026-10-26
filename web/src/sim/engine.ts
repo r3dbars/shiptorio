@@ -162,10 +162,12 @@ const GAUNTLET: StationDef[] = [
   { id: "gate-1", kind: "merge", name: "Merge gate", caught: 0, actions: [act("review", "Review with receipts", true), act("merge", "Merge and launch"), act("permit", "Give docs a launch permit")] },
 ];
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
+const FOREMAN_IDLE_TICKS = 5; // quiet ticks before the drone goes back to its plant
 const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
 
 function initialState(sc: Scenario): FactoryState {
-  const harness = sc.harness ?? "spark";
+  // Spark never writes code: without a scenario harness, the player is signed in with Claude
+  const harness = sc.harness ?? "claude_code";
   // Spark's steam plant powers the brain. A subscription (solar) powers the assemblers, when there is one.
   const plant = harness === "spark" ? "steam-spark" : `solar-${harness}`;
   const machines: Machine[] = [
@@ -231,6 +233,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const fails = new Map<string, string | undefined>(); // item id -> scripted inspector failure
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
   const held = new Set<string>(); // queued items waiting on the player's yes
+  const parked = new Set<string>(); // items the player said "not now" to
+  let lastSpark = 0; // tick of Spark's last tool call
   const byTitle = new Map<string, string>(); // ore title -> item id, for linking
   const onChoose = new Map<string, (optionId: string) => void>(); // move id -> what each answer does
   const pending: Move[] = []; // moves waiting behind the open card
@@ -254,6 +258,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (actionId && opts.undo) undos.set(actionId, opts.undo);
     emit({ type: "log", level: "info", text: line.text, at: Date.now(), itemId: opts.itemId, actor: "spark", tool: line.tool, reason: line.reason, actionId, approvedBy: opts.approvedBy });
     s.foreman = { targetId: opts.target ?? s.foreman?.targetId, tool: line.tool, thinking: false };
+    lastSpark = s.tick;
     emit({ type: "patch", patch: { foreman: s.foreman } });
   };
 
@@ -308,7 +313,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "move_resolved", moveId, optionId, actor });
     if (optionId) then(optionId);
     const next = pending.shift();
-    if (next) setTimeout(() => open(next), 600);
+    if (next) setTimeout(() => (s.move ? pending.unshift(next) : open(next)), 600);
   };
 
   // Each move the player approves as-is counts toward the next autonomy unlock.
@@ -342,8 +347,11 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         ],
       },
       (opt) => {
-        if (opt !== "go") return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
         held.delete(item.id);
+        if (opt !== "go") {
+          parked.add(item.id);
+          return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
+        }
         spark({ tool: "start_job", text: `Sent "${item.title}" to ${asm?.id ?? "the assembler"} with the plan`, reason: "you said go" }, { itemId: item.id, target: asm?.id, approvedBy: "player" });
         approvedAsIs();
       },
@@ -478,6 +486,11 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   const tick = () => {
     s.tick++;
+    // Spark heads back to its plant once it's been quiet for a bit, instead of hovering on its last job
+    if (s.foreman?.targetId && s.tick - lastSpark > FOREMAN_IDLE_TICKS) {
+      s.foreman = { thinking: false };
+      emit({ type: "patch", patch: { foreman: s.foreman } });
+    }
     const now = Date.now();
 
     while (script.length && script[0].at <= s.tick) arrive(script.shift()!, now);
@@ -497,8 +510,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           }
           break;
         case "queued": {
-          if (held.has(item.id)) continue;
-          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle");
+          // Spark's pick goes first: nothing else starts while its "fix this first" waits on your Go
+          if (held.size || parked.has(item.id)) continue;
+          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId);
           if (!a) continue;
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
@@ -735,7 +749,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "place_machine":
           apply({
-            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, tier: 1, state: "idle" }],
+            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
           });
           break;
         case "remove_machine":

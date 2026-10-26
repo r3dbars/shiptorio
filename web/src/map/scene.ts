@@ -341,6 +341,7 @@ export class FactoryScene {
     Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
+    this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
   }
 
   update(state: FactoryState) {
@@ -373,7 +374,7 @@ export class FactoryScene {
     const p = at ? this.machinePos(at) : this.target.clone();
     this.droneTo.set(p.x, at ? (LABEL_Y[at.type] ?? 2) + 1.6 : 4, p.z + (at ? 0.4 : 0));
     if (first) this.drone.g.position.copy(this.droneTo);
-    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : (f?.tool ?? "foreman"));
+    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : f?.tool && f.targetId ? f.tool.replace(/_/g, " ") : "watching the floor");
   }
 
   private droneMode(): DroneMode {
@@ -1062,7 +1063,7 @@ export class FactoryScene {
     this.drone.update(t, dt, this.droneMode());
 
     const drift = this.reduceMotion ? 0 : 1;
-    const dx = Math.sin(t * 0.07) * 0.8 * drift, dz = Math.cos(t * 0.05) * 0.6 * drift;
+    const dx = Math.sin(t * 0.07) * 0.25 * drift, dz = Math.cos(t * 0.05) * 0.2 * drift;
     const off = new THREE.Vector3(CAM_DIST * Math.cos(TILT) * Math.sin(YAW), CAM_DIST * Math.sin(TILT), CAM_DIST * Math.cos(TILT) * Math.cos(YAW));
     this.camera.position.set(this.target.x + dx + off.x, this.target.y + off.y, this.target.z + dz + off.z);
     this.camera.lookAt(this.target.x + dx, this.target.y, this.target.z + dz);
