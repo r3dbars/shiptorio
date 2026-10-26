@@ -9,3 +9,5 @@ dist/
 .DS_Store
 runner/.work/
 playtest-results/
+
+runner/.agent-home/
