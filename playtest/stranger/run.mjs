@@ -163,7 +163,7 @@ try {
     repos: await rows("SELECT * FROM repos"),
     webhook_deliveries: await rows("SELECT source, delivery_id, state FROM webhook_deliveries"),
   };
-  report.page = { repoPolls, url: page.url(), text: (await page.locator("body").innerText().catch(() => "")).slice(0, 1500) };
+  report.page = { repoPolls, apiErrors, consoleErrors, url: page.url(), text: (await page.locator("body").innerText().catch(() => "")).slice(0, 1500) };
   console.log(JSON.stringify({ db: report.db, page: report.page }, null, 1));
 }
 
