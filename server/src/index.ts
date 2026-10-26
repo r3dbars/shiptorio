@@ -1,5 +1,6 @@
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { Hono, type Context, type Next } from "hono";
+import { ops } from "./ops";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
@@ -32,6 +33,7 @@ export interface Env extends FactoryEnv, SignupEnv {
   APP_PASSWORD?: string;
   BUILD_SHA?: string;
   GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
+  ADMIN_LOGINS?: string;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -76,6 +78,7 @@ app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     return;
   }
+  if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
   const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
@@ -86,6 +89,8 @@ app.onError((err, c) => {
   console.error(err);
   return c.json({ error: err.message }, 500);
 });
+
+app.route("/", ops);
 
 // ---------- auth + setup ----------
 
@@ -245,6 +250,10 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
+  if (c.req.param("action") === "revoke") {
+    await f.revokeRunner();
+    return c.json({ revoked: true });
+  }
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
