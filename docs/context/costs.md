@@ -17,6 +17,8 @@ Set overrides in `server/wrangler.jsonc` vars and deploy through the normal revi
 For local development use ignored `server/.dev.vars`. These are non-secret controls; never put API
 keys in source. Zero calls, tokens or concurrent jobs stops that resource. Invalid/negative values
 use defaults. Lowering a cap immediately blocks further reservations if existing usage exceeds it.
+Signup/account quotas are separate guards (see [signup-abuse.md](signup-abuse.md)). Raising Spark
+caps does not raise the player's daily run quota or grant access to another factory.
 The kill switch does not cancel an already-running provider request or local process; existing
 receipts can finish. It stops new spending/admission. Never change unrelated Workers.
 
