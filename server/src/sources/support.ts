@@ -32,10 +32,13 @@ export interface SupportCreds {
 }
 
 export interface SupportEnv extends KeyEnv {
+  DB?: D1Database;
   CACHE?: KVNamespace;
   // Worker secrets win over the connect page, for the SUPPORT_REPO factory only (operator, local dev).
   SUPPORT_INBOUND_TOKEN?: string;
-  SUPPORT_REPO?: string; // operator secrets are pinned to this one factory
+  SUPPORT_REPO?: string; // operator setup label; the numeric identity below is the authority
+  SUPPORT_REPO_ID?: string;
+  SUPPORT_INSTALLATION_ID?: string;
   INTERCOM_CLIENT_SECRET?: string;
   INTERCOM_TOKEN?: string;
   INTERCOM_ADMIN_ID?: string;
@@ -45,21 +48,32 @@ export interface SupportEnv extends KeyEnv {
   FAKE_SUPPORT?: string; // "1": the mine counts as connected with no keys (local dev, demos)
 }
 
-// Pasted keys are encrypted with the same master key as the other mines (credential-crypto.ts, PR #155),
-// bound to this repo, and kept in KV: the D1 credentials table only takes sentry/posthog rows.
-const credKey = (repo: string) => `cred:support:${repo.toLowerCase()}`;
-const binding = (repo: string) => `support:${repo.toLowerCase()}`;
+// Neither a renamed repository nor a newly created repo reusing its old name may inherit credentials.
+export interface SupportIdentity { repoId: number; installationId: number }
+export const supportCredentialKey = (id: SupportIdentity) => `cred:support:${id.installationId}:${id.repoId}`;
+const binding = (id: SupportIdentity) => `support:${id.installationId}:${id.repoId}`;
+export async function supportIdentity(env: SupportEnv, repo: string): Promise<SupportIdentity | null> {
+  try {
+    const row = await env.DB?.prepare("SELECT r.repo_id, r.installation_id, r.archived_at, i.status FROM repos r JOIN installations i ON i.id = r.installation_id WHERE r.full_name = ?").bind(repo.toLowerCase()).first<{ repo_id: number; installation_id: number; archived_at: number | null; status: string }>();
+    if (!row || row.archived_at != null || row.status !== "active" || !Number.isSafeInteger(row.repo_id) || row.repo_id <= 0 || !Number.isSafeInteger(row.installation_id) || row.installation_id <= 0) return null;
+    return { repoId: row.repo_id, installationId: row.installation_id };
+  } catch { return null; }
+}
+const operatorIdentity = (env: SupportEnv, id: SupportIdentity | null) => !!env.SUPPORT_REPO && !!id && env.SUPPORT_REPO_ID === String(id.repoId) && env.SUPPORT_INSTALLATION_ID === String(id.installationId);
+export const isOperatorSupport = async (env: SupportEnv, repo: string) => operatorIdentity(env, await supportIdentity(env, repo));
 
-async function stored(env: SupportEnv, repo: string): Promise<SupportCreds> {
-  const raw = await env.CACHE?.get<{ envelope?: Envelope }>(credKey(repo), "json").catch(() => null);
+async function stored(env: SupportEnv, id: SupportIdentity): Promise<SupportCreds> {
+  const raw = await env.CACHE?.get<{ envelope?: Envelope }>(supportCredentialKey(id), "json").catch(() => null);
   if (!raw?.envelope) return {};
-  return decryptCredential<SupportCreds>(env, binding(repo), raw.envelope).catch(() => ({}));
+  return decryptCredential<SupportCreds>(env, binding(id), raw.envelope).catch(() => ({}));
 }
 
 export async function supportCreds(env: SupportEnv, repo?: string | null): Promise<SupportCreds> {
-  const own = repo ? await stored(env, repo) : {};
-  // Worker secrets only feed the operator's own repo (SUPPORT_REPO). Everyone else uses their pasted keys.
-  const operator = !!repo && env.SUPPORT_REPO?.toLowerCase() === repo.toLowerCase();
+  const id = repo ? await supportIdentity(env, repo) : null;
+  if (!id) return {};
+  // Legacy name-only envelopes and operator settings have no proven identity: reconnect explicitly.
+  const own = await stored(env, id);
+  const operator = operatorIdentity(env, id);
   return {
     inboundToken: (operator ? env.SUPPORT_INBOUND_TOKEN : undefined) || own.inboundToken,
     intercomClientSecret: (operator ? env.INTERCOM_CLIENT_SECRET : undefined) || own.intercomClientSecret,
@@ -70,8 +84,10 @@ export async function supportCreds(env: SupportEnv, repo?: string | null): Promi
 
 export async function saveSupportCreds(env: SupportEnv, repo: string, patch: SupportCreds): Promise<SupportCreds> {
   if (!env.CACHE) throw new Error("no KV binding");
-  const next = { ...(await stored(env, repo)), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v)) };
-  await env.CACHE.put(credKey(repo), JSON.stringify({ envelope: await encryptCredential(env, binding(repo), next) }));
+  const id = await supportIdentity(env, repo);
+  if (!id) throw new Error("Support requires an active repository identity; reconnect the GitHub App");
+  const next = { ...(await stored(env, id)), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v)) };
+  await env.CACHE.put(supportCredentialKey(id), JSON.stringify({ envelope: await encryptCredential(env, binding(id), next) }));
   return next;
 }
 

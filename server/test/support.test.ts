@@ -1,3 +1,4 @@
+import { testD1 } from "./d1-fixture";
 import { encryptCredential } from "../src/sources/credential-crypto";
 import { budgetDb, sparkTestEnv } from "./budget-fixture";
 import { authorizedDB, authorizedSocket, browserEnv, membershipCache } from "./browser-fixture";
@@ -181,8 +182,8 @@ describe("nothing is sent without a player tap", () => {
       const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)), "example/shop");
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [socket] };
       const env = {
-        ...browserEnv, META_API_KEY: "fake-meta-key", SUPPORT_REPO: "example/shop", INTERCOM_CLIENT_SECRET: "intercom-client-secret-123", INTERCOM_TOKEN: "intercom-token", INTERCOM_ADMIN_ID: "42",
-        DB: authorizedDB({ prepare: (sql: string) => /spark_usage|api_limits|factory_budget_owners|user_repos/.test(sql) ? budget.prepare(sql) : { bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }), first: async () => null }) } }),
+        ...browserEnv, META_API_KEY: "fake-meta-key", SUPPORT_REPO: "example/shop", SUPPORT_REPO_ID: "101", SUPPORT_INSTALLATION_ID: "1", INTERCOM_CLIENT_SECRET: "intercom-client-secret-123", INTERCOM_TOKEN: "intercom-token", INTERCOM_ADMIN_ID: "42",
+        DB: authorizedDB({ prepare: (sql: string) => sql.includes("SELECT r.repo_id") ? { bind: () => ({ first: async () => ({ repo_id: 101, installation_id: 1, archived_at: null, status: "active" }) }) } : /spark_usage|api_limits|factory_budget_owners|user_repos/.test(sql) ? budget.prepare(sql) : { bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }), first: async () => null }) } }),
         CACHE: { get: async (k: string, type?: string) => { if (k.startsWith("access:v2:")) return membershipCache.get(k); const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
       };
       const factory = new Factory(ctx as never, env as never);
@@ -269,26 +270,19 @@ describe("nothing is sent without a player tap", () => {
 
 describe("support webhooks", () => {
   it("email needs the map's token, not the preview password; Intercom needs its signature; duplicates queue once", async () => {
-    const rows = new Map<string, { state: string }>();
+    const db = testD1();
+    await db.prepare("INSERT INTO installations(id, account_login, permissions) VALUES (1, 'test', '{}')").run();
+    for (const [repo, id] of [["example/shop", 101], ["other/shop", 102]] as const) await db.prepare("INSERT INTO repos(full_name, installation_id, repo_id) VALUES (?,1,?)").bind(repo,id).run();
     const queued: string[] = [];
     const token = "a".repeat(40);
     const keys = { CRED_MASTER_KEY: btoa("a".repeat(32)) };
-    const otherShop = { envelope: await encryptCredential(keys, "support:other/shop", { inboundToken: "c".repeat(40) }) };
+    const otherShop = { envelope: await encryptCredential(keys, "support:1:102", { inboundToken: "c".repeat(40) }) };
     const env = {
       ...keys,
-      CACHE: { get: async (key: string) => key === "cred:support:other/shop" ? otherShop : null },
-      SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SUPPORT_REPO: "example/shop", SUPPORT_INBOUND_TOKEN: token, INTERCOM_CLIENT_SECRET: "intercom-client-secret-123",
-      DB: { prepare: (sql: string) => {
-        let values: unknown[] = [];
-        const statement = {
-          bind: (...args: unknown[]) => { values = args; return statement; },
-          run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-          first: async () => (sql.includes("signup_counters") ? { count: 1 } : rows.get(String(values[0])) ?? null),
-        };
-        expect(sql).toMatch(/support|signup_counters/);
-        return statement;
-      } },
-      FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSupport: async (_id: string, m: { channel: string; from: string }) => { expect(["example/shop", "other/shop"]).toContain(repo); queued.push(`${m.channel}:${m.from}`); } }) },
+      CACHE: { get: async (key: string) => key === "cred:support:1:102" ? otherShop : null },
+      SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SUPPORT_REPO: "example/shop", SUPPORT_REPO_ID: "101", SUPPORT_INSTALLATION_ID: "1", SUPPORT_INBOUND_TOKEN: token, INTERCOM_CLIENT_SECRET: "intercom-client-secret-123",
+      DB: db,
+      FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSupport: async (_id: string, m: { channel: string; from: string }) => { expect(["repo:101", "repo:102"]).toContain(repo); queued.push(`${m.channel}:${m.from}`); await db.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = 'support' AND delivery_id = ?").bind(_id).run(); } }) },
     };
     const email = JSON.stringify(fakeEmail("question"));
     const post = (path: string, body: string, headers: Record<string, string> = {}) => testApp.fetch(new Request(`https://shiptorio.com${path}`, { method: "POST", headers, body }), env as never);
@@ -307,13 +301,18 @@ describe("support webhooks", () => {
   });
 });
 
-it("operator support secrets are pinned, and repository credentials stay separate", async () => {
+it("operator support secrets require explicit immutable identity pins", async () => {
   const { supportCreds } = await import("../src/sources/support");
+  const db = testD1();
+  await db.prepare("INSERT INTO installations(id, account_login) VALUES (1, 'owner')").run();
+  await db.prepare("INSERT INTO repos(full_name, installation_id, repo_id) VALUES ('owner/operator',1,101),('friend/shop',1,102)").run();
   const keys = { CRED_MASTER_KEY: btoa("a".repeat(32)) };
-  const friend = { envelope: await encryptCredential(keys, "support:friend/shop", { inboundToken: "friend-secret" }) };
-  const env = { ...keys, SUPPORT_REPO: "owner/operator", SUPPORT_INBOUND_TOKEN: "operator-secret", INTERCOM_TOKEN: "operator-intercom", CACHE: { get: async (key: string) => key === "cred:support:friend/shop" ? friend : null } };
+  const friend = { envelope: await encryptCredential(keys, "support:1:102", { inboundToken: "friend-secret" }) };
+  const env = { ...keys, DB: db, SUPPORT_REPO: "owner/operator", SUPPORT_REPO_ID: "101", SUPPORT_INSTALLATION_ID: "1", SUPPORT_INBOUND_TOKEN: "operator-secret", INTERCOM_TOKEN: "operator-intercom", CACHE: { get: async (key: string) => key === "cred:support:1:102" ? friend : null } };
   expect(await supportCreds(env as never, "owner/operator")).toMatchObject({ inboundToken: "operator-secret", intercomToken: "operator-intercom" });
   expect(await supportCreds(env as never, "friend/shop")).toMatchObject({ inboundToken: "friend-secret", intercomToken: undefined });
-  expect(await supportCreds(env as never, "victim/private")).toMatchObject({ inboundToken: undefined, intercomToken: undefined });
-  expect(await supportCreds({ ...env, SUPPORT_REPO: undefined } as never, "owner/operator")).toMatchObject({ inboundToken: undefined });
+  expect(await supportCreds(env as never, "victim/private")).toEqual({});
+  expect(await supportCreds({ ...env, SUPPORT_REPO_ID: undefined } as never, "owner/operator")).toMatchObject({ inboundToken: undefined });
+  await db.prepare("UPDATE repos SET repo_id = 999 WHERE full_name = 'owner/operator'").run();
+  expect(await supportCreds(env as never, "owner/operator")).toMatchObject({ inboundToken: undefined, intercomToken: undefined });
 });

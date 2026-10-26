@@ -28,7 +28,7 @@ import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
 import { connectPage, supportConnectPage } from "./connect";
-import { ensureInboundToken, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
+import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
@@ -325,10 +325,10 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
   const token = await ensureInboundToken(c.env, repoParam);
   const view = async (extra: { error?: string; saved?: boolean } = {}) => {
     const creds = await supportCreds(c.env, repoParam);
-    return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: c.env.SUPPORT_REPO?.toLowerCase() === repoParam && !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
+    return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: await isOperatorSupport(c.env, repoParam) && !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
   };
   if (c.req.method === "GET") {
-    await factory(c.env, repoParam).connectSupport().catch(() => null);
+    await (await factory(c.env, repoParam)).connectSupport().catch(() => null);
     return c.html(await view());
   }
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
@@ -339,7 +339,7 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
   if (intercomToken && !/^[\w=:+/-]{20,400}$/.test(intercomToken)) return c.html(await view({ error: "That doesn't look like an Intercom access token." }), 400);
   if (intercomAdminId && !/^\d{1,20}$/.test(intercomAdminId)) return c.html(await view({ error: "The admin id is a number (Intercom → Settings → your profile URL)." }), 400);
   await saveSupportCreds(c.env, repoParam, { intercomClientSecret, intercomToken, intercomAdminId });
-  await factory(c.env, repoParam).connectSupport().catch(() => null);
+  await (await factory(c.env, repoParam)).connectSupport().catch(() => null);
   return c.html(await view({ saved: true }));
 });
 
@@ -648,7 +648,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'support' AND delivery_id = ?").bind(digest).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  await factory(c.env, repo).enqueueSupport(digest, message);
+  await (await factory(c.env, repo)).enqueueSupport(digest, message);
   return c.json({ ok: true, queued: true }, 202);
 }
 

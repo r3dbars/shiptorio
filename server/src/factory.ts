@@ -67,7 +67,7 @@ import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type 
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
-import { supportCreds, supportStatus, type SupportEnv, type SupportMessage } from "./sources/support";
+import { isOperatorSupport, supportCreds, supportStatus, type SupportEnv, type SupportMessage } from "./sources/support";
 import { deliverReply, fallbackDraft, foldMessage, heuristicSupport, issueFor, issueMove, linkCandidates, makeDraft, playerTap, replyMove, type PlayerTap } from "./support";
 import { draftReply, triageSupport, type SupportTriage } from "./spark-support";
 
@@ -1233,7 +1233,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const creds = await supportCreds(this.env, this.meta?.repo ?? s.repo);
       const current = this.state!.support?.find(x => x.id === t.id);
       if (current?.draft?.hash !== t.draft.hash || current.state !== "drafted") return;
-      const operator = this.env.SUPPORT_REPO?.toLowerCase() === s.repo.toLowerCase();
+      const operator = await isOperatorSupport(this.env, s.repo);
       const sendEnv = operator ? this.env : { ...this.env, RESEND_API_KEY: undefined, SUPPORT_FROM: undefined };
       const result = await deliverReply(sendEnv, creds, t, tap).catch(() => ({ via: "outbox" as const, ok: false, error: "Delivery result is uncertain. Check the provider before trying again." }));
       await this.ctx.storage.put(key, { state: result.ok ? "sent" : "uncertain", at: Date.now() });
