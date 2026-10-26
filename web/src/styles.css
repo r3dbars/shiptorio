@@ -387,6 +387,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .nm-link { font: 600 14px var(--mono); color: var(--dim); align-self: center; text-decoration: none; }
 .nm-link:hover { color: var(--amber); }
 .nextmove.quiet .nm-kicker { color: var(--dim); }
+.nm-grows { font: 500 12px var(--mono); padding: 2px 10px; border: 1px solid var(--moss); border-radius: 999px; color: var(--green); white-space: nowrap; }
 @media (max-width: 760px) {
   .nm-why { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }
