@@ -846,6 +846,17 @@ export const PROGRESS = {
   notifyBody: "The factory needs a decision.",
 };
 
+// The crash screen (ErrorBoundary): a blown boiler plate with one way back.
+export const CRASH = {
+  eyebrow: "Boiler room · fault",
+  state: "Blocked",
+  title: "Boiler blew",
+  body: "Something in this screen overheated and the gauges went dark. Your repo, its PRs and every card you answered are untouched.",
+  hint: "Restart relights the furnace and puts you back on the map.",
+  restart: "Restart",
+  ref: (id: string) => `Fault ${id.slice(0, 8)}`,
+};
+
 // Brand art alt text (web/src/ui/Logo.tsx).
 export const BRAND = {
   wordmarkAlt: "Shiptorio",
