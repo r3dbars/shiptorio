@@ -1,0 +1,473 @@
+<title>The Shiptorio Loop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one game screen. Title bar, the factory map (left to right, rework belt underneath),
+   a station panel that opens on click, then short sections on checks, hooks and what comes later.
+   Single dark look on purpose: it is the game's own UI. Tokens from web/src/styles.css + docs/ART.md. */
+:root {
+  --void: #1b2448;
+  --ground: #141b38;
+  --tile: #1f2952;
+  --panel: #0e1329;
+  --panel-2: #151c3a;
+  --line: #8d99c9;
+  --line-dim: #3a4677;
+  --edge: #05070f;
+  --ink: #eef1fa;
+  --dim: #a9b2d4;
+  --stone: #c9b48a;
+  --cliff: #3a4268;
+  --steel: #8a94a3;
+  --amber: #f2a93b;
+  --amber-hi: #ffd28a;
+  --green: #5bd18b;
+  --red: #ff5e52;
+  --blue: #6fb2ff;
+  --clay: #d97757;
+  --pixel: "Silkscreen", "Courier New", monospace;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  background-image:
+    linear-gradient(var(--tile) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tile) 1px, transparent 1px);
+  background-size: 32px 32px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 64px;
+  display: grid; gap: 28px;
+}
+h1, h2, h3, .px { font-family: var(--pixel); font-weight: 400; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5.4vw, 56px); line-height: 1.05; letter-spacing: 1px; color: var(--amber); text-shadow: 3px 3px 0 var(--edge); }
+h2 { font-size: 20px; letter-spacing: 1px; color: var(--amber-hi); }
+h3 { font-size: 14px; letter-spacing: .5px; }
+p { margin: 0; max-width: 68ch; }
+.box {
+  background: var(--panel); border: 2px solid var(--line); outline: 2px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--edge); padding: 20px;
+}
+.eyebrow { font-family: var(--pixel); font-size: 11px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; }
+.lede { font-size: 15px; color: var(--dim); }
+.lede b { color: var(--ink); font-weight: 600; }
+header.hero { display: grid; gap: 12px; }
+.tag { display: inline-block; font-family: var(--pixel); font-size: 10px; letter-spacing: 1px; padding: 2px 6px; border: 1px solid var(--edge); color: var(--edge); }
+.tag.amber { background: var(--amber); }
+.tag.red { background: var(--red); }
+.tag.green { background: var(--green); }
+.tag.blue { background: var(--blue); }
+.tag.steel { background: var(--steel); }
+
+/* ---------- the map ---------- */
+.mapbox { padding: 0; overflow: hidden; }
+.mapbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 2px solid var(--line-dim); background: var(--panel-2); }
+.mapbar .px { font-size: 12px; letter-spacing: 1px; }
+.hint { font-size: 12px; color: var(--dim); }
+.scroll { overflow-x: auto; }
+.map { min-width: 1060px; padding: 18px 16px 20px; display: grid; gap: 10px; }
+.zones, .row { display: grid; grid-template-columns: 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px; align-items: center; }
+.zones div { font-family: var(--pixel); font-size: 10px; letter-spacing: 1.5px; color: var(--dim); text-align: center; padding-bottom: 6px; border-bottom: 2px dashed var(--line-dim); }
+.z-ore { grid-column: 1 / 2; }
+.z-brain { grid-column: 3 / 4; }
+.z-build { grid-column: 5 / 6; }
+.z-gaunt { grid-column: 7 / 14; color: var(--amber) !important; border-bottom-color: var(--amber) !important; }
+.z-ship { grid-column: 15 / 18; }
+.powerrow { grid-template-columns: 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px; }
+.plants { grid-column: 3 / 8; display: flex; gap: 10px; justify-content: center; }
+.station {
+  appearance: none; font: inherit; color: inherit; cursor: pointer; position: relative;
+  background: var(--panel-2); border: 2px solid var(--line-dim); outline: 2px solid var(--edge);
+  padding: 8px 4px 6px; display: grid; justify-items: center; gap: 4px; min-height: 112px; align-content: start;
+  transition: transform .08s, border-color .08s;
+}
+.station:hover { transform: translateY(-2px); border-color: var(--line); }
+.station:focus-visible { outline: 3px solid var(--amber-hi); }
+.station[aria-pressed="true"] { border-color: var(--amber-hi); background: #1d2650; }
+.station .name { font-family: var(--pixel); font-size: 9.5px; letter-spacing: .5px; line-height: 1.2; text-align: center; }
+.station .meta { font-size: 10px; color: var(--dim); line-height: 1.2; }
+.station.gate { border-color: #6b5a2e; }
+.station.bottleneck { border-color: var(--amber); animation: pulse 1.4s steps(2) infinite; }
+.station.bottleneck::before { content: "BOTTLENECK"; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-family: var(--pixel); font-size: 8.5px; padding: 1px 4px; background: var(--amber); color: var(--edge); border: 1px solid var(--edge); white-space: nowrap; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 3px rgba(242,169,59,.35); } }
+.plant { min-height: 0; grid-template-columns: auto auto; align-items: center; gap: 2px 8px; padding: 6px 10px; justify-items: start; }
+.plant .name { text-align: left; }
+.meter { display: flex; gap: 2px; }
+.meter i { width: 9px; height: 7px; background: #262d4d; border: 1px solid var(--edge); }
+.meter i.on { background: var(--green); }
+.meter.low i.on { background: var(--amber); }
+.meter.brain i.on { background: var(--blue); }
+.sprite { width: 48px; height: 48px; image-rendering: pixelated; }
+.plant .sprite { width: 36px; height: 36px; grid-row: span 2; }
+.pile { display: flex; gap: 2px; height: 8px; }
+.pile i { width: 8px; height: 8px; border: 1px solid var(--edge); background: var(--stone); }
+.pile i.red { background: var(--red); }
+.pile i.green { background: var(--green); }
+.pile i.blue { background: var(--blue); }
+
+/* belts */
+.belt { height: 14px; margin: 0 2px; border-block: 2px solid var(--edge); position: relative;
+  background: repeating-linear-gradient(90deg, #4a4f5f 0 6px, #2e3242 6px 12px); animation: run .6s linear infinite; }
+.belt::after { content: ""; position: absolute; right: -6px; top: 50%; transform: translateY(-50%); border: 6px solid transparent; border-left-color: var(--steel); }
+.belt.hot { background: repeating-linear-gradient(90deg, #6b5a2e 0 6px, #3d3420 6px 12px); }
+@keyframes run { to { background-position: 12px 0; } }
+.reworkrow { grid-template-columns: 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px 1fr 96px; align-items: start; }
+.drops { grid-column: 7 / 14; display: grid; grid-template-columns: 96px 1fr 96px 1fr 96px 1fr 96px; height: 18px; }
+.drops span { justify-self: center; width: 0; border-left: 2px dashed var(--red); height: 18px; }
+.drops span.none { border-left: 0; }
+.rework {
+  grid-column: 3 / 14; appearance: none; font: inherit; color: inherit; cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: 10px; padding: 0; background: none; border: 0;
+}
+.rework .rbelt { flex: 1; height: 14px; border-block: 2px solid var(--edge); position: relative;
+  background: repeating-linear-gradient(90deg, #6e2a2a 0 6px, #3a1a1d 6px 12px); animation: runback .6s linear infinite; }
+.rework .rbelt::before { content: ""; position: absolute; left: -10px; top: 50%; transform: translateY(-50%); border: 6px solid transparent; border-right-color: var(--red); }
+.rework:hover .rbelt, .rework[aria-pressed="true"] .rbelt { outline: 2px solid var(--red); }
+.rework:focus-visible { outline: 3px solid var(--amber-hi); }
+.rework .label { font-family: var(--pixel); font-size: 10px; color: var(--red); white-space: nowrap; }
+@keyframes runback { to { background-position: -12px 0; } }
+.up { grid-column: 3 / 4; justify-self: center; width: 0; height: 18px; border-left: 2px dashed var(--red); }
+
+/* ---------- panel ---------- */
+.panel { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px 28px; }
+.panel .head { grid-column: 1 / -1; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.panel .head .sprite { width: 56px; height: 56px; }
+.panel .head h2 { font-size: 22px; }
+.panel .what { display: grid; gap: 12px; align-content: start; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+.stat { background: var(--panel-2); border: 1px solid var(--line-dim); padding: 8px 10px; min-width: 0; }
+.stat .k { font-size: 11px; color: var(--dim); line-height: 1.3; }
+.stat .v { font-family: var(--pixel); font-size: 16px; font-variant-numeric: tabular-nums; }
+.logline { font-size: 12px; background: #0a0e20; border-left: 3px solid var(--red); padding: 8px 10px; color: var(--ink); }
+.logline.ok { border-left-color: var(--green); }
+.logline .who { color: var(--amber); }
+.acts { display: grid; gap: 8px; align-content: start; }
+.acts .k { font-family: var(--pixel); font-size: 10px; letter-spacing: 1.5px; color: var(--dim); }
+.btn {
+  appearance: none; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; text-align: left;
+  display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: var(--panel-2);
+  border: 2px solid var(--line-dim); border-radius: 18px;
+}
+.btn::before { content: attr(data-key); font-family: var(--pixel); font-size: 10px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: var(--steel); color: var(--edge); border: 1px solid var(--edge); flex-shrink: 0; }
+.btn.rec { border-color: var(--amber); }
+.btn.rec::before { background: var(--amber); }
+.btn:hover { background: #1d2650; }
+.btn:focus-visible { outline: 3px solid var(--amber-hi); }
+.toast { font-size: 12px; color: var(--green); min-height: 1.6em; }
+.sample { font-size: 11px; color: var(--dim); }
+
+/* ---------- sections ---------- */
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+.sec { display: grid; gap: 14px; align-content: start; }
+.ladder { display: grid; gap: 6px; }
+.rung { display: grid; grid-template-columns: 28px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line-dim); }
+.rung .n { font-family: var(--pixel); font-size: 14px; color: var(--amber); text-align: center; }
+.rung b { font-weight: 600; }
+.rung small { color: var(--dim); font-size: 12px; display: block; line-height: 1.4; }
+.promote { font-size: 12px; color: var(--dim); border: 1px dashed var(--amber); padding: 10px 12px; }
+.promote b { color: var(--amber); font-weight: 600; }
+.tech { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.card { background: var(--panel-2); border: 2px solid var(--line-dim); padding: 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.card .top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.card h3 { font-size: 12px; }
+.card p { font-size: 12px; color: var(--dim); }
+.cost { display: flex; gap: 3px; }
+.cost i { width: 10px; height: 10px; border: 1px solid var(--edge); }
+.cost .r { background: var(--red); } .cost .g { background: var(--green); } .cost .b { background: var(--blue); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line-dim); vertical-align: top; }
+th { font-family: var(--pixel); font-weight: 400; font-size: 10px; letter-spacing: 1px; color: var(--dim); }
+td .dot { display: inline-block; width: 9px; height: 9px; border: 1px solid var(--edge); margin-right: 3px; vertical-align: -1px; }
+.hooks { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.hook { display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 10px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line-dim); }
+.hook .sprite { width: 34px; height: 34px; }
+.hook h3 { font-size: 11.5px; margin-bottom: 2px; }
+.hook p { font-size: 12px; color: var(--dim); }
+.later { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.island { flex: 0 0 210px; background: var(--panel-2); border: 2px dashed var(--line-dim); padding: 12px; display: grid; gap: 6px; align-content: start; }
+.island.now { border-style: solid; border-color: var(--amber); }
+.island h3 { font-size: 11.5px; }
+.island p { font-size: 12px; color: var(--dim); line-height: 1.45; }
+.island p b { color: var(--ink); font-weight: 600; }
+.calls { display: grid; gap: 10px; counter-reset: c; }
+.call { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 6px 20px; padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line-dim); }
+.call h3 { grid-column: 1 / -1; font-size: 12px; color: var(--amber-hi); }
+.call p { font-size: 12.5px; color: var(--dim); }
+.call p b { color: var(--green); font-weight: 600; }
+footer { font-size: 12px; color: var(--dim); }
+footer a { color: var(--blue); }
+@media (max-width: 720px) {
+  .panel { grid-template-columns: 1fr; }
+  .stats { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .call { grid-template-columns: 1fr; }
+  .box { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .belt, .rework .rbelt, .station.bottleneck { animation: none; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <span class="eyebrow">Shiptorio · how the factory works · v1, Oct 26</span>
+  <h1>The Shiptorio Loop</h1>
+  <p class="lede">Signals come in on the left. Your AI power runs the machines. <b>Every fix runs a gauntlet of checks before it ships</b>, and anything that fails rides the red belt back to Spark. Where stuff piles up is your bottleneck. Click any machine to see what it's doing and make a move.</p>
+</header>
+
+<section class="box mapbox" aria-label="Factory map">
+  <div class="mapbar">
+    <span class="px">demo-shop · factory floor</span>
+    <span class="hint">Example data. Click a machine, a power plant or the red belt.</span>
+  </div>
+  <div class="scroll">
+    <div class="map">
+      <div class="zones">
+        <div class="z-ore">1 · ORE</div>
+        <div class="z-brain">BRAIN</div>
+        <div class="z-build">2 · BUILD</div>
+        <div class="z-gaunt">3 · THE GAUNTLET</div>
+        <div class="z-ship">4 · SHIPPED</div>
+      </div>
+      <div class="row powerrow">
+        <div class="plants">
+          <button class="station plant" data-id="power" aria-pressed="false"><canvas class="sprite" data-s="plant" data-f="o"></canvas><span class="name">Claude plant</span><span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></button>
+          <button class="station plant" data-id="power" aria-pressed="false"><canvas class="sprite" data-s="plant" data-f="s"></canvas><span class="name">Codex plant</span><span class="meter low"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span></button>
+          <button class="station plant" data-id="power" aria-pressed="false"><canvas class="sprite" data-s="steam"></canvas><span class="name">Spark steam</span><span class="meter brain"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="station" data-id="mines" aria-pressed="false"><canvas class="sprite" data-s="mine"></canvas><span class="name">Ore mines</span><span class="pile"><i class="red"></i><i class="red"></i><i></i><i class="green"></i></span><span class="meta">63 → 11</span></button>
+        <div class="belt"></div>
+        <button class="station" data-id="spark" aria-pressed="false"><canvas class="sprite" data-s="spark"></canvas><span class="name">Spark</span><span class="pile"><i class="red"></i><i></i></span><span class="meta">reads + plans</span></button>
+        <div class="belt"></div>
+        <button class="station" data-id="build" aria-pressed="false"><canvas class="sprite" data-s="arm"></canvas><span class="name">Assemblers</span><span class="pile"><i class="red"></i></span><span class="meta">2 / 3 busy</span></button>
+        <div class="belt hot"></div>
+        <button class="station gate" data-id="ci" aria-pressed="false"><canvas class="sprite" data-s="ci"></canvas><span class="name">CI gate</span><span class="pile"><i class="green"></i></span><span class="meta">78% pass</span></button>
+        <div class="belt hot"></div>
+        <button class="station gate bottleneck" data-id="proof" aria-pressed="false"><canvas class="sprite" data-s="proof"></canvas><span class="name">Proof bay</span><span class="pile"><i class="red"></i><i class="red"></i><i class="red"></i><i class="green"></i></span><span class="meta">23m wait</span></button>
+        <div class="belt hot"></div>
+        <button class="station gate" data-id="review" aria-pressed="false"><canvas class="sprite" data-s="review"></canvas><span class="name">Review tribunal</span><span class="pile"><i class="green"></i></span><span class="meta">84% pass</span></button>
+        <div class="belt hot"></div>
+        <button class="station gate" data-id="pad" aria-pressed="false"><canvas class="sprite" data-s="pad"></canvas><span class="name">Launch pad</span><span class="pile"><i class="red"></i><i class="blue"></i></span><span class="meta">you merge</span></button>
+        <div class="belt"></div>
+        <button class="station" data-id="orbit" aria-pressed="false"><canvas class="sprite" data-s="orbit"></canvas><span class="name">Orbit watch</span><span class="pile"><i class="red"></i><i class="green"></i><i class="green"></i></span><span class="meta">24h watch</span></button>
+      </div>
+      <div class="row reworkrow">
+        <span class="up"></span>
+        <div class="drops"><span></span><span class="none"></span><span></span><span class="none"></span><span></span><span class="none"></span><span></span></div>
+      </div>
+      <div class="row reworkrow">
+        <button class="rework" data-id="rework" aria-pressed="false"><span class="rbelt"></span><span class="label">REWORK BELT · back to Spark · 2 items</span></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="box panel" id="panel" aria-live="polite">
+  <div class="head"><canvas class="sprite" id="p-sprite"></canvas><div><span class="eyebrow" id="p-zone"></span><h2 id="p-name"></h2></div><span id="p-tag"></span></div>
+  <div class="what">
+    <p id="p-what"></p>
+    <div class="stats" id="p-stats"></div>
+    <div class="logline" id="p-log"></div>
+  </div>
+  <div class="acts">
+    <span class="k">Take an action</span>
+    <div id="p-acts" class="acts"></div>
+    <div class="toast" id="p-toast"></div>
+    <span class="sample">Numbers here are example data for the demo shop.</span>
+  </div>
+</section>
+
+<div class="two">
+  <section class="box sec">
+    <span class="eyebrow">Inspired by Lauren Tan (poteto)</span>
+    <h2>Don't trust it. Prove it.</h2>
+    <p>Agent output is untrusted until it shows evidence. "Done" means the bug is gone in the real app, not that the code compiles or the agent said so. And you only scale up (more machines, more autonomy) once the checks are trustworthy.</p>
+    <p>Fix each problem at the strongest layer that can catch it. Layer 1 is strongest: it never forgets and never gets skipped. Your own review is the last net, not the first.</p>
+    <div class="ladder">
+      <div class="rung"><span class="n">1</span><div><b>Guardrail in the code</b><small>Make the bad thing impossible. Types, safe helpers, banned imports.</small></div><span class="tag green">strongest</span></div>
+      <div class="rung"><span class="n">2</span><div><b>CI gate</b><small>Lint, types, tests. Fast, cheap, runs on every PR.</small></div><span class="tag steel">cheap</span></div>
+      <div class="rung"><span class="n">3</span><div><b>Proof bay</b><small>Reproduce before, prove gone after, on the running app.</small></div><span class="tag amber">evidence</span></div>
+      <div class="rung"><span class="n">4</span><div><b>Review tribunal</b><small>A different model attacks the diff. Finds shortcuts tests miss.</small></div><span class="tag blue">2nd opinion</span></div>
+      <div class="rung"><span class="n">5</span><div><b>You, at the launch pad</b><small>Best at taste and intent. Worst at catching the same bug twice.</small></div><span class="tag steel">final say</span></div>
+    </div>
+    <p class="promote"><b>Promote a check.</b> Same failure twice? Spark offers to move it up a layer. A review comment that keeps coming back becomes a lint rule. A proof that keeps failing on <code>/checkout</code> becomes a test turret. The gauntlet gets stronger every time it catches something.</p>
+  </section>
+
+  <section class="box sec">
+    <span class="eyebrow">Research · inspection tech</span>
+    <h2>Add more checks</h2>
+    <p>New stations are research. You spend science packs (the PRs you've shipped) to unlock them, and Spark tells you which one would have caught last week's misses.</p>
+    <div class="tech">
+      <div class="card"><div class="top"><h3>Test turret</h3><span class="cost"><i class="b"></i><i class="b"></i></span></div><p>Writes tests around a district. Catches regressions.</p></div>
+      <div class="card"><div class="top"><h3>Visual diff camera</h3><span class="cost"><i class="g"></i><i class="b"></i></span></div><p>Screenshots pages before and after. Catches broken layouts.</p></div>
+      <div class="card"><div class="top"><h3>Security sentry</h3><span class="cost"><i class="r"></i><i class="b"></i><i class="b"></i></span></div><p>Looks for leaked secrets, auth holes, unsafe input.</p></div>
+      <div class="card"><div class="top"><h3>Perf gauge</h3><span class="cost"><i class="g"></i><i class="g"></i></span></div><p>Load time and bundle size budget. Catches slow.</p></div>
+      <div class="card"><div class="top"><h3>Canary tower</h3><span class="cost"><i class="r"></i><i class="g"></i><i class="b"></i></span></div><p>Ships to 5% first. Rolls back if errors climb.</p></div>
+      <div class="card"><div class="top"><h3>Arena</h3><span class="cost"><i class="r"></i><i class="r"></i><i class="b"></i></span></div><p>Two machines build the same fix. A judge keeps the better one.</p></div>
+    </div>
+    <h3 style="margin-top:6px">Rigor follows risk</h3>
+    <table>
+      <thead><tr><th>District</th><th>Risk</th><th>Stations a launch permit needs</th></tr></thead>
+      <tbody>
+        <tr><td>/checkout</td><td><span class="dot" style="background:var(--red)"></span>high</td><td>CI, proof, review, canary, you</td></tr>
+        <tr><td>/cart</td><td><span class="dot" style="background:var(--amber)"></span>medium</td><td>CI, proof, review</td></tr>
+        <tr><td>docs/</td><td><span class="dot" style="background:var(--green)"></span>low</td><td>CI, review</td></tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="box sec">
+  <span class="eyebrow">The pull</span>
+  <h2>Why you keep playing</h2>
+  <p>It plays like a factory game you can't put down. The difference is that every point is a real thing that happened to your product.</p>
+  <div class="hooks">
+    <div class="hook"><canvas class="sprite" data-s="proof"></canvas><div><h3>There's always one bottleneck</h3><p>It glows on the map with one next move. Fix it, and the next one shows up.</p></div></div>
+    <div class="hook"><canvas class="sprite" data-s="pad"></canvas><div><h3>Rockets</h3><p>Every merge is a launch. Countdown, vapor, liftoff, and Sentry goes quiet.</p></div></div>
+    <div class="hook"><canvas class="sprite" data-s="ci"></canvas><div><h3>Catches are trophies</h3><p>Each station counts the bugs it stopped before they shipped. That number only goes up.</p></div></div>
+    <div class="hook"><canvas class="sprite" data-s="arm"></canvas><div><h3>New stuff to unlock</h3><p>Stations, machines, power plants. Research is always one or two rockets away.</p></div></div>
+    <div class="hook"><canvas class="sprite" data-s="spark"></canvas><div><h3>Spark earns autonomy</h3><p>Play clean and Spark runs more on its own: Advisor, Floor, Build, launch permits, Lights out.</p></div></div>
+    <div class="hook"><canvas class="sprite" data-s="orbit"></canvas><div><h3>Every number is real</h3><p>Users unblocked, customers answered, checkouts completed. Ship bad work and the score drops hard.</p></div></div>
+  </div>
+</section>
+
+<section class="box sec">
+  <span class="eyebrow">Later · more factories</span>
+  <h2>Same loop, more islands</h2>
+  <p>We start with the repo. The same ore → power → gauntlet → rocket loop works for the rest of the business. Each one is an add-on island with its own ore and its own checks.</p>
+  <div class="later">
+    <div class="island now"><span class="tag amber">now</span><h3>Product factory</h3><p><b>Ore:</b> issues, errors, crashes, feedback.<br><b>Rocket:</b> a merged fix.<br><b>Proof:</b> the bug is gone.</p></div>
+    <div class="island"><span class="tag steel">later</span><h3>Acquisition</h3><p><b>Ore:</b> traffic, funnel drop-offs, search terms.<br><b>Rocket:</b> a landing page or onboarding test.<br><b>Proof:</b> signup rate moved.</p></div>
+    <div class="island"><span class="tag steel">later</span><h3>Retention</h3><p><b>Ore:</b> churn, cancel reasons, users gone quiet.<br><b>Rocket:</b> a fix or a win-back email.<br><b>Proof:</b> they came back.</p></div>
+    <div class="island"><span class="tag steel">later</span><h3>Marketing</h3><p><b>Ore:</b> what you shipped this week.<br><b>Rocket:</b> changelog, posts, launch notes.<br><b>Proof:</b> people clicked.</p></div>
+    <div class="island"><span class="tag steel">later</span><h3>Support</h3><p><b>Ore:</b> every ticket.<br><b>Rocket:</b> an answer, or a fix that kills the ticket type.<br><b>Proof:</b> fewer tickets.</p></div>
+  </div>
+</section>
+
+<section class="box sec">
+  <span class="eyebrow">For Justin</span>
+  <h2>Calls to make</h2>
+  <div class="calls">
+    <div class="call"><h3>Which stations ship for the Nov 4 demo?</h3><p>CI gate, proof bay, review tribunal, launch pad. Orbit watch as a Sentry check if there's time. Research tree shown, one unlock on camera.</p><p><b>Recommend:</b> those four. The proof bay is the thing nobody else has, so it's the demo moment.</p></div>
+    <div class="call"><h3>Where do fails go?</h3><p>Back to Spark at the start of the line, carrying a scar tag (what failed, the evidence). Spark re-plans. Third strike comes to you.</p><p><b>Recommend:</b> Spark, not straight back to the builder. That's how the loop learns.</p></div>
+    <div class="call"><h3>Who runs the review?</h3><p>A different model than the builder: Claude builds, Codex reviews, and the reverse. With one sign-in, a fresh session with a hostile reviewer loadout.</p><p><b>Recommend:</b> different model family when both are plugged in. It costs power, so it shows on the meter.</p></div>
+    <div class="call"><h3>Can players remove a station?</h3><p>Per district, yes. But launch permits need the stations their risk calls for, so cutting checks caps autonomy. The launch pad can't be removed without a permit.</p><p><b>Recommend:</b> allowed, with the trust cost shown.</p></div>
+  </div>
+</section>
+
+<footer>Source: <code>docs/LOOP.md</code> in r3dbars/shiptorio. Verification ideas from Lauren Tan's talks and pstack: <a href="https://www.theneuron.ai/explainer-articles/pstack-explained-lauren-tans-system-for-trustworthy-ai-agents/" target="_blank" rel="noopener">pstack explained</a>, <a href="https://redreamality.com/blog/lauren-tan-poteto-trust-before-parallel/" target="_blank" rel="noopener">trust first, then parallel</a>.</footer>
+
+</div>
+
+<script>
+const PAL = { k:"#05070f", a:"#f2a93b", y:"#ffd28a", s:"#8a94a3", d:"#4a5266", S:"#c9b48a", g:"#5bd18b", r:"#ff5e52", b:"#6fb2ff", w:"#eef1fa", c:"#3a4268", m:"#4f7d3b", o:"#d97757" };
+const SPR = {
+  mine: ["............","....kk......","...kbbk..k..","..kbwbbkkak.","..kbbbbkaak.",".kkbbbkkaak.",".kSSkkSSkk..","kSSSSSSSSSk.","kSdSSSdSSSSk","kSSSSdSSSdSk","kkkkkkkkkkkk","............"],
+  spark: ["....kkkk....","...kaaaak...","..kayyyaak..",".kaywwwyaak.",".kaywkwyaak.",".kaywwwyaak.","..kayyyaak..","kk.kaaaak.kk","ksk.kkkk.ksk","kssk....kssk",".kk......kk.","............"],
+  arm: ["............","......kkk...",".....kaak...","....kak.k...","...kak..kk..","..kak...kwk.",".kssk...kk..",".kssk.......","kddddddddk..","kssssssssk..","kddddddddk..","kkkkkkkkkk.."],
+  ci: ["kkkkkkkkkkkk","kssssssssssk","ksdkkkkkkdsk","ksk.g..g.ksk","ksk.g..g.ksk","ksk.gggg.ksk","ksk..gg..ksk","ksk......ksk","ksk.SSSS.ksk","kdk.SSSS.kdk","kkkkkkkkkkkk","............"],
+  proof: ["....kkkk....","....kwwk....","....kwwk....","...kwwwwk...","..kwbbbbwk..",".kwbbbbbbwk.",".kbbgbbbbbk.",".kbbbbbgbbk.","..kbbbbbbk..","kkkkkkkkkkkk","kSSSSSSSSSSk","kkkkkkkkkkkk"],
+  review: ["......k.....",".....kak....","kkkkkkakkkkk","..k..ka..k..",".kak.ka.kak.","kbbbk.akrrrk",".kkk..a.kkk.","......a.....",".....kak....","....kaaak...","...kkkkkkk..","............"],
+  pad: [".....kk.....","....kwwk....","....kwrk....","....kwwk....","...kwwwwk...","...kkwwkk...","kkkkkaakkkkk","kSySySySySyk","kSSSSSSSSSSk","kkkkkkkkkkkk","............","............"],
+  orbit: ["..........k.",".kkk.....kgk","kbbbk.....k.","kbwbkkkk....","kbbbkssk....",".kkk.kssk...","......kssk..",".......kk...","......kssk..",".....kddddk.",".....kkkkkk.","............"],
+  plant: ["............","fffffffffff.","fbbfbbfbbff.","fbwfbbfbbf..","ffffffffff..","fbbfbbfbbf..","ffffffffff..","....kk......","....kk......","...kssk.....","..kddddk....","..kkkkkk...."],
+  steam: ["........ww..",".......w.w..","........w...",".......kk...",".......kdk..","..kkkk.kdk..",".kbbbbkkdk..","kbbbbbbkdk..","kbbwbbbkkkkk","kssssssssssk","kddddddddddk","kkkkkkkkkkkk"],
+  rework: ["............","..kk........",".krk........","krrkkkkkkk..",".krrrrrrrrk.","..kk.....krk",".........krk","..kkkkkkkkrk","..krrrrrrrk.","..kkkkkkkk..","............","............"]
+};
+function draw(cv, name, frame) {
+  const rows = SPR[name]; if (!rows) return;
+  cv.width = 12; cv.height = 12;
+  const x = cv.getContext("2d"); x.clearRect(0,0,12,12);
+  rows.forEach((row, j) => [...row].forEach((ch, i) => {
+    let c = ch === "f" ? (frame || "s") : ch;
+    if (c === ".") return; x.fillStyle = PAL[c]; x.fillRect(i, j, 1, 1);
+  }));
+}
+document.querySelectorAll("canvas[data-s]").forEach(c => draw(c, c.dataset.s, c.dataset.f));
+
+const S = {
+  mines: { zone:"1 · Ore · signals in", name:"Ore mines", sprite:"mine", tag:["steel","input"],
+    what:"Every source is a mine: GitHub issues, Sentry errors, customer email, Stripe events. Spark melts duplicates into one chunk, so 40 crash reports about the same bug become one big chunk that weighs 40. Bigger chunk, more it matters.",
+    stats:[["Raw signals today","63"],["After dedupe","11"],["Biggest chunk","×40"]],
+    log:["Spark","linked 3 customer emails to Sentry #8812, same stack trace. Chunk weight 40 → 43."], ok:true,
+    acts:[["Connect Sentry",1],["Connect the support inbox",0],["Merge these two chunks",0]] },
+  spark: { zone:"Brain · the game master", name:"Spark", sprite:"spark", tag:["blue","never writes code"],
+    what:"Spark reads every chunk, says the problem back in plain words, scores who it hurts, picks a machine and writes the plan. On risky districts you confirm its read before anything gets built. Every fail comes back here, so Spark is also where the loop learns.",
+    stats:[["Waiting","2"],["Avg wait","1m"],["Reads you fixed","1 / 14"]],
+    log:["Spark","#41 came back from the proof bay: crash still happens with an empty cart. Re-planning with the repro attached."],
+    acts:[["Confirm Spark's read of #41",1],["Change the plan",0],["Split into smaller items",0]] },
+  build: { zone:"2 · Build · your machines", name:"Assemblers", sprite:"arm", tag:["steel","your subscriptions"],
+    what:"Your own Claude Code and Codex, running on your subscriptions through the local runner. They take the item and Spark's plan, write the fix and open a PR. They have to attach evidence (a failing test that now passes, a screenshot), not just say done.",
+    stats:[["Busy","2 / 3"],["PRs today","6"],["Evidence attached","5 / 6"]],
+    log:["Claude Code","opened #42 for the cart total bug. Attached: failing test → passing, screenshot of /cart."], ok:true,
+    acts:[["Add an assembler",0],["Give it a test-first loadout",1],["Move it to the Claude plant",0]] },
+  ci: { zone:"3 · Gauntlet · station 1", name:"CI gate", sprite:"ci", tag:["green","cheap + fast"],
+    what:"The first and cheapest check: lint, types, unit tests. It catches the boring breaks fast, so nothing expensive runs on broken code.",
+    stats:[["In line","1"],["Pass rate","78%"],["Caught this week","9"]],
+    log:["CI","#40 failed types: Cart.total is possibly undefined. Sent to the rework belt."],
+    acts:[["Open the CI log",0],["Send back with a hint",0],["Turn this into a lint rule",1]] },
+  proof: { zone:"3 · Gauntlet · station 2", name:"Proof bay", sprite:"proof", tag:["amber","bottleneck"],
+    what:"The real check. Run the bug against the real app, before and after. Before: the crash happens. After: it's gone. The PR carries the receipts: the failing test that turns green, a log or screenshot from the running app. Done means evidence.",
+    stats:[["In line","4"],["Oldest wait","23m"],["Caught this week","5"]],
+    log:["Proof bay","#41 passed CI but the crash still happens with an empty cart. Back to Spark."],
+    acts:[["Build a second proof bay",1],["Teach a /checkout proof recipe",0],["Let docs PRs skip proof",0]] },
+  review: { zone:"3 · Gauntlet · station 3", name:"Review tribunal", sprite:"review", tag:["blue","second opinion"],
+    what:"A different model than the one that wrote it tries to break it. Claude built it, so Codex reviews (or the reverse). It looks for what tests miss: the wrong approach, swallowed errors, security holes, scope creep.",
+    stats:[["In line","1"],["Pass rate","84%"],["Caught this week","3"]],
+    log:["Codex reviewer","#39 hides the error instead of fixing the null. Rejected, with the line."],
+    acts:[["Read the review",0],["Overrule it, with a reason",0],["Add a security reviewer",1]] },
+  pad: { zone:"3 · Gauntlet · station 4", name:"Launch pad", sprite:"pad", tag:["amber","you"],
+    what:"You. Every PR that gets here has passed every station, and the card shows the receipts: CI, proof, review. Merge and the rocket launches. Districts earn launch permits over time, so routine PRs can launch on their own.",
+    stats:[["Waiting on you","2"],["Oldest","40m"],["Launched this week","17"]],
+    log:["Spark","#42 is ready. CI green, proof attached, Codex review approved. Fixes the cart total for 31 users."], ok:true,
+    acts:[["Review #42 with receipts",1],["Merge and launch",0],["Give docs a launch permit",0]] },
+  orbit: { zone:"4 · Shipped · after the merge", name:"Orbit watch", sprite:"orbit", tag:["green","real world"],
+    what:"Checks don't stop at merge. For 24 hours after a deploy, orbit watch checks the real world: Sentry quiet, checkouts back up, the customer answered. If the bug comes back, the ore reopens and that district loses trust.",
+    stats:[["Watching","3"],["Escaped this week","0"],["Users unblocked","112"]],
+    log:["Orbit watch","#38 shipped 6h ago. Sentry #8812 quiet, checkout completions back to normal."], ok:true,
+    acts:[["Draft the reply to Dana",1],["See what changed",0],["Roll back #38",0]] },
+  power: { zone:"Power · AI compute", name:"Power plants", sprite:"plant", frame:"o", tag:["green","your sign-ins"],
+    what:"Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every station spends power, so more checks cost more. Spark spends heavy checks where mistakes are expensive and keeps docs cheap. Spark's own thinking runs on its steam plant. Local models come later as geothermal.",
+    stats:[["Claude left","72%"],["Codex left","35%"],["Per rocket","~4%"]],
+    log:["Spark","Codex is under 40%. Moving reviews to Claude for low-risk districts until Monday."], ok:true,
+    acts:[["Sign in with another plan",0],["Hold low-value items",0],["Let Spark balance power",1]] },
+  rework: { zone:"The loop back", name:"Rework belt", sprite:"rework", tag:["red","fails go back"],
+    what:"Anything that fails a station rides back to Spark, not straight to the builder. It carries a scar tag: what failed and the evidence. Spark re-plans with that. Third strike, it comes to you. Same scar showing up again and again means a check should move up a layer.",
+    stats:[["On the belt","2"],["Top scar","still repros"],["Strikes","#41: 2 / 3"]],
+    log:["Spark","\"Still reproduces\" is the top scar 3 days running. Want a test turret on /checkout?"],
+    acts:[["Add a test turret on /checkout",1],["See all scar tags",0],["Send #41 to me now",0]] }
+};
+const $ = id => document.getElementById(id);
+let current = null;
+function open(id, focus) {
+  const d = S[id]; if (!d) return; current = id;
+  document.querySelectorAll("[data-id]").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === id ? "true" : "false"));
+  draw($("p-sprite"), d.sprite, d.frame);
+  $("p-zone").textContent = d.zone; $("p-name").textContent = d.name;
+  $("p-tag").innerHTML = `<span class="tag ${d.tag[0]}">${d.tag[1]}</span>`;
+  $("p-what").textContent = d.what;
+  $("p-stats").innerHTML = d.stats.map(([k,v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+  const log = $("p-log"); log.className = "logline" + (d.ok ? " ok" : "");
+  log.innerHTML = `<span class="who">${d.log[0]}:</span> ${d.log[1]}`;
+  $("p-acts").innerHTML = d.acts.map(([t, rec], i) => `<button class="btn${rec ? " rec" : ""}" data-key="${"ABC"[i]}">${t}${rec ? " · Spark's pick" : ""}</button>`).join("");
+  $("p-toast").textContent = "";
+  $("p-acts").querySelectorAll(".btn").forEach((b, i) => b.addEventListener("click", () => {
+    $("p-toast").textContent = `In the game this becomes a move: "${d.acts[i][0]}". Spark does it and logs it, with undo.`;
+  }));
+  if (focus) $("panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+document.querySelectorAll("[data-id]").forEach(b => b.addEventListener("click", () => open(b.dataset.id, true)));
+open("proof", false);
+</script>

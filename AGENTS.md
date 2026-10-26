@@ -7,6 +7,10 @@ before you change anything.
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**
 
+**The loop in one page: [`docs/LOOP.md`](docs/LOOP.md)** (visual: `docs/loop.html`). Ore → power → line →
+**verification gauntlet** (CI gate, proof bay, review tribunal, launch pad, orbit watch) → rocket; fails ride the
+rework belt back to Spark with a scar tag; every station is clickable.
+
 **Product spec: [`docs/PRODUCT.md`](docs/PRODUCT.md).** How Muse Spark runs the factory as the Foreman
 agent: the core loop, the bottleneck engine and Next Move card, Spark's tools by trust tier, what the
 player decides vs Spark, launch permits, the real metrics behind the score, onboarding, and hackathon
