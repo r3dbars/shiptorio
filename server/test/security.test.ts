@@ -3,6 +3,7 @@ import { securityHeaders, browserMutationAllowed } from "../src/security";
 import { consumeBudget, ipSubject, LIMITS, rateLimit, requestBudget, type Budget } from "../src/rate-limit";
 import { makeSessionCookie } from "../src/session";
 import { verifyHmac } from "../src/sources/types";
+import { authorizedSocket, browserEnv } from "./browser-fixture";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { default: app } = await import("../src/index");
@@ -161,5 +162,20 @@ describe("durable per-IP and per-user rate limits", () => {
     for (let n = 0; n < 30; n++) await rateLimit(env as never, "user:player", "connect");
     const res = await app.fetch(request("/connect/sentry", { method: "POST", headers: { cookie, "cf-connecting-ip": "192.0.2.99", origin: "https://shiptorio.com" }, body: "clientSecret=sample" }), env as never);
     expect(res.status).toBe(429);
+  });
+  it("throttles websocket moves across connections before state loading or action dispatch", async () => {
+    for (const subject of ["user:test-player", "ip:192.0.2.1"]) {
+      const env = { ...browserEnv, FACTORY: namespace() };
+      for (let n = 0; n < LIMITS.move; n++) await rateLimit(env as never, subject, "move");
+      const f = new Factory({ storage: { get() { throw new Error("Rate-limited move reached state"); } } } as never, env as never);
+      for (let n = 0; n < 2; n++) {
+        const socket = authorizedSocket();
+        socket.serializeAttachment({ ...socket.deserializeAttachment(), rateSubject: "ip:192.0.2.1" });
+        let closed = false;
+        socket.close = (code?: number) => { expect(code).toBe(1008); closed = true; };
+        await f.webSocketMessage(socket, JSON.stringify({ type: "choose_move", moveId: "card", optionId: "go" }));
+        expect(closed).toBe(true);
+      }
+    }
   });
 });
