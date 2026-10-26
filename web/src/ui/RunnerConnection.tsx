@@ -1,5 +1,6 @@
 import "./RunnerConnection.css";
 import { useEffect, useState } from "react";
+const JOB_LABEL: Record<string, string> = { planning: "Planning", awaiting_approval: "Waiting for your approval", ready: "Ready to build", running: "Building", completed: "PR opened", failed: "Stopped" };
 interface RunnerStatus { paired: boolean; online: boolean; seenAt: number | null; harnesses: string[]; lastJob: { id: string; status: string } | null }
 export function RunnerConnection({ repo }: { repo: string }) {
   const [status, setStatus] = useState<RunnerStatus | null>(null);
@@ -30,8 +31,8 @@ export function RunnerConnection({ repo }: { repo: string }) {
     <h3>Connect your machine</h3>
     <p role="status" aria-live="polite">{error || (status ? status.online ? `Online · ${status.harnesses.map(h => h === "codex" ? "Codex" : "Claude Code").join(" + ") || "no agents detected"}` : status.paired ? "Offline · start your runner to connect" : "Your Claude or Codex sign-in powers this factory." : "Checking your machine…")}</p>
     {status?.seenAt && <p className="empty">Last seen {new Date(status.seenAt).toLocaleString()}</p>}
-    {status?.lastJob && <p className="empty">Last job: {status.lastJob.status} · {status.lastJob.id.slice(0, 8)}</p>}
-    {!status?.online && <><p>Run this on your computer, then compare the pairing code in your browser:</p><code className="runner-install">curl -fsSL https://shiptorio.com/install.sh | sh</code><p className="empty">macOS · Linux · Windows via WSL2. Keep the terminal open. Spark asks before any build starts.</p></>}
+    {status?.lastJob && <p className="empty">Last job: {JOB_LABEL[status.lastJob.status] ?? "Unknown"} · {status.lastJob.id.slice(0, 8)}</p>}
+    {!status?.online && <><p>Run this on your computer, then compare the pairing code in your browser:</p><code className="runner-install">curl -fsSL https://shiptorio.com/install.sh | sh</code><p className="empty">macOS · Linux · Windows via WSL2. Keep the terminal open. The planner asks before any build starts.</p></>}
     <details><summary>Add a repo, troubleshoot or uninstall</summary><p>Already installed? Run <code>~/.local/bin/shiptorio-runner pair</code> to add this repo. One runner serves all paired repos.</p><p>Offline? Run <code>~/.local/bin/shiptorio-runner watch</code>. Check sign-ins with <code>~/.local/bin/shiptorio-runner doctor</code>.</p><p>Stop with Ctrl-C. Remove the runner and local credentials with <code>~/.local/bin/shiptorio-runner uninstall</code>.</p><a href="/docs/runner" target="_blank" rel="noreferrer">Runner setup and troubleshooting</a></details>
     {status?.paired && <button type="button" className="credit-btn" onClick={() => confirm ? void disconnect() : setConfirm(true)}>{confirm ? "Confirm disconnect from this repo" : "Disconnect this machine"}</button>}
   </section>;
