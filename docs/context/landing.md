@@ -11,10 +11,13 @@ Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind th
   - `POST /api/waitlist` is public. Everything else (`/index.html`, `/assets/*`, `/api/*`, `/setup`, `/art/`) is still gated.
   - "Sign in" / "Enter the factory" link to `/access?next=%2F`: password form, then the app and its GitHub sign-in (#190 flow).
   - Only a bare `/` (or `utm_*`, `ref`, `joined` params) gets the landing; app deep links like `/?onboard=repo&source=live` still hit the password form with `next` kept.
-- **Waitlist:** `server/src/waitlist.ts`. JSON or form post `{email, website (honeypot), ref}`. Stored in KV
-  `CACHE` as `waitlist:email:<email>` → `{email, at, ref}`, 5 tries per IP per hour, same-origin only.
-  **Codex goal 12 (PR #161, D1 `signup_waitlist` + Turnstile) can take this route over**: import the KV keys
-  (`wrangler kv key list --binding CACHE --prefix waitlist:email:`) and point `joinWaitlist` at `addPending`.
+- **Waitlist:** `server/src/waitlist.ts`, `POST /api/waitlist` (JSON or no-JS form; `email` + hidden `website`
+  honeypot). Same-origin only, 5 per IP per hour via signup.ts `admit`, stored with `addPending` in the D1
+  `signup_waitlist` table from #161, so landing signups show on `/admin` next to `/waitlist` ones. No Turnstile
+  on the landing yet; add the widget there if bots get through.
+- **Signup modes:** password mode (default) shows the landing to anyone without the preview cookie. In
+  `SIGNUP_GATE_MODE=waitlist`, anyone with a `shiptorio_session` cookie skips the landing for the signup gate.
+- **CSP:** security.ts sets `script-src 'self'` site-wide, so the page's JS lives in `/welcome/landing.js`.
 - **Video:** `loop.mp4` (1280×720, 3MB) and `loop-640.mp4` (850KB, phones) are 30s of the real sim
   (`?source=sim&scenario=quiet-morning&autolaunch&intro=0`) recorded with Playwright and encoded with ffmpeg.
   Desktop autoplays after load; phones start on first scroll/tap; reduced motion / Save-Data wait for Play.

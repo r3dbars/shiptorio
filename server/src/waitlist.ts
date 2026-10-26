@@ -1,18 +1,12 @@
-// Public waitlist for the landing page (web/public/welcome/). Emails land in KV as
-// `waitlist:email:<email>`; the signup/invites work (Codex goal 12, PR #161) can read these
-// into its D1 waitlist and take this route over.
-
-export interface WaitlistEnv { CACHE: KVNamespace }
+// Public waitlist for the landing page (web/public/welcome/). Emails go into the same D1 waitlist as
+// /waitlist (signup.ts addPending), so they show up on /admin for approval. The landing page has no
+// Turnstile widget yet; a hidden honeypot field and the per-IP admission budget stand in for it.
+import { addPending, admit, ipScope } from "./signup";
+import type { Env } from "./index";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PER_IP_PER_HOUR = 5;
 
-async function sha256(value: string): Promise<string> {
-  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
-  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-export async function joinWaitlist(request: Request, env: WaitlistEnv, now = Date.now()): Promise<Response> {
+export async function joinWaitlist(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const isJson = (request.headers.get("content-type") ?? "").includes("application/json");
   const reply = (status: number, body: Record<string, unknown>) => isJson || status !== 200
@@ -32,21 +26,12 @@ export async function joinWaitlist(request: Request, env: WaitlistEnv, now = Dat
   } catch {
     return reply(400, { error: "Couldn't read that." });
   }
-  const text = (key: string) => (typeof fields[key] === "string" ? (fields[key] as string) : "");
+  const text = (key: string) => (typeof fields?.[key] === "string" ? (fields[key] as string) : "");
   // Bots fill the hidden field; tell them it worked and keep nothing.
   if (text("website")) return reply(200, { ok: true });
   const email = text("email").trim().toLowerCase();
   if (email.length > 254 || !EMAIL.test(email)) return reply(400, { error: "That email doesn't look right." });
-
-  const hour = Math.floor(now / 3_600_000);
-  const ipKey = `waitlist:ip:${(await sha256(request.headers.get("cf-connecting-ip") ?? "unknown")).slice(0, 24)}:${hour}`;
-  const tries = Number(await env.CACHE.get(ipKey)) || 0;
-  if (tries >= PER_IP_PER_HOUR) return reply(429, { error: "Too many tries from here. Give it an hour." });
-  await env.CACHE.put(ipKey, String(tries + 1), { expirationTtl: 7200 });
-
-  const key = `waitlist:email:${email}`;
-  if (!(await env.CACHE.get(key))) {
-    await env.CACHE.put(key, JSON.stringify({ email, at: new Date(now).toISOString(), ref: text("ref").slice(0, 200) }));
-  }
+  if (!(await admit(env, await ipScope(request, "waitlist"), 5, 3_600_000, "waitlist flood"))) return reply(429, { error: "Too many tries from here. Give it an hour." });
+  await addPending(env, email, "email");
   return reply(200, { ok: true });
 }

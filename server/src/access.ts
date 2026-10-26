@@ -6,6 +6,7 @@ export interface AccessEnv {
   APP_PASSWORD?: string;
   SESSION_SECRET: string;
   DEV_LOGIN?: string;
+  SIGNUP_GATE_MODE?: string;
 }
 
 const COOKIE = "shiptorio_access";
@@ -67,6 +68,8 @@ export async function publicRoute(request: Request, env: AccessEnv): Promise<Pub
   // App deep links (/?onboard=repo&source=live from the GitHub install, ?source=sim, ...) still go to the
   // password form, which keeps them as next; only a bare visit or a campaign link gets the landing page.
   if ([...url.searchParams.keys()].some((key) => !/^(?:utm_\w+|ref|joined)$/.test(key))) return null;
+  // Waitlist mode: anyone signed in with GitHub goes on to the signup gate (the app, or "pending approval").
+  if (env.SIGNUP_GATE_MODE === "waitlist") return /(?:^|;\s*)shiptorio_session=/.test(request.headers.get("cookie") ?? "") ? null : "landing";
   return (await hasPreviewAccess(request, env)) ? null : "landing";
 }
 async function hasPreviewAccess(request: Request, env: AccessEnv): Promise<boolean> {

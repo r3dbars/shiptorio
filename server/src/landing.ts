@@ -1,6 +1,5 @@
 // The public landing page at shiptorio.com (web/public/welcome/). See access.ts publicRoute for what's open.
-
-const CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+// security.ts adds the site-wide CSP, so the page keeps its script in /welcome/landing.js (no inline JS).
 
 /** "/" is the app for anyone with the preview cookie, so the landing copy must not be cached. */
 export async function landingPage(request: Request, assets: Fetcher): Promise<Response> {
@@ -8,8 +7,6 @@ export async function landingPage(request: Request, assets: Fetcher): Promise<Re
   const response = new Response(page.body, page);
   response.headers.set("cache-control", "no-cache");
   response.headers.set("vary", "cookie");
-  response.headers.set("x-content-type-options", "nosniff");
-  response.headers.set("content-security-policy", CSP);
   return response;
 }
 
