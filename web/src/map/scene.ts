@@ -44,6 +44,7 @@ const TILT = Math.PI / 6; // 30° tilt
 const CAM_DIST = 33;
 const ZOOM_MIN = 0.4; // zoom > 1 means zoomed out
 const ZOOM_MAX = 2.6;
+const PORTRAIT_FIT = 0.84; // portrait phones frame the line this much closer than the padded fit
 const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
@@ -408,7 +409,11 @@ export class FactoryScene {
   private fitLine(state: FactoryState, immediate = false) {
     const frame = lineFrame(state.machines, this.width, this.height, this.baseViewHeight());
     if (!frame) return;
-    const goal = { target: new THREE.Vector3(frame.x, 0, frame.z), zoom: Math.min(ZOOM_MAX, frame.zoom) };
+    // portrait phones: the wide line in a narrow screen leaves a tall empty sky, so drop the side padding and
+    // let the line's end stations touch the edges; the island around them may bleed off the sides
+    const portrait = this.width < this.height && this.width <= 760;
+    const zoom = portrait ? Math.max(ZOOM_MIN, frame.zoom * PORTRAIT_FIT) : frame.zoom;
+    const goal = { target: new THREE.Vector3(frame.x, 0, frame.z), zoom: Math.min(ZOOM_MAX, zoom) };
     this.glide = null;
     if (this.launchCam) { this.launchCam.back = goal; return; }
     if (this.home) { this.home = goal; return; } // keep a station panel focused; its return view stays current
