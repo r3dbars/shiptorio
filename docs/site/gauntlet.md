@@ -91,4 +91,4 @@ Every station on the map is a button. Its panel shows what it does, then:
 - what's in it right now, and the last log line
 - a red **bottleneck** tag if this station is where work is piling up
 
-> **Heads up** Station panels also show action buttons (like "Teach a verify recipe"). In the sandbox they work. On live factories they're not wired up yet, so use the cards instead.
+> **Note** In the sandbox, station panels also show action buttons (like "Teach a verify recipe"). Live factories hide them for now, since nothing on the server acts on them yet. Use the cards instead.

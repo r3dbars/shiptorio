@@ -12,3 +12,4 @@ runner/local-model.json
 playtest-results/
 
 runner/.agent-home/
+web/test/a11y/out/

@@ -22,6 +22,11 @@ function ago(at: number) {
 }
 
 export function SupportPanel({ state, send, onClose, reviewTicket }: { state: FactoryState; send: (m: WebToServer) => void; onClose: () => void; reviewTicket?: string | null }) {
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
   // replies waiting on you first, the customer who's waited longest on top; finished threads newest first
   const tickets = [...(state.support ?? [])].sort((a, b) => ORDER[a.state] - ORDER[b.state] || (ORDER[a.state] < 2 ? a.receivedAt - b.receivedAt : b.receivedAt - a.receivedAt));
   const waiting = tickets.filter((t) => t.state === "drafted").length;
