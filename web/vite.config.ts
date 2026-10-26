@@ -9,6 +9,10 @@ const ART: Record<string, string> = {
   "art/item-lab.html": "../docs/item-lab.html",
   "art/prototype.html": "../docs/art-prototype.html",
   "art/spark.html": "../docs/spark.html", // judge-facing: how Meta Muse Spark runs the factory
+  "art/black-iron.html": "../docs/black-iron.html", // the chosen look: Black Iron line with the real work journey
+  "art/cogworks.html": "../docs/cogworks-variations.html",
+  "art/dioramas.html": "../docs/dioramas.html",
+  "art/style-lab.html": "../docs/style-lab.html",
   "art/index.html": "art.html",
 };
 
