@@ -59,8 +59,9 @@ describe("webhook signatures", () => {
   it("both HTTP routes reject unsigned/invalid deliveries before factory dispatch", async () => {
     const signature = await sign(body);
     const DB = testD1();
-    await DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?)").bind("r3dbars/shiptorio", 1).run();
-    const env = { DB, GITHUB_WEBHOOK_SECRET: secret, SENTRY_CLIENT_SECRET: secret, CACHE: { get: async () => null } };
+    await DB.prepare("INSERT INTO installations (id, account_login) VALUES (1, 'fixture')").run();
+    await DB.prepare("INSERT INTO repos (full_name, installation_id, repo_id) VALUES (?, ?, ?)").bind("r3dbars/shiptorio", 1, 5001).run();
+    const env = { DB, SENTRY_REPO_ID: "5001", SENTRY_INSTALLATION_ID: "1", GITHUB_WEBHOOK_SECRET: secret, SENTRY_CLIENT_SECRET: secret, CACHE: { get: async () => null } };
     for (const [path, header, prefix] of [["github", "x-hub-signature-256", "sha256="], ["sentry", "sentry-hook-signature", ""]]) {
       for (const sig of [null, "invalid", prefix + "0".repeat(64), prefix + signature.slice(1)]) {
         const res = await app.fetch(request(`/webhooks/${path}`, { method: "POST", headers: sig ? { [header]: sig } : {}, body }), env as never);
@@ -75,7 +76,8 @@ describe("webhook signatures", () => {
   it("per-repo Sentry signatures are bound to their credential scope without cookie or Origin", async () => {
     const signature = await sign(body);
     const env = { DB: testD1(), CRED_MASTER_KEY: btoa("a".repeat(32)) };
-    for (const repo of ["one/app", "two/app"]) await env.DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?)").bind(repo, 1).run();
+    await env.DB.prepare("INSERT INTO installations (id, account_login) VALUES (1, 'fixture')").run();
+    for (const [i, repo] of ["one/app", "two/app"].entries()) await env.DB.prepare("INSERT INTO repos (full_name, installation_id, repo_id) VALUES (?, ?, ?)").bind(repo, 1, i + 1).run();
     await saveCreds(env, "sentry", { clientSecret: secret }, { installationId: 1, repo: "one/app" });
     await saveCreds(env, "sentry", { clientSecret: "another-test-secret" }, { installationId: 1, repo: "two/app" });
     const send = (repo: string, sig?: string) => app.fetch(request(`/webhooks/sentry/${repo}`, { method: "POST", headers: sig ? { "sentry-hook-signature": sig } : {}, body }), env as never);

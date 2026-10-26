@@ -27,6 +27,13 @@
     // Comma-separated GitHub logins allowed to view maps.
     "ALLOWED_LOGINS": "r3dbars",
     "ADMIN_LOGINS": "r3dbars",
+    // Verified existing mine owner: immutable GitHub identity, production only.
+    "SENTRY_REPO": "r3dbars/shiptorio",
+    "SENTRY_REPO_ID": "1434502633",
+    "SENTRY_INSTALLATION_ID": "175555016",
+    "POSTHOG_REPO": "r3dbars/shiptorio",
+    "POSTHOG_REPO_ID": "1434502633",
+    "POSTHOG_INSTALLATION_ID": "175555016",
     // Muse Spark on Meta Model API. Key goes in the META_API_KEY secret.
     "SPARK_BASE_URL": "https://api.meta.ai/v1",
     "SPARK_MODEL": "muse-spark-1.3"

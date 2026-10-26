@@ -108,6 +108,7 @@ describe("account data controls", () => {
   });
   it("a credential save racing deletion cannot recreate the encrypted envelope", async () => {
     const {env} = await fixture();
+    await env.DB.prepare("UPDATE repos SET repo_id = 101 WHERE full_name = 'alice/app'").run();
     const {saveCreds, sentryCreds} = await import("../src/sources/creds");
     const {repoHash} = await import("../src/account-lifecycle");
     const originalDB = env.DB;
@@ -128,7 +129,7 @@ describe("account data controls", () => {
     }});
     const credsEnv = {...env, DB: racingDB, CRED_MASTER_KEY: btoa("x".repeat(32)), SENTRY_REPO: "alice/app", SENTRY_CLIENT_SECRET: "operator-secret"};
     await expect(saveCreds(credsEnv, "sentry", {clientSecret: "user-secret"}, {repo: "alice/app", installationId: 1})).rejects.toThrow("Factory deleted");
-    expect((await originalDB.prepare("SELECT * FROM credentials WHERE scope = 'installation:1:repo:alice/app'").all()).results).toEqual([]);
+    expect((await originalDB.prepare("SELECT * FROM credentials WHERE scope = 'installation:1:repo-id:101'").all()).results).toEqual([]);
     expect(await sentryCreds(credsEnv, {repo: "alice/app", installationId: 1})).toEqual({});
   });
   it("exports and purges both repo and global operational log copies, preserving other users", async () => {
