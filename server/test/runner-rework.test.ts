@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
@@ -73,7 +74,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };
-  const f = new Factory(ctx as never, { ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+  const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
   const saved = () => data.get("state") as FactoryState;
   const choose = async (optionId: string) => f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: saved().move!.id, optionId }));
   try {
