@@ -169,16 +169,93 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .maplabel i { font-style: normal; font-size: 9px; color: var(--dim); }
 .maplabel.hot { border-color: var(--red); }
 
-@media (max-width: 760px) {
-  .hud-right { top: auto; left: 14px; right: 14px; bottom: 100px; width: auto; max-height: 34vh; overflow: auto; }
-  .hud-right .card:not(.log) { display: none; }
-  .hrow > span:first-child { width: 80px; }
-  .caption .ptitle { font-size: 15px; }
-  .buttons { grid-template-columns: repeat(2, 60px); gap: 8px; }
-  .rbtn { width: 60px; height: 60px; }
-  .scenarios { bottom: 90px; }
-  .hud-left .stats, .hud-left .science { display: none; }
-  .nextmove { left: 14px; right: 14px; width: auto; transform: none; top: auto; bottom: calc(100px + 34vh + 10px); }
+.sheet-handle { display: none; }
+
+/* Phones (portrait, and landscape via the height check): a slim top bar, the map in the middle,
+   the Next Move card docked at the bottom, and the right-hand cards in a pull-up sheet.
+   Safe areas keep everything clear of the notch and the home bar. */
+@media (max-width: 760px), (max-height: 500px) {
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --handle: 40px;
+  }
+  .app { touch-action: pan-x pan-y; } /* no page pinch-zoom; the map handles its own */
+  .card { padding: 8px 10px; }
+
+  .hud-left {
+    top: calc(8px + var(--sat)); left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); max-width: none;
+    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 10px;
+  }
+  .hud-left .ptitle { font-size: 14px; }
+  .hud-left .psub, .hud-left .stats, .hud-left .science { display: none; }
+  .hud-left .score { flex: 1; justify-content: flex-end; gap: 6px; }
+  .hud-left .score b { font-size: 20px; }
+  .hud-left > .hrow:not(.sound) { order: 10; flex-basis: 100%; }
+  .hrow > span:first-child { width: auto; flex: 1; }
+  .hud-left .sound > span:first-child, .hud-left .sound input { display: none; }
+  .hud-left .slotbtn { min-height: 32px; min-width: 44px; }
+
+  .scenarios {
+    top: calc(80px + var(--sat)); bottom: auto; left: calc(8px + var(--sal)); right: auto;
+    max-width: calc(100vw - 80px - var(--sal) - var(--sar));
+    grid-template-columns: none; grid-auto-flow: column; overflow-x: auto; padding: 4px; scrollbar-width: none;
+  }
+  .scenarios a { min-height: 30px; padding: 0 8px; font-size: 10px; }
+
+  .buttons {
+    top: calc(80px + var(--sat)); bottom: auto; right: calc(8px + var(--sar));
+    grid-template-columns: 54px; gap: 8px;
+  }
+  .rbtn { width: 54px; height: 54px; font-size: 9px; }
+  .rbtn b { font-size: 16px; }
+
+  .caption { top: calc(128px + var(--sat)); padding: 6px 14px; max-width: calc(100vw - 96px); }
+  .caption .ptitle { font-size: 14px; }
+
+  .nextmove {
+    left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); width: auto; transform: none;
+    bottom: calc(var(--handle) + 8px + var(--sab)); padding: 8px 10px; gap: 4px;
+  }
+  .nm-title { font-size: 13px; }
+  .nm-why { font-size: 11px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .nm-btn { min-height: 44px; flex: 1; font-size: 11px; }
+
+  /* the bottom sheet: just the handle until opened */
+  .hud-right {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: var(--handle); overflow: hidden;
+    gap: 8px; padding: 0 calc(8px + var(--sar)) var(--sab) calc(8px + var(--sal));
+    background: var(--panel); border-top: 2px solid var(--panel-line); pointer-events: auto; z-index: 5;
+    box-sizing: content-box;
+  }
+  .hud-right.open { max-height: 62vh; overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(8px + var(--sab)); }
+  .hud-right:not(.open) > .card { display: none; }
+  .hud-right .card { border-width: 1px; outline: 0; }
+  .hud-right .log { flex: none; overflow: visible; }
+  .sheet-handle {
+    position: sticky; top: 0; z-index: 1; flex: none;
+    display: flex; align-items: center; justify-content: space-between; height: var(--handle); width: 100%;
+    padding: 0 4px; background: var(--panel); border: 0; color: var(--dim); cursor: pointer;
+    font: 10px var(--pixel); letter-spacing: 0.06em;
+  }
+  .sheet-handle b { font: 14px var(--mono); color: var(--amber); }
+
+  .maplabel { padding: 2px 5px 3px; border-width: 1px; }
+  .maplabel b { font-size: 9px; }
+  .maplabel i { font-size: 8px; }
+}
+
+/* Phone on its side: top bar and Next Move hug the left, the sheet tucks into the bottom right. */
+@media (max-height: 500px) and (min-width: 561px) {
+  .hud-left { right: auto; width: min(400px, 44vw); }
+  .scenarios { top: calc(8px + var(--sat)); left: auto; right: calc(76px + var(--sar)); max-width: calc(56vw - 100px); }
+  .buttons { top: calc(8px + var(--sat)); }
+  .caption { top: calc(84px + var(--sat)); }
+  .nextmove { right: auto; width: min(520px, 54vw); bottom: calc(8px + var(--sab)); }
+  .hud-right { left: auto; width: min(360px, 40vw); right: calc(8px + var(--sar)); border: 2px solid var(--panel-line); border-bottom: 0; padding-left: 8px; }
+  .hud-right.open { max-height: calc(100vh - 80px - var(--sat)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -252,8 +329,18 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .sp-actions { display: flex; flex-direction: column; gap: 6px; }
 .sp-actions .nm-btn { text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .sp-pick { font: 8px var(--pixel); letter-spacing: 0.06em; opacity: 0.8; }
-@media (max-width: 760px) {
-  .stationpanel { left: 14px; right: 14px; width: auto; top: auto; bottom: 100px; max-height: 60vh; overflow: auto; }
+/* phones: the station panel is a bottom sheet over the Next Move card */
+@media (max-width: 760px), (max-height: 500px) {
+  .stationpanel {
+    left: var(--sal); right: var(--sar); width: auto; top: auto; bottom: 0; z-index: 6;
+    max-height: 70vh; overflow-y: auto; overscroll-behavior: contain;
+    border-bottom: 0; outline: 0; padding-bottom: calc(12px + var(--sab));
+  }
+  .sp-close { min-width: 44px; min-height: 44px; }
+  .sp-actions .nm-btn { flex: none; }
+}
+@media (max-height: 500px) and (min-width: 561px) {
+  .stationpanel { left: auto; right: calc(8px + var(--sar)); width: min(380px, 48vw); max-height: calc(100vh - 16px - var(--sat)); }
 }
 .sp-stats dd.long { font: 600 11px/1.3 var(--mono); }
 /* sound: mute + volume */

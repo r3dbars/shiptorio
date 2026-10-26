@@ -23,28 +23,51 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false }: 
     const ro = new ResizeObserver(([e]) => scene.setSize(e.contentRect.width, e.contentRect.height));
     ro.observe(canvas);
 
-    let drag: { x: number; y: number } | null = null;
-    let moved = 0; // a press that barely moves is a click on whatever is under it
+    // One finger (or mouse) drags to pan, two fingers pinch to zoom and pan together.
+    // A press that barely moves is a tap (or click) on whatever is under it.
+    const pts = new Map<number, { x: number; y: number }>();
+    let moved = 0;
+    let pinch = 0; // last distance between two fingers
+    const mid = () => {
+      const [a, b] = [...pts.values()];
+      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
+    };
     const down = (e: PointerEvent) => {
-      drag = { x: e.clientX, y: e.clientY };
-      moved = 0;
+      if (pts.size === 0) moved = 0;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       canvas.setPointerCapture(e.pointerId);
+      if (pts.size === 2) pinch = mid().d;
     };
     const move = (e: PointerEvent) => {
-      if (!drag) {
-        canvas.style.cursor = scene.hover(e.clientX, e.clientY, canvas.getBoundingClientRect()) ? "pointer" : "";
+      const p = pts.get(e.pointerId);
+      if (!p) {
+        // no button down: hovering shows that thing's label
+        if (e.pointerType === "mouse") canvas.style.cursor = scene.hover(e.clientX, e.clientY, canvas.getBoundingClientRect()) ? "pointer" : "";
         return;
       }
-      moved += Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y);
-      scene.panBy(e.clientX - drag.x, e.clientY - drag.y);
-      drag = { x: e.clientX, y: e.clientY };
+      if (pts.size === 1) {
+        moved += Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y);
+        scene.panBy(e.clientX - p.x, e.clientY - p.y);
+        p.x = e.clientX;
+        p.y = e.clientY;
+        return;
+      }
+      const before = mid();
+      p.x = e.clientX;
+      p.y = e.clientY;
+      const after = mid();
+      moved += 100; // two fingers never count as a tap
+      scene.panBy(after.x - before.x, after.y - before.y);
+      if (pinch > 0 && after.d > 0) scene.zoomBy(pinch / after.d); // fingers apart zooms in
+      pinch = after.d;
     };
     const up = (e: PointerEvent) => {
-      if (drag && moved < 5 && e.type === "pointerup") {
+      if (pts.size === 1 && pts.has(e.pointerId) && moved < 8 && e.type === "pointerup") {
         const id = scene.pick(e.clientX, e.clientY, canvas.getBoundingClientRect());
         if (id) pickRef.current?.(id);
       }
-      drag = null;
+      pts.delete(e.pointerId);
+      pinch = pts.size === 2 ? mid().d : 0;
     };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
