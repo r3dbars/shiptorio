@@ -82,3 +82,17 @@ it("upgrades remote HTTP before authentication and sets HSTS on HTTPS gate respo
   expect(local.headers.has("location")).toBe(false);
   expect(local.headers.has("strict-transport-security")).toBe(false);
 });
+
+it("runner revoke is a same-origin signed-in web action and invalidates renewal", async () => {
+  const { browserCookies, browserEnv } = await import("./browser-fixture");
+  let paired = true;
+  const env = { ...browserEnv, FACTORY: { idFromName: (s: string) => s, get: () => ({ revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
+  const url = "https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/revoke";
+  const cookie = await browserCookies();
+  expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://evil.example" } }), env as never)).status).toBe(403);
+  expect(paired).toBe(true);
+  expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://shiptorio.com" } }), env as never)).status).toBe(200);
+  expect(paired).toBe(false);
+  const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "old", expires: Date.now() + 60000 });
+  expect((await app.fetch(new Request("https://shiptorio.com/api/runner/r3dbars/shiptorio/renew", { method: "POST", headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
+});
