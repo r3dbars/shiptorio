@@ -82,6 +82,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               </button>
               {!live && <span className="psub">sim: no real sign-in</span>}
             </div>
+            <p className="ob-credit">powered by Meta Muse Spark</p>
           </>
         )}
 

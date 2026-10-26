@@ -64,6 +64,7 @@ export const ServerToWeb = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("move"), move: Move }), // a new Next Move card (replaces the open one)
   z.object({ type: z.literal("move_resolved"), moveId: z.string(), optionId: z.string().optional(), actor: Actor }),
+  z.object({ type: z.literal("deck"), deck: z.array(Move).max(12) }), // the check-in deck changed (replaces it)
   // The unlock moment. With district, that district earned (or lost) its launch permit.
   z.object({ type: z.literal("autonomy_unlocked"), level: AutonomyLevel, district: z.string().optional(), text: z.string() }),
 ]);
@@ -86,6 +87,10 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("launch_pr"), itemId: z.string() }),
   z.object({ type: z.literal("route_item"), itemId: z.string(), machineId: z.string() }), // drag ore onto a machine
   z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
+  // Check-in swipes (docs/PRODUCT.md "Check-in"). Right is choose_move with the recommended option.
+  z.object({ type: z.literal("defer_move"), moveId: z.string() }), // left: later, back next check-in
+  // down: never. why: once = just this one, kind = stop this kind (a rule), spark = Spark decides these, wrong = Spark misread it (a scar)
+  z.object({ type: z.literal("dismiss_move"), moveId: z.string(), why: z.enum(["once", "kind", "spark", "wrong"]) }),
   z.object({ type: z.literal("undo"), actionId: z.string() }),
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
