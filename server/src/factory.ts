@@ -1,12 +1,21 @@
+import * as Sentry from "@sentry/cloudflare";
+import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
+import { redact } from "./redact";
+import { runQuota } from './signup';
+
+import { Redactor } from "./redact";
+
 import { repoAccess, requireUser, validRepo } from "./authorization";
+
 import { stuckItem } from "./reliability";
 import { validatePlan, validatePatch } from "./injection-policy";
+
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
-import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
@@ -47,12 +56,13 @@ import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } 
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
-import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
+import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
 import { loadFactoryState, saveFactoryState, stateSize, persistedState } from "./state-storage";
 
-export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
+export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv, TelemetryEnv {
+
   PUBLIC_URL?: string;
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -78,7 +88,7 @@ interface Meta {
   installationId: number;
 }
 
-export class Factory extends DurableObject<FactoryEnv> {
+class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
   async health(): Promise<{ ok: boolean }> {
     await this.ctx.storage.get("ops-health");
@@ -92,12 +102,37 @@ export class Factory extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
+  private credentialsReady = false;
+  private redactor = new Redactor(this.env);
+  private credentialScope() { return this.meta ? { installationId: this.meta.installationId, repo: this.meta.repo } : undefined; }
   private running = new Set<string>(); // item ids with a job in flight
 
   private batchingDecisions = false;
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
+
+  async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
+    const allowed = ["ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary"];
+    if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
+    return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
+      const start = Date.now();
+      try {
+        const result = await (this as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>)[method](...args);
+        log("info", "factory.rpc", { method, durationMs: Date.now() - start });
+        return result;
+      } catch (error) { report(error, "factory.rpc_failed", { method, durationMs: Date.now() - start }); throw error; }
+    });
+  }
+
+  async debugSnapshot() {
+    await this.load();
+    // No runner receipts, pairing grants, issue bodies, source keys, or private code.
+    const s = this.state;
+    return redact(s ? { release: this.env.BUILD_SHA ?? "unknown", repo: this.meta?.repo, tick: s.tick, machines: s.machines, belts: s.belts,
+      items: s.items.map(i => ({ id: i.id, state: i.state, district: i.district, attempts: i.attempts, prNumber: i.prNumber, failure: i.failure })),
+      brain: s.brain, power: s.power } : null);
+  }
 
   private async decisionData() {
     if (!this.openMoves) this.openMoves = await this.ctx.storage.get<Move[]>("openMoves") ?? (this.state?.deck?.length ? [...this.state.deck] : this.state?.move ? [this.state.move] : []);
@@ -380,11 +415,12 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async runnerJobs(): Promise<RunnerJob[]> {
+    await this.load();
     const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
-    return [...jobs.values()].map(({ lease, ...job }) => job);
+    return this.redactor.value([...jobs.values()].map(({ lease, ...job }) => job));
   }
 
-  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }): Promise<RunnerJob> {
+  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
@@ -399,9 +435,14 @@ export class Factory extends DurableObject<FactoryEnv> {
         old.status = "failed";
       }
       if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      {
+        const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
+      }
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
+      if (currentTrace()) await this.ctx.storage.put(`trace:${item.id}`, currentTrace());
       await this.ctx.storage.put(`runnerJob:${id}`, job);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
@@ -414,6 +455,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
+    const trace = await this.ctx.storage.get<Trace>(`trace:${job.itemId}`);
+    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
+  }
+
+  private async planRunnerJob(job: RunnerJob): Promise<void> {
+    if (!this.meta || !this.state) return;
     try {
       if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
       job.planningStarted = true;
@@ -474,7 +521,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.save();
       this.log("success", job.needsApproval ? "Your plan is ready to review. Nothing builds until you approve." : `Plan ready for ${job.harness}. Waiting for the local runner.`, item.id);
     } catch {
-      job.status = "failed"; job.error = "Spark planning failed; inspect configuration and approve a new attempt.";
+      job.status = "failed"; job.error = "Planning failed. Check the setup, then approve a new try.";
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       this.log("error", job.error, job.itemId);
     }
@@ -509,7 +556,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const machineId = `runner-${job.harness}`;
       await this.clearRunnerMove();
       await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `solar-${job.harness}`, tier: 1, state: "working" }] });
-      this.log("info", `Local ${job.harness} accepted Spark's plan.`, item.id);
+      this.log("info", `Local ${job.harness} took the plan.`, item.id);
       return job;
     });
     if (!job) return null;
@@ -573,7 +620,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
     const key = `delivery:${deliveryId}`;
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0, trace: currentTrace() });
+
     await this.scheduleTick();
   }
 
@@ -581,27 +629,34 @@ export class Factory extends DurableObject<FactoryEnv> {
   async enqueueSentry(deliveryId: string, resource: string, payload: SentryPayload): Promise<void> {
     const key = `delivery:sentry-${deliveryId}`;
     if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
-    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, trace: currentTrace() });
+
     await this.scheduleTick();
   }
 
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ source?: "sentry"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
+    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
     let processed = 0;
+
     for (const [key, delivery] of pending) {
       if (delivery.nextAt && delivery.nextAt > Date.now()) continue;
       if (++processed > 4) break;
       try {
         const completed = (await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now();
         if (!completed) {
-        if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
-        else await this.handleGitHub(delivery.event, delivery.payload);
+          await inTrace(delivery.trace ?? { requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+          if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
+          else await this.handleGitHub(delivery.event, delivery.payload);
+          log("info", "webhook.processed", { deliveryId: delivery.deliveryId ?? key.slice(9), webhookEvent: delivery.event });
+        });
         await this.ctx.storage.put(`done:${key}`, Date.now() + 7 * 86400000);
         }
+
         const id = delivery.deliveryId ?? key.slice("delivery:".length);
         await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = ? AND delivery_id = ?").bind(delivery.source ?? "github", id).run();
         await this.ctx.storage.delete(key);
-      } catch {
+      } catch (error) {
+        inTrace(delivery.trace ?? { requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), () => report(error, "webhook.processing_failed", { deliveryId: delivery.deliveryId ?? key.slice(9) }));
         // Keep the original payload durably queued. Never log credentials or raw API bodies.
         const attempts = delivery.attempts + 1;
         if (attempts >= 5) {
@@ -679,7 +734,7 @@ export class Factory extends DurableObject<FactoryEnv> {
           for (let i = 0; i < batch.length; i++) for (const signal of normalizeGitHub({ repository: { full_name: repo }, issue: batch[i] })) await this.ingestSignal({ ...signal, reporters: reporters[i] });
         }
         await this.ctx.storage.put("githubBackfilled", true);
-        this.log("info", `GitHub mine connected: ${issues.length} open issues loaded. Spark will triage the ore.`);
+        this.log("info", `GitHub mine connected: ${issues.length} open issues loaded. The planner will sort the ore.`);
       } else {
         for (const signal of normalizeGitHub(p)) await this.ingestSignal(signal);
       }
@@ -747,9 +802,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    // The connect page needs to know which map to plug the mine into.
     const repo = this.meta?.repo ?? this.state?.repo;
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, repo), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, this.credentialScope(), this.redactor), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, this.credentialScope(), this.redactor), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
   }
 
@@ -765,8 +819,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     await this.ctx.storage.put(`${kind}Linked`, true);
     await this.ctx.storage.delete(`${kind}Disconnected`);
-    // The legacy shared keys stay with the first map that linked them; per-repo keys don't need a link.
-    if (!(await linkedRepo(this.env, kind))) await linkRepo(this.env, kind, this.state!.repo);
+    await linkRepo(this.env, kind, this.state!.repo, this.credentialScope()!);
     const deposit = `ore-${kind}`;
     const splitter = this.state!.machines.find((m) => m.type === "splitter");
     const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
@@ -787,7 +840,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!repo) return;
     for (const kind of ["sentry", "posthog"] as const) {
       if ((await this.ctx.storage.get(`${kind}Linked`)) || (await this.ctx.storage.get(`${kind}Disconnected`))) continue;
-      const linked = await linkedRepo(this.env, kind);
+      const linked = await linkedRepo(this.env, kind, this.credentialScope());
       if (linked && linked !== repo) continue;
       if ((await this.mineStatus(kind)).state === "connected") await this.connectMine(kind);
     }
@@ -798,7 +851,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put(`${kind}Disconnected`, true);
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
-    if ((await linkedRepo(this.env, kind)) === this.state!.repo.toLowerCase()) await linkRepo(this.env, kind, null);
+    await linkRepo(this.env, kind, null, this.credentialScope()!);
     const deposit = `ore-${kind}`;
     await this.patch({
       sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
@@ -811,7 +864,9 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   private async handleSentry(resource: string, payload: SentryPayload): Promise<void> {
     if (!(await this.load()) || !(await this.ctx.storage.get<boolean>("sentryLinked"))) return;
-    for (const signal of normalizeSentry(payload, resource)) await this.ingestSignal(signal);
+    if (!(await sentryCreds(this.env, this.credentialScope(), this.redactor)).clientSecret) return;
+    await markUsed(this.env, "sentry", this.credentialScope()!);
+    for (const signal of normalizeSentry(this.redactor.value(payload), resource)) await this.ingestSignal(signal);
   }
 
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
@@ -821,11 +876,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
-    const creds = await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo);
     try {
+      const creds = await postHogCreds(this.env, this.credentialScope(), this.redactor);
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
-      const { signals, traffic } = analyze(rows, creds.keyEvent || "$pageview", now);
+      if (!fake) await markUsed(this.env, "posthog", this.credentialScope()!);
+      const { signals, traffic } = analyze(this.redactor.value(rows), creds.keyEvent || "$pageview", now);
       await this.ctx.storage.put("posthogPoll", { nextAt: now + POLL_MS, failures: 0 });
       await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
@@ -837,7 +893,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const retry = (err as { retryAfter?: number }).retryAfter;
       await this.ctx.storage.put("posthogPoll", { nextAt: now + Math.max((retry ?? 0) * 1000, Math.min(3600000, POLL_MS * 2 ** Math.min(failures, 4))), failures });
       const status = await this.mineStatus("posthog");
-      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Retrying.` }] });
+      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? this.redactor.text(err.message).slice(0, 80) : "error"}). Retrying.` }] });
     }
   }
 
@@ -867,11 +923,16 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
     }
+    if (this.meta && !this.credentialsReady) {
+      await sentryCreds(this.env, this.credentialScope(), this.redactor);
+      await postHogCreds(this.env, this.credentialScope(), this.redactor);
+      this.credentialsReady = true;
+    }
     return this.state;
   }
 
   private async save() {
-    if (this.state) await saveFactoryState(this.ctx.storage, this.state);
+    if (this.state) await saveFactoryState(this.ctx.storage, this.redactor.value(this.state));
   }
 
   /** Owner authorization is enforced by the Worker route, before DO access. */
@@ -879,13 +940,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     const state = await this.load();
     if (!state) return null;
     return { format: "shiptorio-factory", exportedAt: new Date().toISOString(),
-      state: persistedState(structuredClone(state)), storage: stateSize(state) };
+      state: this.redactor.value(persistedState(structuredClone(state))), storage: stateSize(state) };
   }
 
   private broadcastQueue: Promise<void> = Promise.resolve();
 
   private broadcast(msg: ServerToWeb) {
-    const text = JSON.stringify(msg);
+    const text = JSON.stringify(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
       for (const ws of this.ctx.getWebSockets("web")) {
@@ -903,6 +964,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
+    text = this.redactor.text(text);
+    log(level === "success" ? "info" : level, "factory.event", { message: text, itemId, repo: this.meta?.repo });
+    if (level === "error") Sentry.captureException(new Error(text), { tags: { itemId, repo: this.meta?.repo } });
     this.broadcast({ type: "log", level, text, at: Date.now(), itemId });
   }
 
@@ -930,11 +994,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     const start = Date.now();
     this.foreman(about.target ?? about.itemId, decision, true);
     try {
-      const out = await ask();
+      const out = await inTrace({ ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo, itemId: about.itemId }, this.env, task => this.ctx.waitUntil(task), ask);
       await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explain(out) });
       return out;
     } catch (e) {
-      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "Spark didn't answer; a fixed rule decided", reason: e instanceof Error ? e.message : "Spark call failed" });
+      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "The planner didn't answer; a backup rule decided", reason: e instanceof Error ? e.message : "Spark call failed" });
       throw e;
     } finally {
       this.foreman(about.target ?? about.itemId, decision, false);
@@ -952,7 +1016,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     return this.think("triage", { title: item.title, itemId: item.id, target: "splitter-1" },
       () => triage(this.env, { title: item.title, body: item.body, labels: [] }, districts),
       t => ({ outcome: `${t.kind} → ${t.district}`, reason: t.reason ?? "Classified from the issue text." }),
-    ).catch(() => fallback("Spark didn't answer, so a keyword rule sorted it."));
+    ).catch(() => fallback("The planner didn't answer, so a keyword rule sorted it."));
   }
 
   private async patch(p: Patch) {
@@ -1202,7 +1266,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
-      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "the planner";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
       const currentInLane = () => {
         const now = current();
@@ -1223,7 +1287,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
         if (!v.passed) await this.noteRework(now);
       } else {
-        this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
+        this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = currentInLane();
@@ -1446,7 +1510,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.district === item.lane) await this.publishGauntletMove(null);
     if (revoked) {
       const text = `${item.lane} lost its launch permit: ${why}. Its PRs wait for you again until the lane earns trust back.`;
-      this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
+      await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
       this.log("warn", text, item.id);
     }
   }
@@ -1478,7 +1542,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (permit && !earned(r)) { this.log("info", `${lane} hasn't earned a launch permit yet.`); return; }
     await this.savePermits(setPermit(book, lane, permit));
     const text = permit ? `${lane} has a launch permit. Its PRs that pass every station now ship on their own.` : `${lane} launch permit is off. Its PRs wait for you again.`;
-    this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
+    await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
     this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: by === "card" ? "You said yes on the permit card." : "You changed it in settings." });
   }
 
@@ -1593,6 +1657,12 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
+    const auth = await browserSocketAuth(request, this.env);
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.login }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+  }
+
+  private async socketFetch(request: Request): Promise<Response> {
+
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
     const user = await requireUser(request, this.env);
@@ -1608,18 +1678,22 @@ export class Factory extends DurableObject<FactoryEnv> {
     const state = await this.load();
     if (state) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
-    else if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
+    else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
     await this.broadcastQueue;
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    try { await this.handleBrowserMessage(ws, raw); }
-    finally { await this.broadcastQueue; }
+    let auth: { login?: string } | null = null;
+    try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
+    });
   }
 
   private async handleBrowserMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
@@ -1638,6 +1712,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
+    const trace = currentTrace();
+    if (trace) { trace.repo = this.meta?.repo; if ("itemId" in msg && typeof msg.itemId === "string") trace.itemId = msg.itemId; }
+    if (this.meta?.repo) Sentry.setTag("repo", this.meta.repo);
+    if (trace?.itemId) Sentry.setTag("itemId", trace.itemId);
     if (msg.type === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
     if (msg.type === "set_autonomy" && msg.permit && !(await flagEnabled(this.env, "permits", auth.login))) return;
     const s = this.state!;
@@ -1857,6 +1935,13 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
+    await this.load();
+    return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+      try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
+    });
+  }
+
+  private async tick(): Promise<void> {
     this.batchingDecisions = true;
     try {
     await this.load();
@@ -1907,9 +1992,13 @@ export class Factory extends DurableObject<FactoryEnv> {
         continue;
       }
       if (!sparkConfigured(this.env)) {
-        if (m.state !== "blocked") this.log("warn", "Spark has no power. Add the Meta API key to start this line.", item.id);
+        if (m.state !== "blocked") this.log("warn", "The planner has no power. Add the Meta API key to start this line.", item.id);
         await this.patch({ machines: [{ ...m, state: "blocked" }] });
         continue;
+      }
+      {
+        const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
       }
       await this.patch({
         items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
@@ -1957,7 +2046,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const get = () => s.items.find((i) => i.id === itemId)!;
     const machine = () => s.machines.find((m) => m.id === machineId);
     try {
-      if (!sparkConfigured(this.env)) throw new Error("Spark has no power: META_API_KEY isn't set");
+      if (!sparkConfigured(this.env)) throw new Error("The planner has no power: META_API_KEY isn't set");
       if (!this.meta) throw new Error("factory has no repo");
       const item = get();
       const token = await installationToken(this.env, this.meta.installationId);
@@ -2012,3 +2101,6 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
   }
 }
+
+export const Factory = Sentry.instrumentDurableObjectWithSentry((env: FactoryEnv) => sentryOptions(env), FactoryBase);
+export type Factory = FactoryBase;

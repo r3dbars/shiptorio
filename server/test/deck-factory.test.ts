@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
@@ -25,7 +26,10 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
     async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); },
     async getAlarm() { return alarm; }, async setAlarm(value: number) { alarm = value; },
   };
-  const DB = { prepare(sql: string) { return { bind(...args: unknown[]) { return {
+  const DB = { prepare(sql: string) {
+    if (sql.startsWith('SELECT u.id') || sql.startsWith('SELECT u.login')) return {bind:()=>({first:async()=>({id:1,login:'test-player'})})};
+    if (sql.startsWith('SELECT enabled')) return {bind:()=>({first:async()=>null})};
+    return { bind(...args: unknown[]) { return {
     async all() { if (!sql.startsWith("SELECT kind, scope")) throw new Error(`Unexpected query ${sql}`); return { results: [...rules.values()].filter(r => r.repo === args[0]).map(({ kind, scope, actionId }) => ({ kind, scope, actionId })) }; },
     async run() {
       if (sql.startsWith("INSERT INTO move_kind_rules")) { const [repo, kind, scope, actionId] = args as string[]; const key = JSON.stringify([repo, kind, scope]); if (!rules.has(key)) rules.set(key, { repo, kind, scope, actionId }); }
@@ -37,7 +41,7 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
-  const reload = () => new Factory(ctx as never, { ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) } as never);
+  const reload = () => new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) }) as never);
   const factory = reload();
   const send = (value: unknown, instance = factory) => instance.webSocketMessage(authorizedSocket(), JSON.stringify(value));
   const checkin = async (instance = factory) => {

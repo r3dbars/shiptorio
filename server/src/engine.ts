@@ -31,7 +31,7 @@ export function pickAssembler(s: FactoryState, item: Item): Machine | undefined 
 // One complete line: ore → splitter → assembler → the gauntlet (CI, verify, review, merge gate) → launch pad.
 export function starterLine(): Pick<FactoryState, "machines" | "belts" | "power"> {
   const gauntlet = gauntletLine();
-  const power = [{ id: "steam-spark", kind: "steam" as const, name: "Muse Spark", level: 1, online: true }];
+  const power = [{ id: "steam-spark", kind: "steam" as const, name: "Planner", level: 1, online: true }];
   const machines: Machine[] = [
     { id: "ore-issues", type: "ore_deposit", x: -6, y: 0, tier: 1, state: "idle" },
     { id: "splitter-1", type: "splitter", x: -3, y: 0, harness: "spark", powerId: "steam-spark", tier: 1, state: "idle" },

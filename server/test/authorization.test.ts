@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { expect, it, mock } from 'bun:test';
 import { createHash, generateKeyPairSync } from 'node:crypto';
 import { repoAccess, requireUser } from '../src/authorization';
@@ -7,7 +8,7 @@ import { FactoryState } from '@shiptorio/shared';
 import { starterLine } from '../src/engine';
 import { pairToken } from '../src/runner-auth';
 mock.module('cloudflare:workers', () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
-const { default: app } = await import('../src/index');
+const { testApp: app } = await import('./app-fixture');
 const { Factory } = await import('../src/factory');
 const origin = 'https://shiptorio.com';
 const secret = 'test-isolation-session', password = 'test-isolation-preview';
@@ -23,6 +24,10 @@ function fixture() {
   const DB = { prepare(sql: string) { let args: unknown[] = []; const stmt = {
     bind(...values: unknown[]) { args = values; return stmt; },
     async first() {
+      if (sql.startsWith('SELECT enabled')) return null;
+      if (sql.startsWith('INSERT INTO signup_counters')) return {count:1};
+      if (sql.startsWith('SELECT factories')) return null;
+      if (sql.startsWith('INSERT OR IGNORE INTO signup_resources')) return {resource:'fixture'};
       if (sql.startsWith('SELECT u.id, u.login FROM sessions')) return { id: args[1], login: args[1] === 11 ? 'alice' : 'bob' };
       if (sql.includes('FROM user_repos WHERE')) return String(args[1]).startsWith(args[0] === 11 ? 'alice/' : 'bob/') ? { installation_id: args[0] } : null;
       if (sql.includes('FROM user_installations WHERE')) return args[0] === args[1] ? { installation_id: args[1] } : null;
@@ -33,7 +38,7 @@ function fixture() {
     all: async () => ({ results: [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
   }; return stmt; } };
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',
-    CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async () => { writes++; } },
+    CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async (key: string) => { if (!key.startsWith("ops:")) writes++; } },
     ASSETS: { fetch: async () => new Response('static shell') },
     FACTORY: { idFromName: (name: string) => name, get: (name: string) => { if (name.startsWith("security:")) return { securityLimit: async () => ({ allowed: true, retryAfter: 0 }) }; factoryCalls++; return { runnerJobs: async () => [], fetch: async () => new Response('private factory') }; } },
   };
@@ -114,9 +119,9 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
   const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
   let closed = 0, sent = 0;
-  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env), repo: 'bob/private' };
+  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env as never), repo: 'bob/private' };
   const ws = { deserializeAttachment: () => auth, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
-  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, f.env as never);
+  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(f.env) as never);
   for (const repo of ['bob/private', 'alice/private']) {
     const response = await factory.fetch(new Request(`${origin}/api/repos/${repo}/factory`, { headers: { origin, upgrade: 'websocket', cookie: await cookies('bob') } }));
     expect(response.status).toBe(403);
@@ -163,7 +168,7 @@ it('real account logout immediately revokes existing sockets and runner grants e
   let closed = 0, sent = 0;
   const attachment = { user: user!, login: 'alice', expiresAt: user!.expiresAt, epoch: await browserSocketEpoch(env), repo: state.repo };
   const ws = { deserializeAttachment: () => attachment, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
-  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, env as never);
+  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(env) as never);
   await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(11).run();
   expect(await repoAccess(env as never, user!, state.repo)).toBeNull();
   expect(await requireUser(new Request(origin, { headers: { cookie: loginCookie } }), env as never)).toBeNull();
@@ -184,8 +189,8 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
     await DB.prepare('INSERT INTO repos (full_name, installation_id) VALUES (?, ?)').bind(repo, id).run();
   }
   const queued: string[] = [];
-  const env = { ...fixture().env, DB, GITHUB_WEBHOOK_SECRET: 'test-github-hook-secret',
-    CACHE: { get: async (key: string) => key === 'cred:sentry:alice/private' ? { clientSecret: 'alice-secret' } : key === 'cred:sentry:bob/private' ? { clientSecret: 'bob-secret' } : null },
+  const env = { ...fixture().env, DB, CRED_MASTER_KEY: btoa('a'.repeat(32)), GITHUB_WEBHOOK_SECRET: 'test-github-hook-secret',
+    CACHE: { delete: async () => {}, get: async (key: string) => key === 'cred:sentry:alice/private' ? { clientSecret: 'alice-secret' } : key === 'cred:sentry:bob/private' ? { clientSecret: 'bob-secret' } : null },
     FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({
       enqueueGitHub: async (_id: string, _event: string, payload: { repository: { full_name: string } }) => { expect(repo).toBe(payload.repository.full_name); queued.push(`github:${repo}`); },
       enqueueSentry: async (id: string) => { queued.push(`sentry:${repo}:${id}`); },

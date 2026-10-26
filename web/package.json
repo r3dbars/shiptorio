@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sentry/react": "^11.9.0",
     "@shiptorio/shared": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

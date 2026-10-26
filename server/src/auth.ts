@@ -1,7 +1,10 @@
+import { observedFetch } from "./telemetry";
+import { signupAllowed, addPending, redeemInvite } from './signup';
+
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
 import { convertManifestCode } from "./github";
-import { isAllowed, makeSessionCookie } from "./session";
+import { isAllowed, makeSessionCookie, ownerProof } from "./session";
 import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
 import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
@@ -38,7 +41,7 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const state = url.searchParams.get("state");
   const expected = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_oauth_state=([^;]+)/)?.[1];
   if (!code || !state || state !== expected) return new Response("bad login state, try again", { status: 400 });
-  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+  const tokenRes = await observedFetch("github", "https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
@@ -50,20 +53,24 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   });
   const { access_token } = (await tokenRes.json()) as { access_token?: string };
   if (!access_token) return new Response("GitHub login failed", { status: 401 });
-  const userRes = await fetch("https://api.github.com/user", {
+  const userRes = await observedFetch("github", "https://api.github.com/user", {
     headers: { authorization: `Bearer ${access_token}`, "user-agent": "shiptorio", accept: "application/vnd.github+json" },
   });
   const user = (await userRes.json()) as GitHubUser;
   if (!userRes.ok || !Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
-  if (!isAllowed(env.ALLOWED_LOGINS, user.login)) return new Response(`${user.login} isn't on the allow list`, { status: 403 });
-  // The account and its repo list come from GitHub on every sign-in, so signing in again refreshes them.
-  await upsertUser(env, user);
-  await saveReach(env, user.id, await fetchReach(access_token));
-  const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
-  const headers = new Headers({ location: sameOriginPath(next && decodeURIComponent(next), url.origin) });
-  headers.append("set-cookie", await createSession(env, { id: user.id, login: user.login }, request.headers.get("user-agent")));
-  headers.append("set-cookie", "shiptorio_oauth_state=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
-  return new Response(null, { status: 302, headers });
+  user.login = user.login.toLowerCase();
+  const invite = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_invite=([^;]+)/)?.[1];
+  if (invite) { try { await redeemInvite(env,decodeURIComponent(invite),user.login); } catch {} }
+  const allowed = await signupAllowed(env,user.login);
+  if (!allowed) await addPending(env,user.login,'github');
+  await upsertUser(env,user);
+  // Pending accounts get a revocable session, but no factory access or installation discovery.
+  if (allowed) await saveReach(env,user.id,await fetchReach(access_token));
+  const next = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
+  const headers = new Headers({location:allowed ? sameOriginPath(next && decodeURIComponent(next),url.origin) : '/waitlist'});
+  headers.append('set-cookie',await createSession(env,{id:user.id,login:user.login},request.headers.get('user-agent')));
+  for (const name of ['shiptorio_invite','shiptorio_oauth_state','shiptorio_next']) headers.append('set-cookie',`${name}=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  return new Response(null,{status:302,headers});
 }
 
 export async function logout(request: Request, env: Env): Promise<Response> {
@@ -72,6 +79,18 @@ export async function logout(request: Request, env: Env): Promise<Response> {
     status: 302,
     headers: { location: "/", "set-cookie": "shiptorio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" },
   });
+}
+
+// Owner scripts (runner pairing, the dogfood autopilot) prove they hold SESSION_SECRET and get a real,
+// revocable session row, like a GitHub sign-in. Only an existing, allowed account qualifies.
+export async function ownerSession(request: Request, env: Env, now = Date.now()): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as { login?: unknown; at?: unknown; proof?: unknown } | null;
+  const { login, at, proof } = body ?? {};
+  if (typeof login !== "string" || typeof at !== "number" || typeof proof !== "string" || Math.abs(now - at) > 60_000 ||
+    proof !== (await ownerProof(env.SESSION_SECRET, login, at))) return Response.json({ error: "bad proof" }, { status: 401 });
+  const user = await env.DB.prepare("SELECT id, login FROM users WHERE lower(login) = lower(?)").bind(login).first<{ id: number; login: string }>();
+  if (!user || !isAllowed(env.ALLOWED_LOGINS, user.login)) return Response.json({ error: "unknown account" }, { status: 403 });
+  return Response.json({ ok: true }, { headers: { "set-cookie": await createSession(env, user, "owner-script", now) } });
 }
 
 // ---- one-time GitHub App setup via the manifest flow ----

@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
@@ -29,8 +30,8 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
     const state = FactoryState.parse({ repo: "owner/repo", baseBranch: "main", districts: [], ...starterLine(), items: [item], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
     const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }]]);
     const storage = { async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); }, get: async (k: string) => structuredClone(data.get(k)), put: async (k: string, v: unknown) => { data.set(k, structuredClone(v)); }, delete: async (k: string) => data.delete(k), list: async (o: { prefix: string }) => new Map([...data].filter(([k]) => k.startsWith(o.prefix))), getAlarm: async () => null, setAlarm: async () => {} };
-    const env = { ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: privateKey, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ meta: { changes: 1 } }) }) }) } };
-    const factory = new Factory({ storage, blockConcurrencyWhile: (fn: () => unknown) => fn(), getWebSockets: () => [] } as never, { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never);
+    const env = { ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: privateKey, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ meta: { changes: 1 } }) }) }) } };
+    const factory = new Factory({ storage, blockConcurrencyWhile: (fn: () => unknown) => fn(), getWebSockets: () => [] } as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never);
     const saved = () => data.get("state") as FactoryState;
     const launch = async () => {
       await factory.alarm();
