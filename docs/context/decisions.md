@@ -5,6 +5,19 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Deployment handoff (Oct 26, 17:07 UTC): PR #13 merged after CI passed against current
+main (including the pixel map and Foreman contract). `bun run deploy` from main
+successfully deployed only `shiptorio`; both custom domains retain the password gate.
+Local workerd and remote HTTP/WebSocket smoke checks passed. The Meta key was verified
+with a live ping/triage and is a Worker secret; GitHub App setup remains outstanding.
+With Justin's action-time approval, created `Shiptorio GitHub Actions deploy`: Workers
+Scripts/D1/KV Edit on the existing account, Workers Routes Edit on only shiptorio.com
+and shiptorio.dev. Stored it as GitHub secret `CLOUDFLARE_API_TOKEN`, set
+`CLOUDFLARE_ACCOUNT_ID`, and set `DEPLOY_ENABLED=true`. No token value is committed.
+This follow-up PR adds a password-protected deployed commit endpoint and pins the
+deploy command to `shiptorio`; its merge will test the automatic Deploy workflow.
+Automatic deployment is not yet proven until that run succeeds and the live commit matches.
+
 Local backend handoff, Oct 26: Justin moved backend ownership from the cloud Codex chat to
 the local checkout at `/Users/redbars/Documents/Codex/2026-10-26/review-the-official-meta-global-ai/shiptorio`.
 He authorized deploying **only Shiptorio** and using `shiptorio.com` and `shiptorio.dev`.
