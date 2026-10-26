@@ -5,6 +5,17 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Local backend handoff, Oct 26: Justin moved backend ownership from the cloud Codex chat to
+the local checkout at `/Users/redbars/Documents/Codex/2026-10-26/review-the-official-meta-global-ai/shiptorio`.
+He authorized deploying **only Shiptorio** and using `shiptorio.com` and `shiptorio.dev`.
+The site must require a private preview password. First checkpoint is GitHub issue →
+Spark → real PR → current-commit CI inspection/rework → human merge → rocket.
+Sentry, other harnesses and voice follow that checkpoint. Spark is the factory foreman;
+playing the game should cause useful, verifiable changes to a real product.
+The GitHub App does not exist yet. Justin has a Meta key; it must be entered securely.
+The local Wrangler login works; GitHub Actions deployment secrets are not configured yet.
+Do not mistake a local/direct deployment for automatic main deployment being enabled.
+
 | When (2026-10-26, UTC) | Decision | Who |
 | --- | --- | --- |
 | 17:00 | Product calls locked: demo money = Stripe test mode in the demo shop (checkout counter on the HUD); customer replies = Spark drafts, player clicks Send; pitch = solo founders and tiny teams. See `docs/PRODUCT.md` | Justin |

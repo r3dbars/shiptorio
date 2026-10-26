@@ -28,10 +28,11 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
+    signal: AbortSignal.timeout(90000),
     headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
     body: JSON.stringify({ model: env.SPARK_MODEL || "muse-spark-1.3", messages, reasoning_effort: effort }),
   });
-  if (!res.ok) throw new SparkError(`Spark ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  if (!res.ok) throw new SparkError(`Spark request failed (${res.status}). Check API access and credits.`);
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   const text = data.choices?.[0]?.message?.content;
   if (!text) throw new SparkError("Spark returned no content");
