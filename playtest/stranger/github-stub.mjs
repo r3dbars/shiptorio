@@ -31,6 +31,12 @@ export function githubStub({ origin, webhookSecret, worker }) {
     if (p === `/user/installations/${state.installation}/repositories`) return json({ total_count: 1, repositories: [{ full_name: state.repo, default_branch: "main" }] });
     if (p === "/app") return json({ slug: "shiptorio-stub" });
     if (/^\/app\/installations\/\d+\/access_tokens$/.test(p)) return json({ token: "ghs_stub_installation_token", expires_at: new Date(Date.now() + 3600e3).toISOString() }, 201);
+    // Production revalidates the signed-in user's current repo permission before listing/opening it.
+    // Authenticate this lookup too: the stub must not make missing memberships look authorized.
+    if (p === `/repos/${state.repo}/collaborators/${state.user.login}/permission`) {
+      if (!state.installation || request.headers.get("authorization") !== "Bearer ghs_stub_installation_token") return json({ message: "Forbidden (stub)" }, 403);
+      return json({ permission: "admin", user: { id: state.user.id, login: state.user.login } });
+    }
     if (p === `/repos/${state.repo}/installation`) return state.installation ? json({ id: state.installation }) : json({ message: "Not Found" }, 404);
     if (p === `/repos/${state.repo}`) return json({ full_name: state.repo, default_branch: "main" });
     if (p.startsWith(`/repos/${state.repo}/git/trees/`)) return json({ sha: "stubtree", tree, truncated: false });

@@ -51,7 +51,7 @@ mf = new Miniflare(convertV4MiniflareOptions({ port: PORT, workers: [{
   bindings: {
     ...workerOptions.bindings,
     PUBLIC_URL: origin,
-    ALLOWED_LOGINS: "*", // the sign-up gate is Codex goal 12; this run is about what happens once you're let in
+    ALLOWED_LOGINS: "fresh-stranger", // one explicitly approved fixture account; no wildcard signup bypass
     SESSION_SECRET: "stranger-session-secret-0123456789abcdef",
     APP_PASSWORD: PASSWORD,
     GITHUB_APP_ID: "1",
@@ -113,6 +113,8 @@ let failed = null;
 try {
   await step("front door: preview password", async () => {
     await page.goto(origin + "/");
+    // The front door is intentionally public; the private-entry link leads to the password gate.
+    if (await page.getByRole("link", { name: "Enter the factory", exact: true }).count()) await page.getByRole("link", { name: "Enter the factory", exact: true }).click();
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Enter the factory" }).click();
     await page.waitForURL((u) => u.pathname === "/" && !u.search.includes("check"));
