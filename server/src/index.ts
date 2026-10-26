@@ -3,7 +3,7 @@ import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from
 import { Factory, type FactoryEnv } from "./factory";
 import { repoInstallationId } from "./github";
 import { isAllowed, readSession } from "./session";
-import { previewAccess } from "./access";
+import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
@@ -32,6 +32,13 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
 const app = new Hono<{ Bindings: Env; Variables: { login: string; runner: RunnerIdentity } }>();
+
+app.use("*", async (c, next) => {
+  const redirect = secureTransport(c.req.raw);
+  if (redirect) return redirect;
+  await next();
+  if (new URL(c.req.url).protocol === "https:") c.header("Strict-Transport-Security", "max-age=31536000");
+});
 
 app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
