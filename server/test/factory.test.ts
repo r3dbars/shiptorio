@@ -18,6 +18,8 @@ function fixture(items: Item[] = []) {
   const storage = {
     async get(key: string) { return structuredClone(data.get(key)); },
     async put(key: string, value: unknown) { data.set(key, structuredClone(value)); },
+    async delete(key: string) { return data.delete(key); },
+    async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); },
     async getAlarm() { return alarm; },
     async setAlarm(value: number) { alarm = value; },
   };

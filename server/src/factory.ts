@@ -12,12 +12,22 @@ import {
   type Patch,
   type ServerToWeb,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, installationToken, inspectPullRequest, openPullRequest, repoTree, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { pickFiles, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
+import { foldSignal } from "./ore";
+import { githubStatus, normalizeGitHub, type GitHubPayload, type GitHubSourceEnv } from "./sources/github";
+import type { Signal } from "./sources";
 
-export interface FactoryEnv extends AppCredentials, SparkEnv {}
+export interface FactoryEnv extends AppCredentials, SparkEnv {
+  GITHUB_WEBHOOK_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  HOSTED_SPARK_ASSEMBLER?: string;
+  DB: D1Database;
+  FACTORY: DurableObjectNamespace<Factory>;
+}
 
 const TICK_MS = 2000;
 const MAX_ATTEMPTS = 3;
@@ -31,6 +41,106 @@ export class Factory extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private running = new Set<string>(); // item ids with a job in flight
+
+  /** Acknowledge only after durable enqueue. No API calls, backfill or model work here. */
+  async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
+    const key = `delivery:${deliveryId}`;
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0 });
+    await this.scheduleTick();
+  }
+
+  private async processDeliveries(): Promise<void> {
+    const pending = await this.ctx.storage.list<{ event: string; payload: GitHubPayload; attempts: number }>({ prefix: "delivery:", limit: 4 });
+    for (const [key, delivery] of pending) {
+      try {
+        await this.handleGitHub(delivery.event, delivery.payload);
+        const id = key.slice("delivery:".length);
+        await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = 'github' AND delivery_id = ?").bind(id).run();
+        await this.ctx.storage.delete(key);
+      } catch {
+        // Keep the original payload durably queued. Never log credentials or raw API bodies.
+        const attempts = delivery.attempts + 1;
+        await this.ctx.storage.put(key, { ...delivery, attempts });
+        this.log("error", `GitHub delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
+        await this.ctx.storage.setAlarm(Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)));
+        break;
+      }
+    }
+    if ((await this.ctx.storage.list({ prefix: "delivery:", limit: 1 })).size && !(await this.ctx.storage.getAlarm())) await this.scheduleTick();
+  }
+
+  private async handleGitHub(event: string, p: GitHubPayload): Promise<void> {
+    const installationId = p.installation?.id;
+    const repo = p.repository?.full_name;
+    if (event === "installation" || event === "installation_repositories") {
+      if (!installationId) return;
+      const removed = p.action === "deleted" ? await this.env.DB.prepare("SELECT full_name FROM repos WHERE installation_id = ?").bind(installationId).all<{ full_name: string }>() : { results: p.repositories_removed ?? [] };
+      if (p.action === "deleted") {
+        await this.env.DB.batch([this.env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId), this.env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId)]);
+      } else {
+        const added = p.repositories ?? p.repositories_added ?? [];
+        await this.env.DB.batch([
+          this.env.DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (?, ?)").bind(installationId, p.installation?.account?.login ?? ""),
+          ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES (?, ?)").bind(r.full_name.toLowerCase(), installationId)),
+        ]);
+        for (const r of added) {
+          const factory = this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase()));
+          await factory.enqueueGitHub(`install-${installationId}-${r.full_name}-${p.action}`, "shiptorio_install", { repository: { full_name: r.full_name }, installation: p.installation });
+        }
+      }
+      for (const r of removed.results) {
+        await this.env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(r.full_name.toLowerCase()).run();
+        await this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase())).disconnectGitHub();
+      }
+      return;
+    }
+    if (!repo || !installationId) return;
+    if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
+      if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
+      await this.ensure(repo, installationId);
+      if (event === "shiptorio_install") {
+        if (await this.ctx.storage.get<boolean>("githubBackfilled")) return;
+        const token = await installationToken(this.env, installationId);
+        const issues = await openIssues(token, repo);
+        for (let offset = 0; offset < issues.length; offset += 5) {
+          const batch = issues.slice(offset, offset + 5);
+          const reporters = await Promise.all(batch.map((issue) => issueReporters(token, repo, issue)));
+          for (let i = 0; i < batch.length; i++) for (const signal of normalizeGitHub({ repository: { full_name: repo }, issue: batch[i] })) await this.ingestSignal({ ...signal, reporters: reporters[i] });
+        }
+        await this.ctx.storage.put("githubBackfilled", true);
+        this.log("info", `GitHub mine connected: ${issues.length} open issues loaded. Spark will triage the ore.`);
+      } else {
+        for (const signal of normalizeGitHub(p)) await this.ingestSignal(signal);
+      }
+      return;
+    }
+    if (!(await this.load())) return;
+    if (event === "push" && p.ref === `refs/heads/${p.repository?.default_branch}`) await this.refreshDistricts();
+    const pr = p.pull_request as { number?: number; merged?: boolean; head?: { sha: string; ref: string } } | undefined;
+    if (event === "pull_request" && p.action === "closed" && pr?.number) await this.onPullClosed(pr.number, !!pr.merged);
+    const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string } | undefined;
+    if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
+  }
+
+  async disconnectGitHub(): Promise<void> {
+    await this.ctx.storage.put("githubDisabled", true);
+    if (await this.load()) await this.patch({ sources: [{ ...githubStatus(this.env), state: "not_connected", detail: "GitHub mine disconnected for this repository." }] });
+  }
+
+  async ingestSignal(signal: Signal): Promise<void> {
+    if (!(await this.load())) return;
+    const s = this.state!;
+    const existing = s.items.find((i) => i.ore?.fingerprint === signal.fingerprint || (signal.source === "github_issue" && i.id === `gh-${signal.externalId}`));
+    if (signal.action === "close" || signal.action === "resolved") {
+      if (existing && existing.state !== "launched") await this.patch({ removed: [{ kind: "item", id: existing.id }] });
+      return;
+    }
+    const item = foldSignal(existing, signal);
+    if (item === existing) return;
+    await this.patch({ items: [item] });
+    this.log("info", `${existing ? "Ore updated" : "Ore"}: ${item.title}`, item.id);
+    await this.scheduleTick();
+  }
 
   // ---------- state ----------
 
@@ -81,6 +191,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.science) s.science = p.science;
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.tick !== undefined) s.tick = p.tick;
+    if (p.sources) s.sources = p.sources;
+    if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
     await this.save();
     this.broadcast({ type: "patch", patch: p });
   }
@@ -114,6 +226,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       science: { red: 0, green: 0, grey: 0, blue: 0 },
       trust: 0.5,
       tick: 0,
+      sources: [githubStatus(this.env)],
     };
     await this.save();
   }
@@ -267,6 +380,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
+    await this.processDeliveries();
     if (!(await this.load())) return;
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
@@ -289,6 +403,18 @@ export class Factory extends DurableObject<FactoryEnv> {
     for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
       const m = pickAssembler(s, item);
       if (!m) continue;
+      if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
+        await this.patch({
+          machines: [{ ...m, state: "blocked" }],
+          bottleneck: { stage: "resources", wip: s.items.filter((i) => i.state === "queued").length, ageMs: Math.max(0, now - item.updatedAt), throughputPerHour: 0, valueAtRisk: s.items.reduce((total, i) => total + (i.value ?? 0), 0), summary: "Plug in Claude or ChatGPT to start building." },
+        });
+        if (!s.move || s.move.stage !== "resources") {
+          s.move = { id: crypto.randomUUID(), title: "Plug in Claude or ChatGPT to start building.", why: "Spark directs the factory; your local subscription agents write the code.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
+          await this.save();
+          this.broadcast({ type: "move", move: s.move });
+        }
+        continue;
+      }
       if (!sparkConfigured(this.env)) {
         if (m.state !== "blocked") this.log("warn", "Spark has no power. Add the Meta API key to start this line.", item.id);
         await this.patch({ machines: [{ ...m, state: "blocked" }] });
@@ -305,7 +431,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       break;
     }
 
-    const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
+    const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if (busy) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
   }
