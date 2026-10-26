@@ -15,8 +15,8 @@ export function untrustedData(text: string, limit = 64000): string {
 
 export function pathAllowed(path: string): boolean {
   return /^[\w./@+-]+$/.test(path) && !path.startsWith("/") && !path.includes("..")
-    && !path.split("/").some(p => /^(?:\.|\.git(?:hub)?|.*\.env.*|\.dev\.vars.*|\.direnv.*|node_modules|\.wrangler|secrets?(?:\.[\w-]+)?|credentials?(?:\.[\w-]+)?|AGENTS\.md|CLAUDE\.md|\.claude|\.codex|\.ssh|\.aws|\.config|\.npmrc|\.yarnrc.*|\.netrc|\.pypirc|auth\.json|pip\.conf)$/i.test(p))
-    && !/(^|\/)(?:\.circleci|\.buildkite|\.husky)(\/|$)|(^|\/)(?:Jenkinsfile|Dockerfile(?:\..*)?|docker-compose[^/]*|compose\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|bitbucket-pipelines\.ya?ml|cloudbuild\.ya?ml|buildspec\.ya?ml)$/i.test(path)
+    && !path.split("/").some(p => /^(?:\.|\.git(?:hub)?|.*\.env.*|\.dev\.vars.*|\.direnv.*|node_modules|\.wrangler|secrets?(?:\.[\w-]+)?|credentials?(?:\.[\w-]+)?|AGENTS(?:\.[\w-]+)?\.md|CLAUDE(?:\.[\w-]+)?\.md|\.claude|\.codex|\.ssh|\.aws|\.config|\.npmrc|\.yarnrc.*|\.netrc|\.pypirc|auth\.(?:json|toml)|bunfig\.toml|pip\.conf|id_rsa|id_ed25519|service[-_]account(?:\.[\w-]+)?)$/i.test(p))
+    && !/(^|\/)(?:\.circleci|\.buildkite|\.husky)(\/|$)|(^|\/)(?:\.travis\.yml|\.drone\.ya?ml|appveyor\.ya?ml|Jenkinsfile|Dockerfile(?:\..*)?|docker-compose[^/]*|compose\.ya?ml|\.gitlab-ci\.ya?ml|azure-pipelines\.ya?ml|bitbucket-pipelines\.ya?ml|cloudbuild\.ya?ml|buildspec\.ya?ml)$/i.test(path)
     && !/\.(?:pem|key|p12|pfx)$/i.test(path);
 }
 
@@ -36,12 +36,16 @@ export function suspiciousDiff(diff: string): string[] {
   const added = diff.split("\n").filter(l => l.startsWith("+") && !/^\+\+\+ (?:b\/|\/dev\/null$)/.test(l)).join("\n");
   const findings: string[] = [];
   if (injectionAttempt(added)) findings.push("Suspicious diff: prompt injection in added content.");
-  if (unsafeInstructions(added) || /\b(?:fetch|XMLHttpRequest|WebSocket)\s*\(|\b(?:https?|net|dns)\s*\.\s*(?:request|get|connect|resolve)|\b(?:axios|requests)\s*\.|https?:\/\/|\b(?:child_process|execSync|spawnSync|eval)\b|\b(?:exec|spawn)\s*\(/i.test(added)) findings.push("Suspicious diff: new network, process execution or credential access requires human security review.");
-  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|LLM_\d+_[A-Za-z0-9_-]{20,})|authorized_keys|\.ssh\b|\.npmrc\b|\.netrc\b|\.env\b/i.test(added)) findings.push("Suspicious diff: credential or secret-looking content.");
+  if (unsafeInstructions(added) || /\/dev\/(?:tcp|udp)\/|\$\{?[A-Z_]*(?:TOKEN|SECRET|PASSWORD|API_KEY)\b|\b(?:bash|zsh|sh|nc|netcat)\s+-/i.test(added) || /\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(|\bsendBeacon\s*\(|\b(?:https?|net|dns)\s*\.\s*(?:request|get|connect|resolve)|\b(?:axios|requests)\s*\.|https?:\/\/|\b(?:child_process|execSync|spawnSync|eval)\b|\b(?:exec|spawn)\s*\(/i.test(added)) findings.push("Suspicious diff: new network, process execution or credential access requires human security review.");
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|LLM_\d+_[A-Za-z0-9_-]{20,})|authorized_keys|\.ssh\b|\.npmrc\b|\.netrc\b|\.env\b|\b(?:secrets?|credentials?)(?:[._/-]|\b)|\b(?:localStorage|sessionStorage)\s*(?:\.|\[)|\b(?:accessKeyId|secretAccessKey|document\s*\.\s*cookie)\b/i.test(added)) findings.push("Suspicious diff: credential or secret-looking content.");
   if (/^(?:\+\+\+ b\/|--- |diff --git a\/)([^\n]+)/m.test(diff)) {
     for (const line of diff.split("\n")) {
       const path = line.match(/^\+\+\+ b\/(.+)$|^--- (.+?) \([^)]*\)$/);
-      if (path && !pathAllowed(path[1] ?? path[2])) findings.push("Suspicious diff: forbidden path or workflow edit.");
+      if (path) {
+        const filename = path[1] ?? path[2];
+        if (!pathAllowed(filename)) findings.push("Suspicious diff: forbidden path or workflow edit.");
+        if (/(^|\/)package\.json$/i.test(filename)) findings.push("Suspicious diff: executable package configuration requires human security review.");
+      }
     }
   }
   return [...new Set(findings)];

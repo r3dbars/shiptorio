@@ -37,13 +37,14 @@ not grant permissions. This protects the Oct 29 local-runner checkpoint.
   opens or updates. Hosted dev assembly is also confined to its selected files and the
   same patch policy (its whole-file replacement counts against the line limit).
 - New network/process-execution code, credential access, secret-looking additions,
-  workflow edits and recognizable injection overrides fail deterministic security review,
+  workflow edits, executable package-manifest changes and recognizable injection overrides fail deterministic security review,
   even if the model would answer pass. Incomplete review evidence also fails. The AI
   reviewer still checks the ordinary semantic correctness of permitted changes.
 
 These are deliberately conservative gates: a legitimate new network integration or
-security configuration edit needs a separate human-authored PR. Prompt formatting and
-pattern matching are defense in depth, not a proof that a model understands every attack.
+security configuration or package-manifest edit needs a separate human-authored PR. Prompt formatting and
+pattern matching are defense in depth, not a proof that a model understands every attack. Quoted injection instructions in security reports also
+fail the review station and need human security handling rather than an automatic rework.
 Native subscription CLIs retain their authentication access; this change does not claim
 full OS isolation of the coding harness or protection against every obfuscated program.
 Changes to already-existing executable scripts can still be dangerous, so tests execute
