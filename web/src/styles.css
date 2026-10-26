@@ -816,14 +816,18 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .mapping.quiet.flip { translate: calc(-100% + 7px) -7px; }
 @media (max-width: 560px) { .mapping.quiet b { display: none; } } /* phones: just the code path */
 
-/* Make it yours + connect a source (ui/MakeItYours.tsx) */
-.seg { display: inline-flex; flex: none; border: 1px solid var(--panel-line); border-radius: 10px; overflow: hidden; }
-.seg button { border: 0; background: none; color: var(--dim); font: 600 13px var(--pixel); padding: 7px 10px; cursor: pointer; min-width: 34px; }
-.seg button + button { border-left: 1px solid var(--panel-line); }
-.seg button[aria-pressed="true"] { background: var(--ink); color: var(--dark); }
-.seg button:disabled { opacity: 0.4; cursor: default; }
-.pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
-.sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
+/* Make it yours + connect a source (ui/MakeItYours.tsx): iron lever switches, an iron select, numbered steps */
+.seg { display: inline-flex; flex: none; border: 2px solid var(--iron-line); outline: 2px solid var(--iron-outline); border-radius: 0; overflow: hidden; background: #0a0604; }
+.seg button { border: 0; background: var(--iron-plate); color: var(--iron-ink); font: 400 11px/1 var(--iron-pixel); letter-spacing: 0.06em; text-transform: uppercase; padding: 8px 10px; cursor: pointer; min-width: 36px; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.4); }
+.seg button + button { border-left: 2px solid #000; }
+.seg button:hover:not(:disabled) { background: #3a2e26; }
+.seg button[aria-pressed="true"] { background: var(--iron-amber); color: var(--iron-on-amber); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.25); }
+.seg button:disabled { color: var(--iron-dim); background: #140e0a; cursor: default; }
+.pickm { flex: 1; min-width: 0; background: var(--iron-soot); color: var(--iron-ink); border: 2px solid var(--iron-line); border-radius: 0; padding: 8px 10px; font: 400 14px var(--iron-mono); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.5); }
+.pickm:hover { border-color: var(--iron-line-hi); }
+.sheet .steps { margin: 0; padding-left: 0; list-style: none; counter-reset: step; display: flex; flex-direction: column; gap: 6px; font: 400 14px/1.4 var(--iron-mono); color: var(--iron-ink); }
+.sheet .steps li { counter-increment: step; display: flex; gap: 10px; align-items: baseline; }
+.sheet .steps li::before { content: counter(step); flex: none; display: inline-grid; place-items: center; min-width: 22px; height: 22px; font: 700 11px/1 var(--iron-pixel); color: var(--iron-on-amber); background: var(--iron-brass); border: 2px solid #000; }
 
 /* Pin the concepts the current tour lesson names, including on touch screens: caution-striped amber callouts. */
 .maplabel.teaching {
@@ -1243,9 +1247,9 @@ input, select, textarea { font-size: max(16px, 1em); } /* iOS zooms the page int
 /* first repo: the install button is the whole step (new-user-path.md) */
 .ob-install { display: flex; flex-direction: column; gap: 8px; }
 .ob-install .btn { flex: none; }
-/* the planner's one-line why on every card */
-.why-line { margin: 4px 0 0; font: 400 13px/1.4 var(--mono); color: var(--ink); opacity: .85; }
-.why-line b { color: var(--blue); font-weight: 600; }
+/* the planner's one-line why on every card: a thin aether conduit down the left, the planner's words beside it */
+.why-line { margin: 4px 0 0; padding-left: 10px; font: 400 13px/1.45 var(--iron-mono); color: var(--iron-ink); box-shadow: inset 2px 0 0 var(--iron-aether); }
+.why-line b { color: var(--iron-aether); font: 400 10px/1 var(--iron-pixel); letter-spacing: 0.1em; text-transform: uppercase; margin-right: 2px; }
 
 /* ---------- Accessibility ---------- */
 
@@ -1260,24 +1264,34 @@ input, select, textarea { font-size: max(16px, 1em); } /* iOS zooms the page int
   }
 }
 
-/* The factory as text (ui/FactoryText.tsx) */
+/* The factory as text (ui/FactoryText.tsx): a plain ledger, iron rules between rows */
 .a11y-view { overflow-y: auto; }
 .a11y-view ul { list-style: none; margin: 0; padding: 0; }
+.a11y-view .lrow { border-bottom: 2px solid #2a211b; }
 .a11y-view button.lrow {
-  width: 100%; background: none; border: 0; border-bottom: 1px solid var(--hair); color: inherit;
-  text-align: left; cursor: pointer; border-radius: 0;
+  width: 100%; background: none; border: 0; border-bottom: 2px solid #2a211b; color: inherit;
+  text-align: left; cursor: pointer; border-radius: 0; padding-left: 8px; padding-right: 8px;
 }
-.a11y-view button.lrow:hover .tt { color: var(--amber); }
+.a11y-view button.lrow:hover { background: var(--iron-plate); }
+.a11y-view button.lrow:hover .tt { color: var(--iron-amber); }
 .a11y-view li:last-child > .lrow { border-bottom: 0; }
 
-/* Sound captions (ui/SoundCaptions.tsx): bottom-left, clear of the dock */
+/* Sound captions (ui/SoundCaptions.tsx): small iron caption plates under the top bar, a pixel speaker on each */
 .sfx-captions {
   position: absolute; left: calc(12px + var(--sal)); top: calc(70px + var(--sat)); z-index: 30;
-  display: flex; flex-direction: column; gap: 4px; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
 }
 .sfx-captions span {
-  font: 500 14px var(--mono); color: var(--ink); background: rgba(10, 12, 16, 0.85);
-  padding: 4px 10px; border-radius: 8px; border: 1px solid var(--hair);
+  display: inline-flex; align-items: center; gap: 8px; max-width: min(420px, calc(100vw - 24px));
+  font: 400 13px/1.35 var(--iron-mono); color: var(--iron-ink); background: var(--iron-panel-solid);
+  padding: 5px 10px 5px 8px; border-radius: 0; border: 2px solid var(--iron-line); outline: 2px solid var(--iron-outline);
+  animation: sfx-in 0.16s steps(2) both;
 }
+.sfx-captions span::before {
+  content: ""; flex: none; width: 12px; height: 12px; image-rendering: pixelated;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges' fill='%237af0d8'%3E%3Crect x='0' y='3' width='2' height='2'/%3E%3Crect x='2' y='2' width='1' height='4'/%3E%3Crect x='3' y='1' width='1' height='6'/%3E%3Crect x='5' y='2' width='1' height='1'/%3E%3Crect x='6' y='3' width='1' height='2'/%3E%3Crect x='5' y='5' width='1' height='1'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+@keyframes sfx-in { from { opacity: 0; transform: translateX(-8px); } }
 @media (max-width: 560px) { .sfx-captions { top: calc(124px + var(--sat)); } }
+@media (prefers-reduced-motion: reduce) { .sfx-captions span { animation: none; } }
 canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: -3px; }

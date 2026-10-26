@@ -153,7 +153,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const nudge = useBottleneckNudge(deck, progressing);
-  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name) }; // achievements pay XP into progression
+  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson }; // achievements pay XP into progression; toasts wait out the tour coach card
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
     if (progressing && state) prog.open(deck.length);
