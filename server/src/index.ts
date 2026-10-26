@@ -1,3 +1,4 @@
+import { factoryRpc } from "./factory-rpc";
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
 
@@ -61,7 +62,7 @@ const factory = (env: Env, repo: string) => {
       headers.set("X-Request-ID", trace.requestId);
       return target.fetch(new Request(request, { headers }));
     };
-    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+    return (...args: unknown[]) => factoryRpc(target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }, String(method), args, trace);
   } }) as typeof stub;
 };
 
@@ -414,7 +415,7 @@ app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   const raw = JSON.parse(body);
-  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   return c.json({ job: await factory(c.env, identity.repo).claimRunner(identity.pairId, raw.harnesses) });
 });
 
