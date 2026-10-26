@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { normalizeGitHub } from "../src/sources/github";
 
 // Exercise the real Factory transitions with storage and transport substitutes.
 // Wrangler smoke checks below exercise workerd separately.
@@ -25,8 +26,9 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-  const factory = new Factory(ctx as never, { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) }, ...extraEnv } as never);
-  return { factory, data, events, saved: () => data.get("state") as FactoryState };
+  const env = { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) }, ...extraEnv };
+  const factory = new Factory(ctx as never, env as never);
+  return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });
@@ -38,15 +40,20 @@ describe("Factory lifecycle", () => {
     const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(der).toString("base64")}\n-----END PRIVATE KEY-----`;
     const originalFetch = globalThis.fetch;
     const base = "a".repeat(40), head = "b".repeat(40);
-    let opened = 0, sparkCalls = 0, merged = false;
+    let opened = 0, sparkCalls = 0, merged = false, browserPlanning = false, browserCall = 0;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (value: unknown) => Response.json(value);
       if (url.endsWith("/access_tokens")) return json({ token: "fake-install-token" });
+      if (url.endsWith("/chat/completions") && browserPlanning) {
+        browserCall++;
+        const action = browserCall === 1 ? { files: ["server/src/engine.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Read guard" } : { tool: "assign_job", reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
+        return json({ choices: [{ message: { content: JSON.stringify(action) } }] });
+      }
       if (url.endsWith("/chat/completions")) { sparkCalls++; return json({ choices: [{ message: { content: JSON.stringify(sparkCalls === 1 ? { tool: "read_issue", reason: "Understand the approved issue" } : sparkCalls === 2 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect the existing guard" } : { tool: "assign_job", reason: "The scope is clear", plan: "Reject credential paths and add a regression test.", acceptance: ["Ordinary code paths remain accepted", "Secret paths are refused"] }) } }] }); }
       if (url.includes("/contents/")) return json({ content: btoa("export const SAFE_PATH = /.+/;"), encoding: "base64" });
       if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
-      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [], truncated: false });
+      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }], truncated: false });
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
@@ -74,7 +81,7 @@ describe("Factory lifecycle", () => {
       const assigned = claimed.find(Boolean)!;
       expect(assigned.token).toBe("fake-install-token");
       expect(f.saved().items[0].state).toBe("working");
-      expect(f.saved().move).toBeNull();
+      expect(f.saved().move ?? null).toBeNull();
       const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };
       await expect(f.factory.finishRunner(pair, { ...receipt, checks: [] })).rejects.toThrow("check receipts");
       await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");
@@ -100,6 +107,52 @@ describe("Factory lifecycle", () => {
       expect(opened).toBe(1);
       await f.factory.pairRunner();
       await expect(f.factory.claimRunner(pair, ["codex"])).rejects.toThrow("revoked");
+
+      browserPlanning = true;
+      const prepareBrowserPlan = async () => {
+        browserCall = 0;
+        const g = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
+        const pairing = await g.factory.pairRunner();
+        expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
+        const proposal = g.saved().move!;
+        await g.factory.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: "forged", optionId: "codex" }));
+        expect(await g.factory.runnerJobs()).toHaveLength(0);
+        await g.factory.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: proposal.id, optionId: "codex" }));
+        expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
+        await g.factory.alarm();
+        expect((await g.factory.runnerJobs())[0].status).toBe("awaiting_approval");
+        expect(g.saved().move?.plan?.[0]).toContain("server/src/engine.ts");
+        expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
+        return { g, pairing, approval: g.saved().move! };
+      };
+      const approved = await prepareBrowserPlan();
+      const reconnected = approved.g.reload();
+      const approve = JSON.stringify({ type: "choose_move", moveId: approved.approval.id, optionId: "approve" });
+      await reconnected.webSocketMessage({} as never, approve);
+      await reconnected.webSocketMessage({} as never, approve);
+      expect((await reconnected.runnerJobs())[0].status).toBe("ready");
+      expect((await reconnected.runnerJobs())[0].approvedAt).toBeGreaterThan(0);
+      const doubleClaim = await Promise.all([reconnected.claimRunner(approved.pairing, ["codex"]), reconnected.claimRunner(approved.pairing, ["codex"])]);
+      expect(doubleClaim.filter(Boolean)).toHaveLength(1);
+
+      const declined = await prepareBrowserPlan();
+      await declined.g.factory.webSocketMessage({} as never, JSON.stringify({ type: "defer_move", moveId: declined.approval.id }));
+      expect(await declined.g.factory.claimRunner(declined.pairing, ["codex"])).toBeNull();
+      expect(declined.g.saved().move).toBeNull();
+      expect((await declined.g.factory.runnerJobs())[0].status).toBe("failed");
+
+      const stale = await prepareBrowserPlan();
+      for (const signal of normalizeGitHub({ repository: { full_name: "r3dbars/demo" }, issue: { number: 1, title: "Changed scope", body: "New request", html_url: "https://github.com/r3dbars/demo/issues/1", updated_at: "2026-10-26T19:00:00Z" } })) await stale.g.factory.ingestSignal(signal);
+      await stale.g.factory.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: stale.approval.id, optionId: "approve" }));
+      expect((await stale.g.factory.runnerJobs())[0].status).toBe("failed");
+      expect(await stale.g.factory.claimRunner(stale.pairing, ["codex"])).toBeNull();
+
+      const closed = await prepareBrowserPlan();
+      await closed.g.factory.enqueueGitHub("close-planned", "issues", { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 1, title: "Fix checkout", state: "closed", html_url: "https://github.com/r3dbars/demo/issues/1" } });
+      await closed.g.factory.alarm();
+      expect(closed.g.saved().items).toHaveLength(0);
+      expect((await closed.g.factory.runnerJobs())[0].status).toBe("failed");
+      expect(await closed.g.factory.claimRunner(closed.pairing, ["codex"])).toBeNull();
     } finally { globalThis.fetch = originalFetch; }
   });
   it("durably queues delivery work and folds it before acknowledgment", async () => {

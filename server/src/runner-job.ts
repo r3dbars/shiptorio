@@ -6,9 +6,13 @@ export const RunnerReceipt = z.object({ jobId: z.string().uuid(), lease: z.strin
 export type RunnerReceipt = z.infer<typeof RunnerReceipt>;
 export interface RunnerJob {
   id: string; itemId: string; repo: string; harness: z.infer<typeof RunnerHarness>;
-  allowedPaths: string[]; status: "planning" | "ready" | "running" | "completed" | "failed";
+  allowedPaths: string[]; status: "planning" | "awaiting_approval" | "ready" | "running" | "completed" | "failed";
   steps?: { tool: string; reason: string; result: string; at: number }[];
   planningStarted?: boolean;
+  needsApproval?: boolean;
+  approvalMoveId?: string;
+  approvedAt?: number;
+  inputRevision?: string;
   baseSha?: string; baseBranch?: string; branch: string; plan?: string;
   lease?: string; pairId?: string; deadline?: number; prUrl?: string; error?: string;
 }
@@ -18,4 +22,8 @@ export const runnerPathAllowed = (path: string) => /^[\w./@+-]+$/.test(path)
   && !/\.(?:pem|key|p12|pfx)$/i.test(path);
 export function validLease(job: RunnerJob, pairId: string, lease: string, now = Date.now()): boolean {
   return job.status === "running" && job.pairId === pairId && job.lease === lease && !!job.deadline && job.deadline > now;
+}
+export async function issueRevision(title: string, body = ""): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([title, body])));
+  return [...new Uint8Array(digest)].map(n => n.toString(16).padStart(2, "0")).join("");
 }

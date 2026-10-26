@@ -5,6 +5,22 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Justin's delivery rule (Oct 26): push WIP after every meaningful step and open a draft
+PR immediately after the first push. Codex merges its own completed PRs as soon as CI
+is green, verifies Deploy and the live `/api/version` SHA (except docs-only changes),
+and repairs red CI/Deploy in a new PR without waiting for another permission request.
+
+Browser approval checkpoint: reuse the existing Move/choose_move contract. Requesting a
+plan authorizes read-only planning; a durable awaiting_approval state prevents the local
+runner from claiming it. The review card binds files, base commit, plan, item revision
+and harness. Approval releases that exact job; duplicate/stale clicks, changed issues,
+closed issues and declined plans cannot dispatch it. A reconnect retains the same card.
+The only web-lane edits are a plan-details disclosure and its bounded scroll styling;
+the existing check-in deck also sends the same approval command. A reversible macOS
+background service and same-scope credential renewal remove terminal approval steps.
+Implementation and unit/integration checks are complete; live browser acceptance and
+deployment are verified separately before calling this shipped.
+
 Justin authorized shipping the real agent fix: PR #62 merged and automatic Deploy
 https://github.com/r3dbars/shiptorio/actions/runs/40378192118 succeeded for
 `ad483ff985047cff5d9a2f9dc14e11e41c5a1ff8`. Its CI passed 69 tests, typecheck and
