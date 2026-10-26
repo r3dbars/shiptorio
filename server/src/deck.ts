@@ -68,8 +68,10 @@ export function enrichMove(move: Move, state: FactoryState): Move {
 
 export function deckScore(move: Move, state: FactoryState, now: number): number {
   const item = state.items.find(i => i.id === move.itemId);
-  const value = item ? (Number.isFinite(item.value) && item.value! >= 0 ? item.value! : FALLBACK_VALUE[item.kind]) : move.stage === state.bottleneck?.stage ? Math.max(0, state.bottleneck.valueAtRisk) : 1;
-  const waitMs = item ? Math.max(0, now - item.updatedAt) : move.stage === state.bottleneck?.stage ? Math.max(0, state.bottleneck.ageMs) : Math.max(0, now - move.createdAt);
+  const jam = state.bottleneck;
+  const matchesJam = !!jam && move.stage === jam.stage;
+  const value = item ? (Number.isFinite(item.value) && item.value! >= 0 ? item.value! : FALLBACK_VALUE[item.kind]) : matchesJam ? Math.max(0, jam!.valueAtRisk) : 1;
+  const waitMs = item ? Math.max(0, now - item.updatedAt) : matchesJam ? Math.max(0, jam!.ageMs) : Math.max(0, now - move.createdAt);
   return value * waitMs / 60_000 + (GROW_BONUS[move.kind ?? inferKind(move)] ?? 0);
 }
 
@@ -91,7 +93,7 @@ function impliedBottleneckMove(state: FactoryState, now: number): Move | null {
     stage: jam.stage, focus: jam.stationId ?? jam.stage, kind: "unblock", createdAt: now,
     // Read-only fallback: the planner/DO must turn this review into an actual proposal.
     // Never fabricate a build, permit or merge decision from deterministic ranking.
-    options: [{ id: "review", label: resources ? "Connect a local agent" : "Review the bottleneck", recommended: true, actions: [{ tool: resources ? "connect_source" : "review_bottleneck", args: resources ? { kind: "claude" } : { stage: jam.stage, stationId: jam.stationId }, reason: resources ? "No subscription builder is connected." : "Inspect the real queue before choosing a change." }] }],
+    options: [{ id: "review", label: resources ? "Connect a local agent" : "Review the bottleneck", recommended: true, actions: [{ tool: resources ? "connect_source" : "inspect_bottleneck", args: resources ? { kind: "claude" } : { stage: jam.stage, stationId: jam.stationId }, reason: resources ? "No subscription builder is connected." : "Inspect the real queue before choosing a change." }] }],
   };
 }
 
