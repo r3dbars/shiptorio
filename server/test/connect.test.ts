@@ -3,7 +3,7 @@ import { connectPage } from "../src/connect";
 import { makeSessionCookie } from "../src/session";
 import { readConfig } from "../../web/src/source";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { ctx: unknown; env: unknown; constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; } } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const backUrl = (html: string) => new URL(html.match(/href="([^"]+)">Back to the factory/)![1].replaceAll("&#38;", "&"), "https://shiptorio.com");
 
 test("saving either source returns the signed-in player to the actual live repo", async () => {
@@ -17,7 +17,7 @@ test("saving either source returns the signed-in player to the actual live repo"
     expect(response.status).toBe(200);
     const destination = backUrl(await response.text());
     expect(readConfig(destination.search)).toMatchObject({ kind: "live", repo: "example/shop" });
-    expect(writes).toEqual([`cred:${kind}`]);
+    expect(writes.filter(key => !key.startsWith("ops:"))).toEqual([`cred:${kind}`]);
     expect(connections).toEqual([`example/shop:${kind}`]);
   }
 });

@@ -1,3 +1,5 @@
+import { initTelemetry } from "./telemetry";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -29,8 +31,8 @@ function Root() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(
+void initTelemetry().then(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Root />
+    <ErrorBoundary><Root /></ErrorBoundary>
   </StrictMode>,
-);
+));

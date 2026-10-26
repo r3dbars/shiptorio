@@ -1,3 +1,6 @@
+import * as Sentry from "@sentry/cloudflare";
+import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
+import { redact } from "./redact";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -43,7 +46,7 @@ import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
-export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
+export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv, TelemetryEnv {
   PUBLIC_URL?: string;
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
@@ -69,7 +72,7 @@ interface Meta {
   installationId: number;
 }
 
-export class Factory extends DurableObject<FactoryEnv> {
+class FactoryBase extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
@@ -79,6 +82,28 @@ export class Factory extends DurableObject<FactoryEnv> {
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
+
+  async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
+    const allowed = ["ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot"];
+    if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
+    return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
+      const start = Date.now();
+      try {
+        const result = await (this as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>)[method](...args);
+        log("info", "factory.rpc", { method, durationMs: Date.now() - start });
+        return result;
+      } catch (error) { report(error, "factory.rpc_failed", { method, durationMs: Date.now() - start }); throw error; }
+    });
+  }
+
+  async debugSnapshot() {
+    await this.load();
+    // No runner receipts, pairing grants, issue bodies, source keys, or private code.
+    const s = this.state;
+    return redact(s ? { repo: this.meta?.repo, tick: s.tick, machines: s.machines, belts: s.belts,
+      items: s.items.map(i => ({ id: i.id, state: i.state, district: i.district, attempts: i.attempts, prNumber: i.prNumber, failure: i.failure })),
+      brain: s.brain, power: s.power } : null);
+  }
 
   private async decisionData() {
     if (!this.openMoves) this.openMoves = await this.ctx.storage.get<Move[]>("openMoves") ?? (this.state?.deck?.length ? [...this.state.deck] : this.state?.move ? [this.state.move] : []);
@@ -378,6 +403,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
       job.inputRevision = await workRevision(item);
+      if (currentTrace()) await this.ctx.storage.put(`trace:${item.id}`, currentTrace());
       await this.ctx.storage.put(`runnerJob:${id}`, job);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
@@ -390,6 +416,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
+    const trace = await this.ctx.storage.get<Trace>(`trace:${job.itemId}`);
+    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
+  }
+
+  private async planRunnerJob(job: RunnerJob): Promise<void> {
+    if (!this.meta || !this.state) return;
     try {
       if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
       job.planningStarted = true;
@@ -533,27 +565,31 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Acknowledge only after durable enqueue. No API calls, backfill or model work here. */
   async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
     const key = `delivery:${deliveryId}`;
-    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0, trace: currentTrace() });
     await this.scheduleTick();
   }
 
   /** Same durable queue as GitHub, for the Sentry mine. `resource` is the Sentry-Hook-Resource header. */
   async enqueueSentry(deliveryId: string, resource: string, payload: SentryPayload): Promise<void> {
     const key = `delivery:sentry-${deliveryId}`;
-    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0 });
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0, trace: currentTrace() });
     await this.scheduleTick();
   }
 
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ source?: "sentry"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number }>({ prefix: "delivery:", limit: 4 });
+    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number }>({ prefix: "delivery:", limit: 4 });
     for (const [key, delivery] of pending) {
       try {
-        if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
-        else await this.handleGitHub(delivery.event, delivery.payload);
+        await inTrace(delivery.trace ?? { requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+          if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
+          else await this.handleGitHub(delivery.event, delivery.payload);
+          log("info", "webhook.processed", { deliveryId: delivery.deliveryId ?? key.slice(9), webhookEvent: delivery.event });
+        });
         const id = delivery.deliveryId ?? key.slice("delivery:".length);
         await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = ? AND delivery_id = ?").bind(delivery.source ?? "github", id).run();
         await this.ctx.storage.delete(key);
-      } catch {
+      } catch (error) {
+        inTrace(delivery.trace ?? { requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), () => report(error, "webhook.processing_failed", { deliveryId: delivery.deliveryId ?? key.slice(9) }));
         // Keep the original payload durably queued. Never log credentials or raw API bodies.
         const attempts = delivery.attempts + 1;
         await this.ctx.storage.put(key, { ...delivery, attempts });
@@ -803,6 +839,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
+    log(level === "success" ? "info" : level, "factory.event", { message: text, itemId, repo: this.meta?.repo });
+    if (level === "error") Sentry.captureException(new Error(text), { tags: { itemId, repo: this.meta?.repo } });
     this.broadcast({ type: "log", level, text, at: Date.now(), itemId });
   }
 
@@ -830,7 +868,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const start = Date.now();
     this.foreman(about.target ?? about.itemId, decision, true);
     try {
-      const out = await ask();
+      const out = await inTrace({ ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo, itemId: about.itemId }, this.env, task => this.ctx.waitUntil(task), ask);
       await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explain(out) });
       return out;
     } catch (e) {
@@ -1471,6 +1509,11 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
+    const auth = await browserSocketAuth(request, this.env);
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.login }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+  }
+
+  private async socketFetch(request: Request): Promise<Response> {
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
     if (!auth) return new Response("login required", { status: 401 });
@@ -1486,6 +1529,14 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    const auth = ws.deserializeAttachment() as { login?: string } | null;
+    await this.load();
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+      try { await this.socketMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; }
+    });
+  }
+
+  private async socketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
@@ -1631,6 +1682,13 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
+    await this.load();
+    return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+      try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
+    });
+  }
+
+  private async tick(): Promise<void> {
     this.batchingDecisions = true;
     try {
     await this.processDeliveries();
@@ -1771,3 +1829,6 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
   }
 }
+
+export const Factory = Sentry.instrumentDurableObjectWithSentry((env: FactoryEnv) => sentryOptions(env), FactoryBase);
+export type Factory = FactoryBase;

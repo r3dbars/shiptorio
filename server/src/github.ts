@@ -1,3 +1,4 @@
+import { observedFetch } from "./telemetry";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import type { GitHubIssue } from "./sources/github";
 
@@ -77,7 +78,7 @@ export interface AppCredentials {
 }
 
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(API + path, {
+  const res = await observedFetch("github", API + path, {
     signal: AbortSignal.timeout(20000),
     ...init,
     headers: {
@@ -268,7 +269,7 @@ export async function convertManifestCode(code: string): Promise<{
   pem: string;
   webhook_secret: string;
 }> {
-  const res = await fetch(`${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const res = await observedFetch("github", `${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: { accept: "application/vnd.github+json", "user-agent": UA },
   });

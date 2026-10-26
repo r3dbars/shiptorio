@@ -4,7 +4,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const secret = "test-repo-session", password = "test-repo-preview";
 const cookie = async (login: string, preview = true) => [
   (await makeSessionCookie(secret, login)).split(";")[0],

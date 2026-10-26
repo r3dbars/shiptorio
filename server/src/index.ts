@@ -1,3 +1,6 @@
+import * as Sentry from "@sentry/cloudflare";
+import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
+import { adminRoutes } from "./admin";
 import { Hono } from "hono";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
@@ -34,9 +37,40 @@ export interface Env extends FactoryEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
+const factory = (env: Env, repo: string) => {
+  const stub = env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
+  const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
+  // Capture per call, never put mutable request identity on a shared DO instance.
+  return new Proxy(stub, { get(target, method) {
+    if (method === "fetch") return (request: Request) => {
+      const headers = new Headers(request.headers);
+      headers.set("X-Request-ID", trace.requestId);
+      return target.fetch(new Request(request, { headers }));
+    };
+    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+  } }) as typeof stub;
+};
 
 const app = new Hono<{ Bindings: Env; Variables: { login: string; runner: RunnerIdentity } }>();
+
+app.use("*", async (c, next) => {
+  const trace: Trace = { requestId: crypto.randomUUID() };
+  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
+  if (login) trace.userId = login;
+  const match = c.req.path.match(/^\/api\/repos\/([\w.-]+\/[\w.-]+)/);
+  if (match) trace.repo = match[1].toLowerCase();
+  const start = Date.now();
+  return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
+    c.header("X-Request-ID", trace.requestId);
+    await next();
+    // A response can be replaced by auth, assets, or a websocket upgrade.
+    c.header("X-Request-ID", trace.requestId);
+    log(c.res.status >= 500 ? "error" : "info", c.req.path.startsWith("/webhooks/") ? "webhook.delivery" : "http.request", {
+      method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - start,
+      ...(c.req.path.startsWith("/webhooks/") ? { deliveryId: c.req.header("x-github-delivery") ?? c.req.header("request-id"), webhookEvent: c.req.header("x-github-event") ?? c.req.header("sentry-hook-resource") } : {}),
+    });
+  });
+});
 
 app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
@@ -62,8 +96,8 @@ app.use("*", async (c, next) => {
 });
 
 app.onError((err, c) => {
-  console.error(err);
-  return c.json({ error: err.message }, 500);
+  report(err, "http.exception");
+  return c.json({ error: "Something broke. Please reload.", requestId: currentTrace()?.requestId }, 500);
 });
 
 // ---------- auth + setup ----------
@@ -276,7 +310,10 @@ app.post("/webhooks/sentry", async (c) => {
   return c.json({ ok: true, queued: true }, 202);
 });
 
+adminRoutes(app, factory);
+
 // Everything else is the web app.
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
-export default app;
+export { app }; // Unwrapped Hono app for route tests.
+export default Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app.fetch });

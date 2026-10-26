@@ -1,3 +1,4 @@
+import { observedFetch } from "./telemetry";
 // Muse Spark on Meta Model API (OpenAI-compatible chat completions).
 // Spark runs the floor. Local subscription agents execute its plans.
 
@@ -28,7 +29,7 @@ export const sparkModel = (env: SparkEnv): string => env.SPARK_MODEL || "muse-sp
 export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: Effort = "low"): Promise<string> {
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
-  const res = await fetch(`${base}/chat/completions`, {
+  const res = await observedFetch("spark", `${base}/chat/completions`, {
     method: "POST",
     signal: AbortSignal.timeout(90000),
     headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
