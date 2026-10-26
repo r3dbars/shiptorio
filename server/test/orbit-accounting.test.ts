@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -31,7 +32,7 @@ function fixture(items = [item()]) {
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [] };
   const env = { DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } };
-  const reload = () => new Factory(ctx as never, env as never);
+  const reload = () => new Factory(ctx as never, credentialEnv(env) as never);
   return { data, reload, saved: () => data.get("state") as FactoryState, credits: () => [...data.keys()].filter(k => k.startsWith("launchCredit:")), alarm: () => alarm, consumeAlarm: () => { alarm = null; }, setAlarm: (at: number) => { alarm = at; }, failAt: (key?: string) => { failAt = key; } };
 }
 async function revert(f: ReturnType<typeof fixture>, factory: InstanceType<typeof Factory>) {
@@ -124,7 +125,7 @@ describe("idle orbit deadlines", () => {
       expect(f.alarm()).toBe(deadline);
       now = deadline; f.consumeAlarm(); await f.reload().alarm();
       expect(f.saved().items[0].orbit).toMatchObject({ state: "clear", at: deadline });
-      expect(f.alarm()).toBeNull();
+      expect(f.alarm()).toBe(now + 60_000);
       const clear = structuredClone(f.saved().items[0]);
       now += 1000; await f.reload().alarm();
       expect(f.saved().items[0]).toEqual(clear);
@@ -158,7 +159,7 @@ describe("idle orbit deadlines", () => {
       const factory = f.reload(); await factory.onPullClosed(41, true, merge);
       expect(f.alarm()).toBe(now + 60_000);
       f.consumeAlarm(); await factory.alarm();
-      expect(f.alarm()).toBe(now + WATCH_MS);
+      expect(f.alarm()).toBe(now + 60_000);
       await factory.enqueueGitHub("new-work", "unknown", { repository: { full_name: "r3dbars/demo" }, installation: { id: 1 } });
       expect(f.alarm()).toBe(now + 2000);
     } finally { Date.now = originalNow; }

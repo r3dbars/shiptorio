@@ -5,6 +5,7 @@
 import type { FactoryState } from "@shiptorio/shared";
 import { LESSONS } from "./tutorial";
 import { Icon } from "./icons";
+import { GUIDE, WORDS } from "../copy";
 
 interface Entry {
   id: string;
@@ -14,40 +15,33 @@ interface Entry {
   met?: (s: FactoryState) => boolean; // for concepts no lesson teaches yet
 }
 
-const lesson = (id: string, hint: string): Entry => {
+const lesson = (id: string): Entry => {
   const l = LESSONS.find((x) => x.id === id)!;
-  return { id, title: l.title, text: l.text, hint };
+  return { id, title: l.title, text: l.text, hint: GUIDE.hint[id] };
 };
+const extra = (id: keyof typeof GUIDE.extra, met?: Entry["met"]): Entry => ({ id, ...GUIDE.extra[id], met });
 
 const CHAPTERS: { name: string; entries: Entry[] }[] = [
   {
-    name: "First rocket",
-    entries: [
-      lesson("island", "Pick a repo"),
-      lesson("machines", "Build your starter line"),
-      lesson("power", "Plug in Claude or ChatGPT"),
-      lesson("ore", "Wait for work to arrive"),
-      lesson("inspect", "Make your first PR"),
-      lesson("pad", "Pass every check"),
-      lesson("rocket", "Merge a PR"),
-    ],
+    name: GUIDE.chapters.first,
+    entries: [lesson("island"), lesson("machines"), lesson("power"), lesson("ore"), lesson("inspect"), lesson("pad"), lesson("rocket")],
   },
-  { name: "Bottlenecks", entries: [lesson("bottleneck", "Ship once"), lesson("checkin", "Let a few things wait on you")] },
+  { name: GUIDE.chapters.bottlenecks, entries: [lesson("bottleneck"), lesson("checkin")] },
   {
-    name: "More ore",
+    name: GUIDE.chapters.ore,
     entries: [
-      { id: "sentry", title: "Biters", text: "Sentry errors attack the folder they hit. Fixes that kill biters score big.", hint: "Connect Sentry", met: (s) => s.items.some((i) => i.source === "sentry") || !!s.sources?.some((x) => x.kind === "sentry" && x.state === "connected") },
-      { id: "feedback", title: "Feedback", text: "Customer emails arrive as ore at the well, linked to the errors they describe.", hint: "Forward your support inbox", met: (s) => s.items.some((i) => i.source === "inbox") },
-      { id: "users", title: "Users", text: "PostHog shows how many real users each fix reached.", hint: "Connect PostHog" },
+      extra("sentry", (s) => s.items.some((i) => i.source === "sentry") || !!s.sources?.some((x) => x.kind === "sentry" && x.state === "connected")),
+      extra("feedback", (s) => s.items.some((i) => i.source === "inbox")),
+      extra("users"),
     ],
   },
   {
-    name: "Verify, then automate",
+    name: GUIDE.chapters.automate,
     entries: [
-      { id: "station", title: "Stations", text: "Add checks to the gauntlet. Every check makes a yes safer.", hint: "Ship a few PRs", met: (s) => (s.stations?.length ?? 0) > 1 },
-      lesson("autonomy", "Approve suggestions as-is"),
-      { id: "permit", title: "Launch permits", text: "A folder that keeps shipping clean earns the right to ship on its own.", hint: "Build trust in one folder", met: (s) => !!s.autonomy?.districts.some((d) => d.permit) },
-      { id: "lights", title: "Lights out", text: "The factory runs overnight within your budget. You get a morning review.", hint: "Earn permits on most folders", met: (s) => s.autonomy?.level === "lights_out" },
+      extra("station", (s) => (s.stations?.length ?? 0) > 1),
+      lesson("autonomy"),
+      extra("permit", (s) => !!s.autonomy?.districts.some((d) => d.permit)),
+      extra("lights", (s) => s.autonomy?.level === "lights_out"),
     ],
   },
 ];
@@ -63,12 +57,12 @@ export function guideMet(state: FactoryState | null, learned: string[]) {
 export function FieldGuide({ met, onClose }: { met: Set<string>; onClose: () => void }) {
   const n = CHAPTERS.reduce((k, c) => k + c.entries.filter((e) => met.has(e.id)).length, 0);
   return (
-    <section className="card sheet guide" aria-label="Field guide">
+    <section className="card sheet guide" aria-label={GUIDE.title}>
       <div className="sheet-top">
         <h2>
-          Field guide <small>{n}/{GUIDE_TOTAL}</small>
+          {GUIDE.title} <small>{n}/{GUIDE_TOTAL}</small>
         </h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
@@ -80,11 +74,11 @@ export function FieldGuide({ met, onClose }: { met: Set<string>; onClose: () => 
               met.has(e.id) ? (
                 <div key={e.id} className="gitem">
                   <b>{e.title}</b>
-                  <span>{e.text.replace("{repo}", "your repo")}</span>
+                  <span>{e.text.replace("{repo}", WORDS.yourRepo)}</span>
                 </div>
               ) : (
                 <div key={e.id} className="gitem lock">
-                  <b>???</b>
+                  <b>{GUIDE.locked}</b>
                   <span>{e.hint}</span>
                 </div>
               ),

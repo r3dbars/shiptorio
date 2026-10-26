@@ -22,6 +22,11 @@ export async function makeSessionCookie(secret: string, login: string, now = Dat
   return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`;
 }
 
+/** What an owner script sends to /auth/owner-session to prove it holds SESSION_SECRET. */
+export async function ownerProof(secret: string, login: string, at: number): Promise<string> {
+  return hmac(secret, `owner-session.${login.toLowerCase()}.${at}`);
+}
+
 export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number; ref?: SessionRef } | null> {
   if (!secret) return null;
   const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));

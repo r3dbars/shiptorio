@@ -493,3 +493,78 @@ export function makeDistrict(w: number, d: number, buildings: number, name: stri
   }
   return { group: g, roof, kind, labelY: 2.8, update: (t: number) => ticks.forEach((f) => f(t)) };
 }
+
+// ---- progression unlocks (shared/src/progression.ts) ----
+
+// Glass lake (island option B, "for a rainy day"): a glass-walled tank of water set into the front of the
+// island, half sunk into the rock so you see the water column through the glass, a few fish inside.
+// Returns a tick for the shimmer and the fish.
+export function makeGlassLake(r: number, depth: number) {
+  const g = new THREE.Group();
+  const water = new THREE.MeshPhongMaterial({ color: 0x4fb6e8, emissive: 0x0d3550, transparent: true, opacity: 0.62, flatShading: true, shininess: 40, specular: 0x88ccff, depthWrite: false });
+  const glass = new THREE.MeshPhongMaterial({ color: 0xcdeeff, transparent: true, opacity: 0.22, shininess: 80, specular: 0xffffff, side: THREE.DoubleSide, depthWrite: false });
+  const seg = 18;
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.94, r * 0.9, depth, seg, 1, true), water);
+  col.position.y = -depth / 2 - 0.04;
+  g.add(col);
+  const top = new THREE.Mesh(new THREE.CircleGeometry(r * 0.94, seg), new THREE.MeshPhongMaterial({ color: 0x8fe0ff, emissive: 0x1b5a7a, transparent: true, opacity: 0.85, flatShading: true }));
+  top.rotation.x = -Math.PI / 2;
+  top.position.y = 0.04; // just above the paving, which can't be cut
+  g.add(top);
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.96, depth + 0.2, seg, 1, true), glass);
+  wall.position.y = -depth / 2 + 0.05;
+  g.add(wall);
+  // a pale stone rim and a sandy bed with a couple of weeds
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.16, 4, seg), mat(0xb9c4cf));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.08;
+  g.add(rim);
+  cyl(r * 0.9, r * 0.86, 0.3, 0xd8c79a, seg, 0, -depth + 0.1, 0, g);
+  for (let i = 0; i < 5; i++) {
+    const a = i * 1.3, rr = r * (0.3 + (i % 3) * 0.18);
+    box(0.08, 0.5 + (i % 2) * 0.4, 0.08, i % 2 ? 0x4f9a5b : 0x6cbf6a, Math.cos(a) * rr, -depth + 0.5, Math.sin(a) * rr, g).castShadow = false;
+  }
+  const fish = [0xf08a24, 0xffd25c, 0xe8685c].map((c, i) => {
+    const f = new THREE.Group();
+    box(0.26, 0.14, 0.1, c, 0, 0, 0, f).castShadow = false;
+    box(0.1, 0.16, 0.04, c, -0.17, 0, 0, f).castShadow = false;
+    g.add(f);
+    return { f, k: i * 2.1, h: -depth * (0.3 + i * 0.2) };
+  });
+  // a rippling highlight on the surface
+  const glint = box(r * 0.7, 0.01, 0.08, 0xe8f8ff, 0, 0.055, 0, g);
+  glint.castShadow = false;
+  for (const o of g.children) o.castShadow = false;
+  return {
+    group: g,
+    tick: (t: number) => {
+      for (const { f, k, h } of fish) {
+        const a = t * 0.5 + k;
+        f.position.set(Math.cos(a) * r * 0.55, h + Math.sin(t * 1.3 + k) * 0.15, Math.sin(a) * r * 0.55);
+        f.rotation.y = -a - Math.PI / 2;
+      }
+      glint.position.z = Math.sin(t * 0.8) * r * 0.4;
+      glint.scale.x = 0.7 + Math.sin(t * 1.7) * 0.3;
+    },
+  };
+}
+
+// Island lantern: a little post with a warm light, one per day of your streak.
+export function makeLantern() {
+  const g = new THREE.Group();
+  box(0.08, 0.7, 0.08, 0x3a3f52, 0, 0.35, 0, g);
+  box(0.24, 0.05, 0.24, 0x3a3f52, 0, 0.72, 0, g);
+  const glow = box(0.18, 0.2, 0.18, own(0xffc861, 0xd88a1e), 0, 0.84, 0, g);
+  glow.castShadow = false;
+  box(0.26, 0.05, 0.26, 0x3a3f52, 0, 0.97, 0, g);
+  return { group: g, glow: glow.material as THREE.MeshPhongMaterial };
+}
+
+// Gold trim on the launch pad: a square gold frame with corner studs around the pad's base.
+export function makeGoldTrim(s: number) {
+  const g = new THREE.Group();
+  const gold = new THREE.MeshPhongMaterial({ color: 0xf2c14e, emissive: 0x5a3c08, flatShading: true, shininess: 60, specular: 0xfff0b0 });
+  for (const [w, d, x, z] of [[s, 0.14, 0, -s / 2], [s, 0.14, 0, s / 2], [0.14, s, -s / 2, 0], [0.14, s, s / 2, 0]] as const) box(w, 0.1, d, gold, x, 0.06, z, g);
+  for (const x of [-s / 2, s / 2]) for (const z of [-s / 2, s / 2]) box(0.24, 0.18, 0.24, gold, x, 0.1, z, g);
+  return g;
+}

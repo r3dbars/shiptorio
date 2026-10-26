@@ -1,0 +1,46 @@
+name: Rollback
+permissions:
+  contents: read
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Worker to roll back
+        type: choice
+        options: [staging, production]
+        default: staging
+        required: true
+      version:
+        description: Previously deployed Cloudflare version UUID (not a Git SHA)
+        type: string
+        required: true
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: ${{ inputs.environment == 'staging' && 'deploy-staging' || 'deploy' }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Roll back Worker code (data is preserved)
+        working-directory: server
+        env:
+          TARGET_ENV: ${{ inputs.environment }}
+          VERSION_ID: ${{ inputs.version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          [[ "$VERSION_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || exit 1
+          if [ "$TARGET_ENV" = staging ]; then
+            bunx wrangler rollback "$VERSION_ID" --env staging --yes
+            curl --fail --retry 3 --retry-delay 5 https://shiptorio.dev/api/health
+          elif [ "$TARGET_ENV" = production ]; then
+            bunx wrangler rollback "$VERSION_ID" --name shiptorio --yes
+            curl --fail --retry 3 --retry-delay 5 https://shiptorio.com/api/health
+          else
+            exit 1
+          fi
