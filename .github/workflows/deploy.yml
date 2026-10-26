@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     # Off until the repo variable DEPLOY_ENABLED is set to "true" (see docs/SETUP.md).
-    if: vars.DEPLOY_ENABLED == 'true'
+    if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     concurrency: deploy
     timeout-minutes: 15

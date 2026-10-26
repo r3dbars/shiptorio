@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shiptorio art</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --void: #1b2448; --panel: #0e1329; --line: #8d99c9; --ink: #eef1fa; --dim: #a9b2d4; --amber: #f2a93b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--void); color: var(--ink); font: 14px/1.5 ui-monospace, Menlo, monospace; display: grid; place-items: center; padding: 24px 16px; }
+  main { width: min(640px, 100%); display: flex; flex-direction: column; gap: 14px; }
+  h1 { font: 700 28px/1 Silkscreen, monospace; letter-spacing: 0.08em; margin: 0 0 4px; }
+  p { margin: 0; color: var(--dim); }
+  a.card { display: block; padding: 14px 16px; background: var(--panel); border: 2px solid var(--line); outline: 2px solid #05070f; color: var(--ink); text-decoration: none; }
+  a.card:hover, a.card:focus-visible { border-color: var(--amber); }
+  a.card b { display: block; font: 700 15px Silkscreen, monospace; letter-spacing: 0.06em; color: var(--amber); }
+  a.back { color: var(--dim); font: 12px Silkscreen, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SHIPTORIO ART</h1>
+  <p>The locked art baseline. The game map uses these exact models.</p>
+  <a class="card" href="/art/item-lab.html"><b>ITEM LAB</b>Every machine, power plant, belt, ore and biter, with each of its states. Pick one to see it up close, or view them all, day or night.</a>
+  <a class="card" href="/art/prototype.html"><b>PIXEL PROTOTYPE</b>The pixel pass and HUD the game map is built from.</a>
+  <a class="back" href="/">← BACK TO THE FACTORY</a>
+</main>
+</body>
+</html>

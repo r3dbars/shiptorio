@@ -20,6 +20,7 @@ export interface Env extends FactoryEnv {
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
   APP_PASSWORD?: string;
+  BUILD_SHA?: string;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -58,6 +59,8 @@ app.get("/api/setup/status", (c) => c.json({
   spark: !!c.env.META_API_KEY,
   model: c.env.SPARK_MODEL || "muse-spark-1.3",
 }));
+
+app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
 
 // ---------- the factory (browser websocket) ----------
 

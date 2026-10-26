@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun scripts/dev-setup.ts && wrangler dev",
-    "deploy": "wrangler d1 migrations apply shiptorio --remote && wrangler deploy",
+    "deploy": "wrangler d1 migrations apply shiptorio --remote && wrangler deploy --name shiptorio --var BUILD_SHA:$(git rev-parse HEAD)",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test"
   },
   "dependencies": {

@@ -5,6 +5,25 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Deployment handoff (Oct 26, 17:07 UTC): PR #13 merged after CI passed against current
+main (including the pixel map and Foreman contract). `bun run deploy` from main
+successfully deployed only `shiptorio`; both custom domains retain the password gate.
+Local workerd and remote HTTP/WebSocket smoke checks passed. The Meta key was verified
+with a live ping/triage and is a Worker secret; GitHub App setup remains outstanding.
+With Justin's action-time approval, created `Shiptorio GitHub Actions deploy`: Workers
+Scripts/D1/KV Edit on the existing account, Workers Routes Edit on only shiptorio.com
+and shiptorio.dev. Stored it as GitHub secret `CLOUDFLARE_API_TOKEN`, set
+`CLOUDFLARE_ACCOUNT_ID`, and set `DEPLOY_ENABLED=true`. No token value is committed.
+PR #19 merged after CI passed. The automatic push-to-main Deploy run succeeded
+in 36 seconds: https://github.com/r3dbars/shiptorio/actions/runs/40365854227.
+Both password-protected `/api/version` endpoints matched main commit
+`1b5c1182ba6a320178c19b184608dee8cdc0986c`; both domains passed all ten remote
+HTTP/WebSocket checks afterward. Auto-deploy is enabled and verified. Only `shiptorio`
+was deployed; the other Workers were not modified. Future main merges trigger the
+serialized Deploy workflow; verify its success and the live commit before calling a
+change shipped. The preview is playable in simulator mode. Real repo execution still
+needs the GitHub App and the subscription runner/Foreman work specified in PRODUCT.md.
+
 Local backend handoff, Oct 26: Justin moved backend ownership from the cloud Codex chat to
 the local checkout at `/Users/redbars/Documents/Codex/2026-10-26/review-the-official-meta-global-ai/shiptorio`.
 He authorized deploying **only Shiptorio** and using `shiptorio.com` and `shiptorio.dev`.
@@ -34,10 +53,10 @@ Do not mistake a local/direct deployment for automatic main deployment being ena
 
 | Item | Waiting on |
 | --- | --- |
-| Which .com Shiptorio lives on (only `r3d.bar` seen on the Cloudflare account) | Justin |
-| `npx wrangler login` + `bun run deploy` (cloud sessions have no Cloudflare token) | Justin |
+| Domains confirmed: shiptorio.com and shiptorio.dev, both live with password gate | Done |
+| Local deployment and automatic GitHub Actions deployment configured and verified | Done |
 | Open `/setup` on the deployed URL to create the GitHub App, then `wrangler secret put` its secrets | Justin, after deploy |
-| `META_API_KEY` as a Worker secret (and locally for `bun run spark:check`) | Justin |
+| Meta key installed locally and as a Worker secret; live Spark ping/triage verified | Done |
 | Codex PRs #3 (shared protocol) and #4 (factory API + issue ingestion) were built before #1 merged. They need porting onto `main`'s `shared/` + `server/` layout | Codex |
-| PR #7: new launch pad base + solar panel in the Item Lab. Say "lock it" or what to change | Justin |
+| PR #7 Item Lab art and PR #8 pixel map are merged and live | Done |
 | Does Spark accept images (visual QA)? Rate limits, credit balance? | Anyone with a key |

@@ -18,6 +18,7 @@ import {
   buildSolar,
   buildSplitter,
   buildSteam,
+  buildTurret,
   updateFx,
   type BuildOpts,
   type Built,
@@ -164,6 +165,7 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
   solar: 2.4,
   battery: 2.3,
   geothermal: 3.0,
+  turret: 2.4,
 };
 
 function buildModel(m: Machine, power?: PowerSource): Built {
@@ -186,6 +188,8 @@ function buildModel(m: Machine, power?: PowerSource): Built {
       return buildSolar({ variant: solarVariant(power?.name) });
     case "battery":
       return buildBattery();
+    case "turret":
+      return buildTurret();
     case "geothermal":
       return buildGeo({ variant: power?.name.includes("3090") ? ["3090 · LLAMA.CPP", 0x2b2f36, 0xf2a93b] : ["MAC · MLX", 0xc9ced6, 0xeef1fa] });
     default: {
@@ -674,6 +678,8 @@ export class FactoryScene {
       }
       case "geothermal":
         return power && !power.online ? "OVERHEAT" : feeding ? "INFERENCE" : "IDLE";
+      case "turret": // tests guarding a district; it fires while Sentry biters are on it
+        return items.some((i) => i.source === "sentry" && i.district === m.district && (i.state === "ore" || i.state === "queued")) ? "FIRING" : "SCANNING";
       default:
         return "IDLE";
     }
@@ -741,6 +747,9 @@ export class FactoryScene {
         case "solar":
           this.setLabel(v.label, "SOLAR", `${p?.name ?? "subscription"} plan`);
           break;
+        case "turret":
+          this.setLabel(v.label, "TURRET", m.district ? `tests on /${m.district}` : "tests");
+          break;
         case "battery":
           this.setLabel(v.label, "BATTERY", `${Math.round((p?.level ?? 1) * 100)}% of plan window`);
           break;
@@ -748,7 +757,7 @@ export class FactoryScene {
           this.setLabel(v.label, "GEOTHERMAL", p?.name ?? "local GPU");
           break;
         default:
-          this.setLabel(v.label, m.type.toUpperCase(), "");
+          this.setLabel(v.label, (m.type as string).toUpperCase(), "");
       }
     }
   }
