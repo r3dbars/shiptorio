@@ -7,10 +7,10 @@ import { z } from "zod";
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
 export type ItemKind = z.infer<typeof ItemKind>;
 
-export const OreSource = z.enum(["github_issue", "sentry", "inbox", "lint"]);
+export const OreSource = z.enum(["github_issue", "sentry", "posthog", "inbox", "lint"]);
 export type OreSource = z.infer<typeof OreSource>;
 
-export const SourceKind = z.enum(["github", "sentry", "email", "stripe", "claude", "chatgpt"]);
+export const SourceKind = z.enum(["github", "sentry", "posthog", "email", "stripe", "claude", "chatgpt"]);
 export type SourceKind = z.infer<typeof SourceKind>;
 export const SourceStatus = z.object({
   kind: SourceKind,
