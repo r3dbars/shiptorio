@@ -5,20 +5,25 @@
 // FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
-import type { FactoryState, Harness, Item, Machine, PowerSource } from "@shiptorio/shared";
+import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex } from "./kit";
 import {
   buildAssembler,
   buildBattery,
   buildBiter,
+  buildGate,
   buildGeo,
   buildInspector,
   buildLaunchPad,
   buildOre,
+  buildOrbit,
+  buildReview,
+  buildRework,
   buildSolar,
   buildSplitter,
   buildSteam,
   buildTurret,
+  buildVerify,
   updateFx,
   type BuildOpts,
   type Built,
@@ -104,6 +109,7 @@ interface Label {
 interface MachineView {
   built: Built;
   machine: Machine;
+  kind?: StationKind; // set when this inspector-type machine is a gauntlet station
   label?: Label;
   art: string; // the Item Lab state the model is showing
 }
@@ -119,6 +125,7 @@ interface DistrictView {
 interface ItemView {
   mesh: THREE.Mesh;
   state: Item["state"] | null;
+  at?: string; // machineId when planned, so moving station to station re-plans
   path: Path | null;
   s: number;
   stopAt: number;
@@ -168,7 +175,23 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
   turret: 2.4,
 };
 
-function buildModel(m: Machine, power?: PowerSource): Built {
+// Gauntlet stations are inspector-type machines; the station kind picks the Item Lab model.
+const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4 };
+const POWER_TYPES: Machine["type"][] = ["steam", "solar", "battery", "geothermal"];
+const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
+
+function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built {
+  if (m.type === "inspector")
+    switch (kind) {
+      case "verify":
+        return buildVerify();
+      case "review":
+        return buildReview();
+      case "merge":
+        return buildGate();
+      case "orbit":
+        return buildOrbit();
+    }
   switch (m.type) {
     case "ore_deposit":
       return buildOre({ variant: ORE_VARIANT[oreKind(m)] });
@@ -236,10 +259,14 @@ export class FactoryScene {
   private readonly drone = buildDrone();
   private readonly droneTo = new THREE.Vector3(0, 4, 0);
   private droneLabel?: Label;
+  // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
+  private readonly glow = box(3.4, 0.06, 3.4, new THREE.MeshBasicMaterial({ color: 0xf2a93b, transparent: true, opacity: 0.4 }), 0, 0.04, 0);
+  private rework?: { built: Built; label: Label };
 
   constructor(
     canvas: HTMLCanvasElement,
     private readonly labelRoot: HTMLElement,
+    private readonly onPick?: (id: string) => void, // a station id, "power" or "rework"
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(1);
@@ -252,7 +279,9 @@ export class FactoryScene {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.bias = -0.0015;
-    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g);
+    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g, this.glow);
+    this.glow.visible = false;
+    this.glow.castShadow = this.glow.receiveShadow = false;
     this.droneLabel = this.addLabel(this.drone.g, 1.3);
     this.droneLabel.el.classList.add("drone");
     this.loop();
@@ -282,6 +311,17 @@ export class FactoryScene {
     this.target.z = Math.max(b.z0, Math.min(b.z1, this.target.z));
   }
 
+  // Zoom out just enough that the whole machine line, ore to launch pad, fits beside the HUD.
+  private fitLine(state: FactoryState) {
+    if (!state.machines.length || this.width <= 760) return;
+    const xs = state.machines.map((m) => m.x * CELL);
+    const span = (Math.max(...xs) - Math.min(...xs)) * Math.cos(YAW) + 7;
+    const free = (this.width - HUD_RIGHT_PX - 40) / this.height;
+    this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (19 * free)));
+    this.target.x = (Math.max(...xs) + Math.min(...xs)) / 2;
+    this.applyCamera();
+  }
+
   private applyCamera() {
     const a = this.width / this.height;
     const vh = (a < 1 ? (24 / a) * 0.62 : 19) * this.zoom;
@@ -300,13 +340,17 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
-      if (first) this.target.set((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
+      if (first) {
+        this.target.set((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
+        this.fitLine(state);
+      }
     }
     this.syncBelts(state);
     this.syncDistricts(state);
     this.syncItems(state.items);
     this.syncBiters(state.items);
     this.syncLabels(state);
+    this.syncGauntlet(state);
     this.syncDrone(state, first);
   }
 
@@ -339,6 +383,31 @@ export class FactoryScene {
 
   private ofType(t: Machine["type"]) {
     return this.state?.machines.filter((m) => m.type === t) ?? [];
+  }
+
+  private stationAt(machineId: string | undefined): Station | undefined {
+    return machineId ? this.state?.stations?.find((st) => st.machineId === machineId) : undefined;
+  }
+
+  // The click target under a screen point: a station id, "power" or "rework".
+  pick(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+    const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const targets: [THREE.Object3D, string][] = [];
+    for (const v of this.machines.values()) {
+      const id = v.kind ? this.stationAt(v.machine.id)?.id : POWER_TYPES.includes(v.machine.type) ? "power" : undefined;
+      if (id) targets.push([v.built.g, id]);
+    }
+    if (this.rework) targets.push([this.rework.built.g, "rework"]);
+    const hit = ray.intersectObjects(targets.map(([o]) => o), true)[0];
+    if (!hit) return undefined;
+    for (const [o, id] of targets) {
+      let x: THREE.Object3D | null = hit.object;
+      while (x && x !== o) x = x.parent;
+      if (x) return id;
+    }
+    return undefined;
   }
 
   // ---------- world: island, districts, scenery ----------
@@ -408,14 +477,17 @@ export class FactoryScene {
     const seen = new Set<string>();
     for (const m of machines) {
       seen.add(m.id);
+      const kind = m.type === "inspector" ? this.stationAt(m.id)?.kind : undefined;
       let v = this.machines.get(m.id);
-      const rebuild = v && (v.machine.type !== m.type || v.machine.harness !== m.harness);
+      const rebuild = v && (v.machine.type !== m.type || v.machine.harness !== m.harness || v.kind !== kind);
       if (v && rebuild) this.removeMachine(m.id);
       v = this.machines.get(m.id);
       if (!v) {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
-        const built = buildModel(m, power);
-        v = { built, machine: m, label: this.addLabel(built.g, LABEL_Y[m.type] ?? 1.6), art: "IDLE" };
+        const built = buildModel(m, power, kind);
+        const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
+        const pick = kind ? this.stationAt(m.id)!.id : POWER_TYPES.includes(m.type) ? "power" : undefined;
+        v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
         this.machines.set(m.id, v);
         this.scene.add(built.g);
       }
@@ -486,19 +558,49 @@ export class FactoryScene {
     this.beltGroup.clear();
     this.beltTextures = [];
     this.paths.clear();
+    const gauntlet = (state.stations ?? []).filter((st) => st.kind !== "orbit").map((st) => this.byId(st.machineId)).filter((m) => !!m);
     for (const b of state.belts) {
       const from = this.byId(b.from), to = this.byId(b.to);
       if (!from || !to) continue;
       const p = pathOf(this.route(this.machinePos(from), this.machinePos(to)));
       this.paths.set(`${b.from}>${b.to}`, p);
       this.layBelt(p);
-      // an inspector sends failures back to whichever assembler fed it
-      if (to.type === "inspector" && from.type === "assembler") {
+      // no gauntlet: an inspector sends failures back to whichever assembler fed it
+      if (!gauntlet.length && to.type === "inspector" && from.type === "assembler") {
         const r = pathOf(this.reworkRoute(this.machinePos(to), this.machinePos(from)));
         this.paths.set(`rework:${to.id}>${from.id}`, r);
         this.layBelt(r, 0xff9a90);
       }
     }
+    this.layRework(gauntlet);
+  }
+
+  // Every station drops its fails onto one red belt that runs behind the line, back to Spark's splitter.
+  private layRework(stations: Machine[]) {
+    const spl = this.ofType("splitter")[0];
+    if (!stations.length || !spl) {
+      if (this.rework) (this.scene.remove(this.rework.built.g), this.dropLabel(this.rework.label), (this.rework = undefined));
+      return;
+    }
+    const sp = this.machinePos(spl);
+    const lane = Math.min(sp.z, ...stations.map((m) => this.machinePos(m).z)) - 2.3;
+    const far = Math.max(...stations.map((m) => this.machinePos(m).x));
+    for (const m of stations) {
+      const a = this.machinePos(m);
+      const r = pathOf([[a.x, a.z - 1.2], [a.x, lane], [sp.x, lane], [sp.x, sp.z - 1.2]]);
+      this.paths.set(`rework:${m.id}`, r);
+      // the farthest station lays the whole belt; the rest only their drop onto it
+      this.layBelt(a.x === far ? r : pathOf([[a.x, a.z - 1.2], [a.x, lane]]), 0xff7a70);
+    }
+    if (!this.rework) {
+      const built = buildRework();
+      built.g.scale.setScalar(0.7);
+      this.scene.add(built.g);
+      this.rework = { built, label: this.addLabel(built.g, 0.9, "rework") };
+    }
+    // the rework model sits on the belt behind the first two stations
+    const xs = stations.map((m) => this.machinePos(m).x).sort((a, b) => a - b);
+    this.rework.built.g.position.set((xs[0] + (xs[1] ?? xs[0])) / 2, 0.05, lane);
   }
 
   private beltBetween(fromType: Machine["type"], to: Machine | undefined): Path | undefined {
@@ -567,19 +669,35 @@ export class FactoryScene {
         if (asm) v.rest = this.machinePos(asm).add(new THREE.Vector3(0, 1.85, 0));
         break;
       case "inspecting": {
+        const st = this.byId(item.machineId);
+        if (st?.type === "inspector" && this.stationAt(st.id)) {
+          const b = this.state?.belts.find((x) => x.to === st.id);
+          const p = b && this.paths.get(`${b.from}>${b.to}`);
+          if (p) (v.path = p), (v.stopAt = p.len);
+          v.rest = this.pile(st, item);
+          break;
+        }
         const p = (asm && insp && this.paths.get(`${asm.id}>${insp.id}`)) || this.beltBetween("assembler", insp);
         if (p) (v.path = p), (v.stopAt = p.len);
         if (insp) v.rest = this.machinePos(insp).add(new THREE.Vector3(0, 1.5, 0));
         break;
       }
       case "rejected": {
-        const p = asm && insp ? this.paths.get(`rework:${insp.id}>${asm.id}`) : undefined;
+        const p = this.paths.get(`rework:${item.machineId}`) ?? (asm && insp ? this.paths.get(`rework:${insp.id}>${asm.id}`) : undefined);
         if (p) (v.path = p), (v.stopAt = p.len);
         else if (insp) v.rest = this.machinePos(insp).add(new THREE.Vector3(0, 0.45, -1.4));
         break;
       }
       case "passed":
       case "on_pad": {
+        const gate = this.byId(item.machineId);
+        if (gate && this.stationAt(gate.id)?.kind === "merge") {
+          const b = this.state?.belts.find((x) => x.to === gate.id);
+          const p = b && this.paths.get(`${b.from}>${b.to}`);
+          if (p) (v.path = p), (v.stopAt = p.len);
+          v.rest = this.pile(gate, item);
+          break;
+        }
         const p = this.beltBetween("inspector", pad);
         if (p) (v.path = p), (v.stopAt = p.len);
         if (pad) {
@@ -591,6 +709,15 @@ export class FactoryScene {
       case "launched":
         break;
     }
+  }
+
+  // Where an item waits at a station: the first on top being checked, the rest piled in front.
+  private pile(m: Machine, item: Item) {
+    const here = this.state!.items.filter((i) => i.machineId === m.id && (i.state === "inspecting" || i.state === "on_pad"));
+    const k = Math.max(0, here.findIndex((i) => i.id === item.id));
+    const base = this.machinePos(m);
+    if (k === 0) return base.add(new THREE.Vector3(0, 1.5, 0));
+    return base.add(new THREE.Vector3(-1.5 + ((k - 1) % 2) * 0.36, 0.35 + Math.floor((k - 1) / 2) * 0.34, 1.0));
   }
 
   private syncItems(items: Item[]) {
@@ -612,9 +739,10 @@ export class FactoryScene {
       }
       (v.mesh.material as THREE.MeshPhongMaterial).color.setHex(KIND_COLOR[item.kind]);
       (v.mesh.material as THREE.MeshPhongMaterial).emissive.setHex(item.state === "passed" || item.state === "on_pad" ? 0x14402a : 0);
-      if (v.state !== item.state) {
+      if (v.state !== item.state || v.at !== item.machineId) {
         const fresh = v.state === null;
         v.state = item.state;
+        v.at = item.machineId;
         this.plan(v, item, i);
         // a new item appears at the start of its route instead of flying in
         if (fresh) {
@@ -659,8 +787,11 @@ export class FactoryScene {
         return m.state === "working" ? "WORKING" : m.state === "blocked" ? "BLOCKED" : "IDLE";
       case "splitter":
         return m.state === "working" || has("ore") || has("queued") ? "SORTING" : "IDLE";
-      case "inspector":
+      case "inspector": {
+        const st = this.stationAt(m.id);
+        if (st) return this.stationArt(st, m);
         return has("rejected") ? "REJECT" : has("inspecting") ? "SCANNING" : has("passed") || has("on_pad") ? "PASS" : "SCANNING";
+      }
       case "launch_pad":
         return this.t < this.launchUntil ? "LAUNCH" : has("on_pad") || has("passed") ? "COUNTDOWN" : "IDLE";
       case "ore_deposit":
@@ -685,11 +816,39 @@ export class FactoryScene {
     }
   }
 
+  private stationArt(st: Station, m: Machine): string {
+    const items = this.state!.items;
+    const failing = items.some((i) => i.state === "rejected" && i.machineId === m.id);
+    const busy = st.wip > 0;
+    const backed = st.wip >= BACKED_UP;
+    switch (st.kind) {
+      case "verify":
+        return failing ? "FAIL" : backed ? "BACKED UP" : busy ? "VERIFYING" : "IDLE";
+      case "review":
+        return failing ? "CHANGES" : backed ? "BACKED UP" : busy ? "REVIEWING" : "IDLE";
+      case "merge":
+        return failing ? "REJECTED" : backed ? "BACKED UP" : this.t < this.launchUntil ? "APPROVED" : "WAITING";
+      case "orbit":
+        return st.lastLog && !st.lastLog.ok ? "ALERT" : busy ? "WATCHING" : "ALL CLEAR";
+      default:
+        return failing ? "REJECT" : backed ? "BACKED UP" : "SCANNING";
+    }
+  }
+
   // ---------- labels ----------
 
-  private addLabel(obj: THREE.Object3D, y: number): Label {
+  private addLabel(obj: THREE.Object3D, y: number, pick?: string): Label {
     const el = document.createElement("div");
     el.className = "maplabel";
+    if (pick && this.onPick) {
+      el.classList.add("pick");
+      el.setAttribute("role", "button");
+      el.tabIndex = 0;
+      el.addEventListener("click", () => this.onPick!(pick));
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") (e.preventDefault(), this.onPick!(pick));
+      });
+    }
     const title = document.createElement("b");
     const sub = document.createElement("i");
     el.append(title, sub);
@@ -734,9 +893,16 @@ export class FactoryScene {
           if (!m.harness && !m.powerId) this.setLabel(v.label, "ASSEMBLER", "no power · sign in to build", true);
           else this.setLabel(v.label, HARNESS_NAME[m.harness ?? "spark"], `assembler · ${p?.kind ?? "steam"}${st}`, blocked);
           break;
-        case "inspector":
-          this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
+        case "inspector": {
+          const sta = this.stationAt(m.id);
+          if (!sta) this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
+          else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : "all clear");
+          else {
+            const hot = state.bottleneck?.stationId === sta.id;
+            this.setLabel(v.label, sta.name.toUpperCase(), `${sta.wip} in line · caught ${sta.caughtThisWeek}`, hot);
+          }
           break;
+        }
         case "launch_pad": {
           const n = count((i) => i.state === "on_pad" || i.state === "passed");
           this.setLabel(v.label, "LAUNCH PAD", n ? `${n} PR${n > 1 ? "s" : ""} waiting · merge = launch` : "merge = launch");
@@ -760,6 +926,17 @@ export class FactoryScene {
         default:
           this.setLabel(v.label, (m.type as string).toUpperCase(), "");
       }
+    }
+  }
+
+  private syncGauntlet(state: FactoryState) {
+    const id = state.bottleneck?.stationId;
+    const hot = id ? this.byId(state.stations?.find((x) => x.id === id)?.machineId) : undefined;
+    this.glow.visible = !!hot;
+    if (hot) this.glow.position.copy(this.machinePos(hot)).setY(0.04);
+    if (this.rework) {
+      const n = state.items.filter((i) => i.state === "rejected").length;
+      this.setLabel(this.rework.label, "REWORK BELT", `back to Spark · ${n} item${n === 1 ? "" : "s"}`, n > 0);
     }
   }
 
@@ -790,6 +967,8 @@ export class FactoryScene {
       v.art = this.artState(v.machine);
       v.built.update(t, dt, v.art);
     }
+    if (this.rework) this.rework.built.update(t, dt, (this.state?.items.filter((i) => i.state === "rejected").length ?? 0) >= BACKED_UP ? "CLOGGED" : "FLOWING");
+    if (this.glow.visible) (this.glow.material as THREE.MeshBasicMaterial).opacity = this.reduceMotion ? 0.4 : 0.25 + Math.abs(Math.sin(t * 2.4)) * 0.3;
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterTextures) w.offset.y += dt * 1.6;
@@ -844,6 +1023,7 @@ export class FactoryScene {
     cancelAnimationFrame(this.raf);
     for (const l of this.labels) l.el.remove();
     this.labels.clear();
+    this.glow.geometry.dispose();
     this.pass.dispose();
     this.renderer.dispose();
   }

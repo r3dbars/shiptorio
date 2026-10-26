@@ -151,6 +151,8 @@ interface StationDef {
   caught: number;
   actions: Station["actions"];
 }
+// "AI review" stays "AI review", "Verify bay" reads "verify bay" mid-sentence
+export const lc = (name: string) => (/^[A-Z]{2}/.test(name) ? name : name[0].toLowerCase() + name.slice(1));
 const act = (id: string, label: string, recommended = false) => ({ id, label, recommended });
 const GAUNTLET: StationDef[] = [
   { id: "ci-1", kind: "ci", name: "CI inspector", caught: 9, actions: [act("log", "Open the CI log"), act("hint", "Send back with a hint"), act("lint", "Turn this into a lint rule", true)] },
@@ -159,7 +161,6 @@ const GAUNTLET: StationDef[] = [
   { id: "gate-1", kind: "merge", name: "Merge gate", caught: 0, actions: [act("review", "Review with receipts", true), act("merge", "Merge and launch"), act("permit", "Give docs a launch permit")] },
 ];
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
-const REWORK_ACTIONS = [act("turret", "Add a test turret on the top scar's district", true), act("scars", "See all scar tags"), act("me", "Send the oldest to me now")];
 const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
 
 function initialState(sc: Scenario): FactoryState {
@@ -353,7 +354,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: "Bottleneck: launch pad",
-        why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : `PR #${item.prNumber} passed the inspector: ${item.title}`,
+        why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : `PR #${item.prNumber} passed the gauntlet: ${item.title}`,
         stage: "pad",
         itemId: item.id,
         options: [
@@ -461,6 +462,16 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       const what = stage === "pad" ? "waiting on review" : stage === "build" && items.some((i) => held.has(i.id)) ? "waiting on your go" : `in ${stage}`;
       best = { stage, wip: items.length, ageMs, throughputPerHour: 0, valueAtRisk, summary: `${items.length} item${items.length > 1 ? "s" : ""} ${what}` };
     }
+    // point at the station where the pile is, so the map can make it glow
+    if (best?.stage === "pad") best.stationId = "gate-1";
+    else if (best?.stage === "inspect") {
+      const piles = GAUNTLET.map((g) => [g.id, live.filter((i) => i.machineId === g.id).length] as const).sort((a, b) => b[1] - a[1]);
+      if (piles[0][1] > 0) {
+        best.stationId = piles[0][0];
+        const st = GAUNTLET.find((g) => g.id === best!.stationId)!;
+        best.summary = `${piles[0][1]} item${piles[0][1] > 1 ? "s" : ""} waiting at the ${lc(st.name)}`;
+      }
+    }
     return best;
   };
 
@@ -511,7 +522,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             apply({ items: [{ ...next, state: "rejected", failure, scars: [...(item.scars ?? []), scar] }] });
             record(st, false, `#${item.prNumber} ${failure}. Back to Spark on the rework belt.`);
             log("warn", `${st.name} rejected PR #${item.prNumber}: ${failure}`, item.id);
-            spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${st.name.toLowerCase()} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
+            spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${lc(st.name)} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
             break;
           }
           record(st, true, `#${item.prNumber} passed.`);
@@ -519,7 +530,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (nextSt && nextSt.kind !== "merge") {
             since.set(item.id, s.tick);
             apply({ items: [{ ...next, machineId: nextSt.id }] });
-            log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${nextSt.name.toLowerCase()}`, item.id);
+            log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${lc(nextSt.name)}`, item.id);
           } else {
             apply({ items: [{ ...next, state: "on_pad", machineId: "gate-1", failure: undefined }] });
             stat("gate-1").lastLog = { who: "Spark", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
@@ -617,6 +628,37 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (a.next?.level === "build") apply({ autonomy: { ...a, next: { ...a.next, have: a.next.have + 1 } } });
   };
 
+  // ---------- clicking a station ----------
+
+  // A station panel's action, from the player. Merge actually launches; the rest is Spark
+  // taking the job on, logged with undo, the way a real station action would be queued.
+  const stationAction = (stationId: string, action: string) => {
+    const def = [...GAUNTLET, ORBIT].find((g) => g.id === stationId);
+    const label = def?.actions.find((a) => a.id === action)?.label ?? action;
+    const target = def?.id ?? (stationId === "power" ? "steam-spark" : "splitter-1");
+    if (stationId === "gate-1" && action === "merge") {
+      const item = s.items.filter((i) => i.state === "on_pad").sort((a, b) => (since.get(a.id) ?? 0) - (since.get(b.id) ?? 0))[0];
+      if (!item) return log("info", "Nothing at the merge gate yet");
+      if (s.move?.itemId === item.id) resolve(s.move.id, "launch", "player");
+      else launch(item);
+      return;
+    }
+    if (stationId === "gate-1" && action === "permit") {
+      const a = s.autonomy!;
+      const before = a.districts;
+      apply({ autonomy: { ...a, districts: a.districts.map((d) => (d.district === "docs" ? { ...d, permit: true } : d)) } });
+      spark({ tool: "set_autonomy", text: "Docs has a launch permit now: routine docs PRs launch without the merge gate", reason: "You gave it from the merge gate" }, { target, approvedBy: "player", undo: () => apply({ autonomy: { ...s.autonomy!, districts: before } }) });
+      return;
+    }
+    if (stationId === "rework" && action === "me") {
+      const item = s.items.find((i) => i.state === "rejected" || (i.scars?.length && i.state === "queued"));
+      if (!item) return log("info", "Nothing on the rework belt right now");
+      spark({ tool: "escalate", text: `Sending #${item.prNumber ?? item.title} to you with its scar tags`, reason: item.scars?.at(-1)?.reason }, { itemId: item.id, target, approvedBy: "player" });
+      return;
+    }
+    spark({ tool: "station_action", text: `On it: ${label.toLowerCase()}`, reason: `You asked from the ${def ? lc(def.name) : stationId} panel` }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${label.toLowerCase()}`) });
+  };
+
   // ---------- plugging in a subscription ----------
 
   const plugIn = (harness: "claude_code" | "codex") => {
@@ -668,6 +710,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         }
         case "choose_move":
           resolve(msg.moveId, msg.optionId, "player");
+          break;
+        case "station_action":
+          stationAction(msg.stationId, msg.action);
           break;
         case "undo": {
           const undo = undos.get(msg.actionId);

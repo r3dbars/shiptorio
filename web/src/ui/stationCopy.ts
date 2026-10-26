@@ -8,6 +8,7 @@ export interface PanelCopy {
   name: string;
   tag: [color: "green" | "amber" | "blue" | "red" | "steel", text: string];
   what: string;
+  actions?: { id: string; label: string; recommended: boolean }[]; // for panels with no Station behind them
 }
 
 export const STATION_COPY: Record<StationKind, PanelCopy> = {
@@ -54,6 +55,11 @@ export const REWORK_COPY: PanelCopy = {
   name: "Rework belt",
   tag: ["red", "fails go back"],
   what: "Anything that fails a station rides back to Spark, not straight to the builder. It carries a scar tag: what failed and the evidence. Spark re-plans with that. Third strike, it comes to you. Same scar showing up again and again means a check should move up a layer.",
+  actions: [
+    { id: "turret", label: "Add a test turret on the top scar's district", recommended: true },
+    { id: "scars", label: "See all scar tags", recommended: false },
+    { id: "me", label: "Send the oldest to me now", recommended: false },
+  ],
 };
 
 export const POWER_COPY: PanelCopy = {
@@ -61,4 +67,9 @@ export const POWER_COPY: PanelCopy = {
   name: "Power plants",
   tag: ["green", "your sign-ins"],
   what: "Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every station spends power, so more checks cost more. Spark spends heavy checks where mistakes are expensive and keeps docs cheap. Spark's own thinking runs on its steam plant.",
+  actions: [
+    { id: "sign-in", label: "Sign in with another plan", recommended: false },
+    { id: "hold", label: "Hold low-value items", recommended: false },
+    { id: "balance", label: "Let Spark balance power", recommended: true },
+  ],
 };

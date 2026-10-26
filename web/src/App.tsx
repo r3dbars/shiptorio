@@ -6,6 +6,7 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
+import { StationPanel } from "./ui/StationPanel";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -97,6 +98,7 @@ export function App() {
   const { state, log, status, send } = useFactory(cfg);
   const caption = useCaption(log);
   const [showLog, setShowLog] = useState(true);
+  const [panel, setPanel] = useState<string | null>(null);
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -119,7 +121,7 @@ export function App() {
   return (
     <div className="app">
       <main className="floor">
-        <FactoryMap state={state} />
+        <FactoryMap state={state} onPick={setPanel} />
 
         <section className="card hud-left" aria-label="Factory">
           <div className="ptitle">SHIPTORIO</div>
@@ -262,7 +264,9 @@ export function App() {
           </section>
         </div>
 
-        <NextMove move={state?.move} bottleneck={state?.bottleneck} send={send} />
+        <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
+
+        {panel && state && <StationPanel id={panel} state={state} send={send} onClose={() => setPanel(null)} />}
 
         <div className={`card caption${caption ? " on" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption?.title}</div>
