@@ -87,12 +87,13 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("SELECT installation_id") ? { installation_id: 1 } : rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("FROM repos") ? { repo_id: 501, installation_id: 1 } : rows.get(String(values[0])) ?? null,
       };
-      expect(sql.includes("sentry") || sql.includes("SELECT installation_id") || sql.includes("signup_counters")).toBe(true);
+      expect(sql.includes("sentry") || sql.includes("FROM repos") || sql.includes("FROM installations") || sql.includes("signup_counters")).toBe(true);
+
       return statement;
     } },
-    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("example/shop"); queued.push(`${id}:${resource}`); } }) },
+    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:501"); queued.push(`${id}:${resource}`); } }) },
   };
   env.DB = credentialDB(env.DB);
   const body = JSON.stringify(fakeSentry("issue.created"));
@@ -127,7 +128,7 @@ function factoryFixture(env: Record<string, unknown>) {
   const ctx = { waitUntil: (_task: Promise<unknown>) => {}, storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
   const fullEnv = {
     ...browserEnv,
-    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
+    DB: { prepare: () => ({ bind: () => ({ first: async () => null, run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
     CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
     SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop",
     ...env,

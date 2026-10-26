@@ -27,7 +27,8 @@ export async function ownerProof(secret: string, login: string, at: number): Pro
   return hmac(secret, `owner-session.${login.toLowerCase()}.${at}`);
 }
 
-export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number; ref?: SessionRef } | null> {
+export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number; issuedAt: number; ref?: SessionRef } | null> {
+
   if (!secret) return null;
   const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!match) return null;
@@ -37,7 +38,7 @@ export async function readSessionDetails(secret: string, cookieHeader: string | 
     const { login, exp, sid, uid } = JSON.parse(atob(payload));
     if (typeof login !== "string" || !Number.isFinite(exp) || exp <= now / 1000) return null;
     const ref = typeof sid === "string" && Number.isSafeInteger(uid) ? { sid, uid } : undefined;
-    return { login, expiresAt: exp * 1000, ...(ref ? { ref } : {}) };
+    return { login, expiresAt: exp * 1000, issuedAt: (exp - MAX_AGE) * 1000, ...(ref ? { ref } : {}) };
   } catch {
     return null;
   }
@@ -54,4 +55,10 @@ export function isAllowed(allowedLogins: string, login: string): boolean {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
     .includes(login.toLowerCase());
+}
+
+export async function authorizationRevoked(db: D1Database | undefined, login: string, issuedAt: number): Promise<boolean> {
+  if (!db) return false;
+  const row = await db.prepare("SELECT revoked_at FROM github_authorization_revocations WHERE login = ?").bind(login.toLowerCase()).first<{ revoked_at: number }>();
+  return !!row && issuedAt <= row.revoked_at;
 }
