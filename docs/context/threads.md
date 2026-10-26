@@ -69,6 +69,7 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | #13 | Private preview (password gate), hardened issue → Spark → PR → inspector/rework loop, bounded alarm jobs, stale-check handling | merged. Supersedes #4's fixes |
 | #19, #21 | Auto-deploy of `main` verified, `/api/version` shows the live SHA, shiptorio.com + shiptorio.dev live | merged |
 | #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
+| Add real user accounts and sign-in | working | D1 `users`/`sessions`/`user_installations`/`user_repos`/`user_prefs` (migration 0004), revocable sessions, repo membership on every factory route, per-repo Sentry/PostHog keys + per-repo Sentry webhook, `requireUser` helper. Password gate stays in front. Next: web install link + prefs sync |
 
 Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.

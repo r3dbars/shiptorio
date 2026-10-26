@@ -570,13 +570,27 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (!installationId) return;
       const removed = p.action === "deleted" ? await this.env.DB.prepare("SELECT full_name FROM repos WHERE installation_id = ?").bind(installationId).all<{ full_name: string }>() : { results: p.repositories_removed ?? [] };
       if (p.action === "deleted") {
-        await this.env.DB.batch([this.env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId), this.env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId)]);
+        await this.env.DB.batch([
+          this.env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId),
+          this.env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId),
+          this.env.DB.prepare("DELETE FROM user_repos WHERE installation_id = ?").bind(installationId),
+          this.env.DB.prepare("DELETE FROM user_installations WHERE installation_id = ?").bind(installationId),
+        ]);
       } else {
         const added = p.repositories ?? p.repositories_added ?? [];
         await this.env.DB.batch([
           this.env.DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (?, ?)").bind(installationId, p.installation?.account?.login ?? ""),
           ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES (?, ?)").bind(r.full_name.toLowerCase(), installationId)),
         ]);
+        // Whoever installed it can open those maps right away, without signing in again. Only a
+        // Shiptorio account gets rows; anyone else picks the repos up from GitHub when they sign in.
+        const sender = p.sender?.id;
+        if (Number.isSafeInteger(sender) && added.length) {
+          await this.env.DB.batch([
+            this.env.DB.prepare("INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login) SELECT id, ?, ? FROM users WHERE id = ?").bind(installationId, p.installation?.account?.login ?? "", sender!),
+            ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO user_repos (user_id, repo, installation_id) SELECT id, ?, ? FROM users WHERE id = ?").bind(r.full_name.toLowerCase(), installationId, sender!)),
+          ]);
+        }
         for (const r of added) {
           const factory = this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase()));
           await factory.enqueueGitHub(`install-${installationId}-${r.full_name}-${p.action}`, "shiptorio_install", { repository: { full_name: r.full_name }, installation: p.installation });
@@ -584,6 +598,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       for (const r of removed.results) {
         await this.env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(r.full_name.toLowerCase()).run();
+        await this.env.DB.prepare("DELETE FROM user_repos WHERE repo = ?").bind(r.full_name.toLowerCase()).run();
         await this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase())).disconnectGitHub();
       }
       return;
@@ -670,9 +685,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env), this.publicUrl()) : postHogStatus(await postHogCreds(this.env), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
-    // The connect page needs to know which map to plug the mine into.
+    // The connect page needs to know which map to plug the mine into, and keys are per map.
     const repo = this.meta?.repo ?? this.state?.repo;
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, repo), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
   }
 
@@ -688,7 +703,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     await this.ctx.storage.put(`${kind}Linked`, true);
     await this.ctx.storage.delete(`${kind}Disconnected`);
-    await linkRepo(this.env, kind, this.state!.repo);
+    // The legacy shared keys stay with the first map that linked them; per-repo keys don't need a link.
+    if (!(await linkedRepo(this.env, kind))) await linkRepo(this.env, kind, this.state!.repo);
     const deposit = `ore-${kind}`;
     const splitter = this.state!.machines.find((m) => m.type === "splitter");
     const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
@@ -720,7 +736,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put(`${kind}Disconnected`, true);
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
-    await linkRepo(this.env, kind, null);
+    if ((await linkedRepo(this.env, kind)) === this.state!.repo.toLowerCase()) await linkRepo(this.env, kind, null);
     const deposit = `ore-${kind}`;
     await this.patch({
       sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
@@ -743,7 +759,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
-    const creds = await postHogCreds(this.env);
+    const creds = await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo);
     try {
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
