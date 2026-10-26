@@ -67,6 +67,23 @@ describe("durable live check-in decisions", () => {
     expect(f.data.get("approvalEvents")).toEqual([expect.objectContaining({ kind: "verify" })]);
   });
 
+  it("can resolve the third-defer choice for an implied bottleneck card", async () => {
+    const f = fixture([], { items: [{ id: "gh-unpowered", kind: "bug", source: "github_issue", title: "Waiting for a builder", district: "/", state: "queued", attempts: 0, updatedAt: 1 }] });
+    let current = f.factory;
+    await f.checkin(current);
+    const originalId = f.saved().deck!.find(m => m.stage === "resources")!.id;
+    for (let n = 0; n < 3; n++) {
+      await f.send({ type: "defer_move", moveId: originalId }, current);
+      current = f.reload();
+      await f.checkin(current);
+    }
+    const escalation = f.saved().deck!.find(m => m.id === `${originalId}:deferred`)!;
+    expect(escalation.title).toBe("Never, or let the factory decide?");
+    await f.send({ type: "choose_move", moveId: escalation.id, optionId: "decide-class" }, current);
+    expect(f.saved().deck?.some(m => m.id === escalation.id)).toBe(false);
+    expect(f.data.get("approvalEvents")).toEqual([expect.objectContaining({ kind: "unblock" })]);
+  });
+
   it("dismiss once removes only that card and undo restores it after a DO restart", async () => {
     const f = fixture([card("one"), card("two", { kind: "input" })]);
     await f.checkin();
