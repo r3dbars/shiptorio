@@ -35,7 +35,7 @@ export function applyPatch(s: FactoryState, p: Patch): FactoryState {
     tick: p.tick ?? s.tick,
     goal: p.goal ?? s.goal,
     bottleneck: p.bottleneck !== undefined ? p.bottleneck : s.bottleneck,
-    districtTrust: p.districtTrust ?? s.districtTrust,
+    autonomy: p.autonomy ?? s.autonomy,
     metrics: p.metrics ?? s.metrics,
     foreman: p.foreman ?? s.foreman,
   };
@@ -44,18 +44,23 @@ export function applyPatch(s: FactoryState, p: Patch): FactoryState {
 export function useFactory(cfg: SourceConfig) {
   const [state, setState] = useState<FactoryState | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
+  const [unlock, setUnlock] = useState<Extract<ServerToWeb, { type: "autonomy_unlocked" }> | null>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "offline">("connecting");
   const source = useRef<Source | null>(null);
 
   useEffect(() => {
     setState(null);
     setLog([]);
+    setUnlock(null);
     const onMessage = (msg: ServerToWeb) => {
       if (msg.type === "snapshot") setState(msg.state);
       else if (msg.type === "patch") setState((s) => (s ? applyPatch(s, msg.patch) : s));
       else if (msg.type === "move") setState((s) => (s ? { ...s, move: msg.move } : s));
       else if (msg.type === "move_resolved") setState((s) => (s && s.move?.id === msg.moveId ? { ...s, move: null } : s));
-      else {
+      else if (msg.type === "autonomy_unlocked") {
+        setUnlock(msg);
+        setLog((l) => [...l.slice(-(MAX_LOG - 1)), { level: "success", text: msg.text, at: Date.now(), actor: "system" }]);
+      } else {
         const { type: _, ...line } = msg;
         setLog((l) => [...l.slice(-(MAX_LOG - 1)), line]);
       }
@@ -65,5 +70,5 @@ export function useFactory(cfg: SourceConfig) {
   }, [cfg.kind, cfg.repo, cfg.scenario]);
 
   const send = useMemo(() => (msg: WebToServer) => source.current?.send(msg), []);
-  return { state, log, status, send };
+  return { state, log, status, send, unlock };
 }

@@ -31,12 +31,18 @@ describe("foreman contract", () => {
         options: [{ id: "review", label: "Review #41", recommended: true }, { id: "permit", label: "Auto-launch docs PRs" }],
         createdAt: 1,
       },
-      districtTrust: [{ district: "docs", score: 0.8, risk: "low", permit: true }],
+      autonomy: {
+        level: "floor",
+        districts: [{ district: "docs", score: 0.8, risk: "low", permit: true }],
+        next: { level: "build", have: 3, need: 5, label: "PRs merged from Spark's plans, no escaped defect" },
+      },
       metrics: { rockets: 4, bitersKilled: 1, escapedDefects: 0, customersAnswered: 1, usersUnblocked: 112, shipScore: 126 },
       foreman: { targetId: "inspector-1", tool: "inspect_pr" },
     });
     expect(state.move?.options[1].recommended).toBe(false);
     expect(state.foreman?.thinking).toBe(false);
+    expect(state.move?.options[0].actions).toEqual([]);
+    expect(state.autonomy?.ranAlone).toBe(0);
   });
 
   test("a move needs 1 to 3 options", () => {
@@ -49,13 +55,32 @@ describe("foreman contract", () => {
     const log = { type: "log", level: "info", text: "Linked the email to the Sentry error", at: 1, actor: "spark", tool: "link_items", reason: "same stack", actionId: "a1" };
     expect(ServerToWeb.parse(log)).toEqual(log as never);
     expect(ServerToWeb.safeParse({ type: "move_resolved", moveId: "m1", optionId: "review", actor: "player" }).success).toBe(true);
+    expect(ServerToWeb.safeParse({ type: "autonomy_unlocked", level: "floor", text: "Spark earned Floor" }).success).toBe(true);
+    expect(ServerToWeb.safeParse({ ...log, approvedBy: "autonomy" }).success).toBe(true);
+  });
+
+  test("a move option carries the Spark tool calls it applies", () => {
+    const opt = Move.parse({
+      id: "m2",
+      title: "Checkout crash, 112 users",
+      why: "Send to your Claude Code assembler with this plan?",
+      stage: "build",
+      options: [
+        { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: "i1", machineId: "asm-claude-1" }, reason: "top value item" }] },
+        { id: "skip", label: "Skip" },
+      ],
+      createdAt: 2,
+    }).options[0];
+    expect(opt.actions[0].tool).toBe("start_job");
+    expect(Move.safeParse({ id: "m3", title: "t", why: "w", stage: "resources", options: [{ id: "a", label: "Sign in with Claude" }], createdAt: 0 }).success).toBe(true);
   });
 
   test("player actions on the foreman layer", () => {
     for (const msg of [
       { type: "choose_move", moveId: "m1", optionId: "review" },
       { type: "undo", actionId: "a1" },
-      { type: "revoke_permit", district: "docs" },
+      { type: "set_autonomy", level: "advisor" },
+      { type: "set_autonomy", district: "docs", permit: false },
       { type: "set_goal", text: "ship checkout fixes" },
     ]) expect(WebToServer.safeParse(msg).success).toBe(true);
     expect(WebToServer.safeParse({ type: "set_goal", text: "x".repeat(201) }).success).toBe(false);

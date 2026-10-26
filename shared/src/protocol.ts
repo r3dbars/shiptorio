@@ -3,10 +3,11 @@
 import { z } from "zod";
 import {
   Actor,
+  Autonomy,
+  AutonomyLevel,
   Belt,
   Bottleneck,
   District,
-  DistrictTrust,
   FactoryState,
   Foreman,
   Harness,
@@ -33,7 +34,7 @@ export const Patch = z.object({
   tick: z.number().int().optional(),
   goal: z.string().optional(),
   bottleneck: Bottleneck.nullable().optional(),
-  districtTrust: z.array(DistrictTrust).optional(), // full replacement when present
+  autonomy: Autonomy.optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
 });
@@ -54,9 +55,12 @@ export const ServerToWeb = z.discriminatedUnion("type", [
     tool: z.string().optional(), // the Spark tool call behind this line, e.g. "link_items"
     reason: z.string().optional(), // why Spark did it
     actionId: z.string().optional(), // set when the action can be undone
+    approvedBy: z.enum(["player", "autonomy"]).optional(), // who let a Spark action through
   }),
   z.object({ type: z.literal("move"), move: Move }), // a new Next Move card (replaces the open one)
   z.object({ type: z.literal("move_resolved"), moveId: z.string(), optionId: z.string().optional(), actor: Actor }),
+  // The unlock moment. With district, that district earned (or lost) its launch permit.
+  z.object({ type: z.literal("autonomy_unlocked"), level: AutonomyLevel, district: z.string().optional(), text: z.string() }),
 ]);
 export type ServerToWeb = z.infer<typeof ServerToWeb>;
 
@@ -78,7 +82,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("route_item"), itemId: z.string(), machineId: z.string() }), // drag ore onto a machine
   z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
   z.object({ type: z.literal("undo"), actionId: z.string() }),
-  z.object({ type: z.literal("revoke_permit"), district: z.string() }),
+  // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
+  z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
 ]);
 export type WebToServer = z.infer<typeof WebToServer>;
