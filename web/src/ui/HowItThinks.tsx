@@ -57,6 +57,7 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
           <div className="think-why">“{t.reason}”</div>
         </div>
       ))}
+      <a className="credit-btn" href="/art/spark.html" target="_blank" rel="noreferrer">How Meta Muse Spark runs Shiptorio →</a>
       <p className="credit">powered by Meta Muse Spark{brain?.model && brain.model !== "sim" ? ` · ${brain.model}` : ""}</p>
     </section>
   );
