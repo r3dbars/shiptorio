@@ -3,7 +3,7 @@
 // nobody reads a manual, but everyone fills a collection.
 
 import type { FactoryState } from "@shiptorio/shared";
-import { LESSONS } from "./tutorial";
+import { CONCEPT_ICON, LESSONS } from "./tutorial";
 import { Icon } from "./icons";
 import { GUIDE, WORDS } from "../copy";
 
@@ -73,12 +73,18 @@ export function FieldGuide({ met, onClose }: { met: Set<string>; onClose: () => 
             {c.entries.map((e) =>
               met.has(e.id) ? (
                 <div key={e.id} className="gitem">
-                  <b>{e.title}</b>
+                  <b>
+                    <Icon name={CONCEPT_ICON[e.id] ?? "star"} size={16} />
+                    {e.title}
+                  </b>
                   <span>{e.text.replace("{repo}", WORDS.yourRepo)}</span>
                 </div>
               ) : (
                 <div key={e.id} className="gitem lock">
-                  <b>{GUIDE.locked}</b>
+                  <b>
+                    <Icon name="lock" size={16} />
+                    {GUIDE.locked}
+                  </b>
                   <span>{e.hint}</span>
                 </div>
               ),

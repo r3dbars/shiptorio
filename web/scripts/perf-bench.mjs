@@ -1,6 +1,7 @@
 // Perf bench: serves web/dist gzipped, then loads the game in Playwright as a desktop and as
 // a mid-range phone (Pixel 7 viewport, 4x CPU throttle, slow 4G) and prints load + frame numbers.
 //   bun run build && node web/scripts/perf-bench.mjs [scenario]
+//   MAP_QUERY="&world=iron" adds to the map URL (compare looks)
 // Headless Chromium draws with SwiftShader (CPU), so fps here is a floor, not a real phone's
 // number. Compare runs against each other; draw calls, triangles and bytes are exact.
 import { createRequire } from "node:module";
@@ -63,7 +64,7 @@ async function run(name, p) {
   // 2. the map: time until the first frame is drawn, then frame stats once it's busy
   bytes = 0;
   const t1 = Date.now();
-  await page.goto(`${base}/?source=sim&scenario=${scenario}`, { waitUntil: "commit" });
+  await page.goto(`${base}/?source=sim&scenario=${scenario}${process.env.MAP_QUERY ?? ""}`, { waitUntil: "commit" });
   await page.waitForFunction(() => window.__shipPerf && window.__shipPerf().calls > 0, null, { timeout: 120000, polling: 50 });
   out["map first frame"] = Date.now() - t1;
   out["map KB"] = bytes / 1024;
