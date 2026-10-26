@@ -13,6 +13,11 @@ describe("private preview", () => {
     expect((await previewAccess(new Request("https://shiptorio.com/"), { SESSION_SECRET: "" }))?.status).toBe(503);
     expect(await previewAccess(new Request("https://shiptorio.com/webhooks/github"), env)).toBeNull();
   });
+  it("leaves only GET /api/version public, so Deploy can check the live commit", async () => {
+    expect(await previewAccess(new Request("https://shiptorio.com/api/version"), env)).toBeNull();
+    expect((await previewAccess(new Request("https://shiptorio.com/api/version", { method: "POST" }), env))?.status).toBe(401);
+    expect((await previewAccess(new Request("https://shiptorio.com/api/version/x"), env))?.status).toBe(401);
+  });
   it("accepts a password, rejects forgery, and invalidates cookies after password rotation", async () => {
     const request = (password: string) => new Request("https://shiptorio.com/access", { method: "POST", headers: { origin: "https://shiptorio.com" }, body: new URLSearchParams({ password }) });
     expect((await previewAccess(request("wrong"), env))?.status).toBe(401);

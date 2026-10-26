@@ -940,6 +940,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.science) s.science = p.science;
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.tick !== undefined) s.tick = p.tick;
+    if (p.goal !== undefined) s.goal = p.goal;
     if (p.sources) s.sources = p.sources;
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
     if (p.metrics) s.metrics = p.metrics;
@@ -1608,6 +1609,9 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.refreshDecisions(); return;
     }
     switch (msg.type) {
+      case "set_goal":
+        await this.patch({ goal: msg.text });
+        break;
       case "research":
         await this.research(msg.tech, "tree");
         break;
