@@ -71,7 +71,7 @@ async function run(name, p) {
   const samples = [];
   for (let i = 0; i < 5; i++) { await page.waitForTimeout(1000); samples.push(await page.evaluate(() => window.__shipPerf())); }
   const avg = (k) => samples.reduce((a, s) => a + s[k], 0) / samples.length;
-  Object.assign(out, { fps: avg("fps"), "frame ms (JS)": avg("workMs"), calls: avg("calls"), "tris k": avg("triangles") / 1000, geometries: samples.at(-1).geometries, textures: samples.at(-1).textures, programs: samples.at(-1).programs });
+  Object.assign(out, { fps: avg("fps"), "frame ms (JS)": avg("workMs"), calls: avg("calls"), "tris k": avg("triangles") / 1000, geometries: samples.at(-1).geometries, textures: samples.at(-1).textures, programs: samples.at(-1).programs, tier: samples.at(-1).tier });
   out["heap MB"] = await page.evaluate(() => performance.memory.usedJSHeapSize / 1048576);
   await browser.close();
   return out;

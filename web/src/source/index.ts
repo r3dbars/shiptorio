@@ -2,7 +2,6 @@
 // server or the simulator: `?source=sim` (default) or `?source=live&repo=owner/name`.
 
 import type { ServerToWeb, WebToServer } from "@shiptorio/shared";
-import { connectLive } from "./live";
 import { connectSim, SCENARIOS, type ScenarioName } from "../sim/engine";
 
 export interface Source {
@@ -31,5 +30,22 @@ export function readConfig(search = location.search): SourceConfig {
 }
 
 export function connect(cfg: SourceConfig, onMessage: Listener, onStatus: StatusListener): Source {
-  return cfg.kind === "live" ? connectLive(cfg.repo, onMessage, onStatus) : connectSim(cfg.scenario, onMessage, onStatus, cfg.repo || undefined);
+  if (cfg.kind === "sim") return connectSim(cfg.scenario, onMessage, onStatus, cfg.repo || undefined);
+  // live loads on demand: it brings zod (the message schemas), which the sim and the first paint don't need
+  onStatus("connecting");
+  let src: Source | null = null;
+  let closed = false;
+  const queue: WebToServer[] = [];
+  import("./live").then(({ connectLive }) => {
+    if (closed) return;
+    src = connectLive(cfg.repo, onMessage, onStatus);
+    for (const m of queue.splice(0)) src.send(m);
+  });
+  return {
+    send: (m) => (src ? src.send(m) : queue.push(m)),
+    close: () => {
+      closed = true;
+      src?.close();
+    },
+  };
 }
