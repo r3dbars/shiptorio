@@ -78,6 +78,24 @@ export const ScarTag = z.object({
 });
 export type ScarTag = z.infer<typeof ScarTag>;
 
+// Orbit watch: the last station. For 24h after a launch it watches the real world. A comeback (the same Sentry
+// error, a new error spike on that folder, a revert PR, main going red on the merge commit) scars the item,
+// sends it back on the rework belt and revokes its lane's launch permit.
+export const OrbitSignal = z.enum(["sentry", "revert", "deploy"]);
+export type OrbitSignal = z.infer<typeof OrbitSignal>;
+export const OrbitWatch = z.object({
+  since: z.number(), // launch time
+  until: z.number(), // watch ends
+  mergeSha: z.string().optional(), // the commit on main the deploy and CI run on
+  state: z.enum(["watching", "clear", "regressed"]),
+  signal: OrbitSignal.optional(), // what tripped it
+  reason: z.string().optional(), // "Sentry #8812 fired again 3h after the launch"
+  evidenceUrl: z.string().optional(),
+  at: z.number().optional(), // when it cleared or regressed
+  prNumber: z.number().int().optional(), // the launched PR (the item gets a new one on rework)
+});
+export type OrbitWatch = z.infer<typeof OrbitWatch>;
+
 export const Item = z.object({
   id: z.string(),
   kind: ItemKind,
@@ -100,6 +118,7 @@ export const Item = z.object({
   ore: OreChunk.optional(),
   inspection: Inspection.optional(),
   scars: z.array(ScarTag).optional(), // every fail so far, newest last
+  orbit: OrbitWatch.optional(), // set at launch; orbit watch's verdict on the last launch
 });
 export type Item = z.infer<typeof Item>;
 

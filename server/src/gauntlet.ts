@@ -6,6 +6,7 @@ import type { Belt, FactoryState, Inspection, Item, Machine, Move, ScarTag, Stat
 import { gh } from "./github";
 import { parseJsonReply, sparkChat, type SparkEnv } from "./spark";
 import type { RegressionProof } from "./runner-job";
+import { ORBIT_ID, orbitStation } from "./orbit";
 
 type Gate = Inspection["stages"][number]["gate"];
 interface StationDef { id: string; kind: StationKind; name: string; gate: Gate }
@@ -23,6 +24,8 @@ export function gauntletLine(): { machines: Machine[]; belts: Belt[] } {
   const machines: Machine[] = [
     ...GAUNTLET.map((g, i): Machine => ({ id: g.id, type: "inspector", x: 3 + i * 3, y: 0, tier: 1, state: "idle" })),
     { id: "launch-pad", type: "launch_pad", x: 15, y: 0, tier: 1, state: "idle" },
+    // orbit watch sits past the pad and watches each launch for 24h (src/orbit.ts); no belt, rockets fly to it
+    { id: ORBIT_ID, type: "inspector", x: 15, y: 3, tier: 1, state: "idle" },
   ];
   const chain = ["assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   return { machines, belts: chain.slice(1).map((to, i) => ({ id: `belt-g${i + 1}`, from: chain[i], to })) };
@@ -30,7 +33,12 @@ export function gauntletLine(): { machines: Machine[]; belts: Belt[] } {
 
 /** Factories made before the gauntlet have one `inspector-1`. Swap it for the four stations. */
 export function migrateGauntlet(s: FactoryState): boolean {
-  if (s.machines.some((m) => m.id === "ci-1")) return false;
+  if (s.machines.some((m) => m.id === "ci-1")) {
+    // Factories made before orbit watch get its mast next to the pad.
+    if (s.machines.some((m) => m.id === ORBIT_ID)) return false;
+    s.machines = [...s.machines, gauntletLine().machines.find((m) => m.id === ORBIT_ID)!];
+    return true;
+  }
   const old = new Set(["inspector-1", "launch-pad"]);
   const line = gauntletLine();
   s.machines = [...s.machines.filter((m) => !old.has(m.id)), ...line.machines];
@@ -208,8 +216,10 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
   };
 }
 
-export async function mergePullRequest(token: string, repo: string, pr: number, sha: string, title: string): Promise<void> {
-  await gh(`/repos/${repo}/pulls/${pr}/merge`, token, { method: "PUT", body: JSON.stringify({ merge_method: "squash", sha, commit_title: `${title} (#${pr})` }) });
+/** Squash-merges the PR. Returns the merge commit on the base branch, which orbit watch follows. */
+export async function mergePullRequest(token: string, repo: string, pr: number, sha: string, title: string): Promise<string | undefined> {
+  const res = await gh<{ sha?: string } | null>(`/repos/${repo}/pulls/${pr}/merge`, token, { method: "PUT", body: JSON.stringify({ merge_method: "squash", sha, commit_title: `${title} (#${pr})` }) });
+  return res?.sha;
 }
 
 // ---------- stations for the map and panels ----------
@@ -223,7 +233,7 @@ const ACTIONS: Record<string, Station["actions"]> = {
 
 export function liveStations(s: FactoryState, now = Date.now()): Station[] {
   const live = s.items.filter((i) => i.state !== "launched");
-  return GAUNTLET.map((g) => {
+  const stations = GAUNTLET.map((g): Station => {
     const here = live.filter((i) => i.machineId === g.id && ["inspecting", "on_pad", "rejected"].includes(i.state));
     const caught = s.items.reduce((n, i) => n + (i.scars ?? []).filter((sc) => sc.station === g.kind).length, 0);
     const ran = s.items.filter((i) => { const st = stageOf(i, g.gate); return st && st.state !== "pending"; });
@@ -242,4 +252,5 @@ export function liveStations(s: FactoryState, now = Date.now()): Station[] {
       actions: ACTIONS[g.id] ?? [],
     };
   });
+  return [...stations, orbitStation(s, now)];
 }
