@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { layoutMap, zoneOf } from "../src/map";
 
 const blob = (path: string) => ({ path, type: "blob" as const, size: 10 });

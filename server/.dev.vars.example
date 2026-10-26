@@ -1,7 +1,9 @@
-# `npm run dev` copies this to .dev.vars the first time and fills in what it can.
+# `bun run dev` copies this to .dev.vars the first time and fills in what it can.
 SESSION_SECRET=
 # On localhost, /auth/login signs you in as this user without GitHub. Ignored anywhere else.
 DEV_LOGIN=
+# Muse Spark (Meta Model API). Without it the splitter uses a heuristic and assemblers stay unpowered.
+META_API_KEY=
 # Fill these in from /setup once the GitHub App exists, to load real repos locally.
 GITHUB_APP_ID=
 GITHUB_CLIENT_ID=

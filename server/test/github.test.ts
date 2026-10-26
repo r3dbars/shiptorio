@@ -1,5 +1,5 @@
 import { createHmac, createPublicKey, generateKeyPairSync, verify } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { appJwt, verifyWebhookSignature } from "../src/github";
 
 describe("verifyWebhookSignature", () => {

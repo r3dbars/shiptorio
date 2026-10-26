@@ -83,6 +83,7 @@ async function gh<T>(path: string, token: string, init: RequestInit = {}): Promi
       authorization: `Bearer ${token}`,
       "user-agent": UA,
       "x-github-api-version": "2022-11-28",
+      ...(init.body ? { "content-type": "application/json" } : {}),
       ...init.headers,
     },
   });
@@ -125,6 +126,80 @@ export async function repoTree(
 export async function pullRequestFiles(token: string, fullName: string, number: number): Promise<string[]> {
   const files = await gh<{ filename: string }[]>(`/repos/${fullName}/pulls/${number}/files?per_page=100`, token);
   return files.map((f) => f.filename);
+}
+
+export async function fileContent(token: string, fullName: string, path: string, ref: string): Promise<string | null> {
+  try {
+    const f = await gh<{ content?: string; encoding?: string }>(
+      `/repos/${fullName}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`,
+      token,
+    );
+    if (f.encoding !== "base64" || f.content == null) return null;
+    const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+async function branchSha(token: string, fullName: string, branch: string): Promise<string | null> {
+  try {
+    const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
+    return ref.object.sha;
+  } catch {
+    return null;
+  }
+}
+
+export interface FileChange {
+  path: string;
+  content: string;
+}
+
+// One commit with all changes on `branch`, created from `base` if it doesn't exist yet.
+export async function commitToBranch(
+  token: string,
+  fullName: string,
+  base: string,
+  branch: string,
+  changes: FileChange[],
+  message: string,
+): Promise<string> {
+  const existing = await branchSha(token, fullName, branch);
+  const parent = existing ?? (await branchSha(token, fullName, base));
+  if (!parent) throw new Error(`base branch ${base} not found`);
+  const parentCommit = await gh<{ tree: { sha: string } }>(`/repos/${fullName}/git/commits/${parent}`, token);
+  const tree = await gh<{ sha: string }>(`/repos/${fullName}/git/trees`, token, {
+    method: "POST",
+    body: JSON.stringify({
+      base_tree: parentCommit.tree.sha,
+      tree: changes.map((c) => ({ path: c.path, mode: "100644", type: "blob", content: c.content })),
+    }),
+  });
+  const commit = await gh<{ sha: string }>(`/repos/${fullName}/git/commits`, token, {
+    method: "POST",
+    body: JSON.stringify({ message, tree: tree.sha, parents: [parent] }),
+  });
+  if (existing) {
+    await gh(`/repos/${fullName}/git/refs/heads/${encodeURIComponent(branch)}`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ sha: commit.sha }),
+    });
+  } else {
+    await gh(`/repos/${fullName}/git/refs`, token, {
+      method: "POST",
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    });
+  }
+  return commit.sha;
+}
+
+export async function openPullRequest(
+  token: string,
+  fullName: string,
+  pr: { head: string; base: string; title: string; body: string },
+): Promise<{ number: number; html_url: string }> {
+  return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
 }
 
 export async function convertManifestCode(code: string): Promise<{
