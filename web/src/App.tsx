@@ -105,7 +105,6 @@ export function App() {
   const cfg = useMemo(() => readConfig(), []);
   const { state, log, status, send } = useFactory(cfg);
   const caption = useCaption(log);
-  useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
   // ?checkin opens the deck on load, the way a phone check-in would.
@@ -114,6 +113,7 @@ export function App() {
   // the map's pick keys: a station id as-is, any other machine as m:<id>
   const focusKey = focus && (state?.stations?.some((st) => st.id === focus) || focus === "rework" ? focus : `m:${focus}`);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
+  useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
   const [sheet, setSheet] = useState(false); // phones: the right-hand cards live in a bottom sheet
   const [showLabels, setShowLabels] = useState(false);
   const items = state?.items ?? [];
