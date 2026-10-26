@@ -122,7 +122,8 @@ describe("Factory lifecycle", () => {
         const g = fixture([item({ state: "queued", prNumber: undefined, attempts: 0, body: "Canonical request\n\nLabels: \n\nComment: 🧠 **Shiptorio planned this** with Meta Muse Spark (`muse-spark-1.3`)\nOld speculative scope" }), ...(backlog ? [item({ id: "gh-2", title: "Another queued issue", state: "queued", prNumber: undefined, attempts: 0 })] : [])], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
         const pairing = await g.factory.pairRunner();
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
-        const proposal = g.saved().move!;
+        // A backlog can rank either issue first when creation times tie; this fixture builds #1.
+        const proposal = g.saved().deck!.find(move => move.itemId === "gh-1" && move.options.some(option => option.actions.some(action => action.tool === "plan_runner_job")))!;
         await g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: "forged", optionId: "codex" }));
         expect(await g.factory.runnerJobs()).toHaveLength(0);
         await g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: proposal.id, optionId: "codex" }));
