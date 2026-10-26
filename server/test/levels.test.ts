@@ -5,7 +5,7 @@ import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { freshInspection, setStage } from "../src/gauntlet";
 import { autonomyView, emptyBook, recordShip, setPermit, type PermitBook } from "../src/permits";
-import { BUILD_SHIPS, escape, FLOOR_SHIPS, grantLevel, levelMove, levelReady, lowerLevel, nextStep, snoozeLevel } from "../src/levels";
+import { BUILD_SHIPS, escape, FLOOR_SHIPS, grantLevel, levelMove, levelReady, levelTap, lowerLevel, nextStep, snoozeLevel } from "../src/levels";
 import { flagKey } from "../src/flags";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
@@ -124,5 +124,61 @@ describe("autonomy levels in the Factory", () => {
     expect(saved().autonomy?.level).toBe("floor"); // never up from settings
     await f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "set_autonomy", level: "advisor" }));
     expect(saved().autonomy?.level).toBe("advisor");
+  });
+});
+
+describe("what each level lets the planner answer", () => {
+  const card = (tool: string, opts: { id?: string; stage?: "build" | "inspect" | "pad"; args?: Record<string, unknown>; recommended?: boolean; locked?: boolean } = {}) => ({
+    id: "c", title: "t", why: "w", createdAt: 1, stage: opts.stage ?? "build", kind: "build" as const, locked: opts.locked,
+    options: [{ id: opts.id ?? "go", label: "Go", recommended: opts.recommended ?? true, actions: [{ tool, args: opts.args ?? {}, reason: "r" }] }],
+  });
+  it("climbs one tool at a time and never merges", () => {
+    const plan = card("plan_runner_job", { id: "codex" });
+    const approve = card("approve_runner_job", { id: "approve" });
+    const rework = card("plan_runner_job", { id: "rework-codex", stage: "inspect" });
+    const permit = card("set_autonomy", { id: "allow", stage: "pad", args: { district: "docs", permit: true } });
+    const merge = card("request_merge", { id: "launch", stage: "pad", args: { pr: 1 } });
+    const level = card("set_autonomy", { id: "allow", args: { level: "build" } });
+    const answers = (l: "advisor" | "floor" | "build" | "lights_out") => [plan, approve, rework, permit, merge, level].map((c) => !!levelTap(c as never, l));
+    expect(answers("advisor")).toEqual([false, false, false, false, false, false]);
+    expect(answers("floor")).toEqual([true, false, false, false, false, false]);
+    expect(answers("build")).toEqual([true, true, true, false, false, false]);
+    expect(answers("lights_out")).toEqual([true, true, true, true, false, false]);
+  });
+  it("only the recommended option, never on a locked card", () => {
+    expect(levelTap(card("plan_runner_job", { recommended: false }) as never, "lights_out")).toBeNull();
+    expect(levelTap(card("approve_runner_job", { locked: true }) as never, "lights_out")).toBeNull();
+  });
+});
+
+describe("levels acting in the Factory", () => {
+  const run = async (level: "advisor" | "floor") => {
+    const now = Date.now();
+    const item: Item = { id: "gh-5", kind: "bug", source: "github_issue", title: "Fix the login typo", district: "web", state: "queued", attempts: 0, updatedAt: now };
+    const state = FactoryState.parse({ repo: "r3dbars/demo", baseBranch: "main", districts: [], ...starterLine(), items: [item], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
+    const book = { ...emptyBook(), ladder: { level, since: now, clean: 3, offeredAt: 3 } };
+    const data = new Map<string, unknown>([["state", state], ["meta", { repo: "r3dbars/demo", installationId: 1 }], ["permits", book], ["runnerPresence", { harnesses: ["codex"], seenAt: now }]]);
+    let alarm: number | null = null;
+    const storage = {
+      async get(k: string) { return structuredClone(data.get(k)); },
+      async put(k: string, v: unknown) { data.set(k, structuredClone(v)); },
+      async delete(k: string) { return data.delete(k); },
+      async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); },
+      async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); },
+      async getAlarm() { return alarm; },
+      async setAlarm(v: number) { alarm = v; },
+    };
+    const logs: { type: string; approvedBy?: string; text?: string }[] = [];
+    const cache = { ...membershipCache, get: async (key: string) => (key === flagKey("autonomy") ? "true" : membershipCache.get(key)) };
+    const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => logs.push(JSON.parse(raw)))] };
+    const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: cache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0, enabled: 1, runs_daily: 20, count: 1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+    await f.alarm();
+    return { jobs: [...data.keys()].filter((k) => k.startsWith("runnerJob:")), logs };
+  };
+  it("Advisor leaves the plan card for the player; Floor starts the plan on its own and says so", async () => {
+    expect((await run("advisor")).jobs).toEqual([]);
+    const floor = await run("floor");
+    expect(floor.jobs.length).toBe(1);
+    expect(floor.logs.some((l) => l.type === "log" && l.approvedBy === "autonomy")).toBe(true);
   });
 });

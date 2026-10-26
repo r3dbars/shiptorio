@@ -61,7 +61,7 @@ import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
-import { escape, grantLevel, LEVEL_NAME, levelMove, levelReady, lowerLevel, snoozeLevel } from "./levels";
+import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
@@ -2207,6 +2207,33 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return true;
   }
 
+  /**
+   * At Floor and above, the planner answers the cards its level covers (src/levels.ts levelTap) through the same
+   * handlers a player's tap uses, so every job, head and scar check still applies. One card per tick, logged with
+   * approvedBy "autonomy". Nothing here can merge: request_merge is never on the list.
+   */
+  private async runLevel(): Promise<void> {
+    if (!(await flagEnabled(this.env, "autonomy"))) return;
+    const level = ladderOf(await this.permitBook()).level;
+    if (level === "advisor") return;
+    await this.decisionData();
+    const s = this.state!;
+    for (const card of [...this.openMoves!]) {
+      const tap = levelTap(card, level);
+      if (!tap) continue;
+      const label = card.options.find(o => o.id === tap.optionId)?.label ?? tap.optionId;
+      s.move = card;
+      const before = JSON.stringify(await this.runnerJobs());
+      const handled = await this.choosePermitMove(card.id, tap.optionId) || await this.chooseGauntletMove(card.id, tap.optionId);
+      if (!handled) await this.chooseRunnerMove(card.id, tap.optionId);
+      const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
+      await this.refreshDecisions();
+      if (!consumed) continue;
+      this.broadcast({ type: "log", level: "info", text: `${card.title}: ${label}`, at: Date.now(), itemId: card.itemId, actor: "spark", tool: card.options.find(o => o.id === tap.optionId)?.actions[0]?.tool, approvedBy: "autonomy", reason: `${tap.why}. Turn it down in Make it yours.` });
+      return;
+    }
+  }
+
   /** The player turned the factory's level down. Going up only happens on the card. */
   private async setLevel(level: AutonomyLevel): Promise<void> {
     const book = lowerLevel(await this.permitBook(), level);
@@ -2763,6 +2790,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.guard("offerLevelMove", () => this.offerLevelMove());
     await this.guard("offerResearchMove", () => this.offerResearchMove());
     await this.guard("offerRunnerPlan", () => this.offerRunnerPlan());
+    await this.guard("runLevel", () => this.runLevel());
     const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.accountAlarm(Date.now() + TICK_MS);
