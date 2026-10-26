@@ -64,8 +64,8 @@ export interface Env extends FactoryEnv, SignupEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = async (env: Env, repo: string) => {
-  const stub = await repositoryFactory(env, repo);
+const factory = async (env: Env, repo: string, repoId?: number) => {
+  const stub = repoId ? byRepoId(env, repoId) : await repositoryFactory(env, repo);
   const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
   // Capture per call, never put mutable request identity on a shared DO instance.
   return new Proxy(stub, { get(target, method) {
@@ -659,7 +659,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  await byRepoId(c.env, scope.repoId).enqueueSentry(delivery, resource, redactor.value(payload));
+  await (await factory(c.env, repo, scope.repoId)).enqueueSentry(delivery, resource, redactor.value(payload));
 
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
 

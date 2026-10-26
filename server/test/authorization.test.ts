@@ -218,6 +218,9 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
   expect((await sentry('alice/private', 'alice-secret')).status).toBe(202);
   expect((await sentry('bob/private', 'bob-secret')).status).toBe(202);
   expect(queued).toEqual(['sentry:repo:11:alice/private:same-event', 'sentry:repo:22:bob/private:same-event']);
+  await DB.prepare("UPDATE repos SET repo_id = 111 WHERE full_name = 'alice/private'").run();
+  expect((await sentry('alice/private', 'alice-secret')).status).toBe(401);
+  expect(queued).toHaveLength(2);
   const githubBody = JSON.stringify({ action: 'opened', installation: { id: 22 }, repository: { full_name: 'bob/private' }, issue: { number: 1, title: 'Test' } });
   const github = async (sig: string) => app.fetch(new Request(`${origin}/webhooks/github`, { method: 'POST', headers: { 'x-hub-signature-256': sig, 'x-github-event': 'issues', 'x-github-delivery': 'test-github-delivery' }, body: githubBody }), env as never, { waitUntil() {} } as never);
   expect((await github('sha256=invalid')).status).toBe(401);

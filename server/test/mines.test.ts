@@ -249,3 +249,14 @@ it("a failed credential hydration cannot leak state on a second request", async 
   expect(f.events).toHaveLength(0);
   expect(f.kv.has("cred:sentry:example/shop")).toBe(true);
 });
+
+it("a stale Factory cannot use credentials from a replacement at its old name", async () => {
+  const { saveCreds } = await import("../src/sources/creds");
+  const f = factoryFixture({ CRED_MASTER_KEY: btoa("a".repeat(32)) });
+  const env = (f.factory as unknown as { env: import("../src/sources/creds").CredsEnv }).env;
+  await f.factory.connectMine("sentry"); // hydrating Factory 503 fixes its expected identity
+  const db = env.DB as unknown as { sqlite: import("bun:sqlite").Database };
+  db.sqlite.exec("UPDATE credential_test_repos SET repo_id = 999 WHERE full_name = 'example/shop'");
+  await saveCreds(env, "sentry", { clientSecret: "synthetic-replacement-key" }, { repo: "example/shop", installationId: 1 });
+  expect((await f.factory.connectMine("sentry"))?.state).toBe("needs_action");
+});

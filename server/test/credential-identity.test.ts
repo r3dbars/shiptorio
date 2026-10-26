@@ -120,3 +120,22 @@ test("legacy revocation survives a metadata-only usage record during identity up
   await markUsed(env, "sentry", scope);
   expect(await sentryCreds(env, scope)).toEqual({});
 });
+
+test("immutable pins alone cannot invent a legacy name during first-read adoption", async () => {
+  const { env, kv, scope } = await fixture();
+  env.SENTRY_REPO = undefined;
+  kv.set("cred:sentry:example/shop", JSON.stringify({ clientSecret: "synthetic-unproven-name-key" }));
+  expect(await sentryCreds(env, scope)).toEqual({});
+  expect(kv.has("cred:sentry:example/shop")).toBe(true);
+});
+
+test("a pinned Worker override remains usable without a master key even with legacy material pending", async () => {
+  const { env, kv, scope } = await fixture();
+  env.CRED_MASTER_KEY = undefined; env.SENTRY_CLIENT_SECRET = "synthetic-pinned-worker-key";
+  kv.set("cred:sentry", JSON.stringify({ clientSecret: "synthetic-unmigrated-key" }));
+  expect((await sentryCreds(env, scope)).clientSecret).toBe("synthetic-pinned-worker-key");
+  expect(kv.has("cred:sentry")).toBe(true);
+  const { revokeCreds } = await import("../src/sources/creds");
+  await revokeCreds(env, "sentry", scope);
+  expect(await sentryCreds(env, scope)).toEqual({});
+});

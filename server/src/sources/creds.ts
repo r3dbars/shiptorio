@@ -50,8 +50,9 @@ export async function legacyRepo(env: CredsEnv, kind: MineKind): Promise<string 
     .bind(expected.repoId, expected.installationId).first<{ full_name: string }>();
   return row?.full_name ?? null;
 }
-async function legacyName(env: CredsEnv, kind: MineKind, scope: BoundScope) {
-  return ((kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO) || await env.CACHE?.get(`link:${kind}`) || scope.repo).toLowerCase();
+async function legacyName(env: CredsEnv, kind: MineKind, _scope: BoundScope): Promise<string | null> {
+  const name = (kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO) || await env.CACHE?.get(`link:${kind}`);
+  return name?.toLowerCase() ?? null;
 }
 function override(env: CredsEnv, kind: MineKind): Creds {
   return kind === "sentry" ? { clientSecret: env.SENTRY_CLIENT_SECRET } : { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
@@ -72,6 +73,8 @@ async function migrate(env: CredsEnv, scope: BoundScope, kind: MineKind): Promis
     await revokeCreds(env, kind, scope);
     return row(env, scope, kind);
   }
+  const admin = override(env, kind);
+  if (!env.CRED_MASTER_KEY && (kind === "sentry" ? admin.clientSecret : admin.apiKey && admin.projectId)) return current;
   const ownLegacy = await env.CACHE?.get<Creds>(repoKey, "json");
   const globalLegacy = ownsGlobal ? await env.CACHE?.get<Creds>(`cred:${kind}`, "json") : null;
   const legacy = ownLegacy ?? globalLegacy ?? ((!current || !current.envelope) && old?.envelope
