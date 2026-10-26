@@ -1,6 +1,6 @@
 import { createHmac, createPublicKey, generateKeyPairSync, verify } from "node:crypto";
-import { describe, expect, it } from "bun:test";
-import { appJwt, verifyWebhookSignature } from "../src/github";
+import { describe, expect, it, spyOn } from "bun:test";
+import { appJwt, installationToken, runnerInstallationToken, verifyWebhookSignature } from "../src/github";
 
 describe("verifyWebhookSignature", () => {
   const body = JSON.stringify({ hello: "factory" });
@@ -33,4 +33,27 @@ describe("appJwt", () => {
       expect(ok).toBe(true);
     });
   }
+});
+
+
+describe("runner publishing credentials", () => {
+  it("limits issuance to one repository and contents publishing, leaving server credentials unchanged", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
+    const env = { GITHUB_APP_ID: "123", GITHUB_APP_PRIVATE_KEY: privateKey };
+    const bodies: (unknown | undefined)[] = [];
+    const request = spyOn(globalThis, "fetch").mockImplementation((async (_url: unknown, init?: RequestInit) => {
+      bodies.push(init?.body ? JSON.parse(String(init.body)) : undefined);
+      return Response.json({ token: "fake-token" });
+    }) as typeof fetch);
+    try {
+      expect(await runnerInstallationToken(env, 42, "owner/selected-repo")).toBe("fake-token");
+      expect(bodies[0]).toEqual({ repositories: ["selected-repo"], permissions: { contents: "write", metadata: "read" } });
+      await installationToken(env, 42);
+      expect(bodies[1]).toBeUndefined();
+      for (const repo of ["owner", "owner/repo/extra", "owner/..", "../repo", "owner/repo?other", "owner/repo\n", "owner/repo\\other"]) {
+        await expect(runnerInstallationToken(env, 42, repo)).rejects.toThrow("Invalid runner repository");
+      }
+      expect(request).toHaveBeenCalledTimes(2);
+    } finally { request.mockRestore(); }
+  });
 });
