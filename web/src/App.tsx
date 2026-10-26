@@ -19,6 +19,8 @@ import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
 import { ShipCelebration } from "./ui/ShipCelebration";
+import { introMode, useIntroTour } from "./ui/IntroTour";
+import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
 
@@ -110,16 +112,21 @@ function buildSlot(state: FactoryState) {
   return null;
 }
 
-export function App() {
-  const cfg = useMemo(() => readConfig(), []);
+// config: the welcome tour runs the App on its own sim (ui/Onboarding.tsx). onIntroDone: where the tour's last button goes.
+export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
+  const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
+  const intro = introMode(cfg);
+  // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
+  const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
+  const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
   const caption = useCaption(log);
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
   const [panel, setPanel] = useState<string | null>(null);
   // the first run asks which world to start in; everyone else lands in Build, the full map
-  const [world, setWorldState] = useState<World | null>(() => (tour.on ? null : (readWorld() ?? "build")));
+  const [world, setWorldState] = useState<World | null>(() => (intro ? "build" : tour.on ? null : (readWorld() ?? "build")));
   const setWorld = (w: World) => {
     setWorldState(w);
     try {
@@ -149,6 +156,7 @@ export function App() {
   const [source, setSource] = useState<string | null>(null); // an empty mine you tapped
   // map picks: an empty mine opens its connect sheet, anything else its panel
   const pickOnMap = (k: string | null) => {
+    if (intro) return tourly.pick(k);
     if (k?.startsWith("src:")) {
       setSource(k.slice(4));
       setCheckin(false);
@@ -305,8 +313,21 @@ export function App() {
   return (
     <div className={panel ? "app picked" : "app"}>
       <main className="floor">
-        <FactoryMap state={state} onPick={pickOnMap} focus={focusKey ?? panel} showLabels={showLabels} pings={show("line") ? pings : undefined} teachingKeys={lessonFocus(state, tour.lesson?.id)} />
-        <ShipCelebration state={state} />
+        <FactoryMap
+          state={state}
+          onPick={pickOnMap}
+          focus={intro ? tourly.cam.focus : (focusKey ?? panel)}
+          wide={intro ? tourly.cam.wide : null}
+          lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
+          showLabels={showLabels}
+          teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
+        />
+        <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
+        {intro && <div className="tour-vignette" aria-hidden="true" />}
+        {intro && tourly.top}
+        {intro && tourly.card}
+        {!intro && (<>
 
         <header className="topbar">
           <div className="chips">
@@ -606,6 +627,7 @@ export function App() {
             settings={settings}
           />
         )}
+        </>)}
       </main>
     </div>
   );

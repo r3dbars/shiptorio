@@ -10,11 +10,13 @@ interface Props {
   showLabels?: boolean; // all labels on; otherwise they show on hover
   teachingKeys?: string[]; // pinned labels for the concept the tour is teaching
   pings?: Ping[]; // the pulsing marker on whatever needs you, then quiet tags on busy machines
+  wide?: number | null; // no focus: pull back over the whole island, this far out (the welcome tour)
+  lift?: number; // keep what the camera's on this much higher, as a fraction of height (a card sits below)
 }
 
 const NO_PINGS: Ping[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [] }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -98,8 +100,13 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   useEffect(() => {
     if (state) sceneRef.current?.update(state);
   }, [state]);
-  useEffect(() => sceneRef.current?.focus(focus), [focus]);
+  useEffect(() => {
+    if (!focus && wide) sceneRef.current?.overview(wide);
+    else sceneRef.current?.focus(focus);
+    // the wide shot refits as the island grows
+  }, [focus, wide, wide && state?.districts.length, wide && state?.machines.length]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
+  useEffect(() => sceneRef.current?.setLift(lift), [lift]);
   const teachingKey = JSON.stringify(teachingKeys);
   useEffect(() => sceneRef.current?.setTeachingKeys(teachingKeys), [teachingKey]);
   const pingKey = JSON.stringify(pings);

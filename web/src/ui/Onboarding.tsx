@@ -3,7 +3,8 @@
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
 import { Component, useEffect, useState, type ReactNode } from "react";
-import { Intro } from "./Intro";
+import { App } from "../App";
+import type { SourceConfig } from "../source";
 import { IslandBackdrop } from "./IslandBackdrop";
 
 // An older phone without WebGL must still be able to sign in.
@@ -26,7 +27,9 @@ const SIM_REPOS: Repo[] = [
   { fullName: "you/demo-shop", blurb: "Demo shop · sample issues", issues: 3 },
 ];
 
-// The welcome intro is off until it's rebuilt in the game's own art (Justin, 2026-10-26): ?intro=1 shows it.
+// The welcome tour plays on the real map, a demo shop in the sim (ui/IntroTour.tsx). It stays off by default
+// until Justin signs off on it (2026-10-26): ?intro=1 shows it.
+const TOUR: SourceConfig = { kind: "sim", repo: "", scenario: "intro" };
 // Storage can be off (private windows), so seen fails open.
 const INTRO_ON = new URLSearchParams(location.search).get("intro") === "1";
 function introSeen() {
@@ -54,7 +57,8 @@ function Coach({ children }: { children: React.ReactNode }) {
 }
 
 export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
-  const [step, setStep] = useState<OnboardStep>(initial === "intro" && !INTRO_ON ? "repo" : initial);
+  // the tour comes first, before anyone's asked to sign in (playtest #107)
+  const [step, setStep] = useState<OnboardStep>(initial === "hello" && !introSeen() ? "intro" : initial === "intro" && !INTRO_ON ? "repo" : initial);
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -66,7 +70,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
       .then((r) => r.json() as Promise<{ login: string | null }>)
       .then((me) => {
         setLogin(me.login);
-        if (me.login && step === "hello") setStep(introSeen() ? "repo" : "intro");
+        if (me.login && step === "hello") setStep("repo");
       })
       .catch(() => setLogin(null));
     fetch("/api/repos")
@@ -76,20 +80,20 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   }, [live]);
 
   const signIn = () => {
-    if (live) location.href = `/auth/login?next=${encodeURIComponent(INTRO_ON ? "/?onboard=intro&source=live&intro=1" : "/?onboard=repo&source=live")}`;
-    else setStep(introSeen() ? "repo" : "intro");
+    if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
+    else setStep("repo");
   };
-  const at = step === "hello" ? 0 : step === "intro" ? 1 : 2;
+  const at = step === "intro" ? 0 : step === "hello" ? 1 : 2;
   const valid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(typed.trim());
 
-  if (step === "intro") return <Intro login={live ? login : null} onDone={() => { markIntroSeen(); setStep("repo"); }} />;
+  if (step === "intro") return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep(live && login ? "repo" : "hello"); }} />;
 
   return (
     <div className="onboard">
       <IslandFallback><IslandBackdrop /></IslandFallback>
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
-          {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (
+          {["WELCOME", "SIGN IN", "PICK A REPO", "BUILD"].map((s, n) => (
             <span key={s} className={n === at ? "on" : n < at ? "done" : undefined}>
               {n + 1} {s}
             </span>

@@ -4,6 +4,14 @@ Run `bun run playtest --check`. Every registered simulator scenario gets a seede
 180-tick game journey and an early-disconnect journey. The driver uses the real
 simulator, shared schemas and frontend patch reducer; it chooses suggested moves,
 tries duplicate/stale choices, and checks item/machine/PR and wire invariants.
+The guided intro uses its own eight-beat player strategy: the same UI readiness
+checks and commands build the line, launch once, permit docs, add a verification
+check, connect the sample Sentry mine, then enable lights-out play. It must observe
+the scarred item pass verification on its second attempt and launch, plus earned
+automated launches and sample Sentry ore. Duplicate commands must not mutate state.
+The intro disconnect check closes during the delayed starter build. Intro fixtures
+are simulation-only; `source=live&intro=1` cannot enable the tour.
+
 JSON traces and a concise Markdown papercut report go to ignored `playtest-results/`.
 Use `--seed 71`, `--scenario heal`, or `--out /absolute/output/path` to reproduce.
 `--check` fails on P1 findings; P2s remain visible in the report. Unit tests also
