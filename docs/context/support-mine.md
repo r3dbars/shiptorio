@@ -50,9 +50,21 @@ Re:/Fwd:), because mail clients drop References too often.
 
 **Connect:** `/connect/support?repo=owner/name` (signed-in, repo access required). Opening it makes the email
 token and plugs the well into the map. The Intercom client secret, access token and admin id are pasted there.
-Keys live in KV `cred:support:<repo>`; Worker secrets `SUPPORT_INBOUND_TOKEN`, `INTERCOM_CLIENT_SECRET`,
-`INTERCOM_TOKEN`, `INTERCOM_ADMIN_ID` win, but only for the repo named in `SUPPORT_REPO` (operator, local dev). Stored keys
-are encrypted with the #155 master key and bound to the repo (the D1 credentials table only takes sentry/posthog).
+Keys live in encrypted KV `cred:support:<installationId>:<repoId>`, with AAD
+`support:<installationId>:<repoId>`. Both IDs come from the active D1 repository/installation mapping.
+The same repository retains its connection after a rename; a replacement reusing the old name or a
+changed installation cannot inherit it. Legacy name-only keys are ignored: reconnect rather than guessing ownership.
+
+Optional operator Worker secrets `SUPPORT_INBOUND_TOKEN`, `INTERCOM_CLIENT_SECRET`, `INTERCOM_TOKEN`,
+`INTERCOM_ADMIN_ID`, and outgoing `RESEND_API_KEY`/`SUPPORT_FROM` require all three operator settings:
+`SUPPORT_REPO` (setup label), `SUPPORT_REPO_ID` and `SUPPORT_INSTALLATION_ID` (the exact numeric identity).
+The IDs can be read from `repos.repo_id` and `repos.installation_id` for the connected repository.
+Name-only configuration fails closed. Explicit IDs preserve the same actual repository across rename.
+Stored keys use the #155 master key (the D1 credential table only takes sentry/posthog).
+
+Account/factory cleanup must delete the identity key via `supportCredentialKey({ installationId, repoId })`,
+also remove any legacy `cred:support:<full_name>` key, and clear the factory's support conversations,
+`supportSeen`, `supportSend:*` and `delivery:support-*` records. Inbound URL bearer tokens are redacted before logging.
 
 **Sending:** Intercom tickets reply into the conversation (needs token + admin id). Email replies go through
 Resend when `RESEND_API_KEY` and `SUPPORT_FROM` are set. Without a sender, a tapped reply lands in the
