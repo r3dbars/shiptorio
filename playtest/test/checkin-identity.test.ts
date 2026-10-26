@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { Move, WebToServer } from "@shiptorio/shared";
+import type { Move, WebToServer } from "../../shared/src";
 import { createCheckInSession } from "../../web/src/ui/CheckIn";
 
 const card = (id: string): Move => ({ id, title: `Plan issue ${id}`, why: "A real choice", createdAt: 1,
