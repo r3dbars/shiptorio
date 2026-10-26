@@ -50,7 +50,7 @@ import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest,
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
-import { emptyBrain, recordThought } from "./brain";
+import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
 import { foldSignal, matchDistrict } from "./ore";
@@ -250,6 +250,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // Locked ship cards keep "run the missing check" on top; Spark can't talk a merge past the gauntlet.
       if (pick && !m.locked) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
       if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
+      // The why line only describes the option Spark picked, so a locked card keeps its own reason.
+      if (call.because[m.id] && !m.locked) move = { ...move, because: call.because[m.id] };
       return move;
     });
   }
@@ -550,12 +552,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
+      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
@@ -1426,7 +1428,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
         const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
         const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
-        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book) };
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book), brain: scoreShip(s.brain, launched.id) };
         next.stations = liveStations(next, now);
         await tx.put("state", next);
         await tx.put("permits", book);
@@ -1438,7 +1440,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     if (!committed) return;
     const { next, launched, auto } = committed;
-    this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations } });
+    this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations, brain: next.brain } });
     await this.scheduleOrbitDeadline();
     await this.refreshDecisions();
     this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);

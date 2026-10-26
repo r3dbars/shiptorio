@@ -2,9 +2,10 @@
 // Right = do it (the suggested pick), left = later, down = never (+ one tap on why), up = details, tap = zoom.
 // Every gesture also has a button and an arrow key.
 
+import { because } from "./because";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
-import { CHECKIN, STAGE_LABEL, WORDS } from "../copy";
+import { CHECKIN, STAGE_LABEL, THINKS, WORDS } from "../copy";
 
 type Gesture = "right" | "left" | "down" | "up";
 type Why = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -299,6 +300,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
                   </div>
                   <div className="ci-title">{m.title}</div>
                   <p className="ci-why">{m.why}</p>
+                  {because(m) && <p className="why-line"><b>{THINKS.why}</b> {because(m)}</p>}
                   {m.evidence && (
                     <div className="ci-stamps">
                       {m.evidence.map((e) => (

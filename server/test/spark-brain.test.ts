@@ -1,7 +1,8 @@
 import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, describe, expect, it } from "bun:test";
 import { gameMaster, triage, type GameMasterBrief } from "../src/spark";
-import { emptyBrain, recordThought, sparkShare } from "../src/brain";
+import { emptyBrain, recordThought, scoreShip, sparkShare } from "../src/brain";
+import { scorecard } from "@shiptorio/shared";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -18,11 +19,12 @@ const brief: GameMasterBrief = {
 
 describe("Spark game master", () => {
   it("keeps only real card ids and real option ids", async () => {
-    reply({ order: ["bottleneck:review-1", "made-up", "ship"], reason: "Review is the jam.", picks: { ship: "later", "bottleneck:review-1": "merge_everything" }, bottleneck: { title: "Review is backed up", why: "Two fixes wait." } });
+    reply({ order: ["bottleneck:review-1", "made-up", "ship"], reason: "Review is the jam.", picks: { ship: "later", "bottleneck:review-1": "merge_everything" }, because: { ship: "  Two  fixes wait on review first. ", ghost: "x" }, bottleneck: { title: "Review is backed up", why: "Two fixes wait." } });
     const call = await gameMaster(env, brief);
     expect(call.order).toEqual(["bottleneck:review-1", "ship"]);
     expect(call.picks).toEqual({ ship: "later" });
     expect(call.bottleneck?.title).toBe("Review is backed up");
+    expect(call.because).toEqual({ ship: "Two fixes wait on review first." });
   });
   it("refuses an empty order so the rule ranking stands", async () => {
     reply({ order: ["nope"], reason: "?" });
@@ -73,5 +75,42 @@ describe("Spark judges", () => {
   it("permit: advice needs a boolean", async () => {
     reply({ recommend: false, why: "Only typo fixes so far." });
     expect(await judgePermit(env, { lane: "docs", streak: 5, need: 5, ships: [], openRisks: [] })).toEqual({ recommend: false, why: "Only typo fixes so far." });
+  });
+});
+
+import { planLocalTask } from "../src/spark";
+describe("plans learn from never swipes", () => {
+  it("sends the player's past calls to the planner and cites the ones it heeded", async () => {
+    const bodies: string[] = [];
+    const turns = [
+      { tool: "read_issue", reason: "Read it" },
+      { tool: "read_file", path: "src/cart.ts", reason: "Read the code" },
+      { tool: "assign_job", reason: "Clear", plan: "Fix the percent math.", acceptance: ["SAVE10 takes 10%"], files: ["src/cart.ts"], heeded: ["You said no refactors in /src, so this only touches discount()."] },
+    ];
+    globalThis.fetch = (async (_: unknown, init?: RequestInit) => { bodies.push(String(init?.body)); return Response.json({ choices: [{ message: { content: JSON.stringify(turns[bodies.length - 1]) } }] }); }) as unknown as typeof fetch;
+    const feedback = JSON.stringify({ excludedMoveClasses: [{ kind: "build", scope: "district:src" }], playerCorrections: ["Player correction for build in district:src: Refactor cart. Reason: wrong call"] });
+    const out = await planLocalTask(env, { title: "SAVE10", body: "", district: "src", playerFeedback: feedback }, ["src/cart.ts"], async () => "code", async () => {});
+    expect(bodies[0]).toContain("wrong call");
+    expect(out.heeded).toHaveLength(1);
+    expect(out.plan).toContain("Respects your past calls:\n- You said no refactors");
+  });
+});
+
+describe("scorecard", () => {
+  const t = (decision: "plan" | "review" | "triage", by: "spark" | "fallback", outcome: string, itemId = "gh-1") => ({ decision, by, outcome, itemId, at: 1, model: "m", ms: 1, title: "x", reason: "r" });
+  it("measures plan success, review catch rate and fallback share", () => {
+    let b = emptyBrain("m", true);
+    expect(scorecard(b)).toMatchObject({ planSuccess: null, catchRate: null, fallbackRate: null });
+    b = recordThought(b, t("plan", "spark", "Planned 2 files"));
+    b = recordThought(b, t("plan", "spark", "Re-planned after a scar")); // same job, counted once
+    b = recordThought(b, t("plan", "spark", "Planned 1 file", "gh-2"));
+    b = recordThought(b, t("review", "spark", "Sent codex's PR back"));
+    b = recordThought(b, t("review", "spark", "Passed codex's PR"));
+    b = recordThought(b, t("review", "spark", "Verdict made, comment didn't post yet; retrying")); // not a new verdict
+    b = recordThought(b, t("triage", "fallback", "bug → web"));
+    b = scoreShip(b, "gh-1")!;
+    b = scoreShip(b, "gh-1")!; // a redelivered merge doesn't count twice
+    b = scoreShip(b, "gh-9")!; // never planned, not on the card
+    expect(scorecard(b)).toEqual({ planSuccess: 0.5, catchRate: 0.5, fallbackRate: 1 / 7, plans: 2, shipped: 1, reviews: 2, catches: 1 });
   });
 });

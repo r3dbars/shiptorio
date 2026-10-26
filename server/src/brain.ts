@@ -4,16 +4,21 @@
 
 import type { Brain, Thought } from "@shiptorio/shared";
 
+type Score = NonNullable<Brain["score"]>;
+const emptyScore = (): Score => ({ plans: 0, shipped: 0, reviews: 0, catches: 0, open: [] });
+
 const KEEP = 40;
 
 export const emptyBrain = (model: string, online: boolean): Brain => ({ model, online, decisions: 0, fallbacks: 0, thoughts: [] });
 
 /** Adds one decision, newest first. Pure: returns a new brain. */
 export function recordThought(brain: Brain, thought: Omit<Thought, "id">): Brain {
+  const score = scoreThought(brain.score ?? emptyScore(), thought);
   const t: Thought = { ...thought, id: crypto.randomUUID(), title: thought.title.slice(0, 160), outcome: thought.outcome.slice(0, 200), reason: thought.reason.slice(0, 400) };
   return {
     ...brain,
     model: thought.by === "spark" ? thought.model : brain.model,
+    score,
     decisions: brain.decisions + (thought.by === "spark" ? 1 : 0),
     fallbacks: brain.fallbacks + (thought.by === "fallback" ? 1 : 0),
     // A re-rank that lands on the same top card replaces the last one, so ranking can't bury triage and plans.
@@ -23,3 +28,17 @@ export function recordThought(brain: Brain, thought: Omit<Thought, "id">): Brain
 
 /** Share of logged decisions Spark made itself. */
 export const sparkShare = (brain: Brain): number => brain.decisions + brain.fallbacks ? brain.decisions / (brain.decisions + brain.fallbacks) : 0;
+
+/** A Spark plan opens a job on the scorecard (re-plans on rework don't count twice); a Spark verdict counts as a review, a send-back as a catch. */
+function scoreThought(score: Score, t: Omit<Thought, "id">): Score {
+  if (t.by !== "spark") return score;
+  if (t.decision === "plan" && t.itemId && !score.open.includes(t.itemId)) return { ...score, plans: score.plans + 1, open: [t.itemId, ...score.open].slice(0, 50) };
+  if (t.decision === "review" && /^(Passed|Sent)/.test(t.outcome)) return { ...score, reviews: score.reviews + 1, catches: score.catches + (t.outcome.startsWith("Sent") ? 1 : 0) };
+  return score;
+}
+
+/** A merged PR closes its job on the scorecard, if the planner planned it. */
+export function scoreShip(brain: Brain | undefined, itemId: string): Brain | undefined {
+  if (!brain?.score?.open.includes(itemId)) return brain;
+  return { ...brain, score: { ...brain.score, shipped: brain.score.shipped + 1, open: brain.score.open.filter(id => id !== itemId) } };
+}

@@ -483,6 +483,13 @@ export const THINKS = {
   latest: (sim: boolean) => `Latest calls${sim ? " · sandbox" : ""}`,
   empty: "Nothing yet. Decisions show up here as work comes in.",
   rule: "rule",
+  scorecard: "Scorecard",
+  plansShipped: "plans shipped",
+  reviewCatches: "reviews caught a problem",
+  ruleShare: "calls a backup rule made",
+  ofTotal: (n: number, total: number) => `${n} of ${total}`,
+  /** The one-line why on every card. */
+  why: "Why:",
   /** The credit, linked to the judge page on how the planner runs the factory. */
   credit: (model?: string) => `${CREDIT}${model ? ` · ${model}` : ""} · see how it runs Shiptorio →`,
   verb: {
