@@ -1,3 +1,4 @@
+import { signupAllowed, addPending, redeemInvite } from './signup';
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
 import { convertManifestCode } from "./github";
@@ -53,11 +54,21 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
     headers: { authorization: `Bearer ${access_token}`, "user-agent": "shiptorio", accept: "application/vnd.github+json" },
   });
   const { login } = (await userRes.json()) as { login: string };
-  if (!isAllowed(env.ALLOWED_LOGINS, login)) return new Response(`${login} isn't on the allow list`, { status: 403 });
+  if (!login || !userRes.ok) return new Response('GitHub login failed',{status:401});
+  const normalized = login.toLowerCase();
+  const invite = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_invite=([^;]+)/)?.[1];
+  if (invite) await redeemInvite(env,decodeURIComponent(invite),normalized);
+  if (!await signupAllowed(env,normalized)) await addPending(env,normalized,'github');
   const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
   return new Response(null, {
     status: 302,
-    headers: { location: sameOriginPath(next && decodeURIComponent(next), url.origin), "set-cookie": await makeSessionCookie(env.SESSION_SECRET, login) },
+    headers: [
+      ['location',await signupAllowed(env,normalized) ? sameOriginPath(next && decodeURIComponent(next), url.origin) : '/waitlist'],
+      ['set-cookie',await makeSessionCookie(env.SESSION_SECRET,normalized)],
+      ['set-cookie','shiptorio_invite=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0'],
+      ['set-cookie','shiptorio_oauth_state=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0'],
+      ['set-cookie','shiptorio_next=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0'],
+    ],
   });
 }
 

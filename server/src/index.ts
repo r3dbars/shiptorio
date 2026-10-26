@@ -1,3 +1,4 @@
+import { signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, redeemInvite, resourceQuota, runQuota, type SignupEnv } from './signup';
 import { Hono } from "hono";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
@@ -16,7 +17,7 @@ import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 
 export { Factory };
 
-export interface Env extends FactoryEnv {
+export interface Env extends FactoryEnv, SignupEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   CACHE: KVNamespace;
@@ -49,13 +50,14 @@ app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
+    if (!await admit(c.env, await ipScope(c.req.raw, 'pairing'), 60, 60000, 'runner authentication flood')) return c.json({error:'try again later'},429);
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
     return;
   }
-  const denied = await previewAccess(c.req.raw, c.env);
+  const denied = c.env.SIGNUP_GATE_MODE === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
   c.header("Cache-Control", "no-store");
@@ -68,7 +70,34 @@ app.onError((err, c) => {
 
 // ---------- auth + setup ----------
 
-app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
+app.get("/auth/login", (c) => c.env.SIGNUP_GATE_MODE === 'password' ? login(new URL(c.req.url), c.env) : signupPage(c.env));
+app.post('/auth/login', async c => {
+  if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
+  if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
+  const raw = await c.req.text();
+  if (raw.length>4096) return c.text('Too large',413);
+  const form = new URLSearchParams(raw);
+  if (!await turnstile(c.req.raw,c.env,form,'signin')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
+  const response = await login(new URL(c.req.url),c.env);
+  // Store invite on the OAuth path; never include it in GitHub URLs or logs.
+  const invite = form.get('invite') || '';
+  if (invite.length <=100 && invite) response.headers.append('set-cookie',`shiptorio_invite=${encodeURIComponent(invite)}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  return response;
+});
+app.get('/waitlist',c => signupPage(c.env));
+app.post('/waitlist',async c => {
+  if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
+  if (!await admit(c.env,await ipScope(c.req.raw,'waitlist'),5,3600000,'waitlist flood')) return c.text('Try again later',429);
+  const raw = await c.req.text();
+  if (raw.length>4096) return c.text('Too large',413);
+  const form=new URLSearchParams(raw),email=(form.get('email')||'').trim().toLowerCase();
+  if (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return signupPage(c.env,'Enter a valid email.',400);
+  if (!await turnstile(c.req.raw,c.env,form,'waitlist')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
+  await addPending(c.env,email,'email');
+  return signupPage(c.env,'You are on the waitlist. Justin will review your request.');
+});
+app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
+app.on(['GET','POST'],'/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", () => logout());
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
@@ -76,7 +105,7 @@ app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
 app.get("/api/me", async (c) => {
   const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  return c.json({ login, allowed: !!login && isAllowed(c.env.ALLOWED_LOGINS, login) });
+  return c.json({ login, allowed: !!login && await signupAllowed(c.env, login) });
 });
 
 app.get("/api/setup/status", async (c) => c.json({
@@ -104,7 +133,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "sentry" && kind !== "posthog") return c.notFound();
   const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  if (!login || !await signupAllowed(c.env, login)) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const url = publicUrl(new URL(c.req.url), c.env);
   const repoParam = c.req.query("repo") ?? "";
   const repo = REPO_RE.test(repoParam) ? repoParam.toLowerCase() : await linkedRepo(c.env, kind);
@@ -132,7 +161,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
 
 app.get("/api/repos", async (c) => {
   const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
+  if (!login || !await signupAllowed(c.env, login)) return c.json({ error: "login required" }, 401);
   const repos = await c.env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name").all<{ full_name: string; installation_id: number; default_branch: string | null }>();
   // Preserve the legacy database fields while serving the browser's repo-card contract.
   // Issue counts are not available from this query; omit them rather than inventing zero.
@@ -147,7 +176,12 @@ app.get("/api/repos", async (c) => {
 
 app.use("/api/repos/*", async (c, next) => {
   const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
+  if (!login || !await signupAllowed(c.env, login)) return c.json({ error: "login required" }, 401);
+  const quotaRepo = c.req.path.match(/^\/api\/repos\/([^/]+)\/([^/]+)/);
+  if (quotaRepo) {
+    const repo = `${quotaRepo[1]}/${quotaRepo[2]}`.toLowerCase();
+    if (!await resourceQuota(c.env,login,'repo',repo) || !await resourceQuota(c.env,login,'factory',repo)) return c.json({error:'repository/factory quota reached'},429);
+  }
   c.set("login", login);
   await next();
 });
@@ -168,6 +202,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (text.length > 8192) return c.json({ error: "too large" }, 413);
   const parsed = EnqueueRunner.safeParse(JSON.parse(text));
   if (!parsed.success) return c.json({ error: "invalid job" }, 400);
+  if (!await runQuota(c.env,c.get("login"))) return c.json({error:"daily run quota reached"},429);
   return c.json(await f.enqueueRunner(parsed.data), 202);
 });
 
@@ -236,6 +271,11 @@ app.post("/webhooks/github", async (c) => {
   const installation = payload.installation?.id;
   if (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
+  if (!await admit(c.env,`webhook:github:${installation}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
+  if (event === 'installation' && payload.action === 'created') {
+    const account = payload.installation?.account?.login?.toLowerCase();
+    if (!account || !await admit(c.env,`install:${account}`,10,3600000,'many installs from one account')) return c.json({error:'installation throttled'},429);
+  }
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('github', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
@@ -266,6 +306,7 @@ app.post("/webhooks/sentry", async (c) => {
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const delivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (!await admit(c.env,`webhook:sentry:${repo.toLowerCase()}`,300,60000,"Sentry webhook flood")) return c.json({error:"webhook throttled"},429);
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
