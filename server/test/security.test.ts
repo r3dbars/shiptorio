@@ -1,7 +1,9 @@
+import { credentialEnv } from "./credential-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { securityHeaders, browserMutationAllowed } from "../src/security";
 import { consumeBudget, ipSubject, LIMITS, rateLimit, requestBudget, type Budget } from "../src/rate-limit";
 import { makeSessionCookie } from "../src/session";
+import { saveCreds } from "../src/sources/creds";
 import { verifyHmac } from "../src/sources/types";
 import { authorizedSocket, browserEnv } from "./browser-fixture";
 import { signedInCookie, testD1 } from "./d1-fixture";
@@ -54,9 +56,11 @@ describe("webhook signatures", () => {
     expect(await verifyHmac(secret, body, signature, "sha256=")).toBe(false);
     expect(await verifyHmac(secret, body, "sha256=" + signature)).toBe(false);
   });
-  it("both HTTP routes reject unsigned/invalid deliveries before DB or factory access", async () => {
+  it("both HTTP routes reject unsigned/invalid deliveries before factory dispatch", async () => {
     const signature = await sign(body);
-    const env = { GITHUB_WEBHOOK_SECRET: secret, SENTRY_CLIENT_SECRET: secret, CACHE: { get: async () => null } };
+    const DB = testD1();
+    await DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?)").bind("r3dbars/shiptorio", 1).run();
+    const env = { DB, GITHUB_WEBHOOK_SECRET: secret, SENTRY_CLIENT_SECRET: secret, CACHE: { get: async () => null } };
     for (const [path, header, prefix] of [["github", "x-hub-signature-256", "sha256="], ["sentry", "sentry-hook-signature", ""]]) {
       for (const sig of [null, "invalid", prefix + "0".repeat(64), prefix + signature.slice(1)]) {
         const res = await app.fetch(request(`/webhooks/${path}`, { method: "POST", headers: sig ? { [header]: sig } : {}, body }), env as never);
@@ -70,7 +74,10 @@ describe("webhook signatures", () => {
   });
   it("per-repo Sentry signatures are bound to their credential scope without cookie or Origin", async () => {
     const signature = await sign(body);
-    const env = { CACHE: { get: async (key: string) => key === "cred:sentry:one/app" ? { clientSecret: secret } : key === "cred:sentry:two/app" ? { clientSecret: "another-test-secret" } : null } };
+    const env = { DB: testD1(), CRED_MASTER_KEY: btoa("a".repeat(32)) };
+    for (const repo of ["one/app", "two/app"]) await env.DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?)").bind(repo, 1).run();
+    await saveCreds(env, "sentry", { clientSecret: secret }, { installationId: 1, repo: "one/app" });
+    await saveCreds(env, "sentry", { clientSecret: "another-test-secret" }, { installationId: 1, repo: "two/app" });
     const send = (repo: string, sig?: string) => app.fetch(request(`/webhooks/sentry/${repo}`, { method: "POST", headers: sig ? { "sentry-hook-signature": sig } : {}, body }), env as never);
     expect((await send("one/app", signature)).status).toBe(200);
     expect((await send("one/app")).status).toBe(401);
@@ -140,7 +147,7 @@ describe("durable per-IP and per-user rate limits", () => {
     expect(results.filter(r => r.allowed)).toHaveLength(20);
     expect(await consumeBudget(store, "auth", 2000)).toEqual({ allowed: false, retryAfter: 59 });
     expect(await consumeBudget(store, "connect", 2000)).toEqual({ allowed: true, retryAfter: 0 });
-    const reloaded = new Factory({ storage: store } as never, {} as never);
+    const reloaded = new Factory({ storage: store } as never, credentialEnv({}) as never);
     const realNow = Date.now; Date.now = () => 2000;
     try { expect((await reloaded.securityLimit("auth")).allowed).toBe(false); } finally { Date.now = realNow; }
     expect((await consumeBudget(store, "auth", 61000)).allowed).toBe(true);
@@ -188,7 +195,7 @@ describe("durable per-IP and per-user rate limits", () => {
     for (const subject of ["user:test-player", "ip:192.0.2.1"]) {
       const env = { ...browserEnv, FACTORY: namespace() };
       for (let n = 0; n < LIMITS.move; n++) await rateLimit(env as never, subject, "move");
-      const f = new Factory({ storage: { get() { throw new Error("Rate-limited move reached state"); } } } as never, env as never);
+      const f = new Factory({ storage: { get() { throw new Error("Rate-limited move reached state"); } } } as never, credentialEnv(env) as never);
       for (let n = 0; n < 2; n++) {
         const socket = authorizedSocket();
         socket.serializeAttachment({ ...socket.deserializeAttachment(), rateSubject: "ip:192.0.2.1" });

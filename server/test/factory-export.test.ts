@@ -1,3 +1,5 @@
+import { credentialEnv } from "./credential-fixture";
+import { membershipCache } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { makeSessionCookie } from "../src/session";
 import { signedInCookie, testD1 } from "./d1-fixture";
@@ -17,15 +19,15 @@ function fixture(connected = true, populated = true) {
     delete: async (key: string) => data.delete(key),
     transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage),
   };
-  const env = { SESSION_SECRET: "export-test", APP_PASSWORD: "export-preview", ALLOWED_LOGINS: "owner,other", DB: testD1(), FACTORY: {idFromName: (repo: string) => repo, get: (_id: string) => factory} };
-  const factory = new Factory({storage, getWebSockets: () => []} as never, env as never);
+  const env = { SESSION_SECRET: "export-test", APP_PASSWORD: "export-preview", ALLOWED_LOGINS: "owner,other", CACHE: membershipCache, DB: testD1(), FACTORY: {idFromName: (repo: string) => repo, get: (_id: string) => factory} };
+  const factory = new Factory({storage, getWebSockets: () => []} as never, credentialEnv(env) as never);
   const request = async (login: string | null, path = "owner/repo") => {
     if (connected) {
       await env.DB.prepare("INSERT OR IGNORE INTO installations(id,account_login) VALUES(1,'owner')").run();
       await env.DB.prepare("INSERT OR IGNORE INTO repos(full_name,installation_id) VALUES('owner/repo',1)").run();
     }
     const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
-    const cookie = login ? `${await signedInCookie(env, login, ["owner/repo"])}; ${preview}` : preview;
+    const cookie = login ? `${await signedInCookie(env, login, connected ? ["owner/repo"] : [])}; ${preview}` : preview;
     return app.fetch(new Request(`https://shiptorio.com/api/repos/${path}/export`, {headers: {cookie}}), env as never);
   };
   return {request, data};
@@ -53,7 +55,7 @@ test("owner downloads a versioned factory JSON through the real route and DO met
 test("export refuses anonymous and non-owner access, missing factories, and disconnected repos", async () => {
   expect((await fixture().request(null)).status).toBe(401);
   expect((await fixture().request("other")).status).toBe(403);
-  expect((await fixture(false).request("owner")).status).toBe(404);
+  expect((await fixture(false).request("owner")).status).toBe(403);
   expect((await fixture(true, false).request("owner")).status).toBe(404);
   expect((await fixture().request("owner", "Owner/Repo")).status).toBe(200);
 });
