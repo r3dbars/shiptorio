@@ -18,7 +18,7 @@ export function testD1(): D1Database {
   });
   return {
     prepare: (sql: string) => statement(sql),
-    batch: async (list: ReturnType<typeof statement>[]) => db.transaction(() => list.map((s) => db.query(s.sql).run(...(s.args as never[]))))(),
+    batch: async (list: ReturnType<typeof statement>[]) => db.transaction(() => list.map((s) => ({meta: db.query(s.sql).run(...(s.args as never[]))})))(),
   } as unknown as D1Database;
 }
 

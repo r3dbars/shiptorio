@@ -213,6 +213,26 @@ held for the screen.
 `locked`, `plan[]`. Web → server: `choose_move` (right / a details option), `defer_move {moveId}` (left),
 `dismiss_move {moveId, why}` (down).
 
+### Progression: a reason to come back tomorrow (2026-10-26)
+
+XP only comes from real results (`shared/src/progression.ts`): a PR shipped (+10), a clean ship with no rework
+(+5), a launch that held through orbit watch (+10), a launch that ran on a permit with nobody tapping (+15), a
+new check researched (+30), a check-in card answered yes or never (+2), the deck cleared (+15), plus the first
+real move of the day (+5 × streak, capped at 7). Achievements add their own XP through `achieved()`.
+
+- **Levels** need 50 more XP each (0, 50, 150, 300, 500...) with plain titles (Tinkerer → Lights-out legend).
+- **Daily streak**: a day counts once you make one real move. At a 7-day streak you get a **shield** that
+  covers one missed day (one per 7-day run, max 2).
+- **Unlocks** show up on your real island: glass lake (3-day streak, island option B), streak lanterns
+  (level 2, one lit per streak day), gold launch pad trim (level 4), streak shield (7 days).
+- **Morning brief**: the first open of the day says how many cards wait on you, what you did last time, and
+  the deck trend. **The trend is the score**: cards waiting on you each morning, shrinking as trust grows.
+  The same tally and trend close every check-in.
+- **Nudge** (opt-in, progress sheet): one notification when new cards land while the tab is in the
+  background, at most one per 15 minutes. Real push with the tab closed needs Web Push keys (later).
+- Behind `?progress=1` until Justin turns it on by default (`?progress=demo` in the sim seeds a week of play).
+  Stored per browser for now (`shiptorio:progress:<me|sim>`); syncs per user once accounts land.
+
 ## Spark, the Foreman: the agent loop
 
 ### Where it runs

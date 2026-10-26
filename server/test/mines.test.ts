@@ -87,9 +87,9 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => sql.includes("FROM repos") ? { repo_id: 501, installation_id: 1 } : rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("FROM repos") ? { repo_id: 501, installation_id: 1 } : rows.get(String(values[0])) ?? null,
       };
-      expect(sql.includes("sentry") || sql.includes("FROM repos") || sql.includes("FROM installations")).toBe(true);
+      expect(sql.includes("sentry") || sql.includes("FROM repos") || sql.includes("FROM installations") || sql.includes("signup_counters")).toBe(true);
 
       return statement;
     } },

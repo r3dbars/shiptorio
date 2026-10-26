@@ -26,6 +26,11 @@ function fixture() {
     async first() {
       if (/github_authorization_revocations|SELECT permissions|token_version|SELECT archived_at/.test(sql)) return null;
       if (sql === 'SELECT * FROM repos WHERE full_name = ?') return repos.has(String(args[0])) ? { full_name: args[0], repo_id: repos.get(String(args[0])), installation_id: repos.get(String(args[0])) } : null;
+      if (sql.startsWith('SELECT enabled')) return null;
+      if (sql.startsWith('INSERT INTO signup_counters')) return {count:1};
+      if (sql.startsWith('SELECT factories')) return null;
+      if (sql.startsWith('INSERT OR IGNORE INTO signup_resources')) return {resource:'fixture'};
+
       if (sql.startsWith('SELECT u.id, u.login FROM sessions')) return { id: args[1], login: args[1] === 11 ? 'alice' : 'bob' };
       if (sql.includes('FROM user_repos WHERE')) return String(args[1]).startsWith(args[0] === 11 ? 'alice/' : 'bob/') ? { installation_id: args[0] } : null;
       if (sql.includes('FROM user_installations WHERE')) return args[0] === args[1] ? { installation_id: args[1] } : null;
@@ -117,7 +122,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
   const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
   let closed = 0, sent = 0;
-  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env), repo: 'bob/private' };
+  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env as never), repo: 'bob/private' };
   const ws = { deserializeAttachment: () => auth, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
   const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(f.env) as never);
   for (const repo of ['bob/private', 'alice/private']) {
