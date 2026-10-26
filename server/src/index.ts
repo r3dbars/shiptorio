@@ -335,13 +335,15 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
   if (!scope) return c.text("You don't have access to that repo's factory.", 403);
   const repoParam = scope.repo;
   const url = publicUrl(new URL(c.req.url), c.env);
+  // Upgrade legacy name-routed factories before requiring the immutable credential identity.
+  const supportFactory = await factory(c.env, repoParam);
   const token = await ensureInboundToken(c.env, repoParam);
   const view = async (extra: { error?: string; saved?: boolean } = {}) => {
     const creds = await supportCreds(c.env, repoParam);
     return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: await isOperatorSupport(c.env, repoParam) && !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
   };
   if (c.req.method === "GET") {
-    await (await factory(c.env, repoParam)).connectSupport().catch(() => null);
+    await supportFactory.connectSupport().catch(() => null);
     return c.html(await view());
   }
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
@@ -352,7 +354,7 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
   if (intercomToken && !/^[\w=:+/-]{20,400}$/.test(intercomToken)) return c.html(await view({ error: "That doesn't look like an Intercom access token." }), 400);
   if (intercomAdminId && !/^\d{1,20}$/.test(intercomAdminId)) return c.html(await view({ error: "The admin id is a number (Intercom → Settings → your profile URL)." }), 400);
   await saveSupportCreds(c.env, repoParam, { intercomClientSecret, intercomToken, intercomAdminId });
-  await (await factory(c.env, repoParam)).connectSupport().catch(() => null);
+  await supportFactory.connectSupport().catch(() => null);
   return c.html(await view({ saved: true }));
 });
 
