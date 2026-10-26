@@ -227,3 +227,12 @@ it("encrypted mines keep secret-bearing provider errors, ore, logs and browser p
   expect(JSON.stringify(posthog.events)).not.toContain(apiKey);
   expect(posthog.saved().sources?.find(s => s.kind === "posthog")?.detail).toContain("[REDACTED]");
 });
+
+it("a failed credential hydration cannot leak state on a second request", async () => {
+  const f = factoryFixture({});
+  f.kv.set("cred:sentry:example/shop", JSON.stringify({ clientSecret: "unmigrated-secret-12345" }));
+  await expect(f.factory.connectMine("sentry")).rejects.toThrow("Credential encryption key unavailable");
+  await expect(f.factory.runnerJobs()).rejects.toThrow("Credential encryption key unavailable");
+  expect(f.events).toHaveLength(0);
+  expect(f.kv.has("cred:sentry:example/shop")).toBe(true);
+});
