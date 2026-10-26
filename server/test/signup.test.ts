@@ -6,7 +6,7 @@ mock.module('cloudflare:workers',()=>({DurableObject:class {ctx:unknown;env:unkn
 const {default:app}=await import('../src/index');
 const realFetch=globalThis.fetch;
 afterEach(()=>{globalThis.fetch=realFetch;});
-const env = () => ({DB:testD1(),SESSION_SECRET:'signup-test-secret',ALLOWED_LOGINS:'r3dbars',ADMIN_LOGINS:'r3dbars',TURNSTILE_SITE_KEY:'public-test',TURNSTILE_SECRET_KEY:'private-test',ASSETS:{fetch:async()=>new Response('factory app')}});
+const env = () => ({SIGNUP_GATE_MODE:'waitlist',DB:testD1(),SESSION_SECRET:'signup-test-secret',ALLOWED_LOGINS:'r3dbars',ADMIN_LOGINS:'r3dbars',TURNSTILE_SITE_KEY:'public-test',TURNSTILE_SECRET_KEY:'private-test',ASSETS:{fetch:async()=>new Response('factory app')}});
 const req=(path:string,cookie='',body?:Record<string,string>,origin='https://shiptorio.com')=>new Request('https://shiptorio.com'+path,{method:body?'POST':'GET',headers:{cookie,origin,'content-type':'application/x-www-form-urlencoded'},body:body?new URLSearchParams(body):undefined});
 
 test('Justin approves pending user from /admin; pending cannot access assets, APIs or admin; revoke takes effect',async()=>{
@@ -65,6 +65,7 @@ test('atomic counters enforce global per-user daily quotas and resource caps; wi
     expect(await resourceQuota(e as never,'first',kind,'owner/repo4')).toBe(false);
     expect(await resourceQuota(e as never,'second',kind,'owner/repo4')).toBe(true);
   }
+  await e.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at) VALUES ('first','r3dbars',0)").run();
   for(let i=0;i<20;i++) expect(await runQuota(e as never,'first')).toBe(true);
   expect(await runQuota(e as never,'first')).toBe(false);
 });
@@ -95,4 +96,23 @@ test('password fallback remains explicit and does not unlock admin with password
   const e={...env(),SIGNUP_GATE_MODE:'password',APP_PASSWORD:'old-preview'};
   expect((await app.fetch(req('/'),e as never)).status).toBe(401);
   expect(await (await app.fetch(req('/'),e as never)).text()).toContain('Password');
+});
+
+test('failed runner pairings throttle and surface on admin without calling a factory',async()=>{
+  const e=env();
+  for(let i=0;i<10;i++) expect((await app.fetch(new Request('https://shiptorio.com/api/runner/owner/repo/claim',{method:'POST',headers:{authorization:'Bearer invalid','cf-connecting-ip':'192.0.2.8'}}),e as never)).status).toBe(401);
+  expect((await app.fetch(new Request('https://shiptorio.com/api/runner/owner/repo/claim',{method:'POST',headers:{authorization:'Bearer invalid','cf-connecting-ip':'192.0.2.8'}}),e as never)).status).toBe(429);
+  const admin=await signedInCookie(e,'r3dbars');
+  const page=await app.fetch(req('/admin',admin),e as never);
+  expect(await page.text()).toContain('repeated failed runner authentication');
+});
+
+test('Turnstile sign-in has no GET bypass in waitlist mode; missing keys never start OAuth',async()=>{
+  const e={...env(),TURNSTILE_SECRET_KEY:undefined};
+  const get=await app.fetch(req('/auth/login'),e as never);
+  expect(get.headers.get('location')).toBeNull();
+  expect(await get.text()).toContain('data-action="signin"');
+  const post=await app.fetch(req('/auth/login','',{'cf-turnstile-response':'fake'}),e as never);
+  expect(post.status).toBe(403);
+  expect(post.headers.get('location')).toBeNull();
 });

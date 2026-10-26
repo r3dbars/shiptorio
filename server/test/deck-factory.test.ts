@@ -25,7 +25,7 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
     async getAlarm() { return alarm; }, async setAlarm(value: number) { alarm = value; },
   };
   const DB = { prepare(sql: string) {
-    if (sql.startsWith('SELECT u.id')) return {bind:()=>({first:async()=>({id:1,login:'test-player'})})};
+    if (sql.startsWith('SELECT u.id') || sql.startsWith('SELECT u.login')) return {bind:()=>({first:async()=>({id:1,login:'test-player'})})};
     if (sql.startsWith('SELECT enabled')) return {bind:()=>({first:async()=>null})};
     return { bind(...args: unknown[]) { return {
     async all() { if (!sql.startsWith("SELECT kind, scope")) throw new Error(`Unexpected query ${sql}`); return { results: [...rules.values()].filter(r => r.repo === args[0]).map(({ kind, scope, actionId }) => ({ kind, scope, actionId })) }; },

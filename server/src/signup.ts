@@ -1,14 +1,15 @@
 import { currentUser } from './accounts';
 import type { Env } from './index';
-import { isAllowed, readSession } from './session';
+import { isAllowed } from './session';
 import { isLocal } from './auth';
 
 export interface SignupEnv {
-  SIGNUP_GATE_MODE?: string; // password = emergency rollback; otherwise waitlist
+  SIGNUP_GATE_MODE?: string; // waitlist opts in after Turnstile setup; default/password = rollback
   ADMIN_LOGINS?: string;
   TURNSTILE_SITE_KEY?: string;
   TURNSTILE_SECRET_KEY?: string;
 }
+export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist' ? 'waitlist' : 'password';
 export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
 export const isAdmin = (env: Env, login: string) => isAllowed(env.ADMIN_LOGINS || 'r3dbars', login);
@@ -26,7 +27,6 @@ export async function hash(value: string) {
 // Atomic D1 counter: shared across isolates, bounded by time window, no KV races.
 export async function admit(env: Env, scope: string, cap: number, windowMs: number, reason: string, now = Date.now()): Promise<boolean> {
   const bucket = Math.floor(now/windowMs);
-  if (Math.random() < 0.01) await env.DB.prepare('DELETE FROM signup_counters WHERE rowid IN (SELECT rowid FROM signup_counters WHERE expires_at < ? LIMIT 100)').bind(now).run();
   const result = await env.DB.prepare(`INSERT INTO signup_counters(scope,bucket,count,expires_at) SELECT ?,?,1,? WHERE ? > 0
     ON CONFLICT(scope,bucket) DO UPDATE SET count=count+1 WHERE count < ? RETURNING count`)
     .bind(scope,bucket,(bucket+2)*windowMs,cap,cap).first();
@@ -81,6 +81,7 @@ export async function resourceQuota(env: Env, login: string, kind: 'factory'|'re
   return !!await env.DB.prepare('SELECT resource FROM signup_resources WHERE login=? AND kind=? AND resource=?').bind(login.toLowerCase(),kind,resource.toLowerCase()).first();
 }
 export async function runQuota(env: Env, login: string): Promise<boolean> {
+  if (!await signupAllowed(env,login)) return false;
   const row = await env.DB.prepare('SELECT runs_daily FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{runs_daily:number}>();
   return admit(env,`runs:${login.toLowerCase()}`,row?.runs_daily ?? 20,86400000,'daily run quota');
 }
@@ -88,6 +89,12 @@ export async function runQuota(env: Env, login: string): Promise<boolean> {
 export async function adminSignup(request: Request, env: Env): Promise<Response> {
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url)))?.login || null;
   if (!login || !isAdmin(env,login) || !await signupAllowed(env,login)) return new Response('Admin only',{status:403});
+  // Bounded retention work on admin visits rather than a sweep on every public request.
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM signup_counters WHERE rowid IN (SELECT rowid FROM signup_counters WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
+    env.DB.prepare('DELETE FROM signup_abuse WHERE scope IN (SELECT scope FROM signup_abuse WHERE updated_at < ? LIMIT 100)').bind(Date.now()-30*86400000),
+    env.DB.prepare('DELETE FROM signup_invites WHERE digest IN (SELECT digest FROM signup_invites WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
+  ]);
   let message = '';
   if (request.method === 'POST') {
     if (request.headers.get('origin') !== new URL(request.url).origin) return new Response('Invalid origin',{status:403});

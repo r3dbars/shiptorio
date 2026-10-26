@@ -8,7 +8,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
 const { default: app } = await import("../src/index");
 const secret = "test-repo-session", password = "test-repo-preview";
 const preview = async () => (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
-const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", DB: testD1() });
+const baseEnv = () => ({ SIGNUP_GATE_MODE:"waitlist", APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", DB: testD1() });
 const get = (env: object, path: string, cookie: string) => app.fetch(new Request(`https://shiptorio.com${path}`, { headers: { cookie } }), env as never);
 
 test("a player's repo cards list only the repos their GitHub account reaches, with legacy fields", async () => {

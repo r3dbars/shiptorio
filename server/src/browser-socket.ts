@@ -1,5 +1,5 @@
 import { currentUser } from './accounts';
-import { signupAllowed, hash } from './signup';
+import { signupMode, signupAllowed, hash } from './signup';
 import { isAllowed, readSessionDetails } from "./session";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database; SIGNUP_GATE_MODE?: string }
@@ -23,7 +23,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
   const url = new URL(request.url);
   const local = !!env.DEV_LOGIN && ["localhost", "127.0.0.1"].includes(url.hostname);
   let expiresAt = session.expiresAt;
-  if (!local && (!env.DB || env.SIGNUP_GATE_MODE === "password")) {
+  if (!local && (!env.DB || signupMode(env) === "password")) {
     if (!env.APP_PASSWORD) return null;
     const previewValue = cookie?.match(/(?:^|;\s*)shiptorio_access=([^;]+)/)?.[1];
     const preview = await readSessionDetails(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, previewValue ? `shiptorio_session=${previewValue}` : null, now);
@@ -36,14 +36,14 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
 export function browserSocketAllowed(auth: unknown, env: BrowserSocketEnv, epoch: string | null, now = Date.now()): auth is BrowserSocketAuth {
   if (!auth || typeof auth !== "object") return false;
   const value = auth as Partial<BrowserSocketAuth>;
-  return !!epoch && !!env.SESSION_SECRET && typeof value.login === "string" && (!!env.DB && env.SIGNUP_GATE_MODE !== "password" || isAllowed(env.ALLOWED_LOGINS ?? "", value.login))
+  return !!epoch && !!env.SESSION_SECRET && typeof value.login === "string" && (!!env.DB && signupMode(env) !== "password" || isAllowed(env.ALLOWED_LOGINS ?? "", value.login))
     && typeof value.expiresAt === "number" && Number.isFinite(value.expiresAt) && value.expiresAt > now && value.epoch === epoch;
 }
 
 // Revalidate live session and approval after hibernation and before handling moves.
 export async function browserSocketActive(auth: BrowserSocketAuth, env: BrowserSocketEnv): Promise<boolean> {
   if (!env.DB) return true; // legacy unit fixtures; deployed Factory always binds D1
-  if (!auth.sessionHash || !Number.isSafeInteger(auth.userId)) return env.SIGNUP_GATE_MODE === "password";
+  if (!auth.sessionHash || !Number.isSafeInteger(auth.userId)) return signupMode(env) === "password";
   const row = await env.DB.prepare('SELECT u.login FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=? AND s.user_id=? AND s.expires_at>?').bind(auth.sessionHash,auth.userId,Date.now()).first<{login:string}>();
   return !!row && row.login.toLowerCase() === auth.login.toLowerCase() && await signupAllowed({DB:env.DB,ALLOWED_LOGINS:env.ALLOWED_LOGINS},row.login);
 }

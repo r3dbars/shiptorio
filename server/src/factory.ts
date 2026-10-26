@@ -1,4 +1,4 @@
-import { runQuota } from './signup';
+import { signupMode, runQuota } from './signup';
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -375,7 +375,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         old.status = "failed";
       }
       if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
-      if (this.env.SIGNUP_GATE_MODE !== 'password') {
+      if (signupMode(this.env) !== 'password') {
         const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
         if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
       }
@@ -1728,7 +1728,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       this.running.add(item.id);
       // Bounded hosted jobs execute in an alarm, not an HTTP request or a 30-second waitUntil.
       // One job per alarm keeps total work under the alarm's 15-minute limit.
-      if (this.env.SIGNUP_GATE_MODE !== 'password') {
+      if (signupMode(this.env) !== 'password') {
         const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
         if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
       }

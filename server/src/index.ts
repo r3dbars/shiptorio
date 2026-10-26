@@ -1,4 +1,4 @@
-import { signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
+import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { Hono, type Context, type Next } from "hono";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
@@ -63,14 +63,20 @@ app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
-    if (!await admit(c.env, await ipScope(c.req.raw, 'pairing'), 60, 60000, 'runner authentication flood')) return c.json({error:'try again later'},429);
-    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
+    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
+      if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
+      return c.json({error:'runner authentication required'},401);
+    }
+    if (!await factory(c.env,identity.repo).isRunnerPaired(identity.pairId)) {
+      if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
+      return c.json({error:'runner pairing revoked'},401);
+    }
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
     return;
   }
-  const denied = c.env.SIGNUP_GATE_MODE === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
+  const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
   c.header("Cache-Control", "no-store");
@@ -83,7 +89,7 @@ app.onError((err, c) => {
 
 // ---------- auth + setup ----------
 
-app.get("/auth/login", (c) => c.env.SIGNUP_GATE_MODE === 'password' ? login(new URL(c.req.url), c.env) : signupPage(c.env));
+app.get("/auth/login", (c) => signupMode(c.env) === 'password' ? login(new URL(c.req.url), c.env) : signupPage(c.env));
 app.post('/auth/login', async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
@@ -241,6 +247,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   const f = factory(c.env, repo);
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
+    if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
     const expires = Date.now() + 8 * 60 * 60 * 1000;
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires }), expires });

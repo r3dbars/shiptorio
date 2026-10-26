@@ -27,3 +27,6 @@ CREATE TABLE signup_resources (
   login TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('factory','repo')),
   resource TEXT NOT NULL, PRIMARY KEY(login,kind,resource)
 );
+
+CREATE INDEX signup_abuse_updated ON signup_abuse(updated_at);
+CREATE INDEX signup_invites_expiry ON signup_invites(expires_at);
