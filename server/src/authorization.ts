@@ -1,3 +1,4 @@
+import { signupAllowed } from "./signup";
 // Shared adapter over accounts.ts. HTTP, browser sockets and runner grants use one revocable session.
 import { currentUser } from './accounts';
 import { isAllowed, readSessionDetails } from './session';
@@ -23,7 +24,7 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
   if (!Number.isSafeInteger(user.id) || !/^[a-f0-9]{64}$/.test(user.sessionHash ?? '')) return null;
   const sessionUser = await env.DB.prepare('SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?').bind(user.sessionHash, user.id, Date.now()).first<{ id: number; login: string }>();
-  if (!sessionUser || !isAllowed(env.ALLOWED_LOGINS, sessionUser.login)) return null;
+  if (!sessionUser || !await signupAllowed(env,sessionUser.login)) return null;
   const row = await env.DB.prepare('SELECT installation_id FROM repos WHERE full_name = ?').bind(repo).first<{ installation_id: number }>();
   if (!row?.installation_id) return null;
   const installed = await env.DB.prepare('SELECT id FROM installations WHERE id = ?').bind(row.installation_id).first();

@@ -1,7 +1,9 @@
+import { signupAllowed } from './signup';
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
 
+import { parseProgress, validProgress, type Progress } from "@shiptorio/shared";
 import { isAllowed, makeSessionCookie, readSessionDetails } from "./session";
 
 export interface AccountsEnv {
@@ -49,7 +51,7 @@ export async function createSession(env: AccountsEnv, user: User, userAgent: str
 }
 
 /** The signed-in player, or null. A cookie only counts while its session row exists and the login is allowed. */
-export async function currentUser(env: AccountsEnv, cookie: string | null, url: URL | null = null, now = Date.now()): Promise<User | null> {
+export async function currentUser(env: AccountsEnv, cookie: string | null, url: URL | null = null, now = Date.now(), allowPending = false): Promise<User | null> {
   const dev = devUser(env, url);
   if (dev) return dev;
   const session = await readSessionDetails(env.SESSION_SECRET, cookie, now);
@@ -58,7 +60,7 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   const row = await env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
     .bind(await sha256(session.ref.sid), session.ref.uid, now)
     .first<{ id: number; login: string }>();
-  if (!row || !isAllowed(env.ALLOWED_LOGINS ?? "", row.login)) return null;
+  if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
   return { id: row.id, login: row.login };
 }
 
@@ -148,5 +150,26 @@ export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<str
   await env.DB.batch(entries.map(([k, v]) =>
     env.DB.prepare("INSERT INTO user_prefs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
       .bind(user.id, k, v as string, now)));
+  return true;
+}
+
+// ---- progression (migration 0008) ----
+
+export const MAX_PROGRESS_BYTES = 32 * 1024;
+
+export async function readProgress(env: AccountsEnv, user: User): Promise<Progress | null> {
+  if (user.dev) return null;
+  const row = await env.DB.prepare("SELECT value FROM user_progress WHERE user_id = ?").bind(user.id).first<{ value: string }>();
+  return row ? parseProgress(row.value) : null;
+}
+
+/** Stores a progress blob only if the shared schema accepts it, so a bad client can't park junk here. */
+export async function writeProgress(env: AccountsEnv, user: User, raw: string, now = Date.now()): Promise<boolean> {
+  if (raw.length > MAX_PROGRESS_BYTES) return false;
+  const p = validProgress(raw);
+  if (!p) return false;
+  if (user.dev) return true;
+  await env.DB.prepare("INSERT INTO user_progress (user_id, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
+    .bind(user.id, JSON.stringify(p), now).run();
   return true;
 }

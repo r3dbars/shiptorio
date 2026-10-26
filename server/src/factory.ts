@@ -1,3 +1,4 @@
+import { runQuota } from './signup';
 import { Redactor } from "./redact";
 import { repoAccess, requireUser, validRepo } from "./authorization";
 import { stuckItem } from "./reliability";
@@ -7,7 +8,7 @@ import { validatePlan, validatePatch } from "./injection-policy";
 
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
-import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
@@ -389,7 +390,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     return this.redactor.value([...jobs.values()].map(({ lease, ...job }) => job));
   }
 
-  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }): Promise<RunnerJob> {
+  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
@@ -404,6 +405,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         old.status = "failed";
       }
       if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      {
+        const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
+      }
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
@@ -479,7 +484,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.save();
       this.log("success", job.needsApproval ? "Your plan is ready to review. Nothing builds until you approve." : `Plan ready for ${job.harness}. Waiting for the local runner.`, item.id);
     } catch {
-      job.status = "failed"; job.error = "Spark planning failed; inspect configuration and approve a new attempt.";
+      job.status = "failed"; job.error = "Planning failed. Check the setup, then approve a new try.";
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       this.log("error", job.error, job.itemId);
     }
@@ -514,7 +519,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const machineId = `runner-${job.harness}`;
       await this.clearRunnerMove();
       await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `solar-${job.harness}`, tier: 1, state: "working" }] });
-      this.log("info", `Local ${job.harness} accepted Spark's plan.`, item.id);
+      this.log("info", `Local ${job.harness} took the plan.`, item.id);
       return job;
     });
     if (!job) return null;
@@ -684,7 +689,7 @@ export class Factory extends DurableObject<FactoryEnv> {
           for (let i = 0; i < batch.length; i++) for (const signal of normalizeGitHub({ repository: { full_name: repo }, issue: batch[i] })) await this.ingestSignal({ ...signal, reporters: reporters[i] });
         }
         await this.ctx.storage.put("githubBackfilled", true);
-        this.log("info", `GitHub mine connected: ${issues.length} open issues loaded. Spark will triage the ore.`);
+        this.log("info", `GitHub mine connected: ${issues.length} open issues loaded. The planner will sort the ore.`);
       } else {
         for (const signal of normalizeGitHub(p)) await this.ingestSignal(signal);
       }
@@ -952,7 +957,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explain(out) });
       return out;
     } catch (e) {
-      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "Spark didn't answer; a fixed rule decided", reason: e instanceof Error ? e.message : "Spark call failed" });
+      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "The planner didn't answer; a backup rule decided", reason: e instanceof Error ? e.message : "Spark call failed" });
       throw e;
     } finally {
       this.foreman(about.target ?? about.itemId, decision, false);
@@ -970,7 +975,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     return this.think("triage", { title: item.title, itemId: item.id, target: "splitter-1" },
       () => triage(this.env, { title: item.title, body: item.body, labels: [] }, districts),
       t => ({ outcome: `${t.kind} → ${t.district}`, reason: t.reason ?? "Classified from the issue text." }),
-    ).catch(() => fallback("Spark didn't answer, so a keyword rule sorted it."));
+    ).catch(() => fallback("The planner didn't answer, so a keyword rule sorted it."));
   }
 
   private async patch(p: Patch) {
@@ -1220,7 +1225,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
-      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "the planner";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
       const currentInLane = () => {
         const now = current();
@@ -1241,7 +1246,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
         if (!v.passed) await this.noteRework(now);
       } else {
-        this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
+        this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = currentInLane();
@@ -1464,7 +1469,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.district === item.lane) await this.publishGauntletMove(null);
     if (revoked) {
       const text = `${item.lane} lost its launch permit: ${why}. Its PRs wait for you again until the lane earns trust back.`;
-      this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
+      await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
       this.log("warn", text, item.id);
     }
   }
@@ -1496,7 +1501,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (permit && !earned(r)) { this.log("info", `${lane} hasn't earned a launch permit yet.`); return; }
     await this.savePermits(setPermit(book, lane, permit));
     const text = permit ? `${lane} has a launch permit. Its PRs that pass every station now ship on their own.` : `${lane} launch permit is off. Its PRs wait for you again.`;
-    this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
+    await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
     this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: by === "card" ? "You said yes on the permit card." : "You changed it in settings." });
   }
 
@@ -1925,9 +1930,13 @@ export class Factory extends DurableObject<FactoryEnv> {
         continue;
       }
       if (!sparkConfigured(this.env)) {
-        if (m.state !== "blocked") this.log("warn", "Spark has no power. Add the Meta API key to start this line.", item.id);
+        if (m.state !== "blocked") this.log("warn", "The planner has no power. Add the Meta API key to start this line.", item.id);
         await this.patch({ machines: [{ ...m, state: "blocked" }] });
         continue;
+      }
+      {
+        const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
       }
       await this.patch({
         items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
@@ -1975,7 +1984,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const get = () => s.items.find((i) => i.id === itemId)!;
     const machine = () => s.machines.find((m) => m.id === machineId);
     try {
-      if (!sparkConfigured(this.env)) throw new Error("Spark has no power: META_API_KEY isn't set");
+      if (!sparkConfigured(this.env)) throw new Error("The planner has no power: META_API_KEY isn't set");
       if (!this.meta) throw new Error("factory has no repo");
       const item = get();
       const token = await installationToken(this.env, this.meta.installationId);

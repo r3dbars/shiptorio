@@ -1,21 +1,17 @@
-// The check-in: Spark's next 8 to 12 moves as a deck you swipe through (docs/PRODUCT.md "Check-in").
-// Right = do it (Spark's pick), left = later, down = never (+ one tap on why), up = details, tap = zoom.
+// The check-in: the planner's next 8 to 12 moves as a deck you swipe through (docs/PRODUCT.md "Check-in").
+// Right = do it (the suggested pick), left = later, down = never (+ one tap on why), up = details, tap = zoom.
 // Every gesture also has a button and an arrow key.
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
+import { CHECKIN, STAGE_LABEL, WORDS } from "../copy";
 
 type Gesture = "right" | "left" | "down" | "up";
 type Why = Extract<WebToServer, { type: "dismiss_move" }>["why"];
 
-const NEVER: { why: Why; label: string; text: string }[] = [
-  { why: "once", label: "JUST THIS ONE", text: "Drop it, no rule." },
-  { why: "kind", label: "NOT THIS KIND", text: "Stop dealing cards like this. It gets saved as a rule." },
-  { why: "spark", label: "HANDLE THESE FOR ME", text: "Do this kind without asking me. Counts as trust." },
-  { why: "wrong", label: "WRONG CALL", text: "Misread. It becomes a scar so the next read is better." },
-];
+const NEVER: readonly { why: Why; label: string; text: string }[] = CHECKIN.never;
 
-const STAMP: Record<Gesture, string> = { right: "DO IT", left: "LATER", down: "NEVER", up: "DETAILS" };
+const STAMP: Record<Gesture, string> = CHECKIN.stamp;
 const SWIPE_PX = 90;
 
 interface Props {
@@ -24,6 +20,8 @@ interface Props {
   send: (msg: WebToServer) => void;
   onFocus: (id: string | null) => void; // the map zooms to the card's spot
   onClose: () => void;
+  onAnswered?: (left: number) => void; // a yes or a never landed (progression), with this many cards still up
+  end?: ReactNode; // extra on the end screen: today's tally and the deck trend
 }
 
 const pickOf = (m: Move) => m.options.find((o) => o.recommended) ?? m.options[0];
@@ -95,8 +93,24 @@ export function createCheckInSession(initial: Move[], clock = {
   };
 }
 
-export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
+/** A sent gesture earns progress only after it disappears from the server-owned deck. */
+export function createAnswerTracker() {
+  const pending = new Set<string>();
+  return {
+    submit(moveId: string) { pending.add(moveId); },
+    acknowledge(deck: readonly Move[]): number[] {
+      const present = new Set(deck.map(move => move.id));
+      const resolved = [...pending].filter(id => !present.has(id));
+      for (const id of resolved) pending.delete(id);
+      // Batched acknowledgments clear the deck once, on the last resolved card.
+      return resolved.map((_, index) => deck.length + resolved.length - index - 1);
+    },
+  };
+}
+
+export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, end }: Props) {
   const [session] = useState(() => createCheckInSession(deck));
+  const [answers] = useState(createAnswerTracker);
   const [sheet, setSheet] = useState<"details" | "never" | null>(null);
   const [zoomed, setZoomed] = useState(false);
   const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null);
@@ -111,7 +125,10 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
 
   // Reconcile committed props before paint. New top-ranked cards cannot replace the
   // card under the player's finger; same-id proof/options still update immediately.
-  useLayoutEffect(() => { session.update(deck); }, [deck, session]);
+  useLayoutEffect(() => {
+    session.update(deck);
+    for (const left of answers.acknowledge(deck)) onAnswered?.(left);
+  }, [deck, session, answers, onAnswered]);
   useLayoutEffect(() => { session.open(); return () => session.close(); }, [session]);
   const close = () => { session.close(); onClose(); };
 
@@ -136,7 +153,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
       reset();
       send(boundMessage); // exactly the card and option that were visible at gesture start
       then();
-    }, () => { reset(); setToast("That card changed. Please check the next move."); })) return;
+    }, () => { reset(); setToast(CHECKIN.toast.changed); })) return;
     setFly(g);
     setSheet(null);
   };
@@ -145,7 +162,8 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     done(m, "right", { type: "choose_move", moveId: m.id, optionId }, () => {
       const o = m.options.find((x) => x.id === optionId);
       setTally((t) => ({ ...t, yes: t.yes + 1, grows: o?.recommended ? [...t.grows, ...(m.grows ?? [])] : t.grows }));
-      setToast(o ? `${o.label}. On it.` : "On it.");
+      if (onAnswered) answers.submit(m.id);
+      setToast(CHECKIN.toast.yes(o?.label));
     });
 
   const act = (g: Gesture, card = top) => {
@@ -155,7 +173,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     if (g === "right") return choose(card, pickOf(card).id); // a locked card's pick is the missing check, never a merge
     done(card, "left", { type: "defer_move", moveId: card.id }, () => {
       setTally((t) => ({ ...t, later: t.later + 1 }));
-      setToast("Later. It'll come back around.");
+      setToast(CHECKIN.toast.later);
     });
   };
 
@@ -163,7 +181,8 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     if (!top || session.busy()) return;
     done(top, "down", { type: "dismiss_move", moveId: top.id, why }, () => {
       setTally((t) => ({ ...t, never: t.never + 1, rules: t.rules + (why === "once" ? 0 : 1) }));
-      setToast(why === "once" ? "Gone." : why === "kind" ? "Rule saved. No more cards like it." : why === "spark" ? "Handled without asking from now on." : "Scar logged.");
+      if (onAnswered) answers.submit(top.id);
+      setToast(CHECKIN.toast.never[why]);
     });
   };
 
@@ -227,21 +246,21 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
   const swiped = tally.yes + tally.later + tally.never;
 
   return (
-    <section className={`checkin${zoomed ? " zoomed" : ""}`} aria-label="Check-in">
+    <section className={`checkin${zoomed ? " zoomed" : ""}`} aria-label={CHECKIN.label}>
       <header className="ci-bar card">
-        <b>Check-in</b>
-        <span className="ci-count">{top ? `${cards.length} left` : "All clear"}</span>
+        <b>{CHECKIN.label}</b>
+        <span className="ci-count">{top ? CHECKIN.left(cards.length) : CHECKIN.allClear}</span>
         <div className="ci-pips" aria-hidden="true">
           {Array.from({ length: Math.min(12, total) }, (_, i) => (
             <i key={i} className={i < swiped ? "done" : i === swiped && top ? "cur" : ""} />
           ))}
         </div>
-        <button type="button" className="ci-x" onClick={close} aria-label="Close the check-in">
+        <button type="button" className="ci-x" onClick={close} aria-label={CHECKIN.close}>
           ×
         </button>
       </header>
 
-      {zoomed && top && <div className="ci-where">{top.focus ? "ZOOMED IN · TAP THE CARD TO COME BACK" : "TAP THE CARD TO COME BACK"}</div>}
+      {zoomed && top && <div className="ci-where">{top.focus ? CHECKIN.zoomed : CHECKIN.zoomedNoSpot}</div>}
 
       <div className="ci-deck">
         {top ? (
@@ -276,7 +295,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                 >
                   <div className="ci-kicker">
                     {m.kind && <span className={`ci-tag ${m.kind}`}>{m.kind.toUpperCase()}</span>}
-                    {m.stage && <span className="ci-stage">{m.stage.toUpperCase()}</span>}
+                    {m.stage && <span className="ci-stage">{STAGE_LABEL[m.stage].toUpperCase()}</span>}
                   </div>
                   <div className="ci-title">{m.title}</div>
                   <p className="ci-why">{m.why}</p>
@@ -297,11 +316,11 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                       ))}
                     </div>
                   )}
-                  {m.locked && <div className="ci-lock">NO MERGE ON SWIPE · NOT PROVEN YET</div>}
+                  {m.locked && <div className="ci-lock">{CHECKIN.locked}</div>}
                   <div className="ci-pick">
-                    <span className="lbl">SUGGESTED · SWIPE RIGHT</span>
+                    <span className="lbl">{CHECKIN.pick}</span>
                     <span className="do">{pickOf(m).label}</span>
-                    {m.options.length > 1 && <span className="alt">or: {m.options.filter((o) => o !== pickOf(m)).map((o) => o.label.toLowerCase()).join(", ")}</span>}
+                    {m.options.length > 1 && <span className="alt">{CHECKIN.or(m.options.filter((o) => o !== pickOf(m)).map((o) => o.label.toLowerCase()).join(", "))}</span>}
                   </div>
                   {(Object.keys(STAMP) as Gesture[]).map((g) => (
                     <span key={g} className={`ci-stampbig ${g}`} style={{ opacity: leaning === g ? lean : 0 }} aria-hidden="true">
@@ -313,27 +332,27 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
             })
         ) : (
           <div className="ci-clear card">
-            <div className="ci-title">All clear</div>
-            <p className="ci-why">{swiped ? `${swiped} calls. The factory's moving without you now.` : "Nothing needs you right now. A card shows up when something does."}</p>
+            <div className="ci-title">{CHECKIN.allClear}</div>
+            <p className="ci-why">{swiped ? CHECKIN.doneWhy(swiped) : CHECKIN.emptyWhy}</p>
             {swiped > 0 && (
               <div className="ci-tally">
                 <div>
-                  <b>{tally.yes}</b>pushed forward
+                  <b>{tally.yes}</b>{CHECKIN.tally.yes}
                 </div>
                 <div>
-                  <b>{tally.later}</b>back later
+                  <b>{tally.later}</b>{CHECKIN.tally.later}
                 </div>
                 <div>
-                  <b>{tally.grows.filter((g) => g.includes("CHECK") || g.includes("STATION")).length}</b>checks added
+                  <b>{tally.grows.filter((g) => g.includes("CHECK") || g.includes("STATION")).length}</b>{CHECKIN.tally.checks}
                 </div>
                 <div>
-                  <b>{tally.rules}</b>rules taught
+                  <b>{tally.rules}</b>{CHECKIN.tally.rules}
                 </div>
               </div>
             )}
             {autonomy?.next && (
               <div className="ci-meter" title={`${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label}`}>
-                <span>AUTONOMY → {autonomy.next.level.toUpperCase().replace("_", " ")}</span>
+                <span>{CHECKIN.autonomy(autonomy.next.level.toUpperCase().replace("_", " "))}</span>
                 <div className="segs">
                   {Array.from({ length: 10 }, (_, i) => (
                     <i key={i} style={i < Math.round((autonomy.next!.have / autonomy.next!.need) * 10) ? { background: "var(--blue)" } : undefined} />
@@ -341,9 +360,10 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                 </div>
               </div>
             )}
-            <p className="ci-quote">The score isn't how many you cleared. It's how few need you tomorrow.</p>
+            {end}
+            <p className="ci-quote">{CHECKIN.quote}</p>
             <button type="button" className="nm-btn" onClick={close}>
-              Back to the floor
+              {CHECKIN.back}
             </button>
           </div>
         )}
@@ -352,29 +372,29 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
       {top && (
         <div className="ci-actions">
           <button type="button" className="ci-act never" disabled={!!fly} onClick={() => act("down")}>
-            <span className="k">✕</span>Never ↓
+            <span className="k">✕</span>{CHECKIN.buttons.never}
           </button>
           <button type="button" className="ci-act later" disabled={!!fly} onClick={() => act("left")}>
-            <span className="k">↶</span>Later ←
+            <span className="k">↶</span>{CHECKIN.buttons.later}
           </button>
           <button type="button" className="ci-act more" disabled={!!fly} onClick={() => act("up")}>
-            <span className="k">i</span>Details ↑
+            <span className="k">i</span>{CHECKIN.buttons.details}
           </button>
           <button type="button" className="ci-act do" disabled={!!fly} onClick={() => act("right")}>
-            <span className="k">✓</span>Do it →
+            <span className="k">✓</span>{CHECKIN.buttons.doIt}
           </button>
         </div>
       )}
 
       {top && sheet === "details" && (
-        <div className="ci-sheet card" role="dialog" aria-label="Details">
+        <div className="ci-sheet card" role="dialog" aria-label={CHECKIN.details}>
           <button type="button" className="ci-close" onClick={() => setSheet(null)}>
-            CLOSE
+            {CHECKIN.closeSheet}
           </button>
           <div className="ci-title small">{top.title}</div>
           {top.plan && (
             <>
-              <div className="ci-sec">WHAT HAPPENS ON YES</div>
+              <div className="ci-sec">{CHECKIN.onYes}</div>
               <ol>
                 {top.plan.map((p) => (
                   <li key={p}>{p}</li>
@@ -382,7 +402,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
               </ol>
             </>
           )}
-          <div className="ci-sec">PICK ONE</div>
+          <div className="ci-sec">{CHECKIN.pickOne}</div>
           {top.options.map((o) => (
             <button key={o.id} type="button" disabled={!!fly} className={o.recommended ? "ci-opt rec" : "ci-opt"} title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined} onClick={() => choose(top, o.id)}>
               {o.recommended ? "★ " : ""}
@@ -391,18 +411,18 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
           ))}
           {top.url && (
             <a className="nm-link" href={top.url} target="_blank" rel="noreferrer">
-              Open on GitHub ↗
+              {WORDS.onGithub}
             </a>
           )}
         </div>
       )}
 
       {top && sheet === "never" && (
-        <div className="ci-sheet card" role="dialog" aria-label="Never show this">
+        <div className="ci-sheet card" role="dialog" aria-label={CHECKIN.neverLabel}>
           <button type="button" className="ci-close" onClick={() => setSheet(null)}>
-            CANCEL
+            {CHECKIN.cancel}
           </button>
-          <div className="ci-title small">Never: why? One tap.</div>
+          <div className="ci-title small">{CHECKIN.neverTitle}</div>
           {NEVER.map((n) => (
             <button key={n.why} type="button" disabled={!!fly} className="ci-opt why" onClick={() => never(n.why)}>
               <b>{n.label}</b>

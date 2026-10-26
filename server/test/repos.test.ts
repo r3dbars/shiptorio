@@ -27,7 +27,7 @@ test("a player's repo cards list only the repos their GitHub account reaches, wi
 });
 
 test("preview access alone, disallowed logins, pre-accounts cookies, signed-out sessions and missing preview access cannot list repos", async () => {
-  const env = baseEnv();
+  const env = {...baseEnv(),SIGNUP_GATE_MODE:"password"};
   const legacy = (await makeSessionCookie(secret, "r3dbars")).split(";")[0];
   const outsider = await signedInCookie({ ...env, ALLOWED_LOGINS: "*" }, "someone-else", ["r3dbars/shiptorio"]);
   const revoked = await signedInCookie(env, "r3dbars", ["r3dbars/shiptorio"]);
@@ -66,4 +66,19 @@ test("prefs follow the player and only accept known short keys", async () => {
   expect((await put(JSON.stringify({ intro: "1" }), "https://evil.example")).status).toBe(403);
   const me = await (await get(env, "/api/me", cookie)).json();
   expect(me).toMatchObject({ login: "r3dbars", allowed: true, prefs: { intro: "1", guideSeen: "4" } });
+});
+
+test("progress follows the player, validated by the shared schema", async () => {
+  const env = baseEnv();
+  const cookie = `${await signedInCookie(env, "r3dbars")}; ${await preview()}`;
+  const put = (body: string, origin = "https://shiptorio.com") => app.fetch(new Request("https://shiptorio.com/api/me/progress", { method: "PUT", headers: { cookie, origin }, body }), env as never);
+  const { emptyProgress } = await import("@shiptorio/shared");
+  const p = { ...emptyProgress(), xp: 120, streak: 2, best: 2 };
+  expect((await (await get(env, "/api/me/progress", cookie)).json())).toEqual({ progress: null });
+  expect((await put(JSON.stringify(p))).status).toBe(200);
+  expect((await put(JSON.stringify({ v: 1, xp: "lots" }))).status).toBe(400);
+  expect((await put(JSON.stringify(p), "https://evil.example")).status).toBe(403);
+  const got = (await (await get(env, "/api/me/progress", cookie)).json()) as { progress: unknown };
+  expect(got.progress).toMatchObject({ xp: 120, streak: 2 });
+  expect((await get(env, "/api/me/progress", "")).status).toBe(401);
 });
