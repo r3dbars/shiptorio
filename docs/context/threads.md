@@ -63,6 +63,7 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 | #100, #103, #117 | Codex: mobile/onboarding papercuts, first-run loop never idles | merged |
 | #104, #123, #126 | Codex: sandboxed local verify, release receipts, orbit replay deadlines | merged |
 | #118, #119 | Codex: live repo picker, disposed factories stop reconnecting | merged |
+| #176 | Support mine: customer emails + Intercom chats → support well, Spark drafts replies, player taps Send (docs/context/support-mine.md) | open |
 | #177 | Growth loop prototype: funnel drop → experiment → gauntlet → measure station (`?scenario=growth`, docs/context/growth-loop.md) | open |
 | #175 | Geothermal power: local models (Ollama / OpenAI-compatible) as a free assembler for small jobs; fixed guard + planner route; map plant, power accounting, sim `?scenario=geothermal`. Docs: docs/runner-local-models.md | in progress |
 | #3, #4 | Old pre-#1 drafts | closed |
@@ -80,6 +81,7 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | Draft Shiptorio pricing options | PR open | Task 22. Three pricing models (BYO key / flat plans with fuel / pay per launch), unit cost from the code (≈$0.12 Spark per launch, ≈$0.40 Cloudflare per active factory), recommends flat plans: Free 20 launches, $19 solo 150, $59 crew 400. `docs/context/pricing.md`, numbers in `shared/src/pricing.ts`. Artifact: https://claude.ai/artifact/LrSxaUpsbMXnq5i9hxc8XH. Landing page gets a hidden `#pricing` block (`?pricing=1`) after the landing thread's PR merges |
 | Write the Shiptorio docs site | PR #183 | Public docs at shiptorio.com/docs: markdown in `docs/site/`, built by `web/docs-site.ts` (search index, link-check test), `/docs` exempt from the preview password. 14 pages written from the code on main, not the plan. Gaps found while writing are listed in the PR |
 | Build the Shiptorio landing page | PR (branch claude/project-thread-9fgomx) | Public landing at shiptorio.com `/` (static `web/public/welcome/`, real sim loop video, waitlist `POST /api/waitlist` in KV), app stays gated. See `docs/context/landing.md`. Codex #161 can adopt the waitlist |
+| Make Shiptorio fast on phones | Merged #167 | Static batching `web/src/map/bake.ts` (models swept through `ART_STATES` in scene.ts; add a state there if a new part only moves in it), frame governor `web/src/map/quality.ts` (`?quality=0|1|2`), `?perf` overlay + `window.__shipPerf()`, `web/scripts/perf-bench.mjs`. Draw calls 2,673 → ~1,300, phone first paint 2.65s → ~0.65s. Next: lazy zod in progression, Worker latency (Codex prompt `shiptorio/codex-prompts/worker-latency.md`) |
 
 Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.
