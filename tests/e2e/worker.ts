@@ -4,6 +4,11 @@ import { makeSessionCookie } from '../../server/src/session';
 import { createSession, upsertUser, saveReach } from '../../server/src/accounts';
 const knownRepos = new Set<string>();
 export class Factory extends ProductionFactory {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // Test pacing is explicit: a slow fake-provider call must not race a natural alarm.
+    ctx.storage.setAlarm = async () => {};
+  }
   // Use the real alarm body, with test-controlled pacing to avoid card-ID races.
   async alarm() { await super.alarm(); await this.ctx.storage.deleteAlarm(); }
   async testTick() { await this.alarm(); }
@@ -78,14 +83,7 @@ export default {
     }
     if (url.pathname === '/__test/access' || url.pathname === '/__test/session') {
       const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, 'preview')).replace('shiptorio_session=', 'shiptorio_access=');
-      if (url.pathname === '/__test/warm-load-grants') {
-      // The load target is DO fan-out, not GitHub's upstream request queue. Model
-      // already-warm provider permission grants; D1 membership/session checks still run.
-      await Promise.all([...knownRepos].flatMap(repo => Array.from({ length: 5 }, (_, i) =>
-        env.CACHE.put(`access:v2:1:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }))));
-      return reply({ ok: true });
-    }
-    if (url.pathname === '/__test/access') return Response.json({ ok: true }, { headers: { 'set-cookie': preview } });
+      if (url.pathname === '/__test/access') return Response.json({ ok: true }, { headers: { 'set-cookie': preview } });
       const index = Number(url.searchParams.get('user') ?? 0);
       if (!Number.isInteger(index) || index < 0 || index > 5) return new Response('bad fixture user', { status: 400 });
       const user = { id: 123 + index, login: index ? `fixture${index}` : 'fixture' };
