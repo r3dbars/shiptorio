@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { FactoryState, WebToServer } from "@shiptorio/shared";
+import type { SourceConfig } from "../source";
 import { freeNear } from "./MakeItYours";
 import { Icon } from "./icons";
 
@@ -25,12 +26,12 @@ export const BEATS: Beat[] = [
   {
     kick: "Welcome",
     title: "Welcome to *Shiptorio*.",
-    body: "This floating island is a codebase. Every building is a folder, read straight from GitHub. This one's a demo shop. Yours comes next.",
+    body: "This floating island is a codebase. Every building is a folder. This sandbox uses a demo shop and sample changes; your repo comes next.",
   },
   {
     kick: "AI builds now",
     title: "Your agents are *fast*.",
-    body: "Claude and Codex write fixes and features all day. Every crate on the belt is a real change to the code, built by AI.",
+    body: "Claude and Codex write fixes and features all day. These sample crates show how your agents turn a plan into a change.",
     cue: "build",
   },
   {
@@ -136,6 +137,42 @@ function Stat({ n, label, suffix = "" }: { n: number; label: string; suffix?: st
   );
 }
 
+/** Explicitly local simulation: a live URL with intro flags never gains tour commands. */
+export const introMode = (config: SourceConfig) => config.kind === "sim" && config.scenario === "intro";
+export function introDone(state: FactoryState, at: number): boolean {
+  return at === 3 ? (state.metrics?.rockets ?? 0) > 0
+    : at === 4 ? !!state.autonomy?.districts.some(d => d.district === "docs" && d.permit)
+    : at === 5 ? state.machines.some(m => m.type === "turret")
+    : at === 6 ? state.machines.some(m => m.id === "ore-sentry") : false;
+}
+export function introNextReady(state: FactoryState | null, at: number, done: boolean): boolean {
+  if (!state) return false;
+  return at === 0 ? state.districts.length >= 4
+    : at === 1 ? state.items.some(i => i.state === "working" || i.state === "inspecting")
+    : at === 2 ? state.items.filter(i => i.state === "on_pad").length >= 2
+    : BEATS[at]?.act ? done : true;
+}
+export function introCanAct(state: FactoryState | null, at: number, inspected: boolean): boolean {
+  if (!state) return false;
+  const action = BEATS[at]?.act;
+  const caught = state.items.find(i => i.scars?.length && i.state !== "launched");
+  return action === "ship" ? inspected && state.items.some(i => i.state === "on_pad")
+    : action === "turret" ? !!caught && caught.state !== "inspecting" : !!action;
+}
+/** The UI and guided playtest send exactly the same ordinary simulator protocol. */
+export function introCommand(state: FactoryState, at: number): WebToServer | null {
+  const action = BEATS[at]?.act;
+  if (action === "ship") { const item = state.items.find(i => i.state === "on_pad"); return item ? { type: "launch_pr", itemId: item.id } : null; }
+  if (action === "permit") return { type: "set_autonomy", district: "docs", permit: true };
+  if (action === "sentry") return { type: "connect_source", kind: "sentry" };
+  if (action === "turret") {
+    const ci = state.machines.find(m => m.id === "ci-1"), spot = ci && freeNear(state, ci.x, ci.y);
+    const caught = state.items.find(i => i.scars?.length && i.state !== "launched");
+    return spot ? { type: "place_machine", machineType: "turret", x: spot.x, y: spot.y, district: caught?.district ?? "cart" } : null;
+  }
+  return null;
+}
+
 export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) => void, onDone: () => void, login?: string | null) {
   const [at, setAt] = useState(0);
   const [done, setDone] = useState(false); // this beat's move has landed
@@ -151,6 +188,7 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
 
   // each beat's cue for the sim, once
   const cued = useRef(new Set<number>());
+  const acted = useRef(new Set<number>()); // double taps cannot ship the next crate or move a new turret
   useEffect(() => {
     if (!state || !beat.cue || cued.current.has(at)) return;
     cued.current.add(at);
@@ -167,32 +205,18 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
 
   // the move lands when the factory says so, not when the button is pressed
   useEffect(() => {
-    if (done) return;
-    if (at === 3 && rockets > 0) setDone(true);
-    if (at === 4 && state?.autonomy?.districts.some((d) => d.district === "docs" && d.permit)) setDone(true);
-    if (at === 5 && state?.machines.some((m) => m.type === "turret")) setDone(true);
-    if (at === 6 && sentry) setDone(true);
+    if (!done && state && introDone(state, at)) setDone(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, at, done]);
 
   // Next waits for the beat to have something to show
-  const ready =
-    at === 0 ? (state?.districts.length ?? 0) >= 4 :
-    at === 1 ? items.some((i) => i.state === "working" || i.state === "inspecting") :
-    at === 2 ? pad.length >= 2 :
-    beat.act ? done : true;
-
+  const ready = introNextReady(state, at, done);
   const act = () => {
-    if (!state) return;
-    if (beat.act === "ship") {
-      const it = pad[0];
-      if (it) send({ type: "launch_pr", itemId: it.id });
-    } else if (beat.act === "permit") send({ type: "set_autonomy", district: "docs", permit: true });
-    else if (beat.act === "turret") {
-      const ci = state.machines.find((m) => m.id === "ci-1");
-      const spot = ci && freeNear(state, ci.x, ci.y);
-      if (spot) send({ type: "place_machine", machineType: "turret", x: spot.x, y: spot.y, district: caught?.district ?? "cart" });
-    } else if (beat.act === "sentry") send({ type: "connect_source", kind: "sentry" });
+    if (!state || !introCanAct(state, at, tourAt >= 3) || acted.current.has(at)) return;
+    const command = introCommand(state, at);
+    if (!command) return;
+    acted.current.add(at);
+    send(command);
   };
   const next = () => {
     if (at === BEATS.length - 1) return onDone();
@@ -236,10 +260,7 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
     beat.act === "permit" ? "Let docs ship on their own" :
     beat.act === "turret" ? `Add a test turret on /${caught?.district ?? "cart"}` :
     beat.act === "sentry" ? "Connect Sentry" : "";
-  const actReady =
-    beat.act === "ship" ? tourAt >= 3 && pad.length > 0 :
-    beat.act === "turret" ? !!caught && caught.state !== "inspecting" :
-    !!beat.act;
+  const actReady = introCanAct(state, at, tourAt >= 3);
 
   let extra: ReactNode = null;
   if (at === 2) extra = (
@@ -278,7 +299,7 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
   const card = (
     <section className="card nextmove tour" aria-label="Welcome tour">
       <div className="nm-head">
-        <span className="nm-kicker tour-kick">{at === 0 && login ? `Welcome, @${login}` : beat.kick}</span>
+        <span className="nm-kicker tour-kick">Sandbox · {at === 0 && login ? `Welcome, @${login}` : beat.kick}</span>
         <span className="tour-step">
           {at + 1}/{BEATS.length}
         </span>

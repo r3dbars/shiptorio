@@ -18,7 +18,7 @@ import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
 import { ShipCelebration } from "./ui/ShipCelebration";
-import { useIntroTour } from "./ui/IntroTour";
+import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 
 const STATE_LABEL: Record<Item["state"], string> = {
@@ -113,7 +113,7 @@ function buildSlot(state: FactoryState) {
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
-  const intro = cfg.kind === "sim" && cfg.scenario === "intro";
+  const intro = introMode(cfg);
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
