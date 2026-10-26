@@ -1309,7 +1309,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const done = purpose === "fixed" || !(kind === "bug" || kind === "feature") || !tracked;
       const next: SupportTicket = { ...latest, ...(unchanged ? { state: done ? "answered" as const : "waiting_fix" as const, draft: undefined } : {}), sent: [...latest.sent, { at: Date.now(), purpose, via: result.via, ...(result.via === "outbox" ? { text: t.draft.text } : {}) }].slice(-20) };
       const m = this.state!.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
-      const answered = unchanged && done && kind !== "spam";
+      const answered = result.via !== "outbox" && unchanged && done && kind !== "spam";
       await this.patch({ support: (this.state!.support ?? []).map(x => x.id === t.id ? next : x), ...(answered ? { metrics: { ...m, customersAnswered: m.customersAnswered + 1, shipScore: m.shipScore + 10 } } : {}) });
       await this.offerSupportMoves();
       this.log("success", result.via === "outbox" ? "Reply saved to the outbox; no external message was sent." : `Reply sent by ${result.via}.`, t.id);

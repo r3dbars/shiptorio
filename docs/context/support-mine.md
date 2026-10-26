@@ -69,7 +69,7 @@ also remove any legacy `cred:support:<full_name>` key, and clear the factory's s
 **Sending:** Intercom tickets reply into the conversation (needs token + admin id). Email replies go through
 Resend when `RESEND_API_KEY` and `SUPPORT_FROM` are set. Without a sender, a tapped reply lands in the
 **outbox**: marked sent via outbox, kept on the ticket, with a Copy button in the panel. Nothing is lost and
-nothing pretends it was emailed.
+nothing pretends it was emailed. Copy-only outbox records do not earn customer-answer or ship-score credit.
 
 ## Map and UI
 

@@ -271,6 +271,17 @@ describe("nothing is sent without a player tap", () => {
       expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
       expect(saved().support![0].draft!.text).toBe("New draft during identity lookup");
       expect(saved().support![0].sent).toHaveLength(3);
+      // A copy-only outbox record is useful, but no customer has received a message.
+      const outboxId = "sup-outbox";
+      const outboxTicket: SupportTicket = { ...saved().support![0], id: outboxId, channel: "email", thread: "synthetic-thread", from: "synthetic@example.com", state: "drafted", sent: [], issue: undefined, triage: { kind: "question", district: "docs", summary: "A question", reason: "A question", by: "fallback" }, draft: await makeDraft(outboxId, "Copy-only answer", "answer", "player") };
+      data.set("state", { ...saved(), support: [...saved().support!, outboxTicket] });
+      const outbox = new Factory(ctx as never, env as never);
+      const answeredBefore = saved().metrics!.customersAnswered, scoreBefore = saved().metrics!.shipScore;
+      await outbox.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: outboxId, draftHash: outboxTicket.draft!.hash }));
+      expect(saved().support!.find(t => t.id === outboxId)!.sent[0]).toMatchObject({ via: "outbox", text: "Copy-only answer" });
+      expect(saved().metrics!.customersAnswered).toBe(answeredBefore);
+      expect(saved().metrics!.shipScore).toBe(scoreBefore);
+      expect(outbound.filter(u => u.includes("api.intercom.io") || u.includes("api.resend.com"))).toHaveLength(3);
     } finally { globalThis.fetch = original; }
   });
 
