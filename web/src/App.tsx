@@ -23,8 +23,10 @@ import { ShipCelebration } from "./ui/ShipCelebration";
 import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
-import { AchievementToast, AchievementsSheet, useAchievements } from "./ui/Achievements";
+import { AchievementToast, AchievementsSheet, useAchievements, type ProgressLink } from "./ui/Achievements";
 import { checkStationId } from "@shiptorio/shared";
+import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
+
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 
 const STATE_LABEL: Record<Item["state"], string> = {
@@ -69,7 +71,7 @@ const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
-type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "empire" | "achievements";
+type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements";
 const WORLD_KEY = "shiptorio:world";
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
@@ -123,7 +125,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
-  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw);
+  const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
+  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink);
   const send = ach.send; // a card answered counts toward the day's streak
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -152,6 +155,18 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
+  // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
+  const [progressing] = useState(() => !intro && progressOn());
+  const profile = progressProfile(cfg.kind, login);
+  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
+  const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
+  const nudge = useBottleneckNudge(deck, progressing);
+  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name) }; // achievements pay XP into progression
+  // today's log remembers the deck you walked in to (the morning number the trend is made of)
+  useEffect(() => {
+    if (progressing && state) prog.open(deck.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressing, !!state, deck.length > 0]);
   const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
@@ -332,6 +347,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
           pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
+          cosmetics={cosmeticsOf(prog.p, progressing)}
+
           satellites={intro ? undefined : satellites}
           empire={!intro && sheet === "empire"}
         />
@@ -343,9 +360,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <header className="topbar">
           <div className="chips">
+            {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
+
             {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             {show("score") && (
-              <div className="chip" title="PRs merged">
+              <div className={progressing ? "chip desk" : "chip"} title="PRs merged">
                 <span className="badge" style={{ background: "var(--amber)" }}>
                   <Icon name="rocket" size={14} />
                 </span>
@@ -478,6 +497,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </div>
             <p className="empty">You can switch any time.</p>
           </section>
+        ) : brief.show && progressing && !checkin && !sheet ? (
+          <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
+        ) : sheet === "progress" ? (
+          <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
         ) : source && state ? (
           <ConnectSource kind={source} state={state} send={send} onClose={() => setSource(null)} />
         ) : sheet === "yours" && state ? (
@@ -489,11 +512,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
         ) : sheet === "achievements" ? (
-          <AchievementsSheet earned={ach.earned} state={state} onClose={() => setSheet(null)} />
+          <AchievementsSheet earned={ach.earned} state={state} streak={prog.p.best} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
-          <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
+          <CheckIn
+            deck={deck}
+            autonomy={autonomy}
+            send={send}
+            onFocus={setFocus}
+            onClose={() => { setCheckin(false); setFocus(null); }}
+            onAnswered={progressing ? prog.card : undefined}
+            end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+          />
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label="The line">
             <div className="sheet-top">
@@ -638,6 +669,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
+
+        {progressing && <XpPop pop={prog.pop} />}
 
         <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>

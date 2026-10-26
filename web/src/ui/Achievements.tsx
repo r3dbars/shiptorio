@@ -36,7 +36,13 @@ export interface Toast {
 }
 
 /** Folds the factory in and hands back the record plus the toast showing right now. `send` comes back wrapped so a card answered counts as a real move for the day. */
-export function useAchievements(state: FactoryState | null, live: boolean, quiet: boolean, sendRaw: (m: WebToServer) => void, streak = 0) {
+// link: filled in by the caller after progression is set up: its best streak, and where an unlock's XP goes.
+export interface ProgressLink {
+  streak: number;
+  onUnlock?: (a: Achievement) => void;
+}
+
+export function useAchievements(state: FactoryState | null, live: boolean, quiet: boolean, sendRaw: (m: WebToServer) => void, link?: { current: ProgressLink }) {
   const [earned, setEarned] = useState<Earned>(() => (live ? readLocal() : emptyEarned()));
   const [toast, setToast] = useState<Toast | null>(null);
   const queue = useRef<Toast[]>([]);
@@ -93,14 +99,15 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     const r = rocketsOf(state);
     if (rockets.current !== null && r > rockets.current) e = markDay(e, now); // shipped today: a real move
     rockets.current = r;
-    const { earned: next, fresh } = check(e, state.repo, state, now, streak);
+    const { earned: next, fresh } = check(e, state.repo, state, now, link?.current.streak ?? 0);
     if (next !== ref.current) save(next);
     if (!fresh.length || quiet) return;
+    for (const a of fresh) link?.current.onUnlock?.(a);
     const shown: Toast[] = fresh.slice(0, MAX_TOASTS).map((a, i) => ({ key: now + i, a }));
     if (fresh.length > MAX_TOASTS) shown.push({ key: now + MAX_TOASTS, more: fresh.length - MAX_TOASTS });
     queue.current.push(...shown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, synced, quiet, streak]);
+  }, [state, synced, quiet]);
 
   // One toast at a time, one clock for all of them.
   const shownAt = useRef(0);
