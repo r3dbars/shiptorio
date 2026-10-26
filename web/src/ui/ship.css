@@ -1,4 +1,5 @@
-/* Ship celebration: the screen kicks at ignition, then a pixel check writes itself in with a burst. */
+/* Ship celebration (Black Iron): the screen kicks at ignition, then a riveted plate is stamped SHIPPED and a pixel
+   check writes itself in while furnace sparks fly. Steps, not eases. */
 
 body.ship-shake canvas.map {
   animation: ship-shake 0.9s steps(18) both;
@@ -31,27 +32,30 @@ body.ship-shake canvas.map {
   animation: ship-fade-in 0.25s ease-out both;
 }
 
+/* the card: a riveted iron plate in the WORKING green, stamped SHIPPED, with sparks flying off it */
 .ship-card {
   position: relative;
   pointer-events: auto;
   cursor: pointer;
-  min-width: 260px;
-  border-radius: 18px;
-  max-width: min(340px, calc(100vw - 32px));
-  padding: 18px 22px 16px;
+  min-width: 270px;
+  border-radius: 0;
+  max-width: min(350px, calc(100vw - 32px));
+  padding: 20px 22px 16px;
   text-align: center;
-  border-color: var(--green, #5bd18b) !important;
-  box-shadow: 0 0 0 2px rgba(91, 209, 139, 0.25), 0 0 40px rgba(91, 209, 139, 0.25);
-  animation: ship-pop 0.42s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  background: var(--rivets), var(--iron-panel-solid) !important;
+  border: 2px solid var(--iron-ok) !important;
+  outline: 2px solid #000;
+  box-shadow: inset 0 2px 0 rgba(255, 220, 170, 0.06), inset 0 -3px 0 rgba(0, 0, 0, 0.35), 0 0 0 4px rgba(70, 224, 122, 0.18);
+  animation: ship-pop 0.32s steps(5) both;
 }
 
 .ship-check {
-  width: 68px;
-  height: 56px;
+  width: 66px;
+  height: 54px;
   display: block;
-  margin: -32px auto 6px;
-  fill: #5bd18b;
-  filter: drop-shadow(0 4px 0 #1f6b44) drop-shadow(0 0 12px rgba(91, 209, 139, 0.6));
+  margin: -36px auto 8px;
+  fill: var(--iron-ok);
+  filter: drop-shadow(3px 3px 0 #000);
 }
 .ship-check rect {
   transform-box: fill-box;
@@ -60,91 +64,101 @@ body.ship-shake canvas.map {
 }
 
 .ship-title {
-  font: 700 28px/1.1 var(--pixel);
-  letter-spacing: 0.01em;
-  color: #5bd18b;
-  text-shadow: 0 3px 0 #1f6b44;
-  animation: ship-pop 0.36s 0.25s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  font: 700 28px/1.1 var(--iron-pixel);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--iron-ok);
+  text-shadow: 3px 3px 0 #000;
+  animation: ship-pop 0.3s 0.25s steps(4) both;
 }
 .ship-what {
-  margin-top: 4px;
-  color: var(--ink, #eef1fa);
-  font-size: 13px;
+  margin-top: 6px;
+  color: var(--iron-ink);
+  font: 400 13px/1.4 var(--iron-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   animation: ship-fade-in 0.3s 0.4s both;
 }
 .ship-what b {
-  color: var(--amber, #f2a93b);
+  font: 700 12px var(--iron-pixel);
+  letter-spacing: 0.06em;
+  color: var(--iron-amber);
 }
 
 .ship-badges {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .ship-badges:empty {
   display: none;
 }
 .ship-badges .b {
-  font: 600 12px var(--mono);
-  padding: 3px 10px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  animation: ship-stamp 0.3s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+  font: 700 10px/1 var(--iron-pixel);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  border: 2px solid currentColor;
+  border-radius: 0;
+  background: var(--iron-soot);
+  animation: ship-stamp 0.3s steps(4) both;
 }
 .ship-badges .first {
-  color: #5bd18b;
+  color: var(--iron-ok);
   animation-delay: 0.55s;
 }
 .ship-badges .streak {
-  color: #f2a93b;
+  color: var(--iron-amber);
   animation-delay: 0.75s;
 }
 
 .ship-score {
-  margin-top: 10px;
-  font: 700 20px var(--pixel);
-  color: #f2a93b;
-  animation: ship-rise 0.4s 0.6s ease-out both;
+  margin-top: 12px;
+  font: 700 20px var(--iron-pixel);
+  letter-spacing: 0.06em;
+  color: var(--iron-amber);
+  text-shadow: 2px 2px 0 #000;
+  animation: ship-rise 0.4s 0.6s steps(4) both;
 }
 
 .ship-auto {
-  margin-top: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 2px dotted var(--iron-line);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font: 600 13px var(--mono);
-  color: var(--blue, #6fb2ff);
+  font: 400 10px var(--iron-pixel);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--iron-aether);
   animation: ship-fade-in 0.3s 0.9s both;
 }
 .ship-auto .segs {
   display: inline-flex;
-  gap: 2px;
+  gap: 3px;
 }
 .ship-auto .segs i {
   width: 8px;
   height: 10px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--hair);
+  border-radius: 0;
+  background: var(--iron-soot);
+  outline: 1px solid var(--iron-line);
 }
 .ship-auto .segs i.on {
-  background: #6fb2ff;
-  border-color: #6fb2ff;
+  background: var(--iron-aether);
 }
 .ship-auto .segs i.new {
   animation: ship-tick 0.5s 1.1s steps(2) 3 both;
 }
 .ship-auto.unlocked {
-  color: #5bd18b;
+  color: var(--iron-ok);
 }
 .ship-auto.unlocked .segs i.on {
-  background: #5bd18b;
-  border-color: #5bd18b;
+  background: var(--iron-ok);
 }
 
 .ship-burst {
@@ -160,15 +174,15 @@ body.ship-shake canvas.map {
   height: 6px;
   margin: -3px;
   background: var(--c);
-  animation: ship-confetti 0.9s cubic-bezier(0.1, 0.7, 0.3, 1) both;
+  animation: ship-confetti 0.9s steps(9) both;
 }
 .ship-ring {
   position: absolute;
   width: 40px;
   height: 40px;
   margin: -20px;
-  border: 3px solid #5bd18b;
-  animation: ship-ring 0.6s ease-out both;
+  border: 3px solid var(--iron-ok);
+  animation: ship-ring 0.6s steps(6) both;
 }
 
 .ship-cel .sr {
@@ -201,8 +215,8 @@ body.ship-shake canvas.map {
   100% { opacity: 1; transform: translateY(0); }
 }
 @keyframes ship-tick {
-  0% { background: #eef1fa; }
-  100% { background: #6fb2ff; }
+  0% { background: var(--iron-ink); }
+  100% { background: var(--iron-aether); }
 }
 @keyframes ship-confetti {
   0% { opacity: 1; transform: translate(0, 0) scale(1); }

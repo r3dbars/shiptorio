@@ -191,6 +191,9 @@ export const SETTINGS = {
   mute: "Mute (M)",
   soundOn: "ON",
   soundOff: "OFF",
+  music: "Music",
+  musicOn: "MUSIC ON",
+  musicOff: "MUSIC OFF",
   volume: "Volume",
 };
 

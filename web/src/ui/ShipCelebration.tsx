@@ -14,7 +14,8 @@ const CHECK: [number, number][] = [
   [0, 3], [1, 4], [2, 5], [3, 6], [4, 5], [5, 4], [6, 3], [7, 2], [8, 1], [8, 0],
   [0, 4], [1, 5], [2, 6], [3, 5], [4, 4], [5, 3], [6, 2], [7, 1], [7, 0],
 ];
-const CONFETTI = ["#5bd18b", "#f2a93b", "#6fb2ff", "#eef1fa", "#5bd18b", "#ff5e52"];
+// furnace sparks: the Black Iron ok, amber, brass, aether and ember (docs/art/IRON-STYLE.md)
+const CONFETTI = ["#46e07a", "#ffb020", "#d0a24e", "#7af0d8", "#ff7a2a", "#f4ead8"];
 
 type Phase = "countdown" | "shipped";
 interface Show {
