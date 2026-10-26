@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require("playwright");
-const dist = join(dirname(fileURLToPath(import.meta.url)), "../dist");
+const dist = process.env.DIST ?? join(dirname(fileURLToPath(import.meta.url)), "../dist");
 const scenario = process.argv[2] ?? "heal";
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 

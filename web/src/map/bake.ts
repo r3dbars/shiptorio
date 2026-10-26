@@ -31,6 +31,8 @@ const look = (mt: THREE.Material) => {
     m.map ? `${m.map.uuid}:${m.map.offset.x},${m.map.offset.y}:${m.map.repeat.x},${m.map.repeat.y}` : ""].join("|");
 };
 
+const EMPTY = new THREE.BufferGeometry();
+
 const list = (root: THREE.Object3D) => {
   const out: THREE.Object3D[] = [];
   root.traverse((o) => out.push(o));
@@ -174,7 +176,9 @@ export function mergeStatic(root: THREE.Object3D, probe?: Probe, shareLooks = tr
     merged.receiveShadow = meshes[0].receiveShadow;
     merged.name = "baked";
     anchor.add(merged);
-    for (const m of meshes) m.visible = false;
+    // hidden and emptied: their matrices still update (particle spawns read them) but their
+    // vertex data can go, and raycasts hit the merged mesh instead
+    for (const m of meshes) (m.visible = false), (m.geometry = EMPTY);
   }
 }
 
