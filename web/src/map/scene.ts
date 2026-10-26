@@ -246,6 +246,9 @@ export class FactoryScene {
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
   private worldKey = "";
+  private districtCount = 0;
+  private rising: THREE.Object3D[] = []; // new districts climb out of the void (the onboarding scan)
+  private glide: THREE.Vector3 | null = null; // camera eases here when the island grows
   private beltKey = "";
   private zoom = 1;
   private width = 1;
@@ -286,7 +289,9 @@ export class FactoryScene {
 
     this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
+    // phones and low-end machines get a smaller shadow map; the pixel pass hides the difference
+    const small = window.matchMedia?.("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+    this.sun.shadow.mapSize.set(small ? 512 : 1024, small ? 512 : 1024);
     this.sun.shadow.bias = -0.0015;
     this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g, this.glow);
     this.glow.visible = false;
@@ -323,24 +328,36 @@ export class FactoryScene {
   }
 
   // Zoom out just enough that the whole machine line, ore to launch pad, fits beside the HUD.
+  // Phones have no HUD column, so the line gets the full width.
   private fitLine(state: FactoryState) {
-    if (!state.machines.length || this.width <= 760) return;
+    if (!state.machines.length) return;
     const xs = state.machines.map((m) => m.x * CELL);
     const span = (Math.max(...xs) - Math.min(...xs)) * Math.cos(YAW) + 7;
-    const free = (this.width - HUD_RIGHT_PX - 40) / this.height;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (19 * free)));
+    const free = (this.width - (this.hasHudColumn() ? HUD_RIGHT_PX + 40 : 16)) / this.height;
+    this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (this.baseViewHeight() * free)));
     this.target.x = (Math.max(...xs) + Math.min(...xs)) / 2;
     this.applyCamera();
   }
 
+  private hasHudColumn() {
+    return this.width > 760 && this.height > 500; // matches the phone breakpoint in styles.css
+  }
+
+  // world units shown top to bottom at zoom 1; portrait phones see more so the line isn't cramped
+  private baseViewHeight() {
+    const a = this.width / this.height;
+    return a < 1 ? (24 / a) * 0.78 : 19;
+  }
+
   private applyCamera() {
     const a = this.width / this.height;
-    const vh = (a < 1 ? (24 / a) * 0.62 : 19) * this.zoom;
+    const vh = this.baseViewHeight() * this.zoom;
     // keep the factory centered in the space the HUD cards on the right leave free
-    const shift = this.width > 760 ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
+    const shift = this.hasHudColumn() ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
     Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
+    this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
   }
 
   update(state: FactoryState) {
@@ -351,10 +368,11 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
-      if (first) {
-        this.target.set((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
-        this.fitLine(state);
-      }
+      const center = new THREE.Vector3((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
+      if (first) this.target.copy(center);
+      else if (state.districts.length !== this.districtCount) this.glide = center;
+      this.districtCount = state.districts.length;
+      if (first) this.fitLine(state);
     }
     this.syncBelts(state);
     this.syncDistricts(state);
@@ -373,7 +391,7 @@ export class FactoryScene {
     const p = at ? this.machinePos(at) : this.target.clone();
     this.droneTo.set(p.x, at ? (LABEL_Y[at.type] ?? 2) + 1.6 : 4, p.z + (at ? 0.4 : 0));
     if (first) this.drone.g.position.copy(this.droneTo);
-    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : (f?.tool ?? "foreman"));
+    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : f?.tool && f.targetId ? f.tool.replace(/_/g, " ") : "watching the floor");
   }
 
   private droneMode(): DroneMode {
@@ -457,6 +475,7 @@ export class FactoryScene {
     this.world.clear();
     this.waterTextures = [];
     this.rocks = [];
+    this.rising = [];
 
     const ms = state.machines.map((m) => this.machinePos(m));
     let x0 = Math.min(-8, ...ms.map((p) => p.x - 2.5));
@@ -477,7 +496,9 @@ export class FactoryScene {
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
-      model.group.position.set(cx, 0, cz);
+      const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
+      model.group.position.set(cx, isNew ? -2.5 : 0, cz);
+      if (isNew) this.rising.push(model.group);
       this.world.add(model.group);
       const label = this.addLabel(model.group, model.labelY, `d:${d.name}`);
       this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
@@ -1027,6 +1048,12 @@ export class FactoryScene {
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterTextures) w.offset.y += dt * 1.6;
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+    for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
+    this.rising = this.rising.filter((g) => g.position.y < 0);
+    if (this.glide) {
+      this.target.lerp(this.glide, Math.min(1, dt * 3));
+      if (this.target.distanceTo(this.glide) < 0.05) this.glide = null;
+    }
 
     for (const v of this.items.values()) {
       if (v.path && v.s < v.stopAt) {
@@ -1062,7 +1089,7 @@ export class FactoryScene {
     this.drone.update(t, dt, this.droneMode());
 
     const drift = this.reduceMotion ? 0 : 1;
-    const dx = Math.sin(t * 0.07) * 0.8 * drift, dz = Math.cos(t * 0.05) * 0.6 * drift;
+    const dx = Math.sin(t * 0.07) * 0.25 * drift, dz = Math.cos(t * 0.05) * 0.2 * drift;
     const off = new THREE.Vector3(CAM_DIST * Math.cos(TILT) * Math.sin(YAW), CAM_DIST * Math.sin(TILT), CAM_DIST * Math.cos(TILT) * Math.cos(YAW));
     this.camera.position.set(this.target.x + dx + off.x, this.target.y + off.y, this.target.z + dz + off.z);
     this.camera.lookAt(this.target.x + dx, this.target.y, this.target.z + dz);

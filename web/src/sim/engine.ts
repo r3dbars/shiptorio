@@ -58,6 +58,8 @@ interface Scenario {
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
+  checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
+  onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -123,9 +125,27 @@ export const SCENARIOS = {
       { at: 24, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
     ],
   },
+  // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
+  checkin: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    checkin: true,
+    ores: [
+      {
+        at: 2,
+        title: "CSV export is empty",
+        kind: "bug",
+        district: "api",
+        ask: "3 customers asked. Spark found it: the export reads the wrong date column. Build it on Claude Code?",
+        spark: [{ tool: "triage", text: "Triaged \"CSV export is empty\" as a bug in /api, 3 customers asked", reason: "issue + 2 emails" }],
+      },
+      { at: 6, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
+    ],
+  },
   // Onboarding from docs/PRODUCT.md: Spark reads the repo, but nothing builds until you plug in a subscription.
   "first-run": {
     unplugged: true,
+    onboard: true,
     ores: [
       {
         at: 2,
@@ -133,7 +153,7 @@ export const SCENARIOS = {
         kind: "bug",
         district: "web",
         ask: "Send it to your new assembler with Spark's plan: await the payment intent before enabling the button.",
-        spark: [{ tool: "triage", text: "Read the repo: web and server carry the risk, 1 open bug worth fixing first", reason: "repo scan" }],
+        spark: [{ tool: "triage", text: "Triaged as a bug in web: the one worth fixing first", reason: "it blocks checkout on Safari" }],
       },
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
     ],
@@ -162,10 +182,12 @@ const GAUNTLET: StationDef[] = [
   { id: "gate-1", kind: "merge", name: "Merge gate", caught: 0, actions: [act("review", "Review with receipts", true), act("merge", "Merge and launch"), act("permit", "Give docs a launch permit")] },
 ];
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
+const FOREMAN_IDLE_TICKS = 5; // quiet ticks before the drone goes back to its plant
 const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
 
 function initialState(sc: Scenario): FactoryState {
-  const harness = sc.harness ?? "spark";
+  // Spark never writes code: without a scenario harness, the player is signed in with Claude
+  const harness = sc.harness ?? "claude_code";
   // Spark's steam plant powers the brain. A subscription (solar) powers the assemblers, when there is one.
   const plant = harness === "spark" ? "steam-spark" : `solar-${harness}`;
   const machines: Machine[] = [
@@ -190,12 +212,15 @@ function initialState(sc: Scenario): FactoryState {
   const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
   const districts = sc.districts ?? REPO_DISTRICTS;
+  // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
+  // and the starter factory is built only when the player says yes.
+  const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
   return {
     repo: sc.districts ? "sim/demo-shop" : "sim/shiptorio",
     baseBranch: "main",
-    districts,
-    machines,
-    belts,
+    districts: sc.onboard ? [] : districts,
+    machines: starter,
+    belts: sc.onboard ? [] : belts,
     items: [],
     power,
     science: { red: 0, green: 0, grey: 0, blue: 0 },
@@ -207,7 +232,7 @@ function initialState(sc: Scenario): FactoryState {
     autonomy: {
       level: "advisor",
       districts: districts.map((d) => ({ district: d.name, score: d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: false })),
-      next: { level: "floor", have: 8, need: 10, label: "Spark moves approved as-is" },
+      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "Spark moves approved as-is" },
       ranAlone: 0,
     },
     foreman: { thinking: false },
@@ -223,14 +248,21 @@ const STAGE_OF: Partial<Record<Item["state"], Stage>> = { ore: "intake", queued:
 
 const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + m.rockets - 25 * m.escapedDefects;
 
-export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener): Source {
+export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
+  if (repo) s.repo = repo;
+  // Ore ticks count from here. Onboarding holds the ore until the starter factory stands.
+  let clock0 = sc.onboard ? Infinity : 0;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
   const since = new Map<string, number>(); // item id -> tick it entered its state
   const fails = new Map<string, string | undefined>(); // item id -> scripted inspector failure
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
   const held = new Set<string>(); // queued items waiting on the player's yes
+  const parked = new Set<string>(); // items the player said "not now" to
+  let lastSpark = 0; // tick of Spark's last tool call
   const byTitle = new Map<string, string>(); // ore title -> item id, for linking
   const onChoose = new Map<string, (optionId: string) => void>(); // move id -> what each answer does
   const pending: Move[] = []; // moves waiting behind the open card
@@ -254,6 +286,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (actionId && opts.undo) undos.set(actionId, opts.undo);
     emit({ type: "log", level: "info", text: line.text, at: Date.now(), itemId: opts.itemId, actor: "spark", tool: line.tool, reason: line.reason, actionId, approvedBy: opts.approvedBy });
     s.foreman = { targetId: opts.target ?? s.foreman?.targetId, tool: line.tool, thinking: false };
+    lastSpark = s.tick;
     emit({ type: "patch", patch: { foreman: s.foreman } });
   };
 
@@ -275,6 +308,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       if (r.kind === "belt") s.belts = s.belts.filter((x) => x.id !== r.id);
       if (r.kind === "item") s.items = s.items.filter((x) => x.id !== r.id);
     }
+    if (p.districts) s.districts = p.districts;
     if (p.science) s.science = p.science;
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.metrics) s.metrics = p.metrics;
@@ -290,25 +324,66 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // ---------- the Next Move card ----------
 
+  // The check-in deck is the open card plus the ones waiting behind it, at most 12.
+  const dealDeck = () => {
+    s.deck = [...(s.move ? [s.move] : []), ...pending].slice(0, 12);
+    emit({ type: "deck", deck: s.deck });
+  };
   const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void) => {
     const m: Move = { ...move, id: `move-${++seq}`, createdAt: Date.now() };
     onChoose.set(m.id, then);
     if (s.move) pending.push(m);
     else open(m);
+    dealDeck();
   };
   const open = (m: Move) => {
     s.move = m;
     emit({ type: "move", move: m });
+    dealDeck();
+  };
+  // Take a move off the deck, wherever it sits. The next one opens right away while the player swipes.
+  const pull = (moveId: string, delay: number) => {
+    const i = pending.findIndex((m) => m.id === moveId);
+    if (i !== -1) pending.splice(i, 1);
+    if (s.move?.id === moveId) {
+      s.move = null;
+      const next = pending.shift();
+      if (next) setTimeout(() => open(next), delay);
+    }
+    dealDeck();
   };
   const resolve = (moveId: string, optionId: string | undefined, actor: "player" | "spark") => {
     const then = onChoose.get(moveId);
-    if (!then || s.move?.id !== moveId) return;
+    if (!then) return;
     onChoose.delete(moveId);
-    s.move = null;
     emit({ type: "move_resolved", moveId, optionId, actor });
+    pull(moveId, s.deck && s.deck.length > 1 ? 0 : 600);
     if (optionId) then(optionId);
-    const next = pending.shift();
-    if (next) setTimeout(() => open(next), 600);
+  };
+  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in).
+  const defer = (moveId: string) => {
+    const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
+    if (!m) return;
+    pull(moveId, 0);
+    pending.push(m);
+    if (!s.move) open(pending.shift()!);
+    else dealDeck();
+  };
+  // Swipe down: never, with one tap on why. The why is what Spark learns from.
+  const NEVER_LINE = {
+    once: "Dropped it.",
+    kind: "Noted as a rule: no more cards like this",
+    spark: "Got it: Spark handles this kind on its own from now on",
+    wrong: "Logged a scar: Spark misread this one",
+  } as const;
+  const dismiss = (moveId: string, why: keyof typeof NEVER_LINE) => {
+    const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
+    if (!m) return;
+    onChoose.delete(moveId);
+    emit({ type: "move_resolved", moveId, actor: "player" });
+    pull(moveId, 0);
+    spark({ tool: why === "kind" ? "add_rule" : why === "wrong" ? "scar" : "dismiss_move", text: `${NEVER_LINE[why]} ("${m.title}")`, reason: "you swiped never" }, { approvedBy: "player" });
+    if (why === "spark") approvedAsIs();
   };
 
   // Each move the player approves as-is counts toward the next autonomy unlock.
@@ -335,6 +410,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         title: users ? `${item.district === "checkout" ? "Checkout crash" : item.title}, ${users} users` : item.title,
         why: asks.get(item.id) ?? "Build it?",
         stage: "build",
+        kind: "build",
+        focus: asm?.id,
         itemId: item.id,
         options: [
           { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: item.id, machineId: asm?.id }, reason: "highest value on the floor" }] },
@@ -342,8 +419,11 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         ],
       },
       (opt) => {
-        if (opt !== "go") return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
         held.delete(item.id);
+        if (opt !== "go") {
+          parked.add(item.id);
+          return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
+        }
         spark({ tool: "start_job", text: `Sent "${item.title}" to ${asm?.id ?? "the assembler"} with the plan`, reason: "you said go" }, { itemId: item.id, target: asm?.id, approvedBy: "player" });
         approvedAsIs();
       },
@@ -357,6 +437,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         title: "Bottleneck: launch pad",
         why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : `PR #${item.prNumber} passed the gauntlet: ${item.title}`,
         stage: "pad",
+        kind: "ship",
+        focus: "gate-1",
+        evidence: GAUNTLET.slice(0, 3).map((g) => ({ station: g.name, ok: true })),
         itemId: item.id,
         options: [
           { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "green and on the pad" }] },
@@ -376,6 +459,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         title: `Reply to ${to.split("@")[0]}`,
         why: `Spark drafted: "Thanks for the report. Checkout is fixed in #${item.prNumber}, you can pay now. Sorry about that."`,
         stage: "impact",
+        kind: "ship",
+        focus: "ore-inbox",
         itemId: item.id,
         options: [
           { id: "send", label: "Send", recommended: true, actions: [{ tool: "send_customer_reply", args: { to }, reason: "the fix shipped" }] },
@@ -478,9 +563,14 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   const tick = () => {
     s.tick++;
+    // Spark heads back to its plant once it's been quiet for a bit, instead of hovering on its last job
+    if (s.foreman?.targetId && s.tick - lastSpark > FOREMAN_IDLE_TICKS) {
+      s.foreman = { thinking: false };
+      emit({ type: "patch", patch: { foreman: s.foreman } });
+    }
     const now = Date.now();
 
-    while (script.length && script[0].at <= s.tick) arrive(script.shift()!, now);
+    while (script.length && script[0].at + clock0 <= s.tick) arrive(script.shift()!, now);
 
     for (const item of [...s.items]) {
       const age = s.tick - (since.get(item.id) ?? s.tick);
@@ -497,8 +587,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           }
           break;
         case "queued": {
-          if (held.has(item.id)) continue;
-          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle");
+          // Spark's pick goes first: nothing else starts while its "fix this first" waits on your Go
+          if (held.size || parked.has(item.id)) continue;
+          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId);
           if (!a) continue;
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
@@ -686,6 +777,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         title: "Plug in power to start building",
         why: "Spark has read the repo and lined up the first fix, but nothing can build yet. Your own subscriptions power the assemblers.",
         stage: "resources",
+        kind: "input",
+        focus: "assembler-1",
+        grows: ["+1 POWER PLANT", "ASSEMBLERS ON"],
         options: [
           { id: "claude_code", label: "Sign in with Claude", recommended: true, actions: [] },
           { id: "codex", label: "Sign in with ChatGPT", recommended: false, actions: [] },
@@ -695,9 +789,147 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     );
   };
 
+  // ---------- the check-in deck ----------
+
+  // A morning's worth of Next Moves, dealt at once. Mostly loop-growers: checks, sources, autonomy.
+  const dealCheckIn = () => {
+    const yes = (text: string, tool: string, target: string, extra?: () => void) => () => {
+      spark({ tool, text, reason: "you swiped right" }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${text.toLowerCase()}`) });
+      extra?.();
+      approvedAsIs();
+    };
+    const one = (id: string, label: string, actions: Move["options"][number]["actions"] = []) => ({ id, label, recommended: true, actions });
+    const alt = (id: string, label: string) => ({ id, label, recommended: false, actions: [] });
+    const cards: [Omit<Move, "id" | "createdAt">, Record<string, () => void>][] = [
+      [
+        {
+          title: "Same review note, third time. Make it a lint rule?",
+          why: "AI review flagged a missing null check on cart items in #138, #140 and #143. Each one cost a rework loop.",
+          kind: "verify", stage: "inspect", focus: "review-1", grows: ["+1 CHECK", "−1 REWORK LOOP"],
+          plan: ["Claude Code writes the rule plus a fixture", "It lands as a PR through the same gauntlet", "AI review stops raising it, lint catches it earlier"],
+          options: [one("lint", "Promote it to a lint rule", [{ tool: "promote_check", args: { layer: "lint" }, reason: "3 scars, same reason" }]), alt("turret", "Make it a test turret"), alt("keep", "Keep it as a review note")],
+        },
+        { lint: yes("Promoting the cart null check to a lint rule. PR incoming", "promote_check", "review-1"), turret: yes("Adding a test turret on /cart", "add_turret", "review-1") },
+      ],
+      [
+        {
+          title: "4 PRs stuck at the verify bay for 2h",
+          why: "One bay, and each repro takes about 6 minutes. Everything downstream waits on it.",
+          kind: "unblock", stage: "inspect", focus: "verify-1", grows: ["+1 STATION"],
+          plan: ["Second bay goes on the Claude plant, it has charge left", "The pile splits across both bays", "Wait should drop from 2h to about 40m"],
+          options: [one("second", "Build a second verify bay"), alt("skip-docs", "Let docs PRs skip verify")],
+        },
+        { second: yes("Building a second verify bay", "place_machine", "verify-1"), "skip-docs": yes("Docs PRs skip the verify bay now", "set_loadout", "verify-1") },
+      ],
+      [
+        {
+          title: "Connect PostHog to rank by real traffic",
+          why: "Spark is guessing which districts matter. With traffic, a bug on /checkout outranks /docs for the right reason.",
+          kind: "input", stage: "intake", focus: "ore-issues", grows: ["+1 SOURCE", "SMARTER DECKS"],
+          plan: ["Paste a read-only PostHog key", "Roads light up with traffic per district", "Cards rank by real sessions, not guesses"],
+          options: [one("connect", "Connect PostHog"), alt("later", "Not this project")],
+        },
+        { connect: yes("PostHog connected: traffic now feeds the ranking", "connect_source", "ore-issues") },
+      ],
+      [
+        {
+          title: "#151 passed CI, but nobody proved the fix",
+          why: "The verify bay has no recipe for /api, so it skipped. CI green isn't proof.",
+          kind: "verify", stage: "inspect", focus: "verify-1", locked: true, grows: ["+1 CHECK", "/API VERIFIABLE"],
+          evidence: [{ station: "CI inspector", ok: true }, { station: "Verify bay", ok: false, note: "no recipe" }, { station: "AI review", ok: true }],
+          plan: ["Codex writes a recipe: call the endpoint, check the response", "Verify bay runs it before and after #151", "If it passes, #151 comes back as a merge card"],
+          options: [one("recipe", "Write an /api verify recipe, then run it"), alt("close", "Close #151")],
+        },
+        { recipe: yes("Writing an /api verify recipe, #151 waits for it", "start_job", "verify-1") },
+      ],
+      [
+        {
+          title: "Let Spark launch docs PRs on its own?",
+          why: "You merged the last 9 docs PRs exactly as Spark had them. Zero reverts.",
+          kind: "automate", stage: "pad", focus: "gate-1", grows: ["+AUTONOMY", "FEWER CARDS"],
+          plan: ["Spark merges docs PRs that pass every station", "Each one still shows in the morning review card", "One revert and the permit pauses itself"],
+          options: [one("permit", "Give docs a launch permit"), alt("more", "Ask me 5 more times first")],
+        },
+        {
+          permit: yes("Docs has a launch permit now", "set_autonomy", "gate-1", () =>
+            apply({ autonomy: { ...s.autonomy!, districts: s.autonomy!.districts.map((d) => (d.district === "docs" ? { ...d, permit: true } : d)) } }),
+          ),
+        },
+      ],
+      [
+        {
+          title: "Overnight: Spark did 6 things alone. 1 flagged.",
+          why: "Flagged: it closed #133 as a duplicate of #129. They look the same, but #133 only happens on mobile.",
+          kind: "review", stage: "triage", focus: "splitter-1",
+          evidence: [{ station: "5 routine", ok: true, note: "verified" }, { station: "1 flagged", ok: false }],
+          plan: ["Triaged 3 issues", "Linked an email to an open bug", "Closed #133 as a duplicate (flagged)"],
+          options: [one("keep", "Keep all six"), alt("reopen", "Reopen #133")],
+        },
+        { keep: yes("Kept overnight's six moves", "post_log", "splitter-1"), reopen: yes("Reopened #133, it's mobile only", "triage", "splitter-1") },
+      ],
+    ];
+    for (const [move, then] of cards) propose(move, (opt) => then[opt]?.());
+  };
+
+  // ---------- onboarding: scan the repo, then propose the starter factory ----------
+
+  const SCAN_MS = 650;
+  const scan = () => {
+    const ds = sc.districts ?? REPO_DISTRICTS;
+    const files = ds.reduce((n, d) => n + d.files, 0);
+    spark({ tool: "read_repo", text: `Opening ${s.repo}: reading the tree, issues and CI`, reason: "you picked this repo" }, { target: "steam-spark" });
+    ds.forEach((d, n) =>
+      later(SCAN_MS * (n + 1), () => {
+        apply({ districts: ds.slice(0, n + 1) });
+        log("info", `District ${d.name === "/" ? "/ (root)" : `/${d.name}`}: ${d.files} files`);
+      }),
+    );
+    const t = SCAN_MS * (ds.length + 1);
+    later(t, () => spark({ tool: "list_issues", text: `${sc.ores.length} open issues become ore at the deposit`, reason: "GitHub issues" }, { target: "ore-issues" }));
+    later(t + SCAN_MS, () => spark({ tool: "read_ci", text: "Found GitHub Actions: that's your first inspector", reason: ".github/workflows" }));
+    later(t + SCAN_MS * 2, () => {
+      log("success", `Repo read: ${ds.length} districts, ${files} files, ${sc.ores.length} open issues. ${ds[0].name} carries the most risk`);
+      proposeStarter();
+    });
+  };
+
+  // The splitter → assembler → inspector → launch pad line from initialState, minus what's already down.
+  const proposeStarter = () => {
+    const full = initialState({ ...sc, onboard: false });
+    const first = sc.ores.find((o) => o.ask) ?? sc.ores[0];
+    propose(
+      {
+        title: "Build your starter factory?",
+        why: `A splitter, one assembler, an inspector and a launch pad, with belts. First job: "${first.title}".`,
+        stage: "build",
+        options: [
+          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "smallest line that can ship a PR" }] },
+          { id: "later", label: "Not yet", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt !== "build") {
+          spark({ tool: "post_log", text: "No rush. Say the word and I'll lay it down." });
+          return later(TICK_MS * 6, proposeStarter);
+        }
+        approvedAsIs();
+        const add = full.machines.filter((m) => !s.machines.some((x) => x.id === m.id));
+        add.forEach((m, n) => later(300 * n, () => apply({ machines: [m] })));
+        later(300 * add.length, () => {
+          apply({ belts: full.belts });
+          spark({ tool: "place_machine", text: "Starter factory down. The assembler is dark: it needs power", reason: "you said build" }, { target: "assembler-1", approvedBy: "player" });
+          clock0 = s.tick;
+          later(TICK_MS, askForPower);
+        });
+      },
+    );
+  };
+
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
-  if (sc.unplugged) setTimeout(askForPower, TICK_MS * 1.5);
+  if (sc.checkin) setTimeout(dealCheckIn, TICK_MS);
+  if (sc.onboard) later(TICK_MS, scan);
+  else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, TICK_MS);
 
   return {
@@ -712,6 +944,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         }
         case "choose_move":
           resolve(msg.moveId, msg.optionId, "player");
+          break;
+        case "defer_move":
+          defer(msg.moveId);
+          break;
+        case "dismiss_move":
+          dismiss(msg.moveId, msg.why);
           break;
         case "station_action":
           stationAction(msg.stationId, msg.action);
@@ -735,7 +973,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "place_machine":
           apply({
-            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, tier: 1, state: "idle" }],
+            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
           });
           break;
         case "remove_machine":
@@ -750,6 +988,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     },
     close() {
       clearInterval(timer);
+      timers.forEach(clearTimeout);
       onStatus("offline");
     },
   };
