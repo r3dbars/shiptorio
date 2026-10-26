@@ -15,7 +15,7 @@ export async function draftHash(ticketId: string, text: string): Promise<string>
 
 export async function makeDraft(ticketId: string, text: string, purpose: SupportDraft["purpose"], by: SupportDraft["by"], at = Date.now()): Promise<SupportDraft> {
   const clean = text.trim().slice(0, 4000);
-  return { text: clean, hash: await draftHash(ticketId, clean), purpose, by, at };
+  return { text: clean, hash: await draftHash(ticketId, `${purpose}\n${at}\n${crypto.randomUUID()}\n${clean}`), purpose, by, at };
 }
 
 export async function ticketId(m: Pick<SupportMessage, "channel" | "threadId">): Promise<string> {
@@ -89,10 +89,10 @@ export function replyMove(t: SupportTicket, now = Date.now()): Move | null {
     why: `${t.triage?.summary ?? t.subject}${t.paying ? " (paying customer)" : ""}. Draft: “${quote(t.draft.text.replace(/\s+/g, " "), 180)}”`,
     focus: "ore-inbox",
     grows: fixed ? ["+1 CUSTOMER ANSWERED"] : [],
-    plan: [fixed ? "Sends the “it's fixed” reply above, exactly as written." : "Sends the reply above, exactly as written.", `Goes to ${t.channel === "intercom" ? "their Intercom conversation" : "their email thread"}. Nothing else is sent.`],
+    plan: [fixed ? "Opens the complete “it's fixed” reply for review; sending requires another explicit tap." : "Opens the complete reply for review; sending requires another explicit tap.", `Goes to ${t.channel === "intercom" ? "their Intercom conversation" : "their email thread"}. Nothing else is sent.`],
     createdAt: now,
     options: [
-      { id: "send", label: "Send reply", recommended: true, actions: [{ tool: "send_customer_reply", args: { ticketId: t.id, draftHash: t.draft.hash }, reason: "You read the draft and chose to send it." }] },
+      { id: "review", label: "Review full reply", recommended: true, actions: [{ tool: "review_customer_reply", args: { ticketId: t.id }, reason: "Open the full draft and destination before choosing Send." }] },
       { id: "later", label: "Edit first", recommended: false, actions: [] },
     ],
   };

@@ -33,8 +33,9 @@ export interface SupportCreds {
 
 export interface SupportEnv extends KeyEnv {
   CACHE?: KVNamespace;
-  // Worker secrets win over the connect page (operator's own map, local dev).
+  // Worker secrets win over the connect page, for the SUPPORT_REPO factory only (operator, local dev).
   SUPPORT_INBOUND_TOKEN?: string;
+  SUPPORT_REPO?: string; // operator secrets are pinned to this one factory
   INTERCOM_CLIENT_SECRET?: string;
   INTERCOM_TOKEN?: string;
   INTERCOM_ADMIN_ID?: string;
@@ -57,11 +58,13 @@ async function stored(env: SupportEnv, repo: string): Promise<SupportCreds> {
 
 export async function supportCreds(env: SupportEnv, repo?: string | null): Promise<SupportCreds> {
   const own = repo ? await stored(env, repo) : {};
+  // Worker secrets only feed the operator's own repo (SUPPORT_REPO). Everyone else uses their pasted keys.
+  const operator = !!repo && env.SUPPORT_REPO?.toLowerCase() === repo.toLowerCase();
   return {
-    inboundToken: env.SUPPORT_INBOUND_TOKEN || own.inboundToken,
-    intercomClientSecret: env.INTERCOM_CLIENT_SECRET || own.intercomClientSecret,
-    intercomToken: env.INTERCOM_TOKEN || own.intercomToken,
-    intercomAdminId: env.INTERCOM_ADMIN_ID || own.intercomAdminId,
+    inboundToken: (operator ? env.SUPPORT_INBOUND_TOKEN : undefined) || own.inboundToken,
+    intercomClientSecret: (operator ? env.INTERCOM_CLIENT_SECRET : undefined) || own.intercomClientSecret,
+    intercomToken: (operator ? env.INTERCOM_TOKEN : undefined) || own.intercomToken,
+    intercomAdminId: (operator ? env.INTERCOM_ADMIN_ID : undefined) || own.intercomAdminId,
   };
 }
 

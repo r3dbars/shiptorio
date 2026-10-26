@@ -3,7 +3,14 @@
 // (docs/context/support-mine.md). Editing a draft saves a new one; Send always names the draft on screen.
 
 import { useEffect, useState } from "react";
-import type { FactoryState, SupportTicket, WebToServer } from "@shiptorio/shared";
+import type { FactoryState, Move, SupportTicket, WebToServer } from "@shiptorio/shared";
+
+/** Summary cards can open review, never send a hidden remainder of a draft. */
+export function supportReviewTarget(message: WebToServer, deck: Move[]): string | null {
+  if (message.type !== "choose_move") return null;
+  const action = deck.find(m => m.id === message.moveId)?.options.find(o => o.id === message.optionId)?.actions[0];
+  return action?.tool === "review_customer_reply" && typeof action.args.ticketId === "string" ? action.args.ticketId : null;
+}
 
 const KIND_TAG: Record<string, [string, string]> = { bug: ["red", "bug"], feature: ["green", "feature"], question: ["blue", "question"], praise: ["green", "thanks"], spam: ["steel", "spam"] };
 const ORDER: Record<SupportTicket["state"], number> = { drafted: 0, new: 1, waiting_fix: 2, answered: 3, closed: 4 };
@@ -14,14 +21,15 @@ function ago(at: number) {
   return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)}m ago` : s < 129600 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
 }
 
-export function SupportPanel({ state, send, onClose }: { state: FactoryState; send: (m: WebToServer) => void; onClose: () => void }) {
+export function SupportPanel({ state, send, onClose, reviewTicket }: { state: FactoryState; send: (m: WebToServer) => void; onClose: () => void; reviewTicket?: string | null }) {
   // replies waiting on you first, the customer who's waited longest on top; finished threads newest first
   const tickets = [...(state.support ?? [])].sort((a, b) => ORDER[a.state] - ORDER[b.state] || (ORDER[a.state] < 2 ? a.receivedAt - b.receivedAt : b.receivedAt - a.receivedAt));
   const waiting = tickets.filter((t) => t.state === "drafted").length;
-  const [open, setOpen] = useState<string | null>(tickets[0]?.id ?? null);
+  const [open, setOpen] = useState<string | null>(reviewTicket ?? tickets[0]?.id ?? null);
   useEffect(() => {
     if (!open && tickets[0]) setOpen(tickets[0].id);
   }, [open, tickets]);
+  useEffect(() => { if (reviewTicket) setOpen(reviewTicket); }, [reviewTicket]);
   const status = state.sources?.find((s) => s.kind === "email");
   return (
     <section className="card stationpanel support" aria-label="Support well">
@@ -94,6 +102,7 @@ function Ticket({ t, open, onOpen, state, send }: { t: SupportTicket; open: bool
                 {t.draft.purpose === "fixed" ? "“It's fixed” reply" : "Drafted reply"}
                 {t.draft.by === "player" ? " (your edit)" : ""}
               </label>
+              <p className="su-destination">To: {t.channel === "intercom" ? `Intercom conversation ${t.thread}` : t.from}</p>
               <textarea id={`draft-${t.id}`} className="su-draft" value={text} maxLength={4000} rows={6} onChange={(e) => setText(e.target.value)} />
               <div className="sp-actions">
                 {edited ? (

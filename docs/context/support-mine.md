@@ -51,8 +51,8 @@ Re:/Fwd:), because mail clients drop References too often.
 **Connect:** `/connect/support?repo=owner/name` (signed-in, repo access required). Opening it makes the email
 token and plugs the well into the map. The Intercom client secret, access token and admin id are pasted there.
 Keys live in KV `cred:support:<repo>`; Worker secrets `SUPPORT_INBOUND_TOKEN`, `INTERCOM_CLIENT_SECRET`,
-`INTERCOM_TOKEN`, `INTERCOM_ADMIN_ID` win (operator's map, local dev). Codex's encrypted-credentials PR (#155)
-should fold `cred:support:*` in the same way as Sentry/PostHog.
+`INTERCOM_TOKEN`, `INTERCOM_ADMIN_ID` win, but only for the repo named in `SUPPORT_REPO` (operator, local dev). Stored keys
+are encrypted with the #155 master key and bound to the repo (the D1 credentials table only takes sentry/posthog).
 
 **Sending:** Intercom tickets reply into the conversation (needs token + admin id). Email replies go through
 Resend when `RESEND_API_KEY` and `SUPPORT_FROM` are set. Without a sender, a tapped reply lands in the

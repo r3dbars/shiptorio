@@ -250,7 +250,7 @@ app.on(["GET", "POST"], "/connect/support", async (c) => {
   const token = await ensureInboundToken(c.env, repoParam);
   const view = async (extra: { error?: string; saved?: boolean } = {}) => {
     const creds = await supportCreds(c.env, repoParam);
-    return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
+    return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: c.env.SUPPORT_REPO?.toLowerCase() === repoParam && !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
   };
   if (c.req.method === "GET") {
     await factory(c.env, repoParam).connectSupport().catch(() => null);
@@ -550,7 +550,7 @@ async function boundedBody(c: Context<AppEnv>): Promise<string | null> {
 
 async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
-  const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${message.channel}:${message.messageId}:${body.length}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${repo}:${message.channel}:${message.messageId}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('support', ?, ?, ?)").bind(digest, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
