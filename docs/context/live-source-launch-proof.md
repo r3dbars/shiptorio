@@ -24,5 +24,14 @@
   It was not approved. PR #141 separates planning reads from the final editable
   subset, validates that subset and carries it through player approval and runner
   claim. CI passed; merge commit `4d7150dde79af239030a7243f64b6beb6ff3eacd`.
+- PR #141 Deploy run 40401140082 passed; both domains reported its exact SHA.
+- PR #142 removes invalid runner offers for source-only ore and rejects direct
+  enqueue without a real GitHub issue. It also prunes persisted invalid cards.
+  CI and Deploy 40401524789 passed; both domains reported merge SHA
+  `a4fc27c5407460577965a47a5d15d7a3feafbaef`.
+- A second plan was not approved because it still included a reference-only file.
+  Live testing also exposed self-invalidation: the app's own plan-comment webhook
+  replaced issue context and changed its approval revision. A fix is in progress;
+  no stale-plan or writable-scope checks were bypassed.
 - No claim of completed issue → approval → local build → PR → Launch until the
   real run below is recorded. Unit/integration tests alone do not satisfy it.
