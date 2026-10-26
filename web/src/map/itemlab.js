@@ -660,8 +660,11 @@ const beltTex = tex().belt;
     cone(0.26, 1.2, basic(0xffb340), 8, 0, -0.5, 0, flame).rotation.x = Math.PI;
     cone(0.14, 0.7, basic(0xfff3c0), 8, 0, -0.3, 0, flame).rotation.x = Math.PI;
     flame.children.forEach((c) => (c.castShadow = false));
+    // shock diamonds in the plume, and four little vernier jets around the base
+    const diamonds = [0, 1, 2].map((i) => { const s = 0.13 - i * 0.03, d = box(s, s, s, basic(0xffffff), 0, -0.35 - i * 0.32, 0, flame); d.rotation.set(0.6, 0.8, 0); d.castShadow = false; return d; });
+    const verniers = [0, 1, 2, 3].map((i) => { const a = i / 4 * Math.PI * 2 + Math.PI / 4; const j = cone(0.06, 0.34, basic(0xffd25a), 6, Math.cos(a) * 0.3, 0.32, Math.sin(a) * 0.3, rocket); j.rotation.x = Math.PI; j.castShadow = false; j.visible = false; return j; });
     const glow = new THREE.PointLight(0xffb040, 0, 8); glow.position.y = 0.2; rocket.add(glow);
-    let clock = 0, cd = 0, cd2 = 0;
+    let clock = 0, cd = 0, cd2 = 0, ringed = false;
     return { g, update(t, dt, s) {
       cd -= dt; cd2 -= dt;
       beacon.material.emissive.setHex(Math.sin(t * 4) > 0 ? 0xff5e52 : 0);
@@ -686,9 +689,13 @@ const beltTex = tex().belt;
         rocket.position.y = c < 3.4 ? 0.5 * k * k * 3.4 : 0;
         rocket.position.x = c < 3.4 ? Math.sin(c * 40) * 0.015 : 0;
         flame.visible = c < 3.4; flame.scale.y = 0.8 + Math.random() * 0.6; glow.intensity = c < 3.4 ? (night ? 2 : 0.6) : 0;
+        diamonds.forEach((d, i) => { d.visible = Math.sin(t * 30 + i * 2) > -0.3; d.rotation.y += dt * 9; });
+        verniers.forEach((j) => { j.visible = c > 0.3 && c < 3.4 && Math.random() < 0.85; j.scale.y = 0.6 + Math.random() * 0.8; });
+        if (c < 0.6) ringed = false;
+        else if (!ringed) { ringed = true; for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; spawn(g, Math.cos(a) * 0.7, 0.4, Math.sin(a) * 0.7, Math.cos(a) * 3, 0.4, Math.sin(a) * 3, i % 3 ? 0xd8dbe2 : 0xffb340, 1.0, 0.2, -0.2); } }
         if (c < 3.4 && cd <= 0) { cd = 0.03; spawn(g, R() * 0.3, rocket.position.y + 0.38, R() * 0.3, R() * 1.5, -0.5, R() * 1.5, Math.random() < 0.5 ? 0xb8bcc6 : 0xeef1fa, 1.4, 0.22, -0.3); }
         if (c < 2.2 && cd2 <= 0) { cd2 = 0.04; const sx = Math.random() < 0.5 ? -1 : 1; spawn(g, sx * 1.7, 0.4, R() * 0.4, sx * (2 + Math.random()), 0.9, R() * 0.8, Math.random() < 0.3 ? 0xffb340 : 0xd8dbe2, 1.2, 0.24, -0.3); }
-      } else { clock = 0; rocket.position.set(0, 0, 0); flame.visible = false; glow.intensity = 0; }
+      } else { clock = 0; ringed = false; rocket.position.set(0, 0, 0); flame.visible = false; glow.intensity = 0; verniers.forEach((j) => (j.visible = false)); }
     } };
   }
 
