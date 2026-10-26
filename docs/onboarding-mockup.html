@@ -214,6 +214,33 @@ button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .pick li.r { color: var(--fg); }
 .reply { font-family: var(--f-mono); font-size: 13px; background: #070a10; border: 1px dashed var(--amber); border-radius: 10px; padding: 10px 12px; color: var(--amber); }
 
+
+/* ---------- intro (canvas scene up top, words below) ---------- */
+#fx { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; transition: opacity .8s; }
+#fx.off { opacity: 0; pointer-events: none; }
+.screen.low { justify-content: flex-end; background: linear-gradient(transparent 40%, rgba(14,20,32,.92) 62%, var(--void)); }
+.intro { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; justify-content: space-between; }
+.intro .top { display: flex; gap: 10px; align-items: center; padding: 18px 18px 0; }
+.segs { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.segs i { height: 3px; border-radius: 2px; background: rgba(255,255,255,.18); }
+.segs i.done { background: var(--amber); }
+.segs i.now { background: linear-gradient(90deg, var(--amber) 50%, rgba(255,255,255,.18) 50%); background-size: 200% 100%; animation: seg 1.2s ease-out forwards; }
+@keyframes seg { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.intro .skip { background: none; border: 0; color: var(--dim); font-size: 13px; }
+.intro .words { padding: 0 24px 26px; display: flex; flex-direction: column; gap: 12px; background: linear-gradient(transparent, rgba(14,20,32,.94) 22%, var(--void)); padding-top: 50px; }
+.intro .kick { font-family: var(--f-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--amber); }
+.intro h2 { margin: 0; font-family: var(--f-display); font-weight: 700; font-size: 36px; line-height: 1.02; letter-spacing: .01em; text-wrap: balance; }
+.intro h2 em { font-style: normal; color: var(--amber); }
+.intro h2 .w { display: inline-block; opacity: 0; transform: translateY(14px); animation: wup .5s cubic-bezier(.2,.9,.3,1.2) forwards; }
+@keyframes wup { to { opacity: 1; transform: none; } }
+.intro p.body { margin: 0; font-size: 16px; color: #c4ccda; opacity: 0; animation: in .6s .5s forwards; }
+.intro .next { opacity: 0; animation: in .4s .9s forwards; }
+.mini { background: #1b2539; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; touch-action: none; user-select: none; cursor: grab; transition: transform .35s, opacity .35s; box-shadow: 0 10px 26px rgba(0,0,0,.45); opacity: 0; animation: in .5s .7s forwards; }
+.mini b { font-family: var(--f-display); font-size: 17px; }
+.mini .row2 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mini .ship { border: 0; border-radius: 10px; background: var(--ok); color: #062014; font-weight: 700; padding: 8px 12px; }
+.mini .hint { font-size: 12px; color: var(--dim); }
+
 @media (max-width: 860px) {
   .wrap { flex-direction: column; align-items: center; }
   .notes { width: 390px; }
@@ -229,6 +256,7 @@ button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 <div class="wrap">
   <div class="phone" id="phone">
     <div class="stars"></div>
+    <canvas id="fx"></canvas>
     <div class="map" id="map"></div>
     <div class="hud" id="hud"></div>
     <div class="dock" id="dock"></div>
@@ -312,6 +340,7 @@ const S0 = () => ({
 let S = S0();
 
 const NOTES = {
+  intro: ["Welcome to Shiptorio: five beats, about 40 seconds.", "Right after GitHub sign-in, before any setup. It sells the whole idea with a live factory instead of paragraphs:", "1. Your repo is a factory. 2. AI builds now, fast. 3. So the slow part is you: work piles up at your gate. 4. Clear it: you swipe one real-looking decision, the gate opens, rockets launch. 5. Decide faster, ship more, better product. That's the game.", "Beat 4 is teach-by-doing: the first thing you ever do in Shiptorio is clear a bottleneck. Skip is always there."],
   title: ["One button.", "GitHub sign-in is the only thing we ask for up front. Every other connection waits until the game needs it, so signup is two taps."],
   repo: ["One repo, one island.", "Pick the repo. In the real app this lists the repos the GitHub App can see."],
   scan: ["The first wow, then the first truth.", "The island rises with your folders as districts. Then a first read from GitHub alone: we already know your bottleneck (6 PRs waiting on review) before you connect anything. That's the two-minute promise."],
@@ -341,7 +370,8 @@ function render() { renderMap(); renderHud(); renderDock(); renderOverlay(); ren
 
 function renderMap() {
   const m = $("map");
-  if (S.screen === "title" || S.screen === "repo") { m.innerHTML = ""; return; }
+  FX.show(S.screen === "title" || S.screen === "intro");
+  if (S.screen === "title" || S.screen === "intro" || S.screen === "repo") { m.innerHTML = ""; return; }
   const slotHtml = SLOTS.map((sl, i) => {
     const k = S.slots[i];
     let cls = "slot";
@@ -480,10 +510,12 @@ function deckCard(c, pos) {
 function renderOverlay() {
   const o = $("overlay");
   if (S.screen === "title") {
-    o.innerHTML = `<div class="screen"><div class="logo">SHIPTORIO</div><div class="tag">Your repo, as a factory. Play it, and real fixes ship.</div>
+    o.innerHTML = `<div class="screen low"><div class="logo">SHIPTORIO</div><div class="tag">Your repo, as a factory. Play it, and real fixes ship.</div>
       <div class="btns"><button class="btn rec" id="signin">Sign in with GitHub</button></div>
       <p class="small">That's the only thing we need to start.</p><div class="credit">powered by Meta Muse Spark</div></div>`;
-    $("signin").onclick = () => { S.screen = "repo"; setStep("repo"); render(); }; return;
+    $("signin").onclick = () => startIntro(); return;
+  }
+  if (S.screen === "intro") { renderIntro(o); return;
   }
   if (S.screen === "repo") {
     const repos = [["you/demo-shop", "Next.js shop · 14 open issues"], ["you/side-project", "Python CLI · 3 open issues"], ["you/blog", "Astro · no CI yet"]];
@@ -532,7 +564,7 @@ function renderOverlay() {
 function renderNotes() {
   const n = NOTES[S.step] || NOTES.title;
   $("why").innerHTML = `<h2>What you're looking at</h2><p><b>${n[0]}</b></p>${n.slice(1).map(p => `<p>${p}</p>`).join("")}`;
-  const jumps = [["title", "Start"], ["fork", "After the scan"], ["checkin", "Check in"], ["build", "Build"], ["sandbox", "Make it yours"]];
+  const jumps = [["title", "Start"], ["intro", "Intro"], ["fork", "After the scan"], ["checkin", "Check in"], ["build", "Build"], ["sandbox", "Make it yours"]];
   $("jumps").innerHTML = jumps.map(([k, l]) => `<button data-j="${k}" class="${S.step === k ? "on" : ""}">${l}</button>`).join("");
   $("jumps").querySelectorAll("[data-j]").forEach(b => b.onclick = () => jump(b.dataset.j));
 }
@@ -710,6 +742,7 @@ function buildTool(k) {
 function jump(k) {
   S = S0();
   if (k === "title") { setStep("title"); render(); return; }
+  if (k === "intro") { startIntro(); return; }
   S.screen = "map"; S.dist = true; learn("island"); learn("bottleneck");
   if (k === "fork") { S.lens = "fork"; setStep("fork"); render(); return; }
   if (k === "checkin") { startCheckin(); return; }
@@ -720,6 +753,162 @@ function jump(k) {
     ["machines", "ore", "power", "gauntlet", "rocket", "place"].forEach(learn); setStep("sandbox"); render();
   }
 }
+
+
+// ---------- intro: one live factory scene that tells the story ----------
+const BEATS = [
+  { kick: "Welcome, @you", h: "Welcome to <em>Shiptorio</em>.", body: "Your GitHub repo, as a factory you can see and play. Every building is a folder. Every crate is real work.", fx: { island: 1, belt: 0, checks: 0, gate: "none", spawn: 0 } },
+  { kick: "1 · The new way to build", h: "AI builds now. <em>Fast.</em>", body: "Your agents write fixes and features all day. Each crate on the belt is a change to your code, built by AI.", fx: { island: 1, belt: 1, checks: 1, gate: "closed", spawn: 420, spot: 0 } },
+  { kick: "2 · The catch", h: "So the slow part is <em>you</em>.", body: "Every crate waits for a person to decide. Build it? Does it really work? Ship it? The pile at your gate is the real bottleneck.", fx: { island: 1, belt: 1, checks: 1, gate: "closed", spawn: 300, spot: 1 } },
+  { kick: "3 · Try it", h: "Clear the pile.", body: "Shiptorio hands you each decision with the proof attached, so a yes takes a second. Swipe this one right.", fx: { island: 1, belt: 1, checks: 3, gate: "closed", spawn: 300, spot: 0 }, swipe: true },
+  { kick: "4 · The game", h: "Decide faster. <em>Ship more.</em>", body: "Choose what AI builds, what it checks, and what it proves. Every check you add makes yeses safer. Faster yeses, more shipped, a better product. The factory must grow.", fx: { island: 1, belt: 1, checks: 3, gate: "open", spawn: 260, spot: 0, score: 1 } },
+];
+
+function startIntro() { S = S0(); S.screen = "intro"; S.beat = 0; setStep("intro"); FX.reset(); FX.set({ ambient: 0, spot: 0, score: 0, ...BEATS[0].fx }); render(); }
+
+function renderIntro(o) {
+  const b = BEATS[S.beat];
+  const words = b.h.split(/(<em>.*?<\/em>[.,]?|\s+)/).filter(w => w && w.trim()).map((w, i) => `<span class="w" style="animation-delay:${i * 70}ms">${w}</span>`).join(" ");
+  const swiped = S.swiped;
+  o.innerHTML = `<div class="intro">
+    <div class="top"><div class="segs">${BEATS.map((_, i) => `<i class="${i < S.beat ? "done" : i === S.beat ? "now" : ""}"></i>`).join("")}</div><button class="skip" id="skip">Skip</button></div>
+    <div class="words">
+      <div class="kick">${b.kick}</div>
+      <h2>${words}</h2>
+      <p class="body">${b.swipe && swiped ? "That's it. Three checks already ran, so one swipe was enough. Watch the pile drain." : b.body}</p>
+      ${b.swipe && !swiped ? `<div class="mini" id="mini"><div class="row2"><b>Ship PR #38 "Fix cart rounding"?</b></div>
+        <div class="stamps"><span class="stamp">CI ✓</span><span class="stamp">Verified ✓</span><span class="stamp">AI review ✓</span></div>
+        <div class="row2"><span class="hint">drag right, or tap</span><button class="ship" id="shipIt">Ship it →</button></div></div>` : ""}
+      ${!b.swipe || swiped ? `<button class="btn rec next" id="next" style="text-align:center">${S.beat === BEATS.length - 1 ? "Pick your repo" : "Next"}</button>` : ""}
+    </div></div>`;
+  $("skip").onclick = toRepo;
+  const n = $("next"); if (n) n.onclick = () => { if (S.beat === BEATS.length - 1) toRepo(); else { S.beat++; FX.set(BEATS[S.beat].fx); render(); } };
+  const m = $("mini"); if (m) wireMini(m);
+}
+
+function toRepo() { S.screen = "repo"; setStep("repo"); render(); }
+
+function wireMini(el) {
+  const go = () => { el.style.transform = "translateX(140%) rotate(12deg)"; el.style.opacity = 0; setTimeout(() => { S.swiped = true; FX.set({ gate: "open" }); render(); }, 300); };
+  $("shipIt").onclick = e => { e.stopPropagation(); go(); };
+  let sx = 0, dx = 0, down = false;
+  el.onpointerdown = e => { if (e.target.closest("button")) return; down = true; sx = e.clientX; el.setPointerCapture(e.pointerId); el.style.transition = "none"; };
+  el.onpointermove = e => { if (!down) return; dx = e.clientX - sx; el.style.transform = `translateX(${Math.max(dx, -30)}px) rotate(${dx / 22}deg)`; };
+  el.onpointerup = () => { if (!down) return; down = false; el.style.transition = ""; if (dx > 80) go(); else el.style.transform = ""; dx = 0; };
+}
+
+const FX = (() => {
+  const cv = $("fx"), cx = cv.getContext("2d");
+  let W = 0, H = 0, run = false, last = 0, t0 = 0;
+  let p = {}, items = [], pile = 0, rockets = [], shipped = 0, sparks = [], spawnAcc = 0, drainAcc = 0, beatT = 0, gateLift = 0;
+  const NAMES = ["/checkout", "/cart", "/api", "/auth", "/docs"];
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function size() { const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0); }
+  addEventListener("resize", size);
+  const X = { start: .08, agent: .2, checks: [.34, .46, .58], gate: .72, pad: .88 };
+  function reset() { items = []; pile = 0; rockets = []; shipped = 0; sparks = []; beatT = 0; t0 = performance.now(); gateLift = 0; }
+  function set(np) { p = { ...p, ...np }; beatT = 0; }
+  function show(on) {
+    cv.classList.toggle("off", !on);
+    if (on && S.screen === "title" && !p.ambient) { reset(); set({ island: 1, belt: 1, checks: 3, gate: "open", spawn: 520, spot: 0, score: 0, ambient: 1 }); }
+    if (on && !run) { run = true; size(); last = performance.now(); requestAnimationFrame(loop); }
+    if (!on) run = false;
+  }
+  function loop(now) {
+    if (!run) return;
+    const dt = Math.min(.05, (now - last) / 1000); last = now; beatT += dt;
+    step(dt); draw(now / 1000);
+    requestAnimationFrame(loop);
+  }
+  function step(dt) {
+    const by = H * .41, speed = W * .32;
+    if (p.belt && p.spawn) { spawnAcc += dt * 1000; if (spawnAcc > p.spawn) { spawnAcc = 0; items.push({ x: W * X.start, s: 0 }); } }
+    const gx = W * X.gate, open = p.gate === "open";
+    gateLift += ((open ? 1 : 0) - gateLift) * Math.min(1, dt * 6);
+    for (const it of items) {
+      it.x += speed * dt * (it.fast ? 1.5 : 1);
+      if (it.s === 0 && it.x > W * X.agent) { it.s = 1; burst(W * X.agent, by, "#f4a63a", 5); }
+      const nc = Math.max(1, p.checks || 0);
+      if (it.s === 1 && it.x > W * X.checks[nc - 1]) { it.s = 2; burst(W * X.checks[nc - 1], by, "#4fd18b", 4); }
+      if (!open && it.x > gx - 12) { it.dead = true; pile++; }
+      if (it.x > W * X.pad) { it.dead = true; launch(); }
+    }
+    items = items.filter(i => !i.dead);
+    if (open && pile > 0) { drainAcc += dt; if (drainAcc > .12) { drainAcc = 0; pile--; items.push({ x: gx, s: 2, fast: 1 }); } }
+    for (const r of rockets) { r.v += 420 * dt; r.y -= r.v * dt; if (Math.random() < .7) sparks.push({ x: r.x + (Math.random() - .5) * 4, y: r.y + 14, vx: (Math.random() - .5) * 30, vy: 60 + Math.random() * 60, life: .6, c: Math.random() < .5 ? "#ffd36b" : "#ff6a2b" }); }
+    rockets = rockets.filter(r => r.y > -60);
+    for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }
+    sparks = sparks.filter(s => s.life > 0);
+  }
+  function launch() { shipped++; rockets.push({ x: W * X.pad, y: H * .41 - 12, v: 40 }); }
+  function burst(x, y, c, n) { if (reduce) return; for (let i = 0; i < n; i++) sparks.push({ x, y: y - 8, vx: (Math.random() - .5) * 90, vy: -Math.random() * 80, life: .4, c }); }
+  function rr(x, y, w, h, r, f) { cx.beginPath(); cx.roundRect(x, y, w, h, r); cx.fillStyle = f; cx.fill(); }
+  function label(t, x, y, c = "#e8edf5", bg = "rgba(8,12,20,.75)") { cx.font = "500 10px 'JetBrains Mono', monospace"; const w = cx.measureText(t).width + 10; rr(x - w / 2, y - 8, w, 15, 4, bg); cx.fillStyle = c; cx.textAlign = "center"; cx.fillText(t, x, y + 3); }
+  function draw(T) {
+    cx.clearRect(0, 0, W, H);
+    const rise = Math.min(1, beatT / 1.4), e = 1 - Math.pow(1 - rise, 3);
+    const lift = p.ambient ? 0 : (S.beat === 0 ? (1 - e) * 120 : 0), alpha = p.ambient ? 1 : (S.beat === 0 ? e : 1);
+    const cy = H * .36 + lift + Math.sin(T * 1.2) * 3, by = H * .41 + lift + Math.sin(T * 1.2) * 3;
+    cx.save(); cx.globalAlpha = alpha;
+    // rock underside + waterfalls
+    cx.beginPath(); cx.moveTo(W * .14, cy + 10); cx.lineTo(W * .86, cy + 10); cx.lineTo(W * .62, cy + H * .17); cx.lineTo(W * .5, cy + H * .13); cx.lineTo(W * .38, cy + H * .19); cx.closePath();
+    const rg = cx.createLinearGradient(0, cy, 0, cy + H * .19); rg.addColorStop(0, "#6a5a4e"); rg.addColorStop(1, "rgba(40,33,28,0)"); cx.fillStyle = rg; cx.fill();
+    for (const fx of [.3, .66]) { const g = cx.createLinearGradient(0, cy + 20, 0, cy + 110); g.addColorStop(0, "rgba(159,214,255,.55)"); g.addColorStop(1, "rgba(159,214,255,0)"); cx.fillStyle = g; cx.fillRect(W * fx, cy + 20 + ((T * 40) % 6), 5, 90); }
+    // moss cap
+    cx.beginPath(); cx.ellipse(W / 2, cy, W * .46, H * .13, 0, 0, Math.PI * 2);
+    const mg = cx.createRadialGradient(W * .35, cy - 30, 10, W / 2, cy, W * .5); mg.addColorStop(0, "#5f9c58"); mg.addColorStop(.5, "#4f8a4a"); mg.addColorStop(1, "#2f5e33"); cx.fillStyle = mg; cx.fill();
+    cx.lineWidth = 3; cx.strokeStyle = "#1e3a22"; cx.stroke();
+    // buildings pop up one by one
+    NAMES.forEach((n, i) => {
+      const k = p.ambient ? 1 : Math.max(0, Math.min(1, (beatT - .8 - i * .18) / .35)); if (!k) return;
+      const bx = W * (.2 + i * .15), byy = cy - H * .08 + (i % 2) * 6, sc = k < 1 ? k * 1.15 : 1;
+      cx.save(); cx.translate(bx, byy); cx.scale(sc, sc);
+      rr(-14, -10, 28, 20, 4, "#c9c0b0"); rr(-14, 4, 28, 6, 3, "#8e8576"); rr(-10, -16, 20, 7, 3, "#a35f3a");
+      cx.restore();
+      if (S.beat === 0 && !p.ambient && k === 1) label(n, bx, byy + 20);
+    });
+    if (p.belt) {
+      // belt
+      const x0 = W * X.start, x1 = W * X.pad;
+      rr(x0, by - 6, x1 - x0, 12, 3, "#3c3c3c");
+      cx.fillStyle = "#565656"; for (let x = x0 + ((T * 60) % 16); x < x1; x += 16) cx.fillRect(x, by - 6, 8, 12);
+      // agent arm
+      const ax = W * X.agent; rr(ax - 15, by - 30, 30, 22, 4, "#8d9ab0");
+      cx.strokeStyle = "#f4a63a"; cx.lineWidth = 3; cx.lineCap = "round"; cx.beginPath(); cx.moveTo(ax, by - 30); const ang = Math.sin(T * 9) * .6 - 1.2; cx.lineTo(ax + Math.cos(ang) * 14, by - 30 + Math.sin(ang) * 14); cx.stroke();
+      if (S.beat === 1 || p.ambient) label("AI agent", ax, by - 40, "#f4a63a");
+      // checks
+      const nc = p.checks || 0, names = ["CI", "Verify", "Review"];
+      for (let i = 0; i < nc; i++) { const qx = W * X.checks[i]; rr(qx - 9, by - 28, 18, 20, 3, "#8d9ab0"); cx.fillStyle = "#4fd18b"; cx.beginPath(); cx.arc(qx, by - 22, 3, 0, 7); cx.fill(); if (S.beat === 3 || S.beat === 4) label(names[i], qx, by - 38 - (i % 2) * 16, "#4fd18b"); }
+      // gate + you
+      const gx = W * X.gate, open = gateLift;
+      cx.save(); cx.translate(gx, by - 4); cx.rotate(-open * 1.3); rr(-2, -3, 30, 6, 3, p.gate === "none" ? "rgba(0,0,0,0)" : open > .5 ? "#4fd18b" : "#ff5d5d"); cx.restore();
+      if (p.gate !== "none") {
+        cx.fillStyle = "#e8edf5"; cx.beginPath(); cx.arc(gx + 14, by - 34, 6, 0, 7); cx.fill(); rr(gx + 7, by - 27, 14, 14, 5, "#e8edf5");
+        label("you", gx + 14, by - 48, p.spot ? "#fff" : "#e8edf5", p.spot ? "#ff5d5d" : "rgba(8,12,20,.75)");
+      }
+      // pad
+      const px = W * X.pad; rr(px - 14, by - 4, 28, 10, 3, "#8d9ab0");
+      // items
+      for (const it of items) { const c = it.s === 0 ? "#c7a46b" : it.s === 1 ? "#6cb6ff" : "#4fd18b"; rr(it.x - 6, by - 14, 12, 10, 2, c); }
+      // pile
+      for (let i = 0; i < Math.min(pile, 42); i++) { const col = i % 7, row = Math.floor(i / 7); rr(gx - 18 - col * 12, by + 12 + row * 10, 11, 9, 2, (row + col) % 2 ? "#b7884c" : "#a67a40"); }
+      if (pile > 0 && p.gate !== "open") label(`${pile} waiting on you`, gx - 54, by + 12 + Math.min(6, Math.ceil(pile / 7)) * 10 + 12, "#fff", "#ff5d5d");
+    }
+    cx.restore();
+    // rockets + sparks on top
+    for (const s of sparks) { cx.globalAlpha = Math.max(0, s.life / .6); cx.fillStyle = s.c; cx.fillRect(s.x, s.y, 3, 3); }
+    cx.globalAlpha = 1;
+    for (const r of rockets) { cx.save(); cx.translate(r.x, r.y); cx.fillStyle = "#e8edf5"; cx.beginPath(); cx.moveTo(0, -14); cx.quadraticCurveTo(7, -4, 5, 12); cx.lineTo(-5, 12); cx.quadraticCurveTo(-7, -4, 0, -14); cx.fill(); cx.fillStyle = "#f4a63a"; cx.fillRect(-8, 6, 4, 7); cx.fillRect(4, 6, 4, 7); cx.restore(); }
+    // spotlight on the gate
+    if (p.spot) {
+      const k = Math.min(1, beatT / .8), gx = W * X.gate - 30;
+      const g = cx.createRadialGradient(gx, by + 10, 30, gx, by + 10, W * .55);
+      g.addColorStop(0, "rgba(14,20,32,0)"); g.addColorStop(1, `rgba(14,20,32,${.8 * k})`); cx.fillStyle = g; cx.fillRect(0, 0, W, H);
+    }
+    if (p.score) { cx.font = "700 15px 'Chakra Petch', sans-serif"; cx.textAlign = "center"; cx.fillStyle = "#4fd18b"; cx.fillText(`SHIPPED  ${shipped}`, W / 2, H * .1); }
+  }
+  return { show, set, reset };
+})();
 
 render();
 </script>

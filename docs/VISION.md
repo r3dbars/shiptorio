@@ -15,6 +15,11 @@
 product gets better for real: more shipped, more customers, more money. Every move in the game ends as a real
 PR, a real release, a real reply. Shipping is the point.
 
+**Why it matters: the human is the bottleneck.** AI now writes the code. What slows shipping is a person
+deciding what AI should build, what it checks, and what it has to prove. Shiptorio makes those decisions
+visible and fast. The faster you can decide, the more you ship, and the better the user experience and the
+product get. That's the goal of Shiptorio, and it's the first thing a new player learns (the welcome intro).
+
 It never ends. There is always a bottleneck, always something to optimize, always a next move. That's the game.
 
 ## Principles
@@ -89,6 +94,10 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-26: First sources are GitHub, Sentry, PostHog. Stripe on hold.
 - 2026-10-26: Onboarding is a major focus, built on progressive disclosure (principle 9).
 - 2026-10-26: HUD redesign: less dense, mobile first, progressive disclosure, no "Spark" in player-facing UI.
+- 2026-10-26: Onboarding starts with a real "Welcome to Shiptorio" intro right after GitHub sign-in: your repo
+  visualized and gamified, and the goal stated plainly (the human stops being the bottleneck; decide faster on
+  what AI builds, checks and verifies, ship more, better product). Dynamic and polished, real care spent on it.
+  Playable mockup: `docs/onboarding-mockup.html`.
 - 2026-10-26: Humans are the bottleneck in the agentic loop. Shiptorio always points at it, and a swipe
   check-in (8 to 12 cards, right = do it, left = later, down = never + why) lets you push the whole system
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
