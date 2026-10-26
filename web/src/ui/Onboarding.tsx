@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { Intro } from "./Intro";
+import { IslandBackdrop } from "./IslandBackdrop";
 
 export type OnboardStep = "hello" | "intro" | "repo";
 
@@ -79,6 +80,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
   return (
     <div className="onboard">
+      <IslandBackdrop />
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
           {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (
