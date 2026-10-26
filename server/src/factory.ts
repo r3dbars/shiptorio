@@ -31,6 +31,8 @@ import {
   type SourceStatus,
   type Thought,
   type ThoughtDecision,
+  summarizeIsland,
+  type IslandSummary,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
@@ -882,6 +884,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   // ---------- state ----------
 
+  // The empire overview's line for this repo. Reads stored state only: no tick, no GitHub calls.
+  async summary(): Promise<IslandSummary | null> {
+    const state = await this.load();
+    return state ? summarizeIsland(state) : null;
+  }
+
   private async load(): Promise<FactoryState | null> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
@@ -1218,6 +1226,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
     this.gauntletRunning = true;
     const pr = item.prNumber!;
+    const headSha = item.inspection!.headSha;
+    // Any await can let a webhook/reconciliation replace this inspection. Results
+    // belong only to the commit and station that started the run.
+    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection?.headSha === headSha && nextGate(i) === gate);
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const files = await prFiles(token, this.meta.repo, pr);
@@ -1226,12 +1238,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
-      const current = () => {
-        const now = this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
+      const currentInLane = () => {
+        const now = current();
         return now && lane && !now.lane ? { ...now, lane } : now;
       };
       if (gate === "checks") {
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         const { item: checked, ran } = runChecks(now, files);
         await this.patch({ items: [checked] });
@@ -1239,7 +1251,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
@@ -1248,17 +1260,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
-        await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
+        const afterComment = currentInLane();
+        if (!afterComment) return;
+        await this.patch({ items: [setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
     } catch (e) {
-      const latest = this.state!.items.find(i => i.id === item.id);
-      if (latest && nextGate(latest) === gate) {
+      const latest = current();
+      if (latest) {
         const failed = setStage(latest, gate === "checks" ? "ci" : gate, "rework", `Station request failed: ${String(e)}`);
         await this.patch({ items: [failed] });
         await this.noteRework(failed);
