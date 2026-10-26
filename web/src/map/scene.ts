@@ -135,6 +135,7 @@ interface DistrictView {
   center: THREE.Vector3;
   label: Label;
   files: number;
+  update: (t: number) => void; // rack lights, fans, signs
 }
 
 interface ItemView {
@@ -222,6 +223,10 @@ const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, rev
 const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
 const CAUGHT_SLAM_MS = 620; // the verify bay's ram slam in the sound (shiptorio:station), so the CAUGHT! lands on it
 const FOCUS_ZOOM = 0.5; // how close the camera flies in on a picked machine
+// Every launch is the payoff, so the camera flies to the pad, rides the rocket up a little, then eases home.
+const LAUNCH_ZOOM = 0.62;
+const LAUNCH_RISE = 3.2; // world units the camera climbs with the rocket
+const LAUNCH_HOLD = 5.2; // seconds before it eases back to where you were
 const clickable = (key: string) => !key.startsWith("d:") && key !== "drone";
 
 function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built {
@@ -321,6 +326,8 @@ export class FactoryScene {
   private showAll = false;
   private camGoal: { target: THREE.Vector3; zoom: number } | null = null;
   private home: { target: THREE.Vector3; zoom: number } | null = null;
+  private launchCam: { back: { target: THREE.Vector3; zoom: number }; t0: number } | null = null;
+  private synced = false; // launches already done when the map first loads don't fly the camera
   // where the camera target sits on screen, as a fraction of width/height from center (+x right, +y up).
   // On phones the HUD covers the bottom, so the island and picked things sit higher (or left, on a phone on its side).
   private bias = { x: 0, y: 0 };
@@ -376,12 +383,14 @@ export class FactoryScene {
 
   // factor > 1 zooms out
   zoomBy(factor: number) {
+    this.dropLaunchCam();
     this.camGoal = null;
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
   panBy(dx: number, dy: number) {
+    this.dropLaunchCam();
     this.camGoal = null;
     const k = (this.camera.top - this.camera.bottom) / this.height;
     const right = new THREE.Vector3(Math.cos(YAW), 0, -Math.sin(YAW));
@@ -437,6 +446,7 @@ export class FactoryScene {
     this.syncBelts(state);
     this.syncDistricts(state);
     this.syncItems(state.items);
+    this.synced = true;
     this.syncBiters(state.items);
     this.syncLabels(state);
     this.syncGhosts(state);
@@ -544,6 +554,11 @@ export class FactoryScene {
 
   // Fly the camera in on a picked thing, or back out to where it was (null).
   focus(key: string | null) {
+    if (this.launchCam) {
+      // you picked something mid-launch: home is where you were before the fly-in
+      this.home ??= this.launchCam.back;
+      this.dropLaunchCam();
+    }
     this.selected = key ?? undefined;
     const l = key ? [...this.labels].find((x) => x.key === key) : undefined;
     if (l) {
@@ -555,6 +570,22 @@ export class FactoryScene {
       this.home = null;
     }
     this.biasGoal = this.biasFor(!!this.home);
+  }
+
+  // Fly to the launch pad and follow the rocket up. Skipped when you're looking at something or prefer less motion.
+  private flyToLaunch() {
+    const pad = this.ofType("launch_pad")[0];
+    if (!pad || this.reduceMotion || this.home) return;
+    const back = this.launchCam?.back ?? { target: this.target.clone().setY(0), zoom: this.zoom };
+    this.launchCam = { back, t0: this.t };
+    const p = this.machinePos(pad);
+    this.camGoal = { target: new THREE.Vector3(p.x, 0, p.z), zoom: Math.min(back.zoom, LAUNCH_ZOOM) };
+  }
+
+  private dropLaunchCam() {
+    if (!this.launchCam) return;
+    this.launchCam = null;
+    this.target.y = 0;
   }
 
   // ---------- world: island, districts, scenery ----------
@@ -585,13 +616,13 @@ export class FactoryScene {
       const dep = Math.max(1.4, d.h * S - 0.4);
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
-      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
+      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
       this.world.add(model.group);
       const label = this.addLabel(model.group, model.labelY, `d:${d.name}`);
-      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
+      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files, update: model.update });
       x0 = Math.min(x0, cx - w / 2 - 1.5);
       x1 = Math.max(x1, cx + w / 2 + 1.5);
       z0 = Math.min(z0, cz - dep / 2 - 1.5);
@@ -909,6 +940,7 @@ export class FactoryScene {
         if (!this.launched.has(item.id)) {
           this.launched.add(item.id);
           this.launchUntil = this.t + LAUNCH_SECONDS;
+          if (this.synced) this.flyToLaunch();
         }
         return;
       }
@@ -1251,6 +1283,19 @@ export class FactoryScene {
     }
     if (this.rework) this.rework.built.update(t, dt, (this.state?.items.filter((i) => i.state === "rejected").length ?? 0) >= BACKED_UP ? "CLOGGED" : "FLOWING");
     if (this.glow.visible) (this.glow.material as THREE.MeshBasicMaterial).opacity = this.reduceMotion ? 0.4 : 0.25 + Math.abs(Math.sin(t * 2.4)) * 0.3;
+    if (this.launchCam) {
+      const age = t - this.launchCam.t0;
+      if (age > LAUNCH_HOLD) {
+        this.camGoal = this.launchCam.back;
+        this.launchCam = null;
+      } else {
+        // climb after ignition, ease out as the rocket leaves the frame
+        const k = Math.min(1, Math.max(0, (age - 0.8) / 2.4));
+        const rise = LAUNCH_RISE * k * k * (3 - 2 * k) * (age > LAUNCH_SECONDS + 0.6 ? Math.max(0, 1 - (age - LAUNCH_SECONDS - 0.6)) : 1);
+        if (this.camGoal) this.camGoal.target.y = rise;
+        else this.target.y = rise;
+      }
+    }
     if (this.camGoal) {
       const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * 4);
       this.target.lerp(this.camGoal.target, k);
@@ -1265,6 +1310,7 @@ export class FactoryScene {
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterfalls) w(dt, t);
+    for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);

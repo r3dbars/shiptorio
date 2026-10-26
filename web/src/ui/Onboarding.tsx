@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { Intro } from "./Intro";
+import { IslandBackdrop } from "./IslandBackdrop";
 
 export type OnboardStep = "hello" | "intro" | "repo";
 
@@ -15,9 +16,7 @@ interface Repo {
 
 // Sim stand-ins until the server lists the App's installed repos.
 const SIM_REPOS: Repo[] = [
-  { fullName: "r3dbars/shiptorio", blurb: "TypeScript · Cloudflare Worker + React", issues: 2 },
-  { fullName: "you/demo-shop", blurb: "Next.js shop · Stripe test mode", issues: 3 },
-  { fullName: "you/side-project", blurb: "Python CLI · no CI yet", issues: 0 },
+  { fullName: "you/demo-shop", blurb: "Demo shop · sample issues", issues: 3 },
 ];
 
 // The welcome intro is off until it's rebuilt in the game's own art (Justin, 2026-10-26): ?intro=1 shows it.
@@ -81,6 +80,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
   return (
     <div className="onboard">
+      <IslandBackdrop />
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
           {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (
@@ -102,8 +102,9 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
                 SIGN IN WITH GITHUB
               </button>
-              {!live && <span className="psub">sim: no real sign-in</span>}
+              
             </div>
+            {!live && <p className="psub ob-sim-note">Sandbox tour · sample repo and issues · no real sign-in</p>}
             <p className="ob-credit">powered by Meta Muse Spark</p>
           </>
         )}
@@ -112,7 +113,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
           <>
             <div className="ptitle small">PICK A REPO</div>
             <Coach>
-              {login ? `Hey ${login}. ` : ""}Which repo is the factory? We'll read its tree, open issues and CI, then suggest a starter line.
+              {login ? `Hey ${login}. ` : ""}Which repo is the factory? {live ? "We'll read its tree, open issues and CI, then suggest a starter line." : "This sandbox uses a demo shop with sample issues; your real repo stays untouched."}
             </Coach>
             {repos === null && <p className="psub">Looking for repos…</p>}
             {repos && repos.length > 0 && (

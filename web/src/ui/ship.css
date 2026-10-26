@@ -19,12 +19,15 @@ body.ship-shake canvas.map {
   position: fixed;
   inset: 0;
   display: grid;
-  place-items: center;
+  align-items: start;
+  justify-items: end;
+  padding: calc(84px + env(safe-area-inset-top, 0px)) calc(16px + env(safe-area-inset-right, 0px)) 16px;
+  box-sizing: border-box;
   pointer-events: none;
   z-index: 40;
 }
 .ship-cel.shipped {
-  background: radial-gradient(circle at 50% 45%, rgba(91, 209, 139, 0.16), transparent 55%);
+  background: none;
   animation: ship-fade-in 0.25s ease-out both;
 }
 
@@ -34,7 +37,7 @@ body.ship-shake canvas.map {
   cursor: pointer;
   min-width: 260px;
   border-radius: 18px;
-  max-width: min(420px, calc(100vw - 32px));
+  max-width: min(340px, calc(100vw - 32px));
   padding: 18px 22px 16px;
   text-align: center;
   border-color: var(--green, #5bd18b) !important;
@@ -43,10 +46,10 @@ body.ship-shake canvas.map {
 }
 
 .ship-check {
-  width: 112px;
-  height: 92px;
+  width: 68px;
+  height: 56px;
   display: block;
-  margin: -54px auto 6px;
+  margin: -32px auto 6px;
   fill: #5bd18b;
   filter: drop-shadow(0 4px 0 #1f6b44) drop-shadow(0 0 12px rgba(91, 209, 139, 0.6));
 }
@@ -57,7 +60,7 @@ body.ship-shake canvas.map {
 }
 
 .ship-title {
-  font: 700 34px/1.1 var(--pixel);
+  font: 700 28px/1.1 var(--pixel);
   letter-spacing: 0.01em;
   color: #5bd18b;
   text-shadow: 0 3px 0 #1f6b44;
@@ -220,4 +223,10 @@ body.ship-shake canvas.map {
   .ship-burst {
     display: none;
   }
+}
+
+@media (max-width: 760px) {
+  .ship-cel { align-items: end; padding: 16px 16px calc(108px + env(safe-area-inset-bottom, 0px)); }
+  .ship-card { width: min(320px, calc(100vw - 32px)); min-width: 0; padding: 12px 16px; }
+  .ship-title { font-size: 21px; }
 }
