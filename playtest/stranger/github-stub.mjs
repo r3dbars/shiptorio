@@ -13,6 +13,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
     installation: null, // set when the stranger clicks Install on the fake GitHub page
     calls: [],
   };
+  const installationInfo = () => ({ id: state.installation, account: { id: state.user.id, login: state.user.login, type: "User" }, permissions: { contents: "write", pull_requests: "write", issues: "write", checks: "read", statuses: "read", metadata: "read" } });
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   const issues = [
     { number: 1, title: "Checkout total ignores the SAVE10 code", body: "Cart total stays the same after applying SAVE10.", state: "open", html_url: `https://github.com/${state.repo}/issues/1`, updated_at: "2026-10-26T12:00:00Z", user: { login: "a-customer" }, labels: [{ name: "bug" }] },
@@ -31,6 +32,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
     if (p === "/user/installations") return json({ total_count: state.installation ? 1 : 0, installations: state.installation ? [{ id: state.installation, account: { login: state.user.login } }] : [] });
     if (p === `/user/installations/${state.installation}/repositories`) return json({ total_count: 1, repositories: [{ id: state.repoId, full_name: state.repo, default_branch: "main" }] });
     if (p === "/app") return json({ slug: "shiptorio-stub" });
+    if (p === `/app/installations/${state.installation}` && state.installation) return json(installationInfo());
     if (/^\/app\/installations\/\d+\/access_tokens$/.test(p)) return json({ token: "ghs_stub_installation_token", expires_at: new Date(Date.now() + 3600e3).toISOString() }, 201);
     // Production revalidates the signed-in user's current repo permission before listing/opening it.
     // Authenticate this lookup too: the stub must not make missing memberships look authorized.
@@ -54,7 +56,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
   async function sendInstallWebhook() {
     const body = JSON.stringify({
       action: "created",
-      installation: { id: state.installation, account: { login: state.user.login } },
+      installation: installationInfo(),
       repositories: [{ id: state.repoId, full_name: state.repo }],
       sender: { id: state.user.id, login: state.user.login },
     });
