@@ -39,3 +39,14 @@ Codex prompt: project file `codex-prompts/playtest-round-2.md`.
 | #77 | ux | Phone: tiny island, clipped scenario row, overlapping buttons |
 | #79 | feel | SHIPPED card covers the rocket launch |
 | #80 | feel | Sign-in and repo picker are a bare card on an empty background |
+
+## 2026-10-26 round 3 (new onboarding #84, HUD v3, phone fixes #78)
+
+Played `/` from scratch at 1440×900 and 390×844 touch. The live gauntlet (#73) needs the
+GitHub App secrets and shiptorio.com, which the cloud sandbox can't reach, so it was only
+checked through `bun test` (83 pass).
+
+| # | Type | What |
+|---|------|------|
+| #74 | bug | Still reproduces: rocket off-screen after Build it (worse on phone) |
+| see below | | New issues filed this round |
