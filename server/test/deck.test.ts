@@ -88,3 +88,9 @@ describe("live check-in deck", () => {
     expect(moveScope(move("tool", { options: [{ id: "go", label: "Go", recommended: true, actions: [{ tool: "inspect", args: {}, reason: "Read" }] }] }), s)).toBe("tool:inspect");
   });
 });
+
+it("does not turn an earned permit card into a missing-proof merge card", () => {
+  const permit = move("permit", { kind: "automate", stage: "pad", options: [{ id: "allow", label: "Allow", recommended: true, actions: [{ tool: "set_autonomy", args: { district: "docs" }, reason: "Earned" }] }] });
+  expect(enrichMove(permit, state()).options[0].id).toBe("allow");
+  expect(enrichMove(permit, state()).locked).toBeUndefined();
+});

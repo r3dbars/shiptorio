@@ -161,3 +161,22 @@ The connection and automatic deployment checkpoints above supersede that initial
 | Does Spark accept images (visual QA)? Rate limits, credit balance? | Anyone with a key |
 
 - 2026-10-26: Upgrade non-local HTTP to HTTPS before any authentication path; secure-only preview cookies otherwise make a successful HTTP password form appear to do nothing. Keep the gate as a native HTML form, verify cookie acceptance with an explicit recovery message, and preserve the requested factory URL. HTTPS responses include HSTS; local HTTP development stays available.
+
+Live bottleneck/check-in checkpoint (Oct 26): derive all queue metrics in pure
+`bottleneck.ts`, using recorded stage entries/exits rather than invented throughput.
+CI/verify/review map to the existing inspect contract with a specific station id;
+merge maps to pad. Release/impact waits require observed history; a merge alone is
+not evidence of a failed deploy or customer impact. Alarm mutations batch one deck
+projection; browser and runner changes update it immediately. Local runner presence
+expires after 20 seconds, and missing builders become a resources bottleneck.
+
+Open proposals join a persisted pool; the ranked top 12 form the live check-in deck.
+The top card remains `state.move`, and any visible card can be chosen safely. Required
+CI/verify/AI proof comes from the item's inspection, never from supplied card stamps.
+Existing same-PR rework and earned launch permits retain their own handlers. Later
+returns a card on the next websocket check-in, keeps its defer count across restarts,
+and the third defer offers an explicit never-or-delegate choice. Scoped kind rules
+persist in D1; wrong-call notes reach the planner brief. Dismissals have five-minute
+undo, including retracting their pending automation preference. The single
+`recordApproval(kind, scope)` hook records intent for the autonomy lane; it cannot
+create a permit or silently authorize a build/merge. No web or workflow changes.

@@ -88,12 +88,18 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
     }
     if (changed) await this.ctx.storage.put("stageHistory", history.filter(h => h.exitedAt === undefined || h.exitedAt > now - 86400000).slice(-4000));
-    s.bottleneck = deriveBottleneck(s, { now, history, jobs, powered: this.env.HOSTED_SPARK_ASSEMBLER === "1" || !!presence?.harnesses.length && now - presence.seenAt < 20000 || jobs.some(j => j.status === "running") }).bottleneck;
+    const presenceFresh = !!presence?.harnesses.length && now - presence.seenAt < 20000;
+    const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar") };
+    s.bottleneck = deriveBottleneck(telemetryState, { now, history, jobs, powered: this.env.HOSTED_SPARK_ASSEMBLER === "1" || !!presence?.harnesses.length && now - presence.seenAt < 20000 || jobs.some(j => j.status === "running") }).bottleneck;
     this.openMoves = this.openMoves!.filter(move => {
       const item = move.itemId && s.items.find(i => i.id === move.itemId);
       if (move.itemId && (!item || item.state === "launched")) return false;
+      const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
+      if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
       if (proposing && item && (!(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
+      const boundScars = move.options.flatMap(o => o.actions).find(a => typeof a.args.scarCount === "number")?.args.scarCount;
+      if (proposing && item && boundScars !== undefined && boundScars !== (item.scars?.length ?? 0)) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
       if (jobId && !jobs.some(j => j.id === jobId && j.status === "awaiting_approval")) return false;
       if (move.stage === "pad" && item && item.state !== "on_pad" && item.state !== "rejected") return false;
@@ -126,6 +132,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.decisionData();
     if (move) {
       move = enrichMove(move, this.state!);
+      const item = this.state!.items.find(i => i.id === move!.itemId);
+      if (item?.inspection) move = { ...move, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args, headSha: item.inspection!.headSha, scarCount: item.scars?.length ?? 0 } })) })) };
       const key = moveKey(move);
       const previous = this.openMoves!.find(m => moveKey(m) === key);
       if (previous) move = { ...move, id: previous.id, createdAt: previous.createdAt };

@@ -2,7 +2,7 @@ import type { Move } from '@shiptorio/shared';
 
 /** Stable across repeated offers; a new approved job or PR head is a new decision. */
 export function moveKey(move: Move): string {
-  return JSON.stringify([move.itemId ?? '', move.kind ?? move.stage ?? 'unblock', move.options.flatMap(o => o.actions.map(a => [a.tool, a.args.jobId ?? '', a.args.headSha ?? '']))]);
+  return JSON.stringify([move.itemId ?? '', move.kind ?? move.stage ?? 'unblock', move.options.flatMap(o => o.actions.map(a => [a.tool, a.args.jobId ?? '', a.args.headSha ?? '', a.args.scarCount ?? '']))]);
 }
 export interface DeckRule { kind: string; scope: string; actionId: string }
 export interface DeckDecision { key: string; move: Move; count: number; deferred?: boolean; dismissed?: boolean }
