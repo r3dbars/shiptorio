@@ -2172,6 +2172,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           ...(ownsName ? [this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo)] : []),
         ]);
         if (meta && dataKey?.startsWith("repo:")) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`archived:${dataKey}:installation:${meta.installationId}:repo:${meta.repo}`).run();
+        if (meta && repoId) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`installation:${meta.installationId}:repo-id:${repoId}`).run();
         if (meta && ownsName) {
           for (const kind of ["sentry", "posthog"] as const) {
             await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);

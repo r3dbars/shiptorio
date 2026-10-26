@@ -81,7 +81,7 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
   const rows = new Map<string, { state: string }>();
   const queued: string[] = [];
   const env = {
-    SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/shop",
+    SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/shop", SENTRY_REPO_ID: "503", SENTRY_INSTALLATION_ID: "1",
     DB: { prepare: (sql: string) => {
       let values: unknown[] = [];
       const statement = {
@@ -130,7 +130,7 @@ function factoryFixture(env: Record<string, unknown>) {
     ...browserEnv,
     DB: { prepare: () => ({ bind: () => ({ first: async () => null, run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
     CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
-    SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop",
+    SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop", SENTRY_REPO_ID: "503", SENTRY_INSTALLATION_ID: "1", POSTHOG_REPO_ID: "503", POSTHOG_INSTALLATION_ID: "1",
     ...env,
   };
   const factory = new Factory(ctx as never, credentialEnv(fullEnv) as never);
@@ -202,7 +202,7 @@ it("Factory: keys set as Worker secrets plug the mines in when the map opens, an
   await f.factory.ensure("example/shop", 1);
   expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
   // A mine already linked to another repo isn't stolen.
-  const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other" });
+  const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other", SENTRY_REPO_ID: "999" });
   await other.factory.ensure("example/shop", 1);
   expect(other.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
 });
