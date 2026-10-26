@@ -20,8 +20,11 @@ const SIM_REPOS: Repo[] = [
   { fullName: "you/side-project", blurb: "Python CLI · no CI yet", issues: 0 },
 ];
 
-// The welcome intro plays once per browser. Storage can be off (private windows), so it fails open.
+// The welcome intro is off until it's rebuilt in the game's own art (Justin, 2026-10-26): ?intro=1 shows it.
+// Storage can be off (private windows), so seen fails open.
+const INTRO_ON = new URLSearchParams(location.search).get("intro") === "1";
 function introSeen() {
+  if (!INTRO_ON) return true;
   try {
     return localStorage.getItem("shiptorio:intro") === "1";
   } catch {
@@ -45,7 +48,7 @@ function Coach({ children }: { children: React.ReactNode }) {
 }
 
 export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
-  const [step, setStep] = useState<OnboardStep>(initial);
+  const [step, setStep] = useState<OnboardStep>(initial === "intro" && !INTRO_ON ? "repo" : initial);
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -68,8 +71,8 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   }, [live]);
 
   const signIn = () => {
-    if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=intro&source=live")}`;
-    else setStep("intro");
+    if (live) location.href = `/auth/login?next=${encodeURIComponent(INTRO_ON ? "/?onboard=intro&source=live&intro=1" : "/?onboard=repo&source=live")}`;
+    else setStep(introSeen() ? "repo" : "intro");
   };
   const at = step === "hello" ? 0 : step === "intro" ? 1 : 2;
   const valid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(typed.trim());

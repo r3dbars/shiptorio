@@ -82,6 +82,9 @@ export const WebToServer = z.discriminatedUnion("type", [
     district: z.string().optional(),
   }),
   z.object({ type: z.literal("remove_machine"), id: z.string() }),
+  // Make it yours (docs/PRODUCT.md, Onboarding): move a machine, or pick which agent runs an assembler.
+  z.object({ type: z.literal("move_machine"), id: z.string(), x: z.number().int(), y: z.number().int() }),
+  z.object({ type: z.literal("set_harness"), machineId: z.string(), harness: Harness }),
   z.object({ type: z.literal("connect_belt"), from: z.string(), to: z.string(), carries: Belt.shape.carries }),
   z.object({ type: z.literal("set_module"), machineId: z.string(), module: z.string() }),
   z.object({ type: z.literal("launch_pr"), itemId: z.string() }),

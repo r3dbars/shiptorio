@@ -583,3 +583,12 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .firstread .btn small { font-weight: 400; font-size: 13px; opacity: 0.8; }
 .checkin-chip.guide-chip { background: var(--panel); color: var(--ink); border: 1px solid var(--panel-line); font-size: 14px; }
 .checkin-chip.guide-chip.new { border-color: var(--amber); color: var(--amber); }
+
+/* Make it yours + connect a source (ui/MakeItYours.tsx) */
+.seg { display: inline-flex; flex: none; border: 1px solid var(--panel-line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: none; color: var(--dim); font: 600 13px var(--pixel); padding: 7px 10px; cursor: pointer; min-width: 34px; }
+.seg button + button { border-left: 1px solid var(--panel-line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--dark); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+.pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
+.sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
