@@ -405,6 +405,8 @@ export type SupportDraft = z.infer<typeof SupportDraft>;
 export const SupportTicket = z.object({
   id: z.string(),
   channel: SupportChannel,
+  thread: z.string(), // email thread root or Intercom conversation id, so a reply lands in the same conversation
+  replyTo: z.string().optional(), // the newest customer message id; an email reply threads onto it
   from: z.string(), // the customer's address or Intercom contact; never leaves the factory except in the reply
   name: z.string().optional(),
   subject: z.string(),
