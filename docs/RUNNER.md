@@ -63,3 +63,11 @@ gitignored `runner/.work/`. A successful push receipt can be acknowledged again 
 
 Operator commands remain available for recovery. Independent verification/review
 execution, scars and usage telemetry remain later checkpoints.
+
+## Publishing credential boundary
+
+Runner publishing tokens must name only the assigned repository and request only
+`contents: write` and `metadata: read`. PR creation and merging use separate server
+credentials. GitHub installation tokens cannot restrict writes to one branch: protect
+`main` and other sensitive branches with GitHub rules that apply to this App. A
+repository-scoped token alone does not enforce the supervisor's branch policy.
