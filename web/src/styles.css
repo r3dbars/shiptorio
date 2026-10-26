@@ -461,7 +461,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   background: #1b2244; border: 2px solid #3a4677;
 }
 .labeltoggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
-@media (max-width: 760px) { .labeltoggle { display: none; } }
+/* phones have no hover, so the toggle sits under the A/B buttons */
+@media (max-width: 760px), (max-height: 500px) {
+  .labeltoggle { top: calc(204px + var(--sat)); bottom: auto; right: calc(8px + var(--sar)); width: 54px; min-height: 40px; padding: 0; font-size: 8px; }
+  .stationpanel { max-height: 70vh; }
+}
+@media (max-height: 500px) and (min-width: 561px) {
+  .labeltoggle { top: calc(140px + var(--sat)); }
+  .stationpanel { max-height: calc(100vh - 16px - var(--sat)); }
+}
 
 /* playtest fixes: log scrolls inside its card, labels thin out when zoomed out, HUD hints */
 .log { display: flex; flex-direction: column; }
