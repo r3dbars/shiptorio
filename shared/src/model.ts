@@ -350,8 +350,31 @@ export const Brain = z.object({
   decisions: z.number().int(), // Spark decisions since the factory started counting
   fallbacks: z.number().int(),
   thoughts: z.array(Thought).max(40), // newest first
+  // The scorecard: how good its calls turn out, not just how many it makes.
+  score: z.object({
+    plans: z.number().int(), // distinct jobs it planned
+    shipped: z.number().int(), // of those, merged and launched
+    reviews: z.number().int(), // PR verdicts it gave
+    catches: z.number().int(), // of those, sent back for rework
+    open: z.array(z.string()).max(50), // planned item ids not shipped yet
+  }).optional(),
 });
 export type Brain = z.infer<typeof Brain>;
+
+export interface Scorecard { planSuccess: number | null; catchRate: number | null; fallbackRate: number | null; plans: number; shipped: number; reviews: number; catches: number }
+
+/** Plan success, review catch rate and fallback share, as 0..1 (null until there's something to measure). */
+export function scorecard(brain: Brain | undefined): Scorecard {
+  const sc = brain?.score ?? { plans: 0, shipped: 0, reviews: 0, catches: 0 };
+  const total = (brain?.decisions ?? 0) + (brain?.fallbacks ?? 0);
+  return {
+    // Jobs still on the line count as not shipped yet, so the rate only climbs as PRs merge.
+    planSuccess: sc.plans ? sc.shipped / sc.plans : null,
+    catchRate: sc.reviews ? sc.catches / sc.reviews : null,
+    fallbackRate: total ? (brain?.fallbacks ?? 0) / total : null,
+    plans: sc.plans, shipped: sc.shipped, reviews: sc.reviews, catches: sc.catches,
+  };
+}
 
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({

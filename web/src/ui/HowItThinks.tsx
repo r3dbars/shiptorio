@@ -2,7 +2,7 @@
 // what it decided and why, and when a fixed rule had to stand in. This sheet is where the one
 // "powered by Meta Muse Spark" credit lives (docs/VISION.md principle 8).
 
-import type { Brain, ThoughtDecision } from "@shiptorio/shared";
+import { scorecard, type Brain, type ThoughtDecision } from "@shiptorio/shared";
 import { Icon } from "./icons";
 
 const VERB: Record<ThoughtDecision, string> = {
@@ -17,6 +17,8 @@ const VERB: Record<ThoughtDecision, string> = {
   permit: "Weighed a permit",
 };
 
+const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
+
 const ago = (at: number) => {
   const s = Math.max(0, Math.round((Date.now() - at) / 1000));
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`;
@@ -26,6 +28,7 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
   const total = (brain?.decisions ?? 0) + (brain?.fallbacks ?? 0);
   const share = total ? Math.round(((brain?.decisions ?? 0) / total) * 100) : 0;
   const simulated = brain?.thoughts.some((t) => t.simulated);
+  const card = scorecard(brain);
   return (
     <section className="card sheet thinks" aria-label="How it thinks">
       <div className="sheet-top">
@@ -42,6 +45,12 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
         <div><b>{brain?.decisions ?? 0}</b>decisions</div>
         <div><b>{share}%</b>made by the model</div>
         <div><b>{brain?.fallbacks ?? 0}</b>rule fallbacks</div>
+      </div>
+      <h3>Scorecard</h3>
+      <div className="thinks-stats score">
+        <div><b>{pct(card.planSuccess)}</b>plans shipped<small>{card.shipped} of {card.plans}</small></div>
+        <div><b>{pct(card.catchRate)}</b>reviews caught a problem<small>{card.catches} of {card.reviews}</small></div>
+        <div><b>{pct(card.fallbackRate)}</b>calls a rule had to make</div>
       </div>
       {!brain?.online && !simulated && <p className="empty warn">The planner has no power right now, so fixed rules are standing in.</p>}
       <h3>Latest calls{simulated ? " · sim" : ""}</h3>

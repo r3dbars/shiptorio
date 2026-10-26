@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { gameMaster, triage, type GameMasterBrief } from "../src/spark";
-import { emptyBrain, recordThought, sparkShare } from "../src/brain";
+import { emptyBrain, recordThought, scoreShip, sparkShare } from "../src/brain";
+import { scorecard } from "@shiptorio/shared";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -91,5 +92,24 @@ describe("plans learn from never swipes", () => {
     expect(bodies[0]).toContain("wrong call");
     expect(out.heeded).toHaveLength(1);
     expect(out.plan).toContain("Respects your past calls:\n- You said no refactors");
+  });
+});
+
+describe("scorecard", () => {
+  const t = (decision: "plan" | "review" | "triage", by: "spark" | "fallback", outcome: string, itemId = "gh-1") => ({ decision, by, outcome, itemId, at: 1, model: "m", ms: 1, title: "x", reason: "r" });
+  it("measures plan success, review catch rate and fallback share", () => {
+    let b = emptyBrain("m", true);
+    expect(scorecard(b)).toMatchObject({ planSuccess: null, catchRate: null, fallbackRate: null });
+    b = recordThought(b, t("plan", "spark", "Planned 2 files"));
+    b = recordThought(b, t("plan", "spark", "Re-planned after a scar")); // same job, counted once
+    b = recordThought(b, t("plan", "spark", "Planned 1 file", "gh-2"));
+    b = recordThought(b, t("review", "spark", "Sent codex's PR back"));
+    b = recordThought(b, t("review", "spark", "Passed codex's PR"));
+    b = recordThought(b, t("review", "spark", "Verdict made, comment didn't post yet; retrying")); // not a new verdict
+    b = recordThought(b, t("triage", "fallback", "bug → web"));
+    b = scoreShip(b, "gh-1")!;
+    b = scoreShip(b, "gh-1")!; // a redelivered merge doesn't count twice
+    b = scoreShip(b, "gh-9")!; // never planned, not on the card
+    expect(scorecard(b)).toEqual({ planSuccess: 0.5, catchRate: 0.5, fallbackRate: 1 / 7, plans: 2, shipped: 1, reviews: 2, catches: 1 });
   });
 });

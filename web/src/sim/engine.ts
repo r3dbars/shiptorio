@@ -17,6 +17,7 @@ import {
   techById,
   type Autonomy,
   type Belt,
+  type Brain,
   type Bottleneck,
   type District,
   type FactoryState,
@@ -365,7 +366,7 @@ function initialState(sc: Scenario): FactoryState {
       ranAlone: 0,
     },
     foreman: { thinking: false },
-    brain: { model: "sim", online: true, decisions: 0, fallbacks: 0, thoughts: [] },
+    brain: { model: "sim", online: true, decisions: 0, fallbacks: 0, thoughts: [], score: { plans: 0, shipped: 0, reviews: 0, catches: 0, open: [] } },
     // Mines this scenario's ore comes from show as plugged in, so the map doesn't offer to connect them.
     sources: mines.length ? mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })) : undefined,
     stations: [...GAUNTLET, ORBIT].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
@@ -429,11 +430,19 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "patch", patch: { foreman: s.foreman } });
     // The sim's decision log mirrors the live one, tagged simulated so nobody mistakes it for a real model call.
     const decision = THOUGHT_FOR[line.tool];
+    if (line.tool === "start_job" && opts.itemId) score((sc) => sc.open.includes(opts.itemId!) ? sc : { ...sc, plans: sc.plans + 1, open: [opts.itemId!, ...sc.open].slice(0, 50) });
     if (decision && s.brain) {
       const item = opts.itemId ? s.items.find((i) => i.id === opts.itemId) : undefined;
       s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
       emit({ type: "patch", patch: { brain: s.brain } });
     }
+  };
+
+  // The scorecard, same rules as the live one (server/src/brain.ts): plans opened, shipped, reviews and catches.
+  const score = (fn: (sc: NonNullable<Brain["score"]>) => NonNullable<Brain["score"]>) => {
+    if (!s.brain) return;
+    s.brain = { ...s.brain, score: fn(s.brain.score ?? { plans: 0, shipped: 0, reviews: 0, catches: 0, open: [] }) };
+    emit({ type: "patch", patch: { brain: s.brain } });
   };
 
   const apply = (p: Patch) => {
@@ -770,6 +779,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (failure && item.attempts === 1 && (catcher ? catcher === st.id : (failAt.get(item.id) ?? "ci") === st.kind)) {
             const scar = { station: st.kind, reason: failure, strike: item.attempts, at: now, ...(st.kind === "custom" && { check: st.id.slice("check-".length) }) };
             apply({ items: [{ ...next, state: "rejected", failure, scars: [...(item.scars ?? []), scar] }] });
+            if (st.kind === "review") score((sc) => ({ ...sc, reviews: sc.reviews + 1, catches: sc.catches + 1 }));
             record(st, false, `#${item.prNumber} ${failure}. Back to the planner on the rework belt.`);
             log("warn", `${st.name} rejected PR #${item.prNumber}: ${failure}`, item.id);
             spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${lc(st.name)} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
@@ -777,6 +787,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             break;
           }
           record(st, true, `#${item.prNumber} passed.`);
+          if (st.kind === "review") score((sc) => ({ ...sc, reviews: sc.reviews + 1 }));
           const nextSt = line[at + 1];
           if (nextSt && nextSt.kind !== "merge") {
             since.set(item.id, s.tick);
@@ -960,6 +971,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       science: { ...s.science, [key]: s.science[key] + 1 },
       trust: Math.min(1, s.trust + 0.05),
     });
+    if (s.brain?.score?.open.includes(item.id)) score((sc) => ({ ...sc, shipped: sc.shipped + 1, open: sc.open.filter((x) => x !== item.id) }));
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
     watching.set(item.id, s.tick + WATCH_TICKS);
     if (comebacks.has(item.id)) trips.set(item.id, s.tick + COMEBACK_TICKS);
