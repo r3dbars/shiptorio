@@ -521,6 +521,35 @@ export const RESEARCH = {
   board: "Schematic board",
 };
 
+/** Your machine (ui/RunnerConnection.tsx): the local runner, drawn as a power cable into the factory's socket. */
+export const RUNNER = {
+  title: "Connect your machine",
+  state: { online: "Working", offline: "Idle", unpaired: "Unplugged", unknown: "Checking", error: "Blocked" } as Record<"online" | "offline" | "unpaired" | "unknown" | "error", string>,
+  agent: { codex: "Codex", claude_code: "Claude Code", local: "Local model" } as Record<string, string>,
+  job: { planning: "Planning", awaiting_approval: "Waiting for your approval", ready: "Ready to build", running: "Building", completed: "PR opened", failed: "Stopped" } as Record<string, string>,
+  unknownJob: "Unknown",
+  noAgents: "no agents detected",
+  online: (agents: string) => `Online · ${agents}`,
+  offline: "Offline · start your runner to connect",
+  unpaired: "Your Claude or Codex sign-in powers this factory.",
+  checking: "Checking your machine…",
+  noAccess: "Sign in with write access to this repo to see your machine.",
+  unreachable: "Couldn't reach your machine status.",
+  disconnectFailed: "Couldn't disconnect. Refresh and try again.",
+  disconnectFailedShort: "Couldn't disconnect.",
+  lastSeen: (when: string) => `Last seen ${when}`,
+  lastJob: (what: string, id: string) => `Last job: ${what} · ${id}`,
+  runThis: "Run this on your computer, then compare the pairing code in your browser:",
+  platforms: "macOS · Linux · Windows via WSL2. Keep the terminal open. The planner asks before any build starts.",
+  more: "Add a repo, troubleshoot or uninstall",
+  addRepo: ["Already installed? Run ", " to add this repo. One runner serves all paired repos."] as const,
+  offlineHelp: ["Offline? Run ", ". Check sign-ins with "] as const,
+  uninstall: "Stop with Ctrl-C. Remove the runner and local credentials with ",
+  docs: "Runner setup and troubleshooting",
+  disconnect: "Disconnect this machine",
+  confirmDisconnect: "Confirm disconnect from this repo",
+};
+
 /** Achievements (ui/Achievements.tsx): the sheet of medallions and the unlock toast. */
 export const ACHIEVE = {
   title: "Achievements",
