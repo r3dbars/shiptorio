@@ -13,7 +13,7 @@ Every source of work is a **mine** on the map. More mines, more ore, a bigger fa
 | GitHub issues | Crystals at the mine | GitHub App webhooks | Live |
 | Sentry errors | Biters on the folder the stack trace points at | Sentry webhook | Live |
 | PostHog | Drops and error spikes per route | Shiptorio polls PostHog | Live |
-| Support inbox | Envelopes at the well | Email forwarding | Coming soon |
+| Support inbox | Envelopes at the support well | Email forwarding or Intercom webhook | Live |
 
 ## How heavy is a chunk of ore?
 
@@ -68,8 +68,14 @@ Route ids like `/order/8812` are folded to `/order/:id`. If PostHog errors or ra
 
 ## Support inbox
 
-> **Coming soon** Customer email as ore (forward your support inbox, Spark links a complaint to the matching Sentry error and drafts a reply you send). You'll see the well on the map already. It isn't connected to anything yet.
+Customer emails and Intercom chats come up at the **support well**. Spark sorts each one (bug, feature, question), links it to the work it's about, and drafts a reply. Linked work weighs more, so fixes customers are asking for get built first.
+
+**You send every reply.** Tap the card to read the whole draft and where it's going, edit it if you want, then tap Send. Nothing goes to a customer on its own, at any autonomy level. When a linked fix launches, an "it's fixed" reply is drafted for you to send. A bug nobody's tracking can be filed as a GitHub issue with one tap (names and email addresses left out).
+
+Connect it from `/connect/support?repo=owner/name`: point an inbound-email service (Postmark or any JSON forwarder) at the email URL shown there, or paste your Intercom app's client secret, access token and admin id. Without an email sender configured, a sent reply lands in the outbox with a Copy button.
+
+Try it with no keys: `?source=sim&scenario=support`.
 
 ## Where keys go
 
-Sentry and PostHog keys are stored server-side for that one factory and never shown again. See [Security and privacy](/docs/security).
+Sentry, PostHog and support keys are stored server-side for that one factory and never shown again. See [Security and privacy](/docs/security).
