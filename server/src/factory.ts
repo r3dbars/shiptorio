@@ -860,6 +860,15 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (at == null || at > Date.now() + TICK_MS) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
 
+  /** One wake-up for the earliest watch, even when every player and agent is offline. */
+  private async scheduleOrbitDeadline() {
+    const deadlines = this.state?.items.filter(i => i.state === "launched" && i.orbit?.state === "watching").map(i => i.orbit!.until) ?? [];
+    if (!deadlines.length) return;
+    const next = Math.max(Date.now() + 1, Math.min(...deadlines));
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm == null || alarm > next) await this.ctx.storage.setAlarm(next);
+  }
+
   // ---------- RPC from the Worker ----------
 
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
@@ -963,19 +972,32 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async onPullClosed(prNumber: number, merged: boolean, mergeSha?: string): Promise<void> {
     if (!(await this.load())) return;
+    const creditKey = `launchCredit:${prNumber}`;
+    if (merged) {
+      // An item's active PR changes on rework. Credit belongs to the merged PR forever.
+      if (await this.ctx.storage.get(creditKey)) { await this.scheduleOrbitDeadline(); return; }
+      const previous = this.state!.items.find(i => i.orbit?.prNumber === prNumber || i.state === "launched" && i.prNumber === prNumber);
+      if (previous) {
+        // Seed watches shipped before this ledger, without changing their current work.
+        await this.ctx.storage.put(creditKey, { itemId: previous.id, at: previous.orbit?.since ?? previous.updatedAt, mergeSha: previous.orbit?.mergeSha ?? mergeSha });
+        await this.scheduleOrbitDeadline();
+        return;
+      }
+    }
     let item = this.state!.items.find((i) => i.prNumber === prNumber);
     // Recover pre-fix issue-close ordering from our durable job and GitHub's real issue.
     // Never synthesize a rocket for an unrelated PR or reopen the GitHub issue.
     if (!item && merged && this.meta) {
       const job = (await this.runnerJobs()).find(j => j.status === "completed" && j.prUrl?.endsWith(`/pull/${prNumber}`));
       if (job) {
+        // A queued regression or a newer PR is not the old issue-close deletion.
+        if (this.state!.items.some(i => i.id === job.itemId)) return;
         const token = await installationToken(this.env, this.meta.installationId);
         const issue = await gh<NonNullable<GitHubPayload["issue"]>>(`/repos/${job.repo}/issues/${job.itemId.slice(3)}`, token);
         const signal = normalizeGitHub({ repository: { full_name: job.repo }, issue })[0];
         if (signal) {
           const { reason: _reason, ...classification } = await this.sparkTriage({ title: issue.title, body: issue.body ?? "" }, this.state!.districts.map(d => d.name));
           item = { ...foldSignal(undefined, { ...signal, action: "upsert" }), ...classification, state: "inspecting", branch: job.branch, prNumber, prUrl: job.prUrl, attempts: 1 };
-          await this.patch({ items: [item] });
         }
       }
     }
@@ -985,20 +1007,39 @@ export class Factory extends DurableObject<FactoryEnv> {
       this.log("info", `PR #${prNumber} closed without merging. Item scrapped.`, item.id);
       return;
     }
-    const s = this.state!;
-    const key = SCIENCE_FOR[item.kind];
-    const auto = (await this.ctx.storage.get<number>(`autoLaunch:${item.id}`)) === prNumber;
-    const before = await this.permitBook();
-    const book = recordShip(before, item, auto);
-    await this.ctx.storage.put("permits", book);
-    await this.patch({
-      items: [startWatch({ ...item, state: "launched", updatedAt: Date.now() }, Date.now(), mergeSha)],
-      science: { ...s.science, [key]: s.science[key] + 1 },
-      trust: Math.min(1, s.trust + 0.05),
-      autonomy: autonomyView(book),
+    const candidate = item;
+    const committed = await this.ctx.blockConcurrencyWhile(async () => {
+      const s = this.state!;
+      const current = s.items.find(i => i.id === candidate.id);
+      if (current && current.prNumber !== prNumber) return null;
+      const launchedItem = current ?? candidate;
+      const auto = (await this.ctx.storage.get<number>(`autoLaunch:${launchedItem.id}`)) === prNumber;
+      // State, rocket credit and permit counters commit atomically. A failed write
+      // leaves no partial credit; a redelivered receipt can safely try again.
+      const result = await this.ctx.storage.transaction(async tx => {
+        if (await tx.get(creditKey)) return null;
+        const now = Date.now();
+        const key = SCIENCE_FOR[launchedItem.kind];
+        const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
+        const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
+        const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book) };
+        next.stations = liveStations(next, now);
+        await tx.put("state", next);
+        await tx.put("permits", book);
+        await tx.put(creditKey, { itemId: launched.id, at: now, mergeSha });
+        return { next, launched, auto };
+      });
+      if (result) Object.assign(s, result.next);
+      return result;
     });
-    this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${item.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, item.id);
-    if (s.move?.itemId === item.id) await this.publishGauntletMove(null);
+    if (!committed) return;
+    const { next, launched, auto } = committed;
+    this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations } });
+    await this.scheduleOrbitDeadline();
+    await this.refreshDecisions();
+    this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);
+    if (this.state!.move?.itemId === launched.id) await this.publishGauntletMove(null);
   }
 
   // ---------- the gauntlet (docs/LOOP.md) ----------
@@ -1467,6 +1508,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     else await this.save();
     const poll = await this.ctx.storage.get<{ nextAt: number }>("posthogPoll");
     if (poll && (await this.ctx.storage.get<boolean>("posthogLinked")) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Math.max(Date.now() + TICK_MS, poll.nextAt));
+    await this.scheduleOrbitDeadline();
     } finally { this.batchingDecisions = false; await this.refreshDecisions(); }
   }
 
