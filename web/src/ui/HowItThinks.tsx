@@ -32,8 +32,8 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
         </button>
       </div>
       <p className="empty">
-        One model reads your work, sorts it, plans every job, reviews every PR and decides which card you see first.
-        Your Claude or ChatGPT sign-ins only build what it plans. It never writes code and never merges past a failed check.
+        One model sorts your work, plans every job, reviews every PR and picks your next card. Your Claude or ChatGPT
+        sign-ins build what it plans. It never writes code or skips a check.
       </p>
       <div className="thinks-stats">
         <div><b>{brain?.decisions ?? 0}</b>decisions</div>
@@ -50,7 +50,7 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
             <span className="think-when">{t.by === "spark" ? `${(t.ms / 1000).toFixed(1)}s` : "rule"} · {ago(t.at)}</span>
           </div>
           <div className="think-title">{t.title}</div>
-          <div className="think-out">→ {t.outcome}</div>
+          {t.outcome !== t.title && <div className="think-out">→ {t.outcome}</div>}
           <div className="think-why">“{t.reason}”</div>
         </div>
       ))}
