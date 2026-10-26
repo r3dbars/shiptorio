@@ -18,10 +18,10 @@ export async function accountFactory(env: Env, repo: string) {
 }
 
 /** Only personal installation owners can erase shared repository data. Membership is insufficient. */
-export async function ownedRepos(env: Env, user: User): Promise<RepoRow[]> {
+export async function ownedRepos(env: Env, user: User): Promise<(RepoRow & {repo_id?: number | null})[]> {
   if (user.dev) throw new Error("Account deletion is unavailable for the local development identity");
-  return (await env.DB.prepare("SELECT r.full_name, r.installation_id, r.default_branch FROM repos r JOIN installations i ON i.id = r.installation_id WHERE lower(i.account_login) = ? ORDER BY r.full_name")
-    .bind(user.login.toLowerCase()).all<RepoRow>()).results;
+  return (await env.DB.prepare("SELECT r.* FROM repos r JOIN installations i ON i.id = r.installation_id WHERE lower(i.account_login) = ? ORDER BY r.full_name")
+    .bind(user.login.toLowerCase()).all<RepoRow & {repo_id?: number | null}>()).results;
 }
 
 export interface AccountFactoryData {
@@ -53,6 +53,8 @@ async function retainedActivity(env: Env, user: User, repos: RepoRow[]) {
 }
 export async function exportAccount(env: Env, user: User) {
   const repos = await accountRepos(env, user);
+  // Owners retain export/delete access to their archived data after GitHub access ends.
+  if (!user.dev) for (const owned of await ownedRepos(env, user)) if (!repos.some(r => r.full_name === owned.full_name)) repos.push(owned);
   const factories = [];
   for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await (await accountFactory(env, repo.full_name)).exportAccountData()) as AccountFactoryData });
   const prefs = await env.DB.prepare("SELECT key, value, updated_at FROM user_prefs WHERE user_id = ?").bind(user.id).all();
@@ -122,7 +124,9 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
       const columns = await env.DB.prepare("PRAGMA table_info(webhook_deliveries)").all<{name: string}>();
       if (columns.results.some(c => c.name === "repo")) statements.push(env.DB.prepare("DELETE FROM webhook_deliveries WHERE repo = ?").bind(repo.full_name));
     }
-    for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(repo.full_name));
+    const dataKeys = [repo.full_name, ...(repo.repo_id ? [`repo:${repo.repo_id}`] : [])];
+    for (const dataKey of dataKeys) for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(dataKey));
+    if (repo.repo_id) statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope GLOB ?").bind(`archived:repo:${repo.repo_id}:installation:*`));
     statements.push(env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(repo.full_name));
   }
   // Remove installs owned by this account, including ones with no remaining repos.

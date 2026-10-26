@@ -4,10 +4,11 @@
 // what feeds it and where its work goes, recent history, and 1–3 actions with the planner's pick marked.
 
 import { useEffect } from "react";
-import { techById, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
+import { rate, techById, type Experiment, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
 import type { LogLine } from "../store";
-import { MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
+import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
+import { GEO_COPY, MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
 import { HARNESS_NAME, PANEL, STATE_WORD, WORDS } from "../copy";
 
 function fmtWait(ms?: number) {
@@ -32,6 +33,34 @@ interface Panel {
   match: (l: LogLine) => boolean; // which floor log lines are this thing's history
   actions: { id: string; label: string; recommended: boolean }[];
   sendAs?: string; // stationId to send actions as, when it isn't the panel id
+  experiments?: Experiment[]; // the measure station: before vs after, per experiment
+}
+
+const EXP_WORD: Record<Experiment["state"], string> = { proposed: "waiting on you", building: "being built", measuring: "measuring", won: "lift", flat: "no lift", lost: "hurt", inconclusive: "no call", dropped: "dropped" };
+
+// Before (A) against after (B) for one experiment, as two bars and the call.
+function ExperimentRow({ e }: { e: Experiment }) {
+  const a = rate(e.baseline);
+  const b = e.after ? rate(e.after) : undefined;
+  const max = Math.max(a, b ?? 0, 0.01);
+  const tone = e.state === "won" ? "good" : e.state === "lost" ? "bad" : e.state === "flat" || e.state === "inconclusive" ? "flat" : "";
+  return (
+    <li className={`sp-exp ${tone}`}>
+      <div className="sp-exp-top">
+        <span className="txt">{e.prNumber ? `#${e.prNumber} ` : ""}{e.title}</span>
+        <span className={`st${e.state === "lost" ? " bad" : ""}`}>{EXP_WORD[e.state]}</span>
+      </div>
+      <div className="sp-exp-bars" aria-label={`${e.step.label}: before ${(a * 100).toFixed(1)}%${b !== undefined ? `, after ${(b * 100).toFixed(1)}%` : ""}`}>
+        <span className="lbl">A</span>
+        <span className="bar a" style={{ width: `${(a / max) * 100}%` }} />
+        <span className="num">{(a * 100).toFixed(1)}%</span>
+        <span className="lbl">B</span>
+        <span className="bar b" style={{ width: `${((b ?? 0) / max) * 100}%` }} />
+        <span className="num">{b === undefined ? "–" : `${(b * 100).toFixed(1)}%`}</span>
+      </div>
+      <p className="sp-exp-line">{e.line ?? e.hypothesis}</p>
+    </li>
+  );
 }
 
 // A short name for a machine, for the in/out list.
@@ -75,7 +104,7 @@ function itemsAt(m: Machine, state: FactoryState): Item[] {
   }
 }
 
-function panelFor(id: string, state: FactoryState): Panel | null {
+function panelFor(id: string, state: FactoryState, jobs: Map<string, string> = new Map()): Panel | null {
   if (id === "rework") {
     const items = state.items.filter((i) => i.scars?.length && i.state !== "launched");
     const onBelt = state.items.filter((i) => i.state === "rejected");
@@ -100,6 +129,24 @@ function panelFor(id: string, state: FactoryState): Panel | null {
   const st = state.stations?.find((x) => x.id === id);
   if (st) {
     const m = state.machines.find((x) => x.id === st.machineId);
+    if (st.kind === "measure") {
+      const exps = (state.experiments ?? []).filter((e) => e.state !== "dropped");
+      const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost" || e.state === "inconclusive");
+      const live = exps.find((e) => e.state === "measuring");
+      return {
+        copy: STATION_COPY.measure,
+        stats: [
+          ["Measuring", live ? `day ${Math.min(live.windowDays, Math.floor(live.daysWatched ?? 0) + 1)} / ${live.windowDays}` : "nothing"],
+          ["Won", `${decided.filter((e) => e.state === "won").length} / ${decided.length}`],
+          ["Watches", live?.step.label ?? exps[0]?.step.label ?? "a funnel step"],
+        ],
+        experiments: exps,
+        machineId: st.machineId,
+        last: st.lastLog,
+        match: (l) => /measure|experiment|lift/i.test(l.text),
+        actions: st.actions,
+      };
+    }
     if (st.kind === "orbit")
       return {
         copy: STATION_COPY.orbit,
@@ -127,18 +174,31 @@ function panelFor(id: string, state: FactoryState): Panel | null {
     };
   }
   const mid = id.startsWith("m:") ? id.slice(2) : id;
-  const m = state.machines.find((x) => x.id === mid);
+  // live plants the map placed from state.power aren't in state.machines, so find them by their power id
+  const reported = state.power.find((p) => p.id === mid);
+  const m = state.machines.find((x) => x.id === mid) ?? (reported && reported.kind !== "steam" ? { id: reported.id, type: reported.kind, x: 0, y: 0, tier: 1, state: "idle" as const } : undefined);
   if (id === "power" || (m && POWER_TYPES.includes(m.type))) {
-    const stats = state.power.map((p): [string, string] => [p.kind === "steam" ? PANEL.stats.planner : PANEL.stats.left(p.name), p.online ? pct(p.level) : PANEL.stats.offline]);
+    const ledger = powerLedger(state, jobs);
+    const mine = m && ledger.find((r) => r.id === m.id || (m.type === "steam" && r.kind === "steam"));
+    const stats: [string, string][] = mine
+      ? [
+          ["Cost", mine.cost],
+          ["Headroom", mine.online ? pct(mine.level) : "offline"],
+          [mine.kind === "steam" ? "Decisions" : "Jobs this session", String(mine.jobs)],
+        ]
+      : ledger.map((r): [string, string] => [`${r.name} · ${r.kind === "geothermal" ? "free" : r.kind === "solar" ? "your plan" : "planner"}`, `${r.online ? pct(r.level) : "offline"} · ${r.jobs} ${r.kind === "steam" ? "calls" : "jobs"}`]);
     const low = state.power.find((p) => p.kind !== "steam" && p.level < 0.4);
     const feeds = m ? state.machines.filter((x) => x.powerId === m.id || (m.type === "steam" && x.type === "splitter")) : [];
+    const geo = mine?.kind === "geothermal";
     return {
-      copy: POWER_COPY,
-      title: m ? PANEL.plant(m.type) : undefined,
+      copy: geo ? GEO_COPY : POWER_COPY,
+      title: m ? (geo ? `${mine.name} · geothermal` : PANEL.plant(m.type)) : undefined,
       stats: [...stats, ...(feeds.length ? [[PANEL.stats.powers, feeds.map((f) => nameOf(f, state)).join(", ")] as [string, string]] : [])],
       machineId: m?.id,
-      last: low ? { who: PANEL.power, text: PANEL.lowPower(low.name), ok: true } : undefined,
-      match: (l) => /power|plugged|plant|sign in/i.test(l.text),
+      last: geo
+        ? { who: "Geothermal", text: GEO_EXPLAINER, ok: true }
+        : low ? { who: PANEL.power, text: PANEL.lowPower(low.name), ok: true } : undefined,
+      match: (l) => /power|plugged|plant|sign in|routed|geothermal/i.test(l.text),
       actions: POWER_COPY.actions ?? [],
       sendAs: "power",
     };
@@ -173,16 +233,17 @@ interface Props {
   log: LogLine[];
   send: (msg: WebToServer) => void;
   onClose: () => void;
+  jobs?: Map<string, string>; // item id -> power plant that built it, this session
 }
 
-export function StationPanel({ id, state, log, send, onClose }: Props) {
+export function StationPanel({ id, state, log, send, onClose, jobs }: Props) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
 
-  const p = panelFor(id, state);
+  const p = panelFor(id, state, jobs);
   if (!p) return null;
   const hot = state.bottleneck?.stationId === id;
   const [color, tag] = p.copy.tag;
@@ -230,6 +291,20 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
             </ul>
           ) : (
             <p className="sp-empty">{PANEL.idle}</p>
+          )}
+        </div>
+      )}
+      {p.experiments && (
+        <div className="sp-sec">
+          <div className="sp-h">Experiments · before (A) vs after (B)</div>
+          {p.experiments.length ? (
+            <ul className="sp-jobs">
+              {p.experiments.slice(0, 3).map((e) => (
+                <ExperimentRow key={e.id} e={e} />
+              ))}
+            </ul>
+          ) : (
+            <p className="sp-empty">No growth change has launched yet.</p>
           )}
         </div>
       )}

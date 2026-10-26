@@ -2,6 +2,7 @@ import { currentUser } from './accounts';
 import type { Env } from './index';
 import { isAllowed } from './session';
 import { isLocal } from './auth';
+import { isPublicDocs } from './access';
 
 export interface SignupEnv {
   SIGNUP_GATE_MODE?: string; // waitlist opts in after Turnstile setup; default/password = rollback
@@ -57,6 +58,7 @@ export async function signupGate(request: Request, env: Env): Promise<Response |
   if (env.DEV_LOGIN && isLocal(new URL(request.url))) return null;
   if (['/api/version','/api/health'].includes(path) && ['GET','HEAD'].includes(request.method)) return null;
   if (path === '/admin' || path.startsWith('/admin/')) return null;
+  if (isPublicDocs(path)) return null; // the docs site is public in every gate mode
   if (['/waitlist','/auth/login','/auth/callback','/auth/logout','/webhooks/github','/webhooks/sentry'].includes(path) || path.startsWith('/webhooks/sentry/')) return null;
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url),Date.now(),true))?.login || null;
   if (login && await signupAllowed(env,login)) return null;

@@ -24,8 +24,8 @@ function fixture(connected = true, populated = true) {
   const factory = new Factory({storage, getWebSockets: () => []} as never, credentialEnv(env) as never);
   const request = async (login: string | null, path = "owner/repo") => {
     if (connected) {
-      await env.DB.prepare("INSERT OR IGNORE INTO installations(id,account_login) VALUES(1,'owner')").run();
-      await env.DB.prepare("INSERT OR IGNORE INTO repos(full_name,installation_id) VALUES('owner/repo',1)").run();
+      await env.DB.prepare("INSERT OR IGNORE INTO installations(id,account_login,permissions) VALUES(1,'owner','{}')").run();
+      await env.DB.prepare("INSERT OR IGNORE INTO repos(full_name,installation_id,repo_id) VALUES('owner/repo',1,501)").run();
     }
     const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
     const cookie = login ? `${await signedInCookie(env, login, connected ? ["owner/repo"] : [])}; ${preview}` : preview;

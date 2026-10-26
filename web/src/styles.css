@@ -302,6 +302,18 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .sp-jobs .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-jobs .st { flex: none; font: 12px var(--pixel); color: var(--amber); align-self: center; }
 .sp-jobs .st.bad { color: var(--red); }
+/* the measure station: one experiment, before (A) vs after (B) */
+.sp-jobs li.sp-exp { flex-direction: column; gap: 4px; padding: 6px; }
+.sp-exp-top { display: flex; justify-content: space-between; gap: 8px; }
+.sp-exp.good .st { color: var(--green); }
+.sp-exp.flat .st { color: var(--amber); }
+.sp-exp-bars { display: grid; grid-template-columns: 14px 1fr 46px; align-items: center; gap: 3px 6px; font: 12px var(--pixel); }
+.sp-exp-bars .bar { height: 8px; min-width: 2px; background: var(--muted, #8a94a3); }
+.sp-exp-bars .bar.b { background: var(--green); }
+.sp-exp.bad .sp-exp-bars .bar.b { background: var(--red); }
+.sp-exp.flat .sp-exp-bars .bar.b { background: var(--amber); }
+.sp-exp-bars .num { text-align: right; }
+.sp-exp-line { margin: 0; font-size: 12px; color: var(--ink-dim, var(--ink)); white-space: normal; }
 .sp-jobs .more, .sp-empty { font-size: 13px; color: var(--dim); margin: 0; }
 .sp-flow { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .sp-flow b { font: 12px var(--pixel); color: var(--dim); display: inline-block; width: 30px; }
@@ -422,6 +434,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .pill.hot { color: var(--dark); background: var(--amber); }
 .meter { flex: none; width: 90px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .meter i { display: block; height: 100%; border-radius: 3px; }
+/* power sheet: one block per plant, name and cost on top, headroom meter and jobs under it */
+.plant { padding: 8px 0 10px; border-bottom: 1px solid var(--hair); }
+.plant .plant-top { display: flex; align-items: center; gap: 10px; }
+.plant .sq { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.plant-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0 0 20px; }
+.plant-bar .meter { flex: 1; width: auto; }
+.plant-num { flex: none; font: 600 12px var(--mono); color: var(--dim); white-space: nowrap; }
+.plant-note { margin: 8px 0 0 20px; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.plant.geothermal .plant-note { border-left: 2px solid #ff7a2a; padding-left: 8px; }
 .empty { margin: 0; color: var(--dim); font-size: 15px; }
 
 /* activity tray */

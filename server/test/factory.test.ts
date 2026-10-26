@@ -33,6 +33,7 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
   const factory = new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never);
   return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never), saved: () => data.get("state") as FactoryState };
+
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
