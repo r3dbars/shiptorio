@@ -67,3 +67,18 @@ test("prefs follow the player and only accept known short keys", async () => {
   const me = await (await get(env, "/api/me", cookie)).json();
   expect(me).toMatchObject({ login: "r3dbars", allowed: true, prefs: { intro: "1", guideSeen: "4" } });
 });
+
+test("progress follows the player, validated by the shared schema", async () => {
+  const env = baseEnv();
+  const cookie = `${await signedInCookie(env, "r3dbars")}; ${await preview()}`;
+  const put = (body: string, origin = "https://shiptorio.com") => app.fetch(new Request("https://shiptorio.com/api/me/progress", { method: "PUT", headers: { cookie, origin }, body }), env as never);
+  const { emptyProgress } = await import("@shiptorio/shared");
+  const p = { ...emptyProgress(), xp: 120, streak: 2, best: 2 };
+  expect((await (await get(env, "/api/me/progress", cookie)).json())).toEqual({ progress: null });
+  expect((await put(JSON.stringify(p))).status).toBe(200);
+  expect((await put(JSON.stringify({ v: 1, xp: "lots" }))).status).toBe(400);
+  expect((await put(JSON.stringify(p), "https://evil.example")).status).toBe(403);
+  const got = (await (await get(env, "/api/me/progress", cookie)).json()) as { progress: unknown };
+  expect(got.progress).toMatchObject({ xp: 120, streak: 2 });
+  expect((await get(env, "/api/me/progress", "")).status).toBe(401);
+});
