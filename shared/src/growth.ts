@@ -19,6 +19,7 @@ export const MIN_LIFT = 0.02; // relative lift under 2% is "no lift" even when s
 /** Unique-person counts returned by one ordered-funnel query over the whole window.
  * Summing daily route totals (or daily uniques) cannot recover an ordered cohort. */
 /** Traffic context only; route totals are never conversion evidence. */
+export interface FunnelDay { day: string; entered: number; converted: number }
 export interface RouteUsers { route: string; day: string; users: number }
 export interface StepCounts { entered: number; converted: number; days: number }
 export interface FunnelWindow extends StepCounts {
@@ -183,4 +184,28 @@ export function guessFunnel(routes: string[]): FunnelStep | null {
     if (from && to) return { from, to, label: `${from} → ${to}` };
   }
   return null;
+}
+
+// Daily ordered-person context is retained for the producer prototype. Daily
+// unique counts are not summed into whole-window unique-person measurements.
+export function funnelDays(events: { person: string; route: string; at: number }[], step: FunnelStep): FunnelDay[] {
+  const byPersonDay = new Map<string, { day: string; first?: number; last?: number }>();
+  for (const e of events) {
+    if (e.route !== step.from && e.route !== step.to) continue;
+    const day = dayOf(e.at);
+    const k = `${e.person}\u0000${day}`;
+    const v = byPersonDay.get(k) ?? { day };
+    if (e.route === step.from) v.first = Math.min(v.first ?? Infinity, e.at);
+    else v.last = Math.max(v.last ?? -Infinity, e.at);
+    byPersonDay.set(k, v);
+  }
+  const days = new Map<string, FunnelDay>();
+  for (const v of byPersonDay.values()) {
+    if (v.first === undefined) continue; // landed on `to` without `from`: not in this funnel
+    const d = days.get(v.day) ?? { day: v.day, entered: 0, converted: 0 };
+    d.entered++;
+    if (v.last !== undefined && v.last > v.first) d.converted++;
+    days.set(v.day, d);
+  }
+  return [...days.values()].sort((a, b) => a.day.localeCompare(b.day));
 }
