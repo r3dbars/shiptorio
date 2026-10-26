@@ -108,3 +108,15 @@ button:hover, .btn:hover { background: var(--amber); color: #0b0e1c; }
   .science { margin-left: 0; }
   .log { max-height: 240px; }
 }
+
+/* Labels projected from 3D, like the prototype's */
+.maplabels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.maplabel {
+  position: absolute; left: 0; top: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 3px 7px 4px; white-space: nowrap;
+  background: #0e1329; border: 2px solid #8d99c9;
+}
+.maplabel b { font: 700 10px Silkscreen, monospace; letter-spacing: 0.06em; }
+.maplabel i { font-style: normal; font-size: 9px; color: #a9b2d4; }
+.maplabel.hot { border-color: var(--red); }
