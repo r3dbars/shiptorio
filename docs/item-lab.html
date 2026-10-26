@@ -786,23 +786,64 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     } };
   }
 
+  // LAUNCH PAD: octagonal concrete pad over a flame trench, hold-down clamps, red gantry with a lift, fuel tank and a blockhouse
   function buildLaunchPad() {
     const g = group();
-    cyl(1.55, 1.75, 0.3, 0x6b7280, 16, 0, 0.15, 0, g);
-    cyl(1.2, 1.2, 0.32, 0x4a505a, 16, 0, 0.17, 0, g);
-    mesh(new THREE.TorusGeometry(0.95, 0.06, 4, 24), 0xf2a93b, 0, 0.34, 0, g).rotation.x = -Math.PI / 2;
+    cyl(1.72, 1.82, 0.16, 0x7d7a73, 8, 0, 0.08, 0, g).rotation.y = Math.PI / 8;
+    cyl(1.5, 1.58, 0.14, 0x9a968e, 8, 0, 0.23, 0, g).rotation.y = Math.PI / 8;
+    // flame trench across the deck, grated except under the rocket, with rusty deflector lips at both ends
+    box(3.3, 0.03, 0.6, 0x16120a, 0, 0.31, 0, g);
+    hazard(g, 3.0, 0.33, 0.36, 16); hazard(g, 3.0, 0.33, -0.36, 16);
+    for (const sx of [-1, 1]) {
+      for (let i = 0; i < 4; i++) box(0.05, 0.04, 0.6, 0x3a3f47, sx * (0.66 + i * 0.24), 0.33, 0, g);
+      box(0.3, 0.3, 0.64, 0xb5583a, sx * 1.66, 0.16, 0, g).rotation.z = sx * 0.6;
+    }
+    // launch mount and hold-down clamps
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.12, 0.2, 0.12, 0x4a505a, sx * 0.4, 0.4, sz * 0.4, g);
+    box(1.0, 0.1, 1.0, 0x5a606a, 0, 0.53, 0, g);
+    mesh(new THREE.TorusGeometry(0.44, 0.05, 4, 20), 0xf2a93b, 0, 0.59, 0, g).rotation.x = -Math.PI / 2;
+    const clamps = [0, 1, 2, 3].map((i) => {
+      const a = i / 4 * Math.PI * 2, c = group(g, Math.cos(a) * 0.44, 0.58, Math.sin(a) * 0.44); c.rotation.y = -a;
+      const tilt = group(c);
+      box(0.1, 0.34, 0.12, 0x3a3f47, 0, 0.17, 0, tilt);
+      box(0.14, 0.06, 0.16, 0xf2a93b, -0.05, 0.33, 0, tilt);
+      return tilt;
+    });
+    // chase lights around the deck edge, skipping the trench
     const ring = [];
-    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; ring.push(box(0.14, 0.08, 0.14, own(0x3a2a10), Math.cos(a) * 1.42, 0.33, Math.sin(a) * 1.42, g)); }
-    const tw = group(g, -1.3, 0, -0.75);
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; if (Math.abs(Math.sin(a)) < 0.3) continue; ring.push({ i, m: box(0.14, 0.08, 0.14, own(0x3a2a10), Math.cos(a) * 1.3, 0.34, Math.sin(a) * 1.3, g) }); }
+    // gantry tower with a lift cab and two umbilical arms
+    const tw = group(g, -1.25, 0.3, -0.8);
     for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) box(0.07, 3.8, 0.07, 0xd94a3f, x, 1.9, z, tw);
     for (let y = 0.5; y < 3.8; y += 0.55) { box(0.44, 0.05, 0.05, 0xd94a3f, 0, y, 0.2, tw); box(0.05, 0.05, 0.44, 0xd94a3f, 0.2, y, 0, tw); }
     box(0.5, 0.06, 0.5, 0x3a3f47, 0, 3.82, 0, tw);
     const beacon = box(0.12, 0.12, 0.12, own(0xff5e52), 0, 3.92, 0, tw);
-    const arms = [group(tw, 0.2, 2.6, 0.2), group(tw, 0.2, 1.6, 0.2)];
-    arms.forEach((a) => { box(0.75, 0.08, 0.08, 0x8a94a3, 0.37, 0, 0, a); a.rotation.y = -0.55; });
-    sph(0.34, 0xe8e8e8, 1.15, 0.75, -0.95, g, 10, 8);
-    for (const [x, z] of [[0.95, -0.75], [1.35, -0.75], [0.95, -1.15], [1.35, -1.15]]) box(0.05, 0.45, 0.05, 0x6b7280, x, 0.45, z, g);
-    const rocket = group(g);
+    const cab = box(0.28, 0.26, 0.28, 0xf2a93b, 0, 0.4, 0, tw);
+    const arms = [group(tw, 0.2, 2.3, 0.2), group(tw, 0.2, 1.3, 0.2)];
+    arms.forEach((a) => { box(0.85, 0.08, 0.08, 0x8a94a3, 0.42, 0, 0, a); a.rotation.y = -0.55; });
+    // fuel tank on saddles, piped to the mount
+    const tk = group(g, 0.95, 0.3, -0.95); tk.rotation.y = -Math.PI / 4;
+    for (const x of [-0.3, 0.3]) box(0.1, 0.22, 0.4, 0x4a505a, x, 0.11, 0, tk);
+    cyl(0.24, 0.24, 1.0, 0xeef1fa, 14, 0, 0.42, 0, tk).rotation.z = Math.PI / 2;
+    for (const x of [-0.5, 0.5]) sph(0.24, 0xeef1fa, x, 0.42, 0, tk, 12, 8).scale.x = 0.45;
+    cyl(0.25, 0.25, 0.1, 0xff5e52, 14, 0, 0.42, 0, tk).rotation.z = Math.PI / 2;
+    cyl(0.03, 0.03, 0.25, 0x6b7280, 6, 0.3, 0.78, 0, tk);
+    box(0.06, 0.06, 0.95, 0x8a94a3, 0.56, 0.37, -0.56, g).rotation.y = Math.PI / 4;
+    // blockhouse with a window strip that shows the launch state
+    box(0.7, 0.36, 0.55, 0x8f8b84, 0.95, 0.48, 0.95, g);
+    box(0.78, 0.08, 0.63, 0x6b6862, 0.95, 0.7, 0.95, g);
+    const winM = own(0x10141f);
+    box(0.02, 0.08, 0.4, winM, 1.31, 0.52, 0.95, g); box(0.5, 0.08, 0.02, winM, 0.95, 0.52, 1.23, g);
+    cyl(0.015, 0.015, 0.5, 0x8a94a3, 4, 0.75, 0.99, 0.85, g);
+    cone(0.12, 0.05, 0xeef1fa, 8, 0.75, 1.26, 0.85, g).rotation.x = -1.0;
+    // floodlight mast
+    cyl(0.04, 0.05, 2.3, 0x6b7280, 6, -1.05, 1.45, 1.0, g);
+    box(0.4, 0.04, 0.06, 0x3a3f47, -1.05, 2.6, 1.0, g);
+    const lampM = own(0x3a3f47);
+    for (const x of [-0.13, 0.13]) box(0.12, 0.12, 0.08, lampM, -1.05 + x, 2.68, 0.96, g).rotation.x = -0.4;
+    const flood = new THREE.PointLight(0xfff1c0, 0, 6); flood.position.set(-1.0, 2.5, 0.8); g.add(flood);
+    // rocket
+    const lift = group(g, 0, 0.28, 0), rocket = group(lift);
     cyl(0.18, 0.26, 0.26, 0x3a3f47, 10, 0, 0.45, 0, rocket);
     cyl(0.32, 0.34, 2.1, 0xf2f2ee, 12, 0, 1.6, 0, rocket);
     cyl(0.345, 0.345, 0.12, 0xff5e52, 12, 0, 0.85, 0, rocket);
@@ -816,44 +857,88 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     cone(0.14, 0.7, basic(0xfff3c0), 8, 0, -0.3, 0, flame).rotation.x = Math.PI;
     flame.children.forEach((c) => (c.castShadow = false));
     const glow = new THREE.PointLight(0xffb040, 0, 8); glow.position.y = 0.2; rocket.add(glow);
-    let clock = 0, cd = 0;
+    let clock = 0, cd = 0, cd2 = 0;
     return { g, update(t, dt, s) {
-      cd -= dt;
+      cd -= dt; cd2 -= dt;
       beacon.material.emissive.setHex(Math.sin(t * 4) > 0 ? 0xff5e52 : 0);
       const chase = s === 'COUNTDOWN' ? 14 : s === 'LAUNCH' ? 20 : 2;
-      ring.forEach((r, i) => r.material.emissive.setHex(Math.floor(t * chase) % 12 === i || (s !== 'IDLE' && (Math.floor(t * chase) + 6) % 12 === i) ? 0xf2a93b : 0));
+      ring.forEach((r) => r.m.material.emissive.setHex(Math.floor(t * chase) % 12 === r.i || (s !== 'IDLE' && (Math.floor(t * chase) + 6) % 12 === r.i) ? 0xf2a93b : 0));
       const armOpen = s === 'LAUNCH' ? 1.4 : 0;
       arms.forEach((a) => (a.rotation.y += ((-0.55 - armOpen) - a.rotation.y) * Math.min(1, dt * 3)));
-      if (s === 'COUNTDOWN' && cd <= 0) { cd = 0.06; spawn(g, R() * 0.6, 0.5, R() * 0.6, R() * 2, 0.4, R() * 2, 0xeef1fa, 1.0, 0.18, -0.4); }
+      clamps.forEach((c) => (c.rotation.z += ((s === 'LAUNCH' ? -1.1 : 0) - c.rotation.z) * Math.min(1, dt * 5)));
+      const cabY = s === 'IDLE' ? 0.4 + (Math.sin(t * 0.5) + 1) * 1.3 : s === 'COUNTDOWN' ? 2.5 : 0.4;
+      cab.position.y += (cabY - cab.position.y) * Math.min(1, dt * 2);
+      winM.emissive.setHex(s === 'LAUNCH' ? 0x5bd18b : s === 'COUNTDOWN' ? (Math.sin(t * 8) > 0 ? 0xf2a93b : 0x3e2e12) : 0x2a3550);
+      const lit = night || s !== 'IDLE';
+      lampM.emissive.setHex(lit ? 0xfff1c0 : 0); flood.intensity = night ? 1.6 : 0;
+      if (s === 'COUNTDOWN' && cd <= 0) {
+        cd = 0.06;
+        spawn(g, 1.16, 1.2, -0.74, R() * 0.3, 0.6, R() * 0.3, 0xeef1fa, 1.0, 0.14, -0.4);
+        const sx = Math.random() < 0.5 ? -1 : 1; spawn(g, sx * 1.55, 0.35, R() * 0.4, sx * 0.8, 0.3, R() * 0.4, 0xeef1fa, 1.2, 0.16, -0.3);
+      }
       if (s === 'LAUNCH') {
         clock += dt; const c = clock % 4.2;
         const k = Math.max(0, c - 0.6);
         rocket.position.y = c < 3.4 ? 0.5 * k * k * 3.4 : 0;
         rocket.position.x = c < 3.4 ? Math.sin(c * 40) * 0.015 : 0;
         flame.visible = c < 3.4; flame.scale.y = 0.8 + Math.random() * 0.6; glow.intensity = c < 3.4 ? (night ? 2 : 0.6) : 0;
-        if (c < 3.4 && cd <= 0) { cd = 0.03; spawn(g, R() * 0.3, rocket.position.y + 0.1, R() * 0.3, R() * 1.5, -0.5, R() * 1.5, Math.random() < 0.5 ? 0xb8bcc6 : 0xeef1fa, 1.4, 0.22, -0.3); }
+        if (c < 3.4 && cd <= 0) { cd = 0.03; spawn(g, R() * 0.3, rocket.position.y + 0.38, R() * 0.3, R() * 1.5, -0.5, R() * 1.5, Math.random() < 0.5 ? 0xb8bcc6 : 0xeef1fa, 1.4, 0.22, -0.3); }
+        if (c < 2.2 && cd2 <= 0) { cd2 = 0.04; const sx = Math.random() < 0.5 ? -1 : 1; spawn(g, sx * 1.7, 0.4, R() * 0.4, sx * (2 + Math.random()), 0.9, R() * 0.8, Math.random() < 0.3 ? 0xffb340 : 0xd8dbe2, 1.2, 0.24, -0.3); }
       } else { clock = 0; rocket.position.set(0, 0, 0); flame.visible = false; glow.intensity = 0; }
     } };
   }
 
+  // SOLAR: three single-axis tracker rows on a gravel pad, an inverter in the plan's color and a weather mast
   function buildSolar(o) {
     const trim = o.variant[1], g = group();
-    box(0.9, 0.16, 0.9, 0x3a3f47, 0, 0.08, 0, g); bolts(g, 0.9, 0.9, 0.18);
-    cyl(0.12, 0.16, 0.9, 0x6b7280, 8, 0, 0.6, 0, g);
-    box(0.34, 0.26, 0.34, 0x4a505a, 0, 1.12, 0, g);
-    const led = box(0.08, 0.08, 0.04, own(0x173a26), 0.12, 1.12, 0.18, g);
-    box(0.22, 0.24, 0.12, 0x2b2f36, 0.24, 0.5, 0.12, g);
-    cyl(0.03, 0.03, 0.45, 0x16120a, 6, 0.24, 0.2, 0.12, g);
-    const panel = group(g, 0, 1.3, 0);
-    box(2.5, 0.08, 1.6, trim, 0, 0, 0, panel);
-    box(2.42, 0.06, 1.52, 0x1d2a4a, 0, 0.02, 0, panel);
-    const cells = [];
-    for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) cells.push(box(0.36, 0.04, 0.33, own((i + j) % 2 ? 0x2f6fe0 : 0x3b7cf0), -1.0 + i * 0.4, 0.06, -0.54 + j * 0.36, panel));
+    box(3.0, 0.08, 2.5, 0x5f5a50, 0, 0.04, 0, g);
+    for (let i = 0; i < 40; i++) box(0.06, 0.03, 0.06, rnd() < 0.5 ? 0x7a7468 : 0x4a463e, (rnd() - 0.5) * 2.9, 0.09, (rnd() - 0.5) * 2.4, g);
+    const px0 = -0.35, rows = [], cells = [];
+    [-0.85, 0, 0.85].forEach((z, r) => {
+      for (const x of [-0.9, 0.9]) { box(0.16, 0.1, 0.16, 0x8f8b84, px0 + x, 0.12, z, g); cyl(0.05, 0.06, 0.8, 0x6b7280, 6, px0 + x, 0.5, z, g); }
+      cyl(0.045, 0.045, 2.3, 0x8a94a3, 8, px0, 0.88, z, g).rotation.z = Math.PI / 2;
+      box(0.16, 0.2, 0.16, 0x2b2f36, px0, 0.78, z, g);
+      const p = group(g, px0, 0.93, z);
+      box(2.2, 0.05, 0.64, trim, 0, 0, 0, p);
+      box(2.14, 0.04, 0.58, 0x1d2a4a, 0, 0.02, 0, p);
+      for (let i = 0; i < 8; i++) for (let j = 0; j < 2; j++) cells.push({ i, j, r, m: box(0.25, 0.03, 0.27, own(0x2f6fe0), -0.93 + i * 0.266, 0.045, -0.14 + j * 0.28, p) });
+      rows.push(p);
+    });
+    box(0.05, 0.04, 1.7, 0x16120a, 0.66, 0.1, 0, g);
+    box(0.5, 0.04, 0.05, 0x16120a, 0.9, 0.1, -0.55, g);
+    // inverter cabinet with a power meter on its side
+    box(0.42, 0.7, 0.5, trim, 1.15, 0.43, -0.55, g);
+    box(0.46, 0.05, 0.54, 0x3a3f47, 1.15, 0.8, -0.55, g);
+    for (let i = 0; i < 3; i++) box(0.3, 0.04, 0.02, 0x2b2f36, 1.15, 0.3 + i * 0.1, -0.29, g);
+    box(0.02, 0.32, 0.3, 0x16120a, 1.365, 0.55, -0.55, g);
+    const meters = [0, 1, 2, 3].map((k) => box(0.02, 0.05, 0.22, own(0x173a26), 1.38, 0.44 + k * 0.07, -0.55, g));
+    const led = box(0.08, 0.08, 0.08, own(0x173a26), 1.15, 0.87, -0.42, g);
+    // weather mast: anemometer and a sun sensor
+    cyl(0.025, 0.03, 1.5, 0x8a94a3, 6, 1.15, 0.83, 0.75, g);
+    box(0.3, 0.02, 0.02, 0x8a94a3, 1.15, 1.45, 0.75, g);
+    sph(0.05, 0xeef1fa, 1.29, 1.49, 0.75, g, 8, 6);
+    const anemo = group(g, 1.15, 1.6, 0.75);
+    cyl(0.02, 0.02, 0.1, 0x2b2f36, 6, 0, 0, 0, anemo);
+    for (let k = 0; k < 3; k++) { const arm = group(anemo); arm.rotation.y = k * Math.PI * 2 / 3; box(0.22, 0.02, 0.02, 0x2b2f36, 0.11, 0.04, 0, arm); sph(0.045, 0xeef1fa, 0.22, 0.04, 0, arm, 6, 4); }
+    // the cloud that rolls in when the plan hits its limit
+    const cloud = group(g, px0, 2.4, 0);
+    [[0, 0, 0, 0.9, 0.35, 0.7], [0.45, 0.08, 0.1, 0.6, 0.4, 0.55], [-0.45, 0.02, -0.05, 0.7, 0.3, 0.6], [0.1, 0.24, 0, 0.5, 0.3, 0.45]].forEach(([x, y, z, w, h, d]) => box(w, h, d, 0xc9cedb, x, y, z, cloud));
+    cloud.visible = false;
+    let ang = 0;
     return { g, update(t, dt, s) {
       const sunny = s === 'SUNNY';
-      panel.rotation.x += ((sunny ? -0.45 + Math.sin(t * 0.4) * 0.12 : 0) - panel.rotation.x) * Math.min(1, dt * 2);
-      const sweep = (t * 1.2) % 3;
-      cells.forEach((c, n) => { const i = Math.floor(n / 4); c.material.emissive.setHex(sunny && Math.abs(i * 0.5 - sweep) < 0.3 ? 0x5a8cff : sunny ? 0x0a1a3a : 0); c.material.color.setHex(sunny ? ((i + n) % 2 ? 0x2f6fe0 : 0x3b7cf0) : 0x1a2440); });
+      ang += ((sunny ? Math.sin(t * 0.25) * 0.32 : 0) - ang) * Math.min(1, dt * 2);
+      rows.forEach((p) => (p.rotation.x = ang));
+      const sweep = (t * 5) % 14 - 2;
+      cells.forEach((c) => {
+        c.m.material.color.setHex(sunny ? ((c.i + c.j) % 2 ? 0x2f6fe0 : 0x3b7cf0) : 0x1a2440);
+        c.m.material.emissive.setHex(sunny ? (Math.abs(c.i + c.r * 1.5 - sweep) < 0.8 ? 0x5a8cff : 0x0a1a3a) : 0);
+      });
+      cloud.visible = !sunny;
+      if (!sunny) cloud.position.x = px0 + Math.sin(t * 0.4) * 0.35;
+      anemo.rotation.y += dt * (sunny ? 3 : 7);
+      const lvl = sunny ? 3 + (Math.sin(t * 2) > 0 ? 1 : 0) : 0;
+      meters.forEach((m, k) => m.material.emissive.setHex(sunny ? (k < lvl ? 0x5bd18b : 0) : (k === 0 && Math.sin(t * 6) > 0 ? 0xff5e52 : 0)));
       led.material.emissive.setHex(sunny ? 0x5bd18b : (Math.sin(t * 4) > 0 ? 0xff5e52 : 0));
     } };
   }
@@ -935,7 +1020,7 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     { id: 'biter', name: 'BITER', kind: 'ENEMY', chip: 0xff5e52, h: 1.2, real: 'A Sentry error, spawned on the district its stack trace points to. Ignore it and more show up.',
       stats: [['SOURCE', 'Sentry'], ['SPAWNS', 'per error spike'], ['TARGET', 'a district'], ['DROPS', 'red ore']],
       states: ['WALK', 'ATTACK', 'DIE'], variants: [['MEDIUM · ERROR', 0xff5e52, 1], ['SMALL · WARNING', 0xff9a4a, 0.7], ['BIG · CRASH', 0x9b5cff, 1.35]], build: buildBiter },
-    { id: 'solar', name: 'SOLAR PANEL', kind: 'POWER', chip: 0x3b7cf0, h: 1.8, real: 'A subscription plan. Free power while the plan has capacity; goes dark when you hit the usage limit.',
+    { id: 'solar', name: 'SOLAR PANEL', kind: 'POWER', chip: 0x3b7cf0, h: 2.2, real: 'A subscription plan. Free power while the plan has capacity; goes dark when you hit the usage limit.',
       stats: [['COST', 'flat monthly'], ['OUTPUT', 'plan limit'], ['RECHARGE', 'usage window'], ['FEEDS', 'local assemblers']],
       states: ['SUNNY', 'CAPPED'], variants: [['CLAUDE', 0xd97757], ['CODEX', 0xd6dbe3], ['CURSOR', 0x8a8f99], ['GROK', 0x30343c]], build: buildSolar },
     { id: 'battery', name: 'BATTERY', kind: 'POWER', chip: 0x5bd18b, h: 1.9, real: 'Stores a plan’s capacity. Drains as agents work, refills when the usage window resets.',

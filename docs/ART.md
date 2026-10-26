@@ -36,3 +36,21 @@ Live prototype: https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK (a copy is in 
 - Palette: stone `#c9b48a`, cliff slate `#3a4268`, moss `#4f7d3b`, steel `#8a94a3`, amber `#f2a93b`,
   green `#5bd18b`, red `#ff5e52`, blue `#6fb2ff`, void `#1b2448`.
 - Fonts: Silkscreen (pixel UI), JetBrains Mono (small text).
+
+## Item notes
+
+**Locked by Justin on Oct 26:** the Item Lab as of PR #7 is the art baseline for all 12 items.
+
+The Item Lab (`docs/item-lab.html`, live: https://claude.ai/artifact/1LRgfMxAMrZ5gv1r2dkkKy) is the reference for
+every item's model, states and animation. Port builders from there.
+
+- **Launch pad** (Oct 26): octagonal two-step concrete pad, a flame trench across it with grates, hazard edges and rusty
+  deflector lips, a launch mount with four hold-down clamps (swing back on launch), red gantry with a lift cab and two
+  umbilical arms, a horizontal fuel tank on saddles, a blockhouse whose window shows the state (blue idle, blinking amber
+  countdown, green launch), and a floodlight mast. Countdown vents vapor from the tank and trench; launch blows plume
+  out both trench ends.
+- **Solar panel** (Oct 26): three single-axis tracker rows on a gravel pad, frames in the plan's color (Claude clay,
+  Codex silver, ...), an inverter cabinet in the plan's color with a 4-bar power meter, and a weather mast with a
+  spinning anemometer. Sunny: rows track the sun and a light sweep runs across the cells. Capped: rows stow flat, cells
+  go dark, a cloud parks overhead, the meter blinks red.
+
