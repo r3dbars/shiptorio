@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { savePref } from "./account";
 import type { FactoryState, Item, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
@@ -8,14 +8,13 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
-import { CheckIn } from "./ui/CheckIn";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
-import { HowItThinks } from "./ui/HowItThinks";
+import { GEO_EXPLAINER, notePowerJobs, powerLedger } from "./ui/powerLedger";
 import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
@@ -29,7 +28,7 @@ import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressS
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 
-const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#e8685c" };
+const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#ff7a2a" };
 
 const codePath = (district: string) => (district === "/" ? "/" : `/${district}`);
 
@@ -86,6 +85,14 @@ function buildSlot(state: FactoryState) {
 }
 
 // config: the welcome tour runs the App on its own sim (ui/Onboarding.tsx). onIntroDone: where the tour's last button goes.
+// Sheets nobody needs on the first screen load on their own; they're fetched once the browser is idle.
+const loadCheckIn = () => import("./ui/CheckIn");
+const loadHowItThinks = () => import("./ui/HowItThinks");
+const CheckIn = lazy(() => loadCheckIn().then((m) => ({ default: m.CheckIn })));
+const HowItThinks = lazy(() => loadHowItThinks().then((m) => ({ default: m.HowItThinks })));
+const whenIdle = (f: () => void) => ("requestIdleCallback" in window ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 2500));
+whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
+
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
@@ -99,6 +106,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
+  // which plant built each item this session, for the power sheet's job counts
+  const powerJobs = useRef(new Map<string, string>());
+  if (state) powerJobs.current = notePowerJobs(powerJobs.current, state);
+  const plants = state ? powerLedger(state, powerJobs.current) : [];
   const [panel, setPanel] = useState<string | null>(null);
   // the first run asks which world to start in; everyone else lands in Build, the full map
   const [world, setWorldState] = useState<World | null>(() => (intro ? "build" : tour.on ? null : (readWorld() ?? "build")));
@@ -456,7 +467,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "yours" && state ? (
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "thinks" ? (
-          <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+          <Suspense fallback={null}>
+            <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+          </Suspense>
         ) : sheet === "empire" ? (
           <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
@@ -464,15 +477,17 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
-          <CheckIn
-            deck={deck}
-            autonomy={autonomy}
-            send={send}
-            onFocus={setFocus}
-            onClose={() => { setCheckin(false); setFocus(null); }}
-            onAnswered={progressing ? prog.card : undefined}
-            end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
-          />
+          <Suspense fallback={null}>
+            <CheckIn
+              deck={deck}
+              autonomy={autonomy}
+              send={send}
+              onFocus={setFocus}
+              onClose={() => { setCheckin(false); setFocus(null); }}
+              onAnswered={progressing ? prog.card : undefined}
+              end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+            />
+          </Suspense>
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label={LINE.title}>
             <div className="sheet-top">
@@ -521,19 +536,36 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
-            <p className="empty">{POWER.intro}</p>
-            {(state?.power ?? []).map((p) => (
-              <div className="lrow" key={p.id}>
-                <span className="tt">
-                  {p.kind === "steam" ? POWER.planner : p.name}
-                  <code>{p.kind === "steam" ? POWER.plannerTag : p.kind}</code>
-                </span>
-                <span className="meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p.level * 100)}>
-                  <i style={{ width: `${p.online ? Math.round(p.level * 100) : 0}%`, background: POWER_COLOR[p.kind] }} />
-                </span>
-                <span className="pill">{p.online ? `${Math.round(p.level * 100)}%` : POWER.offline}</span>
-              </div>
-            ))}
+            <p className="empty">
+              {plants.some((p) => p.kind === "geothermal") ? POWER.introGeo : POWER.intro}
+            </p>
+            {plants.map((p) => {
+              const pct = p.online ? Math.round(p.level * 100) : 0;
+              return (
+                <div className={`plant ${p.kind}`} key={p.id}>
+                  <div className="plant-top">
+                    <span className="sq" style={{ background: POWER_COLOR[p.kind] }} />
+                    <span className="tt">
+                      {p.name}
+                      <code>
+                        {p.kindLabel} · {p.cost}
+                      </code>
+                    </span>
+                    <span className={p.busy ? "pill working" : "pill"}>{p.online ? (p.busy ? "running" : "ready") : "offline"}</span>
+                  </div>
+                  <div className="plant-bar">
+                    <span className="meter" role="meter" aria-label={`${p.name} headroom`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+                      <i style={{ width: `${pct}%`, background: POWER_COLOR[p.kind] }} />
+                    </span>
+                    <span className="plant-num">{p.online ? `${pct}% left` : POWER.offline}</span>
+                    <span className="plant-num">
+                      {p.jobs} {p.kind === "steam" ? (p.jobs === 1 ? "decision" : "decisions") : p.jobs === 1 ? "job" : "jobs"}
+                    </span>
+                  </div>
+                  {p.kind === "geothermal" && <p className="plant-note">{GEO_EXPLAINER}</p>}
+                </div>
+              );
+            })}
             <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>{POWER.howItThinks}</button>
             {cfg.kind === "live" && state?.repo && (
               <button type="button" className="credit-btn" onClick={async () => {
@@ -564,6 +596,17 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 </div>
               );
             })}
+            {!plants.some((p) => p.kind === "geothermal") && (
+              <div className="lrow">
+                <span className="tt">
+                  Your computer
+                  <code>geothermal · free, runs small jobs on a local model</code>
+                </span>
+                <span className="pill" title="Run Ollama or any OpenAI-compatible model on this machine and the runner finds it">
+                  start a local model
+                </span>
+              </div>
+            )}
           </section>
         ) : (
           <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
@@ -614,7 +657,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         </nav>
         )}
 
-        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
+        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} />}
 
         {progressing && <XpPop pop={prog.pop} />}
 

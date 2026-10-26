@@ -1,9 +1,9 @@
 // Panel copy lookups. The words themselves live in ../copy.ts; this only picks the right ones.
 
 import { techOfStation, type Machine } from "@shiptorio/shared";
-import { MACHINE_COPY, POWER_COPY, RESEARCHED, REWORK_COPY, STATION_COPY, type PanelCopy } from "../copy";
+import { GEO_COPY, MACHINE_COPY, POWER_COPY, RESEARCHED, REWORK_COPY, STATION_COPY, type PanelCopy } from "../copy";
 
-export { MACHINE_COPY, POWER_COPY, REWORK_COPY, STATION_COPY, type PanelCopy };
+export { GEO_COPY, MACHINE_COPY, POWER_COPY, REWORK_COPY, STATION_COPY, type PanelCopy };
 
 /** A researched check's panel: what it does and a real example of what it stops (shared/src/research.ts). */
 export function researchedCopy(stationId: string): PanelCopy {

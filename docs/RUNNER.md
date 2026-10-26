@@ -16,6 +16,8 @@ The server checks the actual remote branch, commit ancestry and file scope befor
 opening a PR. CI alone does not mark runner PRs ready to merge: independent proof,
 review and human merge remain required.
 
+**Local models (geothermal power):** a local OpenAI-compatible model (Ollama etc.) can build small, low-risk jobs for free. See [runner-local-models.md](runner-local-models.md).
+
 ## Operator commands
 
 ## Approve work in the game
