@@ -63,7 +63,8 @@ app.use("*", async (c, next) => {
 });
 
 app.use("*", async (c, next) => {
-  const budget = requestBudget(c.req.raw);
+  // Use the router's decoded path, so encoded aliases consume the same budget.
+  const budget = requestBudget(c.req.raw, c.req.path);
   if (budget) {
     const user = await signedIn(c);
     for (const subject of [ipSubject(c.req.raw), ...(user ? [`user:${user.id}`] : [])]) {
@@ -100,7 +101,7 @@ app.onError((err, c) => {
 });
 
 app.use("*", async (c, next) => {
-  if (!browserMutationAllowed(c.req.raw)) return c.json({ error: "invalid origin" }, 403);
+  if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
   await next();
 });
 
@@ -370,7 +371,7 @@ app.all("*", async (c) => {
   const response = await c.env.ASSETS.fetch(c.req.raw);
   // Only trusted static art contains inline executable scripts. Never add nonces
   // to user-provided text or relax the application/API policy to allow them.
-  if (["/art/prototype.html", "/art/item-lab.html"].includes(c.req.path) && response.headers.get("content-type")?.includes("text/html")) {
+  if (/^\/art\/(prototype|item-lab)(?:\.html)?\/?$/.test(c.req.path) && response.headers.get("content-type")?.includes("text/html")) {
     const nonce = crypto.randomUUID().replaceAll("-", "");
     c.set("artNonce", nonce);
     return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);

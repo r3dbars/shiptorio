@@ -11,7 +11,7 @@ export function securityHeaders(request: Request, artNonce?: string): Record<str
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
-    `connect-src 'self' ${socket}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
+    `connect-src 'self' ${socket}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
     "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'",
@@ -31,10 +31,11 @@ export function securityHeaders(request: Request, artNonce?: string): Record<str
 // Machine-to-machine routes authenticate without cookies. /access has its own
 // signed form proof for browsers that strip Origin. Every other mutation fails
 // closed without an exact same-origin header, including future API endpoints.
-export function browserMutationAllowed(request: Request): boolean {
+export function browserMutationAllowed(request: Request, routePath = new URL(request.url).pathname): boolean {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return true;
   const url = new URL(request.url);
-  if (["/webhooks/github", "/webhooks/sentry", "/access"].includes(url.pathname)
-    || /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(claim|finish|renew)$/.test(url.pathname)) return true;
+  if (["/webhooks/github", "/webhooks/sentry", "/access"].includes(routePath)
+    || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(routePath)
+    || /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(claim|finish|renew)$/.test(routePath)) return true;
   return request.headers.get("origin") === url.origin && request.headers.get("sec-fetch-site") !== "cross-site";
 }

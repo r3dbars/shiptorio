@@ -1547,7 +1547,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
-    for (const subject of [`user:${auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
+    for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
     }
     let value: unknown;

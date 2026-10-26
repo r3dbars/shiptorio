@@ -1,4 +1,5 @@
 import { expect, mock, test } from "bun:test";
+import { unlimitedFactory } from "./browser-fixture";
 import { connectPage } from "../src/connect";
 import { makeSessionCookie } from "../src/session";
 import { readConfig } from "../../web/src/source";
@@ -28,7 +29,7 @@ test("a player can't set keys for a repo they can't reach", async () => {
   const secret = "connect-session", password = "connect-preview", DB = testD1();
   const cookie = [await signedInCookie({ DB, SESSION_SECRET: secret, ALLOWED_LOGINS: "*" }, "stranger", ["stranger/app"]), (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
   const writes: string[] = [];
-  const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "*", CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } } };
+  const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "*", FACTORY: unlimitedFactory, CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } } };
   const response = await app.fetch(new Request("https://shiptorio.com/connect/sentry?repo=example/shop", { method: "POST", headers: { cookie, origin: "https://shiptorio.com" }, body: new URLSearchParams({ clientSecret: "sample_test_secret_only" }) }), env as never);
   expect(response.status).toBe(403);
   expect(writes).toEqual([]);

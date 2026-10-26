@@ -4,6 +4,7 @@ import { consumeBudget, ipSubject, LIMITS, rateLimit, requestBudget, type Budget
 import { makeSessionCookie } from "../src/session";
 import { verifyHmac } from "../src/sources/types";
 import { authorizedSocket, browserEnv } from "./browser-fixture";
+import { signedInCookie, testD1 } from "./d1-fixture";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { default: app } = await import("../src/index");
@@ -25,7 +26,7 @@ function namespace() {
     return { securityLimit: (budget: Budget) => consumeBudget(stores.get(id)!, budget) };
   } };
 }
-const baseEnv = () => ({ SESSION_SECRET: "security-test-session", APP_PASSWORD: "security-test-password", ALLOWED_LOGINS: "player", FACTORY: namespace() });
+const baseEnv = () => ({ DB: testD1(), SESSION_SECRET: "security-test-session", APP_PASSWORD: "security-test-password", ALLOWED_LOGINS: "player", FACTORY: namespace() });
 const request = (path: string, init?: RequestInit) => new Request(`https://shiptorio.com${path}`, init);
 
 describe("webhook signatures", () => {
@@ -80,7 +81,7 @@ describe("browser origin and response policy", () => {
         expect(browserMutationAllowed(request(path, { method, headers: { origin: "https://shiptorio.com", "sec-fetch-site": "cross-site" } }))).toBe(false);
       }
     }
-    for (const path of ["/webhooks/github", "/webhooks/sentry", "/api/runner/a/b/claim", "/api/runner/a/b/finish", "/api/runner/a/b/renew", "/access"]) {
+    for (const path of ["/webhooks/github", "/webhooks/sentry", "/webhooks/sentry/a/b", "/api/runner/a/b/claim", "/api/runner/a/b/finish", "/api/runner/a/b/renew", "/access"]) {
       expect(browserMutationAllowed(request(path, { method: "POST" }))).toBe(true);
     }
     expect(browserMutationAllowed(request("/webhooks/github/extra", { method: "POST" }))).toBe(false);
@@ -88,7 +89,7 @@ describe("browser origin and response policy", () => {
   });
   it("central middleware rejects origins before parsing forms or dispatching jobs", async () => {
     const env = baseEnv();
-    const cookie = [(await makeSessionCookie(env.SESSION_SECRET, "player")).split(";")[0],
+    const cookie = [await signedInCookie(env, "player", ["a/b"], 7),
       (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
     for (const path of ["/connect/sentry", "/api/repos/a/b/runner/pair", "/api/future/move"]) {
       for (const origin of [undefined, "null", "https://evil.example"]) {
@@ -158,10 +159,22 @@ describe("durable per-IP and per-user rate limits", () => {
   });
   it("limits a signed-in user across changing IPs before connecting credentials", async () => {
     const env = baseEnv();
-    const cookie = (await makeSessionCookie(env.SESSION_SECRET, "player")).split(";")[0];
-    for (let n = 0; n < 30; n++) await rateLimit(env as never, "user:player", "connect");
+    const cookie = await signedInCookie(env, "player", [], 7);
+    for (let n = 0; n < 30; n++) await rateLimit(env as never, "user:7", "connect");
     const res = await app.fetch(request("/connect/sentry", { method: "POST", headers: { cookie, "cf-connecting-ip": "192.0.2.99", origin: "https://shiptorio.com" }, body: "clientSecret=sample" }), env as never);
     expect(res.status).toBe(429);
+  });
+  it("encoded route aliases share the router's canonical budget", async () => {
+    const env = baseEnv();
+    const cookie = [await signedInCookie(env, "player", ["a/b"], 7),
+      (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
+    for (const budget of ["auth", "connect", "socket", "move"] as const) {
+      for (let n = 0; n < LIMITS[budget]; n++) await rateLimit(env as never, "user:7", budget);
+    }
+    for (const [path, method] of [["/%61uth/login", "GET"], ["/%63onnect/sentry?repo=a/b", "GET"], ["/%61pi/repos/a/b/factory", "GET"], ["/%61pi/repos/a/b/runner/pair", "POST"]]) {
+      const res = await app.fetch(request(path, { method, headers: { cookie, origin: "https://shiptorio.com" } }), env as never);
+      expect(res.status).toBe(429);
+    }
   });
   it("throttles websocket moves across connections before state loading or action dispatch", async () => {
     for (const subject of ["user:test-player", "ip:192.0.2.1"]) {

@@ -11,7 +11,7 @@ interface Storage {
 }
 
 export async function consumeBudget(storage: Storage, budget: Budget, now = Date.now()): Promise<LimitResult> {
-  if (!(budget in LIMITS)) throw new Error("unknown security budget");
+  if (!Object.hasOwn(LIMITS, budget)) throw new Error("unknown security budget");
   return storage.transaction(async tx => {
     const counter = await tx.get<Counter>("security-budget") ?? { windows: {} };
     let window = counter.windows[budget];
@@ -35,8 +35,7 @@ export async function rateLimit(env: LimiterEnv, subject: string, budget: Budget
 // Cloudflare overwrites this header at the edge. Never use X-Forwarded-For,
 // client-chosen identity headers or a form-supplied login as counter identities.
 export const ipSubject = (request: Request) => `ip:${request.headers.get("cf-connecting-ip") ?? "unknown"}`;
-export function requestBudget(request: Request): Budget | null {
-  const path = new URL(request.url).pathname;
+export function requestBudget(request: Request, path = new URL(request.url).pathname): Budget | null {
   if (path.startsWith("/auth/") || path.startsWith("/setup") || path === "/access" && request.method === "POST") return "auth";
   if (path.startsWith("/connect/")) return "connect";
   if (/^\/api\/repos\/[^/]+\/[^/]+\/factory$/.test(path)) return "socket";
