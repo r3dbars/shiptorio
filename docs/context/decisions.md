@@ -5,6 +5,21 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Latest live verification, Oct 26: Sentry is now delivering signed issue-created and
+issue-resolved webhooks, not merely configured. Isolated verification issue
+7813706988 appeared as factory ore and disappeared after resolution in Sentry.
+PostHog is connected and its Transcripted traffic-drop signal is flowing. The
+existing GitHub App's Commit statuses read permission is repaired (superseding the
+older pending-permission note below). Detailed evidence and remaining real runner
+acceptance are in `live-source-launch-proof.md`.
+
+PRs #141/#142 are merged with green CI and Deploy runs 40401140082/40401524789.
+Both protected version endpoints matched `a4fc27c5407460577965a47a5d15d7a3feafbaef`.
+Only `shiptorio` was deployed. PR #146 subsequently repaired planner-comment
+revision handling. Issue #125 was completed by a concurrent agent PR and is not
+counted as game-loop evidence; #170 is reserved for the real runner acceptance.
+That acceptance remains incomplete; no approval or verification boundary was bypassed.
+
 Security hardening checkpoint (Oct 26): preserve the existing signed webhook and
 session boundaries, enforce browser mutation origins centrally, and add durable
 per-IP/per-user budgets using the existing Factory binding (no new Cloudflare
@@ -296,3 +311,14 @@ lane owns their final storage integration (PR #155). Factory-generated PRs remai
 launchable only through the game. See [security.md](security.md) for the inventory.
 
 - 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.
+
+Credential isolation (Oct 26, goal 3): mine credentials move from global/per-repo KV
+plaintext to installation + repo + kind D1 envelopes. AES-GCM uses fresh data keys
+wrapped by CRED_MASTER_KEY; scope/kind/version are authenticated. First authorized
+read migrates and deletes plaintext; revocation tombstones prevent stale KV or operator
+secret fallback from restoring access. Claude accounts #160 supplies session/user/repo
+membership. Worker-secret overrides stay with the pinned/legacy operator map. Keys
+never enter factory messages, provider errors, logs, or connection responses; shared
+redaction covers those output boundaries. The requested master key was generated directly into Wrangler after confirming
+authorized access and an absent binding, only on shiptorio. No value was printed
+or saved to a file; setup command is in docs/context/encrypted-credentials.md.
