@@ -175,6 +175,22 @@ describe("account data controls", () => {
     for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
     expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}]);
   });
+  it("exports the stable repo-id factory and erases both it and its frozen legacy object", async () => {
+    const {env, user, objects} = await fixture();
+    const columns = await env.DB.prepare("PRAGMA table_info(repos)").all<{name: string}>();
+    if (!columns.results.some(c => c.name === "repo_id")) await env.DB.prepare("ALTER TABLE repos ADD COLUMN repo_id INTEGER").run();
+    await env.DB.prepare("UPDATE repos SET repo_id = 101 WHERE full_name = 'alice/app'").run();
+    const legacy = objects.get("alice/app")!;
+    const data = new Map(legacy.data);
+    legacy.data.clear(); legacy.data.set("migratedTo", "repo:101");
+    let alarm: number | null = 10;
+    const storage = {get: async (key: string) => structuredClone(data.get(key)), deleteAll: async () => {data.clear();}, deleteAlarm: async () => {alarm = null;}};
+    const factory = new Factory({storage, getWebSockets: () => [], blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn()} as never, env);
+    objects.set("repo:101", {factory, data, alarm, closed: 0});
+    expect((await exportAccount(env, user)).factories[0].data.state?.items).toHaveLength(1);
+    await deleteAccount(env, user, ["alice/app"]);
+    expect(data.size).toBe(0); expect(legacy.data.size).toBe(0); expect(alarm).toBeNull();
+  });
   it("can retry a failed KV purge without reporting deletion complete early", async () => {
     const {env, user, kv, objects} = await fixture();
     const original = env.CACHE.delete.bind(env.CACHE);

@@ -1,4 +1,4 @@
-import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos } from "./account-data";
+import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
@@ -314,7 +314,7 @@ app.get("/settings", requireUser, async c => {
   const repos = await accountRepos(c.env, user);
   const rows = [];
   for (const repo of repos) rows.push({ ...repo,
-    runner: await factory(c.env, repo.full_name).accountConnectionStatus(),
+    runner: await (await accountFactory(c.env, repo.full_name)).accountConnectionStatus(),
     sentry: !!(await sentryCreds(c.env, {repo: repo.full_name, installationId: repo.installation_id, user: user.login})).clientSecret,
     posthog: !!(await postHogCreds(c.env, {repo: repo.full_name, installationId: repo.installation_id, user: user.login})).apiKey,
   });
@@ -330,7 +330,7 @@ app.post("/api/account/signout", async c => {
   const user = c.get("user");
   const repos = await reposFor(c.env, user);
   await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id).run();
-  for (const repo of repos) await factory(c.env, repo.full_name).closeAccountSockets(user.login);
+  for (const repo of repos) await (await accountFactory(c.env, repo.full_name)).closeAccountSockets(user.login);
   return logout(c.req.raw, c.env);
 });
 app.post("/api/account/delete", async c => {

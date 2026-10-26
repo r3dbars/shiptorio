@@ -8,7 +8,11 @@ import { linkedRepo } from "./sources/creds";
 
 export { repoHash, factoryDeleted } from "./account-lifecycle";
 import { repoHash } from "./account-lifecycle";
-const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
+/** Account reads and erasure must not wake/migrate a factory or require GitHub availability. */
+export async function accountFactory(env: Env, repo: string) {
+  const row = await env.DB.prepare("SELECT * FROM repos WHERE full_name = ?").bind(repo.toLowerCase()).first<{repo_id?: number | null}>();
+  return env.FACTORY.get(env.FACTORY.idFromName(row?.repo_id ? `repo:${row.repo_id}` : repo.toLowerCase()));
+}
 
 /** Only personal installation owners can erase shared repository data. Membership is insufficient. */
 export async function ownedRepos(env: Env, user: User): Promise<RepoRow[]> {
@@ -47,7 +51,7 @@ async function retainedActivity(env: Env, user: User, repos: RepoRow[]) {
 export async function exportAccount(env: Env, user: User) {
   const repos = await accountRepos(env, user);
   const factories = [];
-  for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData });
+  for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await (await accountFactory(env, repo.full_name)).exportAccountData()) as AccountFactoryData });
   const prefs = await env.DB.prepare("SELECT key, value, updated_at FROM user_prefs WHERE user_id = ?").bind(user.id).all();
   const exportTables = new Set((await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{name: string}>()).results.map(t => t.name));
   const progress = exportTables.has("user_progress") ? await env.DB.prepare("SELECT value, updated_at FROM user_progress WHERE user_id = ?").bind(user.id).first() : null;
@@ -89,11 +93,16 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   // The archive goes only to the requesting browser, never into a retained server backup.
   const archive = await exportAccount(env, user);
   // Revoked GitHub reach must not prevent an owner from archiving their own stored data.
-  for (const repo of repos) if (!archive.factories.some(f => f.repo === repo.full_name)) archive.factories.push({repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData});
+  for (const repo of repos) if (!archive.factories.some(f => f.repo === repo.full_name)) archive.factories.push({repo: repo.full_name, data: JSON.parse(await (await accountFactory(env, repo.full_name)).exportAccountData()) as AccountFactoryData});
   const now = Date.now();
   // Commit the durable stop before destructive work. Retries can finish partial cleanup.
   for (const repo of repos) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(repo.full_name), now).run();
-  for (const repo of repos) await factory(env, repo.full_name).eraseAccountData();
+  for (const repo of repos) {
+    const primary = await accountFactory(env, repo.full_name);
+    await primary.eraseAccountData();
+    // Lifecycle migration leaves a frozen legacy pointer; erase that object as well.
+    await env.FACTORY.get(env.FACTORY.idFromName(repo.full_name.toLowerCase())).eraseAccountData();
+  }
   await purgeKV(env, repos, user.login, user.id);
   for (const subject of [`user:${user.id}`, `user:${user.login.toLowerCase()}`]) {
     await env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).eraseAccountData();
