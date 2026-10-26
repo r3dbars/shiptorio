@@ -231,7 +231,8 @@ describe("nothing is sent without a player tap", () => {
       expect(saved().metrics?.customersAnswered).toBe(1);
       // A blocked provider cannot admit the same approved send twice or erase a newer edit.
       await again.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "One more approved reply" }));
-      const sendHash = saved().support![0].draft!.hash;
+      const approvedDraft = saved().support![0].draft!;
+      const sendHash = approvedDraft.hash;
       let release!: () => void;
       providerWait = new Promise<void>(resolve => { release = resolve; });
       const started = new Promise<void>(resolve => { providerStarted = resolve; });
@@ -244,6 +245,8 @@ describe("nothing is sent without a player tap", () => {
       expect(saved().support![0].draft!.text).toBe("A newer draft that must survive");
       expect(saved().support![0].sent).toHaveLength(3);
       expect(saved().support![0].state).toBe("drafted");
+      // Simulate recovery of an old drafted snapshot after the durable send reservation succeeded.
+      data.set("state", { ...saved(), support: saved().support!.map(t => t.id === ticket.id ? { ...t, draft: approvedDraft, state: "drafted" } : t) });
       const restarted = new Factory(ctx as never, env as never);
       await restarted.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
       expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
