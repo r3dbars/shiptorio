@@ -17,7 +17,7 @@ export interface CredsEnv extends SentrySourceEnv, PostHogSourceEnv {
 const key = (kind: MineKind, repo: string) => `cred:${kind}:${repo.toLowerCase()}`;
 
 async function stored<T>(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<Partial<T>> {
-  const read = (k: string) => env.CACHE?.get<T>(k, "json").catch(() => null) ?? Promise.resolve(null);
+  const read = (k: string) => env.CACHE?.get<T>(k, "json") ?? Promise.resolve(null);
   if (repo) {
     const own = await read(key(kind, repo));
     if (own) return own as Partial<T>;
@@ -30,7 +30,7 @@ async function stored<T>(env: CredsEnv, kind: MineKind, repo?: string | null): P
 async function secretsApply(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<boolean> {
   if (!repo) return true;
   const linked = await linkedRepo(env, kind);
-  return !linked || linked === repo.toLowerCase();
+  return linked === repo.toLowerCase();
 }
 
 export async function sentryCreds(env: CredsEnv, repo?: string | null): Promise<SentryCreds> {
@@ -51,11 +51,9 @@ export async function saveCreds(env: CredsEnv, kind: MineKind, creds: SentryCred
 /** The repo the legacy shared keys and the old /webhooks/sentry URL feed. Per-repo keys don't need it. */
 export async function linkedRepo(env: CredsEnv, kind: MineKind): Promise<string | null> {
   const pinned = kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO;
-  return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`).catch(() => null)) ?? null);
+  return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`)) ?? null);
 }
 
-export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null): Promise<void> {
-  if (!env.CACHE) return;
-  if (repo) await env.CACHE.put(`link:${kind}`, repo.toLowerCase());
-  else await env.CACHE.delete(`link:${kind}`);
+export async function linkRepo(_env: CredsEnv, _kind: MineKind, _repo: string | null): Promise<void> {
+  // Per-repo DO state owns connection lifecycle. Legacy global links are read-only.
 }

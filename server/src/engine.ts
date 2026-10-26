@@ -4,7 +4,8 @@ import type { Belt, FactoryState, Item, Machine } from "@shiptorio/shared";
 import { gauntletLine } from "./gauntlet";
 
 // Spark may only write ordinary repo paths: no escapes, git metadata, CI config or secrets.
-export const SAFE_PATH = /^(?!\/)(?!.*\.\.)(?!\.github\/)(?!.*\s)(?!.*(?:^|\/)\.(?:env|dev\.vars|direnv)(?:\.|\/|$))(?!.*(?:^|\/)\.(?:git|github)(?:\/|$))(?!.*\.(?:pem|key|p12|pfx)$)[\w./@+-]+$/i;
+import { pathAllowed } from "./injection-policy";
+export const SAFE_PATH = { test: pathAllowed };
 
 export function upsert<T extends { id: string }>(list: T[], next: T) {
   const i = list.findIndex((x) => x.id === next.id);

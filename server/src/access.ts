@@ -12,10 +12,11 @@ const COOKIE = "shiptorio_access";
 const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'self'", "x-content-type-options": "nosniff" };
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// Secure cookies cannot authenticate an HTTP page. Redirect before showing the form,
-// otherwise a successful password POST looks like a silent return to the same gate.
+/** The docs site (/docs/*): static pages about how the game works, no factory data. */
 export const isPublicDocs = (path: string) => path === "/docs" || path.startsWith("/docs/");
 
+// Secure cookies cannot authenticate an HTTP page. Redirect before showing the form,
+// otherwise a successful password POST looks like a silent return to the same gate.
 export function secureTransport(request: Request): Response | null {
   const url = new URL(request.url);
   if (url.protocol !== "http:" || isLocal(url)) return null;
@@ -63,8 +64,10 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
-  // The docs site (/docs/*) is public: static pages about how the game works, no factory data.
+  // The docs site is public.
   if (isPublicDocs(url.pathname)) return null;
+  // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.
+  if (url.pathname === "/api/version" && request.method === "GET") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;

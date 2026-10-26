@@ -1,0 +1,29 @@
+# Loop reliability
+
+Checkpoint: Oct 28 inspector/rework loop. Backend only; existing shared protocol and player approval gates.
+
+## Delivery and outbound calls
+
+GitHub delivery IDs and Sentry Request-IDs (body SHA-256 fallback) use the existing D1 delivery ledger with seven-day retention. Pending duplicates may enqueue again to recover a failed handoff; the DO queue coalesces them. Seven-day DO completion tombstones also close the race between a completed handler and a delayed intake enqueue. Both ledgers clean expired completed entries; pending or failed payloads are retained.
+
+Processing retries use exponential backoff and jitter, a persisted next-at timestamp, and five attempts. Exhaustion moves the original payload to `failed:delivery:*` and offers a player card when a map exists. Operator replay requires inspecting the retained payload and clearing its dead letter/completion marker before re-enqueueing. An installation failure before a map exists is retained and logged, not discarded.
+
+`reliability.ts` wraps GitHub REST and Spark completions: three attempts, 250/500ms exponential delays with 0.5–1.5 jitter, immediate failure for permanent HTTP errors. Every fetch attempt has a timeout. GitHub has no general REST idempotency key: comments carry deterministic body markers and search existing comments before posting; PR creation recovers by head/base; branch creation recovers by exact ref/SHA. Comment lookup is capped at 20 pages; exhaustion refuses a new post instead of risking a duplicate. Merge uses the existing checked-head PUT and durable launch-credit transaction. Content-addressed Git objects, labels and target-state updates are replayable. Spark retries can consume additional credits if a response is lost; no provider exactly-once guarantee is assumed.
+
+Exhausted gauntlet calls become rework/scars instead of invoking the model every tick. Other errors are surfaced in logs, saved failure records and attention cards, or the existing source/brain failure state. Removed silent null catches from API/credential reads; only a genuine GitHub 404 means a missing file/branch.
+
+## Stuck watchdog and alarm
+
+Every alarm checks per-state waiting limits: ore 10 minutes; queued, working and inspecting 30 minutes; rejected, passed and on-pad 24 hours. Launched is terminal. A durable clock tracks state/machine changes independently of incidental timestamp updates. One `stuck at <state>` scar and attention card are emitted per stage stay, surviving restart. The card is advisory; it never redispatches a running agent or bypasses proof/approval. Changing stage resets the clock.
+
+A DO restart preserves working items: a local agent can still be alive. It no longer silently requeues them. Alarm sections and individual ore transitions have separate error boundaries. The outer finally schedules a reliability wakeup within one minute, preserving earlier work/orbit deadlines, before refreshing decisions. Persistent storage outages still depend on Cloudflare alarm redelivery; application code cannot guarantee storage availability.
+
+## Reconciliation
+
+After a one-minute warmup, once per minute the factory scans the 100 most recently updated GitHub PRs, recovering unrecorded publications by exact durable runner-job branch. A missing supervisor receipt becomes a rejected verify-stage item requiring player action; discovery alone cannot approve it. It rotates through ten tracked PRs each run, repairing missed merges, closes, changed heads and current-head check results through the existing transition handlers. A failed PR read leaves its state intact and produces an attention card; later PRs still run. Reconciliation never calls merge. The bounded recent-publication scan is not a full historical repository audit.
+
+## Verification
+
+Regression tests cover duplicate intake and DO completion replay; retry delay/exhaustion/permanent errors; a lost comment POST response; all nonterminal SLAs; one watchdog alert across restart; broken tick recovery; dead-letter retention and healthy subsequent work; missed merge/close/head/check reconciliation and single science credit. Existing runner rework, launch-permit and orbit suites remain required.
+
+Run `bun run check` before making the PR ready; then verify PR CI and the main Deploy workflow separately. Mocked external transports prove transition behavior, not an induced production outage.
