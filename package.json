@@ -27,7 +27,8 @@
     "test:e2e": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
     "test:load": "bun tests/load/run.ts",
-    "typecheck:tests": "tsc --noEmit -p tests"
+    "typecheck:tests": "tsc --noEmit -p tests",
+    "autopilot": "bun --env-file=server/.dev.vars server/scripts/autopilot.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261026.1",
