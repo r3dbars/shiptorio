@@ -7,6 +7,7 @@ import { defineConfig, type Plugin } from "vite";
 const ART: Record<string, string> = {
   "art/item-lab.html": "../docs/item-lab.html",
   "art/prototype.html": "../docs/art-prototype.html",
+  "art/spark.html": "../docs/spark.html", // judge-facing: how Meta Muse Spark runs the factory
   "art/index.html": "art.html",
 };
 

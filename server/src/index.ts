@@ -1,11 +1,12 @@
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
+import { ops } from "./ops";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
-import { repoInstallationId } from "./github";
-import { isAllowed, readSession } from "./session";
+import { appJwt, gh, repoInstallationId } from "./github";
+import { canSeeRepo, currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
-import { sentryStatus, type SentryPayload } from "./sources/sentry";
+import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds } from "./sources/creds";
@@ -13,6 +14,8 @@ import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
+import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
 
@@ -30,19 +33,49 @@ export interface Env extends FactoryEnv {
   SESSION_SECRET: string;
   APP_PASSWORD?: string;
   BUILD_SHA?: string;
+  GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
+  ADMIN_LOGINS?: string;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
-const app = new Hono<{ Bindings: Env; Variables: { login: string; runner: RunnerIdentity } }>();
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
+const app = new Hono<AppEnv>();
+
+const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) =>
+  currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+
+/** Route guard: 401s unless a real session is signed in, and puts the player on c.get("user"). */
+export const requireUser = async (c: Context<AppEnv>, next: Next) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  c.set("user", user);
+  await next();
+};
 
 app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
-  if (redirect) return redirect;
+  if (redirect) c.res = redirect;
+  else await next();
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce")))) c.header(key, value);
+});
+
+app.use("*", async (c, next) => {
+  // Use the router's decoded path, so encoded aliases consume the same budget.
+  const budget = requestBudget(c.req.raw, c.req.path);
+  if (budget) {
+    const user = await signedIn(c);
+    for (const subject of [ipSubject(c.req.raw), ...(user ? [`user:${user.id}`] : [])]) {
+      const result = await rateLimit(c.env, subject, budget);
+      if (!result.allowed) {
+        c.header("Retry-After", String(result.retryAfter));
+        return c.json({ error: "too many requests" }, 429);
+      }
+    }
+  }
   await next();
-  if (new URL(c.req.url).protocol === "https:") c.header("Strict-Transport-Security", "max-age=31536000");
 });
 
 app.use("*", async (c, next) => {
@@ -55,29 +88,63 @@ app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     return;
   }
+  if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
   const denied = await previewAccess(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  c.header("Cache-Control", "no-store");
+  c.header("Cache-Control", browserCacheControl(c.req.raw, c.res.status));
 });
 
 app.onError((err, c) => {
   console.error(err);
-  return c.json({ error: err.message }, 500);
+  return c.json({ error: "internal server error" }, 500);
 });
+
+app.use("*", async (c, next) => {
+  if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  await next();
+});
+
+app.route("/", ops);
 
 // ---------- auth + setup ----------
 
 app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
-app.get("/auth/logout", () => logout());
+app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
 app.get("/api/me", async (c) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  return c.json({ login, allowed: !!login && isAllowed(c.env.ALLOWED_LOGINS, login) });
+  const user = await signedIn(c);
+  if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
+  return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
 });
+
+// Settings that follow the player across browsers (intro seen, guide progress).
+app.put("/api/me/prefs", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const text = await c.req.text();
+  if (text.length > 1024) return c.json({ error: "too large" }, 413);
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
+  return c.json({ ok: true });
+});
+
+/** Where a player installs the App on more repos. The slug is read once from GitHub and cached. */
+async function installUrl(env: Env): Promise<string | null> {
+  if (env.GITHUB_APP_SLUG) return `https://github.com/apps/${env.GITHUB_APP_SLUG}/installations/new`;
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
+  let slug = await env.CACHE?.get("app:slug");
+  if (!slug) {
+    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug);
+    if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 });
+  }
+  return slug ? `https://github.com/apps/${slug}/installations/new` : null;
+}
 
 app.get("/api/setup/status", async (c) => c.json({
   sentry: !!(await sentryCreds(c.env)).clientSecret,
@@ -94,8 +161,12 @@ app.get("/api/setup/status", async (c) => c.json({
 app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
 
 app.get("/api/sources", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
   const url = publicUrl(new URL(c.req.url), c.env);
-  return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env), url), postHogStatus(await postHogCreds(c.env), url, c.env.FAKE_POSTHOG === "1")] });
+  const asked = (c.req.query("repo") ?? "").toLowerCase();
+  const repo = REPO_RE.test(asked) && (await canSeeRepo(c.env, user, asked)) ? asked : null;
+  return c.json({ sources: [githubSource.status(c.env), sentryStatus(repo ? await sentryCreds(c.env, repo) : {}, url, repo), postHogStatus(repo ? await postHogCreds(c.env, repo) : {}, url, c.env.FAKE_POSTHOG === "1")] });
 });
 
 // ---------- connect a mine (Sentry, PostHog): paste the key once ----------
@@ -103,37 +174,42 @@ app.get("/api/sources", async (c) => {
 app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "sentry" && kind !== "posthog") return c.notFound();
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  const user = await signedIn(c);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const url = publicUrl(new URL(c.req.url), c.env);
   const repoParam = c.req.query("repo") ?? "";
   const repo = REPO_RE.test(repoParam) ? repoParam.toLowerCase() : await linkedRepo(c.env, kind);
-  const connected = kind === "sentry" ? !!(await sentryCreds(c.env)).clientSecret : !!(await postHogCreds(c.env)).apiKey;
-  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl: `${url}/webhooks/sentry` }));
+  // Keys belong to one map, and only someone who can open that map may set them.
+  if (!repo) return c.text("Open this page from the map you want to plug it into.", 400);
+  if (!(await canSeeRepo(c.env, user, repo))) return c.text("You don't have access to that repo's factory.", 403);
+  const connected = kind === "sentry" ? !!(await sentryCreds(c.env, repo)).clientSecret : !!(await postHogCreds(c.env, repo)).apiKey;
+  const webhookUrl = sentryWebhookUrl(url, repo);
+  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl }));
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (kind === "sentry") {
     const clientSecret = field("clientSecret");
-    if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl: `${url}/webhooks/sentry`, error: "That doesn't look like a Sentry Client Secret." }), 400);
-    await saveCreds(c.env, "sentry", { clientSecret });
+    if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl, error: "That doesn't look like a Sentry Client Secret." }), 400);
+    await saveCreds(c.env, "sentry", { clientSecret }, repo);
   } else {
     const apiKey = field("apiKey");
     const projectId = field("projectId");
     const host = field("host") === "eu" ? "https://eu.posthog.com" : "https://us.posthog.com";
     const keyEvent = field("keyEvent") || "$pageview";
     if (!/^ph[a-z]_[\w]{10,200}$/.test(apiKey) || !/^\d{1,12}$/.test(projectId) || !/^[\w$ .:-]{1,100}$/.test(keyEvent)) return c.html(connectPage({ kind, repo, connected, webhookUrl: "", error: "Check the key (starts with phx_) and the project id (a number)." }), 400);
-    await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent });
+    await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, repo);
   }
   // Plug it straight into the map it came from.
-  if (repo) await factory(c.env, repo).connectMine(kind).catch(() => null);
-  return c.html(connectPage({ kind, repo, connected: true, webhookUrl: `${url}/webhooks/sentry`, saved: true }));
+  await factory(c.env, repo).connectMine(kind);
+  return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
 app.get("/api/repos", async (c) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
-  const repos = await c.env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name").all<{ full_name: string; installation_id: number; default_branch: string | null }>();
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  // Only repos this player's GitHub account can reach through an App installation.
+  const repos = { results: await reposFor(c.env, user) };
   // Preserve the legacy database fields while serving the browser's repo-card contract.
   // Issue counts are not available from this query; omit them rather than inventing zero.
   return c.json({ repos: repos.results.map(repo => ({
@@ -145,10 +221,14 @@ app.get("/api/repos", async (c) => {
 
 // ---------- the factory (browser websocket) ----------
 
-app.use("/api/repos/*", async (c, next) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
-  c.set("login", login);
+app.use("/api/repos/:owner/:repo/*", async (c, next) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  // Same answer for "no such factory" and "not yours", so repo names can't be probed.
+  if (!(await canSeeRepo(c.env, user, repo))) return c.json({ error: "not found" }, 404);
+  c.set("user", user);
   await next();
 });
 
@@ -157,6 +237,10 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
+  if (c.req.param("action") === "revoke") {
+    await f.revokeRunner();
+    return c.json({ revoked: true });
+  }
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
     const pairId = await f.pairRunner();
@@ -198,13 +282,27 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   return c.json(await factory(c.env, identity.repo).finishRunner(identity.pairId, parsed.data));
 });
 
+// Exports are stricter than map access: only the repository owner can download them.
+app.get("/api/repos/:owner/:repo/export", async (c) => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (c.get("user").login.toLowerCase() !== c.req.param("owner").toLowerCase()) return c.json({ error: "owner required" }, 403);
+  const connected = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first();
+  if (!connected) return c.json({ error: "factory not found" }, 404);
+  const data = await factory(c.env, repo).exportState();
+  if (!data) return c.json({ error: "factory not found" }, 404);
+  c.header("Content-Disposition", `attachment; filename="${repo.replace("/", "-")}-factory.json"`);
+  c.header("X-Content-Type-Options", "nosniff");
+  return c.json(data);
+});
+
 app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
-    const installationId = await installationFor(c.env, repo).catch(() => null);
+    const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }
   return f.fetch(c.req.raw);
@@ -250,18 +348,24 @@ app.post("/webhooks/github", async (c) => {
 
 // ---------- Sentry webhooks ----------
 
-app.post("/webhooks/sentry", async (c) => {
+// /webhooks/sentry/<owner>/<repo> is checked with that map's own secret. The bare URL is the
+// pre-accounts one and still feeds the repo the legacy shared key is linked to.
+app.post("/webhooks/sentry/:owner/:repo", (c) => sentryWebhook(c, `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase()));
+app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
+
+async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
+  if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
   if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
   const body = await c.req.text();
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
-  const { clientSecret } = await sentryCreds(c.env);
+  const { clientSecret } = await sentryCreds(c.env, perRepo);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   const resource = c.req.header("sentry-hook-resource") ?? "";
   if (!["issue", "event_alert", "error"].includes(resource)) return c.json({ ok: true, ignored: true });
   let payload: SentryPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
-  const repo = await linkedRepo(c.env, "sentry");
+  const repo = perRepo ?? (await linkedRepo(c.env, "sentry"));
   if (!repo || !REPO_RE.test(repo)) return c.json({ ok: true, ignored: true, reason: "Sentry isn't plugged into a map yet" });
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const delivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
@@ -273,18 +377,22 @@ app.post("/webhooks/sentry", async (c) => {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
+  c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true }, 202);
-});
+}
 
-// Everything else is the web app. Vite content-hashes everything under /assets/, so the browser
-// keeps those for a year (private: the site sits behind the preview gate) and a returning player
-// only downloads what a deploy changed. Pages themselves always revalidate.
+// Everything else is the web app.
 app.all("*", async (c) => {
-  const res = await c.env.ASSETS.fetch(c.req.raw);
-  if (!res.ok || !c.req.path.startsWith("/assets/")) return res;
-  const out = new Response(res.body, res);
-  out.headers.set("Cache-Control", "private, max-age=31536000, immutable");
-  return out;
+  const response = await c.env.ASSETS.fetch(c.req.raw);
+  // Only trusted static art contains inline executable scripts. Never add nonces
+  // to user-provided text or relax the application/API policy to allow them.
+  if (/^\/art\/(prototype|item-lab)(?:\.html)?\/?$/.test(c.req.path) && response.headers.get("content-type")?.includes("text/html")) {
+    const nonce = crypto.randomUUID().replaceAll("-", "");
+    c.set("artNonce", nonce);
+    return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
+  }
+  return response;
+
 });
 
 export default app;

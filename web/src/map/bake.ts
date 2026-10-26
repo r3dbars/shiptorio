@@ -108,6 +108,7 @@ const mergeable = (o: THREE.Object3D): o is THREE.Mesh => {
   const m = o as THREE.Mesh;
   if (m.constructor !== THREE.Mesh || !m.visible || Array.isArray(m.material)) return false;
   const mt = m.material as THREE.Material;
+  if (!(mt instanceof THREE.MeshBasicMaterial || mt instanceof THREE.MeshPhongMaterial) || mt.vertexColors) return false;
   if (mt.transparent || m.renderOrder !== 0 || !m.frustumCulled || m.morphTargetInfluences) return false;
   const g = m.geometry;
   return !!g.attributes.position && !g.morphAttributes.position; // one material, so face groups (BoxGeometry has 6) don't matter

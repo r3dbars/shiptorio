@@ -5,6 +5,15 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Security hardening checkpoint (Oct 26): preserve the existing signed webhook and
+session boundaries, enforce browser mutation origins centrally, and add durable
+per-IP/per-user budgets using the existing Factory binding (no new Cloudflare
+resources). CSP will allow the app's Google fonts and inline styles; executable
+inline scripts remain blocked except nonce-authorized original art prototypes.
+Tenant membership is a separate concurrent change. Security-only web edits, if
+needed, are limited to untrusted link destinations and rendering regression tests.
+The checkpoint advances the Oct 26 live intake foundation and Oct 29 source intake.
+
 Release verification, Oct 26: live bottleneck/deck #96, repeatable playtests #85,
 Firefox/HTTPS entry #95/#98, repository picker #118, same-head CI/session security
 #101/#111, sandboxed local verification/publication #104, idle-loop #117 and disposed
@@ -269,3 +278,5 @@ is not itself an app failure. Console findings belong only to the current naviga
 
 - 2026-10-26: The optional real-map welcome tour is explicitly a sandbox. Only the intro simulator source can run its cues or sample Sentry ore; a live-source URL cannot enable it. Repeated tour actions are idempotent. Its dedicated playtest follows all eight actual UI beats, including scar → second verification → launch and automated shipping, and closes mid-build to protect delayed callback cleanup. Protocol proof remains separate from rendered desktop and physical-phone checks.
 - 2026-10-26: Launch credit is durable per merged PR and commits atomically with science and permit counters. Orbit regressions keep their scars and new work when old merge receipts replay. Idle orbit watches schedule their actual 24-hour deadline; incoming work can preempt that distant alarm. This records elapsed observation, not proof of customer impact.
+
+- 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.

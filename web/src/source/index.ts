@@ -35,14 +35,12 @@ export function connect(cfg: SourceConfig, onMessage: Listener, onStatus: Status
   onStatus("connecting");
   let src: Source | null = null;
   let closed = false;
-  const queue: WebToServer[] = [];
   import("./live").then(({ connectLive }) => {
     if (closed) return;
     src = connectLive(cfg.repo, onMessage, onStatus);
-    for (const m of queue.splice(0)) src.send(m);
-  });
+  }).catch(() => { if (!closed) onStatus("offline"); });
   return {
-    send: (m) => (src ? src.send(m) : queue.push(m)),
+    send: (m) => { if (!closed) src?.send(m); },
     close: () => {
       closed = true;
       src?.close();

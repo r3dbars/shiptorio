@@ -20,7 +20,9 @@
     "deploy": "bun run build && bun run --filter './server' deploy",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
+    "check": "bun run typecheck && bun test && bun run build",
     "spark:check": "bun server/scripts/spark-check.ts",
-    "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts"
+    "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts",
+    "autopilot": "bun --env-file=server/.dev.vars server/scripts/autopilot.ts"
   }
 }

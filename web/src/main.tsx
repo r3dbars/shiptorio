@@ -1,9 +1,18 @@
+import { loadFeatureFlags } from "./flags";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { Onboarding, type OnboardStep } from "./ui/Onboarding";
 import { sound } from "./sound/engine";
 import "./styles.css";
+
+// Keep async font loading compatible with the site's ban on inline event handlers.
+const fonts = document.getElementById("game-fonts") as HTMLLinkElement | null;
+if (fonts) {
+  const ready = () => { fonts.media = "all"; };
+  fonts.addEventListener("load", ready, { once: true });
+  if (fonts.sheet) ready(); // a cached stylesheet may finish before this module starts
+}
 
 sound.install();
 
@@ -28,6 +37,8 @@ function Root() {
     />
   );
 }
+
+await loadFeatureFlags();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
