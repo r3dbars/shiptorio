@@ -5,6 +5,22 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+The game approval PR #81 was rebased onto gauntlet PR #73 and merged. Both move handlers
+remain: chooseGauntletMove gets first refusal only for pad/review cards, then runner
+approval handles its own cards. The alarm runs both gauntlet and runner offers. Deploy
+https://github.com/r3dbars/shiptorio/actions/runs/40382784190 went green and both domains
+reported `066df5b7cf819d5cb97f85d4c4d6a2cd2b4b97f7`.
+
+The next checkpoint adds scar-driven same-PR rework and real local regression receipts.
+The runner checks out the failed PR head, appends one scoped commit, and retains its
+branch/PR. Tests run against the target base with the changed tests overlaid, then head;
+import/syntax/setup failures do not count as reproductions. Proof is bound to base/head
+and attached to the PR; freshInspection resets gates on the new commit. A station's
+third strike removes the rework recommendation and escalates to the player. Automated
+acceptance covers the whole scar-to-Launch path; live browser proof remains separate.
+The private preview password was rotated on both domains at Justin's request and the
+old value was rejected. Its value exists only in local ignored secrets and Worker secrets.
+
 Justin's delivery rule (Oct 26): push WIP after every meaningful step and open a draft
 PR immediately after the first push. Codex merges its own completed PRs as soon as CI
 is green, verifies Deploy and the live `/api/version` SHA (except docs-only changes),

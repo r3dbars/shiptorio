@@ -35,6 +35,16 @@ test("real test overlay fails on base and passes on head, while an already-green
     expect(proof.command).toContain("./value.test.ts");
     expect(proof.logTail).toContain("1 fail");
     expect(proof.logTail).toContain("1 pass");
+    await git("add", ".");
+    await git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "first fix");
+    const firstFix = await git("rev-parse", "HEAD");
+    await Bun.write(join(work, "value.ts"), "export const value = 3;\n");
+    await Bun.write(join(work, "value.test.ts"), 'import {test,expect} from "bun:test";import {value} from "./value";test("value",()=>expect(value).toBe(3));\n');
+    expect(await verifyRegression(work, base, ["value.test.ts"], env)).toMatchObject({ failsOnBase: true, passesOnHead: true });
+    await git("add", ".");
+    await git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "scar rework fix");
+    expect(await git("rev-list", "--count", `${firstFix}..HEAD`)).toBe("1");
+    expect(await git("rev-list", "--count", `${base}..HEAD`)).toBe("2");
     await Bun.write(join(work, "value.test.ts"), 'import {test,expect} from "bun:test";test("unrelated",()=>expect(true).toBe(true));\n');
     expect((await verifyRegression(work, base, ["value.test.ts"], env)).failsOnBase).toBe(false);
     expect((await git("status", "--short"))).toContain("value.test.ts");

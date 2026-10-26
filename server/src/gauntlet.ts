@@ -89,14 +89,14 @@ const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
  */
 export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?: RegressionProof): { passed: boolean; reason: string } {
   if (!files.length) return { passed: false, reason: "The PR has no changed files to verify." };
+  if (files.every((f) => DOCS_FILE.test(f)) && !proof) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
+  const tests = files.filter((f) => TEST_FILE.test(f));
+  if (!tests.length) return { passed: false, reason: "No proof: the PR changes code but adds no test that shows the fix works." };
   if (proof) {
     if (!proof.passesOnHead) return { passed: false, reason: "The regression test did not pass on the fix commit." };
     if (!proof.failsOnBase) return { passed: false, reason: "The test did not reproduce the problem on base. Revise the verify recipe." };
     return { passed: true, reason: `Regression reproduced on base and passed on head. ${proof.command}`.slice(0, 500) };
   }
-  if (files.every((f) => DOCS_FILE.test(f))) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
-  const tests = files.filter((f) => TEST_FILE.test(f));
-  if (!tests.length) return { passed: false, reason: "No proof: the PR changes code but adds no test that shows the fix works." };
   const where = runnerReceipts ? " Local typecheck, tests and build passed on this commit." : "";
   return { passed: true, reason: `Proof attached: ${tests.slice(0, 3).join(", ")}.${where}` };
 }
