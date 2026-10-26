@@ -1,4 +1,5 @@
 import { repoAccess, requireUser, validRepo } from "./authorization";
+import { validatePlan, validatePatch } from "./injection-policy";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -449,6 +450,7 @@ export class Factory extends DurableObject<FactoryEnv> {
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
         }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${job.harness === "codex" ? "Codex" : "Claude Code"} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+      validatePlan(assignment.plan, assignment.files);
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
       await this.planComment(token, job, item).catch(() => null);
@@ -534,8 +536,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, this.meta.installationId);
     const head = await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${job.branch}`, token);
     if (head.object.sha !== receipt.sha) throw new Error("Pushed head mismatch");
-    const diff = await gh<{ status: string; ahead_by: number; files: { filename: string; status: string; previous_filename?: string; changes: number }[] }>(`/repos/${job.repo}/compare/${job.baseSha}...${receipt.sha}`, token);
+    const diff = await gh<{ status: string; ahead_by: number; files: { filename: string; status: string; previous_filename?: string; changes: number; patch?: string }[] }>(`/repos/${job.repo}/compare/${job.baseSha}...${receipt.sha}`, token);
     if (diff.status !== "ahead" || diff.ahead_by !== 1 || !diff.files.length || diff.files.length > 10 || diff.files.some(f => !job.allowedPaths.includes(f.filename) || !runnerPathAllowed(f.filename) || f.status === "renamed" || f.status === "removed") || diff.files.reduce((n, f) => n + f.changes, 0) > 500) throw new Error("Pushed diff exceeds the approved scope");
+    validatePlan(job.plan ?? "", job.allowedPaths);
+    if (diff.files.some(f => typeof f.patch !== "string" || f.patch.split("\n").filter(l => /^[+-]/.test(l)).length !== f.changes)) throw new Error("Missing complete patch evidence");
+    validatePatch(diff.files.map(f => f.filename), job.allowedPaths, diff.files.map(f => `+++ b/${f.filename}\n${f.patch}`).join("\n"));
     if (receipt.proof && (receipt.proof.headSha !== receipt.sha || receipt.proof.baseSha !== (job.verifyBaseSha ?? job.baseSha))) throw new Error("Verify proof is not bound to this base/head");
     const evidence = receipt.proof ? proofComment(receipt.proof) : "";
     let pr: { number: number; html_url: string };
@@ -1813,6 +1818,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const fix = await writeFix(this.env, task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
       if (bad) throw new Error(`refused to write ${bad.path}`);
+      validatePatch(fix.changes.map(c => c.path), wanted, fix.changes.map(c => `+++ b/${c.path}\n${c.content.split("\n").map(l => `+${l}`).join("\n")}`).join("\n"));
 
       const branch = item.branch ?? `shiptorio/${item.id}`;
       await commitToBranch(token, this.meta.repo, s.baseBranch, branch, fix.changes, `${fix.title}\n\n${fix.summary}`);
