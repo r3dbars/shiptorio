@@ -1,6 +1,7 @@
 import { observedFetch } from "./telemetry";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
-import type { GitHubIssue } from "./sources/github";
+import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
+import type { Signal } from "./sources/types";
 
 const API = "https://api.github.com";
 const UA = "shiptorio";
@@ -156,6 +157,26 @@ export async function openIssues(token: string, repo: string): Promise<GitHubIss
     if (batch.length < 25) break;
   }
   return issues;
+}
+
+/** Refresh only new planning jobs: old bot audit text must not become the next task. */
+export async function freshIssueInput(token: string, repo: string, number: number): Promise<Signal> {
+  const issue = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
+  if (issue.number !== number || issue.state !== "open" || issue.pull_request) throw new Error("GitHub issue is no longer open");
+  let latest: GitHubPayload["comment"];
+  const at = (comment: NonNullable<GitHubPayload["comment"]>) => Date.parse(comment.updated_at ?? comment.created_at ?? "") || 0;
+  for (let page = 1; page <= 5; page++) {
+    const comments = await gh<NonNullable<GitHubPayload["comment"]>[]>(`/repos/${repo}/issues/${number}/comments?per_page=100&page=${page}`, token);
+    if (!Array.isArray(comments)) throw new Error("GitHub issue feedback unavailable");
+    for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
+    if (comments.length < 100) {
+      const again = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
+      const stamp = (value: GitHubIssue) => JSON.stringify([value.number, value.state, !!value.pull_request, value.title, value.body ?? "", value.labels ?? [], value.updated_at]);
+      if (stamp(issue) !== stamp(again)) throw new Error("Issue changed while reading feedback");
+      return normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+    }
+  }
+  throw new Error("Issue feedback exceeds the bounded planning window; narrow the issue before planning");
 }
 
 export async function issueReporters(token: string, repo: string, issue: GitHubIssue): Promise<string[]> {

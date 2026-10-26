@@ -6,6 +6,7 @@ import { Component, useEffect, useState, type ReactNode } from "react";
 import { App } from "../App";
 import type { SourceConfig } from "../source";
 import { IslandBackdrop } from "./IslandBackdrop";
+import { savePref, seedPrefs, type PrefKey } from "../account";
 
 // An older phone without WebGL must still be able to sign in.
 class IslandFallback extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -42,6 +43,7 @@ function introSeen() {
   }
 }
 function markIntroSeen() {
+  savePref("intro", "1");
   try {
     localStorage.setItem("shiptorio:intro", "1");
   } catch {
@@ -63,14 +65,17 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
+  const [installUrl, setInstallUrl] = useState<string | null>(null);
 
   // Live: who is signed in and which repositories the existing App installation can see.
   useEffect(() => {
     if (!live) return;
     fetch("/api/me")
-      .then((r) => r.json() as Promise<{ login: string | null }>)
+      .then((r) => r.json() as Promise<{ login: string | null; installUrl?: string | null; prefs?: Partial<Record<PrefKey, string>> }>)
       .then((me) => {
         setLogin(me.login);
+        setInstallUrl(me.installUrl ?? null);
+        seedPrefs(me.prefs);
         if (me.login && step === "hello") setStep("repo");
       })
       .catch(() => setLogin(null));
@@ -165,7 +170,9 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               </form>
             )}
             <p className="psub">
-              Not there? <a href="/setup">Install the Shiptorio app</a> on the repo first.
+              {/* the list is the repos your GitHub account reaches through the App; installing on more adds them */}
+              Not there? <a href={installUrl ?? "https://github.com/settings/installations"}>Install the Shiptorio app</a> on the repo
+              {live && login ? <>, then <a href={`/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`}>refresh</a></> : " first"}.
             </p>
           </>
         )}

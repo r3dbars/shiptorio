@@ -1,5 +1,6 @@
-// Tiny signed-cookie session. Login goes through the GitHub App's own OAuth (user-to-server),
-// and only logins in ALLOWED_LOGINS get in, since the map exposes private repo structure.
+// Signed session cookie. Login goes through the GitHub App's own OAuth (user-to-server), and only
+// logins in ALLOWED_LOGINS get in while Shiptorio is private ("*" opens sign-up to everyone).
+// The cookie names a server-side session row (accounts.ts) so sign-out and revocation are real.
 
 const enc = new TextEncoder();
 const COOKIE = "shiptorio_session";
@@ -13,21 +14,25 @@ async function hmac(secret: string, data: string): Promise<string> {
   return btoa(String.fromCharCode(...sig)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-export async function makeSessionCookie(secret: string, login: string, now = Date.now()): Promise<string> {
-  const payload = btoa(JSON.stringify({ login, exp: Math.floor(now / 1000) + MAX_AGE }));
+export interface SessionRef { sid: string; uid: number }
+
+export async function makeSessionCookie(secret: string, login: string, now = Date.now(), ref?: SessionRef): Promise<string> {
+  const payload = btoa(JSON.stringify({ login, exp: Math.floor(now / 1000) + MAX_AGE, ...ref }));
   const value = `${payload}.${await hmac(secret, payload)}`;
   return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`;
 }
 
-export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number } | null> {
+export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number; ref?: SessionRef } | null> {
   if (!secret) return null;
   const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!match) return null;
   const [payload, sig, extra] = match[1].split(".");
   if (extra || !payload || !sig || (await hmac(secret, payload)) !== sig) return null;
   try {
-    const { login, exp } = JSON.parse(atob(payload));
-    return typeof login === "string" && Number.isFinite(exp) && exp > now / 1000 ? { login, expiresAt: exp * 1000 } : null;
+    const { login, exp, sid, uid } = JSON.parse(atob(payload));
+    if (typeof login !== "string" || !Number.isFinite(exp) || exp <= now / 1000) return null;
+    const ref = typeof sid === "string" && Number.isSafeInteger(uid) ? { sid, uid } : undefined;
+    return { login, expiresAt: exp * 1000, ...(ref ? { ref } : {}) };
   } catch {
     return null;
   }
@@ -38,6 +43,7 @@ export async function readSession(secret: string, cookieHeader: string | null, n
 }
 
 export function isAllowed(allowedLogins: string, login: string): boolean {
+  if (allowedLogins.trim() === "*") return true;
   return allowedLogins
     .split(",")
     .map((s) => s.trim().toLowerCase())
