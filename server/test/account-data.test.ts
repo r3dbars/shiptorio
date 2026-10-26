@@ -158,6 +158,20 @@ describe("account data controls", () => {
     expect(objects.get("alice/app")!.closed).toBeGreaterThan(0);
     expect(objects.get("alice/app")!.data.size).toBeGreaterThan(0);
   });
+  it("rejects a queued websocket action and upgrade after its server session is revoked", async () => {
+    const {env, aliceCookie} = await fixture();
+    const {browserSocketAuth, browserSessionActive} = await import("../src/browser-socket");
+    const {makeSessionCookie} = await import("../src/session");
+    const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:preview`, "preview")).split(";")[0].replace("shiptorio_session", "shiptorio_access");
+    const socketEnv = {...env, APP_PASSWORD: "preview"};
+    const request = new Request("https://shiptorio.com/api/repos/alice/app/factory", {headers: {cookie: `${aliceCookie}; ${preview}`}});
+    const auth = await browserSocketAuth(request, socketEnv);
+    expect(auth?.sessionHash).toBeTruthy();
+    expect(await browserSessionActive(auth!, socketEnv)).toBe(true);
+    await env.DB.prepare("DELETE FROM sessions WHERE user_id = 11").run();
+    expect(await browserSessionActive(auth!, socketEnv)).toBe(false);
+    expect(await browserSocketAuth(request, socketEnv)).toBeNull();
+  });
   it("serves readable draft legal pages publicly even with the private preview gate", async () => {
     const {env} = await fixture();
     for (const path of ["privacy", "terms"]) {
