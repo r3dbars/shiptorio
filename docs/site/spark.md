@@ -46,7 +46,7 @@ Issue text, code comments and error messages can be written by anyone. Spark's p
 
 ## See it think
 
-Open **How it thinks** from the settings menu (**powered by Meta Muse Spark · how it thinks**), from **See how the planner thinks** in the Power sheet, or with `?thinks` on any factory URL.
+Open **How it thinks** from the settings menu, from **See how the planner thinks** in the Power sheet, or with `?thinks` on any factory URL.
 
 ![How it thinks, in the sandbox's heal scenario](/docs/img/thinks.png)
 

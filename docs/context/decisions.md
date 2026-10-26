@@ -5,6 +5,8 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+- 2026-10-26: The growth draft accepts explicit whole-window ordered-funnel cohort counts, never conversion inferred from route totals. Experiment decisions wait for the complete fixed horizon; insufficient evidence stays inconclusive, and before/after differences are observational. Simulator cohorts are explicitly synthetic. Real tenant-scoped PostHog measurement and dispatch remain unfinished.
+
 Latest live verification, Oct 26: Sentry is now delivering signed issue-created and
 issue-resolved webhooks, not merely configured. Isolated verification issue
 7813706988 appeared as factory ore and disappeared after resolution in Sentry.
@@ -324,3 +326,5 @@ never enter factory messages, provider errors, logs, or connection responses; sh
 redaction covers those output boundaries. The requested master key was generated directly into Wrangler after confirming
 authorized access and an absent binding, only on shiptorio. No value was printed
 or saved to a file; setup command is in docs/context/encrypted-credentials.md.
+
+- 2026-10-26: Art direction is **Black Iron** (Cogworks variation 1), brightened, 1x pixels, with height (high rework line) and aether conduits/tesla coils borrowed from the other variations. The art must show the real journey of each work item and obvious IDLE / WORKING / BLOCKED states. Reference build: `docs/black-iron.html`, source in `docs/art/black-iron/`. In-world signage says SHIPTORIO.

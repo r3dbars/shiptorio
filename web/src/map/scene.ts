@@ -551,7 +551,7 @@ export class FactoryScene {
     const st = state.stations?.find((x) => x.kind === "measure");
     const m = st && this.byId(st.machineId);
     for (const e of state.experiments ?? []) {
-      if (e.state !== "won" && e.state !== "flat" && e.state !== "lost" && e.state !== "inconclusive") continue;
+      if (e.state !== "won" && e.state !== "flat" && e.state !== "lost") continue;
       if (this.called.has(e.id)) continue;
       this.called.add(e.id);
       if (first || !m) continue;
@@ -559,7 +559,7 @@ export class FactoryScene {
       const pct = Math.round((e.lift ?? 0) * 100);
       if (e.state === "won") this.pop(at, `+${pct}% LIFT`, "lift", e.step.label, 3.2);
       else if (e.state === "lost") this.pop(at, `${pct}% HURT`, "fail", "roll it back", 3.2);
-      else this.pop(at, e.state === "inconclusive" ? "NO CALL" : "NO LIFT", "flat", e.state === "inconclusive" ? "not enough data" : e.step.label, 3.2);
+      else this.pop(at, "NO LIFT", "flat", e.step.label, 3.2);
     }
   }
 
@@ -1437,7 +1437,7 @@ export class FactoryScene {
       case "measure": {
         // the growth loop: the newest experiment past its launch sets the dial
         const exp = this.state!.experiments?.find((e) => e.launchedAt);
-        return !exp ? "IDLE" : exp.state === "won" ? "LIFT" : exp.state === "lost" ? "HURT" : exp.state === "flat" || exp.state === "inconclusive" ? "NO LIFT" : "MEASURING";
+        return !exp || exp.state === "inconclusive" ? "IDLE" : exp.state === "won" ? "LIFT" : exp.state === "lost" ? "HURT" : exp.state === "flat" ? "NO LIFT" : "MEASURING";
       }
       default:
         return failing ? "REJECT" : backed ? "BACKED UP" : "SCANNING";
@@ -1515,7 +1515,7 @@ export class FactoryScene {
           if (!sta) this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
           else if (sta.kind === "measure") {
             const exp = state.experiments?.find((e) => e.launchedAt);
-            const sub = !exp ? "waiting for a growth launch" : exp.state === "measuring" ? `day ${Math.min(exp.windowDays, Math.floor(exp.daysWatched ?? 0) + 1)} of ${exp.windowDays} · ${exp.step.label}` : exp.state === "won" ? `+${Math.round((exp.lift ?? 0) * 100)}% lift · ${exp.step.label}` : exp.state === "lost" ? `hurt · ${exp.step.label}` : exp.state === "inconclusive" ? `not enough data · ${exp.step.label}` : `no lift · ${exp.step.label}`;
+            const sub = !exp ? "waiting for a growth launch" : exp.state === "measuring" ? `day ${Math.min(exp.windowDays, Math.floor(exp.daysWatched ?? 0) + 1)} of ${exp.windowDays} · ${exp.step.label}` : exp.state === "won" ? `+${Math.round((exp.lift ?? 0) * 100)}% lift · ${exp.step.label}` : exp.state === "lost" ? `hurt · ${exp.step.label}` : `no lift · ${exp.step.label}`;
             this.setLabel(v.label, "MEASURE", sub, exp?.state === "measuring");
           } else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : sta.lastLog?.ok === false ? "caught a comeback" : "all clear");
           else {

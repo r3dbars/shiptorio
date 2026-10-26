@@ -42,9 +42,11 @@ describe("whatsNext", () => {
     expect(n.title).toContain("#142");
   });
 
-  test("live asks to merge the PR instead of flying it", () => {
+  test("live opens the existing merge gate without fabricating a launch command", () => {
     const n = whatsNext(factory({ items: [item("on_pad", 2)] }), { live: true });
-    expect(n.cta.label).toBe("Open the PR to merge");
+    expect(n.cta.label).toBe("Open the merge gate");
+    expect(n.cta.action).toEqual({ do: "station", id: "gate-1" });
+    expect(n.title).not.toContain("passed every check");
   });
 
   test("waiting cards send you to the check-in", () => {

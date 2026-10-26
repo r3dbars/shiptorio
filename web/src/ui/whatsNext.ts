@@ -7,7 +7,7 @@ import { ghostSpots } from "../map/ghosts";
 import { lc } from "../sim/engine";
 
 export type NudgeAction =
-  | { do: "launch"; itemId: string } // fly the PR on the pad (sim) or open it to merge (live)
+  | { do: "launch"; itemId: string } // simulator only; live uses existing server-approved check-in controls
   | { do: "checkin" } // open the check-in deck
   | { do: "station"; id: string } // open a station's panel
   | { do: "research" } // open the research tree
@@ -48,9 +48,11 @@ export function whatsNext(state: FactoryState, ctx: NudgeContext = {}): Nudge {
     return {
       id: `launch:${onPad.id}`,
       kicker: "Next move · launch pad",
-      title: `#${onPad.prNumber ?? "PR"} passed every check`,
-      why: `"${onPad.title}" is on the pad. ${ctx.live ? "Merge it and it lifts off." : "Launch it."}`,
-      cta: { label: ctx.live ? "Open the PR to merge" : "Launch it", action: { do: "launch", itemId: onPad.id } },
+      title: ctx.live ? `Review #${onPad.prNumber ?? "PR"} at the merge gate` : `#${onPad.prNumber ?? "PR"} passed every check`,
+      why: `"${onPad.title}" is on the pad. ${ctx.live ? "Open the merge gate to review its checks and approved launch options." : "Launch it."}`,
+      cta: ctx.live
+        ? { label: "Open the merge gate", action: { do: "station", id: state.stations?.find(st => st.kind === "merge")?.id ?? "merge-1" } }
+        : { label: "Launch it", action: { do: "launch", itemId: onPad.id } },
     };
   }
 

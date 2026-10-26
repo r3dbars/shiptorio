@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  achieved,
   answered,
   dayKey,
   levelOf,
@@ -153,7 +154,9 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
   );
   // the first open of a new day: the day log remembers the deck you walked in to
   const open = useCallback((deck: number) => apply({ progress: openDay(cur.current, Date.now(), deck), gains: [], unlocked: [] }), [apply]);
-  return { p, pop, card, equip, open };
+  // an achievement unlocked (ui/Achievements.tsx): its XP lands here
+  const bonus = useCallback((xp: number, text: string) => on && apply(achieved(cur.current, Date.now(), xp, text)), [on, apply]);
+  return { p, pop, card, equip, open, bonus };
 }
 
 function demoProgress(now: number): Progress {
