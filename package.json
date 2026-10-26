@@ -16,7 +16,7 @@
     "runner:control": "bun --env-file=server/.dev.vars server/scripts/runner-control.ts",
     "dev": "bun run build && bun run --filter './server' dev",
     "dev:web": "bun run --filter './web' dev",
-    "build": "bun run --filter './web' build",
+    "build": "bun run --filter './web' build && bun scripts/build-runner.ts",
     "deploy": "bun run build && bun run --filter './server' deploy",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",

@@ -1,3 +1,4 @@
+import { RunnerConnection } from "./ui/RunnerConnection";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
@@ -144,7 +145,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : cfg.kind === "live" && new URLSearchParams(location.search).has("connect") ? "power" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -289,6 +290,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         powered by Meta Muse Spark · how it thinks
       </button>
       <SoundControl />
+      {cfg.kind === "live" && <button type="button" className="credit-btn" onClick={() => { setTray(false); setSheet("power"); }}>Connect your machine</button>}
       {show("labels") && (
         <div className="row2">
           <span>Labels on every machine (L)</span>
@@ -440,6 +442,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 ? `Your bottleneck right now: ${state.bottleneck.summary}.`
                 : `${state.districts.length} folders scanned. Now let's find what's stuck.`}
             </h2>
+            {cfg.kind === "live" && <RunnerConnection repo={cfg.repo} />}
             <div className="opts">
               <button type="button" className="btn rec" onClick={() => { setWorld("checkin"); if (deck.length > 1) setCheckin(true); }}>
                 Show me what's stuck
@@ -512,6 +515,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
+            {cfg.kind === "live" && <RunnerConnection repo={cfg.repo} />}
             <p className="empty">Your sign-ins power the builders. More sign-ins, more builders. The planner decides what they build.</p>
             {(state?.power ?? []).map((p) => (
               <div className="lrow" key={p.id}>
@@ -565,7 +569,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </button>
           )}
           {world !== "checkin" && (
-          <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={!show("power")}>
+          <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={cfg.kind !== "live" && !show("power")}>
             <Icon name="bolt" size={20} />
             Power
           </button>

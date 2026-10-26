@@ -748,3 +748,11 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   .rs-catch { display: none; }
   .rs-why { max-width: 96px; }
 }
+
+/* Goal 11: local runner setup uses the existing card and power sheet. */
+.runner-connect { padding: 8px 0 16px; border-bottom: 1px solid var(--steel, #8a94a3); margin-bottom: 12px; }
+.runner-connect p { line-height: 1.5; }
+.runner-connect code { overflow-wrap: anywhere; font-size: 12px; }
+.runner-install { display: block; padding: 12px; background: #111a34; white-space: normal; user-select: all; }
+.runner-connect details { margin-top: 12px; line-height: 1.5; }
+.runner-connect summary { cursor: pointer; }

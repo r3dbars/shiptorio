@@ -5,10 +5,11 @@ import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox } from "./sandbox";
 import { snapshotApproved, publishApproved } from "./publication";
+import { runnerHome, loadPairings, savePairing, removePairing, pairMachine, type Pairing } from "./pairing";
 
 interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
-const root = resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(import.meta.dir, ".."));
-const checkout = resolve(root, "..");
+const root = runnerHome();
+const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
 const harnessPath = (h: Job["harness"]) => Bun.which(h === "codex" ? "codex" : "claude");
 const available = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
@@ -36,24 +37,34 @@ if (process.argv[2] === "doctor") {
 }
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
 if (!["https://shiptorio.com", "https://shiptorio.dev", "http://localhost:8787"].includes(base)) throw new Error("Unsupported Shiptorio origin");
-const repo = process.env.SHIPTORIO_REPO;
-let pairing = process.env.SHIPTORIO_RUNNER_TOKEN;
-if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !pairing) throw new Error("Run runner:control pair first");
-async function api(action: string, body: unknown): Promise<any> {
-  const r = await fetch(`${base}/api/runner/${repo}/${action}`, { method: "POST", headers: { authorization: `Bearer ${pairing}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
-  if (!r.ok) throw new Error(`Runner ${action} failed (${r.status})`);
+const action = process.argv[2] ?? "watch";
+if (action === "pair") { await pairMachine(base, root); process.exit(0); }
+if (action === "uninstall") {
+  console.log("Stop other runner terminals first. Removing standalone runner and local pairings.");
+  const { rm } = await import("node:fs/promises");
+  const { homedir } = await import("node:os");
+  // Fixed install paths only; environment overrides must never become recursive delete targets.
+  await rm(resolve(homedir(), ".local/bin/shiptorio-runner"), { force: true });
+  await rm(resolve(homedir(), ".local/share/shiptorio/runner"), { recursive: true, force: true });
+  console.log("Removed. Disconnect this machine in each factory to revoke its credential.");
+  process.exit(0);
+}
+async function api(pair: Pairing, action: string, body: unknown): Promise<any> {
+  const r = await fetch(`${base}/api/runner/${pair.repo}/${action}`, { method: "POST", headers: { authorization: `Bearer ${pair.token}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+  if (!r.ok) { const error = new Error(`Runner ${pair.repo} ${action} failed (${r.status})`); Object.assign(error, { status: r.status }); throw error; }
   return r.json();
 }
-async function renewPairing() {
-  const claims = JSON.parse(atob(pairing!.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
-  if (claims.expires > Date.now() + 60 * 60 * 1000) return;
-  const renewed = await api("renew", {});
-  pairing = renewed.token;
-  const file = resolve(root, ".dev.vars");
-  await Bun.write(file, `SHIPTORIO_URL=${base}\nSHIPTORIO_REPO=${repo}\nSHIPTORIO_RUNNER_TOKEN=${pairing}\n`, { mode: 0o600 });
-  await chmod(file, 0o600);
+async function renewPairing(pair: Pairing) {
+  if (pair.expires > Date.now() + 60 * 60 * 1000) return;
+  const renewed = await api(pair, "renew", {});
+  Object.assign(pair, renewed);
+  if (process.env.SHIPTORIO_REPO === pair.repo) {
+    const file = resolve(root, ".dev.vars");
+    await Bun.write(file, `SHIPTORIO_URL=${base}\nSHIPTORIO_REPO=${pair.repo}\nSHIPTORIO_RUNNER_TOKEN=${pair.token}\n`, { mode: 0o600 }); await chmod(file, 0o600);
+  } else await savePairing(pair, root);
 }
-async function execute(job: Job) {
+async function execute(job: Job, pair: Pairing) {
+  const repo = pair.repo;
   if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || (!job.reworkPr && job.branch !== `shiptorio/runner-${job.id}` || !!job.reworkPr && (!Number.isInteger(job.reworkPr) || job.reworkPr < 1 || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(job.branch))) || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
   const work = resolve(root, ".work", job.id);
   const gitEnv = { ...cleanEnv, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${job.token}`).toString("base64")}`, GIT_TERMINAL_PROMPT: "0" };
@@ -103,25 +114,58 @@ async function execute(job: Job) {
     summary = `Changed files: ${paths.join(", ")} (approved: ${job.allowedPaths.join(", ")}). Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
     await Bun.write(resolve(root, ".work", `${job.id}.receipt.json`), JSON.stringify(receipt));
-    console.log(JSON.stringify(await api("finish", receipt)));
+    console.log(JSON.stringify(await api(pair, "finish", receipt)));
   } catch (error) {
     // If a push/ack succeeded but transport failed, keep the success receipt for explicit retry.
     const receipt = Bun.file(resolve(root, ".work", `${job.id}.receipt.json`));
-    if (!(await receipt.exists())) await api("finish", { jobId: job.id, lease: job.lease, ok: false, summary: "Local runner stopped; inspect local evidence and approve another attempt.", checks: [] }).catch(() => {});
+    if (!(await receipt.exists())) await api(pair, "finish", { jobId: job.id, lease: job.lease, ok: false, summary: "Local runner stopped; inspect local evidence and approve another attempt.", checks: [] }).catch(() => {});
     throw error;
   } finally { await sandbox?.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 }
-if (process.argv[2] !== "retry") console.log(`Local runner ready for ${repo}: ${available.join(", ") || "no installed agents"}. Only approved jobs run.`);
-if (process.argv[2] === "retry") {
+async function connections() {
+  const pairs = await loadPairings(root);
+  const repo = process.env.SHIPTORIO_REPO, token = process.env.SHIPTORIO_RUNNER_TOKEN;
+  if (repo && token && !pairs.some(p => p.repo === repo)) {
+    const claims = JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
+    pairs.push({ repo, token, expires: claims.expires });
+  }
+  return pairs;
+}
+let pairs = await connections();
+if (!pairs.length) { await pairMachine(base, root); pairs = await connections(); }
+if (action === "retry") {
   const id = process.argv[3]; if (!/^[a-f0-9-]{36}$/.test(id ?? "")) throw new Error("Expected job UUID");
-  console.log(JSON.stringify(await api("finish", await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json())));
+  const receipt = await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json();
+  const repo = process.argv[4] ?? (pairs.length === 1 ? pairs[0].repo : "");
+  const pair = pairs.find(p => p.repo === repo); if (!pair) throw new Error("Specify the receipt repository after the job UUID");
+  console.log(JSON.stringify(await api(pair, "finish", receipt)));
 } else {
   await assertVerificationPlatform();
-  const once = process.argv[2] !== "watch";
-  do {
-    await renewPairing();
-    const { job } = await api("claim", { harnesses: available });
-    if (job) await execute(job); else if (once) console.log("No approved Spark job is ready.");
-    if (!once) await new Promise(resolve => setTimeout(resolve, 5000));
-  } while (!once);
+  console.log(`Local runner ready: ${available.join(", ") || "no installed agents"}. Watching ${pairs.map(p => p.repo).join(", ")}. Only approved jobs run. Ctrl-C to stop.`);
+  const once = action !== "watch";
+  let heartbeatBusy = false;
+  const heartbeat = setInterval(async () => {
+    if (heartbeatBusy) return;
+    heartbeatBusy = true;
+    try { for (const pair of await connections()) await api(pair, "heartbeat", { harnesses: available }).catch(() => {}); }
+    finally { heartbeatBusy = false; }
+  }, 5000);
+  try {
+    do {
+      for (const pair of await connections()) {
+        try {
+          await renewPairing(pair);
+          const { job } = await api(pair, "claim", { harnesses: available });
+          if (job) await execute(job, pair); else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : "Runner request failed");
+          if ((error as { status?: number }).status === 401) {
+            if (pair.repo !== process.env.SHIPTORIO_REPO) await removePairing(pair.repo, root);
+            console.error(`${pair.repo}: pairing expired or revoked. Run shiptorio-runner pair to reconnect.`);
+          }
+        }
+      }
+      if (!once) await Bun.sleep(5000);
+    } while (!once);
+  } finally { clearInterval(heartbeat); }
 }

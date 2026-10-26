@@ -1,3 +1,4 @@
+import { assertLinuxSandbox, linuxSandbox } from "./sandbox-linux";
 import { mkdtemp, mkdir, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -11,11 +12,13 @@ const quote = (value: string) => JSON.stringify(value);
 
 /** The repository and all child processes are untrusted. Env filtering alone is not isolation. */
 export async function verificationGit(): Promise<string> {
+  if (process.platform === "linux" && Bun.which("git")) return (await realpath(Bun.which("git")!));
   for (const path of ["/Library/Developer/CommandLineTools/usr/bin/git", "/Applications/Xcode.app/Contents/Developer/usr/bin/git"]) if (await Bun.file(path).exists()) return path;
   throw new Error("Install Apple Command Line Tools before running sandboxed verification");
 }
 
 export async function assertVerificationPlatform(): Promise<void> {
+  if (process.platform === "linux") return assertLinuxSandbox();
   if (process.platform !== "darwin" || !(await Bun.file("/usr/bin/sandbox-exec").exists())) {
     throw new Error("Local verification requires macOS sandbox-exec. This platform has no configured OS sandbox; checks are disabled.");
   }
@@ -23,6 +26,7 @@ export async function assertVerificationPlatform(): Promise<void> {
 }
 
 export async function checkSandbox(work: string): Promise<CheckSandbox> {
+  if (process.platform === "linux") return linuxSandbox(work);
   await assertVerificationPlatform();
   const directory = await realpath(work);
   const privateRoot = await realpath(await mkdtemp(join(tmpdir(), "shiptorio-check-")));
