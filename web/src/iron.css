@@ -1,0 +1,72 @@
+/* Black Iron tokens and helpers (docs/art/IRON-STYLE.md). The rulebook for every 2D surface. */
+@font-face { font-family: "Silkscreen"; font-weight: 400; font-display: swap; src: url("/fonts/silkscreen-400.woff2") format("woff2"); }
+@font-face { font-family: "Silkscreen"; font-weight: 700; font-display: swap; src: url("/fonts/silkscreen-700.woff2") format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400 700; font-display: swap; src: url("/fonts/jetbrains-mono.woff2") format("woff2"); }
+
+:root {
+  --iron-bg: #0b0806;
+  --iron-soot: #1e1814;
+  --iron-panel: rgba(14, 10, 8, 0.92);
+  --iron-panel-solid: #140e0a;
+  --iron-plate: #2a211b;
+  --iron-line: #5a4434;
+  --iron-line-hi: #8a6a4c;
+  --iron-outline: #000;
+  --iron-ink: #f4ead8;
+  --iron-dim: #b8a48a;
+  --iron-amber: #ffb020;
+  --iron-amber-hi: #ffc24a;
+  --iron-on-amber: #140c02;
+  --iron-ok: #46e07a;
+  --iron-bad: #ff4a32;
+  --iron-idle: #8fa2c8;
+  --iron-focus: #6fb2ff;
+  --iron-brass: #d0a24e;
+  --iron-copper: #c06a3a;
+  --iron-rust: #8a3a20;
+  --iron-aether: #7af0d8;
+  --iron-furnace: #ff7a2a;
+  --iron-sky: linear-gradient(180deg, #1c120c 0%, #4a2412 60%, #7a3a16 100%);
+  --iron-caution: repeating-linear-gradient(-45deg, var(--iron-amber) 0 6px, var(--iron-on-amber) 6px 12px);
+  --iron-pixel: "Silkscreen", "Courier New", monospace;
+  --iron-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --iron-plate-shadow: inset 0 2px 0 rgba(255, 220, 170, 0.06), inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* a riveted iron plate */
+.iron-plate { background: var(--iron-panel); border: 2px solid var(--iron-line); outline: 2px solid var(--iron-outline); border-radius: 0; box-shadow: var(--iron-plate-shadow); color: var(--iron-ink); }
+.iron-rivets { position: relative; }
+.iron-rivets::before {
+  content: ""; position: absolute; inset: 4px; pointer-events: none;
+  background:
+    linear-gradient(var(--iron-brass), var(--iron-brass)) top left / 4px 4px no-repeat,
+    linear-gradient(var(--iron-brass), var(--iron-brass)) top right / 4px 4px no-repeat,
+    linear-gradient(var(--iron-brass), var(--iron-brass)) bottom left / 4px 4px no-repeat,
+    linear-gradient(var(--iron-brass), var(--iron-brass)) bottom right / 4px 4px no-repeat;
+  filter: drop-shadow(1px 1px 0 #3a2410);
+}
+.iron-eyebrow { font: 400 10px/1.2 var(--iron-pixel); letter-spacing: 0.14em; text-transform: uppercase; color: var(--iron-dim); }
+.iron-title { font: 700 16px/1.1 var(--iron-pixel); letter-spacing: 0.08em; text-transform: uppercase; color: var(--iron-ink); margin: 0; }
+
+.iron-btn { font: 400 11px/1 var(--iron-pixel); letter-spacing: 0.06em; text-transform: uppercase; min-height: 32px; padding: 0 12px; border-radius: 0; cursor: pointer; color: var(--iron-ink); background: var(--iron-plate); border: 2px solid var(--iron-line); box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.4); }
+.iron-btn:hover { border-color: var(--iron-line-hi); }
+.iron-btn:active { transform: translateY(1px); box-shadow: none; }
+.iron-btn.primary, .iron-btn[aria-pressed="true"] { background: var(--iron-amber); color: var(--iron-on-amber); border-color: #000; }
+.iron-btn.primary:hover { background: var(--iron-amber-hi); }
+.iron-btn:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+
+.iron-input { font: 400 16px/1.3 var(--iron-mono); color: var(--iron-ink); background: var(--iron-soot); border: 2px solid var(--iron-line); border-radius: 0; padding: 10px 12px; caret-color: var(--iron-amber); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.5); }
+.iron-input:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+
+/* IDLE / WORKING / BLOCKED, as in the reference's machine chips */
+.iron-state { display: inline-flex; align-items: center; gap: 6px; font: 700 11px/1 var(--iron-pixel); letter-spacing: 0.06em; color: var(--iron-idle); }
+.iron-state::before { content: ""; width: 8px; height: 8px; flex: none; background: currentColor; }
+.iron-state[data-s="WORKING"] { color: var(--iron-ok); }
+.iron-state[data-s="WORKING"]::before { animation: iron-blink 0.9s infinite; }
+.iron-state[data-s="BLOCKED"] { color: var(--iron-amber); }
+.iron-state[data-s="BLOCKED"]::before { background: var(--iron-bad); animation: iron-blink 0.4s infinite; }
+.iron-ping { animation: iron-ping 1s infinite; }
+
+@keyframes iron-blink { 50% { opacity: 0.25; } }
+@keyframes iron-ping { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(255, 176, 32, 0); } }
+@media (prefers-reduced-motion: reduce) { .iron-ping, .iron-state::before { animation: none !important; } }
