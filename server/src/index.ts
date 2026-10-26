@@ -1,5 +1,6 @@
 import { Redactor } from "./redact";
 import { Hono, type Context, type Next } from "hono";
+import { ops } from "./ops";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
@@ -32,6 +33,7 @@ export interface Env extends FactoryEnv {
   APP_PASSWORD?: string;
   BUILD_SHA?: string;
   GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
+  ADMIN_LOGINS?: string;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -69,6 +71,7 @@ app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
     return;
   }
+  if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
   const denied = await previewAccess(c.req.raw, c.env);
   if (denied) return denied;
   await next();
@@ -79,6 +82,8 @@ app.onError((err, c) => {
   console.error(new Redactor(c.env).value({ error: "Request failed", type: err.name }));
   return c.json({ error: "Request failed. Please try again." }, 500);
 });
+
+app.route("/", ops);
 
 // ---------- auth + setup ----------
 
