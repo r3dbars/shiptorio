@@ -354,8 +354,8 @@ export function App() {
             className={`hud-iconbtn guide-btn${met.size > seenGuide ? " new" : ""}`}
             aria-pressed={sheet === "guide"}
             onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
-            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
-            title={`Field guide · ${met.size}/${GUIDE_TOTAL}`}
+            aria-label={`Field guide, ${met.size} concepts found`}
+            title={`Field guide · ${met.size} concepts found`}
           >
             <Icon name="book" size={20} />
           </button>
@@ -533,8 +533,8 @@ export function App() {
             className="tool big go"
             onClick={build}
             disabled={!show("build") || !slot || !plugged || cfg.kind === "live"}
-            aria-label={plugged ? `Build another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
-            title={plugged ? `Build another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
+            aria-label={plugged ? `Place another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
+            title={plugged ? `Place another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
           >
             <Icon name="bot" size={20} />
             Build
