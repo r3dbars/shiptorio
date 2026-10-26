@@ -39,3 +39,19 @@ Codex prompt: project file `codex-prompts/playtest-round-2.md`.
 | #77 | ux | Phone: tiny island, clipped scenario row, overlapping buttons |
 | #79 | feel | SHIPPED card covers the rocket launch |
 | #80 | feel | Sign-in and repo picker are a bare card on an empty background |
+
+## 2026-10-26 round 3 (new onboarding #84, HUD v3, phone fixes #78)
+
+Played `/` from scratch at 1440×900 and 390×844 touch. The live gauntlet (#73) needs the
+GitHub App secrets and shiptorio.com, which the cloud sandbox can't reach, so it was only
+checked through `bun test` (83 pass).
+
+| # | Type | What |
+|---|------|------|
+| #74 | bug | Still reproduces: rocket off-screen after Build it (worse on phone) |
+| #105 | ux | After two rockets the factory goes quiet, no next move |
+| #106 | ux | Tour 3/10 and Guide 4/16 counters disagree |
+| #107 | feel | Intro is a flat 2D map, asks to sign in first, rockets pile on Skip |
+| #108 | ux | "Build" means two things on screen |
+
+#74, #75, #77, #80 are in flight in Codex PR #103 at the time of writing.
