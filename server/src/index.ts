@@ -1,4 +1,6 @@
-import { repositoryFactory } from "./repository";
+import { byRepoId, repositoryFactory } from "./repository";
+import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
+import { settingsPage, legalPage } from "./account-pages";
 import { lifecycleEvents } from "./github-lifecycle";
 import { factoryRpc } from "./factory-rpc";
 
@@ -30,7 +32,8 @@ import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/se
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
-import { connectPage } from "./connect";
+import { connectPage, supportConnectPage } from "./connect";
+import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
@@ -64,8 +67,8 @@ export interface Env extends FactoryEnv, SignupEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = async (env: Env, repo: string) => {
-  const stub = await repositoryFactory(env, repo);
+const factory = async (env: Env, repo: string, repoId?: number) => {
+  const stub = repoId ? byRepoId(env, repoId) : await repositoryFactory(env, repo);
   const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
   // Capture per call, never put mutable request identity on a shared DO instance.
   return new Proxy(stub, { get(target, method) {
@@ -85,9 +88,11 @@ const signedIn = (c: { env: Env; req: { header(name: string): string | undefined
 type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
 const app = new Hono<AppEnv>();
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
-  const user = await resolveUser(c.req.raw, c.env);
+  const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
-  c.set("user", user);
+  const account = user.dev ? user : await resolveUser(c.req.raw, c.env);
+  if (!account) return c.json({ error: "login required" }, 401);
+  c.set("user", account);
   await next();
 };
 
@@ -133,6 +138,9 @@ app.use("*", async (c, next) => {
   }
   await next();
 });
+
+app.get("/privacy", c => c.html(legalPage("privacy")));
+app.get("/terms", c => c.html(legalPage("terms")));
 
 app.use("*", async (c, next) => {
   // Installer and device exchange have no browser cookies. Device approval still requires
@@ -238,6 +246,9 @@ app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
 app.post('/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+// The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
+// already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
+app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
 app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
@@ -296,8 +307,8 @@ async function requestScope(c: Context<AppEnv>): Promise<CredentialScope | null>
   const user = await resolveUser(c.req.raw, c.env);
   const repo = c.req.query("repo")?.toLowerCase();
   if (!user || !repo || !validRepo(repo) || !(await repoAccess(c.env, user, repo))) return null;
-  const row = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
-  return row?.installation_id ? { installationId: row.installation_id, repo, user: String(user.id) } : null;
+  const row = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
+  return row?.installation_id && Number.isSafeInteger(row.repo_id) && row.repo_id > 0 ? { installationId: row.installation_id, repo, repoId: row.repo_id, user: String(user.id) } : null;
 }
 
 app.get("/api/setup/status", async (c) => {
@@ -322,6 +333,87 @@ app.get("/api/sources", async (c) => {
   const scope = await requestScope(c);
   if (!scope) return c.json({ error: "repository access denied" }, 403);
   return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env, scope), url, scope.repo), postHogStatus(await postHogCreds(c.env, scope), url, c.env.FAKE_POSTHOG === "1")] });
+});
+
+// ---------- account controls ----------
+app.use("/api/account/*", requireUser);
+app.get("/settings", requireUser, async c => {
+  const user = c.get("user");
+  const repos = await accountRepos(c.env, user);
+  const rows = [];
+  for (const repo of repos) rows.push({ ...repo,
+    runner: await (await accountFactory(c.env, repo.full_name)).accountConnectionStatus(),
+    sentry: !!(await sentryCreds(c.env, {repo: repo.full_name, installationId: repo.installation_id, user: user.login})).clientSecret,
+    posthog: !!(await postHogCreds(c.env, {repo: repo.full_name, installationId: repo.installation_id, user: user.login})).apiKey,
+  });
+  const installs = await c.env.DB.prepare("SELECT installation_id, account_login FROM user_installations WHERE user_id = ? ORDER BY installation_id").bind(user.id).all<{installation_id: number; account_login: string}>();
+  return c.html(settingsPage(user, rows, user.dev ? [] : await ownedRepos(c.env, user), installs.results));
+});
+app.get("/api/account/export", async c => {
+  c.header("Content-Disposition", 'attachment; filename="shiptorio-data.json"');
+  return c.json(await exportAccount(c.env, c.get("user")));
+});
+app.post("/api/account/signout", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const user = c.get("user");
+  const repos = await reposFor(c.env, user);
+  await c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id).run();
+  for (const repo of repos) await (await accountFactory(c.env, repo.full_name)).closeAccountSockets(user.login);
+  return logout(c.req.raw, c.env);
+});
+app.post("/api/account/delete", async c => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const text = await c.req.text();
+  if (text.length > 16384) return c.json({ error: "too large" }, 413);
+  const form = new URLSearchParams(text);
+  if (form.get("confirm") !== "delete") return c.json({ error: "confirm deletion" }, 400);
+  const user = c.get("user");
+  if (user.dev) return c.json({ error: "local development identity cannot be deleted" }, 403);
+  const owned = await ownedRepos(c.env, user);
+  const confirmation = form.getAll("repo");
+  if (JSON.stringify([...new Set(confirmation)].sort()) !== JSON.stringify(owned.map(r => r.full_name.toLowerCase()).sort())) return c.json({ error: "Type every owned repository name exactly" }, 400);
+  // The completion log must not immediately re-create a user-linked operational record.
+  const trace = currentTrace();
+  if (trace) { delete trace.userId; delete trace.repo; delete trace.itemId; }
+  Sentry.setUser(null);
+  const result = await deleteAccount(c.env, user, confirmation);
+  c.header("Set-Cookie", "shiptorio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+  c.header("Content-Disposition", 'attachment; filename="shiptorio-deletion-archive.json"');
+  return c.json(result);
+});
+
+// ---------- connect the support mine: the email inlet URL, and Intercom keys ----------
+
+app.on(["GET", "POST"], "/connect/support", async (c) => {
+  const user = await resolveUser(c.req.raw, c.env);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  // Same boundary as the other mines: a signed-in player whose GitHub account reaches this repo.
+  const scope = await requestScope(c);
+  if (!scope) return c.text("You don't have access to that repo's factory.", 403);
+  const repoParam = scope.repo;
+  if (await factoryDeleted(c.env.DB, repoParam)) return c.text("Factory deleted", 410);
+  const url = publicUrl(new URL(c.req.url), c.env);
+  // Upgrade legacy name-routed factories before requiring the immutable credential identity.
+  const supportFactory = await factory(c.env, repoParam);
+  const token = await ensureInboundToken(c.env, repoParam);
+  const view = async (extra: { error?: string; saved?: boolean } = {}) => {
+    const creds = await supportCreds(c.env, repoParam);
+    return supportConnectPage({ repo: repoParam, emailUrl: supportWebhookUrl(url, repoParam, token), intercomUrl: intercomWebhookUrl(url, repoParam), intercom: !!creds.intercomClientSecret, canSend: !!(creds.intercomToken && creds.intercomAdminId), emailSender: await isOperatorSupport(c.env, repoParam) && !!(c.env.RESEND_API_KEY && c.env.SUPPORT_FROM), ...extra });
+  };
+  if (c.req.method === "GET") {
+    await supportFactory.connectSupport().catch(() => null);
+    return c.html(await view());
+  }
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
+  const form = await c.req.formData();
+  const field = (name: string) => String(form.get(name) ?? "").trim();
+  const intercomClientSecret = field("intercomClientSecret"), intercomToken = field("intercomToken"), intercomAdminId = field("intercomAdminId");
+  if (intercomClientSecret && !/^[\w-]{16,200}$/.test(intercomClientSecret)) return c.html(await view({ error: "That doesn't look like an Intercom client secret." }), 400);
+  if (intercomToken && !/^[\w=:+/-]{20,400}$/.test(intercomToken)) return c.html(await view({ error: "That doesn't look like an Intercom access token." }), 400);
+  if (intercomAdminId && !/^\d{1,20}$/.test(intercomAdminId)) return c.html(await view({ error: "The admin id is a number (Intercom → Settings → your profile URL)." }), 400);
+  await saveSupportCreds(c.env, repoParam, { intercomClientSecret, intercomToken, intercomAdminId });
+  await supportFactory.connectSupport().catch(() => null);
+  return c.html(await view({ saved: true }));
 });
 
 // Device-code flow. No subscription credential or browser cookie crosses to the runner.
@@ -358,7 +450,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const code = normalizeCode(c.req.query("code") ?? "");
-  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
+  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
@@ -402,6 +494,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const scope = await requestScope(c);
   if (!scope) return c.text("You don't have access to that repo's factory.", 403);
   const repo = scope.repo;
+  if (await factoryDeleted(c.env.DB, repo)) return c.text("Factory deleted", 410);
   const webhookUrl = sentryWebhookUrl(url, repo);
   if (c.req.method === "GET") {
     const { connected, lastUsedAt, workerOverride } = await credentialStatus(c.env, kind, scope);
@@ -412,7 +505,9 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (field("action") === "revoke") {
     await revokeCreds(c.env, kind, scope);
-    await (await factory(c.env, repo)).disconnectMine(kind);
+    const f = await factory(c.env, repo, scope.repoId);
+    await f.setRepositoryId(scope.repoId!);
+    await f.disconnectMine(kind);
     return c.html(connectPage({ kind, repo, connected: false, webhookUrl, revoked: true }));
   }
   const { connected, workerOverride } = await credentialStatus(c.env, kind, scope);
@@ -431,8 +526,10 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, scope);
   }
   // Plug it straight into the map it came from.
-  await (await factory(c.env, repo)).ensure(repo, scope.installationId);
-  await (await factory(c.env, repo)).connectMine(kind);
+  const f = await factory(c.env, repo, scope.repoId);
+  await f.setRepositoryId(scope.repoId!);
+  await f.ensure(repo, scope.installationId);
+  await f.connectMine(kind);
 
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
@@ -472,6 +569,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = await factory(c.env, repo);
   if (c.req.param("action") === "revoke") {
     await f.revokeRunner();
@@ -558,6 +656,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = await factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
     const installationId = await installationFor(c.env, repo);
@@ -590,9 +689,11 @@ app.post("/webhooks/github", async (c) => {
   if (!delivery || !/^[a-zA-Z0-9_-]{1,200}$/.test(delivery)) return c.json({ error: "delivery id required" }, 400);
   const repo = payload.repository?.full_name;
   const installation = payload.installation?.id;
+  if (installation && await factoryDeleted(c.env.DB, `installation:${installation}`)) return c.json({ok: true, ignored: true, reason: "account deleted"});
   if (event !== "github_app_authorization" && (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo)))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !lifecycleEvents.includes(event)) return c.json({ error: "repo required" }, 400);
   if (!await admit(c.env,`webhook:github:${installation ?? payload.sender?.id ?? "app"}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
+  if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ok: true, ignored: true, reason: "factory deleted"});
   if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
 
   if (event === 'installation' && payload.action === 'created') {
@@ -601,7 +702,7 @@ app.post("/webhooks/github", async (c) => {
   }
 
   const now = Date.now();
-  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('github', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo, installation_id) VALUES ('github', ?, ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null, installation ?? null).run();
   if (!inserted.meta.changes) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'github' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
@@ -632,9 +733,9 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
   const repo = perRepo ?? c.req.query("repo")?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
   if (!repo || !REPO_RE.test(repo)) return c.json({ error: "repository unavailable" }, 403);
-  const installation = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
+  const installation = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
   if (!installation) return c.json({ error: "repository unavailable" }, 403);
-  const scope = { repo, installationId: installation.installation_id };
+  const scope = { repo, installationId: installation.installation_id, repoId: installation.repo_id };
   const redactor = new Redactor(c.env);
   const { clientSecret } = await sentryCreds(c.env, scope, redactor);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
@@ -648,21 +749,71 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (repo && await factoryDeleted(c.env.DB, repo)) return c.json({ ok: true, ignored: true, reason: "factory deleted" });
   if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
   if (!await admit(c.env,`webhook:sentry:${repo.toLowerCase()}`,300,60000,"Sentry webhook flood")) return c.json({error:"webhook throttled"},429);
 
   const delivery = `${repo}:${sourceDelivery}`;
 
   const now = Date.now();
-  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at, repo, installation_id) VALUES ('sentry', ?, ?, ?, ?, ?)").bind(delivery, now, now + 7 * 86400000, repo?.toLowerCase() ?? null, installation.installation_id).run();
   if (!inserted.meta.changes) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  await (await factory(c.env, repo)).enqueueSentry(delivery, resource, redactor.value(payload));
+  await (await factory(c.env, repo, scope.repoId)).enqueueSentry(delivery, resource, redactor.value(payload));
 
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
 
+  return c.json({ ok: true, queued: true }, 202);
+}
+
+// ---------- support mine webhooks ----------
+
+// Email: /webhooks/support/<owner>/<repo>/<token>. Inbound-email services don't sign, so the URL's token is the key.
+app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  if (!tokenMatches((await supportCreds(c.env, repo)).inboundToken, c.req.param("token"))) return c.json({ error: "unknown inbox" }, 401);
+  const body = await boundedBody(c);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  let payload: unknown;
+  try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  const message = normalizeEmail(payload);
+  if (!message) return c.json({ ok: true, ignored: true, reason: "no sender or text" });
+  return queueSupport(c, repo, message, body);
+});
+
+// Intercom: /webhooks/intercom/<owner>/<repo>, signed with that map's client secret.
+app.post("/webhooks/intercom/:owner/:repo", async (c) => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  const body = await boundedBody(c);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  if (!(await verifyIntercom((await supportCreds(c.env, repo)).intercomClientSecret, body, c.req.header("x-hub-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
+  let payload: unknown;
+  try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  const message = normalizeIntercom(payload);
+  if (!message) return c.json({ ok: true, ignored: true });
+  return queueSupport(c, repo, message, body);
+});
+
+async function boundedBody(c: Context<AppEnv>): Promise<string | null> {
+  if (Number(c.req.header("content-length") ?? 0) > 1048576) return null;
+  const body = await c.req.text();
+  return body.length > 1048576 ? null : body;
+}
+
+async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
+  if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
+  const digest = `${repo}:` + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${repo}:${message.channel}:${message.messageId}`)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const now = Date.now();
+  const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('support', ?, ?, ?)").bind(digest, now, now + 7 * 86400000).run();
+  if (!inserted.meta.changes) {
+    const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'support' AND delivery_id = ?").bind(digest).first<{ state: string }>();
+    if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
+  }
+  await (await factory(c.env, repo)).enqueueSupport(digest, message);
   return c.json({ ok: true, queued: true }, 202);
 }
 

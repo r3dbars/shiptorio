@@ -10,6 +10,7 @@ export type ItemKind = z.infer<typeof ItemKind>;
 export const OreSource = z.enum(["github_issue", "sentry", "posthog", "inbox", "lint"]);
 export type OreSource = z.infer<typeof OreSource>;
 
+// "email" is the support mine: inbound support email and Intercom chats (docs/context/support-mine.md).
 export const SourceKind = z.enum(["github", "sentry", "posthog", "email", "stripe", "claude", "chatgpt"]);
 export type SourceKind = z.infer<typeof SourceKind>;
 export const SourceStatus = z.object({
@@ -237,7 +238,8 @@ export const MoveOption = z.object({
 export type MoveOption = z.infer<typeof MoveOption>;
 
 // What a move does for the loop. The check-in deck favors verify, input and automate (docs/PRODUCT.md "Check-in").
-export const MoveKind = z.enum(["unblock", "build", "verify", "input", "automate", "ship", "review"]);
+// "reply" is a drafted customer reply: only a player tap sends it, at every autonomy level.
+export const MoveKind = z.enum(["unblock", "build", "verify", "input", "automate", "ship", "review", "reply"]);
 export type MoveKind = z.infer<typeof MoveKind>;
 
 // One gauntlet stamp on a card: a station that passed, failed or never ran.
@@ -323,7 +325,7 @@ export type Foreman = z.infer<typeof Foreman>;
 
 // One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
 // and so does every time a rule had to stand in because Spark was down or unconfigured.
-export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "route", "growth"]);
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "support", "route", "growth"]);
 export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
 export const Thought = z.object({
   id: z.string(),
@@ -403,6 +405,49 @@ export const Research = z.object({
 });
 export type Research = z.infer<typeof Research>;
 
+// ---------- the support mine (docs/context/support-mine.md) ----------
+
+// One customer conversation from support email or Intercom. Spark sorts it, links it to the work it's about
+// and drafts a reply. Nothing reaches the customer until the player taps Send on that exact draft.
+export const SupportChannel = z.enum(["email", "intercom"]);
+export type SupportChannel = z.infer<typeof SupportChannel>;
+export const SupportKind = z.enum(["bug", "feature", "question", "praise", "spam"]);
+export type SupportKind = z.infer<typeof SupportKind>;
+export const SupportDraft = z.object({
+  text: z.string().max(4000),
+  hash: z.string(), // Send carries this, so only the draft the player saw goes out
+  purpose: z.enum(["answer", "fixed"]), // first answer, or "we shipped the fix"
+  by: z.enum(["spark", "fallback", "player"]),
+  at: z.number(),
+});
+export type SupportDraft = z.infer<typeof SupportDraft>;
+export const SupportTicket = z.object({
+  id: z.string(),
+  channel: SupportChannel,
+  thread: z.string(), // email thread root or Intercom conversation id, so a reply lands in the same conversation
+  replyTo: z.string().optional(), // the newest customer message id; an email reply threads onto it
+  from: z.string(), // the customer's address or Intercom contact; never leaves the factory except in the reply
+  name: z.string().optional(),
+  subject: z.string(),
+  body: z.string(), // latest customer message
+  messages: z.number().int().positive(), // customer messages on this thread so far
+  receivedAt: z.number(),
+  paying: z.boolean().optional(),
+  state: z.enum(["new", "drafted", "waiting_fix", "answered", "closed"]),
+  triage: z.object({
+    kind: SupportKind,
+    district: z.string(),
+    summary: z.string(), // one plain line: "Checkout crashes with an empty cart"
+    reason: z.string(),
+    linkedItemId: z.string().optional(), // the factory item it's about (a Sentry error, an issue)
+    by: z.enum(["spark", "fallback"]),
+  }).optional(),
+  draft: SupportDraft.optional(),
+  // via "outbox": no mail sender is connected, so the reply is kept here (text) for the player to copy.
+  sent: z.array(z.object({ at: z.number(), purpose: z.enum(["answer", "fixed"]), via: z.enum(["email", "intercom", "outbox"]), text: z.string().max(4000).optional() })).default([]),
+  issue: z.object({ number: z.number().int(), url: z.string() }).optional(), // filed from this ticket
+});
+export type SupportTicket = z.infer<typeof SupportTicket>;
 // The growth loop (shared/src/growth.ts, docs/context/growth-loop.md). A funnel step from PostHog drops, the
 // planner proposes one small experiment, it ships through the gauntlet, and the measure station calls the result.
 export const FunnelStep = z.object({
@@ -464,6 +509,7 @@ export const FactoryState = z.object({
   sources: z.array(SourceStatus).optional(),
   stations: z.array(Station).optional(), // the gauntlet, in line order
   research: Research.optional(),
+  support: z.array(SupportTicket).max(60).optional(), // newest first
   experiments: z.array(Experiment).max(20).optional(), // the growth loop, newest first
 });
 export type FactoryState = z.infer<typeof FactoryState>;

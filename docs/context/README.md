@@ -14,6 +14,7 @@ something, add it here and push.
 | --- | --- |
 | [../VISION.md](../VISION.md) | **North star**: Justin's goals, principles, non-goals, current focus, and how to decide what's next. Read first |
 | [../PRODUCT.md](../PRODUCT.md) | **Product spec**: Spark as the Foreman agent, core loop, bottleneck engine, tools, trust, score, onboarding, demo scope |
+| [testing.md](testing.md) | Fast, contract, Wrangler E2E/visual and manual load regression suites |
 | [costs.md](costs.md) | Spark budgets, GitHub rate limits, polling backoff and operator controls |
 | [ops.md](ops.md) | Production diagnostics, Sentry setup, tracing, backup and recovery runbooks |
 | [decisions.md](decisions.md) | Decisions made so far and open items (who's blocked on what) |
@@ -21,6 +22,7 @@ something, add it here and push.
 | [spark-audit.md](spark-audit.md) | **Meta Muse Spark audit**: every factory decision point, who decides (Spark vs rule), fallbacks, and where judges see it (issue comments, "How it thinks" panel) |
 | [growth-loop.md](growth-loop.md) | **Growth loop prototype**: PostHog funnel drop → experiment → ships through the gauntlet → measure station calls lift / no lift / hurt. `?source=sim&scenario=growth` |
 | [accounts.md](accounts.md) | **Accounts + sign-in API**: D1 users/sessions/user_repos tables, `accounts.ts` helpers, `requireUser`, per-repo mine keys, sign-up gate |
+| [support-mine.md](support-mine.md) | **Support mine**: customer email + Intercom → support well, Spark triage/drafts, the player-tap-only send rule, inlets, sim scenario |
 | [memory/](memory/) | Snapshot of the Claude project memory (one fact per file). `memory/MEMORY.md` is its index |
 | [threads.md](threads.md) | Short summary of each Claude project thread and what it produced |
 | [plan.md](plan.md) | Export of Justin's plan doc (game design, art, 12 items, architecture, build plan, demo script, risks) |
