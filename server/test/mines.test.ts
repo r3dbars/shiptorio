@@ -99,3 +99,78 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
   expect((await (await send(good)).json() as { duplicate?: boolean }).duplicate).toBe(true);
   expect(queued).toEqual(["req-1:issue"]);
 });
+
+const { Factory } = await import("../src/factory");
+const { FactoryState } = await import("@shiptorio/shared");
+type FactoryState = import("@shiptorio/shared").FactoryState;
+const { starterLine } = await import("../src/engine");
+
+function factoryFixture(env: Record<string, unknown>) {
+  const state = FactoryState.parse({ repo: "example/shop", baseBranch: "main", districts: DISTRICTS.map((name, i) => ({ name, x: i * 6, y: 0, w: 4, h: 4, files: 3 })), ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
+  const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+  const kv = new Map<string, string>();
+  let alarm: number | null = null;
+  const events: { type: string; text?: string }[] = [];
+  const storage = {
+    async get(key: string) { return structuredClone(data.get(key)); },
+    async put(key: string, value: unknown) { data.set(key, structuredClone(value)); },
+    async delete(key: string) { return data.delete(key); },
+    async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); },
+    async getAlarm() { return alarm; },
+    async setAlarm(value: number) { alarm = value; },
+  };
+  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
+  const fullEnv = {
+    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) },
+    CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
+    ...env,
+  };
+  const factory = new Factory(ctx as never, fullEnv as never);
+  return { factory, kv, events, saved: () => data.get("state") as FactoryState, data };
+}
+
+it("Factory: unconfigured mine answers with setup steps and a connect link for this repo", async () => {
+  const f = factoryFixture({});
+  const status = await f.factory.connectMine("sentry");
+  expect(status?.state).toBe("needs_action");
+  expect(status?.setup.actionUrl).toBe("https://shiptorio.com/connect/sentry?repo=example%2Fshop");
+  expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
+});
+
+it("Factory: Sentry mine opens a deposit, spawns biters on the right district, grows them, and counts the kill", async () => {
+  const f = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret" });
+  expect((await f.factory.connectMine("sentry"))?.state).toBe("connected");
+  expect(f.kv.get("link:sentry")).toBe("example/shop");
+  expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(true);
+  expect(f.saved().belts.some((b) => b.from === "ore-sentry" && b.to === "splitter-1")).toBe(true);
+  await f.factory.enqueueSentry("d1", "issue", fakeSentry("issue.created"));
+  await f.factory.enqueueSentry("d2", "error", fakeSentry("error.created"));
+  await f.factory.alarm();
+  const ore = f.saved().items.filter((i) => i.source === "sentry");
+  expect(ore.length).toBe(1);
+  expect(ore[0].district).toBe("checkout");
+  expect(ore[0].ore?.count).toBe(2);
+  expect(f.saved().sources?.find((s) => s.kind === "sentry")?.state).toBe("connected");
+  // Our fix shipped, then Sentry resolves it: biters killed.
+  f.data.set("state", { ...f.saved(), items: f.saved().items.map((i) => ({ ...i, state: "launched" })) });
+  const fresh = new Factory((f.factory as unknown as { ctx: never }).ctx, (f.factory as unknown as { env: never }).env);
+  await fresh.enqueueSentry("d3", "issue", fakeSentry("issue.resolved"));
+  await fresh.alarm();
+  expect((f.data.get("state") as { metrics?: { bitersKilled: number } }).metrics?.bitersKilled).toBe(1);
+  await fresh.disconnectMine("sentry");
+  expect((f.data.get("state") as { machines: { id: string }[] }).machines.some((m) => m.id === "ore-sentry")).toBe(false);
+  expect(f.kv.has("link:sentry")).toBe(false);
+});
+
+it("Factory: FAKE_POSTHOG polls on the alarm and drops ore on the checkout district once per day", async () => {
+  const f = factoryFixture({ FAKE_POSTHOG: "1" });
+  expect((await f.factory.connectMine("posthog"))?.state).toBe("connected");
+  await f.factory.alarm();
+  const ore = f.saved().items.filter((i) => i.source === "posthog");
+  expect(ore.length).toBe(2);
+  expect(ore.every((i) => i.district === "checkout")).toBe(true);
+  expect(f.saved().sources?.find((s) => s.kind === "posthog")?.detail).toContain("Busiest routes: / ");
+  // Next alarm inside the poll window does nothing new.
+  await f.factory.alarm();
+  expect(f.saved().items.filter((i) => i.source === "posthog").length).toBe(2);
+});

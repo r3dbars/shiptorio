@@ -115,6 +115,49 @@ Claude or ChatGPT. `/api/repos` lists installed repos after GitHub sign-in; `/ap
 reports setup steps after preview sign-in. `disconnect_source github` pauses that repo's
 mine; GitHub uninstallation remains a separate dashboard action.
 
+## 2b. Sentry and PostHog mines
+
+Both are optional. Each one is a single paste on a page Shiptorio serves, no wrangler needed.
+Keys land in the `CACHE` KV namespace (`cred:sentry`, `cred:posthog`), never in git, logs or
+factory state. Wrangler secrets with the same meaning win if set: `SENTRY_CLIENT_SECRET`,
+`POSTHOG_API_KEY` (+ vars `POSTHOG_PROJECT_ID`, `POSTHOG_HOST`, `POSTHOG_KEY_EVENT`).
+Each mine feeds one repo's map: the one you connected it from (`link:<kind>` in KV), or
+`SENTRY_REPO` / `POSTHOG_REPO` if set.
+
+### Justin does — Sentry
+1. Open the map, tap the Sentry mine (or go to https://shiptorio.com/connect/sentry?repo=OWNER/REPO).
+2. In Sentry: Settings → Developer Settings → Custom Integrations → Create New Integration →
+   Internal Integration. Webhook URL `https://shiptorio.com/webhooks/sentry`, Alert Rule Action on,
+   webhooks: issue + error, permissions Issue & Event: Read. Save.
+3. Paste its Client Secret on the connect page.
+
+### Justin does — PostHog
+1. In PostHog: Settings → Personal API keys → create one with Query: Read and Project: Read.
+2. Paste it plus the project id on https://shiptorio.com/connect/posthog?repo=OWNER/REPO.
+
+### Mine behavior
+
+- **Sentry** (push): `/webhooks/sentry` checks `Sentry-Hook-Signature` (HMAC-SHA256 of the raw
+  body with the Client Secret, constant time), dedupes on `Request-ID` in D1, queues in the Factory
+  DO and returns 202. Each Sentry issue id is one ore chunk (`sentry:<id>`). Repeats grow the same
+  chunk (users = max of Sentry's userCount, +1 per error event with a user). District = first
+  path segment of the topmost in-app frame, else the transaction route. Level → severity:
+  warning 1, error 2, fatal 3. Resolved before a fix = ore removed; resolved after our fix
+  launched = `bitersKilled` +1.
+- **PostHog** (pull): every 5 minutes on the DO alarm, one HogQL query for the key event and
+  `$exception` per route per day over 9 days. Ore when yesterday's key event count is below 50%
+  of the prior 7-day average (needs ≥ 30/day baseline), or `$exception` is ≥ 10 and ≥ 3× baseline.
+  Fingerprint `posthog:<event>:<route>:<day>`, so re-polls fold. Errors and 429s back off
+  exponentially (max 1 h). The busiest routes show on the PostHog source card.
+- Spark still decides if any of it is real and links it to other ore; the mines only normalize.
+
+### Fake mode
+- `FAKE_POSTHOG=1` in `server/.dev.vars`: the poller uses canned data (steady traffic, then
+  /checkout drops 70% with an error spike). Tap Connect PostHog on the local map.
+- `bun run fake:sentry [issue.created|issue.resolved|error.created] [issueId]` posts a signed
+  webhook to localhost:8787 with `SENTRY_CLIENT_SECRET` from `server/.dev.vars`. Connect Sentry on
+  the map first so the mine is linked to your local repo.
+
 ## 3. Who can see maps
 
 Only logins in `ALLOWED_LOGINS` (in `server/wrangler.jsonc`) can view maps, since they show

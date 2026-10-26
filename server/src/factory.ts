@@ -575,6 +575,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.sources) s.sources = p.sources;
+    if (p.metrics) s.metrics = p.metrics;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
     if (p.autonomy) s.autonomy = p.autonomy;
     // Station piles follow the items, so every item change re-counts the gauntlet.
@@ -1045,8 +1046,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         const t = await triage(this.env, { title: item.title, body: item.body ?? "", labels: [] }, s.districts.map((d) => d.name)).catch(
           () => null,
         );
-        await this.patch({ items: [{ ...item, kind: t?.kind ?? item.kind, district: t?.district ?? item.district, state: "queued", updatedAt: now }] });
-        this.log("info", `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${t?.district ?? item.district}`, item.id);
+        // Without Spark, a keyword guess shouldn't override a stack frame or route a mine already placed.
+        const district = (!sparkConfigured(this.env) && item.district !== "/" ? item.district : t?.district) ?? item.district;
+        await this.patch({ items: [{ ...item, kind: t?.kind ?? item.kind, district, state: "queued", updatedAt: now }] });
+        this.log("info", `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${district}`, item.id);
       } else if (item.state === "rejected") {
         if (item.attempts >= MAX_ATTEMPTS) continue; // stays rejected until a human steps in
         if (item.branch?.startsWith("shiptorio/runner-")) continue; // local builds rework only with player approval
