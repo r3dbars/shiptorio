@@ -10,6 +10,47 @@ export type ItemKind = z.infer<typeof ItemKind>;
 export const OreSource = z.enum(["github_issue", "sentry", "inbox", "lint"]);
 export type OreSource = z.infer<typeof OreSource>;
 
+export const SourceKind = z.enum(["github", "sentry", "email", "stripe", "claude", "chatgpt"]);
+export type SourceKind = z.infer<typeof SourceKind>;
+export const SourceStatus = z.object({
+  kind: SourceKind,
+  state: z.enum(["not_connected", "needs_action", "connected", "error"]),
+  detail: z.string(),
+  lastEventAt: z.number().optional(),
+  eventsToday: z.number().int().nonnegative().default(0),
+  setup: z.object({ steps: z.array(z.string()), actionUrl: z.string().url().optional() }),
+});
+export type SourceStatus = z.infer<typeof SourceStatus>;
+
+export const OreChunk = z.object({
+  fingerprint: z.string(),
+  count: z.number().int().positive(),
+  firstSeen: z.number(),
+  lastSeen: z.number(),
+  severity: z.number().positive(),
+  usersAffected: z.number().int().nonnegative(),
+  reporters: z.array(z.string()),
+  linked: z.array(z.string()),
+  hints: z.array(z.string()),
+  rawRefs: z.array(z.string()),
+  paying: z.boolean().default(false),
+});
+export type OreChunk = z.infer<typeof OreChunk>;
+
+export const QualityTier = z.enum(["normal", "uncommon", "rare", "epic", "legendary"]);
+export const Inspection = z.object({
+  headSha: z.string(),
+  state: z.enum(["pending", "passed", "rework"]),
+  quality: QualityTier.optional(),
+  stages: z.array(z.object({
+    gate: z.enum(["ci", "verify", "ai", "human"]),
+    state: z.enum(["pending", "passed", "rework"]),
+    reason: z.string(),
+  })),
+  humanApproved: z.boolean().default(false),
+});
+export type Inspection = z.infer<typeof Inspection>;
+
 export const ItemState = z.enum(["ore", "queued", "working", "inspecting", "rejected", "passed", "on_pad", "launched"]);
 export type ItemState = z.infer<typeof ItemState>;
 
@@ -40,6 +81,8 @@ export const Item = z.object({
   updatedAt: z.number(),
   customer: CustomerContext.optional(),
   value: z.number().optional(), // Spark's weight for this item; drives the bottleneck math
+  ore: OreChunk.optional(),
+  inspection: Inspection.optional(),
 });
 export type Item = z.infer<typeof Item>;
 
@@ -239,5 +282,6 @@ export const FactoryState = z.object({
   autonomy: Autonomy.optional(),
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
+  sources: z.array(SourceStatus).optional(),
 });
 export type FactoryState = z.infer<typeof FactoryState>;

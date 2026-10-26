@@ -18,6 +18,8 @@ import {
   Move,
   PowerSource,
   Science,
+  SourceKind,
+  SourceStatus,
 } from "./model";
 
 // ---------- server → web ----------
@@ -37,6 +39,7 @@ export const Patch = z.object({
   autonomy: Autonomy.optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
+  sources: z.array(SourceStatus).optional(), // full replacement when present
 });
 export type Patch = z.infer<typeof Patch>;
 
@@ -61,6 +64,7 @@ export const ServerToWeb = z.discriminatedUnion("type", [
   z.object({ type: z.literal("move_resolved"), moveId: z.string(), optionId: z.string().optional(), actor: Actor }),
   // The unlock moment. With district, that district earned (or lost) its launch permit.
   z.object({ type: z.literal("autonomy_unlocked"), level: AutonomyLevel, district: z.string().optional(), text: z.string() }),
+  z.object({ type: z.literal("source_setup"), source: SourceStatus }),
 ]);
 export type ServerToWeb = z.infer<typeof ServerToWeb>;
 
@@ -85,6 +89,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
+  z.object({ type: z.literal("connect_source"), kind: SourceKind }),
+  z.object({ type: z.literal("disconnect_source"), kind: SourceKind }),
 ]);
 export type WebToServer = z.infer<typeof WebToServer>;
 
