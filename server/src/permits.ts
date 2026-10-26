@@ -3,6 +3,7 @@
 // in the lane revokes its permit and resets the streak. Pure rules; the Factory DO stores the book.
 
 import type { Autonomy, DistrictTrust, Item, Move } from "@shiptorio/shared";
+import { countClean, ladderOf, nextStep, type Ladder } from "./levels";
 
 const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
 
@@ -20,6 +21,7 @@ export interface PermitBook {
   lanes: Record<string, LaneRecord>;
   launches: number; // every rocket since permits started counting
   autoLaunches: number; // rockets that launched on a permit
+  ladder?: Ladder; // factory-wide autonomy level (src/levels.ts), behind the "autonomy" flag
 }
 
 export const emptyBook = (): PermitBook => ({ lanes: {}, launches: 0, autoLaunches: 0 });
@@ -51,10 +53,10 @@ export const shippedClean = (item: Item): boolean =>
 
 /** A rocket launched. Returns the updated book. */
 export function recordShip(book: PermitBook, item: Item, auto: boolean): PermitBook {
-  const next: PermitBook = { ...book, lanes: { ...book.lanes }, launches: book.launches + 1, autoLaunches: book.autoLaunches + (auto ? 1 : 0) };
+  const clean = shippedClean(item);
+  const next: PermitBook = { ...(clean ? countClean(book) : book), lanes: { ...book.lanes }, launches: book.launches + 1, autoLaunches: book.autoLaunches + (auto ? 1 : 0) };
   if (!item.lane) return next;
   const r = record(book, item.lane);
-  const clean = shippedClean(item);
   next.lanes[item.lane] = { ...r, shipped: r.shipped + 1, streak: clean ? r.streak + 1 : 0, autoLaunched: r.autoLaunched + (auto ? 1 : 0) };
   return next;
 }
@@ -115,13 +117,14 @@ export function permitMove(r: LaneRecord, now = Date.now()): Move {
   };
 }
 
-/** What the HUD shows: per-lane trust and permits, and how much of the shipping runs itself. */
-export function autonomyView(book: PermitBook): Autonomy {
+/** What the HUD shows: per-lane trust and permits, and how much of the shipping runs itself. Levels only with the "autonomy" flag. */
+export function autonomyView(book: PermitBook, levels = false, now = Date.now()): Autonomy {
   const lanes = Object.values(book.lanes);
+  const step = levels ? nextStep(book, now) : null;
   return {
-    level: "advisor",
+    level: levels ? ladderOf(book, now).level : "advisor",
     districts: lanes.map((r) => ({ district: r.lane, score: Math.min(1, r.streak / needFor(r.lane)), risk: riskOf(r.lane), permit: r.permit })),
-    next: null,
+    next: step && { level: step.level, have: step.have, need: step.need, label: step.label },
     ranAlone: book.autoLaunches,
     automated: book.launches ? book.autoLaunches / book.launches : 0,
     launches: book.launches,
