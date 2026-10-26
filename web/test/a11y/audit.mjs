@@ -23,10 +23,11 @@ const SCREENS = [
   ["deck", "?source=sim&scenario=checkin"],
   ["deck-details", "?source=sim&scenario=checkin", async (p) => p.keyboard.press("ArrowUp")],
   ["tray", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /^Activity/ }).click()],
-  ["line", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /^Line/ }).click()],
-  ["power", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /^Power/ }).click()],
+  ["line", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /Line$/ }).click()],
+  ["power", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /Power$/ }).click()],
   ["guide", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /^Field guide/ }).click()],
-  ["station", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: /^Factory status/ }).click().then(() => p.locator(".a11y-view button").first().click())],
+  ["station", "?source=sim&scenario=heal", async (p) => p.getByRole("button", { name: "Factory status as text" }).click().then(() => p.locator(".a11y-view button.lrow").first().click())],
+  ["status", "?source=sim&scenario=heal", async (p) => p.keyboard.press("t")],
   ["thinks", "?source=sim&scenario=heal&thinks"],
   ["research", "?source=sim&scenario=research", async (p) => p.getByRole("button", { name: /^Research/ }).click()],
 ];
@@ -35,6 +36,7 @@ const browser = await chromium.launch();
 let bad = 0;
 for (const [name, q, open] of SCREENS) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  page.setDefaultTimeout(8000);
   await page.goto(base + q);
   await page.waitForTimeout(2500);
   try {
@@ -46,10 +48,14 @@ for (const [name, q, open] of SCREENS) {
     await page.close();
     continue;
   }
+  await page.screenshot({ path: join(out, `${name}.png`) });
+  // Contrast can't be judged over a WebGL canvas, so axe sees the HUD over the map's darkest backdrop (the void).
+  // Fades are finished first: a caption halfway out isn't text anyone has to read.
+  await page.addStyleTag({ content: "canvas.map{visibility:hidden} html,body,#root,.app,.floor{background:#1b2448 !important} *{backdrop-filter:none !important; transition:none !important}" });
+  await page.waitForTimeout(100);
   await page.addScriptTag({ content: axe });
   const res = await page.evaluate(() => window.axe.run(document, { resultTypes: ["violations"] }));
   const serious = res.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  await page.screenshot({ path: join(out, `${name}.png`) });
   console.log(`${serious.length ? "✗" : "✓"} ${name}: ${serious.length} serious/critical, ${res.violations.length - serious.length} minor`);
   for (const v of res.violations) {
     console.log(`   [${v.impact}] ${v.id}: ${v.help}`);

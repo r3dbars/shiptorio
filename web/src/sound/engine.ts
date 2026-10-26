@@ -41,6 +41,12 @@ import { SCAPES, type Focus } from "./scapes";
 import { MusicPlayer } from "./musicPlayer";
 import type { MusicInput } from "./music";
 
+export const SFX_EVENT = "shiptorio:sfx";
+export interface SfxEvent {
+  sfx: Sfx;
+  delayMs: number;
+}
+
 export type { Focus };
 type Settings = { muted: boolean; volume: number; music: boolean };
 const KEY = "shiptorio.sound";
@@ -402,6 +408,8 @@ class SoundEngine {
 
   // near: this sound belongs to the thing you're focused on, so it plays up close, unmuffled
   play(s: Sfx, delay = 0, near = false) {
+    // captions hear every sound, even muted or before the first click (ui/SoundCaptions.tsx)
+    window.dispatchEvent(new CustomEvent<SfxEvent>(SFX_EVENT, { detail: { sfx: s, delayMs: delay * 1000 } }));
     if (!this.live) return;
     this.out = near && this.focus ? this.near! : this.floor!;
     const now = performance.now();

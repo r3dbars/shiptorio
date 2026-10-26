@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "a11y": "node test/a11y/audit.mjs && node test/a11y/keyboard.mjs"
   },
   "dependencies": {
     "@sentry/react": "^11.9.0",

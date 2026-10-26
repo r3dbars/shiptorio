@@ -24,6 +24,8 @@ import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
 import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
+import { FactoryText, factorySummary } from "./ui/FactoryText";
+import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
@@ -38,6 +40,7 @@ const SLOTS = POWER.slots;
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
+type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "status";
 const WORLD_KEY = "shiptorio:world";
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
@@ -141,7 +144,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (progressing && state) prog.open(deck.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -234,8 +237,32 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
+  // Keyboard players: whatever opens (a sheet, a station panel, the tray, the deck) takes focus,
+  // and focus goes back to what opened it when it closes.
+  const opened = tray ? "tray" : panel ? `panel:${panel}` : checkin ? "checkin" : sheet;
+  const opener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!opened) {
+      const back = opener.current;
+      opener.current = null;
+      // what opened it may be gone (a row in a sheet that became a panel): land on the map instead
+      (back?.isConnected ? back : document.querySelector<HTMLElement>("canvas.map"))?.focus({ preventScroll: true });
+      return;
+    }
+    const was = document.activeElement as HTMLElement | null;
+    if (!opener.current && was && was !== document.body) opener.current = was;
+    const box = document.querySelector<HTMLElement>(".tray, .stationpanel, .checkin, .sheet");
+    if (!box || box.contains(document.activeElement)) return;
+    const first = box.matches(".checkin") ? box.querySelector<HTMLElement>(".ci-card[tabindex]") : box.querySelector<HTMLElement>("h2, .ptitle");
+    if (first) {
+      if (!first.hasAttribute("tabindex")) first.tabIndex = -1;
+      first.focus({ preventScroll: true });
+    }
+  }, [opened]);
+
+  // T opens the text view of the factory, C the sound captions.
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
   keys.current = { launch, build, show, intro };
@@ -244,6 +271,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
       if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
+      else if (k === "t") setSheet((v) => (v === "status" ? null : "status"));
+      else if (k === "c") captions.set(!captions.on);
       else if (k === "b" && keys.current.show("launch")) keys.current.launch();
       else if (k === "a" && keys.current.show("build")) keys.current.build();
       else if (k === "escape") {
@@ -255,6 +284,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     return () => window.removeEventListener("keydown", key);
   }, []);
 
+  const captionsOn = useCaptionsOn();
   const stats = metrics && (
     <div className="tray-stats">
       <div title={STATS.score.title}>
@@ -288,6 +318,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         {SETTINGS.howItThinks}
       </button>
       <SoundControl />
+      <div className="row2">
+        <span>Sound captions (C)</span>
+        <button type="button" className="toggle" aria-pressed={captionsOn} onClick={() => captions.set(!captionsOn)}>
+          {captionsOn ? "On" : "Off"}
+        </button>
+      </div>
       {show("labels") && (
         <div className="row2">
           <span>{SETTINGS.labels}</span>
@@ -312,6 +348,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   return (
     <div className={panel ? "app picked" : "app"}>
       <main className="floor">
+        <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>
         <FactoryMap
           state={state}
           onPick={pickOnMap}
@@ -325,7 +362,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
           satellites={intro ? undefined : satellites}
           empire={!intro && sheet === "empire"}
+          summary={factorySummary(state)}
         />
+        <SoundCaptions />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
         {intro && tourly.top}
@@ -388,6 +427,18 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           {!world && show("checkin") && deck.length > 1 && !checkin && (
             <button type="button" className="checkin-chip" onClick={() => setCheckin(true)} aria-label={HUD.checkinLabel(deck.length)}>
               {HUD.checkinChip(deck.length)}
+            </button>
+          )}
+          {state && (
+            <button
+              type="button"
+              className="hud-iconbtn"
+              aria-pressed={sheet === "status"}
+              onClick={() => toggleSheet("status")}
+              aria-label="Factory status as text"
+              title="Factory status as text (T)"
+            >
+              <Icon name="eye" size={20} />
             </button>
           )}
           <button
@@ -474,6 +525,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
+        ) : sheet === "status" && state ? (
+          <FactoryText state={state} onOpen={(k) => { setSheet(null); setPanel(k); }} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
