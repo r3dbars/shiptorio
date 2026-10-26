@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, symlink, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertLocalEndpoint, detectLocalModel, localModelConfig, parseLocalEdits, runLocalAssembler, OLLAMA_URL } from "../src/local-model";
+import { assertLocalEndpoint, assertResolvesLocal, detectLocalModel, localModelConfig, parseLocalEdits, runLocalAssembler, OLLAMA_URL } from "../src/local-model";
 import { fakeOllama, type FakeOllama } from "./fake-ollama";
 
 let server: FakeOllama | undefined;
@@ -120,4 +120,12 @@ test("HTTP envelope caps reject oversized discovery and completion before edits"
       expect(await readFile(join(work, "README.md"), "utf8")).toBe("original synthetic file");
     } finally { endpoint.stop(true); }
   }
+});
+
+test("a local-looking name must resolve to a local address", async () => {
+  await expect(assertResolvesLocal("http://gpu-box.local:8000/v1", async () => [{ address: "192.168.1.20" }])).resolves.toBeUndefined();
+  await expect(assertResolvesLocal("http://localhost:11434/v1", async () => [{ address: "127.0.0.1" }, { address: "::1" }])).resolves.toBeUndefined();
+  await expect(assertResolvesLocal("http://gpu-box.local:8000/v1", async () => [{ address: "93.184.216.34" }])).rejects.toThrow("resolve");
+  await expect(assertResolvesLocal("http://gpu-box.local:8000/v1", async () => [{ address: "10.0.0.2" }, { address: "8.8.8.8" }])).rejects.toThrow("resolve");
+  await expect(assertResolvesLocal("http://127.0.0.1:1/v1")).resolves.toBeUndefined();
 });

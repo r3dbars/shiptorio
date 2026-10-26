@@ -1,5 +1,6 @@
 import { lstat, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { lookup } from "node:dns/promises";
 
 // Geothermal power: a model on the player's own hardware (Ollama, llama.cpp server, LM Studio, MLX)
 // behind an OpenAI-compatible endpoint. Free and always on, but small, so it only gets small jobs.
@@ -9,6 +10,14 @@ export const OLLAMA_URL = "http://localhost:11434/v1";
 export const LOCAL_LIMITS = { maxFiles: 3, maxFileBytes: 64_000, maxOutputBytes: 400_000, maxResponseBytes: 800_000, maxDiscoveryBytes: 64_000, timeoutMs: 10 * 60 * 1000 } as const;
 
 const PRIVATE_HOST = /^(?:localhost|127\.\d+\.\d+\.\d+|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|[\w-]+\.local)$/i;
+
+const PRIVATE_IP = /^(?:127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|::1|f[cd][0-9a-f]{2}:.*|fe[89ab][0-9a-f]:.*)$/i;
+/** A name (localhost, *.local) is only a hint: every address it resolves to must be loopback or private. */
+export async function assertResolvesLocal(baseUrl: string, resolve: (host: string) => Promise<{ address: string }[]> = host => lookup(host, { all: true })): Promise<void> {
+  const host = new URL(baseUrl).hostname.replace(/^\[|\]$/g, "");
+  const addresses = await resolve(host);
+  if (!addresses.length || addresses.some(a => !PRIVATE_IP.test(a.address))) throw new Error("Local model host must resolve to this computer or your local network");
+}
 
 /** Code goes to the endpoint, so it must stay on this machine or the local network. */
 export function assertLocalEndpoint(raw: string): string {
@@ -61,6 +70,7 @@ async function boundedJson(response: Response, limit: number): Promise<unknown> 
 /** Ollama, llama.cpp and LM Studio all answer GET /v1/models with { data: [{ id }] }. */
 export async function detectLocalModel(config: LocalModelConfig, fetchImpl: typeof fetch = fetch): Promise<{ ok: boolean; models: string[]; reason?: string }> {
   try {
+    await assertResolvesLocal(config.baseUrl);
     const r = await fetchImpl(`${config.baseUrl}/models`, { signal: AbortSignal.timeout(3000), redirect: "error" });
     if (!r.ok) return { ok: false, models: [], reason: `endpoint answered ${r.status}` };
     const body = await boundedJson(r, LOCAL_LIMITS.maxDiscoveryBytes) as { data?: { id?: unknown }[] };
@@ -140,6 +150,7 @@ export function parseLocalEdits(text: string, allowedPaths: string[]): { summary
 export async function runLocalAssembler(job: { plan: string; allowedPaths: string[] }, work: string, config: LocalModelConfig, fetchImpl: typeof fetch = fetch): Promise<{ summary: string; paths: string[] }> {
   if (!job.allowedPaths.length || job.allowedPaths.length > LOCAL_LIMITS.maxFiles) throw new Error(`Local power takes 1-${LOCAL_LIMITS.maxFiles} files; route this job to a subscription`);
   const files = await readScope(work, job.allowedPaths);
+  await assertResolvesLocal(config.baseUrl);
   const r = await fetchImpl(`${config.baseUrl}/chat/completions`, {
     redirect: "error", method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(LOCAL_LIMITS.timeoutMs),
     body: JSON.stringify({ model: config.model, messages: localMessages(job.plan, files), temperature: 0.1, stream: false, response_format: { type: "json_object" } }),
