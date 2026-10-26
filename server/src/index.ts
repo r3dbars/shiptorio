@@ -68,13 +68,13 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 
 app.use("*", async (c, next) => {
   const trace: Trace = { requestId: crypto.randomUUID() };
-  const user = await currentUser(c.env, c.req.header("cookie") ?? null);
-  if (user) trace.userId = user.login;
   const match = c.req.path.match(/^\/api\/repos\/([\w.-]+\/[\w.-]+)/);
   if (match) trace.repo = match[1].toLowerCase();
   const start = Date.now();
   return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
     c.header("X-Request-ID", trace.requestId);
+    const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+    if (user) { trace.userId = user.login; Sentry.setUser({ id: user.login }); }
     await next();
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);

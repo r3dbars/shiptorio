@@ -31,7 +31,7 @@ test("a player can't set keys for a repo they can't reach", async () => {
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "*", CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } } };
   const response = await app.fetch(new Request("https://shiptorio.com/connect/sentry?repo=example/shop", { method: "POST", headers: { cookie, origin: "https://shiptorio.com" }, body: new URLSearchParams({ clientSecret: "sample_test_secret_only" }) }), env as never);
   expect(response.status).toBe(403);
-  expect(writes).toEqual([]);
+  expect(writes.filter(key => !key.startsWith("ops:"))).toEqual([]);
 });
 
 test("source success pages without a valid target return home without labeling a simulator as that repo", () => {

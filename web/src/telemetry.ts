@@ -5,7 +5,7 @@ let requestId: string | undefined;
 export async function initTelemetry() {
   // Runtime config keeps the DSN in one Worker secret and release identical to /api/version.
   try {
-    const response = await fetch('/api/telemetry/config');
+    const response = await fetch('/api/telemetry/config', { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return;
     const config = await response.json() as { dsn: string | null; release: string; userId: string | null; requestId: string };
     requestId = config.requestId;
