@@ -12,28 +12,32 @@
   animation: mappop-rise 1.6s ease-out both;
 }
 .mappop b {
-  font: 700 14px var(--pixel, Silkscreen, monospace);
-  letter-spacing: 0.06em;
-  padding: 2px 6px;
-  background: var(--panel, #0e1329);
-  border: 2px solid currentColor;
+  font: 700 14px var(--pixel);
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel-solid);
+  border: 1px solid currentColor;
 }
 .mappop.pass { color: var(--green, #5bd18b); }
 .mappop.fail { color: var(--red, #ff5e52); }
 .mappop.caught { color: var(--red, #ff5e52); animation-name: mappop-slam; }
 .mappop.caught b {
-  font-size: 22px;
-  padding: 4px 10px;
+  font-size: 24px;
+  padding: 4px 14px;
+  border-width: 2px;
+  border-radius: 12px;
   background: #2a0a08;
   box-shadow: 0 0 0 2px #2a0a08, 0 0 24px rgba(255, 94, 82, 0.55);
 }
 .mappop.caught i {
   font-style: normal;
-  font-size: 12px;
-  color: var(--ink, #eef1fa);
-  background: var(--panel, #0e1329);
-  border: 1px solid var(--red, #ff5e52);
-  padding: 2px 6px;
+  font: 500 13px var(--mono);
+  color: var(--ink);
+  background: var(--panel-solid);
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 3px 8px;
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;

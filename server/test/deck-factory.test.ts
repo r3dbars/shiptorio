@@ -1,3 +1,4 @@
+import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -32,16 +33,16 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
       return { success: true };
     },
   }; } }; } };
-  const socket = { send: (raw: string) => events.push(JSON.parse(raw)) };
+  const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
-  const reload = () => new Factory(ctx as never, { DB } as never);
+  const reload = () => new Factory(ctx as never, { ...browserEnv, DB } as never);
   const factory = reload();
-  const send = (value: unknown, instance = factory) => instance.webSocketMessage({} as never, JSON.stringify(value));
+  const send = (value: unknown, instance = factory) => instance.webSocketMessage(authorizedSocket(), JSON.stringify(value));
   const checkin = async (instance = factory) => {
     const prior = (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair;
     (globalThis as unknown as { WebSocketPair: unknown }).WebSocketPair = class { 0 = {}; 1 = socket; };
-    try { const response = await instance.fetch(new Request("https://shiptorio.com/api/factory/demo", { headers: { upgrade: "websocket" } })); expect(response.status).toBe(101); }
+    try { const response = await instance.fetch(new Request("https://shiptorio.com/api/factory/demo", { headers: { upgrade: "websocket", cookie: await browserCookies() } })); expect(response.status).toBe(101); }
     finally { (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair = prior; }
   };
   const saved = () => data.get("state") as FactoryState;

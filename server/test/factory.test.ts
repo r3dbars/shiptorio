@@ -1,3 +1,4 @@
+import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -25,8 +26,8 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
     async setAlarm(value: number) { alarm = value; },
   };
   let exclusive: Promise<unknown> = Promise.resolve();
-  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-  const env = { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
+  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
+  const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
   const factory = new Factory(ctx as never, env as never);
   return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
 }
@@ -115,9 +116,9 @@ describe("Factory lifecycle", () => {
         const pairing = await g.factory.pairRunner();
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         const proposal = g.saved().move!;
-        await g.factory.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: "forged", optionId: "codex" }));
+        await g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: "forged", optionId: "codex" }));
         expect(await g.factory.runnerJobs()).toHaveLength(0);
-        await g.factory.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: proposal.id, optionId: "codex" }));
+        await g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: proposal.id, optionId: "codex" }));
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         await g.factory.alarm();
         expect((await g.factory.runnerJobs())[0].status).toBe("awaiting_approval");
@@ -136,22 +137,22 @@ describe("Factory lifecycle", () => {
       const approved = await prepareBrowserPlan();
       const reconnected = approved.g.reload();
       const approve = JSON.stringify({ type: "choose_move", moveId: approved.approval.id, optionId: "approve" });
-      await reconnected.webSocketMessage({} as never, approve);
-      await reconnected.webSocketMessage({} as never, approve);
+      await reconnected.webSocketMessage(authorizedSocket(), approve);
+      await reconnected.webSocketMessage(authorizedSocket(), approve);
       expect((await reconnected.runnerJobs())[0].status).toBe("ready");
       expect((await reconnected.runnerJobs())[0].approvedAt).toBeGreaterThan(0);
       const doubleClaim = await Promise.all([reconnected.claimRunner(approved.pairing, ["codex"]), reconnected.claimRunner(approved.pairing, ["codex"])]);
       expect(doubleClaim.filter(Boolean)).toHaveLength(1);
 
       const declined = await prepareBrowserPlan();
-      await declined.g.factory.webSocketMessage({} as never, JSON.stringify({ type: "defer_move", moveId: declined.approval.id }));
+      await declined.g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "defer_move", moveId: declined.approval.id }));
       expect(await declined.g.factory.claimRunner(declined.pairing, ["codex"])).toBeNull();
       expect(declined.g.saved().deck?.some(m => m.id === declined.approval.id)).toBe(false);
       expect((await declined.g.factory.runnerJobs())[0].status).toBe("awaiting_approval"); // Later keeps the exact plan for the next check-in.
 
       const stale = await prepareBrowserPlan();
       for (const signal of normalizeGitHub({ repository: { full_name: "r3dbars/demo" }, issue: { number: 1, title: "Changed scope", body: "New request", html_url: "https://github.com/r3dbars/demo/issues/1", updated_at: "2026-10-26T19:00:00Z" } })) await stale.g.factory.ingestSignal(signal);
-      await stale.g.factory.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: stale.approval.id, optionId: "approve" }));
+      await stale.g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: stale.approval.id, optionId: "approve" }));
       expect((await stale.g.factory.runnerJobs())[0].status).toBe("failed");
       expect(await stale.g.factory.claimRunner(stale.pairing, ["codex"])).toBeNull();
 
@@ -211,8 +212,8 @@ describe("Factory lifecycle", () => {
   });
   it("accepts build commands but ignores malformed messages and removal of active machinery", async () => {
     const f = fixture();
-    await f.factory.webSocketMessage({} as never, "not JSON");
-    await f.factory.webSocketMessage({} as never, JSON.stringify({ type: "place_machine", machineType: "assembler", harness: "spark", x: 8, y: 0 }));
+    await f.factory.webSocketMessage(authorizedSocket(), "not JSON");
+    await f.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "place_machine", machineType: "assembler", harness: "spark", x: 8, y: 0 }));
     expect(f.saved().machines.at(-1)?.powerId).toBe("steam-spark");
     expect(f.saved().machines).toHaveLength(starterLine().machines.length + 1);
   });

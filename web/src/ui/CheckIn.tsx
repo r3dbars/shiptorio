@@ -169,8 +169,8 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
   return (
     <section className={`checkin${zoomed ? " zoomed" : ""}`} aria-label="Check-in">
       <header className="ci-bar card">
-        <b>CHECK-IN</b>
-        <span className="ci-count">{top ? `${cards.length} LEFT` : "ALL CLEAR"}</span>
+        <b>Check-in</b>
+        <span className="ci-count">{top ? `${cards.length} left` : "All clear"}</span>
         <div className="ci-pips" aria-hidden="true">
           {Array.from({ length: Math.min(12, total) }, (_, i) => (
             <i key={i} className={i < swiped ? "done" : i === swiped && top ? "cur" : ""} />
@@ -252,7 +252,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
             })
         ) : (
           <div className="ci-clear card">
-            <div className="ci-title">ALL CLEAR</div>
+            <div className="ci-title">All clear</div>
             <p className="ci-why">{swiped ? `${swiped} calls. The factory's moving without you now.` : "Nothing needs you right now. A card shows up when something does."}</p>
             {swiped > 0 && (
               <div className="ci-tally">
@@ -291,16 +291,16 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
       {top && (
         <div className="ci-actions">
           <button type="button" className="ci-act never" onClick={() => act("down")}>
-            <span className="k">✕</span>NEVER ↓
+            <span className="k">✕</span>Never ↓
           </button>
           <button type="button" className="ci-act later" onClick={() => act("left")}>
-            <span className="k">↶</span>LATER ←
+            <span className="k">↶</span>Later ←
           </button>
           <button type="button" className="ci-act more" onClick={() => act("up")}>
-            <span className="k">i</span>DETAILS ↑
+            <span className="k">i</span>Details ↑
           </button>
           <button type="button" className="ci-act do" onClick={() => act("right")}>
-            <span className="k">✓</span>DO IT →
+            <span className="k">✓</span>Do it →
           </button>
         </div>
       )}
