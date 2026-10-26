@@ -9,6 +9,7 @@ import {
   type FactoryState,
   type Item,
   type Machine,
+  type Move,
   type Patch,
   type ServerToWeb,
 } from "@shiptorio/shared";
@@ -18,6 +19,7 @@ import { layoutMap } from "./map";
 import { pickFiles, planLocalTask, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
 import { runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal } from "./ore";
+import { diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, reviewComment, reviewDiff, reworkMove, setStage, stageOf, verifyFromDiff } from "./gauntlet";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 
@@ -170,7 +172,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\nHuman review and merge required. Independent verification/review stations remain pending.` });
     job.status = "completed"; job.prUrl = pr.html_url;
     await this.ctx.storage.put(`runnerJob:${job.id}`, job);
-    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", inspection: { headSha: receipt.sha, state: "pending", humanApproved: false, stages: [{ gate: "ci", state: "pending", reason: "Waiting for current-head CI" }, { gate: "verify", state: "pending", reason: "Independent proof required" }, { gate: "ai", state: "pending", reason: "Independent review required" }, { gate: "human", state: "pending", reason: "Human merge required" }] }, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
+    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", machineId: "ci-1", inspection: freshInspection(receipt.sha), updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
     this.log("success", `Local ${job.harness} opened PR #${pr.number}; waiting for CI and independent verification.`, item.id);
     return { prUrl: pr.html_url };
   }
@@ -288,6 +290,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (this.state) {
         for (const i of this.state.items) if (i.state === "working") i.state = "queued";
         for (const m of this.state.machines) if (m.state === "working") m.state = "idle";
+        migrateGauntlet(this.state);
+        this.state.stations = liveStations(this.state);
       }
     }
     return this.state;
@@ -329,6 +333,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.sources) s.sources = p.sources;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
+    // Station piles follow the items, so every item change re-counts the gauntlet.
+    if (p.items || p.removed) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
     this.broadcast({ type: "patch", patch: p });
   }
@@ -404,13 +410,21 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (result.state === "pending") continue;
       if (result.state === "passed") {
         if (item.branch?.startsWith("shiptorio/runner-")) {
-          await this.patch({ items: [{ ...item, inspection: { headSha: headSha ?? "unknown", state: "pending", humanApproved: false, stages: [{ gate: "ci", state: "passed", reason: result.summary }, { gate: "verify", state: "pending", reason: "Independent proof required" }, { gate: "ai", state: "pending", reason: "Independent review required" }, { gate: "human", state: "pending", reason: "Human merge required" }] }, updatedAt: Date.now() }] });
-          this.log("success", `CI passed PR #${item.prNumber}; independent verification and review remain pending.`, item.id);
+          // Every check run reports in; only a new head (or the first green) restarts the gauntlet.
+          if (stageOf(item, "ci")?.state === "passed" && (!headSha || headSha === item.inspection?.headSha)) continue;
+          const fresh = { ...item, inspection: freshInspection(headSha ?? item.inspection?.headSha ?? "unknown") };
+          await this.patch({ items: [setStage(fresh, "ci", "passed", result.summary)] });
+          this.log("success", `CI inspector passed PR #${item.prNumber}. On to the verify bay.`, item.id);
+          await this.scheduleTick();
           continue;
         }
         const onPad = this.state!.machines.some((m) => m.type === "launch_pad");
         await this.patch({ items: [{ ...item, state: onPad ? "on_pad" : "passed", failure: undefined, updatedAt: Date.now() }] });
         this.log("success", `Inspector passed PR #${item.prNumber}. Ready to launch.`, item.id);
+      } else if (item.branch?.startsWith("shiptorio/runner-")) {
+        await this.patch({ items: [setStage(item, "ci", "rework", result.summary.split("\n")[0] || "CI failed")] });
+        this.log("warn", `CI inspector sent PR #${item.prNumber} back: ${result.summary.split("\n")[0]}`, item.id);
+        await this.scheduleTick();
       } else {
         await this.patch({ items: [{ ...item, state: "rejected", failure: result.summary, updatedAt: Date.now() }] });
         this.log("warn", `Inspector rejected PR #${item.prNumber}: ${result.summary}`, item.id);
@@ -451,6 +465,113 @@ export class Factory extends DurableObject<FactoryEnv> {
       trust: Math.min(1, s.trust + 0.05),
     });
     this.log("success", `Rocket launched: PR #${prNumber} merged.`, item.id);
+    if (s.move?.itemId === item.id) await this.publishGauntletMove(null);
+  }
+
+  // ---------- the gauntlet (docs/LOOP.md) ----------
+
+  private gauntletRunning = false;
+
+  /** Runs the next pending station (verify bay, then AI review) for one PR per tick. */
+  private async runGauntlet(): Promise<void> {
+    if (this.gauntletRunning || !this.meta || !this.state) return;
+    const item = this.state.items.find((i) => nextGate(i) && i.prNumber);
+    if (!item) return;
+    const gate = nextGate(item)!;
+    if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
+    this.gauntletRunning = true;
+    const pr = item.prNumber!;
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      const files = await prFiles(token, this.meta.repo, pr);
+      const job = (await this.runnerJobs()).find((j) => j.itemId === item.id && j.prUrl?.endsWith(`/pull/${pr}`));
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
+      const current = () => this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
+      if (gate === "verify") {
+        const v = verifyFromDiff(files.map((f) => f.filename), !!job);
+        const now = current();
+        if (!now) return;
+        await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
+        this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
+      } else {
+        this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
+        const verdict = await reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files));
+        const now = current();
+        if (!now) return;
+        await gh(`/repos/${this.meta.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body: reviewComment(verdict, builder) }) }).catch(() => null);
+        await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
+        this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
+      }
+      await this.scheduleTick();
+    } catch {
+      this.log("warn", `The ${gate === "ai" ? "AI review" : "verify bay"} couldn't run on PR #${pr}. It will retry on the next event.`, item.id);
+    } finally {
+      this.gauntletRunning = false;
+    }
+  }
+
+  private async publishGauntletMove(move: Move | null): Promise<void> {
+    const previous = this.state!.move;
+    this.state!.move = move;
+    await this.save();
+    if (move) this.broadcast({ type: "move", move });
+    else if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
+  }
+
+  /** The merge gate: a green PR on the pad, or a PR the gauntlet sent back, becomes the Next Move. */
+  private async offerGauntletMove(): Promise<void> {
+    const s = this.state;
+    if (!s || (s.move && s.move.stage !== "resources")) return;
+    const now = Date.now();
+    for (const item of s.items) {
+      if (!item.prNumber || (await this.ctx.storage.get<number>(`gauntletDeferred:${item.id}`) ?? 0) > now) continue;
+      if (item.state === "on_pad" && item.inspection?.state === "passed") {
+        await this.publishGauntletMove(launchMove(item, now));
+        await this.patch({ bottleneck: { stage: "pad", stationId: "gate-1", wip: s.items.filter((i) => i.state === "on_pad").length, ageMs: Math.max(0, now - item.updatedAt), throughputPerHour: 0, valueAtRisk: item.value ?? 0, summary: `PR #${item.prNumber} passed every check. It's waiting on you to launch.` } });
+        return;
+      }
+      if (item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-") && item.scars?.length) {
+        if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) continue;
+        await this.ctx.storage.put(`gauntletOffered:${item.id}`, item.scars.length);
+        await this.publishGauntletMove(reworkMove(item, now));
+        return;
+      }
+    }
+  }
+
+  /** Handles the merge gate's own cards. Returns false for every other move. */
+  private async chooseGauntletMove(moveId: string, optionId: string): Promise<boolean> {
+    const s = this.state!;
+    const move = s.move;
+    if (!move || move.id !== moveId || !move.itemId || !(move.stage === "pad" || (move.stage === "inspect" && move.kind === "review"))) return false;
+    const item = s.items.find((i) => i.id === move.itemId);
+    if (!item?.prNumber || !this.meta) return false;
+    if (optionId === "later") {
+      await this.ctx.storage.put(`gauntletDeferred:${item.id}`, Date.now() + 10 * 60 * 1000);
+      await this.publishGauntletMove(null);
+      if (s.bottleneck?.stationId === "gate-1") await this.patch({ bottleneck: null });
+      return true;
+    }
+    const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed";
+    const overrule = optionId === "overrule" && item.state === "rejected";
+    if (!ready && !overrule) return true;
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
+      if (ready && item.inspection?.headSha !== head) throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+      await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
+      const reason = overrule ? "You overruled the gauntlet and merged." : "You merged at the merge gate.";
+      const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
+      await this.patch({ items: [{ ...item, inspection: item.inspection && { ...item.inspection, stages, humanApproved: true }, updatedAt: Date.now() }] });
+      this.broadcast({ type: "log", level: "success", text: `Launching #${item.prNumber}.`, at: Date.now(), actor: "player", tool: "request_merge", approvedBy: "player", reason, itemId: item.id });
+      await this.publishGauntletMove(null);
+      await this.patch({ bottleneck: null });
+      await this.onPullClosed(item.prNumber, true);
+    } catch (err) {
+      const why = err instanceof Error && err.message.startsWith("The PR changed") ? err.message : "GitHub didn't accept the merge. Open the PR to see why.";
+      this.log("warn", why, item.id);
+    }
+    return true;
   }
 
   // ---------- websockets (browsers) ----------
@@ -474,6 +595,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
     const s = this.state!;
+    if ((msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") && (await this.chooseGauntletMove(msg.moveId, msg.type === "choose_move" ? msg.optionId : "later"))) return;
     switch (msg.type) {
       case "connect_source": {
         if (msg.kind === "github") {
@@ -557,6 +679,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.processDeliveries();
     if (!(await this.load())) return;
     await this.planRunnerJobs();
+    await this.runGauntlet();
+    await this.offerGauntletMove();
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
     const now = Date.now();
@@ -570,6 +694,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.log("info", `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${t?.district ?? item.district}`, item.id);
       } else if (item.state === "rejected") {
         if (item.attempts >= MAX_ATTEMPTS) continue; // stays rejected until a human steps in
+        if (item.branch?.startsWith("shiptorio/runner-")) continue; // local builds rework only with player approval
         await this.patch({ items: [{ ...item, state: "queued", updatedAt: now }] });
         this.log("info", `Rework: "${item.title}" goes back to the assemblers`, item.id);
       }
