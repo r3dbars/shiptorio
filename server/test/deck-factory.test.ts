@@ -19,6 +19,7 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   let alarm: number | null = null;
   const events: ServerToWeb[] = [];
   const storage = {
+    async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); },
     async get(key: string) { return structuredClone(data.get(key)); },
     async put(key: string, value: unknown) { data.set(key, structuredClone(value)); },
     async delete(key: string) { return data.delete(key); },

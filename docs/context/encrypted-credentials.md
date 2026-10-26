@@ -46,7 +46,7 @@ reconnecting after removing the override clears the tombstone. Revocation stops 
 Shiptorio uses; an already in-flight provider request can complete, and revoking the
 provider credential itself remains a separate provider-side action.
 
-D1 migration: `0005_encrypted_credentials.sql` (renumber against main before merge).
+D1 migration: `0006_encrypted_credentials.sql` (renumber against main before merge).
 The D1 migration runs through the existing Deploy workflow; no new Cloudflare resources.
 Connection-page changes live in server-rendered `server/src/connect.ts`, not `web/`.
 
