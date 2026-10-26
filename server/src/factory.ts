@@ -64,7 +64,7 @@ import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppr
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
-import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
+import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, legacyCredentialOwner, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
 import { loadFactoryState, saveFactoryState, stateSize, persistedState } from "./state-storage";
@@ -112,7 +112,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private socketEpoch: string | null = null;
   private credentialsReady = false;
   private redactor = new Redactor(this.env);
-  private credentialScope() { return this.meta ? { installationId: this.meta.installationId, repo: this.meta.repo } : undefined; }
+  private credentialRepoId: number | null = null;
+  private credentialScope() { return this.meta && this.credentialRepoId ? { installationId: this.meta.installationId, repo: this.meta.repo, repoId: this.credentialRepoId } : undefined; }
   private running = new Set<string>(); // item ids with a job in flight
 
   private sparkEnv(): SparkEnv {
@@ -844,7 +845,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const ws of this.ctx.getWebSockets("web")) ws.close(1008, "GitHub access changed");
   }
 
-  async setRepositoryId(id: number): Promise<void> { await this.ctx.storage.put("githubRepoId", id); }
+  async setRepositoryId(id: number): Promise<void> { this.credentialRepoId = id; await this.ctx.storage.put("githubRepoId", id); }
 
   async retainReferencesById(id: number): Promise<void> {
     const meta = await this.ctx.storage.get<Meta>("meta");
@@ -1105,6 +1106,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.state = wireState;
       }
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
+      this.credentialRepoId = await this.ctx.storage.get<number>("githubRepoId") ?? null;
       // A local agent can outlive this DO instance. Preserve in-flight work; the watchdog
       // asks the player to inspect it rather than dispatching the same task twice.
       if (this.state) {
@@ -2175,8 +2177,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (meta && repoId) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`installation:${meta.installationId}:repo-id:${repoId}`).run();
         if (meta && ownsName) {
           for (const kind of ["sentry", "posthog"] as const) {
-            await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);
-            if (await linkedRepo(this.env, kind) === meta.repo) {
+            if (repoId && await legacyCredentialOwner(this.env, kind, { repoId, installationId: meta.installationId, repo: meta.repo })) {
+              await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);
               await this.env.CACHE?.delete(`cred:${kind}`);
               await this.env.CACHE?.delete(`link:${kind}`);
             }

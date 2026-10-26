@@ -171,6 +171,7 @@ test("a revoke racing lazy master-key rotation wins its compare-and-swap", async
 
 test("migrates account-era per-repo plaintext independently from another factory's global key", async () => {
   const { env, kv } = fixture();
+  env.SENTRY_REPO = scope.repo;
   kv.set("cred:sentry:alice/shop", JSON.stringify({ clientSecret: secret }));
   kv.set("cred:sentry", JSON.stringify({ clientSecret: "unrelated-operator-secret" }));
   kv.set("link:sentry", "r3dbars/testing");

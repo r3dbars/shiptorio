@@ -38,7 +38,7 @@ function pin(env: CredsEnv, kind: MineKind) {
   const result = { repoId: Number(repoId), installationId: Number(installationId) };
   return Number.isSafeInteger(result.repoId) && result.repoId > 0 && Number.isSafeInteger(result.installationId) && result.installationId > 0 ? result : null;
 }
-const pinned = (env: CredsEnv, kind: MineKind, scope: BoundScope) => {
+export const credentialPinMatches = (env: CredsEnv, kind: MineKind, scope: { installationId: number; repoId: number }) => {
   const expected = pin(env, kind);
   return !!expected && expected.repoId === scope.repoId && expected.installationId === scope.installationId;
 };
@@ -61,13 +61,14 @@ async function row(env: CredsEnv, scope: CredentialScope, kind: MineKind): Promi
 }
 async function migrate(env: CredsEnv, scope: BoundScope, kind: MineKind): Promise<Row | null> {
   let current = await row(env, scope, kind);
-  if (!pinned(env, kind, scope)) return current;
+  if (!credentialPinMatches(env, kind, scope)) return current;
   const name = scope.repo;
-  const ownsGlobal = await legacyName(env, kind, scope) === name;
+  if (await legacyName(env, kind, scope) !== name) return current;
+  const ownsGlobal = (await env.CACHE?.get(`link:${kind}`) ?? name).toLowerCase() === name;
   const repoKey = `cred:${kind}:${name}`;
   const old = await env.DB.prepare("SELECT envelope, revoked, linked, last_used_at FROM credentials WHERE scope = ? AND kind = ?")
     .bind(legacyKey(scope.installationId, name), kind).first<Row>();
-  if (!current && old?.revoked) {
+  if ((!current || (!current.envelope && !current.revoked)) && old?.revoked) {
     await revokeCreds(env, kind, scope);
     return row(env, scope, kind);
   }
@@ -95,7 +96,7 @@ export async function readCreds(env: CredsEnv, kind: MineKind, scope?: Credentia
   if (!bound) return {};
   const current = await migrate(env, bound, kind);
   if (current?.revoked) return {};
-  const ownFactory = pinned(env, kind, bound);
+  const ownFactory = credentialPinMatches(env, kind, bound);
   const admin = ownFactory ? override(env, kind) : {};
   let creds: Creds = kind === "sentry" ? (admin.clientSecret ? admin : {}) : (admin.apiKey && admin.projectId ? admin : {});
   if (!creds.clientSecret && !creds.apiKey && current?.envelope) {
@@ -119,9 +120,9 @@ export async function saveCreds(env: CredsEnv, kind: MineKind, creds: Creds, sco
   const envelope = await encryptCredential(env, binding(bound, kind), creds);
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, ?, 0, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = excluded.envelope, revoked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at, last_used_at = NULL")
     .bind(scopeKey(bound), kind, JSON.stringify(envelope), scope.user ?? null, Date.now()).run();
-  if (pinned(env, kind, bound)) {
+  if (credentialPinMatches(env, kind, bound) && await legacyName(env, kind, bound) === bound.repo) {
     await env.CACHE?.delete(`cred:${kind}:${bound.repo}`);
-    if (await legacyName(env, kind, bound) === bound.repo) await env.CACHE?.delete(`cred:${kind}`);
+    if (await legacyCredentialOwner(env, kind, bound)) await env.CACHE?.delete(`cred:${kind}`);
   }
 }
 export async function revokeCreds(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
@@ -129,9 +130,9 @@ export async function revokeCreds(env: CredsEnv, kind: MineKind, scope: Credenti
   if (!bound) throw new Error("Repository identity unavailable; reconnect GitHub");
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, NULL, 1, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = NULL, revoked = 1, linked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
     .bind(scopeKey(bound), kind, scope.user ?? null, Date.now()).run();
-  if (pinned(env, kind, bound)) {
+  if (credentialPinMatches(env, kind, bound) && await legacyName(env, kind, bound) === bound.repo) {
     await env.CACHE?.delete(`cred:${kind}:${bound.repo}`);
-    if (await legacyName(env, kind, bound) === bound.repo) await env.CACHE?.delete(`cred:${kind}`);
+    if (await legacyCredentialOwner(env, kind, bound)) await env.CACHE?.delete(`cred:${kind}`);
   }
 }
 export async function markUsed(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
@@ -147,7 +148,7 @@ export async function credentialStatus(env: CredsEnv, kind: MineKind, scope: Cre
   const creds = await readCreds(env, kind, bound);
   const current = await row(env, bound, kind);
   const admin = override(env, kind);
-  const workerOverride = !current?.revoked && pinned(env, kind, bound) && !!(kind === "sentry" ? admin.clientSecret : admin.apiKey && admin.projectId);
+  const workerOverride = !current?.revoked && credentialPinMatches(env, kind, bound) && !!(kind === "sentry" ? admin.clientSecret : admin.apiKey && admin.projectId);
   return { connected: !!(kind === "sentry" ? creds.clientSecret : creds.apiKey && creds.projectId), lastUsedAt: current?.last_used_at ?? null, workerOverride };
 }
 export async function linkedRepo(env: CredsEnv, kind: MineKind, scope?: CredentialScope): Promise<string | null> {
@@ -156,11 +157,18 @@ export async function linkedRepo(env: CredsEnv, kind: MineKind, scope?: Credenti
   if (!bound) return null;
   const current = await row(env, bound, kind);
   if (current?.revoked) return null;
-  return current?.linked || pinned(env, kind, bound) ? bound.repo : null;
+  return current?.linked || credentialPinMatches(env, kind, bound) ? bound.repo : null;
 }
 export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null, scope: CredentialScope): Promise<void> {
   const bound = await identity(env, scope);
   if (!bound) throw new Error("Repository identity unavailable; reconnect GitHub");
   await env.DB.prepare("INSERT INTO credentials (scope, kind, linked, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET linked = excluded.linked WHERE credentials.revoked = 0")
     .bind(scopeKey(bound), kind, repo ? 1 : 0, Date.now()).run();
+}
+
+export async function legacyCredentialOwner(env: CredsEnv, kind: MineKind, scope: { installationId: number; repoId: number; repo: string }): Promise<boolean> {
+  if (!credentialPinMatches(env, kind, scope)) return false;
+  const name = await legacyName(env, kind, scope);
+  const linked = await env.CACHE?.get(`link:${kind}`);
+  return name === scope.repo.toLowerCase() && (!linked || linked.toLowerCase() === name);
 }

@@ -328,3 +328,12 @@ authorized access and an absent binding, only on shiptorio. No value was printed
 or saved to a file; setup command is in docs/context/encrypted-credentials.md.
 
 - 2026-10-26: Art direction is **Black Iron** (Cogworks variation 1), brightened, 1x pixels, with height (high rework line) and aether conduits/tesla coils borrowed from the other variations. The art must show the real journey of each work item and obvious IDLE / WORKING / BLOCKED states. Reference build: `docs/black-iron.html`, source in `docs/art/black-iron/`. In-world signage says SHIPTORIO.
+
+Credential identity security follow-up (Oct 26): #159 protects direct D1 collisions,
+but synthetic tests reproduced name reuse through Worker overrides, unmigrated KV,
+and encrypted old-name scopes after rename. Mine storage/AAD now binds the active
+installation plus immutable GitHub repo ID. Operator overrides and legacy adoption
+require explicit installation/repo ID pins; name-only historical material remains
+unread without identity proof. Same-ID renames retain proven new connections, and
+retention deletes only the original ID's credentials. No live credentials or pins
+were accessed or changed during this follow-up.

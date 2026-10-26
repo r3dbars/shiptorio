@@ -87,13 +87,13 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("FROM repos") ? { repo_id: 501, installation_id: 1 } : rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("FROM repos") ? { repo_id: 503, installation_id: 1 } : rows.get(String(values[0])) ?? null,
       };
       expect(sql.includes("sentry") || sql.includes("FROM repos") || sql.includes("FROM installations") || sql.includes("signup_counters")).toBe(true);
 
       return statement;
     } },
-    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:501"); queued.push(`${id}:${resource}`); } }) },
+    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:503"); queued.push(`${id}:${resource}`); } }) },
   };
   env.DB = credentialDB(env.DB);
   const body = JSON.stringify(fakeSentry("issue.created"));
@@ -112,7 +112,7 @@ const { starterLine } = await import("../src/engine");
 
 function factoryFixture(env: Record<string, unknown>) {
   const state = FactoryState.parse({ repo: "example/shop", baseBranch: "main", districts: DISTRICTS.map((name, i) => ({ name, x: i * 6, y: 0, w: 4, h: 4, files: 3 })), ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+  const data = new Map<string, unknown>([["githubRepoId", 503], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
   const kv = new Map<string, string>();
   let alarm: number | null = null;
   const events: { type: string; text?: string }[] = [];
