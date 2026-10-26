@@ -136,7 +136,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
       reset();
       send(boundMessage); // exactly the card and option that were visible at gesture start
       then();
-    }, reset)) return;
+    }, () => { reset(); setToast("That card changed. Please check the next move."); })) return;
     setFly(g);
     setSheet(null);
   };

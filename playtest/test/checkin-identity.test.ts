@@ -50,3 +50,71 @@ test("closing or unmounting the deck cancels queued actions, even if a stale tim
   expect(aborted).toBe(0); // cleanup must not call React state setters after unmount
   expect(f.session.begin(a, choose(a), f.commit, () => {})).toBe(false);
 });
+
+test("removing an in-flight card cancels it and cannot redirect its action to the replacement", () => {
+  const a = card("125"), b = card("77"), f = fixture([a, b]);
+  let aborted = 0;
+  f.session.begin(a, choose(a), f.commit, () => { aborted++; });
+  const stale = f.queued()[0];
+  expect(f.session.update([b]).map(m => m.id)).toEqual(["77"]);
+  expect(aborted).toBe(1);
+  expect(f.session.begin(a, choose(a), f.commit, () => {})).toBe(false);
+  f.flush(); stale();
+  expect(f.sent).toEqual([]);
+  expect(f.session.begin(b, choose(b), f.commit, () => {})).toBe(true);
+  f.flush();
+  expect(f.sent).toEqual([choose(b)]);
+});
+
+test("changed proof or options invalidate a pending choice while keeping fresh same-id content visible", () => {
+  const a = card("125"), f = fixture([a]);
+  let aborted = 0;
+  f.session.begin(a, choose(a), f.commit, () => { aborted++; });
+  const updated = { ...a, locked: true, plan: ["Run checks first"], evidence: [{ station: "verify", ok: false }],
+    options: [{ ...a.options[0], id: "run-verify", label: "Run missing check" }] };
+  f.session.update([updated]);
+  f.flush();
+  expect(f.sent).toEqual([]); expect(aborted).toBe(1);
+  expect(f.session.cards()[0]).toBe(updated);
+  expect(f.session.begin(a, choose(a), f.commit, () => {})).toBe(false);
+  expect(f.session.begin(updated, choose(a), f.commit, () => {})).toBe(false);
+  expect(f.session.begin(updated, choose(updated), f.commit, () => {})).toBe(true);
+  f.flush();
+  expect(f.sent).toEqual([choose(updated)]);
+});
+
+test("a queued message is an immutable binding to the visible move and selected option", () => {
+  const a = card("125"), b = card("77"), f = fixture([a, b]);
+  const message = choose(a);
+  f.session.begin(a, message, f.commit, () => {});
+  message.moveId = b.id; message.optionId = b.options[0].id;
+  f.session.update([b, { ...a, why: "The wait grew while you read" }]);
+  f.flush();
+  expect(f.sent).toEqual([choose(a)]);
+});
+
+test("close/reopen cannot revive a stale flight or cancel the new session's choice", () => {
+  const a = card("125"), f = fixture([a]);
+  f.session.begin(a, { type: "defer_move", moveId: a.id }, f.commit, () => {});
+  const stale = f.queued()[0];
+  f.session.close(); f.session.open();
+  f.session.begin(a, choose(a), f.commit, () => {});
+  stale();
+  expect(f.session.busy()).toBe(true);
+  f.flush();
+  expect(f.sent).toEqual([choose(a)]);
+});
+
+test("later and never bind the visible card too, and a server-returned deferred card can rejoin", () => {
+  const a = card("125"), b = card("77"), f = fixture([a, b]);
+  f.session.begin(a, { type: "defer_move", moveId: a.id }, f.commit, () => {});
+  f.session.update([b, a]); f.flush();
+  expect(f.sent).toEqual([{ type: "defer_move", moveId: a.id }]);
+  f.session.update([b]);
+  f.session.update([a, b]);
+  expect(f.session.cards().map(m => m.id)).toEqual(["77", "125"]);
+  f.session.begin(b, { type: "dismiss_move", moveId: b.id, why: "once" }, f.commit, () => {});
+  f.flush();
+  expect(f.sent[1]).toEqual({ type: "dismiss_move", moveId: b.id, why: "once" });
+  expect(f.session.cards().map(m => m.id)).toEqual(["125"]);
+});
