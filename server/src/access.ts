@@ -10,7 +10,7 @@ export interface AccessEnv {
 const COOKIE = "shiptorio_access";
 const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" };
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const safeNext = (next: string | null) => next && /^\/(?![/\\])/.test(next) ? next : "/";
+const safeNext = (next: string | null) => next && /^\/(?![/\\])/.test(next) && !/[\\\u0000-\u0020\u007f]/.test(next) ? next : "/";
 
 // Secure cookies cannot authenticate an HTTP page. Redirect before showing the form,
 // otherwise a successful password POST looks like a silent return to the same gate.

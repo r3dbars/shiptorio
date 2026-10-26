@@ -62,7 +62,7 @@ it("checks cookie acceptance and preserves the intended factory after native for
 });
 
 it("refuses external post-login destinations", async () => {
-  for (const next of ["//attacker.example", "/\\attacker.example", "https://attacker.example"]) {
+  for (const next of ["//attacker.example", "/\\attacker.example", "https://attacker.example", "/\t/attacker.example"]) {
     const response = await previewAccess(new Request("https://shiptorio.com/access", {
       method: "POST", headers: { origin: "https://shiptorio.com" },
       body: new URLSearchParams({ password: env.APP_PASSWORD, next }),
