@@ -23,6 +23,8 @@ import {
   type PowerSource,
   type ServerToWeb,
   type Stage,
+  type Station,
+  type StationKind,
   type WebToServer,
 } from "@shiptorio/shared";
 import type { Listener, Source, StatusListener } from "../source";
@@ -41,7 +43,8 @@ interface Ore {
   kind: ItemKind;
   district: string;
   source?: OreSource;
-  failFirst?: string; // inspector rejects the first attempt with this
+  failFirst?: string; // a gauntlet station rejects the first attempt with this
+  failAt?: StationKind; // which station catches it (default: the CI inspector)
   users?: number; // usersAffected, from Sentry
   reporter?: string; // who reported it (email sender, issue author)
   linkTo?: string; // title of an earlier ore this is the same problem as; merges into it
@@ -75,7 +78,7 @@ export const SCENARIOS = {
   "quiet-morning": {
     ores: [
       { at: 2, title: "Checkout button spins forever on Safari", kind: "bug", district: "web" },
-      { at: 6, title: "Add dark mode toggle", kind: "feature", district: "web" },
+      { at: 6, title: "Add dark mode toggle", kind: "feature", district: "web", failAt: "review", failFirst: "swallows the theme load error instead of handling it" },
       { at: 11, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
       { at: 16, title: "Remove dead map cache code", kind: "cleanup", district: "server" },
     ],
@@ -98,7 +101,8 @@ export const SCENARIOS = {
         district: "checkout",
         source: "sentry",
         users: 112,
-        failFirst: "vitest: 1 failing (checkout.test.ts › applies coupon to empty cart)",
+        failAt: "verify",
+        failFirst: "passed CI, but the crash still happens with an empty cart (repro attached)",
         ask: "Send it to your Claude Code assembler with Spark's plan: guard cart.total, add a coupon-on-empty-cart test.",
         spark: [
           { tool: "get_sentry_issue", text: "New error on /checkout: TypeError: cart.total is undefined, 112 users", reason: "Sentry alert" },
@@ -139,6 +143,25 @@ export type ScenarioName = keyof typeof SCENARIOS;
 
 const SOLAR_NAME: Partial<Record<Harness, string>> = { claude_code: "Claude", codex: "ChatGPT" };
 
+// The stations in line order, with the panel actions from docs/loop.html. caught seeds "this week".
+interface StationDef {
+  id: string;
+  kind: StationKind;
+  name: string;
+  caught: number;
+  actions: Station["actions"];
+}
+const act = (id: string, label: string, recommended = false) => ({ id, label, recommended });
+const GAUNTLET: StationDef[] = [
+  { id: "ci-1", kind: "ci", name: "CI inspector", caught: 9, actions: [act("log", "Open the CI log"), act("hint", "Send back with a hint"), act("lint", "Turn this into a lint rule", true)] },
+  { id: "verify-1", kind: "verify", name: "Verify bay", caught: 5, actions: [act("second", "Build a second verify bay", true), act("recipe", "Teach a /checkout verify recipe"), act("skip-docs", "Let docs PRs skip verify")] },
+  { id: "review-1", kind: "review", name: "AI review", caught: 3, actions: [act("read", "Read the review"), act("overrule", "Overrule it, with a reason"), act("security", "Add a security reviewer", true)] },
+  { id: "gate-1", kind: "merge", name: "Merge gate", caught: 0, actions: [act("review", "Review with receipts", true), act("merge", "Merge and launch"), act("permit", "Give docs a launch permit")] },
+];
+const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
+const REWORK_ACTIONS = [act("turret", "Add a test turret on the top scar's district", true), act("scars", "See all scar tags"), act("me", "Send the oldest to me now")];
+const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
+
 function initialState(sc: Scenario): FactoryState {
   const harness = sc.harness ?? "spark";
   // Spark's steam plant powers the brain. A subscription (solar) powers the assemblers, when there is one.
@@ -149,8 +172,10 @@ function initialState(sc: Scenario): FactoryState {
     sc.unplugged
       ? { id: "assembler-1", type: "assembler", x: 0, y: 0, tier: 1, state: "blocked" }
       : { id: "assembler-1", type: "assembler", x: 0, y: 0, harness, powerId: plant, tier: 1, state: "idle" },
-    { id: "inspector-1", type: "inspector", x: 3, y: 0, tier: 1, state: "idle" },
-    { id: "launch-pad", type: "launch_pad", x: 6, y: 0, tier: 1, state: "idle" },
+    // the verification gauntlet (docs/LOOP.md); each station is an inspector-type machine
+    ...GAUNTLET.map((g, i): Machine => ({ id: g.id, type: "inspector", x: 3 + i * 3, y: 0, tier: 1, state: "idle" })),
+    { id: "launch-pad", type: "launch_pad", x: 15, y: 0, tier: 1, state: "idle" },
+    { id: "orbit-1", type: "inspector", x: 15, y: 3, tier: 1, state: "idle" },
     { id: "steam-spark", type: "steam", x: 0, y: 3, tier: 1, state: "idle" },
   ];
   const power: PowerSource[] = [{ id: "steam-spark", kind: "steam", name: "Muse Spark", level: 1, online: true }];
@@ -160,7 +185,7 @@ function initialState(sc: Scenario): FactoryState {
   }
   if (sc.ores.some((o) => o.source === "sentry")) machines.push({ id: "ore-sentry", type: "ore_deposit", x: -6, y: -3, tier: 1, state: "idle" });
   if (sc.ores.some((o) => o.source === "inbox")) machines.push({ id: "ore-inbox", type: "ore_deposit", x: -6, y: 3, tier: 1, state: "idle" });
-  const chain = ["ore-issues", "splitter-1", "assembler-1", "inspector-1", "launch-pad"];
+  const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
   const districts = sc.districts ?? REPO_DISTRICTS;
   return {
@@ -184,6 +209,7 @@ function initialState(sc: Scenario): FactoryState {
       ranAlone: 0,
     },
     foreman: { thinking: false },
+    stations: [...GAUNTLET, ORBIT].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
   };
 }
 
@@ -207,6 +233,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const onChoose = new Map<string, (optionId: string) => void>(); // move id -> what each answer does
   const pending: Move[] = []; // moves waiting behind the open card
   const undos = new Map<string, () => void>();
+  const failAt = new Map<string, StationKind | undefined>(); // item id -> station that catches the scripted failure
+  const builtBy = new Map<string, string | undefined>(); // item id -> assembler that built it
+  const watching = new Map<string, number>(); // launched item id -> tick orbit watch stops
+  const stats = new Map<string, { passed: number; failed: number; caught?: number; lastLog?: Station["lastLog"] }>();
   // ?autolaunch merges PRs on the pad by itself, for hands-off demo replays.
   const autoLaunch = new URLSearchParams(location.search).has("autolaunch");
   let pr = 140;
@@ -402,6 +432,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       value: o.users,
     };
     fails.set(item.id, o.failFirst);
+    failAt.set(item.id, o.failAt);
     byTitle.set(o.title, item.id);
     if (o.ask) asks.set(item.id, o.ask);
     apply({ items: [item] });
@@ -463,30 +494,43 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         }
         case "working": {
           const prNumber = item.prNumber ?? ++pr;
+          builtBy.set(item.id, item.machineId);
           apply({
-            items: [{ ...next, state: "inspecting", prNumber, prUrl: `https://github.com/${s.repo}/pull/${prNumber}` }],
+            items: [{ ...next, state: "inspecting", machineId: GAUNTLET[0].id, prNumber, prUrl: `https://github.com/${s.repo}/pull/${prNumber}` }],
             machines: setMachine(item.machineId, "idle"),
           });
-          log("info", `PR #${prNumber} heads to the inspector`, item.id);
+          log("info", `PR #${prNumber} heads into the gauntlet`, item.id);
           break;
         }
         case "inspecting": {
+          const at = GAUNTLET.findIndex((g) => g.id === item.machineId);
+          const st = GAUNTLET[Math.max(0, at)];
           const failure = fails.get(item.id);
-          if (failure && item.attempts === 1) {
-            apply({ items: [{ ...next, state: "rejected", failure }] });
-            log("warn", `Inspector rejected PR #${item.prNumber}: ${failure}`, item.id);
-            spark({ tool: "request_rework", text: `Told ${item.machineId ?? "the assembler"} what broke on #${item.prNumber}`, reason: failure }, { itemId: item.id, target: item.machineId });
+          if (failure && item.attempts === 1 && (failAt.get(item.id) ?? "ci") === st.kind) {
+            const scar = { station: st.kind, reason: failure, strike: item.attempts, at: now };
+            apply({ items: [{ ...next, state: "rejected", failure, scars: [...(item.scars ?? []), scar] }] });
+            record(st, false, `#${item.prNumber} ${failure}. Back to Spark on the rework belt.`);
+            log("warn", `${st.name} rejected PR #${item.prNumber}: ${failure}`, item.id);
+            spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${st.name.toLowerCase()} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
+            break;
+          }
+          record(st, true, `#${item.prNumber} passed.`);
+          const nextSt = GAUNTLET[at + 1];
+          if (nextSt && nextSt.kind !== "merge") {
+            since.set(item.id, s.tick);
+            apply({ items: [{ ...next, machineId: nextSt.id }] });
+            log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${nextSt.name.toLowerCase()}`, item.id);
           } else {
-            const pad = machine("launch_pad");
-            apply({ items: [{ ...next, state: pad ? "on_pad" : "passed", failure: undefined }] });
-            log("success", `PR #${item.prNumber} passed. On the pad.`, item.id);
-            if (pad && !autoLaunch) askToLaunch(next);
+            apply({ items: [{ ...next, state: "on_pad", machineId: "gate-1", failure: undefined }] });
+            stat("gate-1").lastLog = { who: "Spark", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
+            log("success", `PR #${item.prNumber} cleared the gauntlet. Waiting at the merge gate.`, item.id);
+            if (!autoLaunch) askToLaunch(next);
           }
           break;
         }
         case "rejected":
-          apply({ items: [{ ...next, state: "queued" }] });
-          log("info", `Rework: "${item.title}" goes back to the assemblers`, item.id);
+          apply({ items: [{ ...next, state: "queued", machineId: undefined }] });
+          log("info", `Rework: "${item.title}" goes back to the assemblers with its scar tag`, item.id);
           break;
         case "on_pad":
           if (!autoLaunch) continue;
@@ -503,8 +547,56 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const changed = JSON.stringify(bottleneck && { ...bottleneck, ageMs: 0 }) !== JSON.stringify(s.bottleneck && { ...s.bottleneck, ageMs: 0 });
     if (changed) s.bottleneck = bottleneck;
     s.metrics = metrics;
-    emit({ type: "patch", patch: { tick: s.tick, ...(metrics !== m && { metrics }), ...(changed && { bottleneck }) } });
+    // orbit watch: launched items stay watched for a while, then report all clear
+    for (const [id, until] of watching) {
+      if (s.tick < until) continue;
+      watching.delete(id);
+      const it = s.items.find((i) => i.id === id);
+      stat("orbit-1").lastLog = { who: "Orbit watch", text: `#${it?.prNumber} all clear: no new errors since the launch.`, ok: true };
+      log("success", `Orbit watch: #${it?.prNumber} all clear after launch`, id);
+    }
+    const stations = stationsNow();
+    const stationsChanged = JSON.stringify(stations) !== JSON.stringify(s.stations);
+    if (stationsChanged) s.stations = stations;
+    emit({ type: "patch", patch: { tick: s.tick, ...(metrics !== m && { metrics }), ...(changed && { bottleneck }), ...(stationsChanged && { stations }) } });
   };
+
+  // ---------- gauntlet stats ----------
+
+  function stat(id: string) {
+    let v = stats.get(id);
+    if (!v) stats.set(id, (v = { passed: 0, failed: 0 }));
+    return v;
+  }
+  function record(st: StationDef, ok: boolean, text: string) {
+    const v = stat(st.id);
+    if (ok) v.passed++;
+    else {
+      v.failed++;
+      v.caught = (v.caught ?? 0) + 1;
+    }
+    v.lastLog = { who: st.name, text, ok };
+  }
+  function stationsNow(): Station[] {
+    return [...GAUNTLET, ORBIT].map((g) => {
+      const v = stat(g.id);
+      const here = g.kind === "orbit" ? s.items.filter((i) => watching.has(i.id)) : s.items.filter((i) => i.machineId === g.id && (i.state === "inspecting" || i.state === "on_pad"));
+      const oldest = Math.max(0, ...here.map((i) => s.tick - (since.get(i.id) ?? s.tick)));
+      const runs = v.passed + v.failed;
+      return {
+        id: g.id,
+        kind: g.kind,
+        name: g.name,
+        machineId: g.id,
+        wip: here.length,
+        oldestWaitMs: here.length ? oldest * TICK_MS : undefined,
+        passRate: runs ? v.passed / runs : undefined,
+        caughtThisWeek: g.caught + (v.caught ?? 0),
+        lastLog: v.lastLog,
+        actions: g.actions,
+      };
+    });
+  }
 
   const launch = (item: Item) => {
     const key = SCIENCE_FOR[item.kind];
@@ -514,6 +606,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       trust: Math.min(1, s.trust + 0.05),
     });
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
+    watching.set(item.id, s.tick + WATCH_TICKS);
+    record(GAUNTLET[3], true, `#${item.prNumber} merged and launched.`);
     const m = s.metrics!;
     const users = item.customer?.usersAffected ?? 0;
     bumpMetrics({ rockets: m.rockets + 1, usersUnblocked: m.usersUnblocked + users, bitersKilled: m.bitersKilled + (item.source === "sentry" ? 1 : 0) });
