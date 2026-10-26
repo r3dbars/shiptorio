@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { expect, it, mock } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { FactoryState, type Item } from "@shiptorio/shared";
@@ -29,7 +30,7 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
     const data = new Map<string, unknown>([["state", state], ["meta", { repo: state.repo, installationId: 1 }]]);
     const storage = { async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); }, get: async (k: string) => structuredClone(data.get(k)), put: async (k: string, v: unknown) => { data.set(k, structuredClone(v)); }, delete: async (k: string) => data.delete(k), list: async (o: { prefix: string }) => new Map([...data].filter(([k]) => k.startsWith(o.prefix))), getAlarm: async () => null, setAlarm: async () => {} };
     const env = { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: privateKey, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ meta: { changes: 1 } }) }) }) } };
-    const factory = new Factory({ storage, blockConcurrencyWhile: (fn: () => unknown) => fn(), getWebSockets: () => [] } as never, env as never);
+    const factory = new Factory({ storage, blockConcurrencyWhile: (fn: () => unknown) => fn(), getWebSockets: () => [] } as never, credentialEnv(env) as never);
     const saved = () => data.get("state") as FactoryState;
     const launch = async () => {
       await factory.alarm();

@@ -5,7 +5,12 @@ export class Redactor {
   register(values: unknown): void {
     if (!values || typeof values !== "object") return;
     for (const [key, value] of Object.entries(values)) {
-      if (typeof value === "string" && value && /secret|token|password|private.?key|api.?key|master.?key/i.test(key)) this.secrets.add(value);
+      if (typeof value === "string" && value && /secret|token|password|private.?key|api.?key|master.?key|previous.?keys/i.test(key)) {
+        this.secrets.add(value);
+        if (key === "CRED_PREVIOUS_KEYS") {
+          try { for (const previous of Object.values(JSON.parse(value))) if (typeof previous === "string" && previous) this.secrets.add(previous); } catch { /* Invalid config is never printed. */ }
+        }
+      }
     }
   }
   text(value: string): string {

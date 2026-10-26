@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -31,7 +32,7 @@ function fixture(items = [item()]) {
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [] };
   const env = { DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } };
-  const reload = () => new Factory(ctx as never, env as never);
+  const reload = () => new Factory(ctx as never, credentialEnv(env) as never);
   return { data, reload, saved: () => data.get("state") as FactoryState, credits: () => [...data.keys()].filter(k => k.startsWith("launchCredit:")), alarm: () => alarm, consumeAlarm: () => { alarm = null; }, setAlarm: (at: number) => { alarm = at; }, failAt: (key?: string) => { failAt = key; } };
 }
 async function revert(f: ReturnType<typeof fixture>, factory: InstanceType<typeof Factory>) {

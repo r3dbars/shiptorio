@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
@@ -29,8 +30,8 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
   const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
-  const factory = new Factory(ctx as never, env as never);
-  return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
+  const factory = new Factory(ctx as never, credentialEnv(env) as never);
+  return { factory, data, events, reload: () => new Factory(ctx as never, credentialEnv(env) as never), saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });

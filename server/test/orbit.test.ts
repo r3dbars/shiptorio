@@ -1,3 +1,4 @@
+import { credentialEnv } from "./credential-fixture";
 import { authorizedSocket, browserEnv } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
@@ -85,7 +86,7 @@ describe("orbit watch in the Factory", () => {
       async setAlarm(v: number) { alarm = v; },
     };
     const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-    const f = new Factory(ctx as never, { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+    const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
     return { f, data, events, saved: () => data.get("state") as FactoryState, book: () => data.get("permits") as PermitBook };
   };
   const permitted = () => {

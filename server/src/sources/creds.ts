@@ -32,14 +32,16 @@ async function migrate(env: CredsEnv, scope: CredentialScope, kind: MineKind): P
   let current = await row(env, scope, kind);
   if (scope.repo.toLowerCase() !== await legacyRepo(env, kind)) return current;
   const legacy = await env.CACHE?.get<Creds>(`cred:${kind}`, "json");
-  if (!current && legacy) {
+  if ((!current || (!current.envelope && !current.revoked)) && legacy) {
     const envelope = await encryptCredential(env, binding(scope, kind), legacy);
     // A concurrent save/revoke wins. Its tombstone also prevents stale KV reads from resurrecting a key.
     await env.DB.prepare("INSERT OR IGNORE INTO credentials (scope, kind, envelope, updated_at, linked) VALUES (?, ?, ?, ?, 1)")
       .bind(scopeKey(scope), kind, JSON.stringify(envelope), Date.now()).run();
+    await env.DB.prepare("UPDATE credentials SET envelope = ? WHERE scope = ? AND kind = ? AND envelope IS NULL AND revoked = 0")
+      .bind(JSON.stringify(envelope), scopeKey(scope), kind).run();
     current = await row(env, scope, kind);
   }
-  if (current && legacy) await env.CACHE!.delete(`cred:${kind}`);
+  if ((current?.envelope || current?.revoked) && legacy) await env.CACHE!.delete(`cred:${kind}`);
   return current;
 }
 export async function readCreds(env: CredsEnv, kind: MineKind, scope?: CredentialScope, redactor?: Redactor, used = false): Promise<Creds> {
