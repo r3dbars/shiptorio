@@ -33,7 +33,7 @@ test("a repeated read doesn't spend a planning turn or show up as a step", async
   ];
   const payloads: string[] = [];
   globalThis.fetch = (async (_: unknown, init: { body: string }) => {
-    payloads.push(JSON.parse(init.body).messages[1].content);
+    payloads.push(JSON.parse(init.body).messages.find((m: { role: string }) => m.role === "user").content);
     return Response.json({ choices: [{ message: { content: JSON.stringify(script[payloads.length - 1]) } }] });
   }) as unknown as typeof fetch;
   const steps: string[] = [];
@@ -41,7 +41,7 @@ test("a repeated read doesn't spend a planning turn or show up as a step", async
     const plan = await planLocalTask(sparkTestEnv(), { title: "Issue", body: "Evidence", district: "web" }, ["web/src/a.ts", "web/src/b.ts", "web/src/c.ts"], async () => "code", async s => { steps.push(s.tool); });
     expect(plan.plan).toContain("Fix all three");
     expect(steps).toEqual(["read_issue", "read_file", "read_file", "read_file", "assign_job"]);
-    expect(JSON.parse(payloads[1]).alreadyRead).toEqual(["issue"]);
+    expect(JSON.parse(JSON.parse(payloads[1].split("\n")[1])).alreadyRead).toEqual(["issue"]);
   } finally { globalThis.fetch = original; }
 });
 

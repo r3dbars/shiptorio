@@ -6,6 +6,18 @@ import { verificationGit } from "./sandbox";
 import { validateChanges } from "./policy";
 
 export type ApprovedFiles = Record<string, string>;
+/** Give a shell-free assembler bounded code evidence, never direct host-file access. */
+export async function assemblerContext(sandbox: CheckSandbox, paths: string[]): Promise<{ path: string; content: string }[]> {
+  const program = `import {lstatSync,readFileSync,realpathSync} from "node:fs";
+const root=realpathSync(process.cwd());const paths=JSON.parse(process.argv[1]);const result=[];
+for(const path of paths){try{const target=realpathSync(path);if(!target.startsWith(root+"/")||!lstatSync(path).isFile())throw Error("Unsafe source file");result.push({path,content:readFileSync(target,"utf8").slice(0,12000)});}catch(error){if(error.code!=="ENOENT")throw error;result.push({path,content:"File does not exist yet"});}}console.log(JSON.stringify(result));`;
+  const result = await sandbox.run([process.execPath, "--no-env-file", "-e", program, JSON.stringify(paths)]);
+  if (result.code) throw new Error("Unable to read approved assembler context");
+  const files = JSON.parse(result.out) as { path: string; content: string }[];
+  if (files.length !== paths.length || files.some(f => !paths.includes(f.path) || typeof f.content !== "string" || f.content.length > 12000)) throw new Error("Invalid assembler context");
+  return files;
+}
+
 /** Read hostile paths inside the OS boundary, including symlink/race resolution. */
 export async function snapshotApproved(sandbox: CheckSandbox, paths: string[]): Promise<ApprovedFiles> {
   const program = `import {lstatSync,readFileSync,realpathSync} from "node:fs";
