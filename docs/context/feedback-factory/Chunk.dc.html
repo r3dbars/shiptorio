@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback Factory · chunk detail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F2A93B}a:hover{color:#FFC872}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.live{animation:pulse 1.6s ease-in-out infinite}
+</style>
+</helmet>
+<div style="width: 1120px; height: 840px; box-sizing: border-box; padding: 28px; background: #101317; color: #E8ECF1; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; gap: 20px; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <button type="button" aria-label="Back to the factory floor" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #2A313B; background: #1A1F26; color: #E8ECF1; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M15 18l-6-6 6-6"></path></svg>
+      </button>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #9AA4B1">Bug · chunk 1 of 4</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #101317; background: #F2A93B; border-radius: 6px; padding: 2px 7px">Hot</span>
+        </div>
+        <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em">Recordings drop in background</h1>
+      </div>
+    </div>
+    <div style="display: flex; gap: 10px">
+      <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 12px; padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 104px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Reports</span>
+        <span style="font-size: 18px; font-weight: 600">14 <span style="color: #F2A93B; font-size: 13px">+5 today</span></span>
+      </div>
+      <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 12px; padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 104px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">First seen</span>
+        <span style="font-size: 18px; font-weight: 600">6 days ago</span>
+      </div>
+      <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 12px; padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 104px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Since</span>
+        <span style="font-size: 18px; font-weight: 600">v1.4.0</span>
+      </div>
+    </div>
+  </header>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px">
+
+    <section style="display: flex; flex-direction: column; gap: 12px; min-height: 0">
+      <div style="display: flex; justify-content: space-between; align-items: baseline">
+        <h2 style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.08em">What people said</h2>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #9AA4B1">{{included}} of 14 in the brief</span>
+      </div>
+
+      <div style="background: #2A231A; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.06em">Claude's read</span>
+        <p style="margin: 0; font-size: 15px; line-height: 1.4">Every report mentions locking the phone or switching apps mid-recording. 11 of 14 are on iOS 26.1. Nobody hits it on Wi-Fi-only iPads.</p>
+      </div>
+
+      <sc-for list="{{quotes}}" as="q" hint-placeholder-count="5">
+        <div style="background: #1A1F26; border: 1px solid {{q.border}}; border-radius: 12px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start">
+          <button type="button" onClick="{{q.toggle}}" aria-label="{{q.label}}" aria-pressed="{{q.on}}" style="flex-shrink: 0; width: 24px; height: 24px; margin-top: 1px; border-radius: 7px; border: 1.5px solid {{q.boxBorder}}; background: {{q.boxFill}}; color: #101317; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0">
+            <sc-if value="{{q.on}}" hint-placeholder-val="{{true}}"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;stroke-linejoin:round"><path d="M5 12l5 5L20 7"></path></svg></sc-if>
+          </button>
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+            <p style="margin: 0; font-size: 14px; line-height: 1.4; color: #E8ECF1">{{q.text}}</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #101317; background: #C9D1DB; border-radius: 6px; padding: 2px 7px">{{q.src}}</span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1">{{q.device}}</span>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+      <p style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #9AA4B1">+ 9 more like these</p>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 12px; min-height: 0">
+      <h2 style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.08em">The brief the machine gets</h2>
+
+      <div style="flex-grow: 1; min-height: 0; background: #0B0E11; border: 1px solid #2A313B; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; line-height: 1.5; color: #C9D1DB; overflow: hidden">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="color: {{accent}}">## Fix</span>
+          <span>Recordings stop when the app goes to background. Users lose the rest of the meeting.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="color: {{accent}}">## Evidence</span>
+          <span>{{included}} reports attached. Pattern: lock screen or app switch while recording. Mostly iOS 26.1. Started in v1.4.0.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="color: {{accent}}">## Look here first</span>
+          <span>RecordingSession.swift · AudioSessionConfig.swift · Info.plist background modes</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="color: {{accent}}">## Done when</span>
+          <span>A 60 min recording survives a lock and an app switch.</span>
+          <span>A test covers interruption and resume.</span>
+          <span>No new permission prompts.</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <span style="color: {{accent}}">## Don't touch</span>
+          <span>File format, sync code.</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Send to</span>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+          <sc-for list="{{machines}}" as="m" hint-placeholder-count="2">
+            <button type="button" onClick="{{m.pick}}" aria-pressed="{{m.on}}" style="min-height: 56px; border-radius: 14px; border: 1.5px solid {{m.border}}; background: {{m.fill}}; color: #E8ECF1; font-family: 'Space Grotesk', sans-serif; font-size: 15px; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 8px 14px">
+              <span style="font-weight: 600">{{m.name}}</span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1">{{m.status}}</span>
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{idle}}" hint-placeholder-val="{{true}}">
+        <button type="button" onClick="{{start}}" style="min-height: 56px; border-radius: 16px; border: none; background: {{accent}}; color: #101317; font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; cursor: pointer">Start the fix</button>
+      </sc-if>
+      <sc-if value="{{started}}" hint-placeholder-val="{{false}}">
+        <div style="min-height: 56px; box-sizing: border-box; border-radius: 16px; background: #17241F; border: 1px solid #2E5A4C; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; gap: 12px">
+          <span class="live" style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #3DD6B0">● {{startedText}}</span>
+          <button type="button" onClick="{{reset}}" style="min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #2E5A4C; background: transparent; color: #E8ECF1; font-family: 'Space Grotesk', sans-serif; font-size: 14px; cursor: pointer">Undo</button>
+        </div>
+      </sc-if>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#F2A93B","options":["#F2A93B","#FF7A59","#B98CFF","#3DD6B0"]},"$preview":{"width":1120,"height":840}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { machine: 'claude', started: false, off: {} };
+  }
+  renderVals() {
+    const accent = this.props.accent ?? '#F2A93B';
+    const raw = [
+      { id: 'a', src: 'App Store 2★', device: 'iPhone 17 · iOS 26.1', text: 'Recording stopped when I locked my phone. Lost half the meeting.' },
+      { id: 'b', src: 'TestFlight', device: 'iPhone 16 Pro · iOS 26.1', text: 'Switched to Slack for a second and the timer froze. Came back to 4 minutes.' },
+      { id: 'c', src: 'Support', device: 'iPhone 15 · iOS 26.1', text: 'Is there a setting to keep it going with the screen off?' },
+      { id: 'd', src: 'App Store 1★', device: 'iPhone 17 Pro · iOS 26.0', text: 'Third time it died in my pocket. Back to voice memos.' },
+      { id: 'e', src: 'GitHub #91', device: 'iPhone 16 · iOS 26.1', text: 'Audio session gets interrupted after ~30s in background, never resumes.' }
+    ];
+    const off = this.state.off;
+    const quotes = raw.map((q) => {
+      const on = !off[q.id];
+      return {
+        ...q,
+        on: on,
+        label: (on ? 'Remove from brief: ' : 'Add to brief: ') + q.text,
+        border: on ? '#3A4350' : '#242A33',
+        boxBorder: on ? accent : '#3A4350',
+        boxFill: on ? accent : 'transparent',
+        toggle: () => this.setState((s) => ({ off: { ...s.off, [q.id]: !s.off[q.id] } }))
+      };
+    });
+    const included = 9 + quotes.filter((q) => q.on).length;
+    const list = [
+      { id: 'claude', name: 'Claude Code', status: 'Bay 3 free' },
+      { id: 'codex', name: 'Codex', status: 'Busy · ~20 min' }
+    ];
+    const machines = list.map((m) => {
+      const on = this.state.machine === m.id;
+      return {
+        ...m,
+        on: on,
+        border: on ? accent : '#2A313B',
+        fill: on ? '#2A231A' : '#1A1F26',
+        pick: () => this.setState({ machine: m.id, started: false })
+      };
+    });
+    const picked = list.find((m) => m.id === this.state.machine);
+    return {
+      accent: accent,
+      quotes: quotes,
+      included: included,
+      machines: machines,
+      idle: !this.state.started,
+      started: this.state.started,
+      startedText: picked.id === 'claude' ? 'Claude Code picked it up · bay 3' : 'Queued for Codex · starts in ~20 min',
+      start: () => this.setState({ started: true }),
+      reset: () => this.setState({ started: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

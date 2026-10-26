@@ -17,9 +17,9 @@ something, add it here and push.
 | [threads.md](threads.md) | Short summary of each Claude project thread and what it produced |
 | [plan.md](plan.md) | Export of Justin's plan doc (game design, art, 12 items, architecture, build plan, demo script, risks) |
 | [plan-transcript.md](plan-transcript.md) | The plan doc's Transcript tab: the full conversation that produced the plan (long) |
-| [feedback-factory/](feedback-factory/) | Feedback Factory canvas artboards (layout reference only) |
+| [feedback-factory/](feedback-factory/) | Feedback Factory canvas artboards (layout reference only, raw `.dc.html`) |
 
-Also in the repo, once PR #5 merges: `PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`,
+Also in the repo (from PR #5): `PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`,
 `docs/art-prototype.html` (Pixel Prototype), `docs/item-lab.html` (Item Lab, all 12 items),
 `briefs/`.
 

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback Kitchen · service</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&amp;family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#E8A33B}a:hover{color:#F5C46E}
+@keyframes flame{0%,100%{transform:scale(1);opacity:.95}50%{transform:scale(.82);opacity:.7}}
+.flame{animation:flame .35s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.bob{animation:bob .9s ease-in-out infinite}
+@keyframes steam{0%{transform:translate(0,0) scale(.6);opacity:.6}100%{transform:translate(-6px,-34px) scale(1.8);opacity:0}}
+.steam{filter:blur(2px);animation:steam 2.2s ease-out infinite}
+@keyframes lamp{0%,100%{opacity:.9}50%{opacity:.6}}
+.lamp{animation:lamp 2s ease-in-out infinite}
+@keyframes ping{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.ping{animation:ping .6s ease-in-out infinite}
+@keyframes slidein{from{transform:translateX(-40px);opacity:0}to{transform:translateX(0);opacity:1}}
+.slidein{animation:slidein .4s ease-out}
+@keyframes pop{0%{transform:translateY(6px);opacity:0}100%{transform:translateY(0);opacity:1}}
+.pop{animation:pop .25s ease-out}
+@keyframes sway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+.sway{animation:sway 2.4s ease-in-out infinite;transform-origin:bottom center}
+</style>
+</helmet>
+<div style="position: relative; width: 1120px; height: 840px; box-sizing: border-box; padding: 18px 24px; background: #1E1814; color: #F3EBDD; font-family: 'Inter', system-ui, sans-serif; display: flex; flex-direction: column; gap: 10px; overflow: hidden">
+
+  <header style="height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <div style="display: flex; align-items: baseline; gap: 12px">
+      <span style="font-family: 'Fraunces', serif; font-size: 26px; font-weight: 700; color: #F5E6C8">Feedback Kitchen</span>
+      <span style="font-size: 13px; color: #B9A88E">Service {{service}} · {{clock}} left</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 18px; font-size: 14px; font-weight: 600">
+      <span style="display: flex; gap: 2px; font-size: 22px; letter-spacing: 1px">
+        <sc-for list="{{stars}}" as="st" hint-placeholder-count="3"><span style="color: {{st.color}}">★</span></sc-for>
+      </span>
+      <span>Served <span style="color: #8FD38A">{{served}}</span></span>
+      <span>Sent back <span style="color: {{escColor}}">{{escapes}}</span></span>
+      <span>Caught at the pass <span style="color: #E8A33B">{{caught}}</span></span>
+    </div>
+  </header>
+
+  <sc-if value="{{toastOn}}" hint-placeholder-val="{{false}}">
+    <div class="pop" style="position: absolute; left: 50%; top: 70px; transform: translateX(-50%); z-index: 6; background: #120E0B; border: 1px solid {{toastColor}}; color: {{toastColor}}; border-radius: 999px; padding: 6px 16px; font-size: 14px; font-weight: 600; white-space: nowrap">{{toast}}</div>
+  </sc-if>
+
+  <div style="position: relative; height: 470px; border-radius: 14px; overflow: hidden; border: 1px solid #3A2E24">
+
+    <div style="position: absolute; left: 0; top: 0; width: 760px; height: 470px; background-color: #D9D4CA; background-image: linear-gradient(45deg, #C9C3B7 25%, transparent 25%, transparent 75%, #C9C3B7 75%), linear-gradient(45deg, #C9C3B7 25%, transparent 25%, transparent 75%, #C9C3B7 75%); background-size: 40px 40px; background-position: 0 0, 20px 20px"></div>
+
+    <div style="position: absolute; left: 16px; top: 10px; width: 728px; height: 58px; background: linear-gradient(#B8BEC4, #8E959C); border-radius: 6px; box-shadow: 0 4px 0 rgba(0,0,0,.25)">
+      <span style="position: absolute; left: 10px; top: 4px; font-size: 10px; font-weight: 700; color: #2A2E33; letter-spacing: .08em">ORDER RAIL · FEEDBACK</span>
+      <div style="position: absolute; left: 10px; right: 10px; top: 18px; display: flex; gap: 8px">
+        <sc-for list="{{tickets}}" as="tk" hint-placeholder-count="5">
+          <div class="slidein" style="width: 128px; height: 34px; box-sizing: border-box; background: #FFFDF6; border-top: 4px solid {{tk.color}}; box-shadow: 1px 2px 0 rgba(0,0,0,.25); padding: 2px 6px; color: #2A231C; font-size: 11px; line-height: 1.2; overflow: hidden">
+            <b>{{tk.count}}</b> · {{tk.text}}
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="position: absolute; left: 22px; top: 78px; display: flex; align-items: center; gap: 8px">
+      <div class="bob" style="width: 30px; height: 30px; border-radius: 50%; background: #9A6CD8; border: 3px solid #FFFFFF; box-shadow: 2px 3px 0 rgba(0,0,0,.25)"></div>
+      <span style="font-size: 11px; font-weight: 700; color: #3A2E5A; background: rgba(255,255,255,.75); padding: 1px 6px; border-radius: 4px">Sous chef · Claude splits orders</span>
+    </div>
+
+    <sc-for list="{{stations}}" as="s" hint-placeholder-count="4">
+      <div style="position: absolute; left: {{s.left}}px; top: 118px; width: 152px; height: 108px; border-radius: 8px; background: linear-gradient(#C8CED4, #9EA6AE); box-shadow: inset 0 2px 0 #E8ECEF, 0 6px 0 #6E757C, 4px 10px 8px rgba(0,0,0,.25)">
+        <div style="position: absolute; left: 14px; top: 14px; width: 40px; height: 40px; border-radius: 50%; background: #2B2B2B; box-shadow: inset 0 0 0 4px #4A4A4A"></div>
+        <div class="flame" style="position: absolute; left: 22px; top: 22px; width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #FFE08A, #FF8A1E 55%, rgba(255,80,0,0) 72%)"></div>
+        <div style="position: absolute; left: 64px; top: 14px; width: 40px; height: 40px; border-radius: 50%; background: #2B2B2B; box-shadow: inset 0 0 0 4px #4A4A4A"></div>
+        <div class="flame" style="position: absolute; left: 72px; top: 22px; width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle, #FFE08A, #FF8A1E 55%, rgba(255,80,0,0) 72%); animation-delay: .15s"></div>
+        <div class="steam" style="position: absolute; left: 80px; top: 8px; width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.8)"></div>
+        <div style="position: absolute; left: 112px; top: 14px; width: 28px; height: 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px">
+          <span style="background: #6BAF4A; border-radius: 2px"></span><span style="background: #E05A3A; border-radius: 2px"></span><span style="background: #F2C14E; border-radius: 2px"></span><span style="background: #F5F0E6; border-radius: 2px"></span>
+        </div>
+        <span style="position: absolute; left: 10px; top: 62px; font-size: 13px; font-weight: 700; color: #1E2226">{{s.name}}</span>
+        <span style="position: absolute; left: 10px; top: 80px; font-size: 10px; color: #2E343A">{{s.role}} · {{s.cook}}</span>
+        <div style="position: absolute; left: 0; right: 0; bottom: -6px; height: 5px; background: #4A4F55"><div style="height: 5px; width: {{s.pct}}%; background: #6BAF4A"></div></div>
+      </div>
+      <div style="position: absolute; left: {{s.left}}px; top: 238px; width: 152px; display: flex; justify-content: center; gap: 6px">
+        <sc-for list="{{s.cooks}}" as="ck" hint-placeholder-count="1">
+          <div class="bob" style="position: relative; width: 28px; height: 28px; border-radius: 50%; background: {{s.color}}; border: 3px solid #FFFFFF; box-shadow: 2px 3px 0 rgba(0,0,0,.25); animation-delay: {{ck.d}}s">
+            <div style="position: absolute; left: 3px; top: -11px; width: 16px; height: 10px; background: #FFFFFF; border-radius: 6px 6px 2px 2px"></div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="position: absolute; left: {{s.left}}px; top: 276px; width: 152px; display: flex; flex-direction: column; gap: 3px">
+        <div style="height: 6px; background: rgba(0,0,0,.25); border-radius: 3px"><div style="height: 6px; border-radius: 3px; width: {{s.trust}}%; background: {{s.trustColor}}; transition: width .4s"></div></div>
+        <span style="font-size: 10px; font-weight: 700; color: #2A231C">trust {{s.trust}}% · {{s.cookCount}} cook{{s.plural}}</span>
+        <sc-if value="{{s.hasHazard}}" hint-placeholder-val="{{false}}">
+          <span class="ping" style="font-size: 10px; font-weight: 700; color: #FFFFFF; background: #C0392B; border-radius: 4px; padding: 2px 5px; line-height: 1.25">Keeps tripping: {{s.hazard}}</span>
+        </sc-if>
+        <sc-if value="{{s.handPlate}}" hint-placeholder-val="{{false}}">
+          <span style="font-size: 10px; font-weight: 700; color: #FFFFFF; background: #6A4FA0; border-radius: 4px; padding: 2px 5px">You plate this station yourself</span>
+        </sc-if>
+        <button type="button" onClick="{{s.hire}}" disabled="{{s.cantHire}}" style="min-height: 24px; border-radius: 6px; border: 1px solid #6E757C; background: {{s.hireBg}}; color: {{s.hireFg}}; font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700; cursor: pointer">{{s.hireLabel}}</button>
+      </div>
+    </sc-for>
+
+    <div style="position: absolute; left: 16px; top: 388px; width: 160px; height: 70px; border-radius: 8px; background: linear-gradient(#B8BEC4, #8E959C); box-shadow: 3px 6px 0 rgba(0,0,0,.2)">
+      <div style="position: absolute; left: 10px; top: 10px; width: 56px; height: 34px; border-radius: 6px; background: #5E86A0; box-shadow: inset 0 0 0 4px #7E9DB2"></div>
+      <div class="bob" style="position: absolute; left: 80px; top: 12px; width: 26px; height: 26px; border-radius: 50%; background: #7FA8C9; border: 3px solid #FFFFFF"></div>
+      <span style="position: absolute; left: 10px; top: 50px; font-size: 10px; font-weight: 700; color: #1E2226">Dish pit · cleanup agent</span>
+    </div>
+
+    <div style="position: absolute; left: 192px; top: 388px; width: 552px; height: 70px; border-radius: 8px; background: #6E4E32; background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.12) 0 2px, transparent 2px 22px); box-shadow: inset 0 0 0 3px #4E3622">
+      <div style="position: absolute; left: 10px; top: 8px; right: 10px; height: 34px; display: flex; gap: 6px; align-items: flex-end; overflow: hidden">
+        <sc-for list="{{garden}}" as="g" hint-placeholder-count="14">
+          <div class="sway" style="width: 14px; height: {{g.h}}px; background: {{g.color}}; border-radius: 7px 7px 2px 2px; animation-delay: {{g.d}}s"></div>
+        </sc-for>
+      </div>
+      <span style="position: absolute; left: 10px; bottom: 6px; font-size: 10px; font-weight: 700; color: #F5E6C8">Herb garden · the codebase · {{weedText}}</span>
+      <button type="button" onClick="{{garden_go}}" disabled="{{gardenBusy}}" style="position: absolute; right: 8px; bottom: 6px; min-height: 26px; padding: 0 10px; border-radius: 6px; border: none; background: {{gardenBg}}; color: #1E1814; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; cursor: pointer">{{gardenLabel}}</button>
+    </div>
+
+    <sc-for list="{{tasters}}" as="ts" hint-placeholder-count="3">
+      <div style="position: absolute; left: 700px; top: {{ts.top}}px; width: 40px; display: flex; flex-direction: column; align-items: center; gap: 2px">
+        <div class="bob" style="width: 24px; height: 24px; border-radius: 50%; background: #5FA85A; border: 3px solid #FFFFFF; box-shadow: 2px 3px 0 rgba(0,0,0,.25); animation-delay: {{ts.d}}s"></div>
+        <span style="font-size: 9px; font-weight: 700; color: #1E3A1C; background: rgba(255,255,255,.8); padding: 0 3px; border-radius: 3px; white-space: nowrap">{{ts.name}}</span>
+      </div>
+    </sc-for>
+
+    <div style="position: absolute; left: 748px; top: 0; width: 46px; height: 470px; background: linear-gradient(90deg, #8E959C, #D4D9DE 50%, #8E959C); box-shadow: inset 0 0 0 2px #6E757C">
+      <span style="position: absolute; left: 50%; top: 82px; transform: translateX(-50%) rotate(-90deg); font-size: 11px; font-weight: 700; color: #2A2E33; letter-spacing: .12em; white-space: nowrap">THE PASS</span>
+      <div class="lamp" style="position: absolute; left: 3px; top: 140px; width: 40px; height: 40px; border-radius: 50%; background: radial-gradient(circle, rgba(255,170,70,.9), rgba(255,140,40,0) 70%)"></div>
+      <div class="lamp" style="position: absolute; left: 3px; top: 220px; width: 40px; height: 40px; border-radius: 50%; background: radial-gradient(circle, rgba(255,170,70,.9), rgba(255,140,40,0) 70%); animation-delay: .5s"></div>
+      <div class="lamp" style="position: absolute; left: 3px; top: 300px; width: 40px; height: 40px; border-radius: 50%; background: radial-gradient(circle, rgba(255,170,70,.9), rgba(255,140,40,0) 70%); animation-delay: 1s"></div>
+    </div>
+
+    <div style="position: absolute; left: 794px; top: 0; width: 278px; height: 470px; background-color: #5A3A26; background-image: repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 2px, transparent 2px 26px), linear-gradient(90deg, #5E3E28, #6A4630)">
+      <span style="position: absolute; left: 14px; top: 10px; font-family: 'Fraunces', serif; font-size: 15px; font-weight: 700; color: #F5E6C8">Dining room · your users</span>
+      <sc-for list="{{tables}}" as="tb" hint-placeholder-count="6">
+        <div style="position: absolute; left: {{tb.x}}px; top: {{tb.y}}px; width: 70px; height: 70px; border-radius: 50%; background: #F5EFE4; box-shadow: 0 4px 0 #C9BFAE, 3px 8px 8px rgba(0,0,0,.3)">
+          <div style="position: absolute; left: 25px; top: -12px; width: 20px; height: 20px; border-radius: 50%; background: {{tb.face}}; border: 2px solid #3A2A1E"></div>
+          <div style="position: absolute; left: 25px; bottom: -12px; width: 20px; height: 20px; border-radius: 50%; background: {{tb.face2}}; border: 2px solid #3A2A1E"></div>
+          <sc-if value="{{tb.inspector}}" hint-placeholder-val="{{false}}">
+            <span style="position: absolute; left: 50px; top: -16px; font-size: 9px; font-weight: 700; color: #1E1814; background: #E8A33B; padding: 1px 4px; border-radius: 3px">inspector</span>
+          </sc-if>
+          <sc-if value="{{tb.angry}}" hint-placeholder-val="{{false}}">
+            <span class="ping" style="position: absolute; left: -10px; top: 24px; font-size: 10px; font-weight: 700; color: #FFFFFF; background: #C0392B; padding: 2px 5px; border-radius: 4px; white-space: nowrap">sent back!</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <sc-for list="{{plates}}" as="p" hint-placeholder-count="4">
+      <div style="position: absolute; left: {{p.x}}px; top: {{p.y}}px; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #D8D2C6; box-shadow: 2px 3px 0 rgba(0,0,0,.25); display: flex; align-items: center; justify-content: center; z-index: 2">
+        <span style="width: 9px; height: 9px; border-radius: 50%; background: {{p.food}}"></span>
+      </div>
+    </sc-for>
+
+    <sc-if value="{{hasWaiting}}" hint-placeholder-val="{{true}}">
+      <div class="ping" style="position: absolute; left: 744px; top: 410px; z-index: 3; background: #E8A33B; color: #1E1814; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 700; white-space: nowrap">{{waiting}} at the pass for you</div>
+    </sc-if>
+  </div>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 230px; gap: 10px">
+
+    <section style="background: #2A211A; border: 1px solid #4A3A2C; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px">
+      <sc-if value="{{hasPass}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <span style="font-size: 11px; font-weight: 700; color: #1E1814; background: {{cur.tagBg}}; padding: 2px 7px; border-radius: 4px">{{cur.tag}}</span>
+          <span style="font-size: 12px; color: #B9A88E">{{cur.station}} · {{cur.cook}}</span>
+        </div>
+        <span style="font-family: 'Fraunces', serif; font-size: 19px; font-weight: 700; line-height: 1.2; color: #FFFFFF">{{cur.dish}}</span>
+        <span style="font-size: 13px; color: #E8D9BF">{{cur.reason}}</span>
+        <sc-for list="{{cur.notes}}" as="n" hint-placeholder-count="3">
+          <div style="display: flex; gap: 8px; align-items: center; font-size: 12px">
+            <span style="width: 8px; height: 8px; border-radius: 4px; background: {{n.color}}; flex-shrink: 0"></span>
+            <span style="color: #D9CBB3">{{n.text}}</span>
+          </div>
+        </sc-for>
+        <div style="flex-grow: 1"></div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" onClick="{{sendBack}}" style="flex-grow: 1; min-height: 44px; border-radius: 10px; border: 1px solid #6A5442; background: #3A2E24; color: #F3EBDD; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer">← Send back, fix the kitchen</button>
+          <button type="button" onClick="{{sendOut}}" style="flex-grow: 1; min-height: 44px; border-radius: 10px; border: none; background: #8FD38A; color: #12240F; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer">Send it out →</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{noPass}}" hint-placeholder-val="{{false}}">
+        <span style="font-family: 'Fraunces', serif; font-size: 20px; font-weight: 700; color: #F5E6C8">Nothing at the pass</span>
+        <span style="font-size: 13px; color: #D9CBB3; line-height: 1.45">The tasters are clearing plates on their own. You're the head chef: you don't cook, you set up the kitchen and answer for every plate. Fix what keeps tripping your cooks, or tend the garden.</span>
+      </sc-if>
+    </section>
+
+    <section style="background: #2A211A; border: 1px solid #4A3A2C; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px">
+      <sc-if value="{{picking}}" hint-placeholder-val="{{false}}">
+        <span style="font-size: 13px; font-weight: 700; color: #F5E6C8">Fix the kitchen so it doesn't happen again</span>
+        <sc-for list="{{fixes}}" as="f" hint-placeholder-count="5">
+          <button type="button" onClick="{{f.pick}}" style="all: unset; cursor: pointer; box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; background: #1E1814; border: 1px solid {{f.border}}; border-radius: 8px; padding: 5px 9px">
+            <span style="display: flex; flex-direction: column">
+              <span style="font-size: 13px; font-weight: 700; color: #FFFFFF">{{f.name}}</span>
+              <span style="font-size: 11px; color: #B9A88E">{{f.desc}}</span>
+            </span>
+            <span style="font-size: 10px; font-weight: 700; color: {{f.tagColor}}; text-align: right">{{f.tag}}</span>
+          </button>
+        </sc-for>
+      </sc-if>
+      <sc-if value="{{notPicking}}" hint-placeholder-val="{{true}}">
+        <span style="font-size: 13px; font-weight: 700; color: #F5E6C8">The kitchen, in software terms</span>
+        <sc-for list="{{legend}}" as="lg" hint-placeholder-count="7">
+          <div style="display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; font-size: 12px; line-height: 1.3">
+            <span style="font-weight: 700; color: #E8A33B">{{lg.a}}</span>
+            <span style="color: #D9CBB3">{{lg.b}}</span>
+          </div>
+        </sc-for>
+      </sc-if>
+    </section>
+
+    <section style="background: #2A211A; border: 1px solid #4A3A2C; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px">
+      <span style="font-size: 13px; font-weight: 700; color: #F5E6C8">Tonight</span>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+        <div style="background: #1E1814; border-radius: 8px; padding: 6px 8px"><span style="display: block; font-size: 10px; color: #B9A88E">Tasters' skill</span><span style="font-size: 18px; font-weight: 700">{{tasterSkill}}%</span></div>
+        <div style="background: #1E1814; border-radius: 8px; padding: 6px 8px"><span style="display: block; font-size: 10px; color: #B9A88E">You checked</span><span style="font-size: 18px; font-weight: 700">{{checked}}</span></div>
+        <div style="background: #1E1814; border-radius: 8px; padding: 6px 8px"><span style="display: block; font-size: 10px; color: #B9A88E">Kitchen fixes</span><span style="font-size: 18px; font-weight: 700; color: #E8A33B">{{fixCount}}</span></div>
+        <div style="background: #1E1814; border-radius: 8px; padding: 6px 8px"><span style="display: block; font-size: 10px; color: #B9A88E">Hands-off</span><span style="font-size: 18px; font-weight: 700; color: #8FD38A">{{handsOff}}%</span></div>
+      </div>
+      <span style="font-size: 11px; color: #B9A88E; line-height: 1.4">Stars drop when diners send plates back, or wait too long at the pass. More cooks only open up once a station earns trust.</span>
+    </section>
+  </div>
+
+  <sc-if value="{{isEnd}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; z-index: 10; background: rgba(20,14,10,.82); display: flex; align-items: center; justify-content: center">
+      <div class="pop" style="width: 560px; background: #F5EFE4; color: #2A231C; border-radius: 18px; padding: 28px 30px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 40px rgba(0,0,0,.5)">
+        <span style="font-size: 12px; font-weight: 700; letter-spacing: .1em; color: #8A6A3A">THE INSPECTOR'S VERDICT · SERVICE {{endedService}}</span>
+        <div style="display: flex; gap: 4px; font-size: 44px; line-height: 1">
+          <sc-for list="{{stars}}" as="st2" hint-placeholder-count="3"><span style="color: {{st2.colorLight}}">★</span></sc-for>
+        </div>
+        <span style="font-family: 'Fraunces', serif; font-size: 28px; font-weight: 700">{{verdict}}</span>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+          <sc-for list="{{endStats}}" as="es" hint-placeholder-count="6">
+            <div style="background: #FFFFFF; border: 1px solid #E2D8C6; border-radius: 10px; padding: 8px 10px"><span style="display: block; font-size: 11px; color: #8A7A62">{{es.label}}</span><span style="font-size: 20px; font-weight: 700">{{es.value}}</span></div>
+          </sc-for>
+        </div>
+        <span style="font-size: 14px; color: #5A4A36; line-height: 1.45">Every fix stays in the kitchen. Next service gets busier, and the stations you trusted get more cooks.</span>
+        <button type="button" onClick="{{nextService}}" style="min-height: 52px; border-radius: 12px; border: none; background: #2A211A; color: #F5E6C8; font-family: 'Inter', sans-serif; font-size: 16px; font-weight: 700; cursor: pointer">Start service {{service}}</button>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":840}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.FIXES = [
+      { key: 'structure', name: 'Rebuild the station', desc: 'Code structure. The mistake becomes impossible.', trust: 15 },
+      { key: 'lint', name: 'Add a guard rail', desc: 'Lint and CI. It gets blocked every time.', trust: 12 },
+      { key: 'verifier', name: 'Train the tasters', desc: 'Verifier skill. They can taste this dish now.', trust: 8 },
+      { key: 'skills', name: 'Write a recipe card', desc: 'Agent rules. Helps, but cooks can skip it.', trust: 4 },
+      { key: 'review', name: 'Plate it yourself from now on', desc: 'Human review. Every plate waits for you.', trust: 0 }
+    ];
+    this.TICKETS = [
+      ['14', 'Recording stops when phone locks', '#E05A3A'], ['9', 'Speaker 2 labeled as me', '#F2C14E'], ['6', 'Send action items to Notion', '#6BAF4A'],
+      ['4', 'Sync fails silently on cellular', '#5E86A0'], ['5', 'Long transcripts stutter', '#F2C14E'], ['7', 'Start from Apple Watch', '#E05A3A'], ['3', 'Search misses names', '#6BAF4A']
+    ];
+    this.TABLES = [{ x: 40, y: 60 }, { x: 160, y: 60 }, { x: 40, y: 190 }, { x: 160, y: 190 }, { x: 40, y: 320 }, { x: 160, y: 320 }];
+    this.state = this.fresh();
+  }
+
+  fresh() {
+    return {
+      phase: 'play', service: 1, endedService: 1, time: 0, len: 120,
+      stars: 2.4, served: 0, escapes: 0, caught: 0, checked: 0, fixCount: 0, autoOut: 0,
+      tasterSkill: 0.62, weeds: 4, gardenCd: 0, ticketIn: 0, tickets: this.TICKETS.slice(0, 5).map((t, i) => ({ id: i, count: t[0], text: t[1], color: t[2] })), ticketN: 5,
+      plates: [], nextId: 1, picking: null, toast: '', toastGood: true, toastT: 0, angry: {},
+      st: [
+        { key: 'rec', name: 'Recording', role: 'Grill', cook: 'Claude Code', color: '#E8A33B', trust: 76, cooks: 1, prog: 0.3, hazard: 'forgets to resume after a call', unprovable: false, weak: false, hand: false, dishes: ['Resume after interruptions', 'Auto-save every minute', 'Delete recordings over 90 days'], flag: 'drops audio if a call comes in mid-test' },
+        { key: 'sync', name: 'Sync', role: 'Sauté', cook: 'Codex', color: '#7AA7FF', trust: 58, cooks: 1, prog: 0.6, hazard: 'swallows errors to keep plates pretty', unprovable: false, weak: false, hand: false, dishes: ['Retry sync on cellular', 'Batch uploads on Wi-Fi', 'Clear sync error banner'], flag: 'catch block logs nothing' },
+        { key: 'spk', name: 'Speakers', role: 'Garde manger', cook: 'Claude Code', color: '#E8A33B', trust: 70, cooks: 1, prog: 0.1, hazard: '', unprovable: false, weak: false, hand: false, dishes: ['Keep speaker names stable', 'Bolder speaker labels', 'Merge duplicate speakers'], flag: 'frames hit 22 ms on long calls' },
+        { key: 'exp', name: 'Export', role: 'Pastry', cook: 'Codex', color: '#7AA7FF', trust: 44, cooks: 1, prog: 0.45, hazard: "tasters can't reach the Export sheet", unprovable: true, weak: false, hand: false, dishes: ['Notion export for action items', 'PDF export with speakers', 'Share sheet for clips'], flag: 'touches share code it never mentions' }
+      ]
+    };
+  }
+
+  componentDidMount() { this.timer = setInterval(() => this.tick(), 100); }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  stationXY(i) { return { x: 92 + i * 170, y: 172 }; }
+
+  tick() {
+    this.setState((s) => {
+      if (s.phase !== 'play') return null;
+      const dt = 0.1, time = s.time + dt;
+      let { stars, served, escapes, caught, autoOut, nextId, tasterSkill } = s;
+      let toast = s.toast, toastT = Math.max(0, s.toastT - dt), toastGood = s.toastGood;
+      const st = s.st.map((x) => ({ ...x }));
+      const angry = { ...s.angry };
+      Object.keys(angry).forEach((k) => { angry[k] -= dt; if (angry[k] <= 0) delete angry[k]; });
+      const weeds = Math.min(30, s.weeds + 0.12 * dt);
+      const plates = [];
+      const busy = 1 + 0.25 * (s.service - 1);
+      st.forEach((x, i) => {
+        x.prog += dt * 0.11 * x.cooks * busy;
+        if (x.prog >= 1) {
+          x.prog = 0;
+          const haz = x.hazard ? (x.weak ? 0.22 : 0.45) : 0.06;
+          const bad = Math.random() < haz + weeds * 0.006;
+          const dishIdx = Math.floor(Math.random() * x.dishes.length);
+          const reserved = x.key === 'rec' && dishIdx === 2;
+          plates.push({ id: nextId, si: i, bad, reserved, dish: x.dishes[dishIdx], stage: 'toPass', t: 0, table: nextId % 6 });
+          nextId += 1;
+        }
+      });
+      s.plates.forEach((p0) => {
+        const p = { ...p0 };
+        const x = st[p.si];
+        if (p.stage === 'toPass') {
+          p.t += dt / 1.2;
+          if (p.t >= 1) {
+            p.t = 0;
+            if (p.reserved || x.hand || (x.unprovable && x.hazard)) { p.stage = 'pass'; p.since = time; }
+            else if (p.bad && Math.random() < tasterSkill) { p.stage = 'back'; caught += 1; toast = 'Taster sent a ' + x.name + ' plate back'; toastT = 1.4; toastGood = true; }
+            else { p.stage = 'out'; autoOut += 1; }
+          }
+        } else if (p.stage === 'out') {
+          p.t += dt / 1.5;
+          if (p.t >= 1) { p.stage = 'table'; p.t = 0; }
+        } else if (p.stage === 'table') {
+          p.t += dt / 3;
+          if (p.t >= 1) {
+            if (p.bad) {
+              escapes += 1; stars = Math.max(0, stars - 0.22); x.trust = Math.max(10, x.trust - 8);
+              if (!x.hazard) { x.hazard = 'plates leaving wrong'; x.unprovable = false; x.weak = false; }
+              angry[p.table] = 2;
+              toast = 'A diner sent back ' + p.dish + '. Stars drop.'; toastT = 2.4; toastGood = false;
+            } else { served += 1; stars = Math.min(3, stars + 0.02); x.trust = Math.min(98, x.trust + 1); }
+            return;
+          }
+        } else if (p.stage === 'back') {
+          p.t += dt / 1.2;
+          if (p.t >= 1) return;
+        }
+        plates.push(p);
+      });
+      const waiting = plates.filter((p) => p.stage === 'pass').length;
+      if (waiting > 3) { stars = Math.max(0, stars - 0.004 * (waiting - 3)); if (toastT === 0) { toast = 'Plates are dying under the heat lamps. Diners are waiting on you.'; toastT = 2; toastGood = false; } }
+      let tickets = s.tickets, ticketIn = s.ticketIn + dt, ticketN = s.ticketN;
+      if (ticketIn > 3.5) {
+        ticketIn = 0;
+        const t = this.TICKETS[ticketN % this.TICKETS.length];
+        tickets = s.tickets.slice(1).concat([{ id: ticketN, count: t[0], text: t[1], color: t[2] }]);
+        ticketN += 1;
+      }
+      const patch = { time, stars, served, escapes, caught, autoOut, nextId, st, plates, angry, weeds, toast, toastT, toastGood, tickets, ticketIn, ticketN, gardenCd: Math.max(0, s.gardenCd - dt) };
+      if (time >= s.len) { patch.phase = 'end'; patch.endedService = s.service; patch.picking = null; }
+      return patch;
+    });
+  }
+
+  say(text, good) { this.setState({ toast: text, toastT: 2.4, toastGood: good }); }
+
+  passList() { return this.state.plates.filter((p) => p.stage === 'pass').sort((a, b) => a.since - b.since); }
+
+  sendOut() {
+    const p = this.passList()[0];
+    if (!p) return;
+    this.setState((s) => ({ plates: s.plates.map((x) => (x.id === p.id ? { ...x, stage: 'out', t: 0 } : x)), checked: s.checked + 1 }));
+    this.say('You vouched for ' + p.dish + '.', true);
+  }
+
+  sendBack() {
+    const p = this.passList()[0];
+    if (!p) return;
+    this.setState((s) => ({ plates: s.plates.map((x) => (x.id === p.id ? { ...x, stage: 'back', t: 0 } : x)), checked: s.checked + 1, picking: { si: p.si, bad: p.bad } }));
+  }
+
+  fix(key) {
+    const pk = this.state.picking;
+    if (!pk) return;
+    const F = this.FIXES.find((f) => f.key === key);
+    this.setState((s) => {
+      const st = s.st.map((x) => ({ ...x }));
+      const x = st[pk.si];
+      let tasterSkill = s.tasterSkill;
+      if (key === 'structure' || key === 'lint') { x.hazard = ''; x.unprovable = false; x.weak = false; }
+      if (key === 'verifier') { tasterSkill = Math.min(0.95, tasterSkill + 0.08); if (x.unprovable) { x.hazard = ''; x.unprovable = false; } }
+      if (key === 'skills') x.weak = true;
+      if (key === 'review') x.hand = true;
+      x.trust = Math.min(98, x.trust + F.trust);
+      return { st, tasterSkill, picking: null, fixCount: s.fixCount + (key === 'review' ? 0 : 1) };
+    });
+    const name = this.state.st[pk.si].name;
+    this.say(pk.bad ? F.name + ' at ' + name + '. Agent opened the PR.' : 'That plate was fine, but ' + F.name.toLowerCase() + ' at ' + name + ' anyway.', pk.bad);
+  }
+
+  renderVals() {
+    const s = this.state;
+    const pass = this.passList();
+    const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const passPt = { x: 771, y: 236 };
+    const tableXY = (i) => ({ x: 794 + this.TABLES[i].x + 35, y: this.TABLES[i].y + 35 });
+    const foods = ['#E05A3A', '#5E86A0', '#F2C14E', '#6BAF4A'];
+    const plates = s.plates.map((p) => {
+      let pt;
+      const sp = this.stationXY(p.si);
+      if (p.stage === 'toPass') pt = lerp(sp, passPt, p.t);
+      else if (p.stage === 'pass') { const k = pass.indexOf(p); pt = { x: 771, y: 150 + Math.min(k, 7) * 30 }; }
+      else if (p.stage === 'out') pt = lerp(passPt, tableXY(p.table), p.t);
+      else if (p.stage === 'table') pt = tableXY(p.table);
+      else pt = lerp(passPt, sp, p.t);
+      return { x: pt.x, y: pt.y, food: foods[p.si] };
+    });
+    const stations = s.st.map((x, i) => {
+      const canHire = x.trust >= 80 && x.cooks < 3;
+      const cooks = [];
+      for (let k = 0; k < x.cooks; k += 1) cooks.push({ d: k * 0.3 });
+      return {
+        left: 16 + i * 170, name: x.name, role: x.role, cook: x.cook, color: x.color,
+        pct: Math.round(x.prog * 100), cooks, cookCount: x.cooks, plural: x.cooks > 1 ? 's' : '',
+        trust: Math.round(x.trust), trustColor: x.trust >= 80 ? '#3E8E3A' : x.trust >= 55 ? '#C98A1E' : '#C0392B',
+        hasHazard: !!x.hazard, hazard: x.hazard + (x.weak ? ' (recipe card helps)' : ''), handPlate: x.hand,
+        cantHire: !canHire, hireBg: canHire ? '#8FD38A' : 'rgba(255,255,255,.4)', hireFg: canHire ? '#12240F' : '#4A4F55',
+        hireLabel: x.cooks >= 3 ? 'Station full' : canHire ? 'Hire another cook' : 'More cooks at 80% trust',
+        hire: () => { if (canHire) { this.setState((st0) => ({ st: st0.st.map((y, j) => (j === i ? { ...y, cooks: y.cooks + 1 } : y)) })); this.say('Trust first, then parallel. ' + x.name + ' gets another cook.', true); } }
+      };
+    });
+    const weedsN = Math.round(s.weeds);
+    const garden = [];
+    for (let k = 0; k < 34; k += 1) {
+      const weed = k % 34 < weedsN && (k * 7) % 3 !== 0;
+      garden.push({ h: weed ? 12 + (k * 5) % 10 : 18 + (k * 7) % 14, color: weed ? '#7A6A2A' : (k % 2 ? '#5FA85A' : '#4E8E48'), d: (k % 6) * 0.3 });
+    }
+    const cur0 = pass[0];
+    let cur = { tag: '', tagBg: '#E8A33B', station: '', cook: '', dish: '', reason: '', notes: [] };
+    if (cur0) {
+      const x = s.st[cur0.si];
+      const reason = cur0.reserved ? 'You reserved anything that deletes user data. No cook sends it out.' : x.hand ? 'You said you plate this station yourself.' : "Tasters couldn't taste it. They can't reach the Export sheet.";
+      const notes = [
+        { text: 'Gates: tests pass', color: '#8FD38A' },
+        { text: cur0.reserved ? 'Live taste: deleted 3 seeded recordings' : x.unprovable ? 'Live taste: could not reach the dish' : 'Live taste: looks right', color: x.unprovable && !cur0.reserved ? '#E8A33B' : '#8FD38A' },
+        cur0.bad ? { text: 'Plating: ' + x.flag, color: '#E05A3A' } : { text: 'Plating: clean, matches the ticket', color: '#8FD38A' }
+      ];
+      cur = { tag: cur0.reserved ? 'Reserved' : x.hand ? 'Yours to plate' : "Couldn't taste", tagBg: cur0.reserved ? '#B98CFF' : '#E8A33B', station: x.name, cook: x.cook, dish: cur0.dish, reason, notes };
+    }
+    const pk = s.picking;
+    const fixes = this.FIXES.map((f) => {
+      const x = pk ? s.st[pk.si] : null;
+      const rec = x && ((x.unprovable && f.key === 'verifier') || (!x.unprovable && x.hazard && f.key === 'lint'));
+      return { name: f.name, desc: f.desc, border: rec ? '#E8A33B' : '#4A3A2C', tag: rec ? 'Claude suggests' : f.key === 'review' ? 'doesn\'t scale' : '', tagColor: rec ? '#E8A33B' : '#B9A88E', pick: () => this.fix(f.key) };
+    });
+    const full = Math.floor(s.stars);
+    const frac = s.stars - full;
+    const starList = [0, 1, 2].map((k) => ({ color: k < full ? '#E8A33B' : k === full && frac > 0.5 ? '#9A7A4A' : '#4A3A2C', colorLight: k < full ? '#C98A1E' : k === full && frac > 0.5 ? '#E2C48E' : '#E2D8C6' }));
+    const left = Math.max(0, Math.ceil(s.len - s.time));
+    const total = s.autoOut + s.checked;
+    const verdicts = ['The kitchen needs work', 'One star. Solid.', 'Two stars. Worth the trip.', 'Three stars. Exceptional.'];
+    return {
+      service: s.phase === 'end' ? s.service + 1 : s.service,
+      endedService: s.endedService,
+      clock: Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0'),
+      stars: starList, served: s.served, escapes: s.escapes, escColor: s.escapes ? '#E05A3A' : '#F3EBDD', caught: s.caught,
+      toastOn: s.toastT > 0 && !!s.toast, toast: s.toast, toastColor: s.toastGood ? '#8FD38A' : '#FF8A7A',
+      tickets: s.tickets, stations, plates, garden,
+      weedText: weedsN > 8 ? weedsN + ' weeds, workarounds are spreading' : weedsN + ' weeds',
+      gardenBusy: s.gardenCd > 0, gardenBg: s.gardenCd > 0 ? '#8A7A62' : '#8FD38A',
+      gardenLabel: s.gardenCd > 0 ? 'Gardener busy ' + Math.ceil(s.gardenCd) + 's' : 'Send the gardener',
+      garden_go: () => { if (s.gardenCd <= 0) { this.setState({ weeds: 0, gardenCd: 25 }); this.say('Gardener pulled the weeds. Fewer bad patterns to copy.', true); } },
+      tasters: [{ top: 120, name: 'gates', d: 0 }, { top: 196, name: 'live taste', d: 0.3 }, { top: 272, name: 'plating', d: 0.6 }],
+      tables: this.TABLES.map((t, i) => ({ x: t.x, y: t.y + 30, face: ['#E8B48A', '#C98A5E', '#F2CFA6'][i % 3], face2: ['#A86A44', '#F2CFA6', '#E8B48A'][i % 3], inspector: i === 3, angry: !!s.angry[i] })),
+      hasWaiting: pass.length > 0, waiting: pass.length,
+      hasPass: !!cur0, noPass: !cur0, cur,
+      sendOut: () => this.sendOut(), sendBack: () => this.sendBack(),
+      picking: !!pk, notPicking: !pk, fixes,
+      legend: [
+        { a: 'Head chef', b: 'You. You don\'t cook, you answer for every plate.' },
+        { a: 'Sous chef', b: 'Claude, splitting feedback into tickets.' },
+        { a: 'Line cooks', b: 'Coding agents, one station each.' },
+        { a: 'Tasters at the pass', b: 'Verifiers. Only what they can\'t taste reaches you.' },
+        { a: 'Diner sends it back', b: 'An escape. A bad fix reached users.' },
+        { a: 'Cook keeps tripping', b: 'A recurring mistake. Fix the kitchen, not the cook.' },
+        { a: 'Weeds', b: 'Workarounds agents copy. Needs a gardener.' }
+      ],
+      tasterSkill: Math.round(s.tasterSkill * 100), checked: s.checked, fixCount: s.fixCount,
+      handsOff: total ? Math.round((s.autoOut / total) * 100) : 100,
+      isEnd: s.phase === 'end',
+      verdict: verdicts[Math.max(0, Math.min(3, Math.round(s.stars)))],
+      endStats: [
+        { label: 'Plates served', value: s.served }, { label: 'Sent back by diners', value: s.escapes }, { label: 'Caught by tasters', value: s.caught },
+        { label: 'You checked', value: s.checked }, { label: 'Kitchen fixes', value: s.fixCount }, { label: 'Hands-off', value: (total ? Math.round((s.autoOut / total) * 100) : 100) + '%' }
+      ],
+      nextService: () => this.setState((s0) => ({ phase: 'play', service: s0.service + 1, time: 0, plates: [], served: 0, escapes: 0, caught: 0, checked: 0, autoOut: 0, angry: {}, toast: 'Service ' + (s0.service + 1) + '. Busier tonight.', toastT: 2, toastGood: true }))
+    };
+  }
+}
+</script>
+</body>
+</html>
