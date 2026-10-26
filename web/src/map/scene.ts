@@ -102,6 +102,14 @@ export interface Ping {
   title: string; // a few words: "Needs a look", "Ready to launch"
   code?: string; // the part of the codebase: "/web", "src/sync"
   tone?: "warn" | "ok";
+  quiet?: boolean; // a small tag on a busy machine (no pulse), not the one thing that needs you
+}
+
+interface PingEl {
+  key: string;
+  el: HTMLButtonElement;
+  title: HTMLElement;
+  code: HTMLElement;
 }
 
 interface Label {
@@ -127,6 +135,7 @@ interface DistrictView {
   center: THREE.Vector3;
   label: Label;
   files: number;
+  update: (t: number) => void; // rack lights, fans, signs
 }
 
 interface ItemView {
@@ -145,18 +154,45 @@ interface BiterView {
   attacking: boolean;
 }
 
-type OreKind = "sentry" | "inbox" | "issues";
+type OreKind = "sentry" | "inbox" | "posthog" | "issues";
 
 function oreKind(m: Machine): OreKind {
   if (m.id.includes("sentry")) return "sentry";
   if (m.id.includes("inbox")) return "inbox";
+  if (m.id.includes("posthog")) return "posthog";
   return "issues";
+}
+
+// Sources you haven't connected yet sit on the island as empty mines (docs/PRODUCT.md, Onboarding): a dim
+// deposit with a "tap to connect" label, picked as "src:<kind>". Connecting one replaces it with the real deposit.
+export const GHOST_SOURCES = ["sentry", "posthog"] as const;
+export type GhostSource = (typeof GHOST_SOURCES)[number];
+const GHOST_TRY: Record<GhostSource, [number, number][]> = {
+  sentry: [[0, -3], [0, -6], [-3, -3]],
+  posthog: [[-3, 0], [0, 6], [-3, 3]],
+};
+
+export function ghostSpots(state: FactoryState): { kind: GhostSource; x: number; y: number }[] {
+  const ore = state.machines.find((m) => m.type === "ore_deposit" && oreKind(m) === "issues");
+  if (!ore) return [];
+  const taken = state.machines.map((m) => [m.x, m.y]);
+  const out: { kind: GhostSource; x: number; y: number }[] = [];
+  for (const kind of GHOST_SOURCES) {
+    const live = state.machines.some((m) => m.type === "ore_deposit" && oreKind(m) === kind) || state.sources?.some((x) => (x.kind as string) === kind && x.state === "connected");
+    if (live) continue;
+    const spot = GHOST_TRY[kind].map(([dx, dy]) => [ore.x + dx, ore.y + dy]).find(([x, y]) => !taken.some(([tx, ty]) => Math.abs(tx - x) < 2 && Math.abs(ty - y) < 2));
+    if (!spot) continue;
+    taken.push(spot);
+    out.push({ kind, x: spot[0], y: spot[1] });
+  }
+  return out;
 }
 
 // Item Lab variants: [name, color, extra?]
 const ORE_VARIANT: Record<OreKind, BuildOpts["variant"]> = {
   sentry: ["SENTRY", 0xff5e52],
   inbox: ["INBOX", 0x6fb2ff],
+  posthog: ["POSTHOG", 0xf2cf6b],
   issues: ["ISSUES", 0xf2a93b],
 };
 
@@ -185,7 +221,12 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
 // Gauntlet stations are inspector-type machines; the station kind picks the Item Lab model.
 const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4 };
 const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
+const CAUGHT_SLAM_MS = 620; // the verify bay's ram slam in the sound (shiptorio:station), so the CAUGHT! lands on it
 const FOCUS_ZOOM = 0.5; // how close the camera flies in on a picked machine
+// Every launch is the payoff, so the camera flies to the pad, rides the rocket up a little, then eases home.
+const LAUNCH_ZOOM = 0.62;
+const LAUNCH_RISE = 3.2; // world units the camera climbs with the rocket
+const LAUNCH_HOLD = 5.2; // seconds before it eases back to where you were
 const clickable = (key: string) => !key.startsWith("d:") && key !== "drone";
 
 function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built {
@@ -243,6 +284,7 @@ export class FactoryScene {
   private readonly districts = new Map<string, DistrictView>();
   private readonly items = new Map<string, ItemView>();
   private readonly biters = new Map<string, BiterView>();
+  private readonly ghosts = new Map<GhostSource, { built: Built; label: Label }>();
   private readonly paths = new Map<string, Path>(); // "from>to" and "rework:inspector>assembler"
   private readonly labels = new Set<Label>();
   private beltTextures: THREE.Texture[] = [];
@@ -273,19 +315,26 @@ export class FactoryScene {
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
   private readonly glow = box(3.4, 0.06, 3.4, new THREE.MeshBasicMaterial({ color: 0xf2a93b, transparent: true, opacity: 0.4 }), 0, 0.04, 0);
   private rework?: { built: Built; label: Label };
+  // a station's verdict on the item that just left it: the art plays PASS or FAIL for a beat
+  private verdicts = new Map<string, { fail: boolean; until: number }>();
+  // floating "PASS" / "CAUGHT!" pops over stations, and the shockwave rings when the verify bay catches one
+  private pops: { el: HTMLElement; at: THREE.Vector3; until: number }[] = [];
+  private shocks: { mesh: THREE.Mesh; born: number }[] = [];
   // labels show on hover, on the picked thing, when hot, or all of them when toggled on
   private hovered?: string;
   private selected?: string;
   private showAll = false;
   private camGoal: { target: THREE.Vector3; zoom: number } | null = null;
   private home: { target: THREE.Vector3; zoom: number } | null = null;
+  private launchCam: { back: { target: THREE.Vector3; zoom: number }; t0: number } | null = null;
+  private synced = false; // launches already done when the map first loads don't fly the camera
   // where the camera target sits on screen, as a fraction of width/height from center (+x right, +y up).
   // On phones the HUD covers the bottom, so the island and picked things sit higher (or left, on a phone on its side).
   private bias = { x: 0, y: 0 };
   private biasGoal: { x: number; y: number } | null = null;
   private readonly ray = new THREE.Raycaster();
-  // the one in-world ping: a pulsing dot on whatever needs you, tagged with the code it touches
-  private ping?: { key: string; el: HTMLButtonElement; title: HTMLElement; code: HTMLElement };
+  // in-world pings: a pulsing dot on whatever needs you, plus quiet tags on busy machines, each naming the code it touches
+  private pings: PingEl[] = [];
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -334,12 +383,14 @@ export class FactoryScene {
 
   // factor > 1 zooms out
   zoomBy(factor: number) {
+    this.dropLaunchCam();
     this.camGoal = null;
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
   panBy(dx: number, dy: number) {
+    this.dropLaunchCam();
     this.camGoal = null;
     const k = (this.camera.top - this.camera.bottom) / this.height;
     const right = new THREE.Vector3(Math.cos(YAW), 0, -Math.sin(YAW));
@@ -382,7 +433,7 @@ export class FactoryScene {
     const first = !this.state;
     this.state = state;
     this.syncMachines(state.machines);
-    const key = JSON.stringify([state.districts, state.machines.map((m) => [m.x, m.y])]);
+    const key = JSON.stringify([state.districts, state.machines.map((m) => [m.x, m.y]), ghostSpots(state)]);
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
@@ -395,8 +446,10 @@ export class FactoryScene {
     this.syncBelts(state);
     this.syncDistricts(state);
     this.syncItems(state.items);
+    this.synced = true;
     this.syncBiters(state.items);
     this.syncLabels(state);
+    this.syncGhosts(state);
     this.syncGauntlet(state);
     this.syncDrone(state, first);
   }
@@ -471,36 +524,41 @@ export class FactoryScene {
     this.showAll = on;
   }
 
-  // Pin the ping to a pick key (station id, "m:<machine id>", "d:<district>", "rework"), or clear it.
-  setPing(p: Ping | null) {
-    if (!p) {
-      this.ping?.el.remove();
-      this.ping = undefined;
-      return;
-    }
-    if (!this.ping) {
-      const el = document.createElement("button");
-      el.type = "button";
-      el.className = "mapping";
-      const dot = document.createElement("i");
-      const tag = document.createElement("span");
-      const title = document.createElement("b");
-      const code = document.createElement("code");
-      tag.append(title, code);
-      el.append(dot, tag);
-      el.addEventListener("click", () => this.ping && this.onPick?.(this.ping.key));
-      this.labelRoot.appendChild(el);
-      this.ping = { key: p.key, el, title, code };
-    }
-    this.ping.key = p.key;
-    this.ping.el.classList.toggle("ok", p.tone === "ok");
-    this.ping.el.setAttribute("aria-label", `${p.title}${p.code ? ` in ${p.code}` : ""}`);
-    if (this.ping.title.textContent !== p.title) this.ping.title.textContent = p.title;
-    if (this.ping.code.textContent !== (p.code ?? "")) this.ping.code.textContent = p.code ?? "";
+  // Pin pings to pick keys (station id, "m:<machine id>", "d:<district>", "rework"). An empty list clears them.
+  setPings(list: Ping[]) {
+    while (this.pings.length > list.length) this.pings.pop()!.el.remove();
+    list.forEach((p, n) => {
+      let pe = this.pings[n];
+      if (!pe) {
+        const el = document.createElement("button");
+        el.type = "button";
+        const dot = document.createElement("i");
+        const tag = document.createElement("span");
+        const title = document.createElement("b");
+        const code = document.createElement("code");
+        tag.append(title, code);
+        el.append(dot, tag);
+        pe = { key: p.key, el, title, code };
+        const me = pe;
+        el.addEventListener("click", () => this.onPick?.(me.key));
+        this.labelRoot.appendChild(el);
+        this.pings.push(pe);
+      }
+      pe.key = p.key;
+      pe.el.className = `mapping${p.quiet ? " quiet" : ""}${p.tone === "ok" ? " ok" : ""}`;
+      pe.el.setAttribute("aria-label", `${p.title}${p.code ? ` in ${p.code}` : ""}`);
+      if (pe.title.textContent !== p.title) pe.title.textContent = p.title;
+      if (pe.code.textContent !== (p.code ?? "")) pe.code.textContent = p.code ?? "";
+    });
   }
 
   // Fly the camera in on a picked thing, or back out to where it was (null).
   focus(key: string | null) {
+    if (this.launchCam) {
+      // you picked something mid-launch: home is where you were before the fly-in
+      this.home ??= this.launchCam.back;
+      this.dropLaunchCam();
+    }
     this.selected = key ?? undefined;
     const l = key ? [...this.labels].find((x) => x.key === key) : undefined;
     if (l) {
@@ -514,6 +572,22 @@ export class FactoryScene {
     this.biasGoal = this.biasFor(!!this.home);
   }
 
+  // Fly to the launch pad and follow the rocket up. Skipped when you're looking at something or prefer less motion.
+  private flyToLaunch() {
+    const pad = this.ofType("launch_pad")[0];
+    if (!pad || this.reduceMotion || this.home) return;
+    const back = this.launchCam?.back ?? { target: this.target.clone().setY(0), zoom: this.zoom };
+    this.launchCam = { back, t0: this.t };
+    const p = this.machinePos(pad);
+    this.camGoal = { target: new THREE.Vector3(p.x, 0, p.z), zoom: Math.min(back.zoom, LAUNCH_ZOOM) };
+  }
+
+  private dropLaunchCam() {
+    if (!this.launchCam) return;
+    this.launchCam = null;
+    this.target.y = 0;
+  }
+
   // ---------- world: island, districts, scenery ----------
 
   private buildWorld(state: FactoryState) {
@@ -524,7 +598,7 @@ export class FactoryScene {
     this.rocks = [];
     this.rising = [];
 
-    const ms = state.machines.map((m) => this.machinePos(m));
+    const ms = [...state.machines, ...ghostSpots(state)].map((m) => this.machinePos(m));
     let x0 = Math.min(-8, ...ms.map((p) => p.x - 2.5));
     let x1 = Math.max(8, ...ms.map((p) => p.x + 2.5));
     let z1 = Math.max(4, ...ms.map((p) => p.z + 2.5));
@@ -542,13 +616,13 @@ export class FactoryScene {
       const dep = Math.max(1.4, d.h * S - 0.4);
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
-      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
+      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
       this.world.add(model.group);
       const label = this.addLabel(model.group, model.labelY, `d:${d.name}`);
-      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
+      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files, update: model.update });
       x0 = Math.min(x0, cx - w / 2 - 1.5);
       x1 = Math.max(x1, cx + w / 2 + 1.5);
       z0 = Math.min(z0, cz - dep / 2 - 1.5);
@@ -601,6 +675,39 @@ export class FactoryScene {
       v.built.g.position.copy(this.machinePos(m));
     }
     for (const id of [...this.machines.keys()]) if (!seen.has(id)) this.removeMachine(id);
+  }
+
+  private syncGhosts(state: FactoryState) {
+    const spots = ghostSpots(state);
+    for (const [kind, g] of this.ghosts)
+      if (!spots.some((sp) => sp.kind === kind)) {
+        this.scene.remove(g.built.g);
+        this.dropLabel(g.label);
+        this.ghosts.delete(kind);
+      }
+    // they wait quietly until the first rocket, then ask: did that help anyone?
+    const ask = (state.metrics?.rockets ?? 0) > 0;
+    for (const sp of spots) {
+      let g = this.ghosts.get(sp.kind);
+      if (!g) {
+        const built = buildOre({ variant: ORE_VARIANT[sp.kind] });
+        built.g.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material).clone() as THREE.Material;
+          mat.transparent = true;
+          mat.opacity = 0.35;
+          mat.depthWrite = false;
+          mesh.material = mat;
+          mesh.castShadow = false;
+        });
+        g = { built, label: this.addLabel(built.g, LABEL_Y.ore_deposit ?? 2.6, `src:${sp.kind}`) };
+        this.ghosts.set(sp.kind, g);
+        this.scene.add(built.g);
+      }
+      g.built.g.position.copy(this.machinePos(sp));
+      this.setLabel(g.label, sp.kind.toUpperCase(), "empty mine · tap to connect", ask);
+    }
   }
 
   private removeMachine(id: string) {
@@ -833,6 +940,7 @@ export class FactoryScene {
         if (!this.launched.has(item.id)) {
           this.launched.add(item.id);
           this.launchUntil = this.t + LAUNCH_SECONDS;
+          if (this.synced) this.flyToLaunch();
         }
         return;
       }
@@ -847,6 +955,7 @@ export class FactoryScene {
       (v.mesh.material as THREE.MeshPhongMaterial).emissive.setHex(item.state === "passed" || item.state === "on_pad" ? 0x14402a : 0);
       if (v.state !== item.state || v.at !== item.machineId) {
         const fresh = v.state === null;
+        if (v.state === "inspecting" && v.at) this.verdict(v.at, item);
         v.state = item.state;
         v.at = item.machineId;
         this.plan(v, item, i);
@@ -922,8 +1031,72 @@ export class FactoryScene {
     }
   }
 
+  // An item just left a station: it passed if it moved on, failed if it went onto the rework belt.
+  private verdict(machineId: string, item: Item) {
+    const st = this.stationAt(machineId);
+    const m = this.byId(machineId);
+    if (!st || !m || st.kind === "orbit") return;
+    const fail = item.state === "rejected";
+    this.verdicts.set(machineId, { fail, until: this.t + (fail ? 3 : 1.6) });
+    const at = this.machinePos(m).setY((STATION_LABEL_Y[st.kind] ?? 2.4) + 0.6);
+    if (fail && st.kind === "verify") return this.caught(st, m, item, at);
+    this.pop(at, fail ? "FAIL" : "PASS", fail ? "fail" : "pass");
+  }
+
+  // The demo moment: CI waved a fix through and the verify bay caught it anyway.
+  // The bay goes red at once (with the sound's klaxon); the slam lands on the sound's ram hit, CAUGHT_SLAM_MS later.
+  private caught(st: Station, m: Machine, item: Item, at: THREE.Vector3) {
+    window.dispatchEvent(new CustomEvent("shiptorio:caught", { detail: { itemId: item.id, title: item.title, stationId: st.id } }));
+    setTimeout(() => this.slam(m, item, at), CAUGHT_SLAM_MS);
+  }
+
+  private slam(m: Machine, item: Item, at: THREE.Vector3) {
+    const why = item.scars?.at(-1)?.reason ?? item.failure;
+    this.pop(at, "CAUGHT!", "caught", !why ? "passed CI · failed verify" : /\bCI\b/.test(why) ? why : `passed CI · ${why}`, 3.2);
+    if (this.reduceMotion) return;
+    const base = this.machinePos(m);
+    for (const delay of [0, 0.18, 0.36]) {
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.05, 32), new THREE.MeshBasicMaterial({ color: delay ? 0xffb340 : 0xff5e52, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(base.x - 0.35, 0.2, base.z - 0.2);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.shocks.push({ mesh, born: this.t + delay });
+    }
+    const flash = document.createElement("div");
+    flash.className = "caught-flash";
+    this.labelRoot.appendChild(flash);
+    setTimeout(() => flash.remove(), 1200);
+    document.body.classList.remove("caught-shake");
+    void document.body.offsetWidth; // restart the shake if two land close together
+    document.body.classList.add("caught-shake");
+    setTimeout(() => document.body.classList.remove("caught-shake"), 700);
+  }
+
+  private pop(at: THREE.Vector3, text: string, kind: string, sub?: string, life = 1.6) {
+    const el = document.createElement("div");
+    el.className = `mappop ${kind}`;
+    const b = document.createElement("b");
+    b.textContent = text;
+    el.append(b);
+    if (sub) {
+      const i = document.createElement("i");
+      i.textContent = sub;
+      el.append(i);
+    }
+    el.style.animationDuration = `${life}s`;
+    this.labelRoot.appendChild(el);
+    this.pops.push({ el, at, until: this.t + life });
+  }
+
   private stationArt(st: Station, m: Machine): string {
     const items = this.state!.items;
+    const v = this.verdicts.get(m.id);
+    if (v && this.t < v.until) {
+      const k = st.kind;
+      if (v.fail) return k === "verify" ? "FAIL" : k === "review" ? "CHANGES" : k === "merge" ? "REJECTED" : "REJECT";
+      return k === "review" || k === "merge" ? "APPROVED" : "PASS";
+    }
     const failing = items.some((i) => i.state === "rejected" && i.machineId === m.id);
     const busy = st.wip > 0;
     const backed = st.wip >= BACKED_UP;
@@ -989,6 +1162,11 @@ export class FactoryScene {
         case "ore_deposit": {
           const kind = oreKind(m);
           // count this deposit's own source, and ore Spark hasn't started building yet
+          if (kind === "posthog") {
+            const n = count((i) => (i.source as string) === "posthog" && (i.state === "ore" || i.state === "queued"));
+            this.setLabel(v.label, "POSTHOG", `${n} waiting · user signals`);
+            break;
+          }
           const src = { sentry: "sentry", inbox: "inbox", issues: "github_issue" }[kind];
           const n = count((i) => i.source === src && (i.state === "ore" || i.state === "queued"));
           const name = { sentry: "SENTRY", inbox: "INBOX", issues: "ISSUES" }[kind];
@@ -1049,6 +1227,17 @@ export class FactoryScene {
     }
   }
 
+  private placePops() {
+    const w = this.width, h = this.height;
+    this.pops = this.pops.filter((p) => {
+      if (this.t > p.until) return (p.el.remove(), false);
+      this.v3.copy(p.at).project(this.camera);
+      p.el.style.left = `${((this.v3.x + 1) / 2) * w}px`;
+      p.el.style.top = `${((1 - this.v3.y) / 2) * h}px`;
+      return true;
+    });
+  }
+
   private placeLabels() {
     const w = this.width, h = this.height;
     for (const l of this.labels) {
@@ -1061,19 +1250,20 @@ export class FactoryScene {
       l.el.style.display = off ? "none" : "flex";
       if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
     }
-    if (this.ping) {
-      const l = [...this.labels].find((x) => x.key === this.ping!.key);
-      if (!l) this.ping.el.style.display = "none";
-      else {
-        l.obj.getWorldPosition(this.v3);
-        this.v3.y += l.y * 0.55;
-        this.v3.project(this.camera);
-        const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
-        this.ping.el.style.display = "flex";
-        this.ping.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
-        // keep the tag on screen: flip it to the dot's left near the right edge
-        this.ping.el.classList.toggle("flip", x > w - 220);
+    for (const pe of this.pings) {
+      const l = [...this.labels].find((x) => x.key === pe.key);
+      if (!l) {
+        pe.el.style.display = "none";
+        continue;
       }
+      l.obj.getWorldPosition(this.v3);
+      this.v3.y += l.y * 0.55;
+      this.v3.project(this.camera);
+      const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
+      pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
+      pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      // keep the tag on screen: flip it to the dot's left near the right edge
+      pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
     }
   }
 
@@ -1093,6 +1283,19 @@ export class FactoryScene {
     }
     if (this.rework) this.rework.built.update(t, dt, (this.state?.items.filter((i) => i.state === "rejected").length ?? 0) >= BACKED_UP ? "CLOGGED" : "FLOWING");
     if (this.glow.visible) (this.glow.material as THREE.MeshBasicMaterial).opacity = this.reduceMotion ? 0.4 : 0.25 + Math.abs(Math.sin(t * 2.4)) * 0.3;
+    if (this.launchCam) {
+      const age = t - this.launchCam.t0;
+      if (age > LAUNCH_HOLD) {
+        this.camGoal = this.launchCam.back;
+        this.launchCam = null;
+      } else {
+        // climb after ignition, ease out as the rocket leaves the frame
+        const k = Math.min(1, Math.max(0, (age - 0.8) / 2.4));
+        const rise = LAUNCH_RISE * k * k * (3 - 2 * k) * (age > LAUNCH_SECONDS + 0.6 ? Math.max(0, 1 - (age - LAUNCH_SECONDS - 0.6)) : 1);
+        if (this.camGoal) this.camGoal.target.y = rise;
+        else this.target.y = rise;
+      }
+    }
     if (this.camGoal) {
       const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * 4);
       this.target.lerp(this.camGoal.target, k);
@@ -1107,6 +1310,7 @@ export class FactoryScene {
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterfalls) w(dt, t);
+    for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);
@@ -1170,12 +1374,23 @@ export class FactoryScene {
     this.sun.position.set(this.target.x + 14, 26, this.target.z + 8);
     this.sun.target.position.copy(this.target);
 
+    for (const sh of this.shocks) {
+      const age = t - sh.born;
+      sh.mesh.visible = age >= 0;
+      sh.mesh.scale.setScalar(1 + Math.max(0, age) * 7);
+      (sh.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.9 - age * 1.1);
+      if (age > 0.85) (this.scene.remove(sh.mesh), sh.mesh.geometry.dispose());
+    }
+    this.shocks = this.shocks.filter((sh) => t - sh.born <= 0.85);
+
     this.pass.render(this.renderer, this.scene, this.camera);
     this.placeLabels();
+    this.placePops();
   };
 
   dispose() {
-    this.ping?.el.remove();
+    for (const pe of this.pings) pe.el.remove();
+    for (const p of this.pops) p.el.remove();
     cancelAnimationFrame(this.raf);
     for (const l of this.labels) l.el.remove();
     this.labels.clear();

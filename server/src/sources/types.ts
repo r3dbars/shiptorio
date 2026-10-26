@@ -10,6 +10,8 @@ export interface Signal {
   url?: string;
   districtHint?: string;
   usersAffected: number;
+  /** A source-reported running total (Sentry userCount). Folds as max, not sum. */
+  usersTotal?: number;
   reporter?: string;
   reporters?: string[];
   occurredAt: number;

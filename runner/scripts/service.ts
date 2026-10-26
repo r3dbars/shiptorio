@@ -1,8 +1,9 @@
 // Reversible macOS background service; credentials stay in the existing gitignored vars file.
 import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { pairingConfig } from "../src/service-config";
 const runnerRoot = resolve(import.meta.dir, "..");
-const repoRoot = resolve(runnerRoot, "..");
+const support = resolve(process.env.HOME!, "Library/Application Support/Shiptorio");
 const label = "com.shiptorio.runner";
 const domain = `gui/${process.getuid!()}`;
 const plist = resolve(process.env.HOME!, "Library/LaunchAgents", `${label}.plist`);
@@ -16,14 +17,20 @@ const launch = async (args: string[], required = true) => {
 if (process.platform !== "darwin") throw new Error("Run runner watch on this platform; service installation currently supports macOS.");
 if (action === "install") {
   if (!(await Bun.file(resolve(runnerRoot, ".dev.vars")).exists())) throw new Error("Pair this Mac first");
-  const runtime = resolve(runnerRoot, ".work/runtime/bun");
-  await mkdir(dirname(runtime), { recursive: true });
+  const runtime = resolve(support, "bun");
+  await mkdir(support, { recursive: true, mode: 0o700 });
+  const bundled = await Bun.build({ entrypoints: [resolve(runnerRoot, "src/cli.ts")], target: "bun", outdir: support, naming: "runner.mjs" });
+  if (!bundled.success) throw new Error("Unable to bundle the background runner");
+  const vars = Bun.file(resolve(support, ".dev.vars"));
+  const config = pairingConfig(await Bun.file(resolve(runnerRoot, ".dev.vars")).text(), await vars.exists() ? await vars.text() : undefined);
+  await writeFile(resolve(support, ".dev.vars"), config, { mode: 0o600 });
+  await chmod(resolve(support, ".dev.vars"), 0o600);
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const args = [runtime, `--env-file=${resolve(runnerRoot, ".dev.vars")}`, resolve(runnerRoot, "src/cli.ts"), "watch"];
+  const args = [runtime, `--env-file=${resolve(support, ".dev.vars")}`, resolve(support, "runner.mjs"), "watch"];
   const path = [...new Set([dirname(runtime), ...[Bun.which("codex"), Bun.which("claude")].filter(Boolean).map(p => dirname(p!)), "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
   await mkdir(dirname(plist), { recursive: true });
-  await writeFile(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${esc(a)}</string>`).join("")}</array><key>WorkingDirectory</key><string>${esc(repoRoot)}</string><key>EnvironmentVariables</key><dict><key>HOME</key><string>${esc(process.env.HOME!)}</string><key>PATH</key><string>${esc(path)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${esc(resolve(runnerRoot, ".work/service.log"))}</string><key>StandardErrorPath</key><string>${esc(resolve(runnerRoot, ".work/service-error.log"))}</string></dict></plist>`, { mode: 0o600 });
+  await writeFile(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${esc(a)}</string>`).join("")}</array><key>WorkingDirectory</key><string>${esc(support)}</string><key>EnvironmentVariables</key><dict><key>HOME</key><string>${esc(process.env.HOME!)}</string><key>PATH</key><string>${esc(path)}</string><key>SHIPTORIO_RUNNER_ROOT</key><string>${esc(support)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${esc(resolve(support, "service.log"))}</string><key>StandardErrorPath</key><string>${esc(resolve(support, "service-error.log"))}</string></dict></plist>`, { mode: 0o600 });
   await launch(["bootout", `${domain}/${label}`], false);
   await launch(["bootstrap", domain, plist]);
   console.log("Shiptorio runner installed and started for this Mac user. Only approved jobs can run.");

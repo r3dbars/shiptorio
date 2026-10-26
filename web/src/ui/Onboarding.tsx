@@ -3,8 +3,10 @@
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
 import { useEffect, useState } from "react";
+import { Intro } from "./Intro";
+import { IslandBackdrop } from "./IslandBackdrop";
 
-export type OnboardStep = "hello" | "repo";
+export type OnboardStep = "hello" | "intro" | "repo";
 
 interface Repo {
   fullName: string;
@@ -14,10 +16,27 @@ interface Repo {
 
 // Sim stand-ins until the server lists the App's installed repos.
 const SIM_REPOS: Repo[] = [
-  { fullName: "r3dbars/shiptorio", blurb: "TypeScript · Cloudflare Worker + React", issues: 2 },
-  { fullName: "you/demo-shop", blurb: "Next.js shop · Stripe test mode", issues: 3 },
-  { fullName: "you/side-project", blurb: "Python CLI · no CI yet", issues: 0 },
+  { fullName: "you/demo-shop", blurb: "Demo shop · sample issues", issues: 3 },
 ];
+
+// The welcome intro is off until it's rebuilt in the game's own art (Justin, 2026-10-26): ?intro=1 shows it.
+// Storage can be off (private windows), so seen fails open.
+const INTRO_ON = new URLSearchParams(location.search).get("intro") === "1";
+function introSeen() {
+  if (!INTRO_ON) return true;
+  try {
+    return localStorage.getItem("shiptorio:intro") === "1";
+  } catch {
+    return false;
+  }
+}
+function markIntroSeen() {
+  try {
+    localStorage.setItem("shiptorio:intro", "1");
+  } catch {
+    // replays next time, which is fine
+  }
+}
 
 function Coach({ children }: { children: React.ReactNode }) {
   return (
@@ -28,7 +47,7 @@ function Coach({ children }: { children: React.ReactNode }) {
 }
 
 export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
-  const [step, setStep] = useState<OnboardStep>(initial);
+  const [step, setStep] = useState<OnboardStep>(initial === "intro" && !INTRO_ON ? "repo" : initial);
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -41,7 +60,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
       .then((r) => r.json() as Promise<{ login: string | null }>)
       .then((me) => {
         setLogin(me.login);
-        if (me.login && step === "hello") setStep("repo");
+        if (me.login && step === "hello") setStep(introSeen() ? "repo" : "intro");
       })
       .catch(() => setLogin(null));
     fetch("/api/repos")
@@ -51,17 +70,20 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   }, [live]);
 
   const signIn = () => {
-    if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
-    else setStep("repo");
+    if (live) location.href = `/auth/login?next=${encodeURIComponent(INTRO_ON ? "/?onboard=intro&source=live&intro=1" : "/?onboard=repo&source=live")}`;
+    else setStep(introSeen() ? "repo" : "intro");
   };
-  const at = step === "hello" ? 0 : 1;
+  const at = step === "hello" ? 0 : step === "intro" ? 1 : 2;
   const valid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(typed.trim());
+
+  if (step === "intro") return <Intro login={live ? login : null} onDone={() => { markIntroSeen(); setStep("repo"); }} />;
 
   return (
     <div className="onboard">
+      <IslandBackdrop />
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
-          {["SIGN IN", "PICK A REPO", "BUILD", "POWER"].map((s, n) => (
+          {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (
             <span key={s} className={n === at ? "on" : n < at ? "done" : undefined}>
               {n + 1} {s}
             </span>
@@ -80,8 +102,9 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
                 SIGN IN WITH GITHUB
               </button>
-              {!live && <span className="psub">sim: no real sign-in</span>}
+              
             </div>
+            {!live && <p className="psub ob-sim-note">Sandbox tour · sample repo and issues · no real sign-in</p>}
             <p className="ob-credit">powered by Meta Muse Spark</p>
           </>
         )}
@@ -90,7 +113,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
           <>
             <div className="ptitle small">PICK A REPO</div>
             <Coach>
-              {login ? `Hey ${login}. ` : ""}Which repo is the factory? We'll read its tree, open issues and CI, then suggest a starter line.
+              {login ? `Hey ${login}. ` : ""}Which repo is the factory? {live ? "We'll read its tree, open issues and CI, then suggest a starter line." : "This sandbox uses a demo shop with sample issues; your real repo stays untouched."}
             </Coach>
             {repos === null && <p className="psub">Looking for repos…</p>}
             {repos && repos.length > 0 && (

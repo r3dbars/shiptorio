@@ -114,7 +114,16 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   padding: 16px; overflow: auto;
   background: radial-gradient(ellipse at 50% 60%, #2a3566 0%, var(--void) 60%, #0b1030 100%);
 }
-.ob-card { width: min(520px, 100%); gap: 12px; padding: 16px 18px; }
+.ob-card { width: min(520px, 100%); gap: 12px; padding: 16px 18px; position: relative; }
+/* the live island behind the card: no input, dimmed toward the card so the text stays easy to read */
+.ob-backdrop { position: fixed; inset: 0; pointer-events: none; }
+.ob-backdrop .maplabels { display: none; }
+.ob-backdrop::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(11, 16, 48, 0.55) 0%, rgba(11, 16, 48, 0.15) 60%, rgba(11, 16, 48, 0.35) 100%); }
+.onboard > .ob-skip { position: relative; padding: 4px 10px; border-radius: 999px; background: rgba(11, 16, 48, 0.7); }
+/* phones: the card sits low so the island shows above it */
+@media (max-width: 600px) and (orientation: portrait) {
+  .onboard { justify-content: flex-end; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px)); }
+}
 .ob-title { font-size: 34px; color: var(--amber); text-shadow: none; }
 .ob-steps { display: flex; flex-wrap: wrap; gap: 4px 12px; font: 12px var(--pixel); letter-spacing: 0.03em; color: var(--faint); }
 .ob-steps .on { color: var(--amber); }
@@ -510,7 +519,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .ob-credit { margin: 0; font-size: 12px; color: var(--faint); letter-spacing: 0.02em; }
 @media (max-width: 760px) { .caption.coached { display: none; } }
 
-/* the in-world ping (map/scene.ts setPing): a pulsing dot on what needs you, tagged with its code path */
+/* the in-world ping (map/scene.ts setPings): a pulsing dot on what needs you, tagged with its code path */
 .mapping {
   position: absolute; left: 0; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 0; margin: 0;
   background: none; border: 0; color: var(--amber); cursor: pointer; pointer-events: auto; translate: -11px -11px;
@@ -530,3 +539,88 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .nm-plan summary { cursor: pointer; padding: 8px 0; }
 .nm-plan ol { max-height: min(32vh, 240px); overflow-y: auto; padding-left: 20px; }
 .nm-plan li { margin-bottom: 8px; }
+
+/* Welcome intro (ui/Intro.tsx): the live island up top, the words below, one beat at a time. */
+.intro { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; justify-content: space-between;
+  background: radial-gradient(ellipse at 50% 30%, #2a3566 0%, var(--void) 60%, #0b1030 100%); overflow: hidden; }
+.intro-fx { position: absolute; inset: 0; width: 100%; height: 100%; }
+.intro-top { position: relative; display: flex; gap: 12px; align-items: center; padding: calc(16px + var(--sat)) calc(18px + var(--sar)) 0 calc(18px + var(--sal)); }
+.intro-top .linkish { color: var(--dim); font-size: 14px; }
+.intro-segs { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; }
+.intro-segs i { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.18); }
+.intro-segs i.done { background: var(--amber); }
+.intro-segs i.now { background: linear-gradient(90deg, var(--amber) 50%, rgba(255, 255, 255, 0.18) 50%); background-size: 200% 100%; animation: intro-seg 1.2s ease-out forwards; }
+@keyframes intro-seg { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.intro-words { position: relative; width: min(560px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 12px;
+  padding: 56px calc(24px + var(--sar)) calc(26px + var(--sab)) calc(24px + var(--sal));
+  background: linear-gradient(transparent, rgba(18, 22, 44, 0.94) 22%, rgba(14, 18, 38, 0.98)); }
+.intro-kick { font: 600 12px var(--pixel); letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); }
+.intro h2 { margin: 0; font: 700 clamp(32px, 7vw, 46px) / 1.02 var(--pixel); letter-spacing: 0.01em; text-wrap: balance; }
+.intro h2 em { font-style: normal; color: var(--amber); }
+.intro h2 .w { display: inline-block; opacity: 0; transform: translateY(14px); animation: intro-up 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards; white-space: pre; }
+@keyframes intro-up { to { opacity: 1; transform: none; } }
+@keyframes intro-in { to { opacity: 1; } }
+.intro-body { margin: 0; font-size: 16px; line-height: 1.5; color: #c9ccd6; opacity: 0; animation: intro-in 0.6s 0.4s forwards; }
+.intro-next { opacity: 0; animation: intro-in 0.4s 0.8s forwards; justify-content: center; min-height: 48px; font-size: 16px; }
+.intro-card { background: var(--panel-solid); border: 1px solid var(--panel-line); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+  touch-action: none; user-select: none; cursor: grab; transition: transform 0.35s, opacity 0.35s; box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45); opacity: 0; animation: intro-in 0.5s 0.6s forwards; }
+.intro-card.gone { transform: translateX(140%) rotate(12deg) !important; opacity: 0 !important; animation: none; }
+.intro-card b { font: 700 18px/1.2 var(--pixel); }
+.intro-card .stamps { display: flex; flex-wrap: wrap; gap: 6px; }
+.intro-card .stamp { font: 11px var(--code); border: 1px solid var(--green); color: var(--green); border-radius: 4px; padding: 1px 6px; }
+.intro-card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.intro-card .hint { font-size: 12px; color: var(--dim); }
+.intro-card .ship { border: 0; border-radius: 10px; background: var(--green); color: #062014; font: 700 15px var(--pixel); padding: 9px 14px; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .intro * { animation-duration: 0.01s !important; animation-delay: 0s !important; } }
+
+/* Field guide (ui/FieldGuide.tsx) */
+.guide h2 small { font-size: 13px; color: var(--dim); margin-left: 6px; }
+.guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.gitem { border: 1px solid var(--panel-line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.35; color: var(--dim); }
+.gitem b { font: 700 14px var(--pixel); color: var(--ink); }
+.gitem.lock { border-style: dashed; }
+.gitem.lock b { color: var(--faint); }
+
+/* Two worlds (App.tsx): the Check in / Build lens and the first read after the scan */
+.firstread h2 { margin: 0; font: 700 20px/1.2 var(--pixel); text-wrap: balance; }
+.firstread .opts { display: flex; flex-direction: column; gap: 8px; }
+.firstread .btn { flex-direction: column; align-items: flex-start; text-align: left; }
+.firstread .btn small { font-weight: 400; font-size: 13px; opacity: 0.8; }
+
+/* the Check in / Build lens: centered up top on wide screens, under the chips on phones */
+.lens {
+  position: absolute; z-index: 4; top: calc(12px + var(--sat)); left: 50%; transform: translateX(-50%); display: flex; padding: 3px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--hair); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.lens button {
+  display: flex; align-items: center; gap: 6px; min-height: 38px; border: 0; background: none; padding: 0 16px; border-radius: 999px;
+  font: 600 15px var(--mono); color: var(--dim); cursor: pointer;
+}
+.lens button[aria-pressed="true"] { background: var(--ink); color: var(--dark); }
+.lens-n { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; font: 700 12px/20px var(--pixel); text-align: center; color: var(--dark); background: var(--amber); }
+.guide-btn.new { border-color: var(--amber); color: var(--amber); }
+.guide-btn[aria-pressed="true"] { border-color: var(--amber); }
+@media (max-width: 760px), (max-height: 500px) {
+  .lens { top: calc(66px + var(--sat)); left: calc(12px + var(--sal)); transform: none; }
+  .lens button { min-height: 34px; padding: 0 14px; font-size: 14px; }
+  .coachcard { top: calc(112px + var(--sat)); }
+}
+
+/* quiet map tags on busy machines: a small steady dot and the code path, no pulse */
+.mapping.quiet { color: var(--blue); translate: -7px -7px; gap: 6px; }
+.mapping.quiet i { width: 14px; height: 14px; }
+.mapping.quiet i::before { display: none; }
+.mapping.quiet span { padding: 2px 8px; background: rgba(22, 25, 33, 0.72); }
+.mapping.quiet b { font-size: 12px; font-weight: 500; color: var(--dim); }
+.mapping.quiet code { color: var(--ink); }
+.mapping.quiet.flip { translate: calc(-100% + 7px) -7px; }
+@media (max-width: 560px) { .mapping.quiet b { display: none; } } /* phones: just the code path */
+
+/* Make it yours + connect a source (ui/MakeItYours.tsx) */
+.seg { display: inline-flex; flex: none; border: 1px solid var(--panel-line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: none; color: var(--dim); font: 600 13px var(--pixel); padding: 7px 10px; cursor: pointer; min-width: 34px; }
+.seg button + button { border-left: 1px solid var(--panel-line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--dark); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+.pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
+.sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
