@@ -24,7 +24,7 @@ import {
   type Thought,
   type ThoughtDecision,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
@@ -377,7 +377,6 @@ export class Factory extends DurableObject<FactoryEnv> {
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
-      job.inputRevision = await workRevision(item);
       await this.ctx.storage.put(`runnerJob:${id}`, job);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
@@ -394,8 +393,9 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
       job.planningStarted = true;
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
-      const item = this.state.items.find(i => i.id === job.itemId);
+      let item = this.state.items.find(i => i.id === job.itemId);
       if (!item) throw new Error("Item removed");
+      const beforeRefresh = await workRevision(item);
       const token = await installationToken(this.env, this.meta.installationId);
       const tree = await repoTree(token, this.meta.repo);
       job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
@@ -411,6 +411,14 @@ export class Factory extends DurableObject<FactoryEnv> {
         changedFiles = await prFiles(token, job.repo, job.reworkPr);
         job.prTestFiles = changedFiles.filter(f => f.status !== "removed" && runnerPathAllowed(f.filename) && /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/i.test(f.filename)).map(f => f.filename);
       }
+      // Refresh persisted input before planning, never an already-approved/ready job.
+      const input = await freshIssueInput(token, job.repo, Number(item.id.slice(3)));
+      const current = this.state.items.find(i => i.id === job.itemId);
+      if (!current || beforeRefresh !== await workRevision(current) || this.state.items.find(i => i.id === job.itemId) !== current) throw new Error("Issue changed during input refresh");
+      item = { ...current, title: input.title.slice(0, 500), body: input.body.slice(0, 16000), url: input.url };
+      await this.patch({ items: [item] });
+      job.inputRevision = await workRevision(item);
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       job.steps = [];
       await this.decisionData();
       const feedback = plannerFeedback(this.deckBook!, this.deckRules!);

@@ -229,6 +229,7 @@ app.use("/api/repos/:owner/:repo/*", async (c, next) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   // Same answer for "no such factory" and "not yours", so repo names can't be probed.
   if (!(await canSeeRepo(c.env, user, repo))) return c.json({ error: "not found" }, 404);
+  if (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo)) return c.json({error:'repository/factory quota reached'},429);
   c.set("user", user);
   await next();
 });
