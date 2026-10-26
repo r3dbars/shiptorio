@@ -23,3 +23,19 @@ Live shiptorio.com wasn't reachable from the cloud sandbox, so this run used `bu
 | #47 | feel | Zoomed out, labels pile up |
 | #48 | ux | Log grows forever, Undo clipped |
 | #49 | bug | Caption box flashes empty while fading |
+
+All 13 above were fixed and closed by later PRs (#51, #52, #53, #57, #59 and others).
+
+## 2026-10-26 round 2 (current main after the new UI, island and celebration)
+
+Played the full new-player flow at `/` plus `heal` on desktop and a 390px touch phone.
+Codex prompt: project file `codex-prompts/playtest-round-2.md`.
+
+| # | Type | What |
+|---|------|------|
+| #74 | bug | After "Build it", launch pad and rocket are off-screen |
+| #75 | ux | Tour names the gauntlet stations but the map doesn't show which is which |
+| #76 | ux | Picking r3dbars/shiptorio gives fake checkout jobs |
+| #77 | ux | Phone: tiny island, clipped scenario row, overlapping buttons |
+| #79 | feel | SHIPPED card covers the rocket launch |
+| #80 | feel | Sign-in and repo picker are a bare card on an empty background |
