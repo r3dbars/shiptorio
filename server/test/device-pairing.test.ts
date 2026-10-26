@@ -45,6 +45,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
   }) as typeof fetch;
   const request = (path: string, init: RequestInit = {}) => app.fetch(new Request(`https://shiptorio.com${path}`, init), env as never);
   try {
+    const help = await request("/docs/runner"); expect(help.status).toBe(200); expect(await help.text()).toContain("uninstall");
     const start = await request("/api/runner-device/start", { method: "POST" });
     expect(start.status).toBe(200); expect(start.headers.get("cache-control")).toBe("no-store");
     const d = await start.json() as { code: string; secret: string; verificationUri: string };
