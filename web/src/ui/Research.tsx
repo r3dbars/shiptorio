@@ -2,6 +2,7 @@
 // new gauntlet stations. Each one really runs on every PR, right after CI. Repeated scars put a "Suggested"
 // tag on the tech that would have caught them.
 
+import { useState } from "react";
 import { sciencePacks, techById, techStatus, TECHS, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { Icon, type IconName } from "./icons";
 import { RESEARCH, WORDS } from "../copy";
@@ -16,14 +17,19 @@ export function Research({ state, send, onClose, onResearched }: { state: Factor
   const have = sciencePacks(state);
   const suggest = state.research?.suggest;
   const pick = suggest && techById(suggest.tech);
+  const [fresh, setFresh] = useState<string | null>(null); // the tech just bought: its socket fires up
   const go = (tech: string) => {
+    setFresh(tech);
     send({ type: "research", tech });
     onResearched(tech);
   };
   return (
     <section className="card sheet research" aria-label={RESEARCH.title}>
       <div className="sheet-top">
-        <h2>{RESEARCH.title}</h2>
+        <div className="sheet-head">
+          <span className="iron-eyebrow">{RESEARCH.board}</span>
+          <h2>{RESEARCH.title}</h2>
+        </div>
         <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
@@ -51,7 +57,7 @@ export function Research({ state, send, onClose, onResearched }: { state: Factor
               const st = techStatus(t, state);
               const picked = suggest?.tech === t.id && st.state !== "done";
               return (
-                <div key={t.id} className={`rs-node ${st.state}${picked ? " picked" : ""}`}>
+                <div key={t.id} className={`rs-node ${st.state}${picked ? " picked" : ""}${fresh === t.id && st.state === "done" ? " fresh" : ""}`}>
                   <span className="rs-ico" aria-hidden="true">
                     <Icon name={(st.state === "locked" ? "lock" : t.icon) as IconName} size={22} />
                   </span>
