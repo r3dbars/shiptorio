@@ -5,6 +5,32 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+GitHub connection verified (Oct 26): PR #35 merged after green CI and deployed through
+https://github.com/r3dbars/shiptorio/actions/runs/40374006337. Both password-protected
+domains reported commit `d60b7499b971aac477d165df598969845c2352fd`. All 55 tests,
+workspace type checks, web build and ten local workerd smoke checks passed. The five
+existing-App credentials were uploaded directly from gitignored `.dev.vars` to secrets
+on only the `shiptorio` Worker. Installed the existing App (5483448) on only
+`r3dbars/shiptorio`, installation 175555016. GitHub reports the installation delivery
+and subsequent check events accepted with HTTP 202. This proves authenticated intake;
+it does not yet prove a local-agent PR or the full verification gauntlet. Next checkpoint:
+confirm live ore, then local runner and station verification. Codex owns `server/` and
+`runner/`; Claude Code owns `web/`; contract changes remain separate PRs.
+
+GitHub mine checkpoint: reuse the existing private `Shiptorio` App (id 5483448), rather
+than creating a duplicate. New client/signing credentials were saved only in gitignored
+`.dev.vars`; App JWT authentication was verified. The App webhook now uses the matching
+local signing secret, JSON payloads and verified TLS. Credential upload and repo-only
+installation follow the durable-intake deploy. PR #23 is deployed; PR #26 adds optional
+source, ore-provenance and inspection fields. This checkpoint adds delivery-id dedupe in
+the existing D1 database (migration 0002), durable DO intake, issue backfill and exact ore
+folding; no new Cloudflare resources. Hosted Spark coding defaults off.
+
+Latest scope from Justin: first prove GitHub → the four-station gauntlet → a real shipping
+loop with local Codex/Claude agents. Then use Transcripted as the real-product pilot with
+Sentry, support email and PostHog. Stripe is out of scope. The updated gauntlet checklist
+uses merged contracts/docs #29/#31; do not create a second stations contract.
+
 Deployment handoff (Oct 26, 17:07 UTC): PR #13 merged after CI passed against current
 main (including the pixel map and Foreman contract). `bun run deploy` from main
 successfully deployed only `shiptorio`; both custom domains retain the password gate.
@@ -31,9 +57,8 @@ The site must require a private preview password. First checkpoint is GitHub iss
 Spark → real PR → current-commit CI inspection/rework → human merge → rocket.
 Sentry, other harnesses and voice follow that checkpoint. Spark is the factory foreman;
 playing the game should cause useful, verifiable changes to a real product.
-The GitHub App does not exist yet. Justin has a Meta key; it must be entered securely.
-The local Wrangler login works; GitHub Actions deployment secrets are not configured yet.
-Do not mistake a local/direct deployment for automatic main deployment being enabled.
+At that initial handoff the App credentials and deployment secrets were not configured.
+The connection and automatic deployment checkpoints above supersede that initial state.
 
 | When (2026-10-26, UTC) | Decision | Who |
 | --- | --- | --- |
@@ -56,7 +81,8 @@ Do not mistake a local/direct deployment for automatic main deployment being ena
 | --- | --- |
 | Domains confirmed: shiptorio.com and shiptorio.dev, both live with password gate | Done |
 | Local deployment and automatic GitHub Actions deployment configured and verified | Done |
-| Open `/setup` on the deployed URL to create the GitHub App, then `wrangler secret put` its secrets | Justin, after deploy |
+| Existing GitHub App credentials uploaded and installation restricted to r3dbars/shiptorio | Done; authenticated installation delivery accepted |
+| Local subscription runner and full CI / verify / review / human-merge loop | Codex; not yet proven |
 | Meta key installed locally and as a Worker secret; live Spark ping/triage verified | Done |
 | Codex PRs #3 (shared protocol) and #4 (factory API + issue ingestion) were built before #1 merged. They need porting onto `main`'s `shared/` + `server/` layout | Codex |
 | PR #7 Item Lab art and PR #8 pixel map are merged and live | Done |

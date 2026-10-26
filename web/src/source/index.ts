@@ -24,11 +24,12 @@ export function readConfig(search = location.search): SourceConfig {
   const scenario = q.get("scenario") as ScenarioName;
   return {
     kind: q.get("source") === "live" ? "live" : "sim",
-    repo: q.get("repo") || "r3dbars/shiptorio",
+    // live defaults to this repo; the sim names its own fake repo unless onboarding picked one
+    repo: q.get("repo") || (q.get("source") === "live" ? "r3dbars/shiptorio" : ""),
     scenario: scenario in SCENARIOS ? scenario : "quiet-morning",
   };
 }
 
 export function connect(cfg: SourceConfig, onMessage: Listener, onStatus: StatusListener): Source {
-  return cfg.kind === "live" ? connectLive(cfg.repo, onMessage, onStatus) : connectSim(cfg.scenario, onMessage, onStatus);
+  return cfg.kind === "live" ? connectLive(cfg.repo, onMessage, onStatus) : connectSim(cfg.scenario, onMessage, onStatus, cfg.repo || undefined);
 }

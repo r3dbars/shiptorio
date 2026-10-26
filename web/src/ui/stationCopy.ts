@@ -1,7 +1,7 @@
 // Panel copy for every clickable thing on the line, lifted from docs/loop.html (the S object).
 // The numbers come from the factory state; this is only the words.
 
-import type { StationKind } from "@shiptorio/shared";
+import type { Machine, StationKind } from "@shiptorio/shared";
 
 export interface PanelCopy {
   zone: string;
@@ -73,3 +73,51 @@ export const POWER_COPY: PanelCopy = {
     { id: "balance", label: "Let Spark balance power", recommended: true },
   ],
 };
+
+// Every other machine on the map opens a detail panel too (Justin's playtest: click anything, see what it's doing).
+export const MACHINE_COPY: Partial<Record<Machine["type"], PanelCopy>> = {
+  ore_deposit: {
+    zone: "1 · Ore · signals in",
+    name: "Ore mine",
+    tag: ["amber", "signals in"],
+    what: "Every source is a mine: GitHub issues, Sentry errors, customer email. Spark merges duplicates into one weighted chunk, so 40 crash reports about one bug ride the belt as one chunk weighing 40.",
+    actions: [{ id: "connect", label: "Connect another source", recommended: true }],
+  },
+  splitter: {
+    zone: "Brain · Spark",
+    name: "Spark's splitter",
+    tag: ["blue", "reads, plans, routes"],
+    what: "Spark reads each chunk, restates the problem in plain words, scores who it hurts, picks a machine and writes the plan. Spark never writes code. Its thinking runs on the steam plant.",
+    actions: [{ id: "replan", label: "Re-plan the queue by value", recommended: true }],
+  },
+  assembler: {
+    zone: "2 · Build",
+    name: "Assembler",
+    tag: ["amber", "your subscription"],
+    what: "Your Claude Code or Codex, running on your own subscription, builds what Spark planned and opens a PR. It has to attach evidence, not just say done.",
+    actions: [
+      { id: "upgrade", label: "Upgrade to MK2 (more parallel jobs)", recommended: true },
+      { id: "pause", label: "Pause this assembler", recommended: false },
+    ],
+  },
+  launch_pad: {
+    zone: "4 · Shipped",
+    name: "Launch pad",
+    tag: ["green", "merge = launch"],
+    what: "Every merge is a launch. Countdown, vapor, liftoff, then it deploys and real numbers move: errors gone, customers answered, checkouts back.",
+  },
+  turret: {
+    zone: "Defense",
+    name: "Test turret",
+    tag: ["red", "guards a district"],
+    what: "Tests guarding one district. It fires while Sentry errors are attacking that district, and every PR into the district has to get past it.",
+  },
+};
+
+export const POWER_TYPES: Machine["type"][] = ["steam", "solar", "battery", "geothermal"];
+
+// The label for an action id on any panel, so the floor log can say what was asked for.
+export function actionLabel(action: string): string | undefined {
+  const all = [REWORK_COPY, POWER_COPY, ...Object.values(MACHINE_COPY)].flatMap((c) => c?.actions ?? []);
+  return all.find((a) => a.id === action)?.label;
+}

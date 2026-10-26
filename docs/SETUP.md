@@ -86,6 +86,35 @@ domain later, set the `PUBLIC_URL` var and update the App's URLs on GitHub.
 The canonical `PUBLIC_URL` is `https://shiptorio.com`, including when the `.dev` alias is visited.
 Phase A adds install/backfill, normalized ore and the gauntlet in subsequent small PRs.
 
+### Existing Shiptorio App
+
+The private App already exists at `https://github.com/settings/apps/shiptorio`.
+Do not create a duplicate. App ID and Client ID are public identifiers on its General page.
+Credentials → Client secrets → New secret creates a one-time client secret.
+Credentials → Key pairs → New key downloads the PEM; save its contents in
+`GITHUB_APP_PRIVATE_KEY` locally and upload that value with `wrangler secret put`.
+The webhook signing secret must match between the App webhook configuration and
+`GITHUB_WEBHOOK_SECRET` on the Worker. Only secret names and readiness booleans are logged.
+
+### GitHub mine behavior
+
+Verified webhook requests persist a delivery id in D1 and enqueue the payload durably
+in the repo's Factory DO before returning 202. Retries use that same id; processed ids
+expire after seven days. API calls, backfill and Spark work happen in alarms.
+The installation lifecycle uses a control DO, then queues each repo's initialization.
+Backfill reads up to fifty open issues (paginated, excluding PRs), including distinct
+reaction authors as reporters. Exact duplicate signals fold into an existing chunk.
+Evidence weight = severity × max(1, users affected) + 2 × unique reporters + 10 for paying
+customer evidence, decayed with a seven-day half-life and 10% floor. Spark decides priority;
+normalizers only attach evidence and exact route/Sentry hints.
+
+`HOSTED_SPARK_ASSEMBLER` is **off by default**. Set it to `1` only for an explicitly
+approved dev/demo fallback; the product's builders are local subscription agents.
+Without a builder, queued ore produces a resources bottleneck and a Next Move to connect
+Claude or ChatGPT. `/api/repos` lists installed repos after GitHub sign-in; `/api/sources`
+reports setup steps after preview sign-in. `disconnect_source github` pauses that repo's
+mine; GitHub uninstallation remains a separate dashboard action.
+
 ## 3. Who can see maps
 
 Only logins in `ALLOWED_LOGINS` (in `server/wrangler.jsonc`) can view maps, since they show
