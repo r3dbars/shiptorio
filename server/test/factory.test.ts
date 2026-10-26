@@ -331,10 +331,11 @@ it('reconciliation repairs missed merge, close, moved head and check-run events 
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey('pkcs8', keys.privateKey)).toString('base64')}\n-----END PRIVATE KEY-----`;
   const f = fixture([1, 2, 3, 4].map(n => item({ id: `gh-${n}`, prNumber: n, state: 'inspecting', branch: 'shiptorio/runner-test', inspection: { headSha: 'old', state: 'pending', humanApproved: false, stages: [{ gate: 'ci', state: 'pending', reason: 'waiting' }, { gate: 'verify', state: 'pending', reason: 'waiting' }, { gate: 'ai', state: 'pending', reason: 'waiting' }, { gate: 'human', state: 'pending', reason: 'waiting' }] } })), { GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem });
   f.data.set('reconcileAt', 0);
+  let publicationRecovery = false;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: unknown) => {
     const url = String(input);
-    if (url.includes('/pulls?state=all')) return Response.json([]);
+    if (url.includes('/pulls?state=all')) return Response.json(publicationRecovery ? [{ number: 1, html_url: 'https://github.com/r3dbars/demo/pull/1', state: 'closed', merged_at: '2026-10-26', head: { ref: 'shiptorio/runner-old', sha: 'old' } }] : []);
     if (url.endsWith('/access_tokens')) return Response.json({ token: 'test' });
     if (url.includes('/check-runs?')) return Response.json({ total_count: 1, check_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }] });
     if (url.includes('/status?')) return Response.json({ total_count: 0, statuses: [] });
@@ -353,6 +354,15 @@ it('reconciliation repairs missed merge, close, moved head and check-run events 
     f.data.set('reconcileAt', 0);
     await (f.factory as unknown as { reconcileGitHub: () => Promise<void> }).reconcileGitHub();
     expect(f.saved().science.red).toBe(1);
+    // An old published PR must not attach itself to fresh ore after orbit reopens it.
+    publicationRecovery = true;
+    const live = (f.factory as unknown as { state: FactoryState }).state;
+    live.items = [{ ...live.items[0], state: "queued", prNumber: undefined, prUrl: undefined }];
+    f.data.set('runnerJob:old-publication', { id: 'old-publication', itemId: 'gh-1', repo: 'r3dbars/demo', branch: 'shiptorio/runner-old', status: 'completed' });
+    f.data.set('reconcileAt', 0);
+    await (f.factory as unknown as { reconcileGitHub: () => Promise<void> }).reconcileGitHub();
+    expect(live.items[0].prNumber).toBeUndefined();
+    expect(live.items[0].state).toBe('queued');
   } finally { globalThis.fetch = original; }
 });
 

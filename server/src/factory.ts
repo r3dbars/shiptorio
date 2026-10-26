@@ -284,7 +284,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       job.allowedPaths.length ? `**Allowed files:** ${job.allowedPaths.map(p => `\`${p}\``).join(", ")}` : "",
       job.needsApproval ? "_Nothing builds until the player approves this plan in Shiptorio._" : "",
     ].filter(Boolean).join("\n\n");
-    await gh(`/repos/${job.repo}/issues/${item.id.slice(3)}/comments`, token, { method: "POST", body: JSON.stringify({ body: body.slice(0, 60000) }) });
+    await gh(`/repos/${job.repo}/issues/${item.id.slice(3)}/comments`, token, { method: "POST", body: JSON.stringify({ body: `${body.slice(0, 60000)}\n\n<!-- shiptorio-plan:${job.id} -->` }) });
   }
 
   private runnerApprovalMove(job: RunnerJob, item: Item): Move {
@@ -1174,7 +1174,7 @@ export class Factory extends DurableObject<FactoryEnv> {
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = current();
         if (!now) return;
-        await this.postReviewComment(token, pr, reviewComment(verdict, builder), item.id);
+        await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
         await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
@@ -1732,10 +1732,11 @@ export class Factory extends DurableObject<FactoryEnv> {
     const published = await gh<{ number: number; html_url: string; state: string; merged_at?: string | null; merge_commit_sha?: string; head: { ref: string; sha: string } }[]>(`/repos/${this.meta.repo}/pulls?state=all&sort=updated&direction=desc&per_page=100`, token);
     const jobs = await this.runnerJobs();
     for (const pr of published) {
-      const job = jobs.find(j => j.branch === pr.head.ref);
+      if (await this.ctx.storage.get(`launchCredit:${pr.number}`)) continue;
+      const job = jobs.find(j => j.branch === pr.head.ref && j.status === "running") ?? jobs.find(j => j.branch === pr.head.ref && j.status === "completed");
       if (!job) continue;
       const item = this.state.items.find(i => i.id === job.itemId);
-      if (!item || item.prNumber || !["running", "completed"].includes(job.status)) continue;
+      if (!item || item.prNumber || item.orbit?.prNumber === pr.number || !["running", "completed"].includes(job.status)) continue;
       const recovered: Item = { ...item, state: "inspecting", branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, inspection: freshInspection(pr.head.sha), machineId: "ci-1", updatedAt: now };
       if (job.status === "running") {
         // A discovered branch is not a supervisor receipt. Require rework/approval for lost receipts.
