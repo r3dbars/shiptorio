@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
 
 interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number }
-const root = resolve(import.meta.dir, "../..");
+const root = resolve(import.meta.dir, "..");
 const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
 const harnessPath = (h: Job["harness"]) => Bun.which(h === "codex" ? "codex" : "claude");
