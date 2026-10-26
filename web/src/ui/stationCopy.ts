@@ -40,7 +40,7 @@ export const STATION_COPY: Record<StationKind, PanelCopy> = {
     zone: "4 · Shipped · after the merge",
     name: "Orbit watch",
     tag: ["green", "real world"],
-    what: "Checks don't stop at merge. For 24 hours after a deploy, orbit watch checks the real world: Sentry quiet, checkouts back up, the customer answered. If the bug comes back, the ore reopens and that district loses trust.",
+    what: "Checks don't stop at merge. For 24 hours after a launch, orbit watch checks the real world: Sentry stays quiet, nobody reverts it, main stays green. If the bug comes back, it rides the rework belt with an orbit scar and that lane loses its launch permit.",
   },
   custom: {
     zone: "3 · Gauntlet",

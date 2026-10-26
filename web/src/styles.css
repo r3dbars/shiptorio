@@ -297,6 +297,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .sp-jobs li { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 3px 6px; background: var(--chip); }
 .sp-jobs .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-jobs .st { flex: none; font: 12px var(--pixel); color: var(--amber); align-self: center; }
+.sp-jobs .st.bad { color: var(--red); }
 .sp-jobs .more, .sp-empty { font-size: 13px; color: var(--dim); margin: 0; }
 .sp-flow { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .sp-flow b { font: 12px var(--pixel); color: var(--dim); display: inline-block; width: 30px; }
