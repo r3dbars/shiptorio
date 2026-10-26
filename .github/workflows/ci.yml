@@ -10,10 +10,13 @@ concurrency:
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/context/**"
-      - "docs/playtest/**"
+    # docs/site/*.md is the public docs site (served at /docs), so it builds and deploys like code
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/context/**"
+      - "!docs/playtest/**"
+      - "docs/site/**"
 jobs:
   check:
     if: github.event.pull_request.draft == false

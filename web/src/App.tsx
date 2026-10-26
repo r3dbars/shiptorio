@@ -15,6 +15,7 @@ import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
+import { GEO_EXPLAINER, notePowerJobs, powerLedger } from "./ui/powerLedger";
 import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
@@ -22,13 +23,14 @@ import { ShipCelebration } from "./ui/ShipCelebration";
 import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
+import { AchievementToast, AchievementsSheet, useAchievements, type ProgressLink } from "./ui/Achievements";
 import { checkStationId } from "@shiptorio/shared";
 import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 
-const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#e8685c" };
+const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#ff7a2a" };
 
 const codePath = (district: string) => (district === "/" ? "/" : `/${district}`);
 
@@ -38,6 +40,7 @@ const SLOTS = POWER.slots;
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
+type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements";
 const WORLD_KEY = "shiptorio:world";
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
@@ -95,10 +98,13 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
-  const { state, log, status, send } = useFactory(cfg);
+  const { state, log, status, send: sendRaw } = useFactory(cfg);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
+  const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
+  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink, progressProfile(cfg.kind, login));
+  const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
@@ -106,6 +112,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
+  // which plant built each item this session, for the power sheet's job counts
+  const powerJobs = useRef(new Map<string, string>());
+  if (state) powerJobs.current = notePowerJobs(powerJobs.current, state);
+  const plants = state ? powerLedger(state, powerJobs.current) : [];
   const [panel, setPanel] = useState<string | null>(null);
   // the first run asks which world to start in; everyone else lands in Build, the full map
   const [world, setWorldState] = useState<World | null>(() => (intro ? "build" : tour.on ? null : (readWorld() ?? "build")));
@@ -138,12 +148,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const nudge = useBottleneckNudge(deck, progressing);
+  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name) }; // achievements pay XP into progression
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
     if (progressing && state) prog.open(deck.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -236,7 +247,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -415,6 +426,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               <Icon name="flask" size={20} />
             </button>
           )}
+          {ach.count > 0 && (
+            // Achievements show up with the first one earned.
+            <button
+              type="button"
+              className={`hud-iconbtn ach-btn${ach.toast ? " new" : ""}`}
+              aria-pressed={sheet === "achievements"}
+              onClick={() => toggleSheet("achievements")}
+              aria-label={`Achievements, ${ach.count} earned`}
+              title={`Achievements · ${ach.count} earned`}
+            >
+              <Icon name="medal" size={20} />
+            </button>
+          )}
           <button type="button" className="hud-iconbtn" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
             {waiting > 0 && <span className="n">{waiting}</span>}
             <Icon name="bell" size={20} />
@@ -476,6 +500,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
+        ) : sheet === "achievements" ? (
+          <AchievementsSheet earned={ach.earned} state={state} streak={prog.p.best} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
@@ -538,19 +564,36 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
-            <p className="empty">{POWER.intro}</p>
-            {(state?.power ?? []).map((p) => (
-              <div className="lrow" key={p.id}>
-                <span className="tt">
-                  {p.kind === "steam" ? POWER.planner : p.name}
-                  <code>{p.kind === "steam" ? POWER.plannerTag : p.kind}</code>
-                </span>
-                <span className="meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p.level * 100)}>
-                  <i style={{ width: `${p.online ? Math.round(p.level * 100) : 0}%`, background: POWER_COLOR[p.kind] }} />
-                </span>
-                <span className="pill">{p.online ? `${Math.round(p.level * 100)}%` : POWER.offline}</span>
-              </div>
-            ))}
+            <p className="empty">
+              {plants.some((p) => p.kind === "geothermal") ? POWER.introGeo : POWER.intro}
+            </p>
+            {plants.map((p) => {
+              const pct = p.online ? Math.round(p.level * 100) : 0;
+              return (
+                <div className={`plant ${p.kind}`} key={p.id}>
+                  <div className="plant-top">
+                    <span className="sq" style={{ background: POWER_COLOR[p.kind] }} />
+                    <span className="tt">
+                      {p.name}
+                      <code>
+                        {p.kindLabel} · {p.cost}
+                      </code>
+                    </span>
+                    <span className={p.busy ? "pill working" : "pill"}>{p.online ? (p.busy ? "running" : "ready") : "offline"}</span>
+                  </div>
+                  <div className="plant-bar">
+                    <span className="meter" role="meter" aria-label={`${p.name} headroom`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+                      <i style={{ width: `${pct}%`, background: POWER_COLOR[p.kind] }} />
+                    </span>
+                    <span className="plant-num">{p.online ? `${pct}% left` : POWER.offline}</span>
+                    <span className="plant-num">
+                      {p.jobs} {p.kind === "steam" ? (p.jobs === 1 ? "decision" : "decisions") : p.jobs === 1 ? "job" : "jobs"}
+                    </span>
+                  </div>
+                  {p.kind === "geothermal" && <p className="plant-note">{GEO_EXPLAINER}</p>}
+                </div>
+              );
+            })}
             <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>{POWER.howItThinks}</button>
             {cfg.kind === "live" && state?.repo && (
               <button type="button" className="credit-btn" onClick={async () => {
@@ -581,6 +624,17 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 </div>
               );
             })}
+            {!plants.some((p) => p.kind === "geothermal") && (
+              <div className="lrow">
+                <span className="tt">
+                  Your computer
+                  <code>geothermal · free, runs small jobs on a local model</code>
+                </span>
+                <span className="pill" title="Run Ollama or any OpenAI-compatible model on this machine and the runner finds it">
+                  start a local model
+                </span>
+              </div>
+            )}
           </section>
         ) : (
           <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} />
@@ -631,7 +685,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         </nav>
         )}
 
-        {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} reviewTicket={supportReview} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />)}
+        <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
+
+        {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} reviewTicket={supportReview} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} />)}
 
         {progressing && <XpPop pop={prog.pop} />}
 

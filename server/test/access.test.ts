@@ -13,6 +13,15 @@ describe("private preview", () => {
     expect((await previewAccess(new Request("https://shiptorio.com/"), { SESSION_SECRET: "" }))?.status).toBe(503);
     expect(await previewAccess(new Request("https://shiptorio.com/webhooks/github"), env)).toBeNull();
   });
+  it("serves the docs site publicly, and only the docs site", async () => {
+    for (const path of ["/docs", "/docs/", "/docs/runner", "/docs/search.json", "/docs/img/hero.png"]) {
+      expect(await previewAccess(new Request(`https://shiptorio.com${path}`), env)).toBeNull();
+      expect(await previewAccess(new Request(`https://shiptorio.com${path}`), { SESSION_SECRET: "" })).toBeNull();
+    }
+    for (const path of ["/docsx", "/documents", "/api/docs", "/art/spark.html"]) {
+      expect((await previewAccess(new Request(`https://shiptorio.com${path}`), env))?.status).toBe(401);
+    }
+  });
   it("leaves only GET /api/version public, so Deploy can check the live commit", async () => {
     expect(await previewAccess(new Request("https://shiptorio.com/api/version"), env)).toBeNull();
     expect((await previewAccess(new Request("https://shiptorio.com/api/version", { method: "POST" }), env))?.status).toBe(401);
@@ -122,4 +131,13 @@ it("supports header-stripping Firefox privacy using a signed expiring form proof
   const realNow = Date.now;
   Date.now = () => realNow() + 601_000;
   try { expect((await post({ cookie }))?.status).toBe(403); } finally { Date.now = realNow; }
+});
+
+describe("docs caching", () => {
+  it("lets browsers keep public docs a few minutes, never app pages", async () => {
+    const { browserCacheControl } = await import("../src/security");
+    expect(browserCacheControl(new Request("https://shiptorio.com/docs/faq"), 200)).toBe("public, max-age=300");
+    expect(browserCacheControl(new Request("https://shiptorio.com/docs/nope"), 404)).toBe("no-store");
+    expect(browserCacheControl(new Request("https://shiptorio.com/"), 200)).toBe("no-store");
+  });
 });

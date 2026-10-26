@@ -21,7 +21,7 @@ test("the empire lists one island per repo the player can reach, and never anyon
     APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", DB: testD1(),
     FACTORY: {
       idFromName: (r: string) => r,
-      get: (r: string) => ({ summary: async () => (asked.push(r), r === "r3dbars/shiptorio" ? island(r, 2) : null) }),
+      get: (r: string) => ({ summary: async () => (asked.push(r), r === "repo:1" ? island("r3dbars/shiptorio", 2) : null) }),
     },
   };
   const mine = `${await signedInCookie(env, "r3dbars", ["r3dbars/shiptorio", "r3dbars/testing"])}; ${await preview()}`;

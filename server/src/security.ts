@@ -1,3 +1,4 @@
+import { isPublicDocs } from "./access";
 // One response policy for assets, API errors, redirects and the preview gate.
 export function securityHeaders(request: Request, artNonce?: string, turnstile = false, sentryDsn?: string): Record<string, string> {
 
@@ -54,6 +55,8 @@ export function browserMutationAllowed(request: Request, routePath = new URL(req
 // Only authenticated content-hashed assets are immutable. Gates/errors/pages stay private and fresh.
 export function browserCacheControl(request: Request, status: number): string {
   const hash = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
+  // the public docs site is the same for everyone, so browsers and the edge may keep it a few minutes
+  if (["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && isPublicDocs(new URL(request.url).pathname)) return "public, max-age=300";
   return ["GET", "HEAD"].includes(request.method) && [200, 304].includes(status) && hash.test(new URL(request.url).pathname)
     ? "private, max-age=31536000, immutable" : "no-store";
 }

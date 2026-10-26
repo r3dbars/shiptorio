@@ -1244,6 +1244,68 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     } };
   }
 
+  // MEASURE STATION: after a growth change launches, it splits the funnel into before (A) and after (B)
+  // and stacks each conversion rate as a light column; the dial swings to the lift once there's enough sample
+  function buildMeasure() {
+    const g = group();
+    box(3.0, 0.14, 2.6, 0x3a3f47, 0, 0.07, 0, g); bolts(g, 3.0, 2.6, 0.16);
+    hazard(g, 2.8, 0.15, 1.24, 14);
+    // intake hopper where visitors arrive, and the A/B splitter wedge
+    box(0.6, 0.36, 0.6, 0x6b7280, -1.05, 0.32, 0.55, g);
+    box(0.7, 0.06, 0.7, 0x2b2f36, -1.05, 0.53, 0.55, g);
+    const wedge = box(0.12, 0.3, 0.5, 0xf2cf6b, -0.62, 0.3, 0.55, g); wedge.rotation.y = 0.0;
+    // two short lanes: A (before, steel) and B (after, green), each carrying little visitor cubes
+    const lanes = [];
+    [['A', -0.25, 0x8a94a3], ['B', 0.25, 0x5bd18b]].forEach(([k, dz, c]) => {
+      box(1.2, 0.06, 0.2, 0x1d2026, -0.05, 0.2, 0.55 + dz, g);
+      box(1.22, 0.04, 0.03, c, -0.05, 0.24, 0.55 + dz + (dz > 0 ? 0.11 : -0.11), g);
+      const cubes = [0, 1, 2].map((i) => box(0.09, 0.09, 0.09, own(k === 'A' ? 0xd5d8de : 0xb9f2cf), -0.6 + i * 0.4, 0.28, 0.55 + dz, g));
+      lanes.push({ k, cubes });
+    });
+    // the two columns: ten light segments each, A on the left, B on the right
+    const cols = [];
+    [[-0.15, 0x8a94a3], [0.55, 0x5bd18b]].forEach(([x, c], j) => {
+      box(0.5, 0.12, 0.5, 0x2b2f36, x, 0.2, -0.45, g);
+      box(0.06, 1.9, 0.06, 0x3a3f47, x - 0.24, 1.15, -0.45 + 0.2, g); box(0.06, 1.9, 0.06, 0x3a3f47, x + 0.24, 1.15, -0.45 + 0.2, g);
+      const segs = [];
+      for (let i = 0; i < 10; i++) segs.push(box(0.38, 0.14, 0.38, own(0x10141f), x, 0.35 + i * 0.17, -0.45, g));
+      box(0.5, 0.06, 0.5, c, x, 2.1, -0.45, g);
+      cols.push(segs);
+    });
+    box(0.06, 0.06, 0.06, 0x2b2f36, 0.2, 2.1, -0.45, g);
+    // the lift dial on a post: needle left = hurt, up = no change, right = lift
+    const dx = 1.15, dz = -0.15;
+    cyl(0.05, 0.06, 1.2, 0x8a94a3, 6, dx, 0.74, dz, g);
+    cyl(0.42, 0.42, 0.08, 0xeef1fa, 16, dx, 1.55, dz, g).rotation.x = Math.PI / 2;
+    for (let i = 0; i < 3; i++) { const a = Math.PI * (0.85 - i * 0.35); box(0.2, 0.05, 0.02, i === 0 ? 0xff5e52 : i === 1 ? 0xf2cf6b : 0x5bd18b, dx + Math.cos(a) * 0.28, 1.55 + Math.sin(a) * 0.28, dz + 0.05, g).rotation.z = a; }
+    const needle = group(g, dx, 1.55, dz + 0.07);
+    box(0.03, 0.34, 0.02, 0x16120a, 0, 0.15, 0, needle);
+    cyl(0.05, 0.05, 0.04, 0x2b2f36, 8, dx, 1.55, dz + 0.07, g).rotation.x = Math.PI / 2;
+    // seven day pips under the dial: how far into the watch
+    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => box(0.08, 0.08, 0.04, own(0x10141f), dx - 0.27 + i * 0.09, 1.02, dz + 0.04, g));
+    box(0.7, 0.14, 0.05, 0x2b2f36, dx, 1.02, dz, g);
+    const alarm = beacon(g, dx + 0.3, 1.98, dz);
+    const caught = tally(g, -1.05, 0.14, -0.75);
+    let swing = 0, flow = 0;
+    return { g, update(t, dt, s) {
+      const lift = s === 'LIFT', flat = s === 'NO LIFT', hurt = s === 'HURT', on = s !== 'IDLE';
+      // A holds at 6 lit, B climbs over or sinks under it
+      const bTarget = lift ? 9 : hurt ? 3 : flat ? 6 : 6 + Math.round(Math.sin(t * 1.3) * 1.5);
+      cols[0].forEach((m, i) => m.material.emissive.setHex(on && i < 6 ? 0x8a94a3 : 0));
+      cols[1].forEach((m, i) => m.material.emissive.setHex(on && i < bTarget ? (hurt ? 0xff5e52 : lift ? 0x5bd18b : flat ? 0xf2cf6b : 0x5bd18b) : 0));
+      const goal = lift ? -0.9 : hurt ? 0.9 : flat ? 0 : Math.sin(t * 2.2) * 0.35;
+      swing += (goal - swing) * Math.min(1, dt * 3);
+      needle.rotation.z = swing;
+      flow = (flow + dt * (on ? 0.6 : 0)) % 1;
+      lanes.forEach((L) => L.cubes.forEach((c, i) => { c.position.x = -0.6 + ((i / 3 + flow) % 1) * 1.1; c.visible = on; }));
+      wedge.rotation.y = on ? Math.sin(t * 4) * 0.4 : 0;
+      const lit = lift || flat || hurt ? 7 : Math.floor((t * 0.8) % 7) + 1;
+      days.forEach((d, i) => d.material.emissive.setHex(i < lit ? (lift ? 0x5bd18b : hurt ? 0xff5e52 : 0xf2cf6b) : 0));
+      alarm.update(dt, hurt);
+      caught.set(lift ? 3 : 2, lift && Math.sin(t * 6) > 0);
+    } };
+  }
+
   // VERIFY BAY: a glass containment chamber that replays the bug; the fix has to kill it in there
   function buildVerify() {
     const g = group();
@@ -1693,6 +1755,8 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
       stats: [['POWER', 'none'], ['NEEDS', 'your merge'], ['PERMIT', 'per district'], ['OUTPUT', 'a release']], states: ['IDLE', 'COUNTDOWN', 'LAUNCH'], build: buildLaunchPad },
     { id: 'orbit', name: 'ORBIT WATCH', kind: 'INSPECTION', chip: 0x93c5fd, h: 2.9, real: 'The last station, after the launch. Watches the deploy for 24 hours: Sentry stays quiet and the metric comes back, or the change is flagged and sent back to Spark.',
       stats: [['WATCHES', '24 h after deploy'], ['SIGNALS', 'Sentry + metrics'], ['ON ALERT', 'back to Spark'], ['SITS BY', 'the launch pad']], states: ['WATCHING', 'ALL CLEAR', 'ALERT'], build: buildOrbit },
+    { id: 'measure', name: 'MEASURE STATION', kind: 'GROWTH', chip: 0x5bd18b, h: 2.4, real: 'After a growth change launches, it watches the PostHog funnel step that dropped: before (A) against after (B). Enough people and a clear jump is lift; a clear drop means roll it back.',
+      stats: [['WATCHES', '7 days after launch'], ['SIGNALS', 'PostHog funnel'], ['MATH', 'two-proportion z-test'], ['SITS BY', 'orbit watch']], states: ['MEASURING', 'LIFT', 'NO LIFT', 'HURT', 'IDLE'], build: buildMeasure },
     { id: 'turret', name: 'TURRET', kind: 'DEFENSE', chip: 0x5bd18b, h: 1.6, real: 'Tests guarding a district. Bugs that reach the district get shot down before they ship.',
       stats: [['POWER', 'solar'], ['AMMO', 'regression tests'], ['RANGE', 'one district'], ['BUILT BY', 'turret builder']], states: ['SCANNING', 'FIRING'], build: buildTurret },
     { id: 'biter', name: 'BITER', kind: 'ENEMY', chip: 0xff5e52, h: 1.2, real: 'A Sentry error, spawned on the district its stack trace points to. Ignore it and more show up.',

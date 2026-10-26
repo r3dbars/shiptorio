@@ -4,8 +4,9 @@ import { signupAllowed } from "./signup";
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
 
+import { authorizationRevoked, isAllowed, makeSessionCookie, readSessionDetails } from "./session";
 import { parseProgress, validProgress, type Progress } from "@shiptorio/shared";
-import { isAllowed, makeSessionCookie, readSessionDetails } from "./session";
+
 
 export interface AccountsEnv {
   DB: D1Database;
@@ -60,7 +61,9 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   const row = await env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
     .bind(await sha256(session.ref.sid), session.ref.uid, now)
     .first<{ id: number; login: string }>();
+  if (await authorizationRevoked(env.DB, session.login, session.issuedAt)) return null;
   if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
+
   return { id: row.id, login: row.login };
 }
 
@@ -120,15 +123,17 @@ export interface RepoRow { full_name: string; installation_id: number; default_b
 
 export async function reposFor(env: AccountsEnv, user: User): Promise<RepoRow[]> {
   const query = user.dev
-    ? env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name")
-    : env.DB.prepare("SELECT ur.repo AS full_name, ur.installation_id, r.default_branch FROM user_repos ur LEFT JOIN repos r ON r.full_name = ur.repo WHERE ur.user_id = ? ORDER BY ur.repo").bind(user.id);
+    ? env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos WHERE archived_at IS NULL ORDER BY full_name")
+    : env.DB.prepare("SELECT ur.repo AS full_name, ur.installation_id, r.default_branch FROM user_repos ur LEFT JOIN repos r ON r.full_name = ur.repo WHERE ur.user_id = ? AND r.archived_at IS NULL ORDER BY ur.repo").bind(user.id);
   return (await query.all<RepoRow>()).results;
 }
 
 // ---- per-player settings ----
 
-// Only these keys are stored, each a short string, so the table can't become a dumping ground.
-const PREF_KEYS = ["intro", "guideSeen"] as const;
+// Only these keys are stored, each with a length cap, so the table can't become a dumping ground.
+// achievements: the player's earned badges as JSON (shared/src/achievements.ts), bounded to 4 KB including long repository names.
+const PREF_LIMIT = { intro: 64, guideSeen: 64, achievements: 4096 } as const;
+const PREF_KEYS = Object.keys(PREF_LIMIT) as (keyof typeof PREF_LIMIT)[];
 export type PrefKey = (typeof PREF_KEYS)[number];
 export const isPrefKey = (key: string): key is PrefKey => (PREF_KEYS as readonly string[]).includes(key);
 
@@ -140,7 +145,7 @@ export async function readPrefs(env: AccountsEnv, user: User): Promise<Partial<R
 
 export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<string, unknown>, now = Date.now()): Promise<boolean> {
   const entries = Object.entries(prefs);
-  if (!entries.length || entries.some(([k, v]) => !isPrefKey(k) || typeof v !== "string" || v.length > 64)) return false;
+  if (!entries.length || entries.some(([k, v]) => !isPrefKey(k) || typeof v !== "string" || v.length > PREF_LIMIT[k])) return false;
   if (user.dev) return true;
   await env.DB.batch(entries.map(([k, v]) =>
     env.DB.prepare("INSERT INTO user_prefs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")

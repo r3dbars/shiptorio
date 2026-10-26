@@ -2,12 +2,17 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { docsSite } from "./docs-site";
 
 // The art pages live in docs/ (one source of truth) and are served at /art/ on the site.
 const ART: Record<string, string> = {
   "art/item-lab.html": "../docs/item-lab.html",
   "art/prototype.html": "../docs/art-prototype.html",
   "art/spark.html": "../docs/spark.html", // judge-facing: how Meta Muse Spark runs the factory
+  "art/black-iron.html": "../docs/black-iron.html", // the chosen look: Black Iron line with the real work journey
+  "art/cogworks.html": "../docs/cogworks-variations.html",
+  "art/dioramas.html": "../docs/dioramas.html",
+  "art/style-lab.html": "../docs/style-lab.html",
   "art/index.html": "art.html",
 };
 
@@ -31,7 +36,7 @@ function artPages(): Plugin {
 
 // `bun run dev:web` serves the UI on :5173 and proxies the API + websockets to `wrangler dev` on :8787.
 export default defineConfig({
-  plugins: [react(), artPages()],
+  plugins: [react(), artPages(), docsSite()],
   build: {
     rollupOptions: {
       output: {
