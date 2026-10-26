@@ -1887,6 +1887,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         await this.patch({ machines: [{ ...m, state: "blocked" }] });
         continue;
       }
+      {
+        const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
+      }
       await this.patch({
         items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
         machines: [{ ...m, state: "working" }],
@@ -1894,10 +1898,6 @@ export class Factory extends DurableObject<FactoryEnv> {
       this.running.add(item.id);
       // Bounded hosted jobs execute in an alarm, not an HTTP request or a 30-second waitUntil.
       // One job per alarm keeps total work under the alarm's 15-minute limit.
-      {
-        const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
-        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
-      }
       await this.runSparkJob(item.id, m.id);
       break;
     }

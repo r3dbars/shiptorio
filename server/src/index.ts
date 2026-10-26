@@ -289,7 +289,11 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (text.length > 8192) return c.json({ error: "too large" }, 413);
   const parsed = EnqueueRunner.safeParse(JSON.parse(text));
   if (!parsed.success) return c.json({ error: "invalid job" }, 400);
-  return c.json(await f.enqueueRunner(parsed.data,c.get("user").login), 202);
+  try { return c.json(await f.enqueueRunner(parsed.data,c.get("user").login), 202); }
+  catch (error) {
+    if (error instanceof Error && error.message.includes('Daily run quota reached')) return c.json({error:'daily run quota reached'},429);
+    throw error;
+  }
 });
 
 app.get("/api/repos/:owner/:repo/runner/jobs", async (c) => c.json(await factory(c.env, `${c.req.param("owner")}/${c.req.param("repo")}`).runnerJobs()));
