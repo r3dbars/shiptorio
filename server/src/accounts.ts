@@ -1,4 +1,6 @@
+import { observedFetch } from "./telemetry";
 import { signupAllowed } from './signup';
+
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
@@ -72,7 +74,7 @@ export async function endSession(env: AccountsEnv, cookie: string | null): Promi
 // ---- which repos a player can reach ----
 
 async function userApi<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(API + path, {
+  const res = await observedFetch("github", API + path, {
     signal: AbortSignal.timeout(15000),
     headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "shiptorio", "x-github-api-version": "2022-11-28" },
   });
