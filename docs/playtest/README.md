@@ -49,4 +49,9 @@ checked through `bun test` (83 pass).
 | # | Type | What |
 |---|------|------|
 | #74 | bug | Still reproduces: rocket off-screen after Build it (worse on phone) |
-| see below | | New issues filed this round |
+| #105 | ux | After two rockets the factory goes quiet, no next move |
+| #106 | ux | Tour 3/10 and Guide 4/16 counters disagree |
+| #107 | feel | Intro is a flat 2D map, asks to sign in first, rockets pile on Skip |
+| #108 | ux | "Build" means two things on screen |
+
+#74, #75, #77, #80 are in flight in Codex PR #103 at the time of writing.
