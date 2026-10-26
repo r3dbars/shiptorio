@@ -1,6 +1,6 @@
 import { z } from "zod";
 // Internal HTTP transport; shared browser/runner websocket contracts remain compatible.
-export const RunnerHarness = z.enum(["codex", "claude_code"]);
+export const RunnerHarness = z.enum(["codex", "claude_code", "local"]);
 export const EnqueueRunner = z.object({ itemId: z.string().regex(/^gh-\d+$/), harness: RunnerHarness, allowedPaths: z.array(z.string().min(1).max(200)).min(1).max(10) }).strict();
 export const RegressionProof = z.object({ failsOnBase: z.boolean(), passesOnHead: z.boolean(), baseSha: z.string().regex(/^[a-f0-9]{40}$/), headSha: z.string().regex(/^[a-f0-9]{40}$/), command: z.string().max(1000), logTail: z.string().max(3000) }).strict();
 export type RegressionProof = z.infer<typeof RegressionProof>;
@@ -15,6 +15,7 @@ export interface RunnerJob {
   approvalMoveId?: string;
   approvedAt?: number;
   inputRevision?: string;
+  route?: string; // which power plant builds it, and why (geothermal guard + planner pick)
   reworkPr?: number;
   verifyBaseSha?: string;
   prTestFiles?: string[];
