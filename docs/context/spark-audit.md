@@ -16,9 +16,13 @@ and verified live earlier today, see decisions.md).
 | AI review station | `gauntlet.ts` `reviewDiff` | **Spark**, hostile reviewer, comments on the PR | station waits (pile shows) |
 | Deck ranking + suggested option per card | `spark.ts` `gameMaster`, `Factory.askGameMaster` | **Spark** (new) | value × wait score in `deck.ts` |
 | Bottleneck card wording | same call | **Spark** (new) | `impliedBottleneckMove` text |
+| Orbit watch: did this new Sentry spike come from the launch? | `spark.ts` `judgeOrbit`, `Factory.orbitCaused` | **Spark** (new), reads the PR's files + the error; unsure = caused | spike rule trips it |
+| Research pick from the scar pile | `spark.ts` `pickResearch`, `Factory.sparkResearch` | **Spark** (new), only techs on the tree | scar-regex pick (`suggestResearch`) |
+| Launch permit card: suggest Allow or Not yet | `spark.ts` `judgePermit`, `Factory.advisePermit` | **Spark** (new) advises; player taps | streak rule suggests Allow |
 | Bottleneck detection (which stage is jammed) | `bottleneck.ts` | rule: queue telemetry (WIP × value × age) | n/a |
 | Verify bay | `gauntlet.ts` `verifyFromDiff` | rule: runner proof receipts | n/a |
-| Launch permits | `permits.ts` | rule: 5/10 clean ships, revoke on any rework | n/a |
+| Permit eligibility + revoke | `permits.ts` | rule: 5/10 clean ships to be offered, revoke on any rework | n/a |
+| Same Sentry error back, revert PR, red on main | `orbit.ts` | rule: these are facts, not judgment calls | n/a |
 | Hosted assembler (Spark writes code) | `spark.ts` `writeFix` | dev only, `HOSTED_SPARK_ASSEMBLER=1` | off in prod by design |
 
 Deliberately rules, not model calls: bottleneck math, verify bay proof, launch permits. These are the
@@ -48,6 +52,9 @@ permission stay deterministic so the automation earned by playing is provable.
    speaks in Spark's voice.
 4. The live drone never moved (server never set `foreman`) → set on every Spark call.
 5. Spark's plan was invisible in GitHub → issue comment.
+
+Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
+triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.
 
 ## Still open
 
