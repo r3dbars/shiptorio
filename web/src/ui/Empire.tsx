@@ -79,9 +79,9 @@ async function fetchIslands(): Promise<IslandSummary[] | null> {
   const r = await fetch("/api/empire", { credentials: "same-origin" }).catch(() => null);
   if (r?.ok) {
     // the schema (and zod) load only when there's an empire to check
-    const { Empire: EmpireSchema } = await import("../source/schemas");
-    const parsed = EmpireSchema.safeParse(await r.json().catch(() => null));
-    if (parsed.success) return parsed.data.islands;
+    const schemas = await import("../source/schemas").catch(() => null);
+    const parsed = schemas?.Empire.safeParse(await r.json().catch(() => null));
+    if (parsed?.success) return parsed.data.islands;
   }
   // older servers: the repo list alone still draws the islands
   const repos = await fetch("/api/repos", { credentials: "same-origin" }).catch(() => null);
