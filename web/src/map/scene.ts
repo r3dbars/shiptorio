@@ -47,6 +47,7 @@ const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
+const TOP_BAR_PX = 64; // the top bar (score chips, mode toggle, icons); map labels stay below it
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -1284,6 +1285,8 @@ export class FactoryScene {
       const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
       l.el.style.display = off ? "none" : "flex";
+      // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
+      if (!off) y = Math.max(y, TOP_BAR_PX + l.el.offsetHeight);
       if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
     }
     for (const pe of this.pings) {
@@ -1295,8 +1298,10 @@ export class FactoryScene {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y * 0.55;
       this.v3.project(this.camera);
-      const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
+      const x = ((this.v3.x + 1) / 2) * w;
+      let y = ((1 - this.v3.y) / 2) * h;
       pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
+      y = Math.max(y, TOP_BAR_PX + pe.el.offsetHeight / 2);
       pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
       // keep the tag on screen: flip it to the dot's left near the right edge
       pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
