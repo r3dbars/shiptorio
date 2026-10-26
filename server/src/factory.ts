@@ -1164,8 +1164,26 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   // ---------- RPC from the Worker ----------
 
-  /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
+  private initializing: { repo: string; promise: Promise<void> } | null = null;
+
+  /** Installation delivery and the first browser can arrive together. Never initialize twice. */
   async ensure(repo: string, installationId: number): Promise<void> {
+    if (!validRepo(repo)) throw new Error("Repository mismatch");
+    const pending = this.initializing;
+    if (pending) {
+      if (pending.repo !== repo.toLowerCase()) throw new Error("Repository mismatch");
+      await pending.promise;
+      if (this.meta?.installationId !== installationId) await this.ensure(repo, installationId);
+      return;
+    }
+    const operation = { repo: repo.toLowerCase(), promise: this.ensureFactory(repo, installationId) };
+    this.initializing = operation;
+    try { await operation.promise; }
+    finally { if (this.initializing === operation) this.initializing = null; }
+  }
+
+  /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
+  private async ensureFactory(repo: string, installationId: number): Promise<void> {
     await this.load();
     if (!validRepo(repo) || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) throw new Error("Repository mismatch");
     if (await this.load()) {

@@ -86,8 +86,14 @@ await context.route(`${origin}/auth/login*`, async (route) => {
 });
 const page = await context.newPage();
 const consoleErrors = [];
+const consoleWarnings = [];
+const socketMessages = [];
+page.on("websocket", socket => {
+  socket.on("framereceived", frame => { try { const value = JSON.parse(String(frame.payload)); socketMessages.push({ type: value.type, text: value.text, itemCount: value.state?.items?.length, move: value.state?.move?.title }); } catch {} });
+  socket.on("close", () => socketMessages.push({ type: "socket-closed" }));
+});
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
-page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); });
+page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
 const apiErrors = [];
 let repoPolls = 0;
 page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/repos") repoPolls++; });
@@ -165,7 +171,7 @@ try {
     repos: await rows("SELECT * FROM repos"),
     webhook_deliveries: await rows("SELECT source, delivery_id, state FROM webhook_deliveries"),
   };
-  report.page = { repoPolls, apiErrors, consoleErrors, url: page.url(), text: (await page.locator("body").innerText().catch(() => "")).slice(0, 1500) };
+  report.page = { repoPolls, apiErrors, consoleErrors, consoleWarnings, socketMessages, url: page.url(), text: (await page.locator("body").innerText().catch(() => "")).slice(0, 1500) };
   console.log(JSON.stringify({ db: report.db, page: report.page }, null, 1));
 }
 
