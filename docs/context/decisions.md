@@ -362,3 +362,13 @@ production config; provider key values, revocations and permissions are unchange
   currently installed local runner targets r3dbars/testing.
 - The existing ten-minute PR monitor remains active. Respect active lane ownership,
   require current-head checks, and keep runner PRs behind the in-game Launch gate.
+- Production release `0796af32deced1ff4d48a7377c3c72a46ce67818` is live on
+  https://shiptorio.com: Deploy run
+  https://github.com/r3dbars/shiptorio/actions/runs/40416992098 succeeded and
+  `/api/version` returned the exact SHA. Public landing returned 200, while the
+  live factory deep link and `/api/repos` returned 401 without credentials.
+  Authenticated Sentry/PostHog connect reads both returned 200 with connected
+  controls after this release. This receipt is docs-only and does not redeploy.
+- New Claude UI PRs #227 and draft #229 arrived after the backlog cleared; their
+  active owner retains merge/deploy responsibility. They are not part of the
+  release above. Preview/staging on shiptorio.dev was not changed or certified.
