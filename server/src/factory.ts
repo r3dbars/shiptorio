@@ -1,6 +1,7 @@
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
+import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import {
@@ -70,6 +71,12 @@ interface Meta {
 }
 
 export class Factory extends DurableObject<FactoryEnv> {
+  /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
+  async health(): Promise<{ ok: boolean }> {
+    await this.ctx.storage.get("ops-health");
+    return { ok: true };
+  }
+
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
@@ -1235,6 +1242,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Merges at the merge gate: the player's tap, an overrule, or a launch permit doing it on its own. */
   private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
+    if (by === "autonomy" && !(await flagEnabled(this.env, "permits"))) return;
     if (!item.prNumber || !this.meta) return;
     try {
       const token = await installationToken(this.env, this.meta.installationId);
@@ -1361,6 +1369,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** PRs in a lane with a permit launch on their own once every station passed. Runs before any card is offered. */
   private async autoLaunchPermitted(): Promise<void> {
+    if (!(await flagEnabled(this.env, "permits"))) return;
     const book = await this.permitBook();
     for (const item of this.state?.items.filter((i) => mayAutoLaunch(book, i)) ?? []) {
       if ((await this.ctx.storage.get<string>(`autoLaunchFailed:${item.id}`)) === item.inspection?.headSha) continue;
@@ -1370,6 +1379,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** A lane with a clean streak gets its permit card, when nothing else is waiting on the player. */
   private async offerPermitMove(): Promise<void> {
+    if (!(await flagEnabled(this.env, "permits"))) return;
     const s = this.state;
     if (!s) return;
     const ready = permitReady(await this.permitBook());
@@ -1377,6 +1387,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async grantPermit(lane: string, permit: boolean, by: "card" | "toggle"): Promise<void> {
+    if (permit && !(await flagEnabled(this.env, "permits"))) return;
     const book = await this.permitBook();
     const r = book.lanes[lane];
     if (!r || r.permit === permit) return;
@@ -1403,6 +1414,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Spends science packs on a tech. Its station drops onto the line right after CI and runs on every PR from now on. */
   private async research(tech: string, by: "tree" | "card"): Promise<void> {
+    if (!(await flagEnabled(this.env, "research"))) return;
     const s = this.state!;
     const blocked = researchBlocked(s, tech);
     if (blocked) { this.log("info", blocked); return; }
@@ -1417,6 +1429,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Repeated scars point at a tech: keep the tree's pick current, and offer it as a card once it's affordable. */
   private async offerResearchMove(): Promise<void> {
+    if (!(await flagEnabled(this.env, "research"))) return;
     const s = this.state;
     if (!s) return;
     const suggest = await this.sparkResearch(suggestResearch(s));
@@ -1521,6 +1534,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
+    if (msg.type === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
+    if (msg.type === "set_autonomy" && msg.permit && !(await flagEnabled(this.env, "permits", auth.login))) return;
     const s = this.state!;
     if (msg.type === "undo") { await this.undoDecision(msg.actionId); return; }
     if (msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") {
@@ -1539,6 +1554,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       // Existing handlers validate their own job/revision/head. Select any visible deck card temporarily.
       s.move = card;
       const action = option.actions[0];
+      if (action?.tool === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
+      if (card.kind === "automate" && msg.optionId === "allow" && !(await flagEnabled(this.env, "permits", auth.login))) return;
       if (action?.tool === "run_missing_check") {
         await this.scheduleTick(); this.log("info", "The missing check is queued. Merging still waits for proof.");
       } else if (action?.tool === "inspect_bottleneck") {
