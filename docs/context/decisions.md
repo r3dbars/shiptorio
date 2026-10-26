@@ -269,3 +269,15 @@ is not itself an app failure. Console findings belong only to the current naviga
 
 - 2026-10-26: The optional real-map welcome tour is explicitly a sandbox. Only the intro simulator source can run its cues or sample Sentry ore; a live-source URL cannot enable it. Repeated tour actions are idempotent. Its dedicated playtest follows all eight actual UI beats, including scar → second verification → launch and automated shipping, and closes mid-build to protect delayed callback cleanup. Protocol proof remains separate from rendered desktop and physical-phone checks.
 - 2026-10-26: Launch credit is durable per merged PR and commits atomically with science and permit counters. Orbit regressions keep their scars and new work when old merge receipts replay. Idle orbit watches schedule their actual 24-hour deadline; incoming work can preempt that distant alarm. This records elapsed observation, not proof of customer impact.
+
+- 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.
+
+Credential isolation (Oct 26, goal 3): mine credentials move from global/per-repo KV
+plaintext to installation + repo + kind D1 envelopes. AES-GCM uses fresh data keys
+wrapped by CRED_MASTER_KEY; scope/kind/version are authenticated. First authorized
+read migrates and deletes plaintext; revocation tombstones prevent stale KV or operator
+secret fallback from restoring access. Claude accounts #160 supplies session/user/repo
+membership. Worker-secret overrides stay with the pinned/legacy operator map. Keys
+never enter factory messages, provider errors, logs, or connection responses; shared
+redaction covers those output boundaries. Operator must configure the new master key
+using the command in docs/context/encrypted-credentials.md; no key was set by this task.

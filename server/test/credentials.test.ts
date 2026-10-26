@@ -42,7 +42,7 @@ test("encrypted records isolate installations, repositories and kinds, and never
   expect(await sentryCreds(env, { ...scope, installationId: 13 })).toEqual({});
   expect(await sentryCreds(env, { ...scope, repo: "alice/other" })).toEqual({});
   expect(await postHogCreds(env, scope)).toEqual({});
-  expect(await credentialStatus(env, "sentry", scope)).toEqual({ connected: true, lastUsedAt: null });
+  expect(await credentialStatus(env, "sentry", scope)).toMatchObject({ connected: true, lastUsedAt: null, workerOverride: false });
   await markUsed(env, "sentry", scope);
   expect((await credentialStatus(env, "sentry", scope)).lastUsedAt).toBeGreaterThan(0);
   expect(JSON.stringify(db.sqlite.query("SELECT * FROM credentials").all())).not.toContain(secret);
@@ -167,4 +167,14 @@ test("a revoke racing lazy master-key rotation wins its compare-and-swap", async
   await sentryCreds(env, scope); // An already in-flight read can finish; it cannot restore the record.
   expect(db.sqlite.query("SELECT envelope, revoked FROM credentials").get()).toMatchObject({ envelope: null, revoked: 1 });
   expect(await sentryCreds(env, scope)).toEqual({});
+});
+
+test("migrates account-era per-repo plaintext independently from another factory's global key", async () => {
+  const { env, kv } = fixture();
+  kv.set("cred:sentry:alice/shop", JSON.stringify({ clientSecret: secret }));
+  kv.set("cred:sentry", JSON.stringify({ clientSecret: "unrelated-operator-secret" }));
+  kv.set("link:sentry", "r3dbars/testing");
+  expect((await sentryCreds(env, scope)).clientSecret).toBe(secret);
+  expect(kv.has("cred:sentry:alice/shop")).toBe(false);
+  expect(kv.has("cred:sentry")).toBe(true);
 });

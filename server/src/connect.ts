@@ -1,9 +1,9 @@
 // /connect/<kind>: the one page where the player pastes a mine's key. Server-rendered,
-// same look as the access page. Keys go to KV and never come back out to the browser.
+// same look as the access page. Keys are encrypted in D1 and never come back out to the browser.
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
-export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null; connected: boolean; webhookUrl: string; error?: string; saved?: boolean; lastUsedAt?: number | null; revoked?: boolean }): string {
+export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null; connected: boolean; webhookUrl: string; error?: string; saved?: boolean; lastUsedAt?: number | null; revoked?: boolean; workerOverride?: boolean }): string {
   const name = o.kind === "sentry" ? "Sentry" : "PostHog";
   // The browser defaults to the simulator unless live mode is explicit.
   const target = o.repo && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(o.repo) ? o.repo : null;
@@ -27,6 +27,7 @@ export function connectPage(o: { kind: "sentry" | "posthog"; repo: string | null
 <form method="post" action="${esc(action)}"><button name="action" value="revoke">Revoke</button></form>` : o.revoked ? `<p>Connection revoked. Shiptorio will no longer use this key. To invalidate the key everywhere, also revoke it in ${name}.</p>` : "";
   const body = o.saved
     ? `<p>✓ ${name} is plugged in${o.repo ? ` to <b>${esc(o.repo)}</b>` : ""}. ${o.kind === "sentry" ? "New errors will show up as biters on the folder they hit." : "Traffic drops and error spikes per route will show up as ore within a few minutes."}</p><a class="btn" href="${esc(back)}">Back to the factory</a>`
+    : o.workerOverride ? `<p>This factory uses an operator-managed key. Ask the operator to rotate it; Revoke stops Shiptorio from using it here.</p>`
     : `${o.connected ? `<p class="ok">✓ ${name} already has a key. Rotate your connection by pasting a replacement key below. Revoke the old key in the provider after saving.</p>` : ""}${steps}
 <form method="post" action="${esc(action)}">${o.error ? `<p class="err">${esc(o.error)}</p>` : ""}${fields}<button>${o.connected ? "Rotate key" : `Plug in ${name}`}</button></form>`;
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect ${name} · Shiptorio</title>

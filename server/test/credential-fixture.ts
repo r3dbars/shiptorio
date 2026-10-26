@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { readFileSync } from "node:fs";
-const migration = readFileSync(new URL("../migrations/0004_credentials.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../migrations/0005_encrypted_credentials.sql", import.meta.url), "utf8");
 
 /** Run the production credential SQL against SQLite, instead of mirroring its behavior in a mock. */
 export function credentialDB(original?: { prepare(sql: string): unknown }) {

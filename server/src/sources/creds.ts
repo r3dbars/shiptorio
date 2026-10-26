@@ -30,8 +30,11 @@ async function row(env: CredsEnv, scope: CredentialScope, kind: MineKind): Promi
 }
 async function migrate(env: CredsEnv, scope: CredentialScope, kind: MineKind): Promise<Row | null> {
   let current = await row(env, scope, kind);
-  if (scope.repo.toLowerCase() !== await legacyRepo(env, kind)) return current;
-  const legacy = await env.CACHE?.get<Creds>(`cred:${kind}`, "json");
+  const ownsGlobal = scope.repo.toLowerCase() === await legacyRepo(env, kind);
+  const repoKey = `cred:${kind}:${scope.repo.toLowerCase()}`;
+  const ownLegacy = await env.CACHE?.get<Creds>(repoKey, "json");
+  const globalLegacy = ownsGlobal ? await env.CACHE?.get<Creds>(`cred:${kind}`, "json") : null;
+  const legacy = ownLegacy ?? globalLegacy;
   if ((!current || (!current.envelope && !current.revoked)) && legacy) {
     const envelope = await encryptCredential(env, binding(scope, kind), legacy);
     // A concurrent save/revoke wins. Its tombstone also prevents stale KV reads from resurrecting a key.
@@ -41,7 +44,10 @@ async function migrate(env: CredsEnv, scope: CredentialScope, kind: MineKind): P
       .bind(JSON.stringify(envelope), scopeKey(scope), kind).run();
     current = await row(env, scope, kind);
   }
-  if ((current?.envelope || current?.revoked) && legacy) await env.CACHE!.delete(`cred:${kind}`);
+  if ((current?.envelope || current?.revoked) && legacy) {
+    await env.CACHE!.delete(repoKey);
+    if (ownsGlobal) await env.CACHE!.delete(`cred:${kind}`);
+  }
   return current;
 }
 export async function readCreds(env: CredsEnv, kind: MineKind, scope?: CredentialScope, redactor?: Redactor, used = false): Promise<Creds> {
@@ -70,11 +76,13 @@ export async function saveCreds(env: CredsEnv, kind: MineKind, creds: Creds, sco
   const envelope = await encryptCredential(env, binding(scope, kind), creds);
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, ?, 0, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = excluded.envelope, revoked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at, last_used_at = NULL")
     .bind(scopeKey(scope), kind, JSON.stringify(envelope), scope.user ?? null, Date.now()).run();
+  await env.CACHE?.delete(`cred:${kind}:${scope.repo.toLowerCase()}`);
   if (scope.repo.toLowerCase() === await legacyRepo(env, kind)) await env.CACHE?.delete(`cred:${kind}`);
 }
 export async function revokeCreds(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
   await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, revoked, updated_by, updated_at) VALUES (?, ?, NULL, 1, ?, ?) ON CONFLICT(scope, kind) DO UPDATE SET envelope = NULL, revoked = 1, linked = 0, updated_by = excluded.updated_by, updated_at = excluded.updated_at")
     .bind(scopeKey(scope), kind, scope.user ?? null, Date.now()).run();
+  await env.CACHE?.delete(`cred:${kind}:${scope.repo.toLowerCase()}`);
   if (scope.repo.toLowerCase() === await legacyRepo(env, kind)) await env.CACHE?.delete(`cred:${kind}`);
 }
 export async function markUsed(env: CredsEnv, kind: MineKind, scope: CredentialScope): Promise<void> {
@@ -85,7 +93,9 @@ export async function markUsed(env: CredsEnv, kind: MineKind, scope: CredentialS
 export async function credentialStatus(env: CredsEnv, kind: MineKind, scope: CredentialScope) {
   const creds = await readCreds(env, kind, scope);
   const current = await row(env, scope, kind);
-  return { connected: !!(kind === "sentry" ? creds.clientSecret : creds.apiKey && creds.projectId), lastUsedAt: current?.last_used_at ?? null };
+  const admin = override(env, kind);
+  const workerOverride = !current?.revoked && scope.repo.toLowerCase() === await legacyRepo(env, kind) && !!(kind === "sentry" ? admin.clientSecret : admin.apiKey && admin.projectId);
+  return { connected: !!(kind === "sentry" ? creds.clientSecret : creds.apiKey && creds.projectId), lastUsedAt: current?.last_used_at ?? null, workerOverride };
 }
 export async function linkedRepo(env: CredsEnv, kind: MineKind, scope?: CredentialScope): Promise<string | null> {
   if (!scope) return legacyRepo(env, kind); // Only for resolving the legacy webhook destination.

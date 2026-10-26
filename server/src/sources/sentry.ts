@@ -107,7 +107,10 @@ export function normalizeSentry(payload: unknown, resource = "issue"): Signal[] 
   }];
 }
 
-export function sentryStatus(creds: SentryCreds, publicUrl = "https://shiptorio.com"): SourceStatus {
+/** Each map gets its own webhook URL, so Sentry's signature is checked with that map's own secret. */
+export const sentryWebhookUrl = (publicUrl: string, repo?: string | null) => `${publicUrl}/webhooks/sentry${repo ? `/${repo.toLowerCase()}` : ""}`;
+
+export function sentryStatus(creds: SentryCreds, publicUrl = "https://shiptorio.com", repo?: string | null): SourceStatus {
   const connected = !!creds.clientSecret;
   return {
     kind: "sentry",
@@ -117,7 +120,7 @@ export function sentryStatus(creds: SentryCreds, publicUrl = "https://shiptorio.
     setup: {
       steps: [
         "In Sentry: Settings → Developer Settings → Custom Integrations → Create New Integration → Internal Integration.",
-        `Webhook URL: ${publicUrl}/webhooks/sentry. Turn on Alert Rule Action, tick the issue and error webhooks, give Issue & Event read access.`,
+        `Webhook URL: ${sentryWebhookUrl(publicUrl, repo)}. Turn on Alert Rule Action, tick the issue and error webhooks, give Issue & Event read access.`,
         "Save, copy the Client Secret, and paste it on the connect page.",
       ],
       actionUrl: `${publicUrl}/connect/sentry`,
