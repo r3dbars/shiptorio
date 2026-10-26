@@ -23,7 +23,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     expect(res.ok(), `${path}: ${await res.text()}`).toBe(true);
     return res.json();
   };
-  await post(`/__test/${repo}/seed?ore=0`);
+  const { repoId } = await post(`/__test/${repo}/seed?ore=0`);
   await post('/__test/access');
   // Stub only GitHub's authorization screen. The Worker callback validates real OAuth state,
   // exchanges the fake code and creates the real D1 account/session/repo membership.
@@ -50,7 +50,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await page.getByRole('button', { name: repo }).click();
   await expect(page).toHaveURL(/source=live&repo=/);
   await expect.poll(() => messages.some(m => m.type === 'snapshot')).toBe(true);
-  const issue = JSON.stringify({ action: 'opened', installation: { id: 1 }, repository: { full_name: repo, default_branch: 'main' }, issue: { number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', html_url: `https://github.com/${repo}/issues/1`, state: 'open', labels: [{ name: 'bug' }], user: { login: 'fixture' } } });
+  const issue = JSON.stringify({ action: 'opened', installation: { id: 1 }, repository: { id: repoId, full_name: repo, default_branch: 'main' }, issue: { number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', html_url: `https://github.com/${repo}/issues/1`, state: 'open', labels: [{ name: 'bug' }], user: { login: 'fixture' } } });
   const delivery = await page.request.post('/webhooks/github', { data: issue, headers: { 'content-type': 'application/json', 'x-github-event': 'issues', 'x-github-delivery': crypto.randomUUID(), 'x-hub-signature-256': `sha256=${createHmac('sha256', 'public-test-hook').update(issue).digest('hex')}` } });
   expect(delivery.status()).toBe(202);
   await post(`/__test/${repo}/tick`);

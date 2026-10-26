@@ -5,6 +5,8 @@ import { createSession, upsertUser, saveReach } from '../../server/src/accounts'
 const knownRepos = new Set<string>();
 const installationId = (repo: string) => repo === 'load/crowd' ? 1000
   : repo.startsWith('load/factory-') ? 1001 + Number(repo.slice('load/factory-'.length)) : 1;
+const repositoryId = (repo: string) => [...repo].reduce((id, c) => (Math.imul(id, 31) + c.charCodeAt(0)) >>> 0, 1) + 100000;
+const permissions = { contents: 'write', pull_requests: 'write', issues: 'write', checks: 'read', statuses: 'read', metadata: 'read' };
 export class Factory extends ProductionFactory {
   constructor(ctx: DurableObjectState<{}>, env: Env) {
     super(ctx, env);
@@ -65,6 +67,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const collaborator = p.match(/\/collaborators\/fixture([1-5])?\/permission$/);
   if (collaborator) return reply({ permission: 'write', user: { id: 123 + Number(collaborator[1] ?? 0) } });
   if (p.endsWith('/access_tokens')) return reply({ token: `public-test-installation-${p.split('/')[3]}-token` });
+  if (/^\/app\/installations\/\d+$/.test(p)) return reply({ permissions, account: { login: 'fixture', type: 'User' } });
   if (p.endsWith('/installation')) return reply({ id: installationId(p.split('/').slice(2, 4).join('/')) });
   if (p.includes('/git/trees/')) return reply({ sha: BASE, tree: files.map(f => ({ path: f.filename, type: 'blob', size: 100 })), truncated: false });
   if (p.includes('/git/ref/heads/')) return reply({ object: { sha: p.endsWith('/main') ? BASE : HEAD } });
@@ -78,7 +81,10 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (/\/issues\/1$/.test(p)) return reply({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', state: 'open', user: { login: 'fixture' }, html_url: 'https://github.com/fixture/demo/issues/1' });
   if (p.endsWith('/pulls/99')) return reply({ number: 99, head: { sha: HEAD }, base: { sha: BASE }, merged: false, state: 'open' });
   if (p.endsWith('/pulls')) return init?.method === 'POST' ? reply({ number: 99, html_url: 'https://github.com/fixture/demo/pull/99' }) : reply([]);
-  if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) return reply({ default_branch: 'main' });
+  if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) {
+    const repo = p.split('/').slice(2, 4).join('/');
+    return reply({ id: repositoryId(repo), full_name: repo, default_branch: 'main' });
+  }
   throw new Error(`Unstubbed GitHub request: ${init?.method ?? 'GET'} ${p}`);
 }) as typeof fetch;
 
@@ -109,18 +115,20 @@ export default {
     const match = url.pathname.match(/^\/__test\/([\w-]+)\/([\w-]+)\/(seed|tick|check)$/);
     if (match) {
       const repo = `${match[1]}/${match[2]}`;
-      const f = env.FACTORY.get(env.FACTORY.idFromName(repo));
+      const repoId = repositoryId(repo);
+      const f = env.FACTORY.get(env.FACTORY.idFromName(`repo:${repoId}`));
       if (req.method !== 'POST') return new Response('POST required', { status: 405 });
       if (match[3] === 'seed') {
         knownRepos.add(repo);
         const id = installationId(repo);
-        await env.DB.prepare('INSERT OR IGNORE INTO installations (id, account_login) VALUES (?, ?)').bind(id, 'fixture').run();
-        await env.DB.prepare('INSERT OR REPLACE INTO repos (full_name, installation_id, default_branch) VALUES (?, ?, ?)').bind(repo, id, 'main').run();
+        await env.DB.prepare('INSERT OR IGNORE INTO installations (id, account_login, permissions, account_type) VALUES (?, ?, ?, ?)').bind(id, 'fixture', JSON.stringify(permissions), 'User').run();
+        await env.DB.prepare('INSERT OR REPLACE INTO repos (full_name, repo_id, installation_id, default_branch) VALUES (?, ?, ?, ?)').bind(repo, repoId, id, 'main').run();
         await f.ensure(repo, id);
+        await f.setRepositoryId(repoId);
         if (url.searchParams.get('ore') !== '0') await f.ingestIssue({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', labels: ['bug'], url: `https://github.com/${repo}/issues/1` });
       } else if (match[3] === 'check') await f.onCheckSuite([99], true, 'CI green', HEAD);
       else await (f as unknown as { testTick(): Promise<void> }).testTick();
-      return reply({ ok: true });
+      return reply({ ok: true, repoId });
     }
     // Miniflare overwrites CF-Connecting-IP. Only this non-production entry may emulate edge IPs.
     const ip = req.headers.get('x-fixture-client-ip');
