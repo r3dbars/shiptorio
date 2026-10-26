@@ -25,6 +25,7 @@ export interface GitHubPayload {
   repositories?: { full_name: string }[];
   repositories_added?: { full_name: string }[];
   repositories_removed?: { full_name: string }[];
+  sender?: { id: number; login?: string };
   [key: string]: unknown;
 }
 
