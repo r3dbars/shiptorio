@@ -75,3 +75,21 @@ describe("Spark judges", () => {
     expect(await judgePermit(env, { lane: "docs", streak: 5, need: 5, ships: [], openRisks: [] })).toEqual({ recommend: false, why: "Only typo fixes so far." });
   });
 });
+
+import { planLocalTask } from "../src/spark";
+describe("plans learn from never swipes", () => {
+  it("sends the player's past calls to the planner and cites the ones it heeded", async () => {
+    const bodies: string[] = [];
+    const turns = [
+      { tool: "read_issue", reason: "Read it" },
+      { tool: "read_file", path: "src/cart.ts", reason: "Read the code" },
+      { tool: "assign_job", reason: "Clear", plan: "Fix the percent math.", acceptance: ["SAVE10 takes 10%"], files: ["src/cart.ts"], heeded: ["You said no refactors in /src, so this only touches discount()."] },
+    ];
+    globalThis.fetch = (async (_: unknown, init?: RequestInit) => { bodies.push(String(init?.body)); return Response.json({ choices: [{ message: { content: JSON.stringify(turns[bodies.length - 1]) } }] }); }) as unknown as typeof fetch;
+    const feedback = JSON.stringify({ excludedMoveClasses: [{ kind: "build", scope: "district:src" }], playerCorrections: ["Player correction for build in district:src: Refactor cart. Reason: wrong call"] });
+    const out = await planLocalTask(env, { title: "SAVE10", body: "", district: "src", playerFeedback: feedback }, ["src/cart.ts"], async () => "code", async () => {});
+    expect(bodies[0]).toContain("wrong call");
+    expect(out.heeded).toHaveLength(1);
+    expect(out.plan).toContain("Respects your past calls:\n- You said no refactors");
+  });
+});
