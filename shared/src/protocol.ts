@@ -64,7 +64,6 @@ export const ServerToWeb = z.discriminatedUnion("type", [
   z.object({ type: z.literal("move_resolved"), moveId: z.string(), optionId: z.string().optional(), actor: Actor }),
   // The unlock moment. With district, that district earned (or lost) its launch permit.
   z.object({ type: z.literal("autonomy_unlocked"), level: AutonomyLevel, district: z.string().optional(), text: z.string() }),
-  z.object({ type: z.literal("source_setup"), source: SourceStatus }),
 ]);
 export type ServerToWeb = z.infer<typeof ServerToWeb>;
 

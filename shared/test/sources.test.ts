@@ -10,7 +10,6 @@ it("keeps older items valid while accepting ore provenance and ordered inspectio
 it("carries connect-a-source setup responses and replacement status patches", () => {
   const source = SourceStatus.parse({ kind: "github", state: "needs_action", detail: "Install the App", setup: { steps: ["Create the App"], actionUrl: "https://shiptorio.com/setup" } });
   expect(source.eventsToday).toBe(0);
-  expect(ServerToWeb.parse({ type: "source_setup", source })).toEqual({ type: "source_setup", source });
   expect(ServerToWeb.safeParse({ type: "patch", patch: { sources: [source] } }).success).toBe(true);
   expect(WebToServer.safeParse({ type: "connect_source", kind: "github" }).success).toBe(true);
   expect(WebToServer.safeParse({ type: "disconnect_source", kind: "email" }).success).toBe(true);
