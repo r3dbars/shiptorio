@@ -126,7 +126,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent });
   }
   // Plug it straight into the map it came from.
-  if (repo) await factory(c.env, repo).connectMine(kind).catch(() => null);
+  if (repo) await factory(c.env, repo).connectMine(kind);
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl: `${url}/webhooks/sentry`, saved: true }));
 });
 
@@ -204,7 +204,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
-    const installationId = await installationFor(c.env, repo).catch(() => null);
+    const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }
   return f.fetch(c.req.raw);
@@ -273,6 +273,7 @@ app.post("/webhooks/sentry", async (c) => {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
+  c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true }, 202);
 });
 

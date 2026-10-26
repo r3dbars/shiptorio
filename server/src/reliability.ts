@@ -15,7 +15,8 @@ export async function retry<T>(operation: string, run: () => Promise<T>, options
   const attempts = options.attempts ?? 3;
   for (let n = 1; ; n++) {
     try { return await run(); } catch (error) {
-      const transient = !(error instanceof OutboundError) || [408, 429].includes(error.status) || error.status >= 500;
+      const cause = error instanceof RetryExhausted ? error.cause : error;
+      const transient = !(cause instanceof OutboundError) || [408, 429].includes(cause.status) || cause.status >= 500;
       if (!transient || n >= attempts) throw new RetryExhausted(operation, n, error);
       await (options.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(Math.round(250 * 2 ** (n - 1) * (0.5 + (options.random ?? Math.random)())));
     }

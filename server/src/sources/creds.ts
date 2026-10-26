@@ -13,7 +13,7 @@ export interface CredsEnv extends SentrySourceEnv, PostHogSourceEnv {
 }
 
 async function stored<T>(env: CredsEnv, kind: MineKind): Promise<Partial<T>> {
-  return ((await env.CACHE?.get<T>(`cred:${kind}`, "json").catch(() => null)) ?? {}) as Partial<T>;
+  return ((await env.CACHE?.get<T>(`cred:${kind}`, "json")) ?? {}) as Partial<T>;
 }
 
 export async function sentryCreds(env: CredsEnv): Promise<SentryCreds> {
@@ -34,7 +34,7 @@ export async function saveCreds(env: CredsEnv, kind: MineKind, creds: SentryCred
 /** The one repo whose factory a mine feeds (Shiptorio is single-player for now). */
 export async function linkedRepo(env: CredsEnv, kind: MineKind): Promise<string | null> {
   const pinned = kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO;
-  return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`).catch(() => null)) ?? null);
+  return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`)) ?? null);
 }
 
 export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null): Promise<void> {
