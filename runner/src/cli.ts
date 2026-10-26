@@ -5,11 +5,15 @@ import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
 
 interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
-const root = resolve(import.meta.dir, "..");
+const root = resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(import.meta.dir, ".."));
 const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
 const harnessPath = (h: Job["harness"]) => Bun.which(h === "codex" ? "codex" : "claude");
 const available = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+if (process.argv[2] === "paths") {
+  console.log(JSON.stringify({ root, checkout, harnesses: available }));
+  process.exit(0);
+}
 async function command(args: string[], cwd: string, env = cleanEnv, timeout = 120000): Promise<string> {
   const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => p.kill(), timeout);
@@ -97,6 +101,7 @@ async function execute(job: Job) {
     throw error;
   } finally { job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 }
+if (process.argv[2] !== "retry") console.log(`Local runner ready for ${repo}: ${available.join(", ") || "no installed agents"}. Only approved jobs run.`);
 if (process.argv[2] === "retry") {
   const id = process.argv[3]; if (!/^[a-f0-9-]{36}$/.test(id ?? "")) throw new Error("Expected job UUID");
   console.log(JSON.stringify(await api("finish", await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json())));
