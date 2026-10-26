@@ -277,7 +277,9 @@ export class FactoryScene {
 
     this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
+    // phones and low-end machines get a smaller shadow map; the pixel pass hides the difference
+    const small = window.matchMedia?.("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
+    this.sun.shadow.mapSize.set(small ? 512 : 1024, small ? 512 : 1024);
     this.sun.shadow.bias = -0.0015;
     this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g, this.glow);
     this.glow.visible = false;
@@ -313,7 +315,7 @@ export class FactoryScene {
 
   // Zoom out just enough that the whole machine line, ore to launch pad, fits beside the HUD.
   private fitLine(state: FactoryState) {
-    if (!state.machines.length || this.width <= 760) return;
+    if (!state.machines.length || this.width <= 760 || this.height <= 500) return;
     const xs = state.machines.map((m) => m.x * CELL);
     const span = (Math.max(...xs) - Math.min(...xs)) * Math.cos(YAW) + 7;
     const free = (this.width - HUD_RIGHT_PX - 40) / this.height;
@@ -324,9 +326,9 @@ export class FactoryScene {
 
   private applyCamera() {
     const a = this.width / this.height;
-    const vh = (a < 1 ? (24 / a) * 0.62 : 19) * this.zoom;
+    const vh = (a < 1 ? (24 / a) * 0.78 : 19) * this.zoom;
     // keep the factory centered in the space the HUD cards on the right leave free
-    const shift = this.width > 760 ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
+    const shift = this.width > 760 && this.height > 500 ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
     Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));

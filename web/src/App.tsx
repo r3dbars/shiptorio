@@ -102,6 +102,7 @@ export function App() {
   useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
+  const [sheet, setSheet] = useState(false); // phones: the right-hand cards live in a bottom sheet
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -190,7 +191,11 @@ export function App() {
           <SoundControl />
         </section>
 
-        <div className="hud-right">
+        <div className={`hud-right${sheet ? " open" : ""}`}>
+          <button type="button" className="sheet-handle" aria-expanded={sheet} onClick={() => setSheet((v) => !v)}>
+            <span>POWER · PAD · LINE · LOG</span>
+            <b>{sheet ? "▾" : "▴"}</b>
+          </button>
           <section className="card" aria-label="Power">
             <div className="ptitle small">POWER</div>
             {(state?.power ?? []).map((p) => (
