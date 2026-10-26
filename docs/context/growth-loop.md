@@ -43,8 +43,8 @@ acquisition, retention, same game, more districts). PR #177.
 
 ## Thresholds (shared/src/growth.ts)
 
-`FUNNEL_MIN_ENTERED` 50 people/day, `FUNNEL_DROP` 20%, `MEASURE_DAYS` 7, `MIN_SAMPLE` 200 people after
-launch, `ALPHA` 0.05, `MIN_LIFT` 2%.
+`FUNNEL_MIN_ENTERED` 50 people/day, `FUNNEL_DROP` 20%, `MEASURE_DAYS` 7, `MIN_SAMPLE` 200 people on each side
+(before and after), `ALPHA` 0.05, `MIN_LIFT` 2%.
 
 ## Known gaps (next slices)
 
@@ -59,5 +59,5 @@ launch, `ALPHA` 0.05, `MIN_LIFT` 2%.
   floor log and the station panel. Next: a deck card that opens a revert PR through the gauntlet.
 - **Live verdicts are plain math**, so they go in the floor log, not "How it thinks". Spark could explain
   *why* it moved (or didn't) and pick the next idea; that's the obvious next Spark call.
-- The PostHog query looks back 9 days, so a live experiment that waits longer than a day between launch
-  and the first poll still gets a full baseline only if the poll runs within ~2 days of the launch.
+- The funnel query looks back 21 days: enough for a 7-day baseline before the launch plus the 7-day watch,
+  as long as the poll after the launch runs within a week of it (it runs every 5 minutes).
