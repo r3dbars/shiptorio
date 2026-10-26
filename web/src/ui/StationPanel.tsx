@@ -45,7 +45,7 @@ interface Panel {
   experiments?: Experiment[]; // the measure station: before vs after, per experiment
 }
 
-const EXP_WORD: Record<Experiment["state"], string> = { proposed: "waiting on you", building: "being built", measuring: "measuring", won: "lift", flat: "no lift", lost: "hurt", dropped: "dropped" };
+const EXP_WORD: Record<Experiment["state"], string> = { proposed: "waiting on you", building: "being built", measuring: "measuring", won: "lift", flat: "no lift", lost: "hurt", dropped: "dropped", inconclusive: "not enough data" };
 
 // Before (A) against after (B) for one experiment, as two bars and the call.
 function ExperimentRow({ e }: { e: Experiment }) {

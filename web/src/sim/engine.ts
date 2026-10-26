@@ -14,7 +14,7 @@ import {
   updateExperiment,
   type Experiment,
   type FunnelStep,
-  type RouteUsers,
+  type FunnelWindow,
   checkStationId,
   insertCheck,
   researchBlocked,
@@ -1069,16 +1069,11 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const setExp = (e: Experiment) => apply({ experiments: [e, ...(s.experiments ?? []).filter((x) => x.id !== e.id)] });
   const expOf = (itemId: string) => s.experiments?.find((e) => e.itemId === itemId);
 
-  // A funnel day in the shape the PostHog mine pulls: people on each route.
-  const funnelRows = (g: GrowthDrop, now: number): RouteUsers[] => {
-    const rows: RouteUsers[] = [];
-    for (let i = 1; i <= 8; i++) {
-      const day = new Date(now - i * 86400000).toISOString().slice(0, 10);
-      const share = i === 1 ? g.dropped : g.before;
-      rows.push({ route: g.step.from, day, users: g.entered }, { route: g.step.to, day, users: Math.round(g.entered * share) });
-    }
-    return rows;
-  };
+  // Explicit synthetic ordered cohorts; route traffic is never treated as conversion evidence.
+  const funnelRows = (g: GrowthDrop, now: number): FunnelWindow[] => [
+    { from: g.step.from, to: g.step.to, startsOn: new Date(now - 8 * 86400000).toISOString().slice(0, 10), endsOn: new Date(now - 2 * 86400000).toISOString().slice(0, 10), entered: g.entered * 7, converted: Math.round(g.entered * 7 * g.before), days: 7, ordered: true, unit: "unique_persons", evidence: "simulation", conversionWindowHours: 24 },
+    { from: g.step.from, to: g.step.to, startsOn: new Date(now - 86400000).toISOString().slice(0, 10), endsOn: new Date(now - 86400000).toISOString().slice(0, 10), entered: g.entered, converted: Math.round(g.entered * g.dropped), days: 1, ordered: true, unit: "unique_persons", evidence: "simulation", conversionWindowHours: 24 },
+  ];
 
   const funnelDrop = (g: GrowthDrop, now: number) => {
     const drop = findFunnelDrop(funnelRows(g, now), g.step, now);
@@ -1154,6 +1149,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       setExp(next);
       if (next.state === "measuring") continue;
       measuringSince.delete(id);
+      if (next.state === "inconclusive") {
+        log("info", next.line!, exp.itemId);
+        continue; // No pass/fail trophy or rollback recommendation without evidence.
+      }
       const ok = next.state !== "lost";
       record(MEASURE, ok, next.line!);
       spark({ tool: "measure_experiment", text: next.line!, reason: `${after.entered} people through ${exp.step.label} since #${exp.prNumber}, two-proportion test p = ${next.p!.toFixed(3)}` }, { itemId: exp.itemId, target: "measure-1" });

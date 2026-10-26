@@ -5,6 +5,8 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+- 2026-10-26: The growth draft accepts explicit whole-window ordered-funnel cohort counts, never conversion inferred from route totals. Experiment decisions wait for the complete fixed horizon; insufficient evidence stays inconclusive, and before/after differences are observational. Simulator cohorts are explicitly synthetic. Real tenant-scoped PostHog measurement and dispatch remain unfinished.
+
 Release verification, Oct 26: live bottleneck/deck #96, repeatable playtests #85,
 Firefox/HTTPS entry #95/#98, repository picker #118, same-head CI/session security
 #101/#111, sandboxed local verification/publication #104, idle-loop #117 and disposed

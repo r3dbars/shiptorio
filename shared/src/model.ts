@@ -394,9 +394,9 @@ export const FunnelStep = z.object({
 export type FunnelStep = z.infer<typeof FunnelStep>;
 export const ExperimentChange = z.enum(["copy", "cta", "onboarding", "layout"]);
 export type ExperimentChange = z.infer<typeof ExperimentChange>;
-export const ExperimentVerdict = z.enum(["too_early", "lift", "no_lift", "hurt"]);
+export const ExperimentVerdict = z.enum(["too_early", "lift", "no_lift", "hurt", "inconclusive"]);
 export type ExperimentVerdict = z.infer<typeof ExperimentVerdict>;
-const StepCounts = z.object({ entered: z.number().nonnegative(), converted: z.number().nonnegative(), days: z.number().int().nonnegative() });
+const StepCounts = z.object({ entered: z.number().int().nonnegative(), converted: z.number().int().nonnegative(), days: z.number().int().nonnegative() }).refine(c => c.converted <= c.entered, "Converted people must belong to the entered cohort");
 export const Experiment = z.object({
   id: z.string(),
   step: FunnelStep,
@@ -405,7 +405,7 @@ export const Experiment = z.object({
   change: ExperimentChange,
   district: z.string(), // where the PR lands
   // proposed → building (yes on the card) → measuring (launched) → won / flat / lost; dropped = player said no
-  state: z.enum(["proposed", "building", "measuring", "won", "flat", "lost", "dropped"]),
+  state: z.enum(["proposed", "building", "measuring", "won", "flat", "lost", "dropped", "inconclusive"]),
   itemId: z.string().optional(), // the factory item that ships it
   prNumber: z.number().int().optional(),
   baseline: StepCounts, // the step before the change
