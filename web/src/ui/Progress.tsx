@@ -49,7 +49,7 @@ const store = {
 /** ?progress=1 turns progression on for this browser (and remembers it); ?progress=0 turns it back off. */
 export function progressOn(): boolean {
   const q = new URLSearchParams(location.search).get("progress");
-  if (q === "1") store.set(ON_KEY, "1");
+  if (q === "1" || q === "demo") store.set(ON_KEY, "1");
   if (q === "0") store.set(ON_KEY, null);
   return store.get(ON_KEY) === "1";
 }
@@ -64,7 +64,10 @@ export interface Pop {
 /** One player's progress, kept per browser profile ("sim" playtests never touch the real one). */
 export function useProgress(state: FactoryState | null, profile: string, repo: string, on: boolean) {
   const key = `shiptorio:progress:${profile}`;
-  const [p, setP] = useState<Progress>(() => parseProgress(store.get(key)));
+  // ?progress=demo in the sim: a week of play already behind you, to see the streak, unlocks and trend
+  const [p, setP] = useState<Progress>(() =>
+    profile === "sim" && new URLSearchParams(location.search).get("progress") === "demo" ? demoProgress(Date.now()) : parseProgress(store.get(key)),
+  );
   const [pop, setPop] = useState<Pop | null>(null);
   const seq = useRef(0);
   const cur = useRef(p);
@@ -103,6 +106,12 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
   // the first open of a new day: the day log remembers the deck you walked in to
   const open = useCallback((deck: number) => apply({ progress: openDay(cur.current, Date.now(), deck), gains: [], unlocked: [] }), [apply]);
   return { p, pop, card, equip, open };
+}
+
+function demoProgress(now: number): Progress {
+  const decks = [12, 11, 11, 9, 8, 7];
+  const days = decks.map((deck, i) => ({ day: dayKey(now - (decks.length - i) * 86_400_000), xp: 40 + i * 9, ships: 2 + (i % 3), cards: deck - 1, deck, automated: 0.1 + i * 0.05 }));
+  return { ...parseProgress(null), xp: 290, streak: 4, best: 4, last: days[days.length - 1].day, days, unlocked: ["lanterns", "glass-lake"], equip: { lanterns: true, "glass-lake": true } };
 }
 
 /** What the map draws for the cosmetics you've switched on. */

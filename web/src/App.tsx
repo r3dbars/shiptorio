@@ -151,10 +151,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const prog = useProgress(state, cfg.kind === "sim" ? "sim" : "me", cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0);
   const nudge = useBottleneckNudge(deck, progressing);
+  // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
-    if (brief.show) prog.open(deck.length);
+    if (progressing && state) prog.open(deck.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brief.show]);
+  }, [progressing, !!state, deck.length > 0]);
   const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
@@ -346,7 +347,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <div className="chips">
             {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
             {show("score") && (
-              <div className="chip" title="PRs merged">
+              <div className={progressing ? "chip desk" : "chip"} title="PRs merged">
                 <span className="badge" style={{ background: "var(--amber)" }}>
                   <Icon name="rocket" size={14} />
                 </span>

@@ -80,7 +80,12 @@ export const daysBetween = (a: string, b: string) => dayNum(b) - dayNum(a);
 function today(p: Progress, now: number, deck: number): [Progress, DayLog] {
   const key = dayKey(now);
   const last = p.days[p.days.length - 1];
-  if (last?.day === key) return [p, last];
+  if (last?.day === key) {
+    // the deck often lands a beat after the first look: take it while nothing's been answered yet
+    if (last.deck !== 0 || deck === 0 || last.cards > 0) return [p, last];
+    const fixed = { ...last, deck };
+    return [{ ...p, days: [...p.days.slice(0, -1), fixed] }, fixed];
+  }
   const log: DayLog = { day: key, xp: 0, ships: 0, cards: 0, deck };
   return [{ ...p, days: [...p.days, log].slice(-30) }, log];
 }

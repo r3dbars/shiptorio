@@ -1,7 +1,7 @@
 import "./gauntlet.css";
 import { useEffect, useRef } from "react";
 import type { FactoryState } from "@shiptorio/shared";
-import { FactoryScene, type Ping } from "./scene";
+import { FactoryScene, type Cosmetics, type Ping } from "./scene";
 
 interface Props {
   state: FactoryState | null;
@@ -12,11 +12,12 @@ interface Props {
   pings?: Ping[]; // the pulsing marker on whatever needs you, then quiet tags on busy machines
   wide?: number | null; // no focus: pull back over the whole island, this far out (the welcome tour)
   lift?: number; // keep what the camera's on this much higher, as a fraction of height (a card sits below)
+  cosmetics?: Cosmetics; // progression unlocks drawn on the island
 }
 
 const NO_PINGS: Ping[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0 }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -107,6 +108,9 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   }, [focus, wide, wide && state?.districts.length, wide && state?.machines.length]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
   useEffect(() => sceneRef.current?.setLift(lift), [lift]);
+  const cosmeticsKey = JSON.stringify(cosmetics ?? null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => sceneRef.current?.setCosmetics(cosmetics), [cosmeticsKey]);
   const teachingKey = JSON.stringify(teachingKeys);
   useEffect(() => sceneRef.current?.setTeachingKeys(teachingKeys), [teachingKey]);
   const pingKey = JSON.stringify(pings);
