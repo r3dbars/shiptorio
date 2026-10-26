@@ -18,7 +18,7 @@ function Root() {
   return (
     <Onboarding
       live={live}
-      step={step === "repo" ? "repo" : "hello"}
+      step={step === "repo" || step === "intro" ? step : "hello"}
       onDone={(repo) => {
         if (live) return void (location.href = `?source=live&repo=${encodeURIComponent(repo)}`);
         // The sim plays the rest: scan, starter factory, power, first build.
