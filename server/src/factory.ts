@@ -319,9 +319,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private gm: { key: string; call: GameMasterCall } | null = null;
   private gmAsking: string | null = null;
   private gmLastAt = 0;
+  private gmFails = 0;
 
   private static deckKey(deck: readonly Move[], s: FactoryState): string {
-    return JSON.stringify([s.bottleneck?.stage, s.bottleneck?.stationId, s.bottleneck?.wip, deck.map(m => m.id).sort()]);
+    // Pile size is left out on purpose: a pile growing by one isn't a new deck, and each new key is a Spark call.
+    return JSON.stringify([s.bottleneck?.stage, s.bottleneck?.stationId, deck.map(m => m.id).sort()]);
   }
 
   /** Spark's last call for this exact deck: its order first, its suggested option, its words on the bottleneck card. */
@@ -333,10 +335,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       let move = m;
       const pick = call.picks[m.id];
       // Locked ship cards keep "run the missing check" on top; Spark can't talk a merge past the gauntlet.
-      if (pick && !m.locked) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
+      // A "do nothing" pick would stall autopilot on a card that has a real next step; ranking the card lower already says "later".
+      const stalls = !m.options.find(o => o.id === pick)?.actions.length && m.options.some(o => o.recommended && o.actions.length);
+      if (pick && !m.locked && !stalls) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
       if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
-      // The why line only describes the option Spark picked, so a locked card keeps its own reason.
-      if (call.because[m.id] && !m.locked) move = { ...move, because: call.because[m.id] };
+      // The why line only describes the option Spark picked, so a locked or overruled card keeps its own reason.
+      if (call.because[m.id] && !m.locked && !(pick && stalls)) move = { ...move, because: call.because[m.id] };
       return move;
     });
   }
@@ -346,7 +350,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     if (!sparkConfigured(this.env) || !deck.length) return;
     const key = Factory.deckKey(deck, s);
-    if (this.gm?.key === key || this.gmAsking === key || this.gmAsking || Date.now() - this.gmLastAt < 15000) return;
+    // Ranking is a nice-to-have next to planning and review: at most once a minute, backing off to 15 min while it fails.
+    const wait = Math.min(15 * 60_000, 60_000 * 2 ** this.gmFails);
+    if (this.gm?.key === key || this.gmAsking || Date.now() - this.gmLastAt < wait) return;
     this.gmAsking = key; this.gmLastAt = Date.now();
     const brief = {
       goal: s.goal,
@@ -357,12 +363,22 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       playerFeedback: plannerFeedback(this.deckBook!, this.deckRules!),
     };
     const top = (id: string) => deck.find(m => m.id === id);
-    void this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
+    void this.rankBudgetLeft().then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
       () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
-      .then(async call => { this.gm = { key, call }; await this.refreshDecisions(); })
-      .catch(error => { this.gm = null; this.log("error", `Game master failed: ${String(error)}`); })
+      .then(async call => { this.gm = { key, call }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
+      .catch(error => { this.gm = null; this.gmFails = Math.min(this.gmFails + 1, 4); this.log("error", `Game master failed: ${String(error)}`); })
       .finally(() => { if (this.gmAsking === key) this.gmAsking = null; });
+  }
+
+  /** The game master stops at half the day's Spark budget, so ranking can never starve planning and review. */
+  private async rankBudgetLeft(): Promise<boolean> {
+    const env = this.sparkEnv();
+    if (!env.DB || !env.budgetAccount) return true;
+    try {
+      const u = await budgetUsage(env, await env.budgetAccount());
+      return u.calls < u.limits.calls / 2 && u.tokens < u.limits.tokens / 2;
+    } catch { return true; }
   }
 
   private async publishDecision(move: Move | null) {
