@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback Factory · play</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#F2A93B}a:hover{color:#FFC872}
+@keyframes beltmove{from{background-position:0 0}to{background-position:28px 0}}
+.belt{height:6px;border-radius:3px;background-image:repeating-linear-gradient(90deg,#3A4350 0 14px,#1F252D 14px 28px);animation:beltmove 1.2s linear infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.live{animation:pulse 1.6s ease-in-out infinite}
+.urgent{animation:pulse .7s ease-in-out infinite}
+@keyframes zin{from{opacity:0;transform:scale(1.08)}to{opacity:1;transform:scale(1)}}
+@keyframes zout{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.zin{animation:zin .35s ease-out}
+.zout{animation:zout .35s ease-out}
+@keyframes pop{0%{transform:scale(.9);opacity:0}60%{transform:scale(1.04);opacity:1}100%{transform:scale(1)}}
+.pop{animation:pop .3s ease-out}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 3s linear infinite}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+.shake{animation:shake .4s ease-in-out}
+</style>
+</helmet>
+<div style="width: 1120px; height: 840px; box-sizing: border-box; padding: 24px 28px; background: #101317; color: #E8ECF1; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; gap: 14px; overflow: hidden">
+
+  <sc-if value="{{isTitle}}" hint-placeholder-val="{{false}}">
+    <div class="zout" style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; text-align: center">
+      <div style="width: 84px; height: 84px; border-radius: 22px; background: {{accent}}; display: flex; align-items: center; justify-content: center; color: #101317">
+        <svg width="46" height="46" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M3 21V10l5 3V10l5 3V6l8 4v11z"></path><path d="M7 17h2M12 17h2M17 17h2"></path></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h1 style="margin: 0; font-size: 56px; font-weight: 700; letter-spacing: -0.02em">Feedback Factory</h1>
+        <p style="margin: 0; font-size: 20px; color: #C9D1DB">Your agents ship fixes all day. You're the bottleneck. Keep up.</p>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; width: 900px; text-align: left">
+        <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.06em">Sort</span>
+          <span style="font-size: 16px; font-weight: 600">Build real problems</span>
+          <span style="font-size: 14px; color: #9AA4B1; line-height: 1.4">Swipe right to send a chunk to a machine. Skip duplicates, they waste a bay.</span>
+        </div>
+        <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #3DD6B0; text-transform: uppercase; letter-spacing: 0.06em">Review</span>
+          <span style="font-size: 16px; font-weight: 600">Merge the good ones</span>
+          <span style="font-size: 14px; color: #9AA4B1; line-height: 1.4">Read the card. Failing tests or risky diffs go back, or you ship a regression.</span>
+        </div>
+        <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #FF7A59; text-transform: uppercase; letter-spacing: 0.06em">Crashes</span>
+          <span style="font-size: 16px; font-weight: 600">Jump the line</span>
+          <span style="font-size: 14px; color: #9AA4B1; line-height: 1.4">Handle them in 8 seconds or users walk. Fast calls in a row build your combo.</span>
+        </div>
+      </div>
+      <button type="button" onClick="{{startShift}}" style="min-height: 64px; padding: 0 40px; border-radius: 18px; border: none; background: {{accent}}; color: #101317; font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; cursor: pointer">Clock in · Shift {{shift}}</button>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #9AA4B1">90 second shifts · best score {{best}}</span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isEnd}}" hint-placeholder-val="{{false}}">
+    <div class="zout" style="flex-grow: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: stretch">
+      <section style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 20px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.08em">Shift {{endedShift}} complete</span>
+        <div style="display: flex; gap: 10px">
+          <sc-for list="{{stars}}" as="st" hint-placeholder-count="3">
+            <svg class="pop" width="56" height="56" viewBox="0 0 24 24" aria-hidden="true" style="fill:{{st.fill}};stroke:{{st.stroke}};stroke-width:1.5;stroke-linejoin:round"><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"></path></svg>
+          </sc-for>
+        </div>
+        <h2 style="margin: 0; font-size: 34px; font-weight: 700">{{gradeText}}</h2>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+          <sc-for list="{{endStats}}" as="es" hint-placeholder-count="6">
+            <div style="background: #101317; border: 1px solid #2A313B; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">{{es.label}}</span>
+              <span style="font-size: 22px; font-weight: 600; color: {{es.color}}">{{es.value}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="flex-grow: 1"></div>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #9AA4B1">Next shift: more feedback, sneakier PRs.</span>
+      </section>
+
+      <section style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 22px; padding: 28px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; justify-content: space-between; align-items: baseline">
+          <h2 style="margin: 0; font-size: 26px; font-weight: 700">Upgrade the floor</h2>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 16px; color: {{accent}}">{{coins}} parts</span>
+        </div>
+        <sc-for list="{{shop}}" as="u" hint-placeholder-count="3">
+          <div style="background: #101317; border: 1px solid {{u.border}}; border-radius: 16px; padding: 14px 16px; display: flex; align-items: center; gap: 14px">
+            <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px">
+              <span style="font-size: 17px; font-weight: 600">{{u.name}}</span>
+              <span style="font-size: 14px; color: #9AA4B1; line-height: 1.35">{{u.desc}}</span>
+              <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #C9D1DB">{{u.level}}</span>
+            </div>
+            <button type="button" onClick="{{u.buy}}" disabled="{{u.disabled}}" style="min-width: 108px; min-height: 48px; border-radius: 12px; border: none; background: {{u.btnBg}}; color: {{u.btnFg}}; font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer">{{u.btn}}</button>
+          </div>
+        </sc-for>
+        <div style="flex-grow: 1"></div>
+        <button type="button" onClick="{{startShift}}" style="min-height: 64px; border-radius: 18px; border: none; background: {{accent}}; color: #101317; font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; cursor: pointer">Clock in · Shift {{shift}}</button>
+      </section>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isPlay}}" hint-placeholder-val="{{true}}">
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <div style="width: 44px; height: 44px; border-radius: 12px; background: {{accent}}; display: flex; align-items: center; justify-content: center; color: #101317">
+        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M3 21V10l5 3V10l5 3V6l8 4v11z"></path><path d="M7 17h2M12 17h2M17 17h2"></path></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px">
+        <span style="font-size: 18px; font-weight: 700">Shift {{shift}} <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 400; color: {{clockColor}}">{{clock}}</span></span>
+        <div style="height: 6px; border-radius: 3px; background: #2A313B; overflow: hidden"><div style="height: 6px; border-radius: 3px; background: {{clockColor}}; width: {{clockPct}}%"></div></div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 8px; align-items: stretch">
+      <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 12px; padding: 6px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 84px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Score</span>
+        <span style="font-size: 18px; font-weight: 600">{{score}}</span>
+      </div>
+      <div style="background: #1A1F26; border: 1px solid {{comboBorder}}; border-radius: 12px; padding: 6px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 70px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Combo</span>
+        <span style="font-size: 18px; font-weight: 600; color: {{comboColor}}">x{{combo}}</span>
+      </div>
+      <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 12px; padding: 6px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 84px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Released</span>
+        <span style="font-size: 18px; font-weight: 600">{{shipped}} <span style="font-size: 13px; color: #3DD6B0">· {{happy}} happy</span></span>
+      </div>
+      <div style="background: #1A1F26; border: 1px solid #2A313B; border-radius: 12px; padding: 6px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 84px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">Rating</span>
+        <span style="font-size: 18px; font-weight: 600; color: {{ratingColor}}">{{rating}}★</span>
+      </div>
+      <button type="button" onClick="{{toggleZoom}}" style="min-height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #3A4350; background: #1A1F26; color: #E8ECF1; font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path><path d="M8 11h6"></path></svg>
+        {{zoomLabel}}
+      </button>
+    </div>
+  </header>
+
+  <div style="display: flex; align-items: center; gap: 12px">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap">Waiting on you</span>
+    <div style="flex-grow: 1; height: 8px; border-radius: 4px; background: #2A313B; overflow: hidden"><div style="height: 8px; border-radius: 4px; background: {{pressureColor}}; width: {{pressurePct}}%; transition: width .3s, background .3s"></div></div>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: {{pressureColor}}; min-width: 150px; text-align: right">{{pressureText}}</span>
+  </div>
+
+  <div style="height: 28px; display: flex; justify-content: center">
+    <sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+      <span class="pop" style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #101317; background: {{toastColor}}; border-radius: 999px; padding: 5px 14px">{{toast}}</span>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{zoomedIn}}" hint-placeholder-val="{{true}}">
+    <div class="zin" style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px">
+      <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 24px">
+
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px; opacity: {{noHint}}; transition: opacity .15s">
+          <span style="font-size: 28px; font-weight: 700; color: #FF7A59">← {{noLabel}}</span>
+          <span style="font-size: 14px; color: #9AA4B1; text-align: right">{{noWhat}}</span>
+        </div>
+
+        <div class="{{shakeClass}}" style="position: relative; height: 430px">
+          <div style="position: absolute; left: 22px; right: 22px; top: 22px; bottom: -6px; border-radius: 24px; background: #161B21; border: 1px solid #242A33"></div>
+          <div style="position: absolute; left: 11px; right: 11px; top: 11px; bottom: 4px; border-radius: 24px; background: #181E25; border: 1px solid #2A313B"></div>
+          <sc-if value="{{hasNext}}" hint-placeholder-val="{{true}}">
+            <article onPointerDown="{{down}}" onPointerMove="{{move}}" onPointerUp="{{up}}" onPointerCancel="{{up}}" style="position: absolute; left: 0; right: 0; top: 0; bottom: 14px; box-sizing: border-box; border-radius: 24px; background: #1C222A; border: 1.5px solid {{cardBorder}}; padding: 22px; display: flex; flex-direction: column; gap: 14px; cursor: grab; touch-action: none; user-select: none; transform: translateX({{dragX}}px) rotate({{dragRot}}deg); transition: {{cardTransition}}">
+              <div style="display: flex; align-items: center; justify-content: space-between">
+                <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #101317; background: {{kindColor}}; border-radius: 6px; padding: 3px 8px">{{card.kind}}</span>
+                <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #9AA4B1">{{card.tag}}</span>
+              </div>
+              <sc-if value="{{card.urgent}}" hint-placeholder-val="{{false}}">
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <span class="urgent" style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #FF7A59; white-space: nowrap">{{card.countdown}}s left</span>
+                  <div style="flex-grow: 1; height: 6px; border-radius: 3px; background: #2A313B; overflow: hidden"><div style="height: 6px; border-radius: 3px; background: #FF7A59; width: {{card.urgentPct}}%"></div></div>
+                </div>
+              </sc-if>
+              <h2 style="margin: 0; font-size: 25px; font-weight: 600; line-height: 1.2">{{card.title}}</h2>
+              <div style="background: #2A231A; border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px">
+                <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: {{accent}}; text-transform: uppercase; letter-spacing: 0.06em">Why</span>
+                <span style="font-size: 16px; line-height: 1.35">{{card.why}}</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <sc-for list="{{card.checks}}" as="ck" hint-placeholder-count="2">
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <span style="width: 8px; height: 8px; border-radius: 4px; background: {{ck.color}}; flex-shrink: 0"></span>
+                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #C9D1DB">{{ck.text}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="flex-grow: 1"></div>
+              <p style="margin: 0; font-size: 13px; color: #9AA4B1; text-align: center">Drag the card, or use the buttons</p>
+            </article>
+          </sc-if>
+          <sc-if value="{{noNext}}" hint-placeholder-val="{{false}}">
+            <div style="position: absolute; left: 0; right: 0; top: 0; bottom: 14px; box-sizing: border-box; border-radius: 24px; background: #1C222A; border: 1px solid #2A313B; padding: 22px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center">
+              <svg class="spin" width="40" height="40" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:#7AA7FF;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>
+              <h2 style="margin: 0; font-size: 22px; font-weight: 600">Line's clear</h2>
+              <p style="margin: 0; font-size: 15px; color: #9AA4B1; line-height: 1.4">The machines are working. Zoom out and watch, the next card shows up here.</p>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; opacity: {{yesHint}}; transition: opacity .15s">
+          <span style="font-size: 28px; font-weight: 700; color: #3DD6B0">{{yesLabel}} →</span>
+          <span style="font-size: 14px; color: #9AA4B1">{{yesWhat}}</span>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: center; gap: 12px">
+        <button type="button" onClick="{{no}}" disabled="{{noNext}}" style="width: 200px; min-height: 56px; border-radius: 16px; border: 1px solid #3A4350; background: #1A1F26; color: #E8ECF1; font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 500; cursor: pointer">← {{noLabel}}</button>
+        <button type="button" onClick="{{yes}}" disabled="{{noNext}}" style="width: 200px; min-height: 56px; border-radius: 16px; border: none; background: #3DD6B0; color: #0D1A16; font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; cursor: pointer">{{yesLabel}} →</button>
+      </div>
+
+      <button type="button" onClick="{{toggleZoom}}" aria-label="Zoom out to the whole line" style="all: unset; cursor: zoom-out; box-sizing: border-box; background: #1A1F26; border: 1px solid #2A313B; border-radius: 14px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1; text-transform: uppercase; letter-spacing: 0.06em">
+          <span>Incoming</span><span>Sort</span><span>Machines</span><span>Review</span><span>Shipping</span><span>Released {{shipped}}</span>
+        </div>
+        <div style="position: relative; height: 16px">
+          <div class="belt" style="position: absolute; left: 0; right: 0; top: 5px"></div>
+          <sc-for list="{{chips}}" as="d" hint-placeholder-count="6">
+            <div style="position: absolute; top: 2px; left: {{d.dot}}%; width: 12px; height: 12px; border-radius: 6px; background: {{d.color}}; transition: left .1s linear"></div>
+          </sc-for>
+        </div>
+      </button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{zoomedOut}}" hint-placeholder-val="{{false}}">
+    <div class="zout" style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px">
+      <div style="position: relative; flex-grow: 1; min-height: 0; border-radius: 18px; background: #0B0E11; border: 1px solid #2A313B; overflow: hidden">
+
+        <div style="position: absolute; top: 0; bottom: 0; left: 0%; width: 18.5%; border-right: 1px dashed #2A313B"></div>
+        <div style="position: absolute; top: 0; bottom: 0; left: 18.5%; width: 11%; background: #15130F; border-right: 1px dashed #2A313B"></div>
+        <div style="position: absolute; top: 0; bottom: 0; left: 29.5%; width: 29.5%; border-right: 1px dashed #2A313B"></div>
+        <div style="position: absolute; top: 0; bottom: 0; left: 59%; width: 11%; background: #15130F; border-right: 1px dashed #2A313B"></div>
+        <div style="position: absolute; top: 0; bottom: 0; left: 70%; width: 19%; border-right: 1px dashed #2A313B"></div>
+        <div style="position: absolute; top: 0; bottom: 0; left: 89%; width: 11%; background: #111C18"></div>
+
+        <div class="belt" style="position: absolute; left: 0; right: 0; top: 12px"></div>
+
+        <sc-for list="{{bayRows}}" as="b" hint-placeholder-count="2">
+          <div style="position: absolute; left: 30.5%; width: 27.5%; top: {{b.top}}px; height: 42px; box-sizing: border-box; border-radius: 11px; border: 1px solid #2A313B; background: #141920; display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; gap: 6px">
+            <svg class="{{b.spinClass}}" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:{{b.color}};stroke-width:2;stroke-linecap:round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #9AA4B1">{{b.label}}</span>
+          </div>
+        </sc-for>
+
+        <sc-for list="{{chips}}" as="c" hint-placeholder-count="7">
+          <div style="position: absolute; left: {{c.left}}%; top: {{c.top}}px; width: 9%; box-sizing: border-box; height: 32px; border-radius: 9px; background: {{c.color}}; color: #101317; padding: 0 8px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; transition: left .1s linear, top .25s ease; box-shadow: 0 0 0 {{c.ring}}px #FF7A59, 0 2px 0 rgba(0,0,0,.35)">
+            <span style="font-family: 'IBM Plex Mono', monospace">{{c.count}}</span>
+            <span style="overflow: hidden; white-space: nowrap; text-overflow: ellipsis">{{c.short}}</span>
+          </div>
+        </sc-for>
+
+        <div style="position: absolute; left: 89%; width: 11%; top: 40px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center">
+          <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true" style="fill:none;stroke:#3DD6B0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M4 12l5 5L20 6"></path></svg>
+          <span style="font-size: 40px; font-weight: 700; color: #3DD6B0; line-height: 1">{{shipped}}</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1">PRs released</span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #3DD6B0">{{happy}} people fixed</span>
+        </div>
+
+        <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 64px; display: grid; grid-template-columns: 18.5fr 11fr 29.5fr 11fr 19fr 11fr; border-top: 1px solid #2A313B; background: #101317">
+          <div style="display: flex; flex-direction: column; justify-content: center; padding: 0 12px; gap: 2px"><span style="font-size: 14px; font-weight: 600">Incoming</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1">reviews, TestFlight, support</span></div>
+          <div style="display: flex; align-items: center; justify-content: center; padding: 0 6px">
+            <button type="button" onClick="{{zoomIn}}" style="min-height: 44px; width: 100%; border-radius: 10px; border: 1px solid {{sortBorder}}; background: transparent; color: #E8ECF1; font-family: 'Space Grotesk', sans-serif; font-size: 13px; cursor: zoom-in">Sort · {{sortWaiting}}</button>
+          </div>
+          <div style="display: flex; flex-direction: column; justify-content: center; padding: 0 12px; gap: 2px"><span style="font-size: 14px; font-weight: 600">Machines · {{bays}} bays</span><span class="live" style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #3DD6B0">● {{building}} building · {{queued}} queued</span></div>
+          <div style="display: flex; align-items: center; justify-content: center; padding: 0 6px">
+            <button type="button" onClick="{{zoomIn}}" style="min-height: 44px; width: 100%; border-radius: 10px; border: 1px solid {{reviewBorder}}; background: transparent; color: #E8ECF1; font-family: 'Space Grotesk', sans-serif; font-size: 13px; cursor: zoom-in">Review · {{reviewWaiting}}</button>
+          </div>
+          <div style="display: flex; flex-direction: column; justify-content: center; padding: 0 12px; gap: 2px"><span style="font-size: 14px; font-weight: 600">Shipping</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9AA4B1">TestFlight, then App Store</span></div>
+          <div style="display: flex; flex-direction: column; justify-content: center; padding: 0 12px; gap: 2px"><span style="font-size: 14px; font-weight: 600; color: #3DD6B0">Released</span></div>
+        </div>
+      </div>
+      <p style="margin: 0; font-size: 13px; color: #9AA4B1; text-align: center">Amber chips are waiting on you. Red rings are crashes. Tap Sort or Review to jump in.</p>
+    </div>
+  </sc-if>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#F2A93B","options":["#F2A93B","#FF7A59","#B98CFF","#3DD6B0"]},"speed":{"editor":"enum","default":"normal","options":["chill","normal","rush"]},"$preview":{"width":1120,"height":840}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.POOL = [
+      { title: 'Recordings drop in background', pr: 'Retry recording when the app comes back from background', short: 'Bg recording', count: 14, src: 'App Store, TestFlight' },
+      { title: 'Speaker names swapped', pr: 'Keep speaker names stable across a whole call', short: 'Speakers', count: 9, src: 'TestFlight, Support' },
+      { title: 'Sync fails silently on cellular', pr: 'Show a clear error when sync fails', short: 'Cell sync', count: 4, src: 'GitHub, Support' },
+      { title: 'Send action items to Notion', pr: 'Add Notion export for action items', short: 'Notion', count: 6, src: 'Support' },
+      { title: 'Long transcripts stutter', pr: 'Lazy-load long transcripts', short: 'Scroll lag', count: 5, src: 'App Store' },
+      { title: 'Search misses speaker names', pr: 'Index speaker names for search', short: 'Search', count: 3, src: 'TestFlight' },
+      { title: 'Start recording from the Watch', pr: 'Add a Watch start button', short: 'Watch', count: 7, src: 'App Store' },
+      { title: 'Summary cuts off mid-sentence', pr: 'Stream the full summary before saving', short: 'Summary', count: 5, src: 'TestFlight' }
+    ];
+    this.CRASH = [
+      { title: 'Crash opening an empty meeting', pr: 'Guard empty meetings on open', short: 'Crash', count: 11, src: 'Crash reports' },
+      { title: 'Crash when mic permission is off', pr: 'Handle a denied mic without crashing', short: 'Mic crash', count: 13, src: 'Crash reports' },
+      { title: 'Launch crash on iOS 26.1', pr: 'Fix the launch crash on 26.1', short: 'Launch', count: 21, src: 'Crash reports' }
+    ];
+    this.TRAPS = ['2 tests fail', 'Deletes the sync retry logic', 'No tests added · touches file format', 'Turns off encryption to fix it'];
+    this.state = {
+      phase: 'title', shift: 1, endedShift: 1, timeLeft: 90, zoom: 'in',
+      items: [], nextId: 1, time: 0, spawnIn: 1,
+      score: 0, combo: 1, lastAt: -99, shipped: 0, happy: 0, rating: 4.0,
+      toast: '', toastT: 0, toastGood: true, shakeT: 0,
+      dragging: false, startX: 0, dragX: 0,
+      coins: 0, best: 0, earned: 0,
+      up: { bays: 2, speed: 0, autoskip: false },
+      stats: { good: 0, bad: 0, catches: 0, churned: 0 },
+      lastGrade: 0
+    };
+  }
+
+  makeItem(id, time, shift, forceCrash) {
+    const r = Math.random();
+    const crash = forceCrash || r < 0.08 + 0.03 * shift;
+    const dupe = !crash && Math.random() < 0.12 + 0.03 * shift;
+    const trap = Math.random() < 0.14 + 0.05 * shift;
+    return {
+      id: id, crash: crash, dupe: dupe, trap: trap,
+      p: crash ? id % this.CRASH.length : (id * 5) % this.POOL.length,
+      trapText: this.TRAPS[id % this.TRAPS.length],
+      dupeOf: this.POOL[(id * 3 + 1) % this.POOL.length].title,
+      stage: 0, t: 0, lane: id % 4, since: time,
+      agent: id % 2 ? 'Codex' : 'Claude Code', pr: 140 + id,
+      plus: 12 + (id * 37) % 90, minus: 2 + (id * 13) % 30, rework: false
+    };
+  }
+
+  info(i) {
+    const P = i.crash ? this.CRASH[i.p] : this.POOL[i.p];
+    return { title: P.title, pr: P.pr, short: i.dupe ? 'Dupe?' : P.short, count: i.dupe ? 2 : P.count, src: P.src };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => this.tick(), 100);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  speedMul() {
+    const s = this.props.speed ?? 'normal';
+    return s === 'chill' ? 0.6 : s === 'rush' ? 1.6 : 1;
+  }
+
+  startShift() {
+    this.setState((s) => {
+      const items = [];
+      let id = s.nextId;
+      [[0, 0.3], [0, 0.8], [1, 0], [2, 0.4]].forEach((seed) => {
+        const it = this.makeItem(id, 0, s.shift, false);
+        it.stage = seed[0]; it.t = seed[1]; it.since = -id; it.crash = false; it.dupe = false; it.trap = false;
+        it.p = id % this.POOL.length;
+        items.push(it); id += 1;
+      });
+      return {
+        phase: 'play', zoom: 'in', timeLeft: 90, items: items, nextId: id, time: 0, spawnIn: 1.5,
+        score: 0, combo: 1, lastAt: -99, shipped: 0, happy: 0, rating: 4.0,
+        toast: 'Shift ' + s.shift + '. Clocked in.', toastT: 2, toastGood: true, shakeT: 0,
+        stats: { good: 0, bad: 0, catches: 0, churned: 0 }, dragging: false, dragX: 0
+      };
+    });
+  }
+
+  endShift(s, patch) {
+    const score = patch.score ?? s.score;
+    const target = 150 + 70 * (s.shift - 1);
+    const grade = score >= target * 1.6 ? 3 : score >= target ? 2 : score >= target * 0.5 ? 1 : 0;
+    const earned = Math.round(score / 4) + grade * 20;
+    return {
+      ...patch, phase: 'end', endedShift: s.shift, shift: s.shift + 1, lastGrade: grade,
+      earned: earned, coins: s.coins + earned, best: Math.max(s.best, score), dragging: false, dragX: 0
+    };
+  }
+
+  tick() {
+    const mul = this.speedMul();
+    this.setState((s) => {
+      if (s.phase !== 'play') return null;
+      const dt = 0.1 * mul;
+      const time = s.time + 0.1;
+      const machineSpeed = 1 + 0.3 * s.up.speed;
+      let shipped = s.shipped, happy = s.happy, rating = s.rating;
+      let toast = s.toast, toastT = Math.max(0, s.toastT - 0.1), toastGood = s.toastGood;
+      let nextId = s.nextId, spawnIn = s.spawnIn - dt;
+      const stats = { ...s.stats };
+      let active = 0;
+      const items = [];
+      for (const it of s.items) {
+        const c = { ...it };
+        if (c.stage === 0) {
+          c.t += dt / 3;
+          if (c.t >= 1) {
+            if (c.dupe && s.up.autoskip) { toast = 'Claude skipped a duplicate'; toastT = 1.8; toastGood = true; continue; }
+            c.stage = 1; c.t = 0; c.since = time;
+          }
+        } else if (c.stage === 1 && c.crash) {
+          if (time - c.since > 8) {
+            rating = Math.max(1, rating - 0.25); stats.churned += 1;
+            toast = 'Too slow. ' + this.info(c).count + ' users deleted the app.'; toastT = 2.5; toastGood = false;
+            continue;
+          }
+        } else if (c.stage === 2) {
+          if (active < s.up.bays) {
+            active += 1;
+            c.t += (dt * machineSpeed) / (c.rework ? 4 : c.crash ? 4 : 6);
+            if (c.t >= 1) { c.stage = 3; c.t = 0; c.since = time; }
+          }
+        } else if (c.stage === 4) {
+          c.t += dt / 2.5;
+          if (c.t >= 1) {
+            const n = this.info(c).count;
+            shipped += 1; happy += n; rating = Math.min(5, rating + 0.04);
+            if (c.trap) {
+              rating = Math.max(1, rating - 0.4);
+              toast = 'Regression! PR #' + c.pr + ' broke something. New crash incoming.'; toastT = 2.8; toastGood = false;
+              const crashItem = this.makeItem(nextId, time, s.shift, true);
+              crashItem.trap = false;
+              items.push(crashItem); nextId += 1;
+            } else {
+              toast = 'Released · ' + n + ' people just got their fix'; toastT = 2.2; toastGood = true;
+            }
+            continue;
+          }
+        }
+        items.push(c);
+      }
+      if (spawnIn <= 0) {
+        if (items.length < 18) { items.push(this.makeItem(nextId, time, s.shift, false)); nextId += 1; }
+        spawnIn = Math.max(1.2, 3.4 - 0.35 * (s.shift - 1) - shipped * 0.05);
+      }
+      const waiting = items.filter((i) => i.stage === 1 || i.stage === 3).length;
+      if (waiting > 5) {
+        rating = Math.max(1, rating - 0.004 * (waiting - 5));
+        if (toastT === 0) { toast = 'Line is backing up. Users are waiting.'; toastT = 2; toastGood = false; }
+      }
+      const combo = time - s.lastAt > 5 ? 1 : s.combo;
+      const timeLeft = s.timeLeft - 0.1;
+      const patch = { items, time, shipped, happy, rating, toast, toastT, toastGood, nextId, spawnIn, combo, stats, timeLeft, shakeT: Math.max(0, s.shakeT - 0.1) };
+      if (timeLeft <= 0 || rating <= 1) return this.endShift(s, patch);
+      return patch;
+    });
+  }
+
+  waitingList(items) {
+    return items
+      .filter((i) => i.stage === 1 || i.stage === 3)
+      .sort((a, b) => (a.crash && a.stage === 1 ? 0 : 1) - (b.crash && b.stage === 1 ? 0 : 1) || a.since - b.since);
+  }
+
+  decide(yes) {
+    this.setState((s) => {
+      if (s.phase !== 'play') return null;
+      const n = this.waitingList(s.items)[0];
+      if (!n) return { dragging: false, dragX: 0 };
+      const I = this.info(n);
+      const stats = { ...s.stats };
+      let combo = s.time - s.lastAt < 5 ? Math.min(5, s.combo + 1) : 1;
+      let items = s.items, toast, good = true, points = 0, rating = s.rating;
+      if (n.stage === 1) {
+        if (n.dupe) {
+          items = s.items.filter((i) => i.id !== n.id);
+          if (yes) { good = false; toast = 'Duplicate of "' + n.dupeOf + '". Wasted a bay.'; points = -10; }
+          else { toast = 'Nice catch. Duplicate skipped.'; points = 15; stats.catches += 1; }
+        } else if (yes) {
+          items = s.items.map((i) => (i.id === n.id ? { ...i, stage: 2, t: 0 } : i));
+          toast = n.agent + ' is on ' + I.short; points = n.crash ? 20 : 10;
+        } else {
+          items = s.items.filter((i) => i.id !== n.id);
+          good = false; points = 0; rating = Math.max(1, rating - (n.crash ? 0.3 : 0.08));
+          toast = I.count + ' people are still stuck with that.';
+        }
+      } else if (n.trap) {
+        if (yes) {
+          items = s.items.map((i) => (i.id === n.id ? { ...i, stage: 4, t: 0 } : i));
+          good = false; points = 0; toast = 'Merged PR #' + n.pr + '... hope that was fine.';
+        } else {
+          items = s.items.map((i) => (i.id === n.id ? { ...i, stage: 2, t: 0, rework: true, trap: false } : i));
+          toast = 'Good eye. Sent back to ' + n.agent + '.'; points = 15; stats.catches += 1;
+        }
+      } else if (yes) {
+        items = s.items.map((i) => (i.id === n.id ? { ...i, stage: 4, t: 0 } : i));
+        toast = 'Merged PR #' + n.pr + ' · shipping'; points = 10;
+      } else {
+        items = s.items.map((i) => (i.id === n.id ? { ...i, stage: 2, t: 0, rework: true } : i));
+        toast = 'That one was fine. Rework costs time.'; points = 0; good = false;
+      }
+      if (good) stats.good += 1; else stats.bad += 1;
+      if (!good) combo = 1;
+      return {
+        items, combo, rating, stats, lastAt: s.time,
+        score: Math.max(0, s.score + (points > 0 ? points * combo : points)),
+        toast: toast + (good && combo > 1 ? '  ·  x' + combo : ''), toastT: 2.2, toastGood: good,
+        shakeT: good ? 0 : 0.4, dragging: false, dragX: 0
+      };
+    });
+  }
+
+  buy(key) {
+    this.setState((s) => {
+      const up = { ...s.up };
+      const cost = this.costs(up)[key];
+      if (cost == null || s.coins < cost) return null;
+      if (key === 'bays') up.bays += 1;
+      if (key === 'speed') up.speed += 1;
+      if (key === 'autoskip') up.autoskip = true;
+      return { up, coins: s.coins - cost };
+    });
+  }
+
+  costs(up) {
+    return {
+      bays: up.bays < 5 ? 40 + 30 * (up.bays - 2) : null,
+      speed: up.speed < 3 ? 50 + 30 * up.speed : null,
+      autoskip: up.autoskip ? null : 90
+    };
+  }
+
+  renderVals() {
+    const accent = this.props.accent ?? '#F2A93B';
+    const s = this.state;
+    const waiting = this.waitingList(s.items);
+    const sortQ = waiting.filter((i) => i.stage === 1);
+    const reviewQ = waiting.filter((i) => i.stage === 3);
+    const building = s.items.filter((i) => i.stage === 2);
+    const colors = ['#C9D1DB', accent, '#7AA7FF', accent, '#3DD6B0'];
+
+    const chips = s.items.map((i) => {
+      const I = this.info(i);
+      let left, top, color = colors[i.stage];
+      if (i.stage === 0) { left = 0.5 + i.t * 8.5; top = 34 + i.lane * 52; }
+      else if (i.stage === 1) { left = 19.5; top = 34 + Math.min(sortQ.indexOf(i), 7) * 40; }
+      else if (i.stage === 2) {
+        const idx = building.indexOf(i);
+        if (idx < s.up.bays) { left = 31 + i.t * 17; top = 39 + idx * 50; }
+        else { left = 31; top = 44 + s.up.bays * 50 + Math.min(idx - s.up.bays, 3) * 36; color = '#4A5568'; }
+      }
+      else if (i.stage === 3) { left = 60; top = 34 + Math.min(reviewQ.indexOf(i), 7) * 40; }
+      else { left = 70.5 + i.t * 9; top = 34 + i.lane * 52; }
+      return { left, top, dot: left + 4, color, count: I.count, short: I.short, ring: i.crash ? 2 : 0 };
+    });
+
+    const bayRows = [];
+    for (let b = 0; b < s.up.bays; b += 1) {
+      const busy = b < building.length;
+      bayRows.push({ top: 34 + b * 50, label: 'Bay ' + (b + 1) + (b % 2 ? ' · Codex' : ' · Claude Code'), color: busy ? (b % 2 ? '#7AA7FF' : accent) : '#3A4350', spinClass: busy ? 'spin' : '' });
+    }
+
+    const n = waiting[0];
+    let card = { kind: '', tag: '', title: '', why: '', checks: [], urgent: false, countdown: 0, urgentPct: 0 };
+    let yesLabel = 'Build it', noLabel = 'Skip', yesWhat = 'Send it to a machine', noWhat = 'Not worth fixing now', kindColor = accent;
+    if (n) {
+      const I = this.info(n);
+      if (n.stage === 1) {
+        const left = Math.max(0, 8 - (s.time - n.since));
+        if (n.dupe) {
+          card = { kind: 'Sort · new chunk', tag: 'Support', title: 'Same issue as "' + n.dupeOf.toLowerCase() + '"', why: '2 reports. Claude thinks it matches a chunk you already built.', checks: [{ text: '2 reports · low confidence it is new', color: '#9AA4B1' }], urgent: false };
+        } else {
+          card = {
+            kind: n.crash ? 'Crash · new chunk' : 'Sort · new chunk', tag: I.src, title: I.title,
+            why: I.count + ' people hit this. Claude grouped their reports.',
+            checks: [{ text: 'Goes to ' + n.agent + ' if you build it', color: '#7AA7FF' }],
+            urgent: n.crash, countdown: Math.ceil(left), urgentPct: (left / 8) * 100
+          };
+        }
+        if (n.crash) kindColor = '#FF7A59';
+      } else {
+        const checks = n.trap
+          ? [{ text: n.trapText, color: '#FF7A59' }, { text: '+' + n.plus + ' −' + n.minus, color: '#9AA4B1' }]
+          : [{ text: 'Tests pass', color: '#3DD6B0' }, { text: (n.rework ? 'Reworked · ' : '') + '+' + n.plus + ' −' + n.minus, color: '#9AA4B1' }];
+        card = { kind: 'Review · PR #' + n.pr, tag: n.agent, title: I.pr, why: 'Fixes ' + I.count + ' complaints about "' + I.title.toLowerCase() + '".', checks: checks, urgent: false };
+        yesLabel = 'Merge'; noLabel = 'Send back'; yesWhat = 'Ship it to TestFlight'; noWhat = 'Back to ' + n.agent + ' for another pass';
+        kindColor = '#3DD6B0';
+      }
+    }
+
+    const dragX = s.dragX;
+    const pressure = waiting.length;
+    const hot = pressure > 5;
+    const secs = Math.max(0, Math.ceil(s.timeLeft));
+    const c = this.costs(s.up);
+    const shopItem = (key, name, desc, level) => {
+      const cost = c[key];
+      const maxed = cost == null;
+      const can = !maxed && s.coins >= cost;
+      return {
+        name, desc, level,
+        btn: maxed ? 'Owned' : cost + ' parts',
+        disabled: !can,
+        btnBg: can ? accent : '#2A313B',
+        btnFg: can ? '#101317' : '#9AA4B1',
+        border: can ? accent : '#2A313B',
+        buy: () => this.buy(key)
+      };
+    };
+    const g = s.lastGrade;
+
+    return {
+      accent: accent,
+      isTitle: s.phase === 'title',
+      isPlay: s.phase === 'play',
+      isEnd: s.phase === 'end',
+      startShift: () => this.startShift(),
+      shift: s.shift,
+      endedShift: s.endedShift,
+      best: s.best,
+      coins: s.coins,
+
+      stars: [0, 1, 2].map((k) => ({ fill: k < g ? accent : 'transparent', stroke: k < g ? accent : '#3A4350' })),
+      gradeText: ['Rough shift', 'Kept the lights on', 'Solid shift', 'Factory legend'][g],
+      endStats: [
+        { label: 'Score', value: s.score + (s.score >= s.best && s.score > 0 ? ' · best' : ''), color: '#E8ECF1' },
+        { label: 'Parts earned', value: '+' + s.earned, color: accent },
+        { label: 'PRs released', value: s.shipped, color: '#3DD6B0' },
+        { label: 'People fixed', value: s.happy, color: '#3DD6B0' },
+        { label: 'Good catches', value: s.stats.catches, color: '#E8ECF1' },
+        { label: 'Users lost', value: s.stats.churned, color: s.stats.churned ? '#FF7A59' : '#E8ECF1' }
+      ],
+      shop: [
+        shopItem('bays', 'Another machine bay', 'Build one more fix at the same time.', s.up.bays + ' of 5 bays'),
+        shopItem('speed', 'Faster machines', 'Every fix builds 30% quicker.', 'Level ' + s.up.speed + ' of 3'),
+        shopItem('autoskip', 'Claude spots duplicates', 'Dupes get skipped before they reach you.', s.up.autoskip ? 'Running' : 'Not installed')
+      ],
+
+      clock: Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0'),
+      clockPct: (Math.max(0, s.timeLeft) / 90) * 100,
+      clockColor: secs <= 15 ? '#FF7A59' : accent,
+
+      zoomedIn: s.zoom === 'in',
+      zoomedOut: s.zoom === 'out',
+      zoomLabel: s.zoom === 'in' ? 'Zoom out' : 'Zoom in',
+      toggleZoom: () => this.setState((st) => ({ zoom: st.zoom === 'in' ? 'out' : 'in' })),
+      zoomIn: () => this.setState({ zoom: 'in' }),
+
+      score: s.score,
+      combo: s.combo,
+      comboColor: s.combo > 1 ? accent : '#E8ECF1',
+      comboBorder: s.combo > 1 ? accent : '#2A313B',
+      shipped: s.shipped,
+      happy: s.happy,
+      rating: s.rating.toFixed(1),
+      ratingColor: s.rating >= 4 ? '#3DD6B0' : s.rating >= 3 ? accent : '#FF7A59',
+
+      pressurePct: Math.min(100, (pressure / 8) * 100),
+      pressureColor: hot ? '#FF7A59' : accent,
+      pressureText: pressure === 0 ? 'nothing waiting' : pressure + ' waiting' + (hot ? ' · backing up' : ''),
+
+      hasToast: s.toastT > 0 && s.toast !== '',
+      toast: s.toast,
+      toastColor: s.toastGood ? accent : '#FF7A59',
+      shakeClass: s.shakeT > 0 ? 'shake' : '',
+
+      chips: chips,
+      bayRows: bayRows,
+      bays: s.up.bays,
+      sortWaiting: sortQ.length,
+      reviewWaiting: reviewQ.length,
+      sortBorder: sortQ.length ? accent : '#3A4350',
+      reviewBorder: reviewQ.length ? accent : '#3A4350',
+      building: Math.min(building.length, s.up.bays),
+      queued: Math.max(0, building.length - s.up.bays),
+
+      hasNext: !!n,
+      noNext: !n,
+      card: card,
+      kindColor: kindColor,
+      yesLabel: yesLabel, noLabel: noLabel, yesWhat: yesWhat, noWhat: noWhat,
+      yes: () => this.decide(true),
+      no: () => this.decide(false),
+
+      dragX: dragX,
+      dragRot: dragX / 18,
+      cardTransition: s.dragging ? 'none' : 'transform .25s ease',
+      cardBorder: dragX > 40 ? '#3DD6B0' : dragX < -40 ? '#FF7A59' : '#3A4350',
+      yesHint: 0.25 + 0.75 * Math.max(0, Math.min(1, dragX / 110)),
+      noHint: 0.25 + 0.75 * Math.max(0, Math.min(1, -dragX / 110)),
+      down: (e) => {
+        if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+        this.setState({ dragging: true, startX: e.clientX, dragX: 0 });
+      },
+      move: (e) => {
+        if (!this.state.dragging) return;
+        this.setState({ dragX: e.clientX - this.state.startX });
+      },
+      up: () => {
+        if (!this.state.dragging) return;
+        const dx = this.state.dragX;
+        if (dx > 110) this.decide(true);
+        else if (dx < -110) this.decide(false);
+        else this.setState({ dragging: false, dragX: 0 });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
