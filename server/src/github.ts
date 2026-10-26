@@ -186,7 +186,10 @@ interface InstallationTokenScope {
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {
   const cacheKey = `${env.GITHUB_APP_ID}:${await credentialKey(env.GITHUB_APP_PRIVATE_KEY)}:${installationId}:${JSON.stringify(scope ?? null)}`;
   const cached = tokenCache.get(cacheKey);
-  if (cached && cached.expires > Date.now()) return cached.token;
+  if (cached && cached.expires > Date.now()) {
+    if (env.DB) await registerGithubCredential(cached.token, env.DB, `github:installation:${installationId}`);
+    return cached.token;
+  }
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
   const res = await gh<{ token: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {

@@ -512,3 +512,25 @@ for (const outcome of ["pass", "error", "comment"] as const) {
     } finally { release(); globalThis.fetch = original; }
   });
 }
+
+it("budget and rate-limit waits leave AI review pending without a rework scar", async () => {
+  const { BudgetError } = await import("../src/budget");
+  const { RateLimitError } = await import("../src/rate-limit");
+  const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: unknown) => String(url).endsWith("/access_tokens") ? Response.json({ token: "paused-review-token" }) : Response.json([])) as unknown as typeof fetch;
+  try {
+    for (const error of [new BudgetError("Spark daily budget exhausted"), new RateLimitError(Date.now() + 60000)]) {
+      const reviewing = setStage(setStage(item({ state: "inspecting", inspection: freshInspection("head") }), "ci", "passed", "green"), "verify", "passed", "proof");
+      const f = fixture([reviewing], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test" });
+      const internals = f.factory as unknown as { load(): Promise<unknown>; runGauntlet(): Promise<void>; think(): Promise<unknown> };
+      internals.think = async () => { throw error; };
+      await internals.load();
+      await internals.runGauntlet();
+      expect(f.saved().items[0].state).toBe("inspecting");
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
+      expect(f.saved().items[0].scars ?? []).toEqual([]);
+    }
+  } finally { globalThis.fetch = original; }
+});

@@ -17,7 +17,7 @@ export async function browserCookies() {
 
 export const membershipCache = { get: async (key: string) => key.startsWith("access:v2:") ? { expiresAt: Date.now() + 59000 } : null, put: async () => {} };
 export function authorizedDB(original: any) { return { ...original, prepare(sql: string) {
-  if (sql.startsWith('SELECT u.id, u.login FROM sessions') || sql.includes('FROM user_repos WHERE') || sql.includes('FROM user_installations WHERE') || sql === 'SELECT installation_id FROM repos WHERE full_name = ?' || sql === 'SELECT id FROM installations WHERE id = ?') return { bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }) }) };
+  if (sql.startsWith('SELECT') && (sql.startsWith('SELECT u.id, u.login FROM sessions') || sql.includes('FROM user_repos WHERE') || sql.includes('FROM user_installations WHERE') || sql === 'SELECT installation_id FROM repos WHERE full_name = ?' || sql === 'SELECT id FROM installations WHERE id = ?')) return { bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }) }) };
   return original.prepare(sql);
 } }; }
 

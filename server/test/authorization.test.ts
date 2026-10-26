@@ -23,6 +23,7 @@ function fixture() {
   const DB = { prepare(sql: string) { let args: unknown[] = []; const stmt = {
     bind(...values: unknown[]) { args = values; return stmt; },
     async first() {
+      if (sql.includes("api_limits")) return { next_at: Date.now(), failures: 0 };
       if (sql.startsWith('SELECT u.id, u.login FROM sessions')) return { id: args[1], login: args[1] === 11 ? 'alice' : 'bob' };
       if (sql.includes('FROM user_repos WHERE')) return String(args[1]).startsWith(args[0] === 11 ? 'alice/' : 'bob/') ? { installation_id: args[0] } : null;
       if (sql.includes('FROM user_installations WHERE')) return args[0] === args[1] ? { installation_id: args[1] } : null;
@@ -30,6 +31,7 @@ function fixture() {
       if (sql === 'SELECT id FROM installations WHERE id = ?') return installs.has(Number(args[0])) ? { id: args[0] } : null;
       throw new Error(`Unexpected query ${sql}`);
     },
+    run: async () => ({ success: true }),
     all: async () => ({ results: [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
   }; return stmt; } };
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',
