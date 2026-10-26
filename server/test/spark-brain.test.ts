@@ -2,7 +2,7 @@ import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, describe, expect, it } from "bun:test";
 import { gameMaster, triage, type GameMasterBrief } from "../src/spark";
 import { emptyBrain, recordThought, scoreShip, sparkShare } from "../src/brain";
-import { scorecard } from "@shiptorio/shared";
+import { Brain, scorecard } from "@shiptorio/shared";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -113,4 +113,15 @@ describe("scorecard", () => {
     b = scoreShip(b, "gh-9")!; // never planned, not on the card
     expect(scorecard(b)).toEqual({ planSuccess: 0.5, catchRate: 0.5, fallbackRate: 1 / 7, plans: 2, shipped: 1, reviews: 2, catches: 1 });
   });
+});
+
+it("retains every outstanding plan until launch, beyond fifty concurrent plans", () => {
+  let b = emptyBrain("m", true);
+  for (let i = 0; i < 75; i++) b = recordThought(b, { decision: "plan", by: "spark", outcome: "Planned", itemId: `gh-${i}`, at: i, model: "m", ms: 1, title: "x", reason: "r" });
+  b = Brain.parse(JSON.parse(JSON.stringify(b)));
+  b = recordThought(b, { decision: "plan", by: "spark", outcome: "Re-planned", itemId: "gh-0", at: 76, model: "m", ms: 1, title: "x", reason: "r" });
+  expect(b.score?.plans).toBe(75);
+  for (let i = 0; i < 75; i++) b = scoreShip(b, `gh-${i}`)!;
+  expect(scorecard(b)).toMatchObject({ plans: 75, shipped: 75, planSuccess: 1 });
+  expect(b.score?.open).toEqual([]);
 });

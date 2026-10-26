@@ -1,4 +1,3 @@
-import { RunnerConnection } from "./ui/RunnerConnection";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { savePref } from "./account";
@@ -24,11 +23,13 @@ import { ShipCelebration } from "./ui/ShipCelebration";
 import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
+import { AchievementToast, AchievementsSheet, useAchievements, type ProgressLink } from "./ui/Achievements";
 import { checkStationId } from "@shiptorio/shared";
 import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { RunnerConnection } from "./ui/RunnerConnection";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#ff7a2a" };
 
@@ -40,6 +41,7 @@ const SLOTS = POWER.slots;
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
+type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements";
 const WORLD_KEY = "shiptorio:world";
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
@@ -97,10 +99,13 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
-  const { state, log, status, send } = useFactory(cfg);
+  const { state, log, status, send: sendRaw } = useFactory(cfg);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
+  const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
+  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink, progressProfile(cfg.kind, login));
+  const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
@@ -138,12 +143,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const nudge = useBottleneckNudge(deck, progressing);
+  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name) }; // achievements pay XP into progression
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
     if (progressing && state) prog.open(deck.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
 
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
@@ -237,7 +243,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -421,6 +427,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               <Icon name="flask" size={20} />
             </button>
           )}
+          {ach.count > 0 && (
+            // Achievements show up with the first one earned.
+            <button
+              type="button"
+              className={`hud-iconbtn ach-btn${ach.toast ? " new" : ""}`}
+              aria-pressed={sheet === "achievements"}
+              onClick={() => toggleSheet("achievements")}
+              aria-label={`Achievements, ${ach.count} earned`}
+              title={`Achievements · ${ach.count} earned`}
+            >
+              <Icon name="medal" size={20} />
+            </button>
+          )}
           <button type="button" className="hud-iconbtn" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
             {waiting > 0 && <span className="n">{waiting}</span>}
             <Icon name="bell" size={20} />
@@ -483,6 +502,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
+        ) : sheet === "achievements" ? (
+          <AchievementsSheet earned={ach.earned} state={state} streak={prog.p.best} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
@@ -659,6 +680,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           )}
         </nav>
         )}
+
+        <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} />}
 
