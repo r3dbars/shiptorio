@@ -22,6 +22,7 @@ import {
   type BuildOpts,
   type Built,
 } from "./itemlab";
+import { buildDrone, type DroneMode } from "./drone";
 import { makeDistrict, makeIsland, makeWaterfall } from "./models";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
@@ -227,6 +228,10 @@ export class FactoryScene {
   private launchUntil = -1;
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
+  // Spark, the Foreman, flying to whatever it's touching
+  private readonly drone = buildDrone();
+  private readonly droneTo = new THREE.Vector3(0, 4, 0);
+  private droneLabel?: Label;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -243,7 +248,9 @@ export class FactoryScene {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.bias = -0.0015;
-    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup);
+    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g);
+    this.droneLabel = this.addLabel(this.drone.g, 1.3);
+    this.droneLabel.el.classList.add("drone");
     this.loop();
   }
 
@@ -296,6 +303,24 @@ export class FactoryScene {
     this.syncItems(state.items);
     this.syncBiters(state.items);
     this.syncLabels(state);
+    this.syncDrone(state, first);
+  }
+
+  // ---------- the Foreman drone ----------
+
+  private syncDrone(state: FactoryState, first: boolean) {
+    const f = state.foreman;
+    const at = this.byId(f?.targetId) ?? this.ofType("steam")[0] ?? this.ofType("splitter")[0];
+    const p = at ? this.machinePos(at) : this.target.clone();
+    this.droneTo.set(p.x, at ? (LABEL_Y[at.type] ?? 2) + 1.6 : 4, p.z + (at ? 0.4 : 0));
+    if (first) this.drone.g.position.copy(this.droneTo);
+    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : (f?.tool ?? "foreman"));
+  }
+
+  private droneMode(): DroneMode {
+    if (this.state?.foreman?.thinking) return "THINKING";
+    if (this.drone.g.position.distanceTo(this.droneTo) > 0.3) return "FLYING";
+    return this.state?.foreman?.targetId ? "WORKING" : "IDLE";
   }
 
   // ---------- positions ----------
@@ -783,6 +808,15 @@ export class FactoryScene {
       }
       b.biter.update(t, dt, b.attacking ? "ATTACK" : "WALK");
     }
+
+    const dp = this.drone.g.position;
+    const toward = this.v3.subVectors(this.droneTo, dp);
+    const step = this.reduceMotion ? toward.length() : Math.min(toward.length(), dt * 7);
+    if (toward.lengthSq() > 1e-4) {
+      dp.addScaledVector(toward.normalize(), step);
+      this.drone.g.rotation.y = Math.atan2(toward.x, toward.z);
+    }
+    this.drone.update(t, dt, this.droneMode());
 
     const drift = this.reduceMotion ? 0 : 1;
     const dx = Math.sin(t * 0.07) * 0.8 * drift, dz = Math.cos(t * 0.05) * 0.6 * drift;
