@@ -24,3 +24,12 @@ test("live station panels hide the action buttons nothing on the server handles"
   expect(renderToStaticMarkup(<StationPanel id="rework" state={state} log={[]} send={noop} onClose={noop} />)).toContain(label);
   expect(renderToStaticMarkup(<StationPanel id="rework" state={state} log={[]} send={noop} onClose={noop} live />)).not.toContain(label);
 });
+
+test("Make it yours can turn the autonomy level down, never up", () => {
+  const at = (level: string) => renderToStaticMarkup(<MakeItYours state={{ ...state, autonomy: { ...state.autonomy!, level } } as FactoryState} send={noop} onClose={noop} />);
+  expect(at("advisor")).not.toContain(YOURS.level);
+  const html = at("build");
+  expect(html).toContain(YOURS.levelDown("Advisor"));
+  expect(html).toContain(YOURS.levelDown("Floor"));
+  expect(html).not.toContain(YOURS.levelDown("Lights out"));
+});

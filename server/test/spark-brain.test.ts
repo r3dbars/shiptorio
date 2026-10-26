@@ -125,3 +125,35 @@ it("retains every outstanding plan until launch, beyond fifty concurrent plans",
   expect(scorecard(b)).toMatchObject({ plans: 75, shipped: 75, planSuccess: 1 });
   expect(b.score?.open).toEqual([]);
 });
+
+describe("tolerant replies (live Testing run, 2026-10-26)", () => {
+  const sequence = (contents: string[], seen: string[] = []) => {
+    let n = 0;
+    globalThis.fetch = (async (_u: unknown, init: RequestInit) => { seen.push(String(init.body)); return Response.json({ choices: [{ message: { content: contents[Math.min(n++, contents.length - 1)] } }] }); }) as unknown as typeof fetch;
+  };
+  it("triage keeps a reply with extra keys, an off-list kind or a file path for district", async () => {
+    sequence([JSON.stringify({ kind: "docs", district: "README.md", reason: "README fix.", confidence: 0.9 })]);
+    expect(await triage(env, { title: "Docs: start a changelog", body: "", labels: [] }, ["/", "src"])).toMatchObject({ district: "/", reason: "README fix." });
+  });
+  it("repairs trailing commas and smart-quoted keys", async () => {
+    sequence(['{“kind”: "bug", "district": "src", "reason": "Wrong total.",}']);
+    expect(await triage(env, { title: "Receipt says 2 items", body: "", labels: [] }, ["/", "src"])).toEqual({ kind: "bug", district: "src", reason: "Wrong total." });
+  });
+  it("escapes a double quote the model forgot to escape inside a sentence", async () => {
+    sequence(['{"order": ["ship"], "reason": "Ship "Fix receipt" first, it\'s green.", "because": {"ship": "The "2 items" bug is fixed: [tests] pass."}}']);
+    const call = await gameMaster(env, brief);
+    expect(call.reason).toBe('Ship "Fix receipt" first, it\'s green.');
+    expect(call.because.ship).toBe('The "2 items" bug is fixed: [tests] pass.');
+  });
+  it("asks once more with the reason when a reply is malformed, then uses the good one", async () => {
+    const seen: string[] = [];
+    sequence(['{"order": ["ship" "bottleneck:review-1"]}', JSON.stringify({ order: ["ship"], reason: "Ship it." })], seen);
+    expect((await gameMaster(env, brief)).order).toEqual(["ship"]);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toContain("previous reply was rejected");
+  });
+  it("gives up after two bad replies so the fixed rule decides", async () => {
+    sequence(["not json at all"]);
+    await expect(triage(env, { title: "x", body: "", labels: [] }, ["/"])).rejects.toThrow("twice");
+  });
+});

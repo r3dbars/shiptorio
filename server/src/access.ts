@@ -92,6 +92,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
+  // The support inlets: email carries its own secret token in the path, Intercom signs with HMAC.
+  if (/^\/webhooks\/support\/[\w.-]+\/[\w.-]+\/[0-9a-f]{40}$/.test(url.pathname) || /^\/webhooks\/intercom\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
   // The docs site is public.
   if (isPublicDocs(url.pathname) && ["GET", "HEAD"].includes(request.method)) return null;
   // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.
