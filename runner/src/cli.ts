@@ -10,12 +10,17 @@ import { runnerHome, loadPairings, savePairing, removePairing, pairMachine, type
 
 import { jobWorkspace } from "./workspace";
 import { responseSchemas, type Job } from "./messages";
+import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
 const authHome = resolve(root, ".agent-home");
-const harnessPath = (h: Job["harness"]) => Bun.which(h === "codex" ? "codex" : "claude");
-let available = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
+const localFile = Bun.file(resolve(root, "local-model.json"));
+const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
+const localStatus = local ? await detectLocalModel(local) : null;
+let available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
+
 if (process.argv[2] === "paths") {
   console.log(JSON.stringify({ root, checkout, harnesses: available }));
   process.exit(0);
@@ -28,13 +33,25 @@ async function command(args: string[], cwd: string, env = cleanEnv, timeout = 12
   if (code !== 0) throw new Error(`Command ${args[0].split("/").at(-1)} ${args[1]} failed (${code}): ${(err || out).slice(-2000)}`);
   return out.trim();
 }
+if (process.argv[2] === "geothermal") {
+  // bun run runner geothermal MODEL [URL]: save local-model settings, then check the endpoint answers.
+  const config = localModelConfig({ SHIPTORIO_LOCAL_MODEL: process.argv[3] ?? "", SHIPTORIO_LOCAL_MODEL_URL: process.argv[4] ?? "" });
+  if (!config) throw new Error("Usage: runner geothermal MODEL [URL], e.g. runner geothermal qwen2.5-coder:7b");
+  const status = await detectLocalModel(config);
+  await Bun.write(resolve(root, "local-model.json"), JSON.stringify({ model: config.model, url: config.baseUrl }, null, 2) + "\n");
+  console.log(status.ok ? `Geothermal online: ${config.model} at ${config.baseUrl}. Restart the runner to offer it.` : `Saved, but not ready yet: ${status.reason}`);
+  process.exit(0);
+}
 async function signedInHarness(h: Job["harness"]) {
+  if (h === "local") return localStatus?.ok === true;
   try {
+
     const output = await command([harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])], authHome, agentEnvironment(process.env, authHome));
     return h === "codex" || JSON.parse(output).loggedIn === true;
   } catch { return false; }
 }
 async function loginHarness(h: Job["harness"]) {
+  if (h === "local") throw new Error("Local models do not need subscription login");
   console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
   const child = Bun.spawn([harnessPath(h)!, ...(h === "codex" ? ["login"] : ["auth", "login"])], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
@@ -49,6 +66,7 @@ if (["doctor", "setup", "login"].includes(process.argv[2])) {
   }
   let ready = false;
   for (const h of available) {
+    if (h === "local") { console.log(`local: ${local!.model} at ${local!.baseUrl} (geothermal power)`); ready = true; continue; }
     const loggedIn = await signedInHarness(h);
     console.log(`${h}: ${loggedIn ? "installed and signed in for Shiptorio" : "installed; needs dedicated sign-in (shiptorio-runner login " + (h === "codex" ? "codex" : "claude") + ")"}`);
     ready ||= loggedIn;
@@ -115,15 +133,22 @@ async function execute(job: Job, pair: Pairing) {
     const boundary = await checkSandbox(jobRoot);
     sandbox = { run: (args, cwd = work, options) => boundary.run(args, cwd, options), close: () => boundary.close() };
     await checked(["git", "checkout", "--detach", job.baseSha]);
-    const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
-    console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
-    const executable = harnessPath(job.harness);
-    if (!executable) throw new Error("Assigned harness is unavailable");
-    agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-    const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
-    if (result.code) throw new Error(`Agent failed (${result.code}); check dedicated subscription sign-in`);
-    const output = result.out;
-    await agentSandbox.close(); agentSandbox = undefined;
+    let output: string;
+    if (job.harness === "local") {
+      // Geothermal: the model only returns text; the runner writes approved files, then the same supervisor runs.
+      console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
+      output = JSON.stringify(await runLocalAssembler(job, work, local!));
+    } else {
+      const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
+      console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
+      const executable = harnessPath(job.harness);
+      if (!executable) throw new Error("Assigned harness is unavailable");
+      agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
+      const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
+      if (result.code) throw new Error(`Agent failed (${result.code}); check dedicated subscription sign-in`);
+      output = result.out;
+      await agentSandbox.close(); agentSandbox = undefined;
+    }
     // Preserve local evidence; never forward raw agent output to the server/browser.
     await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
     if (job.harness === "claude_code" && JSON.parse(output).is_error) throw new Error("Claude reported an agent error");

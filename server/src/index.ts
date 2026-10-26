@@ -495,7 +495,7 @@ app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   const raw = JSON.parse(body);
-  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   return c.json({ job: await factory(c.env, identity.repo).claimRunner(identity.pairId, raw.harnesses) });
 });
 
@@ -504,7 +504,7 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
   let raw: { harnesses?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
-  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
+  if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = factory(c.env, identity.repo);
   if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
   await f.heartbeatRunner(identity.pairId, raw.harnesses); return c.json({ ok: true });

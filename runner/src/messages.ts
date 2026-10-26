@@ -6,7 +6,7 @@ const sha = z.string().regex(/^[a-f0-9]{40}$/);
 // Pick executable fields; server-only audit metadata is deliberately stripped.
 export const JobAssignment = z.object({
   id: z.string().uuid(), repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
-  harness: z.enum(["codex", "claude_code"]), baseSha: sha,
+  harness: z.enum(["codex", "claude_code", "local"]), baseSha: sha,
   branch: z.string().regex(/^shiptorio\/runner-[a-f0-9-]{36}$/),
   allowedPaths: z.array(path).min(1).max(10), plan: z.string().min(1).max(50000),
   lease: z.string().uuid(), token: z.string().min(1).max(2048), deadline: z.number().int().positive(),

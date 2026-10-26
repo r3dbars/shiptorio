@@ -46,9 +46,10 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought } from "./brain";
-import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
+import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
+import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
 import { foldSignal, matchDistrict } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
@@ -181,7 +182,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (changed) await this.ctx.storage.put("stageHistory", history.filter(h => h.exitedAt === undefined || h.exitedAt > now - 86400000).slice(-4000));
     const presenceFresh = !!presence?.harnesses.length && now - presence.seenAt < 20000;
-    const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar") };
+    const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar" && p.kind !== "geothermal") };
     const derived = deriveBottleneck(telemetryState, { now, history, jobs, powered: this.env.HOSTED_SPARK_ASSEMBLER === "1" || !!presence?.harnesses.length && now - presence.seenAt < 20000 || jobs.some(j => j.status === "running") });
     s.bottleneck = derived.bottleneck;
     const metrics = derived.stages;
@@ -354,7 +355,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private runnerApprovalMove(job: RunnerJob, item: Item): Move {
-    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before your local ${job.harness === "codex" ? "Codex" : "Claude"} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${job.harness === "codex" ? "Codex" : "Claude"}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
+    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before ${job.harness === "local" ? "your computer's local model" : `your local ${harnessLabel(job.harness)}`} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.route ? [`Power: ${job.route}`] : []), ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${harnessLabel(job.harness)}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
   }
 
   private async offerRunnerPlan(): Promise<void> {
@@ -369,7 +370,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     for (const item of s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
-    const choices = presence.harnesses.slice(0, 2).map(harness => ({ id: harness, label: `Plan with ${harness === "codex" ? "Codex" : "Claude"}`, recommended: harness === presence.harnesses[0], actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Read this issue and propose a file scope before building." }] }));
+    const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
+    const lead = small ? "local" : presence.harnesses.find(h => h !== "local") ?? presence.harnesses[0];
+    const choices = presence.harnesses.slice(0, 3).map(harness => ({ id: harness, label: harness === "local" ? "Plan on your computer (free)" : `Plan with ${harnessLabel(harness)}`, recommended: harness === lead, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Read this issue and propose a file scope before building." }] }));
     if (!choices.length) return;
     await this.publishRunnerMove({ id: crypto.randomUUID(), title: `Plan #${item.id.slice(3)}: ${item.title}`, why: "Get a focused plan first. Review its files and steps before any code changes.", stage: "build", kind: "build", itemId: item.id, createdAt: Date.now(), options: [...choices, { id: "decline", label: "Later", recommended: false, actions: [] }] });
     }
@@ -404,7 +407,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (optionId === "decline") { await this.ctx.storage.put(`runnerDeferred:${item.id}`, item.updatedAt); await this.publishRunnerMove(null); await this.refreshDecisions(); return; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
-    if (action?.tool !== "plan_runner_job" || !["codex", "claude_code"].includes(String(action.args.harness))) return;
+    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true });
       await this.publishRunnerMove(null);
@@ -523,6 +526,31 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
   }
 
+  /** Pick the power plant. The planner chooses among plants the fixed geothermal guard allows; the guard has the last word. */
+  private async routeRunnerJob(job: RunnerJob, item: Item): Promise<void> {
+    const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
+    const available = presence?.harnesses?.length ? presence.harnesses : [job.harness];
+    if (!available.includes("local") && job.harness !== "local") return; // subscriptions only: the player's pick stands
+    const c = { kind: item.kind, title: item.title, paths: job.allowedPaths, scars: item.scars?.length ?? 0, rework: !!job.reworkPr };
+    const guard = geothermalGuard(c);
+    const allowed = available.filter(h => h !== "local" || guard.ok);
+    let pick: { harness: string; why: string } | null = allowed.length === 1 ? { harness: allowed[0], why: guard.reason } : null;
+    if (!pick) {
+      try {
+        if (!sparkConfigured(this.env)) throw new Error("No planner key");
+        pick = await this.think("route", { title: item.title, itemId: item.id }, () => pickPower(this.sparkEnv(), {
+          title: item.title, kind: item.kind, plan: job.plan ?? "", files: job.allowedPaths,
+          plants: allowed.map(h => h === "local" ? { harness: h, name: "Geothermal (your computer)", cost: "free", strength: "small model, fine for docs and tiny fixes" } : { harness: h, name: `Solar (${h === "codex" ? "ChatGPT" : "Claude"})`, cost: "spends weekly subscription usage", strength: "strong coding agent" }),
+        }), out => ({ outcome: `Routed to ${harnessLabel(out.harness)}`, reason: out.why || guard.reason }));
+      } catch { pick = ruleRoute(c, available); }
+    }
+    const final = pick && enforceRoute(pick.harness as RunnerJob["harness"], c, available);
+    if (!final) throw new Error(`${guard.reason} Sign in to Claude or Codex on your runner to build it.`);
+    job.harness = final.harness;
+    job.route = `${final.harness === "local" ? "geothermal, your computer (free)" : `solar, ${harnessLabel(final.harness)}`}. ${final.why || pick!.why}`.trim();
+    this.broadcast({ type: "log", level: "info", text: final.vetoed ? `Too big for local power: ${guard.reason} Moved to ${harnessLabel(final.harness)}.` : `Power: ${job.route}`, at: Date.now(), actor: "spark", tool: "set_power", reason: final.why || pick!.why || "Routing rule", approvedBy: "player", itemId: item.id });
+  }
+
   private async planRunnerJobs(): Promise<void> {
     const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
     const job = [...jobs.values()].find(j => j.status === "planning");
@@ -578,10 +606,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${job.harness === "codex" ? "Codex" : "Claude Code"} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
+      await this.routeRunnerJob(job, item);
       await this.planComment(token, job, item).catch(error => this.reliabilityFailure(`planComment:${item.id}`, error, item.id));
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
@@ -606,7 +635,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if ([...running.values()].some(j => j.status === "running" && j.deadline && j.deadline > Date.now())) return null;
       await this.load();
       await this.ctx.storage.put("runnerPresence", { harnesses, seenAt: Date.now() });
-      const localPower = harnesses.map(h => ({ id: `solar-${h}`, kind: "solar" as const, name: h === "codex" ? "ChatGPT" : "Claude", level: 1, online: true }));
+      const localPower = runnerPower(harnesses);
       if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
         await this.patch({ power: [...this.state.power.filter(p => !["power-codex", "power-claude_code", ...localPower.map(p => p.id)].includes(p.id)), ...localPower] });
       }
@@ -629,8 +658,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
       await this.clearRunnerMove();
-      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `solar-${job.harness}`, tier: 1, state: "working" }] });
-      this.log("info", `Local ${job.harness} took the plan.`, item.id);
+      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: job.harness === "local" ? LOCAL_POWER_ID : `solar-${job.harness}`, tier: 1, state: "working" }] });
+      this.log("info", job.harness === "local" ? "Your computer's local model picked up the plan (geothermal power)." : `Local ${job.harness} took the plan.`, item.id);
       return job;
     });
     if (!job) return null;
@@ -681,7 +710,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (evidence && !existing.body?.includes(`shiptorio-proof:${receipt.sha}`)) await gh(`/repos/${job.repo}/pulls/${job.reworkPr}`, token, { method: "PATCH", body: JSON.stringify({ body: `${existing.body ?? ""}\n\n${evidence}` }) });
       pr = { number: existing.number, html_url: existing.html_url };
     } else {
-      pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\n${evidence}\n\nHuman review and merge required.` });
+      pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; ${job.harness === "local" ? `a local model on the player's own hardware (geothermal power) executed it${job.route ? ` (${job.route})` : ""}` : `the local ${job.harness} subscription executed it`}.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\n${evidence}\n\nHuman review and merge required.` });
     }
     job.status = "completed"; job.prUrl = pr.html_url; job.headSha = receipt.sha; job.proof = receipt.proof;
     await this.ctx.storage.put(`runnerJob:${job.id}`, job);
@@ -1355,7 +1384,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
-      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "the planner";
+      const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
       const currentInLane = () => {
         const now = current();
@@ -1453,8 +1482,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-") && item.scars?.length) {
         if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) continue;
         await this.ctx.storage.put(`gauntletOffered:${item.id}`, item.scars.length);
-        const builder = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
-        await this.publishGauntletMove(reworkMove(item, now, builder));
+        const last = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
+        // A scarred job never goes back to geothermal: the retry takes a subscription.
+        const subs = (await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][] }>("runnerPresence"))?.harnesses.filter(h => h !== "local") ?? [];
+        const builder = last !== "local" ? last : subs[0] ?? "codex";
+        await this.publishGauntletMove(reworkMove(item, now, builder as "codex" | "claude_code"));
         continue;
       }
     }

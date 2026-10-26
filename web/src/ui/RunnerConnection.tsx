@@ -1,5 +1,6 @@
 import "./RunnerConnection.css";
 import { useEffect, useState } from "react";
+const AGENT_LABEL: Record<string, string> = { codex: "Codex", claude_code: "Claude Code", local: "Local model" };
 const JOB_LABEL: Record<string, string> = { planning: "Planning", awaiting_approval: "Waiting for your approval", ready: "Ready to build", running: "Building", completed: "PR opened", failed: "Stopped" };
 interface RunnerStatus { paired: boolean; online: boolean; seenAt: number | null; harnesses: string[]; lastJob: { id: string; status: string } | null }
 export function RunnerConnection({ repo }: { repo: string }) {
@@ -29,7 +30,7 @@ export function RunnerConnection({ repo }: { repo: string }) {
   };
   return <section className="runner-connect" aria-label="Connect your machine">
     <h3>Connect your machine</h3>
-    <p role="status" aria-live="polite">{error || (status ? status.online ? `Online · ${status.harnesses.map(h => h === "codex" ? "Codex" : "Claude Code").join(" + ") || "no agents detected"}` : status.paired ? "Offline · start your runner to connect" : "Your Claude or Codex sign-in powers this factory." : "Checking your machine…")}</p>
+    <p role="status" aria-live="polite">{error || (status ? status.online ? `Online · ${status.harnesses.map(h => AGENT_LABEL[h] ?? h).join(" + ") || "no agents detected"}` : status.paired ? "Offline · start your runner to connect" : "Your Claude or Codex sign-in powers this factory." : "Checking your machine…")}</p>
     {status?.seenAt && <p className="empty">Last seen {new Date(status.seenAt).toLocaleString()}</p>}
     {status?.lastJob && <p className="empty">Last job: {JOB_LABEL[status.lastJob.status] ?? "Unknown"} · {status.lastJob.id.slice(0, 8)}</p>}
     {!status?.online && <><p>Run this on your computer, then compare the pairing code in your browser:</p><code className="runner-install">curl -fsSL https://shiptorio.com/install.sh | sh</code><p className="empty">macOS · Linux · Windows via WSL2. Keep the terminal open. The planner asks before any build starts.</p></>}

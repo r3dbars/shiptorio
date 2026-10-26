@@ -44,6 +44,7 @@ interface SparkLine {
   tool: string;
   text: string;
   reason?: string;
+  outcome?: string; // the decision log's short outcome, when the floor log line says more
 }
 
 interface Ore {
@@ -61,6 +62,7 @@ interface Ore {
   ask?: string; // Spark asks before building it; this is the card's question
   spark?: SparkLine[]; // what Spark logs when it reads this ore
   comeback?: string; // orbit watch catches it after the first launch: "Sentry fired it again"
+  route?: { to: Harness; why: string }; // the planner's pick of power plant for it, and why (geothermal scenario)
 }
 
 interface Scenario {
@@ -74,6 +76,7 @@ interface Scenario {
   permits?: string[]; // lanes that start with a launch permit
   science?: FactoryState["science"]; // packs already shipped, so the research tree has something to spend
   rockets?: number; // PRs already shipped
+  geothermal?: boolean; // the runner found a local model: a free, capped geothermal plant runs small, low-risk jobs
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -248,6 +251,30 @@ export const SCENARIOS = {
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
     ],
   },
+  // Geothermal power (docs/PRODUCT.md power table): the runner found a local model on your computer, so a free,
+  // capped geothermal plant sits next to the Claude solar plant. The planner routes the small, low-risk docs fix
+  // to it and the bigger bug to Claude. Both ride the whole gauntlet to a rocket.
+  geothermal: {
+    harness: "claude_code",
+    geothermal: true,
+    ores: [
+      {
+        at: 2,
+        title: "Fix typo in README setup steps",
+        kind: "cleanup",
+        district: "docs",
+        route: { to: "local", why: "small docs job, 1 file, low risk, so it runs on free local power" },
+      },
+      {
+        at: 4,
+        title: "Checkout total ignores the coupon after a refresh",
+        kind: "bug",
+        district: "web",
+        users: 42,
+        route: { to: "claude_code", why: "a bug across 4 files with 42 users waiting, too big and risky for the local model" },
+      },
+    ],
+  },
   // The welcome tour after sign-in (ui/IntroTour.tsx). A demo shop, played fast. Nothing asks: the tour's
   // cards cue each beat (station_action "intro"), and the ore keeps coming from INTRO_ORE once the line stands.
   intro: {
@@ -288,6 +315,7 @@ const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at mos
 export type ScenarioName = keyof typeof SCENARIOS;
 
 const SOLAR_NAME: Partial<Record<Harness, string>> = { claude_code: "Claude", codex: "ChatGPT" };
+const GEO_PLANT = "geo-local"; // the runner's local model, same id the live server uses
 
 // The stations in line order, with the panel actions from docs/loop.html. caught seeds "this week".
 interface StationDef {
@@ -333,11 +361,23 @@ function initialState(sc: Scenario): FactoryState {
     machines.push({ id: plant, type: "solar", x: 3, y: 3, tier: 1, state: "idle" });
     power.push({ id: plant, kind: "solar", name: SOLAR_NAME[harness] ?? harness, level: 0.9, online: true });
   }
+  if (sc.geothermal) {
+    // the local model gets its own assembler under the Claude one, and the plants line up in a row below them
+    const at = (id: string, x: number, y: number) => Object.assign(machines.find((m) => m.id === id)!, { x, y });
+    at("steam-spark", -3, 6);
+    if (harness !== "spark" && !sc.unplugged) at(plant, 3, 6);
+    machines.push(
+      { id: GEO_PLANT, type: "geothermal", x: 0, y: 6, tier: 1, state: "idle" },
+      { id: "assembler-local", type: "assembler", x: 0, y: 3, harness: "local", powerId: GEO_PLANT, tier: 1, state: "idle" },
+    );
+    power.push({ id: GEO_PLANT, kind: "geothermal", name: "Your computer", level: 0.75, online: true });
+  }
   if (sc.ores.some((o) => o.source === "sentry")) machines.push({ id: "ore-sentry", type: "ore_deposit", x: -6, y: -3, tier: 1, state: "idle" });
   if (sc.ores.some((o) => o.source === "inbox")) machines.push({ id: "ore-inbox", type: "ore_deposit", x: -6, y: 3, tier: 1, state: "idle" });
   if (sc.ores.some((o) => o.source === "posthog")) machines.push({ id: "ore-posthog", type: "ore_deposit", x: -6, y: sc.ores.some((o) => o.source === "inbox") ? 6 : 3, tier: 1, state: "idle" });
   const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
+  if (sc.geothermal) belts.push({ id: "belt-local-in", from: "splitter-1", to: "assembler-local" }, { id: "belt-local-out", from: "assembler-local", to: GAUNTLET[0].id });
   const districts = sc.districts ?? REPO_DISTRICTS;
   const mines = (["sentry", "posthog"] as const).filter((kind) => sc.ores.some((o) => o.source === kind));
   // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
@@ -405,6 +445,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const failAt = new Map<string, StationKind | undefined>(); // item id -> station that catches the scripted failure
   const failCheck = new Map<string, string | undefined>(); // item id -> researched check that would catch it first
   const builtBy = new Map<string, string | undefined>(); // item id -> assembler that built it
+  const routes = new Map<string, NonNullable<Ore["route"]>>(); // item id -> the scripted routing pick
+  const routed = new Map<string, Harness>(); // item id -> the harness (and so the power plant) the planner picked
   const watching = new Map<string, number>(); // launched item id -> tick orbit watch stops
   const comebacks = new Map<string, string>(); // item id -> what orbit watch will catch after its first launch
   const trips = new Map<string, number>(); // launched item id -> tick its comeback lands
@@ -414,7 +456,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let pr = 140;
   let seq = 0;
 
-  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit" };
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
@@ -431,7 +473,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const decision = THOUGHT_FOR[line.tool];
     if (decision && s.brain) {
       const item = opts.itemId ? s.items.find((i) => i.id === opts.itemId) : undefined;
-      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
+      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.outcome ?? line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
       emit({ type: "patch", patch: { brain: s.brain } });
     }
   };
@@ -669,11 +711,25 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     fails.set(item.id, o.failFirst);
     failAt.set(item.id, o.failAt);
     if (o.comeback) comebacks.set(item.id, o.comeback);
+    if (o.route) routes.set(item.id, o.route);
     failCheck.set(item.id, o.failCheck);
     byTitle.set(o.title, item.id);
     if (o.ask) asks.set(item.id, o.ask);
     apply({ items: [item] });
     if (!o.spark) log("info", `Ore: ${o.title}`, item.id);
+  };
+
+  // The planner picks a power plant for each job: small, low-risk work goes to the free geothermal plant,
+  // bigger or riskier work to a subscription. Either way it rides the full gauntlet.
+  const routeItem = (item: Item) => {
+    const route = routes.get(item.id);
+    if (!route || routed.has(item.id)) return;
+    const asm = s.machines.find((m) => m.type === "assembler" && m.harness === route.to && m.powerId);
+    const plant = asm && s.power.find((p) => p.id === asm.powerId);
+    if (!asm || !plant) return;
+    routed.set(item.id, route.to);
+    const where = plant.kind === "geothermal" ? `${plant.name.toLowerCase()} (geothermal)` : `${plant.name} (solar)`;
+    spark({ tool: "route", text: `Routed "${item.title}" to ${where}: ${route.why}`, reason: route.why, outcome: `${item.kind} in /${item.district} → ${where}` }, { itemId: item.id, target: plant.id });
   };
 
   // The stage with the most value waiting, the way bottleneck.ts scores it.
@@ -735,6 +791,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (!machine("splitter")) continue;
           apply({ items: [{ ...next, state: "queued" }] });
           log("info", `Splitter sorted "${item.title}" → ${item.district}`, item.id);
+          routeItem(item);
           if (asks.has(item.id)) {
             held.add(item.id);
             askToBuild(item);
@@ -743,7 +800,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         case "queued": {
           // Spark's pick goes first: nothing else starts while its "fix this first" waits on your Go
           if (held.size || parked.has(item.id)) continue;
-          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId);
+          // the local model only takes what the planner routed to it; routed work waits for its own plant
+          const want = routed.get(item.id);
+          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId && (want ? m.harness === want : m.harness !== "local"));
           if (!a) continue;
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
