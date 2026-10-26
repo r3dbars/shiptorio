@@ -22,7 +22,7 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
     async put(key: string, value: unknown) { data.set(key, structuredClone(value)); },
     async delete(key: string) { return data.delete(key); },
     async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); },
-    async transaction<T>(fn: (tx: { get: typeof storage.get; put: typeof storage.put }) => Promise<T>): Promise<T> { return fn(storage); },
+    async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); },
     async getAlarm() { return alarm; },
     async setAlarm(value: number) { alarm = value; },
   };
