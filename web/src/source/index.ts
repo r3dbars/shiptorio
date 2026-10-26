@@ -31,13 +31,17 @@ export function readConfig(search = location.search): SourceConfig {
 
 export function connect(cfg: SourceConfig, onMessage: Listener, onStatus: StatusListener): Source {
   if (cfg.kind === "sim") return connectSim(cfg.scenario, onMessage, onStatus, cfg.repo || undefined);
+  return connectLazyLive(cfg.repo, onMessage, onStatus);
+}
+
+export function connectLazyLive(repo: string, onMessage: Listener, onStatus: StatusListener, load: () => Promise<{ connectLive: (repo: string, onMessage: Listener, onStatus: StatusListener) => Source }> = () => import("./live")): Source {
   // live loads on demand: it brings zod (the message schemas), which the sim and the first paint don't need
   onStatus("connecting");
   let src: Source | null = null;
   let closed = false;
-  import("./live").then(({ connectLive }) => {
+  load().then(({ connectLive }) => {
     if (closed) return;
-    src = connectLive(cfg.repo, onMessage, onStatus);
+    src = connectLive(repo, onMessage, onStatus);
   }).catch(() => { if (!closed) onStatus("offline"); });
   return {
     send: (m) => { if (!closed) src?.send(m); },
