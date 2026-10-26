@@ -450,7 +450,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const code = normalizeCode(c.req.query("code") ?? "");
-  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
+  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);

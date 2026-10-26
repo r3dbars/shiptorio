@@ -3,6 +3,7 @@ import type { Env } from './index';
 import { isAllowed } from './session';
 import { isLocal } from './auth';
 import { isPublicDocs } from './access';
+import { ironShell } from './iron-page';
 
 export interface SignupEnv {
   SIGNUP_GATE_MODE?: string; // waitlist opts in after Turnstile setup; default/password = rollback
@@ -50,8 +51,9 @@ export async function turnstile(request: Request, env: Env, form: URLSearchParam
 }
 const headers = {'content-type':'text/html; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"};
 export function signupPage(env: Env, message = '', status = 200): Response {
-  const widget = (action:string) => `<div class="cf-turnstile" data-sitekey="${escape(env.TURNSTILE_SITE_KEY || '')}" data-action="${action}"></div>`;
-  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Join Shiptorio</title><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script><style>body{background:#1b2448;color:#eee;font:18px system-ui;max-width:440px;margin:8vh auto;padding:24px}input,button{padding:12px;margin:8px 0;display:block;max-width:100%;box-sizing:border-box}button{background:#f2a93b;border:0;border-radius:5px}a{color:#6fb2ff}</style><h1>Shiptorio</h1><p>The factory must grow. Join the private preview.</p><p role="status">${escape(message)}</p><form method="post" action="/waitlist"><label>Email <input type="email" name="email" maxlength="254" required autocomplete="email"></label>${widget('waitlist')}<button>Join the waitlist</button></form><hr><form method="post" action="/auth/login"><input name="invite" placeholder="Invite code (optional)" maxlength="100" autocomplete="off">${widget('signin')}<button>Continue with GitHub</button></form><p>GitHub sign-in joins the waitlist. Justin approves access.</p></html>`,{status,headers});
+  const widget = (action:string) => `<div class="cf-turnstile" data-sitekey="${escape(env.TURNSTILE_SITE_KEY || '')}" data-action="${action}" data-theme="dark"></div>`;
+  const body = `<p class="eyebrow">Private preview</p><h1>Join the factory</h1><p>The factory must grow. Join the private preview.</p><p class="status" role="status">${escape(message)}</p><form method="post" action="/waitlist"><label for="w-email">Email</label><input id="w-email" type="email" name="email" maxlength="254" required autocomplete="email">${widget('waitlist')}<button>Join the waitlist</button></form><hr><form method="post" action="/auth/login"><label for="w-invite">Invite code (optional)</label><input id="w-invite" name="invite" maxlength="100" autocomplete="off">${widget('signin')}<button class="alt">Continue with GitHub</button></form><p class="note">GitHub sign-in joins the waitlist. Justin approves access.</p>`;
+  return new Response(ironShell('Join Shiptorio', body, '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>'),{status,headers});
 }
 export async function signupGate(request: Request, env: Env): Promise<Response | null> {
   const path = new URL(request.url).pathname;
