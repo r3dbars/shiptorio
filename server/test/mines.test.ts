@@ -176,3 +176,17 @@ it("Factory: FAKE_POSTHOG polls on the alarm and drops ore on the checkout distr
   await f.factory.alarm();
   expect(f.saved().items.filter((i) => i.source === "posthog").length).toBe(2);
 });
+
+it("Factory: keys set as Worker secrets plug the mines in when the map opens, and stay unplugged once disconnected", async () => {
+  const f = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", FAKE_POSTHOG: "1" });
+  await f.factory.ensure("example/shop", 1);
+  expect(f.saved().machines.filter((m) => m.id.startsWith("ore-")).map((m) => m.id).sort()).toEqual(["ore-issues", "ore-posthog", "ore-sentry"]);
+  expect(f.kv.get("link:sentry")).toBe("example/shop");
+  await f.factory.disconnectMine("sentry");
+  await f.factory.ensure("example/shop", 1);
+  expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
+  // A mine already linked to another repo isn't stolen.
+  const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other" });
+  await other.factory.ensure("example/shop", 1);
+  expect(other.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
+});
