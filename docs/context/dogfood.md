@@ -45,6 +45,12 @@ where the first fix doesn't really fix the bug, so AI review fails it and the re
 | 10-26 21:33 | Service install race fixed | https://github.com/r3dbars/shiptorio/pull/186 | F8 |
 | 10-26 21:42 | Owner scripts get real sessions | https://github.com/r3dbars/shiptorio/pull/189 | F9 |
 | 10-26 22:20 | Runner re-paired after #151/#160/#166 | | Waiting on Justin's dedicated Codex sign-in (F10) |
+| 10-26 22:24 | Autopilot taps Plan on #1 to #6, approves #5 | | Spark planned #5 (README npm → bun) |
+| 10-26 22:25 | #6 planning fails | | Generic "Planning failed"; real cause was an off-list file pick, now dropped and recorded (#226) |
+| 10-26 22:50 | Dedicated Codex sign-in reaches the service | https://github.com/r3dbars/shiptorio/pull/213 · https://github.com/r3dbars/shiptorio/pull/224 | F11, F12 |
+| 10-26 22:52 | First claim of #5 lost in transit | https://github.com/r3dbars/shiptorio/pull/230 | F13: job "running" with nobody on it |
+| 10-26 23:10 | #5 re-handed to the runner, Codex dies in the Mac sandbox | https://github.com/r3dbars/shiptorio/pull/235 | F14 |
+| 10-26 23:20 | Spark daily budget used up | https://github.com/r3dbars/shiptorio/pull/240 | F15: game master retries ate about half of it |
 
 ## Friction log
 
@@ -85,3 +91,22 @@ Format: what hurt, how bad, what we did. Fixed items stay for the record.
   (#166). Each one is right on its own, but together they mean a working runner stopped working three times
   with no in-game signal beyond a 403 in a log file. Real fix: the game's power panel should say
   "runner can't claim: re-pair / sign in" with the exact command. *Open.*
+- **F11. `runner login codex` failed on a fresh Mac** because the dedicated `CODEX_HOME` folder didn't
+  exist yet. Fixed in #213 (create `.agent-home/.codex` first).
+- **F12. The login landed in the checkout, the service reads Application Support.** So the service kept
+  saying "No signed-in agent" after a good login. Fixed in #224 (`service install` carries `.agent-home`).
+- **F13. A lost claim response stranded a job.** The server marked #5 running, the response was lost to an
+  ECONNRESET / 30s timeout (plus a run of edge 503s), and nothing could ever claim or re-plan it: an expired
+  lease also stayed "running" forever. Fixed in #230: the same idle pairing claiming again 45s+ later gets
+  the job back, and expired leases fail and requeue the item.
+- **F14. Codex can't start inside the macOS agent sandbox.** Seatbelt denied cfprefsd (managed prefs) and
+  the configd/networkd/trust services HTTPS needs, and the runner blamed the sign-in. Fixed in #235 (agent
+  profile only; verification stays locked down). The agent's redacted stderr tail now goes to the local log.
+  Needs a `runner:service install` paste each time (F7).
+- **F15. The game master could starve planning.** Malformed/cut-off JSON retries on every refresh used about
+  half of Spark's 200 calls / 500k tokens a day, then #1 failed "budget exhausted". Fixed in #226 (cap 6144,
+  keep partial fields) and #240 (re-rank at most once a minute, back off, stop at half budget).
+- **F16. Autopilot can't answer `ask_player`** (#10 failed "Spark requested player input"), and it skips
+  cards whose recommended option is "Later" (Spark picked Later on #6/#7/#9; #240 stops that). *By design
+  for ask_player; the question is now kept on the job.*
+- **F17. GitHub 304s logged as errors and sent to Sentry** (about 20 per 15 min on Testing). Fixed in #230.
