@@ -159,3 +159,5 @@ The connection and automatic deployment checkpoints above supersede that initial
 | Codex PRs #3 (shared protocol) and #4 (factory API + issue ingestion) were built before #1 merged. They need porting onto `main`'s `shared/` + `server/` layout | Codex |
 | PR #7 Item Lab art and PR #8 pixel map are merged and live | Done |
 | Does Spark accept images (visual QA)? Rate limits, credit balance? | Anyone with a key |
+
+- 2026-10-26: Upgrade non-local HTTP to HTTPS before any authentication path; secure-only preview cookies otherwise make a successful HTTP password form appear to do nothing. Keep the gate as a native HTML form, verify cookie acceptance with an explicit recovery message, and preserve the requested factory URL. HTTPS responses include HSTS; local HTTP development stays available.

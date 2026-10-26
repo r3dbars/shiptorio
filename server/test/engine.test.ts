@@ -56,14 +56,17 @@ describe("pickAssembler", () => {
 
 describe("SAFE_PATH", () => {
   it("allows normal repo paths", () => {
-    for (const p of ["src/a.ts", "README.md", "web/src/sim/scenario-1.ts", "packages/@scope/x.json", "server/test/engine.test.ts", "docs/SETUP.md", "src/env.ts", "src/dev.vars.ts", "docs/.github-notes.md", "src/key.ts"]) expect(SAFE_PATH.test(p)).toBe(true);
+    for (const p of ["src/a.ts", "README.md", "web/src/sim/scenario-1.ts", "packages/@scope/x.json", "server/test/engine.test.ts", "docs/SETUP.md", "docs/environment.md", "src/env.ts", ".gitignore", "src/dev.vars.ts", "docs/.github-notes.md", "src/key.ts"]) expect(SAFE_PATH.test(p)).toBe(true);
   });
   it("refuses escapes and CI config", () => {
     for (const p of ["../etc/passwd", "/abs.ts", "src/../../x", ".github/workflows/ci.yml", "a b.ts", "a\tb.ts", "a.ts\n", "src/a\\b.ts", "src/a?.ts", ""]) expect(SAFE_PATH.test(p)).toBe(false);
   });
-  it("refuses env and dev vars basenames at any depth regardless of case", () => {
-    for (const name of [".env", ".env.local", ".ENV.Production", ".dev.vars", ".DeV.VaRs.local"]) {
-      for (const prefix of ["", "server/", "packages/app/"]) expect(SAFE_PATH.test(prefix + name)).toBe(false);
+  it("refuses env, dev vars and direnv basenames at any depth regardless of case", () => {
+    for (const name of [".env", ".env.local", ".ENV.Production", ".dev.vars", ".DeV.VaRs.local", ".direnv", ".DiReNv", ".direnv.local", ".DiReNv.local"]) {
+      for (const prefix of ["", "server/", "packages/app/"]) {
+        expect(SAFE_PATH.test(prefix + name)).toBe(false);
+        expect(SAFE_PATH.test(prefix + name + "/config")).toBe(false);
+      }
     }
   });
   it("refuses git and github segments at any depth regardless of case", () => {
