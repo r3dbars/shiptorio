@@ -1,7 +1,8 @@
 import { isAllowed, readSessionDetails } from "./session";
+import { ipSubject } from "./rate-limit";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; sessionHash?: string; userId?: number }
+export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; rateSubject?: string; sessionHash?: string; userId?: number }
 
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
@@ -24,7 +25,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
     if (!preview) return null;
     expiresAt = Math.min(expiresAt, preview.expiresAt);
   }
-  const auth: BrowserSocketAuth = { login: session.login, expiresAt, epoch: await browserSocketEpoch(env) };
+  const auth: BrowserSocketAuth = { rateSubject: ipSubject(request), login: session.login, expiresAt, epoch: await browserSocketEpoch(env) };
   if (session.ref) {
     auth.userId = session.ref.uid;
     auth.sessionHash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(session.ref.sid)))].map(b => b.toString(16).padStart(2, "0")).join("");
