@@ -790,17 +790,24 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put("state", this.state);
   }
 
+  private broadcastQueue: Promise<void> = Promise.resolve();
+
   private broadcast(msg: ServerToWeb) {
     const text = JSON.stringify(msg);
-    for (const ws of this.ctx.getWebSockets("web")) {
-      try {
-        if (!browserSocketAllowed(ws.deserializeAttachment(), this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); continue; }
-        ws.send(text);
-      } catch {
-        // Legacy/unattached sockets reconnect through the authenticated upgrade.
-        try { ws.close(1008, "Sign in again"); } catch { /* Already gone. */ }
+    const repo = this.meta?.repo ?? this.state?.repo;
+    const deliver = async () => {
+      for (const ws of this.ctx.getWebSockets("web")) {
+        try {
+          const auth = ws.deserializeAttachment();
+          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !await repoAccess(this.env, auth, repo)) { ws.close(1008, "Repository access revoked"); continue; }
+          ws.send(text);
+        } catch { try { ws.close(1008, "Sign in again"); } catch {} }
       }
-    }
+    };
+    const delivery = this.broadcastQueue.then(deliver);
+    this.broadcastQueue = delivery.catch(() => {});
+    this.ctx.waitUntil?.(delivery);
+    return delivery;
   }
 
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
@@ -881,7 +888,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
-    this.broadcast({ type: "patch", patch: p });
+    await this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();
   }
 
@@ -1488,10 +1495,16 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    await this.broadcastQueue;
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    try { await this.handleBrowserMessage(ws, raw); }
+    finally { await this.broadcastQueue; }
+  }
+
+  private async handleBrowserMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }

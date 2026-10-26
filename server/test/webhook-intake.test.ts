@@ -10,7 +10,7 @@ const { default: app } = await import("../src/index");
 
 it("runner transport authenticates independently without opening the preview or other repos", async () => {
   let claims = 0;
-  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", FACTORY: { idFromName: (repo: string) => repo, get: () => ({ isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
+  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1 }) }) }) }, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
   const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", expires: Date.now() + 10000 });
   const send = (repo: string, bearer = token) => app.fetch(new Request(`https://shiptorio.com/api/runner/${repo}/claim`, { method: "POST", headers: { authorization: `Bearer ${bearer}` }, body: JSON.stringify({ harnesses: ["codex"] }) }), env as never);
   expect((await send("r3dbars/shiptorio", "forged")).status).toBe(401);

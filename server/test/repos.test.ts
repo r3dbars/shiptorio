@@ -1,3 +1,4 @@
+import { authorizedDB, membershipCache } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { makeSessionCookie } from "../src/session";
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
@@ -15,7 +16,7 @@ test("installed repo cards keep legacy fields, expose their full name, and omit 
   const rows = [{ full_name: "r3dbars/shiptorio", installation_id: 123, default_branch: "main" }, { full_name: "r3dbars/other", installation_id: 123, default_branch: null }];
   let reads = 0;
   const env = { APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars", DB: { prepare(sql: string) { expect(sql).toBe("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name"); return { all: async () => { reads++; return { results: rows }; } }; } } };
-  const response = await app.fetch(new Request("https://shiptorio.com/api/repos", { headers: { cookie: await cookie("r3dbars") } }), env as never);
+  const response = await app.fetch(new Request("https://shiptorio.com/api/repos", { headers: { cookie: await cookie("r3dbars") } }), { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never);
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ repos: [
     { ...rows[0], fullName: "r3dbars/shiptorio", blurb: "Default branch: main" },
@@ -30,7 +31,7 @@ test("preview access alone, disallowed logins, and sessions without preview acce
   const env = { APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars", DB: { prepare() { reads++; throw new Error("Unauthorized database read"); } } };
   const preview = (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
   for (const header of ["", preview, await cookie("someone-else"), await cookie("r3dbars", false)]) {
-    const response = await app.fetch(new Request("https://shiptorio.com/api/repos", { headers: { cookie: header } }), env as never);
+    const response = await app.fetch(new Request("https://shiptorio.com/api/repos", { headers: { cookie: header } }), { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never);
     expect(response.status).toBe(401);
   }
   expect(reads).toBe(0);

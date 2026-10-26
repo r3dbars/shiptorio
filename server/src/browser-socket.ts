@@ -1,7 +1,7 @@
 import { isAllowed, readSessionDetails } from "./session";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string }
+export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; repo?: string }
 
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
