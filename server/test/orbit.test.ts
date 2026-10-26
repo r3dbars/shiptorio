@@ -87,7 +87,7 @@ describe("orbit watch in the Factory", () => {
       async setAlarm(v: number) { alarm = v; },
     };
     const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-    const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+    const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
     return { f, data, events, saved: () => data.get("state") as FactoryState, book: () => data.get("permits") as PermitBook };
   };
   const permitted = () => {

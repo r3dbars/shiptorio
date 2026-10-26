@@ -1,3 +1,4 @@
+import "./RunnerConnection.css";
 import { useEffect, useState } from "react";
 interface RunnerStatus { paired: boolean; online: boolean; seenAt: number | null; harnesses: string[]; lastJob: { id: string; status: string } | null }
 export function RunnerConnection({ repo }: { repo: string }) {

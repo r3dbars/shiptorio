@@ -162,7 +162,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (progressing && state) prog.open(deck.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : cfg.kind === "live" && new URLSearchParams(location.search).has("connect") ? "power" : null));
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
 
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
@@ -303,6 +303,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ))}
     </div>
   );
+
+  useEffect(() => {
+    if (cfg.kind === "live" && new URLSearchParams(location.search).has("connect")) setSheet("power");
+  }, [cfg.kind, cfg.repo]);
 
   const settings = (
     <>
