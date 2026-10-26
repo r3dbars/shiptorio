@@ -797,7 +797,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
       const loaded = await loadFactoryState(this.ctx.storage);
-      this.state = loaded;
+      if (loaded) {
+        const { schemaVersion: _version, ...wireState } = loaded;
+        this.state = wireState;
+      }
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
       // A job in flight dies with the instance; put its item back in the queue.
       if (this.state) {

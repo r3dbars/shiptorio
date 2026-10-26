@@ -24,7 +24,7 @@ export const stateMigrations: ReadonlyArray<(s: StoredFactoryState) => void> = [
 export function migrateFactoryState(raw: unknown): StoredFactoryState {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid stored factory state");
   const value = raw as Record<string, unknown>;
-  const version = value.schemaVersion ?? 0;
+  const version = Object.hasOwn(value, "schemaVersion") ? value.schemaVersion : 0;
   if (!Number.isInteger(version) || (version as number) < 0 || (version as number) > STATE_SCHEMA_VERSION)
     throw new Error(`Unsupported factory schema version: ${version}`);
   // Validate before changing anything. Keep unknown fields for forward-compatible deploys.

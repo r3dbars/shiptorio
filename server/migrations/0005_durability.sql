@@ -7,7 +7,7 @@ WHEN NEW.updated_at = '' BEGIN
   UPDATE installations SET updated_at = NEW.created_at WHERE id = NEW.id;
 END;
 CREATE TRIGGER installations_update_timestamp AFTER UPDATE ON installations
-WHEN NEW.updated_at = OLD.updated_at BEGIN
+WHEN NEW.updated_at = OLD.updated_at AND NEW.updated_at <> datetime('now') BEGIN
   UPDATE installations SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
@@ -24,7 +24,7 @@ DROP TABLE repos;
 ALTER TABLE repos_durable RENAME TO repos;
 CREATE INDEX repos_installation ON repos(installation_id);
 CREATE TRIGGER repos_update_timestamp AFTER UPDATE ON repos
-WHEN NEW.updated_at = OLD.updated_at BEGIN
+WHEN NEW.updated_at = OLD.updated_at AND NEW.updated_at <> datetime('now') BEGIN
   UPDATE repos SET updated_at = datetime('now') WHERE full_name = NEW.full_name;
 END;
 
@@ -35,7 +35,7 @@ WHEN NEW.created_at = '' BEGIN
   UPDATE pull_requests SET created_at = NEW.updated_at WHERE repo = NEW.repo AND number = NEW.number;
 END;
 CREATE TRIGGER pull_requests_update_timestamp AFTER UPDATE ON pull_requests
-WHEN NEW.updated_at = OLD.updated_at BEGIN
+WHEN NEW.updated_at = OLD.updated_at AND NEW.updated_at <> datetime('now') BEGIN
   UPDATE pull_requests SET updated_at = datetime('now') WHERE repo = NEW.repo AND number = NEW.number;
 END;
 -- Existing PK and head index cover lookup by repo/number and repo/head_sha.

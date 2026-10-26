@@ -38,9 +38,9 @@ describe("persisted factory schema", () => {
     });
   }
   it("refuses future, malformed and negative versions without overwriting evidence", async () => {
-    for (const raw of [{...original, schemaVersion: 999}, {...original, schemaVersion: -1}, {...original, schemaVersion: "1"}, {...original, items: null}]) {
+    for (const raw of [{...original, schemaVersion: 999}, {...original, schemaVersion: null}, {...original, schemaVersion: -1}, {...original, schemaVersion: "1"}, {...original, items: null}]) {
       const f = stateStorage(raw);
-      expect(loadFactoryState(f.storage)).rejects.toThrow();
+      await expect(loadFactoryState(f.storage)).rejects.toThrow();
       expect(f.rows.get("state")).toEqual(raw);
     }
   });

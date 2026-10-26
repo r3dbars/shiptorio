@@ -1,10 +1,12 @@
-# Durability work (goal 8)
+# Durability checkpoint (goal 8)
 
-Owner: `codex/data-durability`. Oct 26 checkpoint: preserve the first real factory loop across deploys.
+`codex/data-durability` / PR #157, Oct 26 first real-factory loop checkpoint.
 
-- Server-only persisted state version, ordered load migrations, past-state fixtures.
-- Owner-only factory JSON export; D1 backup and local restore drill in `ops.md`.
-- D1 migration number will be assigned after checking the auth users/sessions work and latest main.
-- No shared wire-model or web edits; no new Cloudflare resources.
-
-This PR is in progress. See its final description and ops runbook for verified results.
+- Auth PR #160 owns `0004_accounts`; durability follows with `0005_durability` and does not rebuild
+  account tables. Core upserts preserve creation times instead of replacing parent installations.
+- Server-only stored `schemaVersion`, ordered atomic migrations, fixtures, bounded thought history,
+  chunked large-state writes, measured owner export. Shared/browser protocol and web lane unchanged.
+- Backup/restore procedures and the local real-Wrangler/workerd drill: [ops.md](ops.md).
+- Verified local drill: 402,041-byte Unicode state exported, restored into a separate local DO store,
+  then loaded after process restart; D1 export/import rows equal, FK check empty, quick check OK.
+- No Cloudflare resource created, no production restore performed, no automatic backup schedule added.
