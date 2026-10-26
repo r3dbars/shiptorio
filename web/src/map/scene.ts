@@ -29,7 +29,7 @@ import {
   type Built,
 } from "./itemlab";
 import { buildDrone, type DroneMode } from "./drone";
-import { makeDistrict, makeIsland, makeWaterfall } from "./models";
+import { islandDepth, makeDistrict, makeFloater, makeIsland, makeWaterfall } from "./models";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
 
@@ -239,8 +239,8 @@ export class FactoryScene {
   private readonly paths = new Map<string, Path>(); // "from>to" and "rework:inspector>assembler"
   private readonly labels = new Set<Label>();
   private beltTextures: THREE.Texture[] = [];
-  private waterTextures: THREE.Texture[] = [];
-  private rocks: { r: THREE.Mesh; y: number; k: number }[] = [];
+  private waterfalls: ((dt: number, t: number) => void)[] = [];
+  private rocks: { r: THREE.Object3D; y: number; k: number }[] = [];
   private readonly launched = new Set<string>();
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
@@ -287,6 +287,10 @@ export class FactoryScene {
     this.scene.background = new THREE.Color(PALETTE.void);
 
     this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
+    // cool bounce light from below, so the island's rock underside keeps its facets
+    const under = new THREE.DirectionalLight(0x9fb2ff, 0.45 * LEGACY_LIGHT);
+    under.position.set(10, -6, 14);
+    this.scene.add(under);
     this.sun.castShadow = true;
     // phones and low-end machines get a smaller shadow map; the pixel pass hides the difference
     const small = window.matchMedia?.("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
@@ -466,7 +470,7 @@ export class FactoryScene {
     for (const d of this.districts.values()) this.dropLabel(d.label);
     this.districts.clear();
     this.world.clear();
-    this.waterTextures = [];
+    this.waterfalls = [];
     this.rocks = [];
     this.rising = [];
 
@@ -504,19 +508,18 @@ export class FactoryScene {
     const island = makeIsland(w, d);
     island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     this.world.add(island);
-    this.waterTextures.push(makeWaterfall(this.world, x0 + w * 0.72, z1 + 0.06, 0, 1.4));
-    this.waterTextures.push(makeWaterfall(this.world, x1 + 0.06, z0 + d * 0.4, Math.PI / 2, 1.2));
-    for (let i = 0; i < 9; i++) {
-      const r = mesh(
-        new THREE.DodecahedronGeometry(0.4 + rnd() * 0.9, 0),
-        mat(0x2f3760),
-        x0 - 3 + rnd() * (w + 6),
-        -6 - rnd() * 8,
-        z0 - 3 + rnd() * (d + 6),
-        this.world,
-      );
-      this.rocks.push({ r, y: r.position.y, k: rnd() * 6 });
-    }
+    // waterfalls sit just past the moss cap's bulge and fall a bit past the rock's tip
+    const fall = islandDepth(w, d) * 0.9;
+    this.waterfalls.push(makeWaterfall(this.world, x0 + w * 0.72, z1 + 0.6 + d * 0.025, 0, 1.4, fall));
+    this.waterfalls.push(makeWaterfall(this.world, x1 + 0.6 + w * 0.025, z0 + d * 0.4, Math.PI / 2, 1.2, fall * 0.8));
+    // mossy chunks floating around the island, kept clear of its footprint
+    const spots = [[-1, 0.7], [1.06, 0.9], [-0.9, -0.8], [0.8, -1.1], [0.1, 1.25], [-1.15, -0.1]];
+    spots.forEach(([fx, fz], i) => {
+      const r = makeFloater(0.6 + ((i * 37) % 5) * 0.15, 31 + i);
+      r.position.set((x0 + x1) / 2 + fx * (w / 2 + 3), -2 - ((i * 53) % 7) * 1.1, (z0 + z1) / 2 + fz * (d / 2 + 3));
+      this.world.add(r);
+      this.rocks.push({ r, y: r.position.y, k: i * 1.3 });
+    });
 
     Object.assign(this.bounds, { x0, x1, z0, z1 });
     const half = Math.max(w, d) / 2 + 6;
@@ -1039,7 +1042,7 @@ export class FactoryScene {
     }
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
-    for (const w of this.waterTextures) w.offset.y += dt * 1.6;
+    for (const w of this.waterfalls) w(dt, t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);

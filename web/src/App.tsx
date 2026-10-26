@@ -11,6 +11,7 @@ import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
+import { Coach, useTutorial } from "./ui/tutorial";
 import { useFactorySound } from "./sound/useFactorySound";
 
 const STATE_LABEL: Record<Item["state"], string> = {
@@ -34,9 +35,6 @@ const SLOTS = [
 ] as const;
 // science packs by item kind (shared SCIENCE_FOR)
 const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "tests" } as const;
-
-// HUD pieces by concept, so the first-run tour can reveal them one at a time (docs/VISION.md).
-type HudPart = "score" | "autonomy" | "science" | "power" | "line" | "log" | "launch" | "build" | "scenarios" | "labels" | "checkin";
 
 function fmtLead(ms?: number) {
   if (ms === undefined) return "–";
@@ -77,7 +75,9 @@ export function App() {
   const cfg = useMemo(() => readConfig(), []);
   const { state, log, status, send } = useFactory(cfg);
   const caption = useCaption(log);
-  const show = (_part: HudPart) => true; // every piece, until the tour decides otherwise
+  // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
+  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
+  const { show } = tour;
   const [panel, setPanel] = useState<string | null>(null);
   // ?checkin opens the deck on load, the way a phone check-in would.
   const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
@@ -116,15 +116,15 @@ export function App() {
   const toggleSheet = (s: "line" | "power") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
-  const keys = useRef({ launch, build });
-  keys.current = { launch, build };
+  const keys = useRef({ launch, build, show });
+  keys.current = { launch, build, show };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
-      else if (k === "b") keys.current.launch();
-      else if (k === "a") keys.current.build();
+      else if (k === "b" && keys.current.show("launch")) keys.current.launch();
+      else if (k === "a" && keys.current.show("build")) keys.current.build();
       else if (k === "escape") {
         setTray(false);
         setSheet(null);
@@ -239,6 +239,12 @@ export function App() {
             <Icon name="bell" size={20} />
           </button>
         </header>
+
+        {tour.lesson && (
+          <section className="card coachcard" aria-label="Tour">
+            <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? "your repo"} onDismiss={tour.dismiss} onSkip={tour.skip} />
+          </section>
+        )}
 
         {checkin ? (
           <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
@@ -359,7 +365,7 @@ export function App() {
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
 
-        <div className={`card caption${caption.on ? " on" : ""}`} role="status" aria-live="polite">
+        <div className={`card caption${caption.on ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>
           <div className="psub">{caption.sub}</div>
         </div>
