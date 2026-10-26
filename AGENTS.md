@@ -7,6 +7,11 @@ before you change anything.
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**
 
+**Product spec: [`docs/PRODUCT.md`](docs/PRODUCT.md).** How Muse Spark runs the factory as the Foreman
+agent: the core loop, the bottleneck engine and Next Move card, Spark's tools by trust tier, what the
+player decides vs Spark, launch permits, the real metrics behind the score, onboarding, and hackathon
+scope. It wins over PLAN.md / ARCHITECTURE.md on product behavior.
+
 ## What Shiptorio is
 
 Shiptorio turns a codebase into a Factorio-style factory. User feedback is the ore,
