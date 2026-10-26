@@ -30,7 +30,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # Live smoke: the new commit is what shiptorio.com serves, and the password gate still holds.
+      # Live smoke: the new commit is what shiptorio.com serves, the landing page is public, and the app gate still holds.
       - name: Live smoke
         run: |
           for i in $(seq 1 12); do
@@ -39,8 +39,10 @@ jobs:
             echo "live commit '$live', waiting for $GITHUB_SHA"; sleep 5
           done
           [ "$live" = "$GITHUB_SHA" ] || { echo "::error::shiptorio.com is not serving $GITHUB_SHA"; exit 1; }
-          gate=$(curl -s -o /dev/null -w '%{http_code}' https://shiptorio.com/)
-          [ "$gate" = "401" ] || { echo "::error::password gate returned $gate, expected 401"; exit 1; }
+          landing=$(curl -s -o /dev/null -w '%{http_code}' https://shiptorio.com/)
+          [ "$landing" = "200" ] || { echo "::error::landing page returned $landing, expected 200"; exit 1; }
+          gate=$(curl -s -o /dev/null -w '%{http_code}' https://shiptorio.com/app)
+          [ "$gate" = "401" ] || { echo "::error::app gate returned $gate, expected 401"; exit 1; }
           http=$(curl -s -o /dev/null -w '%{http_code}' http://shiptorio.com/)
           [ "$http" = "308" ] || [ "$http" = "301" ] || { echo "::error::http:// returned $http, expected a redirect to https"; exit 1; }
-          echo "Live: $live, gate 401, http $http"
+          echo "Live: $live, landing 200, app gate 401, http $http"
