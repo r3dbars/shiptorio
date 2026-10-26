@@ -33,7 +33,7 @@ export function stuckItem(item: Item, since: number, now: number): { item: Item;
   const reason = `stuck at ${item.state}`;
   const scar = { station: 'custom' as const, reason, strike: 1, at: now, evidenceUrl: item.prUrl };
   return {
-    item: { ...item, failure: reason, scars: [...(item.scars ?? []), scar] },
+    item: { ...item, failure: reason, scars: item.scars?.some(s => s.reason === reason && (s.at ?? 0) >= since) ? item.scars : [...(item.scars ?? []), scar] },
     move: { id: `stuck:${item.id}:${since}`, itemId: item.id, title: `${item.title}: ${reason}`, why: 'This work exceeded its waiting limit. Check the worker or PR before approving another attempt.', stage: item.state === 'on_pad' || item.state === 'passed' ? 'pad' : 'inspect', kind: 'unblock', url: item.prUrl ?? item.url, createdAt: now,
       options: [{ id: 'later', label: 'Look later', recommended: true, actions: [] }] },
   };

@@ -30,11 +30,11 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   return retry("Spark completion", async () => {
-  const res = await fetch(`${base}/chat/completions`, {
-    method: "POST",
-    signal: AbortSignal.timeout(90000),
-    headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: sparkModel(env), messages, reasoning_effort: effort }),
+    const res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      signal: AbortSignal.timeout(90000),
+      headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: sparkModel(env), messages, reasoning_effort: effort }),
   });
   if (!res.ok) throw new OutboundError(res.status);
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };

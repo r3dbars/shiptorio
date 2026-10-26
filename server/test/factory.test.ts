@@ -30,7 +30,7 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
   const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
   const factory = new Factory(ctx as never, env as never);
-  return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
+  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
@@ -46,7 +46,7 @@ describe("Factory lifecycle", () => {
     let onFeedbackRead: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
+      if (/\/comments\?per_page=100&page=/.test(url) && !url.includes("/issues/1/comments?")) return Response.json([]);
       if (url.endsWith("/comments")) return Response.json({ id: 1 });
       const json = (value: unknown) => Response.json(value);
       if (url.endsWith("/access_tokens")) return json({ token: "fake-install-token" });
@@ -287,6 +287,8 @@ it('watchdog survives restart, offers one scar/card, and alarm always recovers f
   (broken as unknown as { pollPostHog: () => Promise<void> }).pollPostHog = async () => { throw new Error('one bad poll'); };
   await broken.alarm();
   expect(f.data.has('reliabilityFailure:pollPostHog')).toBe(true);
+  expect(f.alarm()).toBeGreaterThan(Date.now());
+  expect(f.alarm()).toBeLessThanOrEqual(Date.now() + 60000);
   expect(f.saved().deck?.some(m => m.id === 'reliability:pollPostHog')).toBe(true);
 });
 
@@ -320,6 +322,8 @@ it('exhausted deliveries leave a durable dead letter and player card while later
   expect(f.data.has('delivery:broken')).toBe(false);
   expect(f.saved().deck?.some(m => m.id === 'failed:delivery:broken')).toBe(true);
   expect(healthy).toBe(1);
+  await f.factory.enqueueGitHub('broken', 'bad', {});
+  expect(f.data.has('delivery:broken')).toBe(false);
 });
 
 it('reconciliation repairs missed merge, close, moved head and check-run events independently', async () => {
@@ -350,4 +354,17 @@ it('reconciliation repairs missed merge, close, moved head and check-run events 
     await (f.factory as unknown as { reconcileGitHub: () => Promise<void> }).reconcileGitHub();
     expect(f.saved().science.red).toBe(1);
   } finally { globalThis.fetch = original; }
+});
+
+
+it('does not retry a durable delivery before its persisted backoff deadline', async () => {
+  const f = fixture();
+  let calls = 0;
+  (f.factory as unknown as { handleGitHub: () => Promise<void> }).handleGitHub = async () => { calls++; throw new Error('unavailable'); };
+  await f.factory.enqueueGitHub('backoff', 'bad', {});
+  await f.factory.alarm();
+  await f.factory.alarm();
+  expect(calls).toBe(1);
+  const pending = f.data.get('delivery:backoff') as { nextAt: number };
+  expect(pending.nextAt).toBeGreaterThan(Date.now());
 });

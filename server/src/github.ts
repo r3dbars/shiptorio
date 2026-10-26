@@ -88,28 +88,29 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
   }
   const request = async () => {
-  if (marker) {
-    for (let page = 1; ; page++) {
-      const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
-      const existing = comments.find(c => c.body?.includes(marker!));
-      if (existing) return existing as T;
-      if (comments.length < 100) break;
+    if (marker) {
+      for (let page = 1; ; page++) {
+        if (page > 20) throw new OutboundError(409); // do not post if duplicate history cannot be checked within budget
+        const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
+        const existing = comments.find(c => c.body?.includes(marker!));
+        if (existing) return existing as T;
+        if (comments.length < 100) break;
+      }
     }
-  }
-  const res = await fetch(API + path, {
-    signal: AbortSignal.timeout(20000),
-    ...init,
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "user-agent": UA,
-      "x-github-api-version": "2022-11-28",
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-    },
-  });
-  if (!res.ok) throw new OutboundError(res.status);
-  return res.status === 204 ? undefined as T : res.json() as Promise<T>;
+    const res = await fetch(API + path, {
+      signal: AbortSignal.timeout(20000),
+      ...init,
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${token}`,
+        "user-agent": UA,
+        "x-github-api-version": "2022-11-28",
+        ...(init.body ? { "content-type": "application/json" } : {}),
+        ...init.headers,
+      },
+    });
+    if (!res.ok) throw new OutboundError(res.status);
+    return res.status === 204 ? undefined as T : res.json() as Promise<T>;
   };
   // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
   return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
@@ -286,12 +287,12 @@ export async function openPullRequest(
   // A crash can occur after GitHub accepts the PR but before the Factory saves it.
   // Recover the existing PR on retry rather than opening another one.
   return retry("Open pull request", async () => {
-  const owner = fullName.split("/")[0];
-  const existing = await gh<{ number: number; html_url: string }[]>(
-    `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
-  );
-  if (existing[0]) return existing[0];
-  return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+    const owner = fullName.split("/")[0];
+    const existing = await gh<{ number: number; html_url: string }[]>(
+      `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
+    );
+    if (existing[0]) return existing[0];
+    return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
   });
 }
 

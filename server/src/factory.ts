@@ -542,7 +542,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Acknowledge only after durable enqueue. No API calls, backfill or model work here. */
   async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
     const key = `delivery:${deliveryId}`;
-    if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now()) return;
+    if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
     if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0 });
     await this.scheduleTick();
   }
@@ -550,7 +550,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Same durable queue as GitHub, for the Sentry mine. `resource` is the Sentry-Hook-Resource header. */
   async enqueueSentry(deliveryId: string, resource: string, payload: SentryPayload): Promise<void> {
     const key = `delivery:sentry-${deliveryId}`;
-    if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now()) return;
+    if ((await this.ctx.storage.get<number>(`done:${key}`) ?? 0) > Date.now() || await this.ctx.storage.get(`failed:${key}`)) return;
     if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0 });
     await this.scheduleTick();
   }
@@ -570,7 +570,6 @@ export class Factory extends DurableObject<FactoryEnv> {
         }
         const id = delivery.deliveryId ?? key.slice("delivery:".length);
         await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = ? AND delivery_id = ?").bind(delivery.source ?? "github", id).run();
-        await this.ctx.storage.put(`done:${key}`, Date.now() + 7 * 86400000);
         await this.ctx.storage.delete(key);
       } catch {
         // Keep the original payload durably queued. Never log credentials or raw API bodies.
@@ -1729,8 +1728,14 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (!job) continue;
       const item = this.state.items.find(i => i.id === job.itemId);
       if (!item || item.prNumber || !["running", "completed"].includes(job.status)) continue;
-      await this.patch({ items: [{ ...item, state: "inspecting", branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, inspection: freshInspection(pr.head.sha), machineId: "ci-1", updatedAt: now }] });
-      job.status = "completed"; job.prUrl = pr.html_url; job.headSha = pr.head.sha;
+      const recovered: Item = { ...item, state: "inspecting", branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, inspection: freshInspection(pr.head.sha), machineId: "ci-1", updatedAt: now };
+      if (job.status === "running") {
+        // A discovered branch is not a supervisor receipt. Require rework/approval for lost receipts.
+        const reason = "Publication recovered, but the runner receipt was lost. Verify before another launch attempt.";
+        await this.patch({ items: [setStage(recovered, "verify", "rework", reason)] });
+        job.status = "failed"; job.error = reason;
+      } else await this.patch({ items: [recovered] });
+      job.prUrl = pr.html_url; job.headSha = pr.head.sha;
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
     }
     const candidates = this.state.items.filter(i => i.prNumber && i.state !== "launched");
@@ -1756,6 +1761,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   async alarm(): Promise<void> {
     this.batchingDecisions = true;
     try {
+    await this.load();
     await this.processDeliveries();
     if (!(await this.load())) return;
     await this.guard("pollPostHog", () => this.pollPostHog());
