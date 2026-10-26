@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { enforceRoute, geothermalGuard, localPower, looksSmall, ruleRoute, runnerPower } from "../src/geothermal";
 import { pickPower } from "../src/spark";
+import { sparkTestEnv } from "./budget-fixture";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -40,7 +41,7 @@ test("planner power pick must name an allowed plant", async () => {
   const reply = (content: unknown) => { globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] })) as unknown as typeof fetch; };
   const c = { title: docs.title, plan: "Fix the typo", files: docs.paths, plants: [{ harness: "local", name: "Geothermal", cost: "free", strength: "small" }, { harness: "codex", name: "Solar", cost: "usage", strength: "strong" }] };
   reply({ harness: "local", why: "One-line docs fix." });
-  expect(await pickPower({ META_API_KEY: "k" } as never, c)).toEqual({ harness: "local", why: "One-line docs fix." });
+  expect(await pickPower(sparkTestEnv(), c)).toEqual({ harness: "local", why: "One-line docs fix." });
   reply({ harness: "grok", why: "?" });
-  await expect(pickPower({ META_API_KEY: "k" } as never, c)).rejects.toThrow("isn't available");
+  await expect(pickPower(sparkTestEnv(), c)).rejects.toThrow("isn't available");
 });
