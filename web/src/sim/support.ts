@@ -78,10 +78,10 @@ export function simSupport(mails: SimMail[], h: SupportHooks) {
         stage: "impact", kind: "reply", focus: "ore-inbox", grows: fixed ? ["+1 CUSTOMER ANSWERED"] : [],
         plan: [fixed ? "Sends the “it's fixed” reply above, exactly as written." : "Sends the reply above, exactly as written.", "Nothing else is sent."],
         options: [
-          { id: "send", label: "Send reply", recommended: true, actions: [{ tool: "send_customer_reply", args: { ticketId: t.id, draftHash: t.draft.hash }, reason: "You read the draft and chose to send it." }] },
+          { id: "review", label: "Review full reply", recommended: true, actions: [{ tool: "review_customer_reply", args: { ticketId: t.id }, reason: "Open the full draft and destination before choosing Send." }] },
           { id: "later", label: "Edit first", recommended: false, actions: [] },
         ],
-      }, (opt) => { if (opt === "send") sendReply(t.id, t.draft!.hash); }));
+      }, () => {}));
     }
     if (t.triage?.kind === "bug" && !t.triage.linkedItemId && !t.issue && t.state !== "closed") {
       ids.push(h.propose({
