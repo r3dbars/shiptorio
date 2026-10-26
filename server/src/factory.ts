@@ -27,8 +27,6 @@ import {
   WebToServer,
   emptyResearch,
   fallbackExperiment,
-  type FunnelDay,
-  type FunnelStep,
   insertCheck,
   researchBlocked,
   suggestResearch,
@@ -36,6 +34,7 @@ import {
   TECHS,
   type Belt,
   type FactoryState,
+  type FunnelWindow,
   type Item,
   type Machine,
   type Move,
@@ -52,7 +51,7 @@ import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest,
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
-import { emptyBrain, recordThought } from "./brain";
+import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
 import { foldSignal, matchDistrict } from "./ore";
@@ -64,8 +63,8 @@ import { buildDeck, moveScope, enrichMove } from "./deck";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
-import { analyze, fakeFunnelDays, fakePostHogRows, fetchFunnelDays, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
-import { experimentSignal, funnelFromTraffic, growthTick, MEASURE_ID, measureMachine, newExperiment, stepsToQuery } from "./growth";
+import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
+import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
@@ -310,6 +309,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // Locked ship cards keep "run the missing check" on top; Spark can't talk a merge past the gauntlet.
       if (pick && !m.locked) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
       if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
+      // The why line only describes the option Spark picked, so a locked card keeps its own reason.
+      if (call.because[m.id] && !m.locked) move = { ...move, because: call.because[m.id] };
       return move;
     });
   }
@@ -611,12 +612,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
+      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.accountPut(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-        }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
@@ -1112,7 +1113,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut("posthogPoll", { nextAt: now + pollDelay(POLL_MS), failures: 0 });
       await this.accountPut("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
-      await this.growthPoll(rows, now, (step) => (fake ? Promise.resolve(fakeFunnelDays(now, step)) : fetchFunnelDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! }, step)));
+      await this.growthPoll(rows, creds.keyEvent || "$pageview", now);
       const top = traffic.slice(0, 3).map((t) => `${t.route} ${t.usersPerDay}/day`).join(", ");
       const status = this.state!.sources?.find((source) => source.kind === "posthog") ?? (await this.mineStatus("posthog"));
       await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "connected", detail: top ? `Busiest routes: ${top}.` : status.detail, lastEventAt: status.lastEventAt ?? now }] });
@@ -1126,25 +1127,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   /** The growth loop (server/src/growth.ts): measure launched experiments, and turn a funnel drop into a new one. */
-  private async growthPoll(rows: RouteDay[], now: number, funnel: (step: FunnelStep) => Promise<FunnelDay[]>): Promise<void> {
+  private async growthPoll(rows: RouteDay[], keyEvent: string, now: number, windows: FunnelWindow[] = []): Promise<void> {
     const s = this.state!;
-    // traffic rows only pick the step to watch; conversion always comes from a per-person funnel query
-    const watch = funnelFromTraffic(rows);
-    const funnels = new Map<string, FunnelDay[]>();
-    for (const step of stepsToQuery(s.experiments ?? [], watch)) {
-      try { funnels.set(step.label, await funnel(step)); } catch (err) { this.log("warn", `PostHog funnel ${step.label} didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Measuring waits for the next poll.`); }
-    }
-    const tick = growthTick(s.experiments ?? [], s.items, funnels, now, watch);
+    const users = routeUsers(rows, keyEvent); // Traffic context, not an ordered funnel.
+    // The route poll cannot supply unique-person cohort conversions. A future
+    // authorized funnel query must provide these windows before live growth runs.
+    if (!(await flagEnabled(this.env, "newFeatures")) || !windows.length) return;
+    const tick = growthTick(s.experiments ?? [], s.items, windows, now);
     if (tick.changed) await this.patch({ experiments: tick.experiments });
     for (const exp of tick.decided) {
       // the call is plain math (shared/src/growth.ts), so it goes in the floor log, not the planner's decision log
-      this.log(exp.state === "won" ? "success" : exp.state === "lost" ? "warn" : "info", `Measure station: ${exp.line}${exp.state === "inconclusive" ? "" : ` (p = ${(exp.p ?? 1).toFixed(3)})`}`, exp.itemId);
+      this.log(exp.state === "won" ? "success" : exp.state === "lost" ? "warn" : "info", `Measure station: ${exp.line} (p = ${(exp.p ?? 1).toFixed(3)})`, exp.itemId);
     }
     const drop = tick.drop;
     if (!drop) return;
     const districts = s.districts.map((d) => d.name);
     const fallback = () => ({ ...fallbackExperiment(drop), district: districts[0] ?? "/", reason: "A fixed rule picked the experiment." });
-    const busiestRoutes = [...new Set(rows.map((r) => r.route))].slice(0, 20);
+    const busiestRoutes = [...new Set(users.map((u) => u.route))].slice(0, 20);
     const pick = !sparkConfigured(this.env)
       ? fallback()
       : await this.think("growth", { title: `${drop.step.label} −${drop.dropPct}%`, target: "ore-posthog" },
@@ -1503,7 +1502,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
         const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
         const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
-        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book) };
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book), brain: scoreShip(s.brain, launched.id) };
         next.stations = liveStations(next, now);
         await tx.put("state", next);
         await tx.put("permits", book);
@@ -1515,7 +1514,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     if (!committed) return;
     const { next, launched, auto } = committed;
-    this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations } });
+    this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations, brain: next.brain } });
     await this.scheduleOrbitDeadline();
     await this.refreshDecisions();
     this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);

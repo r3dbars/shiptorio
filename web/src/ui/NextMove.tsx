@@ -1,9 +1,10 @@
 // The Next Move card: the one thing holding the factory back, and the ask about it.
 // Above the dock, always one card at a time (docs/PRODUCT.md). The recommended option says "Suggested".
 
+import { because } from "./because";
 import type { Bottleneck, Move, Station, WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
-import { NEXT_MOVE, STAGE_LABEL, WORDS } from "../copy";
+import { NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { Icon } from "./icons";
 
 interface Props {
@@ -46,6 +47,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
       </div>
       <div className="nm-title">{move.title}</div>
       <p className="nm-why">{move.why}</p>
+      {because(move) && <p className="why-line"><b>{THINKS.why}</b> {because(move)}</p>}
       {!!move.plan?.length && (
         <details className="nm-plan">
           <summary>{NEXT_MOVE.plan}</summary>
