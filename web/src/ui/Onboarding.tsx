@@ -206,9 +206,11 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
           </>
         )}
       </section>
-      <a className="ob-skip" href="?source=sim&scenario=quiet-morning">
-        {ONBOARD.skip}
-      </a>
+      <nav aria-label="Skip">
+        <a className="ob-skip" href="?source=sim&scenario=quiet-morning">
+          {ONBOARD.skip}
+        </a>
+      </nav>
     </div>
   );
 }
