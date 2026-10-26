@@ -300,7 +300,7 @@ async function requestScope(c: Context<AppEnv>): Promise<CredentialScope | null>
   const repo = c.req.query("repo")?.toLowerCase();
   if (!user || !repo || !validRepo(repo) || !(await repoAccess(c.env, user, repo))) return null;
   const row = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
-  return row?.installation_id ? { installationId: row.installation_id, repo, repoId: row.repo_id, user: String(user.id) } : null;
+  return row?.installation_id && Number.isSafeInteger(row.repo_id) && row.repo_id > 0 ? { installationId: row.installation_id, repo, repoId: row.repo_id, user: String(user.id) } : null;
 }
 
 app.get("/api/setup/status", async (c) => {
@@ -415,7 +415,9 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (field("action") === "revoke") {
     await revokeCreds(c.env, kind, scope);
-    await (await factory(c.env, repo)).disconnectMine(kind);
+    const f = await factory(c.env, repo, scope.repoId);
+    await f.setRepositoryId(scope.repoId!);
+    await f.disconnectMine(kind);
     return c.html(connectPage({ kind, repo, connected: false, webhookUrl, revoked: true }));
   }
   const { connected, workerOverride } = await credentialStatus(c.env, kind, scope);
@@ -434,8 +436,10 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, scope);
   }
   // Plug it straight into the map it came from.
-  await (await factory(c.env, repo)).ensure(repo, scope.installationId);
-  await (await factory(c.env, repo)).connectMine(kind);
+  const f = await factory(c.env, repo, scope.repoId);
+  await f.setRepositoryId(scope.repoId!);
+  await f.ensure(repo, scope.installationId);
+  await f.connectMine(kind);
 
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
