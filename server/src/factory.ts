@@ -781,8 +781,6 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.processDeliveries();
     if (!(await this.load())) return;
     await this.planRunnerJobs();
-    await this.runGauntlet();
-    await this.offerGauntletMove();
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
     const now = Date.now();
@@ -835,6 +833,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       break;
     }
 
+    await this.runGauntlet();
+    await this.offerGauntletMove();
     await this.offerRunnerPlan();
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if (busy && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
