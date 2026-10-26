@@ -20,7 +20,7 @@ export function foldSignal(existing: Item | undefined, signal: Signal, now = Dat
     firstSeen: Math.min(previous?.firstSeen ?? signal.occurredAt, signal.occurredAt),
     lastSeen: Math.max(previous?.lastSeen ?? signal.occurredAt, signal.occurredAt),
     severity: Math.max(previous?.severity ?? 0, signal.severity),
-    usersAffected: (previous?.usersAffected ?? 0) + signal.usersAffected,
+    usersAffected: signal.usersTotal != null ? Math.max(previous?.usersAffected ?? 0, signal.usersTotal) : (previous?.usersAffected ?? 0) + signal.usersAffected,
     reporters: unique([...(previous?.reporters ?? []), ...(signal.reporters ?? []), ...(signal.reporter ? [signal.reporter] : [])]),
     linked: previous?.linked ?? [], // only Spark link_items may add judged cross-source links
     hints: unique([...(previous?.hints ?? []), ...signal.hints, ...(signal.districtHint ? [`path:${signal.districtHint}`] : [])]),
@@ -36,4 +36,18 @@ export function foldSignal(existing: Item | undefined, signal: Signal, now = Dat
     updatedAt: now, ore, value: oreWeight(ore, now),
     customer: { usersAffected: ore.usersAffected, reporters: ore.reporters, linked: ore.linked, paying: ore.paying },
   };
+}
+
+/** Where a file path or route lands on the map: the first path segment that names a district.
+ * "web/src/checkout/total.ts" → "web", "/checkout/pay" → "checkout", nothing matching → "/". */
+export function matchDistrict(hint: string | undefined, districts: string[]): string {
+  if (!hint) return "/";
+  const names = new Set(districts.map((d) => d.toLowerCase()));
+  const parts = hint.toLowerCase().replace(/^[a-z]+:\/\/[^/]*/i, "").split(/[/\\?#]/).filter(Boolean);
+  for (const part of parts) if (names.has(part)) return districts.find((d) => d.toLowerCase() === part)!;
+  for (const part of parts) {
+    const stem = part.replace(/\.[\w]+$/, "");
+    if (names.has(stem)) return districts.find((d) => d.toLowerCase() === stem)!;
+  }
+  return "/";
 }

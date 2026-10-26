@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
+import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
 import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
@@ -46,6 +47,10 @@ const PING_WORD: Record<NonNullable<Move["stage"]>, string> = {
   resources: "Needs power",
 };
 
+// What a quiet tag on a busy machine says.
+const BUSY_WORD: Partial<Record<Item["state"], string>> = { working: "Building", inspecting: "Checking", rejected: "Reworking" };
+const codePath = (district: string) => (district === "/" ? "/" : `/${district}`);
+
 const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "Advisor", floor: "Floor", build: "Build", lights_out: "Lights out" };
 // Subscriptions you can plug in. Each sign-in adds a solar plant and assemblers (docs/PRODUCT.md).
 const SLOTS = [
@@ -59,6 +64,7 @@ const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
 const WORLD_KEY = "shiptorio:world";
+const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
   try {
     const w = localStorage.getItem(WORLD_KEY);
@@ -146,7 +152,22 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     } else setPanel(k);
   };
   const met = guideMet(state, tour.learned);
-  const [seenGuide, setSeenGuide] = useState(0); // the chip glows when something new lands
+  // the guide button glows when something new lands; remembered so a returning player isn't told about all of it again
+  const [seenGuide, setSeenGuideState] = useState(() => {
+    try {
+      return Number(localStorage.getItem(GUIDE_SEEN_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  });
+  const setSeenGuide = (n: number) => {
+    setSeenGuideState(n);
+    try {
+      localStorage.setItem(GUIDE_SEEN_KEY, String(n));
+    } catch {
+      // this visit only
+    }
+  };
   const fork = world === null && !!state && state.districts.length > 0 && !tour.lesson;
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
@@ -169,9 +190,23 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (!key) return null;
     const stage = move?.stage ?? state.bottleneck?.stage;
     const title = item?.state === "rejected" ? "Sent back" : stage ? PING_WORD[stage] : "Needs you";
-    return { key, title, code: item ? (item.district === "/" ? "/" : `/${item.district}`) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
+    return { key, title, code: item ? codePath(item.district) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
+  const narrow = typeof window !== "undefined" && window.innerWidth <= 560; // phones get fewer tags
+  // Quiet tags on every other busy machine, naming the code it's working in, so the whole line reads as your codebase.
+  const pings = useMemo(() => {
+    if (!state) return [];
+    const out: Ping[] = ping ? [ping] : [];
+    for (const i of state.items) {
+      const word = i.machineId ? BUSY_WORD[i.state] : undefined;
+      const key = i.machineId && pickKey(i.machineId);
+      if (!word || !key || out.some((p) => p.key === key)) continue;
+      out.push({ key, title: word, code: codePath(i.district), quiet: true });
+      if (out.length >= (narrow ? 3 : 5)) break;
+    }
+    return out;
+  }, [state, ping, narrow]);
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
 
   const launchItem = (item: Item) => {
@@ -271,7 +306,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           wide={intro ? tourly.cam.wide : null}
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
-          ping={intro ? (tourly.ping ? ping : null) : show("line") ? ping : null}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
         />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
@@ -329,34 +364,37 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             )}
           </div>
-          {world && (
-            <div className="lens" role="group" aria-label="View">
-              <button type="button" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
-                Check in
-              </button>
-              <button type="button" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
-                Build
-              </button>
-            </div>
-          )}
-          <button
-            type="button"
-            className={`checkin-chip guide-chip${met.size > seenGuide ? " new" : ""}`}
-            onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
-            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
-          >
-            Guide · {met.size}/{GUIDE_TOTAL}
-          </button>
-          {show("checkin") && deck.length > 1 && !checkin && (
+          {!world && show("checkin") && deck.length > 1 && !checkin && (
             <button type="button" className="checkin-chip" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
               Check in · {deck.length}
             </button>
           )}
+          <button
+            type="button"
+            className={`hud-iconbtn guide-btn${met.size > seenGuide ? " new" : ""}`}
+            aria-pressed={sheet === "guide"}
+            onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
+            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
+            title={`Field guide · ${met.size}/${GUIDE_TOTAL}`}
+          >
+            <Icon name="book" size={20} />
+          </button>
           <button type="button" className="hud-iconbtn" aria-label={`Activity, ${waiting} waiting on you`} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
             {waiting > 0 && <span className="n">{waiting}</span>}
             <Icon name="bell" size={20} />
           </button>
         </header>
+
+        {world && (
+          <div className="lens" role="group" aria-label="View">
+            <button type="button" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
+              Check in{deck.length > 0 && <span className="lens-n">{deck.length}</span>}
+            </button>
+            <button type="button" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
+              Build
+            </button>
+          </div>
+        )}
 
         {tour.lesson && (
           <section className="card coachcard" aria-label="Tour">

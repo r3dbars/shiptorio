@@ -338,5 +338,5 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
     </header>
   );
 
-  return { at, cam, card, top, pick, ping: at === 2 || (at === 5 && !!caught && !done), quiet: rockets > 1 };
+  return { at, cam, card, top, pick, ping: at === 1 || at === 2 || (at === 5 && !!caught && !done), quiet: rockets > 1 };
 }

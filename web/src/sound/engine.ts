@@ -410,16 +410,29 @@ class SoundEngine {
         this.tone({ f: 660, dur: 0.05, vol: 0.08, at: t + 0.12 });
         break;
       case "launch": {
-        // 3 · 2 · 1 countdown, then ignition and a rising roar (the rocket clears the frame in ~3.4s)
+        // 3 · 2 · 1 countdown over the rocket's oxygen vent hissing, then the clamps let go, the deluge water
+        // rushes, and the engine lights. The roar opens up as it throttles, then closes down as it climbs away.
         [0, 0.22, 0.44].forEach((d) => this.tone({ f: 880, dur: 0.09, vol: 0.12, at: t + d }));
         this.tone({ f: 1760, dur: 0.18, vol: 0.13, at: t + 0.66 });
+        this.noise({ dur: 0.75, vol: 0.05, hp: 3500, at: t, attack: 0.25 });
         const ign = t + 0.7;
-        this.noise({ dur: 3.0, vol: 0.32, lp: 300, sweepTo: 2400, at: ign, rate: 0.5, attack: 0.15 });
-        this.tone({ f: 55, to: 180, dur: 2.6, type: "sawtooth", vol: 0.12, at: ign, attack: 0.2 });
+        for (let i = 0; i < 4; i++) {
+          const at = ign - 0.1 + i * 0.03;
+          this.tone({ f: 260 - i * 20, to: 120, dur: 0.07, vol: 0.1, at });
+          this.noise({ dur: 0.03, vol: 0.12, bp: 3200, at });
+        }
+        this.noise({ dur: 2.2, vol: 0.1, bp: 1600, at: ign - 0.1, attack: 0.3 });
+        this.noise({ dur: 1.5, vol: 0.32, lp: 300, sweepTo: 2400, at: ign, rate: 0.5, attack: 0.15 });
+        this.noise({ dur: 2.0, vol: 0.3, lp: 2400, sweepTo: 220, at: ign + 1.3, rate: 0.5, attack: 0.2 });
+        this.noise({ dur: 3.3, vol: 0.28, lp: 130, at: ign, rate: 0.25, attack: 0.3 }); // the rumble under it all
+        this.tone({ f: 55, to: 180, dur: 2.6, type: "sawtooth", vol: 0.1, at: ign, attack: 0.2 });
         this.noise({ dur: 0.4, vol: 0.3, lp: 800, at: ign });
-        // the kick you feel in your chest, then exhaust crackle
+        // the kick you feel in your chest, then exhaust crackle that thins out with distance
         this.tone({ f: 120, to: 32, dur: 0.6, type: "sine", vol: 0.45, at: ign });
-        for (let i = 0; i < 14; i++) this.noise({ dur: 0.03, vol: 0.12, hp: 2500, at: ign + 0.25 + Math.random() * 1.8 });
+        for (let i = 0; i < 22; i++) {
+          const k = Math.random() ** 1.6 * 2.6;
+          this.noise({ dur: 0.025, vol: 0.13 * (1 - k / 3), hp: 2500, at: ign + 0.2 + k });
+        }
         break;
       }
       case "chirp": { // Spark drone: two quick bird-like blips

@@ -5,6 +5,7 @@ import "./ship.css";
 import { SHIP_EVENT, SHIP_TIMING, type ShipEvent } from "../sound/ship";
 
 const LEVEL: Record<AutonomyLevel, string> = { advisor: "ADVISOR", floor: "FLOOR", build: "BUILD", lights_out: "LIGHTS OUT" };
+const CARD_AT_MS = SHIP_TIMING.doneMs + 200; // let the rocket clear the frame before the card arrives
 const HOLD_MS = 6500; // the card stays this long after the check lands
 
 // The check, drawn on a 9x7 grid in stroke order (short leg down, then the long leg up) so it "writes" itself in.
@@ -76,9 +77,9 @@ export function ShipCelebration({ state, quiet = false, high = false }: { state:
           const delta = Math.max(0, scoreRef.current - (baseRef.current ?? scoreRef.current));
           baseRef.current = scoreRef.current;
           setShow({ ev, phase: "shipped", delta });
-        }, SHIP_TIMING.checkMs),
+        }, CARD_AT_MS),
       );
-      timers.current.push(window.setTimeout(() => setShow(null), SHIP_TIMING.checkMs + HOLD_MS));
+      timers.current.push(window.setTimeout(() => setShow(null), CARD_AT_MS + HOLD_MS));
     };
     window.addEventListener(SHIP_EVENT, onShip);
     return () => {
