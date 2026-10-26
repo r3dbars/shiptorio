@@ -187,6 +187,10 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
   the Deploy run on `main` went green before calling it live. Don't merge drafts that are stale (#3, #4) or a PR
   another agent is still working on. GitHub's repo auto-merge setting is not on yet; Justin can flip it in
   Settings → General → "Allow auto-merge".
+- **Never merge a PR the factory built** (runner PRs from `shiptorio[bot]` / `shiptorio/runner-*` branches, or anything
+  in r3dbars/Testing) directly on GitHub. Those go through the in-game gauntlet and the Launch card, or auto-launch
+  via a launch permit. A green CI is not enough: the verify bay and AI review can still flag them (#128 got merged
+  past a verify-bay flag). The auto-merge rule above is for agent PRs only.
 - Only original art. The name leans on Factorio, so don't use any Factorio assets.
 
 ## Rules for every agent (from the plan)
