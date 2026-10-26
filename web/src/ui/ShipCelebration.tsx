@@ -38,8 +38,12 @@ function useCount(target: number, run: boolean, ms = 900) {
   return n;
 }
 
-export function ShipCelebration({ state }: { state: FactoryState | null }) {
+// quiet: the rocket and the sound still go, but no card (the welcome tour's later, automatic rockets)
+// high: the card sits up top, clear of a card at the bottom (the welcome tour)
+export function ShipCelebration({ state, quiet = false, high = false }: { state: FactoryState | null; quiet?: boolean; high?: boolean }) {
   const [show, setShow] = useState<Show | null>(null);
+  const quietRef = useRef(quiet);
+  quietRef.current = quiet;
   const score = state?.metrics?.shipScore ?? 0;
   const scoreRef = useRef(score);
   const baseRef = useRef<number | null>(null); // shipScore at the last celebration (or first sight)
@@ -54,7 +58,7 @@ export function ShipCelebration({ state }: { state: FactoryState | null }) {
     };
     const onShip = (e: Event) => {
       const ev = (e as CustomEvent<ShipEvent>).detail;
-      if (!ev) return;
+      if (!ev || quietRef.current) return;
       clear();
       const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
       setShow({ ev, phase: "countdown", delta: 0 });
@@ -99,7 +103,7 @@ export function ShipCelebration({ state }: { state: FactoryState | null }) {
   const unlocked = !!next && next.have >= next.need;
 
   return (
-    <div className={`ship-cel ${show.phase}`} aria-live="polite">
+    <div className={`ship-cel ${show.phase}${high ? " high" : ""}`} aria-live="polite">
       {shipped && (
         <div className="ship-card card" role="status" onClick={() => setShow(null)} title="Click to close">
           <div className="ship-burst" aria-hidden>

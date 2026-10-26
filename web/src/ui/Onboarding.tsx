@@ -3,7 +3,8 @@
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
 import { useEffect, useState } from "react";
-import { Intro } from "./Intro";
+import { App } from "../App";
+import type { SourceConfig } from "../source";
 
 export type OnboardStep = "hello" | "intro" | "repo";
 
@@ -20,7 +21,9 @@ const SIM_REPOS: Repo[] = [
   { fullName: "you/side-project", blurb: "Python CLI · no CI yet", issues: 0 },
 ];
 
-// The welcome intro is off until it's rebuilt in the game's own art (Justin, 2026-10-26): ?intro=1 shows it.
+// The welcome tour plays on the real map, a demo shop in the sim (ui/IntroTour.tsx). It stays off by default
+// until Justin signs off on it (2026-10-26): ?intro=1 shows it.
+const TOUR: SourceConfig = { kind: "sim", repo: "", scenario: "intro" };
 // Storage can be off (private windows), so seen fails open.
 const INTRO_ON = new URLSearchParams(location.search).get("intro") === "1";
 function introSeen() {
@@ -77,7 +80,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const at = step === "hello" ? 0 : step === "intro" ? 1 : 2;
   const valid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(typed.trim());
 
-  if (step === "intro") return <Intro login={live ? login : null} onDone={() => { markIntroSeen(); setStep("repo"); }} />;
+  if (step === "intro") return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep("repo"); }} />;
 
   return (
     <div className="onboard">

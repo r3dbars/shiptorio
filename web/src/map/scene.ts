@@ -359,7 +359,15 @@ export class FactoryScene {
     if (!this.camGoal) this.bias = this.biasFor(!!this.home);
   }
 
+  // extra lift for whatever sits at the bottom of the screen (the welcome tour's card), as a fraction of height
+  private lift = 0;
+  setLift(y: number) {
+    this.lift = y;
+    this.biasGoal = this.biasFor(!!this.home || !!this.camGoal);
+  }
+
   private biasFor(focused: boolean) {
+    if (this.lift) return { x: 0, y: this.lift };
     const phone = this.width <= 760 || this.height <= 500;
     if (!phone) return { x: 0, y: 0 };
     if (this.height <= 500 && this.width > this.height) return { x: focused ? -0.25 : 0, y: 0 }; // panel on the right
@@ -547,6 +555,18 @@ export class FactoryScene {
       this.home = null;
     }
     this.biasGoal = this.biasFor(!!this.home);
+  }
+
+  // Pull back over the whole island, eased like focus (the welcome tour's wide shots). scale > 1 sits further out.
+  overview(scale = 1) {
+    this.selected = undefined;
+    this.home = null;
+    const b = this.bounds;
+    const span = (b.x1 - b.x0) * Math.cos(YAW) + (b.z1 - b.z0) * Math.sin(YAW);
+    const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ((span * 1.1) / (this.baseViewHeight() * (this.width / this.height))) * scale));
+    this.glide = null;
+    this.camGoal = { target: new THREE.Vector3((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2 + 1), zoom };
+    this.biasGoal = this.biasFor(true);
   }
 
   // ---------- world: island, districts, scenery ----------

@@ -61,6 +61,7 @@ interface Scenario {
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
   checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
   onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
+  intro?: boolean; // the welcome tour (ui/IntroTour.tsx): fast and quiet, and the tour cues each beat
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -159,7 +160,42 @@ export const SCENARIOS = {
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
     ],
   },
+  // The welcome tour after sign-in (ui/IntroTour.tsx). A demo shop, played fast. Nothing asks: the tour's
+  // cards cue each beat (station_action "intro"), and the ore keeps coming from INTRO_ORE once the line stands.
+  intro: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    onboard: true,
+    intro: true,
+    ores: [],
+  },
 } satisfies Record<string, Scenario>;
+
+// The tour's ore, round and round: mostly docs, so a docs permit visibly drains the pile.
+const INTRO_ORE: Omit<Ore, "at">[] = [
+  { title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
+  { title: "Cart badge shows a stale count", kind: "bug", district: "cart", users: 38 },
+  { title: "Document the refund webhook", kind: "cleanup", district: "docs" },
+  { title: "Tests for webhook signatures", kind: "tests", district: "api" },
+  { title: "Update the README setup steps", kind: "cleanup", district: "docs" },
+  { title: "Saved cards at checkout", kind: "feature", district: "checkout", users: 120 },
+  { title: "Explain coupon rules in the help center", kind: "cleanup", district: "docs" },
+  { title: "Rate limit docs for the API", kind: "cleanup", district: "docs" },
+];
+const INTRO_CATCH: Omit<Ore, "at"> = {
+  title: "Coupon total off by a cent",
+  kind: "bug",
+  district: "cart",
+  users: 64,
+  failAt: "verify",
+  failFirst: "passed CI, but two coupons still round the total wrong (repro attached)",
+};
+const INTRO_SENTRY: Omit<Ore, "at">[] = [
+  { title: "TypeError: cart.total is undefined", kind: "bug", district: "checkout", source: "sentry", users: 112 },
+  { title: "RangeError in the price formatter", kind: "bug", district: "cart", source: "sentry", users: 47 },
+  { title: "Timeout on /api/orders", kind: "bug", district: "api", source: "sentry", users: 85 },
+];
+const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at most this many
 
 export type ScenarioName = keyof typeof SCENARIOS;
 
@@ -251,6 +287,7 @@ const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + 
 
 export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
+  const tickMs = sc.intro ? 450 : TICK_MS;
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
   if (repo) s.repo = repo;
@@ -331,6 +368,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "deck", deck: s.deck });
   };
   const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void) => {
+    if (sc.intro) return; // the tour's own cards do the asking
     const m: Move = { ...move, id: `move-${++seq}`, createdAt: Date.now() };
     onChoose.set(m.id, then);
     if (s.move) pending.push(m);
@@ -508,7 +546,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       return;
     }
     const item: Item = {
-      id: `sim-${s.tick}`,
+      id: `sim-${s.tick}-${++seq}`,
       kind: o.kind,
       source: o.source ?? "github_issue",
       title: o.title,
@@ -529,6 +567,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // The stage with the most value waiting, the way bottleneck.ts scores it.
   const findBottleneck = (): Bottleneck | null => {
+    // the tour: a fix the verify bay caught waits on the rework belt for your new check
+    const caught = sc.intro && s.items.find((i) => i.scars?.length && (i.state === "rejected" || i.state === "queued"));
+    if (caught) return { stage: "inspect", stationId: "verify-1", wip: 1, ageMs: 0, throughputPerHour: 0, valueAtRisk: caught.value ?? 1, summary: `the verify bay caught a bad fix in /${caught.district}` };
     if (!s.power.some((p) => p.kind !== "steam" && p.online) && s.machines.some((m) => m.type === "assembler" && !m.powerId))
       return { stage: "resources", wip: s.items.length, ageMs: 0, throughputPerHour: 0, valueAtRisk: s.items.length, summary: "No subscription plugged in, so nothing can build" };
     const live = s.items.filter((i) => i.state !== "launched");
@@ -571,6 +612,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     }
     const now = Date.now();
 
+    if (sc.intro && clock0 !== Infinity) introFeed(now);
     while (script.length && script[0].at + clock0 <= s.tick) arrive(script.shift()!, now);
 
     for (const item of [...s.items]) {
@@ -633,13 +675,17 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         }
         case "rejected":
+          if (sc.intro && !s.machines.some((x) => x.type === "turret")) continue; // waits for the tour's new check
           apply({ items: [{ ...next, state: "queued", machineId: undefined }] });
           log("info", `Rework: "${item.title}" goes back to the assemblers with its scar tag`, item.id);
           break;
-        case "on_pad":
-          if (!autoLaunch) continue;
-          launch(item);
+        case "on_pad": {
+          // a folder with a launch permit ships on its own (docs/LOOP.md)
+          const alone = permitted(item.district);
+          if (!autoLaunch && !alone) continue;
+          launch(item, alone);
           break;
+        }
       }
     }
 
@@ -702,7 +748,44 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
   }
 
-  const launch = (item: Item) => {
+  const permitted = (district: string) => !!s.autonomy?.districts.find((d) => d.district === district)?.permit;
+
+  // ---------- the welcome tour ----------
+
+  let introAt = 0; // next tick the tour drops ore
+  let introN = 0;
+  let lightsOut = false;
+  const introFeed = (now: number) => {
+    if (s.tick < introAt) return;
+    const inFlight = s.items.filter((i) => i.state !== "on_pad" && i.state !== "launched").length;
+    const atGate = s.items.filter((i) => i.state === "on_pad").length;
+    const live = inFlight + atGate;
+    // until docs can ship alone, the pile at the gate stops growing at INTRO_PILE: you get the point
+    if (inFlight >= (lightsOut ? 6 : 4) || atGate >= 8 || (!permitted("docs") && live >= INTRO_PILE)) return;
+    arrive({ at: 0, ...INTRO_ORE[introN++ % INTRO_ORE.length] }, now);
+    introAt = s.tick + (lightsOut ? 2 : 3);
+  };
+  const introCue = (cue: string) => {
+    if (cue === "build" && clock0 === Infinity) {
+      // the starter line drops in machine by machine, already plugged in, then the ore starts
+      const full = initialState({ ...sc, onboard: false });
+      const add = full.machines.filter((m) => !s.machines.some((x) => x.id === m.id));
+      add.forEach((m, n) => later(220 * n, () => apply({ machines: [m] })));
+      later(220 * add.length, () => {
+        apply({ belts: full.belts, power: full.power });
+        s.power = full.power;
+        spark({ tool: "place_machine", text: "Line's down: Claude Code on the assembler" }, { target: "assembler-1" });
+        clock0 = s.tick;
+      });
+    } else if (cue === "catch") arrive({ at: 0, ...INTRO_CATCH }, Date.now());
+    else if (cue === "lights") {
+      lightsOut = true;
+      const a = s.autonomy!;
+      apply({ autonomy: { ...a, level: "lights_out", next: null, districts: a.districts.map((d) => ({ ...d, permit: true })) } });
+    }
+  };
+
+  const launch = (item: Item, alone = false) => {
     const key = SCIENCE_FOR[item.kind];
     apply({
       items: [{ ...item, state: "launched", updatedAt: Date.now() }],
@@ -714,11 +797,19 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     record(GAUNTLET[3], true, `#${item.prNumber} merged and launched.`);
     const m = s.metrics!;
     const users = item.customer?.usersAffected ?? 0;
-    bumpMetrics({ rockets: m.rockets + 1, usersUnblocked: m.usersUnblocked + users, bitersKilled: m.bitersKilled + (item.source === "sentry" ? 1 : 0) });
+    bumpMetrics({
+      rockets: m.rockets + 1,
+      usersUnblocked: m.usersUnblocked + users,
+      bitersKilled: m.bitersKilled + (item.source === "sentry" ? 1 : 0),
+      customersAnswered: m.customersAnswered + (sc.intro && users ? 1 : 0), // the tour's fixes all had someone asking
+    });
     if (item.source === "sentry") log("success", `Biters cleared: Sentry is quiet on /${item.district}`, item.id);
     for (const to of item.customer?.reporters ?? []) askToReply(item, to);
+    // the automated share counts rockets that launched on a permit
     const a = s.autonomy!;
-    if (a.next?.level === "build") apply({ autonomy: { ...a, next: { ...a.next, have: a.next.have + 1 } } });
+    const launches = (a.launches ?? 0) + 1;
+    const automated = (Math.round((a.automated ?? 0) * (a.launches ?? 0)) + (alone ? 1 : 0)) / launches;
+    apply({ autonomy: { ...a, launches, automated, next: a.next?.level === "build" ? { ...a.next, have: a.next.have + 1 } : a.next } });
   };
 
   // ---------- clicking a station ----------
@@ -726,6 +817,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // A station panel's action, from the player. Merge actually launches; the rest is Spark
   // taking the job on, logged with undo, the way a real station action would be queued.
   const stationAction = (stationId: string, action: string) => {
+    if (sc.intro && stationId === "intro") return introCue(action);
     const def = [...GAUNTLET, ORBIT].find((g) => g.id === stationId);
     const machine = s.machines.find((m) => m.id === stationId);
     const label = def?.actions.find((a) => a.id === action)?.label ?? actionLabel(action) ?? action;
@@ -874,10 +966,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // ---------- onboarding: scan the repo, then propose the starter factory ----------
 
-  const SCAN_MS = 650;
+  const SCAN_MS = sc.intro ? 520 : 650;
   const scan = () => {
     const ds = sc.districts ?? REPO_DISTRICTS;
     const files = ds.reduce((n, d) => n + d.files, 0);
+    if (sc.intro) {
+      // the tour's island rises folder by folder, quietly
+      ds.forEach((d, n) => later(SCAN_MS * (n + 1), () => apply({ districts: ds.slice(0, n + 1) })));
+      return;
+    }
     spark({ tool: "read_repo", text: `Opening ${s.repo}: reading the tree, issues and CI`, reason: "you picked this repo" }, { target: "steam-spark" });
     ds.forEach((d, n) =>
       later(SCAN_MS * (n + 1), () => {
@@ -890,7 +987,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     later(t + SCAN_MS, () => spark({ tool: "read_ci", text: "Found GitHub Actions: that's your first inspector", reason: ".github/workflows" }));
     later(t + SCAN_MS * 2, () => {
       log("success", `Repo read: ${ds.length} districts, ${files} files, ${sc.ores.length} open issues. ${ds[0].name} carries the most risk`);
-      proposeStarter();
+      if (!sc.intro) proposeStarter();
     });
   };
 
@@ -931,7 +1028,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   if (sc.checkin) setTimeout(dealCheckIn, TICK_MS);
   if (sc.onboard) later(TICK_MS, scan);
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
-  const timer = setInterval(tick, TICK_MS);
+  const timer = setInterval(tick, tickMs);
 
   return {
     send(msg: WebToServer) {
@@ -1007,6 +1104,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             machines: [{ id, type: "ore_deposit", x: spot.x, y: spot.y, tier: 1, state: "idle" }],
             belts: splitter ? [{ id: `belt-${id}`, from: id, to: splitter.id }] : [],
           });
+// the tour: Sentry's errors start arriving right away
+          if (sc.intro && kind === "sentry") INTRO_SENTRY.forEach((o, n) => script.push({ ...o, at: s.tick - clock0 + 2 + n * 5 }));
           log("success", kind === "sentry" ? "Sentry connected: errors now arrive as ore, and biters show where they hit" : "PostHog connected: user signals now weigh what gets built first");
           break;
         }

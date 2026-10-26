@@ -23,7 +23,7 @@ const NAME: Partial<Record<Machine["type"], string>> = {
 };
 
 // first free cell near (x, y), two cells apart like the rest of the line
-function freeNear(state: FactoryState, x: number, y: number) {
+export function freeNear(state: FactoryState, x: number, y: number) {
   for (const [dx, dy] of [[0, -4], [2, -4], [-2, -4], [0, 4], [2, 4], [-2, 4], [4, -4], [4, 4]]) {
     const nx = x + dx, ny = y + dy;
     if (!state.machines.some((m) => Math.abs(m.x - nx) < 2 && Math.abs(m.y - ny) < 2)) return { x: nx, y: ny };

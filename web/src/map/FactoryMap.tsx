@@ -9,9 +9,11 @@ interface Props {
   focus?: string | null; // the picked thing the camera flies in on
   showLabels?: boolean; // all labels on; otherwise they show on hover
   ping?: Ping | null; // the pulsing marker on whatever needs you
+  wide?: number | null; // no focus: pull back over the whole island, this far out (the welcome tour)
+  lift?: number; // keep what the camera's on this much higher, as a fraction of height (a card sits below)
 }
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, ping = null }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, ping = null, wide = null, lift = 0 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -95,8 +97,13 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   useEffect(() => {
     if (state) sceneRef.current?.update(state);
   }, [state]);
-  useEffect(() => sceneRef.current?.focus(focus), [focus]);
+  useEffect(() => {
+    if (!focus && wide) sceneRef.current?.overview(wide);
+    else sceneRef.current?.focus(focus);
+    // the wide shot refits as the island grows
+  }, [focus, wide, wide && state?.districts.length, wide && state?.machines.length]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
+  useEffect(() => sceneRef.current?.setLift(lift), [lift]);
   useEffect(() => sceneRef.current?.setPing(ping), [ping?.key, ping?.title, ping?.code, ping?.tone]);
 
   return (
