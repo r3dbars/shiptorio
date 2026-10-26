@@ -81,6 +81,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
+  private credentialsReady = false;
   private redactor = new Redactor(this.env);
   private credentialScope() { return this.meta ? { installationId: this.meta.installationId, repo: this.meta.repo } : undefined; }
   private running = new Set<string>(); // item ids with a job in flight
@@ -816,10 +817,6 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!this.state) {
       this.state = (await this.ctx.storage.get<FactoryState>("state")) ?? null;
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
-      if (this.meta) {
-        await sentryCreds(this.env, this.credentialScope(), this.redactor);
-        await postHogCreds(this.env, this.credentialScope(), this.redactor);
-      }
       // A job in flight dies with the instance; put its item back in the queue.
       if (this.state) {
         for (const i of this.state.items) if (i.state === "working") i.state = "queued";
@@ -829,6 +826,11 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.state.autonomy = autonomyView(await this.permitBook());
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
+    }
+    if (this.meta && !this.credentialsReady) {
+      await sentryCreds(this.env, this.credentialScope(), this.redactor);
+      await postHogCreds(this.env, this.credentialScope(), this.redactor);
+      this.credentialsReady = true;
     }
     return this.state;
   }
