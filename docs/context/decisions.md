@@ -5,6 +5,19 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Justin authorized shipping the real agent fix: PR #62 merged and automatic Deploy
+https://github.com/r3dbars/shiptorio/actions/runs/40378192118 succeeded for
+`ad483ff985047cff5d9a2f9dc14e11e41c5a1ff8`. Its CI passed 69 tests, typecheck and
+build. Independent operator proof reproduced six baseline failures and verified the
+fix; a local Claude static review found no blocking issues. The live merge exposed an
+issue-close-before-PR-merge race that deleted the tracked item before rocket credit.
+The follow-up preserves PR-backed items, reconciles current-head CI without PR links,
+and recovers older lost items only from a completed durable job and GitHub's actual
+merged PR/issue. Duplicate completion acknowledgments reconcile receipts without
+opening another PR or awarding another rocket. Regression checks cover that ordering,
+stale-head exclusion, recovery, and duplicate acknowledgments. Automated independent
+proof/review stations and browser approval wiring remain separate next checkpoints.
+
 Real Spark-to-Codex acceptance passed on Oct 26: backend PR #61 deployed as
 `b16638cee9a436d5dcfaf6aa74b960734e8535d0` via
 https://github.com/r3dbars/shiptorio/actions/runs/40376838080. Both domains matched.
@@ -14,8 +27,8 @@ was claimed by local Codex using the existing ChatGPT sign-in. Its supervisor ch
 the two approved files, passed typecheck/tests/build and pushed commit
 `29cf937b43d4e127c348149753489471c411792e`. The installed Shiptorio App opened
 https://github.com/r3dbars/shiptorio/pull/62; GitHub CI passed:
-https://github.com/r3dbars/shiptorio/actions/runs/40377351997. The PR remains open for
-independent verification/review and human merge. This proves a real issue-to-PR path,
+https://github.com/r3dbars/shiptorio/actions/runs/40377351997. The PR was then merged
+at Justin's instruction (see the newer checkpoint above). This proves a real issue-to-PR path,
 not the complete scars/verify/review gauntlet or browser approval flow. Sentry and
 PostHog remain unconnected. The first post-deploy pairing attempt hit temporary
 Worker/DO version skew; retry after propagation succeeded. The live test also caught

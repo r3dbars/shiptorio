@@ -38,7 +38,7 @@ describe("Factory lifecycle", () => {
     const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(der).toString("base64")}\n-----END PRIVATE KEY-----`;
     const originalFetch = globalThis.fetch;
     const base = "a".repeat(40), head = "b".repeat(40);
-    let opened = 0, sparkCalls = 0;
+    let opened = 0, sparkCalls = 0, merged = false;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const json = (value: unknown) => Response.json(value);
@@ -50,6 +50,10 @@ describe("Factory lifecycle", () => {
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
+      if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged });
+      if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix checkout", body: "Issue was closed by merge", state: "closed", html_url: "https://github.com/r3dbars/demo/issues/1", user: { login: "reporter" } });
+      if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+      if (url.includes("/status?")) return json({ total_count: 0, statuses: [] });
       if (url.includes("/pulls?")) return json([]);
       if (url.endsWith("/pulls") && init?.method === "POST") { opened++; return json({ number: 99, html_url: "https://github.com/r3dbars/demo/pull/99" }); }
       throw new Error(`Unexpected test request ${url}`);
@@ -76,12 +80,24 @@ describe("Factory lifecycle", () => {
       await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");
       const result = await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
       expect(result.prUrl).toEndWith("/99");
+      await f.factory.onCheckSuite([], true, "unrelated", base);
+      expect(f.saved().items[0].inspection?.stages[0].state).toBe("pending");
+      await f.factory.onCheckSuite([], true, "current head without PR links", head);
+      expect(f.saved().items[0].inspection?.stages[0].state).toBe("passed");
       await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
       expect(opened).toBe(1);
       expect(sparkCalls).toBe(3);
       expect((await f.factory.runnerJobs())[0].steps?.map(s => s.tool)).toEqual(["read_issue", "read_file", "assign_job"]);
       expect(f.saved().items[0].state).toBe("inspecting");
       expect((await f.factory.runnerJobs())[0].lease).toBeUndefined();
+      // Simulate the legacy close-before-merge deletion, then replay a real merged-PR receipt.
+      (f.factory as unknown as { state: FactoryState }).state.items = [];
+      merged = true;
+      await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
+      await f.factory.finishRunner(pair, { ...receipt, checks: [...receipt.checks] });
+      expect(f.saved().items[0].state).toBe("launched");
+      expect(f.saved().science.red).toBe(1);
+      expect(opened).toBe(1);
       await f.factory.pairRunner();
       await expect(f.factory.claimRunner(pair, ["codex"])).rejects.toThrow("revoked");
     } finally { globalThis.fetch = originalFetch; }
@@ -106,6 +122,16 @@ describe("Factory lifecycle", () => {
     expect(f.saved().items[0].state).toBe("launched");
     expect(f.saved().science.red).toBe(1);
     expect(f.saved().trust).toBe(0.55);
+  });
+  it("keeps a tracked PR when its issue-close webhook arrives before the merge", async () => {
+    const f = fixture([item({ state: "inspecting" })]);
+    await f.factory.enqueueGitHub("close-before-merge", "issues", { action: "closed", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 1, title: "Fix checkout", state: "closed", html_url: "https://github.com/r3dbars/demo/issues/1" } });
+    await f.factory.alarm();
+    expect(f.saved().items).toHaveLength(1);
+    await f.factory.onPullClosed(42, true);
+    await f.factory.onPullClosed(42, true);
+    expect(f.saved().items[0].state).toBe("launched");
+    expect(f.saved().science.red).toBe(1);
   });
   it("deduplicates issue deliveries and retains source context", async () => {
     const f = fixture();
