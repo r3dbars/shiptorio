@@ -26,8 +26,8 @@ function Gauge() {
 
 export function Crash({ eventId }: { eventId?: string }) {
   return (
-    <main role="alert" className="crash">
-      <section className="crash-plate iron-plate iron-rivets" aria-labelledby="crash-title">
+    <main className="crash">
+      <section role="alert" className="crash-plate iron-plate iron-rivets" aria-labelledby="crash-title">
         <div className="crash-stripe" aria-hidden="true" />
         <div className="crash-head">
           <span className="iron-eyebrow">{CRASH.eyebrow}</span>
