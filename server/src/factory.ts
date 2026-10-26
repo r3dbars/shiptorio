@@ -27,7 +27,7 @@ import {
   type Thought,
   type ThoughtDecision,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pickFiles, planLocalTask, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
@@ -382,7 +382,6 @@ export class Factory extends DurableObject<FactoryEnv> {
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
-      job.inputRevision = await workRevision(item);
       await this.ctx.storage.put(`runnerJob:${id}`, job);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
@@ -399,8 +398,9 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
       job.planningStarted = true;
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
-      const item = this.state.items.find(i => i.id === job.itemId);
+      let item = this.state.items.find(i => i.id === job.itemId);
       if (!item) throw new Error("Item removed");
+      const beforeRefresh = await workRevision(item);
       const token = await installationToken(this.env, this.meta.installationId);
       const tree = await repoTree(token, this.meta.repo);
       job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
@@ -416,6 +416,14 @@ export class Factory extends DurableObject<FactoryEnv> {
         changedFiles = await prFiles(token, job.repo, job.reworkPr);
         job.prTestFiles = changedFiles.filter(f => f.status !== "removed" && runnerPathAllowed(f.filename) && /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/i.test(f.filename)).map(f => f.filename);
       }
+      // Refresh persisted input before planning, never an already-approved/ready job.
+      const input = await freshIssueInput(token, job.repo, Number(item.id.slice(3)));
+      const current = this.state.items.find(i => i.id === job.itemId);
+      if (!current || beforeRefresh !== await workRevision(current) || this.state.items.find(i => i.id === job.itemId) !== current) throw new Error("Issue changed during input refresh");
+      item = { ...current, title: input.title.slice(0, 500), body: input.body.slice(0, 16000), url: input.url };
+      await this.patch({ items: [item] });
+      job.inputRevision = await workRevision(item);
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       job.steps = [];
       await this.decisionData();
       const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
@@ -580,6 +588,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const repo = p.repository?.full_name;
     if (lifecycleEvents.includes(event)) { await handleLifecycle(this.env, event, p); return; }
     if (await this.githubStopped()) return;
+
     if (!repo || !installationId) return;
     if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
       if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
@@ -636,11 +645,11 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async importLegacy(entries: [string, unknown][]): Promise<void> {
     await this.ctx.blockConcurrencyWhile(async () => {
-      if (await this.ctx.storage.get("legacyImported")) return;
-      if (!(await this.ctx.storage.get("state"))) {
-        for (const [key, value] of entries) await this.ctx.storage.put(key, value);
-      }
-      await this.ctx.storage.put("legacyImported", true);
+      await this.ctx.storage.transaction(async tx => {
+        if (await tx.get("legacyImported")) return;
+        if (!(await tx.get("state"))) for (const [key, value] of entries) await tx.put(key, value);
+        await tx.put("legacyImported", true);
+      });
       this.state = null; this.meta = null;
       const lifecycle = await this.ctx.storage.get<{ deleteAt?: number }>("githubLifecycle");
       if (lifecycle?.deleteAt) await this.ctx.storage.setAlarm(lifecycle.deleteAt);
@@ -657,6 +666,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put("githubLifecycle", { reason, ...(deleteAt ? { deleteAt } : {}) });
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.delete("runnerPair");
+    for (const job of await this.runnerJobs()) if (["running", "planning"].includes(job.status)) await this.ctx.storage.put(`runnerJob:${job.id}`, { ...job, status: "failed", error: "GitHub access changed; a fresh player approval is required." });
     if (await this.load()) {
       if (this.meta) purgeInstallationTokens(this.meta.installationId);
       await this.patch({ sources: [{ ...githubStatus(this.env), state: "needs_action", detail: `${reason}. ${deleteAt ? "Factory archived; reconnect within 30 days to restore it." : "Factory paused until access is restored."}` }] });
@@ -668,6 +678,11 @@ export class Factory extends DurableObject<FactoryEnv> {
   async restoreGitHub(repo: string, installationId: number): Promise<void> {
     await this.load();
     // Metadata can be restored without network I/O; initialization/backfill stays in the queue.
+    if (this.meta && (this.meta.repo !== repo || this.meta.installationId !== installationId)) {
+      await this.ctx.storage.delete("runnerPair");
+      await this.ctx.storage.delete("runnerPresence");
+      for (const job of await this.runnerJobs()) await this.ctx.storage.put(`runnerJob:${job.id}`, { ...job, repo, ...(["running", "planning", "ready", "awaiting_approval"].includes(job.status) ? { status: "failed", error: "Repository identity changed; approve a fresh plan." } : {}) });
+    }
     this.meta = { repo, installationId };
     await this.ctx.storage.put("meta", this.meta);
     if (this.state) {
@@ -683,6 +698,10 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async setGitHubPermissions(source: SourceStatus): Promise<void> {
     if (source.state === "needs_action") await this.pauseGitHub(source.detail);
+    if (!(await this.load()) && this.meta && source.state === "needs_action") {
+      await this.ctx.storage.put("githubNeedsInitialization", true);
+      this.state = { repo: this.meta.repo, baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 };
+    }
     if (await this.load()) await this.patch({ sources: [...(this.state!.sources ?? []).filter(s => s.kind !== "github"), source] });
     await this.ctx.storage.put("githubPermissions", source);
   }
@@ -739,9 +758,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env), this.publicUrl()) : postHogStatus(await postHogCreds(this.env), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
-    // The connect page needs to know which map to plug the mine into.
+    // The connect page needs to know which map to plug the mine into, and keys are per map.
     const repo = this.meta?.repo ?? this.state?.repo;
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, repo), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
   }
 
@@ -758,7 +777,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     await this.ctx.storage.put(`${kind}Linked`, true);
     await this.ctx.storage.delete(`${kind}Disconnected`);
-    await linkRepo(this.env, kind, this.state!.repo);
+    // The legacy shared keys stay with the first map that linked them; per-repo keys don't need a link.
+    if (!(await linkedRepo(this.env, kind))) await linkRepo(this.env, kind, this.state!.repo);
     const deposit = `ore-${kind}`;
     const splitter = this.state!.machines.find((m) => m.type === "splitter");
     const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
@@ -790,7 +810,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put(`${kind}Disconnected`, true);
     if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
     if (!(await this.load())) return;
-    await linkRepo(this.env, kind, null);
+    if ((await linkedRepo(this.env, kind)) === this.state!.repo.toLowerCase()) await linkRepo(this.env, kind, null);
     const deposit = `ore-${kind}`;
     await this.patch({
       sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
@@ -813,7 +833,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
-    const creds = await postHogCreds(this.env);
+    const creds = await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo);
     try {
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
@@ -974,6 +994,13 @@ export class Factory extends DurableObject<FactoryEnv> {
   async ensure(repo: string, installationId: number): Promise<void> {
     if (await this.githubStopped()) return;
     if (await this.load()) {
+      if (await this.ctx.storage.get("githubNeedsInitialization")) {
+        const tree = await repoTree(await installationToken(this.env, installationId), repo);
+        this.state!.baseBranch = tree.branch;
+        this.state!.districts = layoutMap(tree.entries).zones;
+        await this.save();
+        await this.ctx.storage.delete("githubNeedsInitialization");
+      }
       if (this.meta?.installationId !== installationId || this.meta?.repo !== repo) {
         this.meta = { repo, installationId };
         await this.ctx.storage.put("meta", this.meta);
@@ -1709,6 +1736,10 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.ctx.storage.deleteAlarm();
       if (lifecycle.deleteAt && lifecycle.deleteAt <= Date.now()) {
         const meta = await this.ctx.storage.get<Meta>("meta");
+        if (meta) {
+          const row = await this.env.DB.prepare("SELECT archived_at FROM repos WHERE full_name = ?").bind(meta.repo).first<{ archived_at: number | null }>();
+          if (row && row.archived_at == null) return; // reinstall already committed; its RPC resumes the object
+        }
         if (meta) await this.env.DB.batch([
           this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(meta.repo),
           this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(meta.repo),

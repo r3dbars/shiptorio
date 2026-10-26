@@ -1,5 +1,5 @@
 import type { SourceStatus } from "@shiptorio/shared";
-import { gh, purgeInstallationTokens, repoInstallationId } from "./github";
+import { gh, GitHubError, purgeInstallationTokens, repoInstallationId } from "./github";
 import { byRepoId, migrateRepository, type RepoRecord, type RepositoryEnv } from "./repository";
 import type { GitHubPayload, GitHubRepository } from "./sources/github";
 
@@ -24,6 +24,7 @@ async function archive(env: RepositoryEnv, row: RepoRecord, reason: string, id?:
   const at = row.archived_at ?? Date.now();
   // Persist first; retries keep the original retention deadline.
   await env.DB.prepare("UPDATE repos SET archived_at = ?, archive_reason = ? WHERE full_name = ? AND installation_id = ?").bind(at, reason, row.full_name, row.installation_id).run();
+  await env.DB.prepare("DELETE FROM user_repos WHERE repo = ? AND installation_id = ?").bind(row.full_name, row.installation_id).run();
   await (await objectFor(env, row, id)).archiveGitHub(reason, at, row.full_name, row.installation_id);
 }
 async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: number) {
@@ -31,7 +32,7 @@ async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: 
   const old = await env.DB.prepare("SELECT * FROM repos WHERE repo_id = ? OR (repo_id IS NULL AND full_name = ?) LIMIT 1").bind(repo.id, repo.full_name.toLowerCase()).first<RepoRecord>();
   const f = old ? await objectFor(env, old, repo.id) : byRepoId(env, repo.id);
   if (old && old.full_name !== repo.full_name.toLowerCase()) {
-    await env.DB.batch([env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(repo.full_name.toLowerCase(), old.full_name), env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(repo.full_name.toLowerCase(), old.full_name)]);
+    await env.DB.batch([env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(repo.full_name.toLowerCase(), old.full_name), env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(repo.full_name.toLowerCase(), old.full_name), env.DB.prepare("UPDATE user_repos SET repo = ? WHERE repo = ?").bind(repo.full_name.toLowerCase(), old.full_name)]);
     await env.DB.prepare("UPDATE repos SET full_name = ? WHERE full_name = ?").bind(repo.full_name.toLowerCase(), old.full_name).run();
   }
   await env.DB.prepare("INSERT INTO repos (full_name, repo_id, installation_id, default_branch) VALUES (?, ?, ?, ?) ON CONFLICT(full_name) DO UPDATE SET repo_id = excluded.repo_id, installation_id = excluded.installation_id, default_branch = COALESCE(excluded.default_branch, repos.default_branch), archived_at = NULL, archive_reason = NULL").bind(repo.full_name.toLowerCase(), repo.id, installation, repo.default_branch ?? null).run();
@@ -43,6 +44,9 @@ async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: 
 export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitHubPayload): Promise<void> {
   if (event === "github_app_authorization") {
     if (p.action !== "revoked" || !p.sender?.login) return;
+    await env.DB.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE lower(login) = ?)").bind(p.sender.login.toLowerCase()).run();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id IN (SELECT id FROM users WHERE lower(login) = ?)").bind(p.sender.login.toLowerCase()).run();
+    await env.DB.prepare("DELETE FROM user_installations WHERE user_id IN (SELECT id FROM users WHERE lower(login) = ?)").bind(p.sender.login.toLowerCase()).run();
     await env.DB.prepare("INSERT INTO github_authorization_revocations (login, revoked_at) VALUES (?, ?) ON CONFLICT(login) DO UPDATE SET revoked_at = excluded.revoked_at").bind(p.sender.login.toLowerCase(), Date.now()).run();
     return;
   }
@@ -62,9 +66,10 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     if (p.action === "deleted") { if (row) await archive(env, row, "repository deleted", repo.id); return; }
     if (!["renamed", "transferred"].includes(p.action ?? "")) return;
     // A transfer can remove access or move it to a DIFFERENT installation. Never trust the old ID.
-    const current = await repoInstallationId(env, repo.full_name).catch(() => null);
+    const current = await repoInstallationId(env, repo.full_name).catch(error => { if (error instanceof GitHubError && [403, 404].includes(error.status)) return null; throw error; });
     if (!current) { if (row) await archive(env, row, "repository transferred out of installation", repo.id); return; }
     await upsert(env, repo, current);
+    if (row && p.action === "transferred") await env.DB.prepare("DELETE FROM user_repos WHERE repo = ?").bind(repo.full_name.toLowerCase()).run();
     return;
   }
   const account = p.installation?.account;
@@ -88,6 +93,10 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   }
   const added = p.repositories ?? p.repositories_added ?? [];
   for (const repo of added) await upsert(env, repo, id);
+  if (Number.isSafeInteger(p.sender?.id) && added.length) await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO user_installations (user_id, installation_id, account_login) SELECT id, ?, ? FROM users WHERE id = ?").bind(id, account?.login ?? "", p.sender!.id!),
+    ...added.map(repo => env.DB.prepare("INSERT OR REPLACE INTO user_repos (user_id, repo, installation_id) SELECT id, ?, ? FROM users WHERE id = ?").bind(repo.full_name.toLowerCase(), id, p.sender!.id!)),
+  ]);
   // unsuspend/permissions payloads may omit repositories. Refresh every retained active factory.
   if (event === "installation" && ["unsuspend", "new_permissions_accepted"].includes(p.action ?? "")) {
     for (const row of await rows(env, id)) if (!row.archived_at) await (await objectFor(env, row)).restoreGitHub(row.full_name, id);

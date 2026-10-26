@@ -85,12 +85,12 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("FROM repos") ? { repo_id: 501 } : rows.get(String(values[0])) ?? null,
       };
-      expect(sql).toContain("sentry");
+      expect(sql.includes("sentry") || sql.includes("FROM repos")).toBe(true);
       return statement;
     } },
-    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("example/shop"); queued.push(`${id}:${resource}`); } }) },
+    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:501"); queued.push(`${id}:${resource}`); } }) },
   };
   const body = JSON.stringify(fakeSentry("issue.created"));
   const send = async (signature: string, id = "req-1") => app.fetch(new Request("https://shiptorio.com/webhooks/sentry", { method: "POST", headers: { "sentry-hook-signature": signature, "sentry-hook-resource": "issue", "request-id": id }, body }), env as never);

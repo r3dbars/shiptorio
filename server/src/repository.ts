@@ -1,5 +1,5 @@
 import type { Factory } from "./factory";
-import { appJwt, gh, type AppCredentials } from "./github";
+import { gh, installationToken, type AppCredentials } from "./github";
 
 export interface RepoRecord { full_name: string; repo_id: number | null; installation_id: number; archived_at: number | null; archive_reason: string | null }
 export interface RepositoryEnv extends AppCredentials { DB: D1Database; FACTORY: DurableObjectNamespace<Factory> }
@@ -20,8 +20,8 @@ export async function repositoryFactory(env: RepositoryEnv, name: string): Promi
   if (row?.repo_id) return byRepoId(env, row.repo_id);
   // Existing installs are upgraded lazily using the App JWT, including archived rows.
   if (row) {
-    const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-    const repo = await gh<{ id: number }>(`/repos/${name}`, jwt);
+    const token = await installationToken(env, row.installation_id);
+    const repo = await gh<{ id: number }>(`/repos/${name}`, token);
     return migrateRepository(env, row, repo.id);
   }
   throw new Error("Repository is not installed");

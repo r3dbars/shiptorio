@@ -1,5 +1,6 @@
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
-import type { GitHubIssue } from "./sources/github";
+import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
+import type { Signal } from "./sources/types";
 
 const API = "https://api.github.com";
 const UA = "shiptorio";
@@ -82,7 +83,11 @@ export class GitHubError extends Error {
 }
 interface TokenEntry { token: string; expiresAt: number; installationId: number; version: number; env: AppCredentials; scope?: InstallationTokenScope }
 const tokenCache = new Map<string, TokenEntry>();
-const tokenOwners = new Map<string, TokenEntry>();
+const tokenOwners = new Map<string, Omit<TokenEntry, "token">>();
+async function tokenFingerprint(token: string) {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(token)));
+  return [...hash].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
 const pendingTokens = new Map<string, Promise<string>>();
 const tokenKey = (env: AppCredentials, id: number, scope?: InstallationTokenScope) => JSON.stringify([env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, id, scope]);
 export function purgeInstallationTokens(id: number) {
@@ -96,9 +101,14 @@ async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
   return row?.token_version ?? 0;
 }
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const owner = tokenOwners.get(token);
+  const owner = tokenOwners.get(await tokenFingerprint(token));
   if (owner) {
     const version = await tokenVersion(owner.env, owner.installationId);
+    const repo = /^\/repos\/([^/]+\/[^/?]+)/.exec(path)?.[1]?.toLowerCase();
+    if (repo && owner.env.DB) {
+      const row = await owner.env.DB.prepare("SELECT archived_at, installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ archived_at: number | null; installation_id: number }>();
+      if (row && (row.archived_at != null || row.installation_id !== owner.installationId)) throw new Error("GitHub repository access changed; factory archived or transferred");
+    }
     if (version !== owner.version || owner.expiresAt <= Date.now() + 60000) token = await installationToken(owner.env, owner.installationId, owner.scope);
   }
   const request = (credential: string) => fetch(API + path, {
@@ -139,7 +149,8 @@ export async function installationToken(env: AppCredentials, installationId: num
     const entry = { token: res.token, expiresAt: Date.parse(res.expires_at ?? "") || Date.now(), installationId, version, env, scope };
     tokenCache.set(key, entry);
     for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
-    tokenOwners.set(res.token, entry);
+    const { token: _, ...metadata } = entry;
+    tokenOwners.set(await tokenFingerprint(res.token), metadata);
     return res.token;
   })();
   pendingTokens.set(pendingKey, pending);
@@ -194,6 +205,26 @@ export async function openIssues(token: string, repo: string): Promise<GitHubIss
     if (batch.length < 25) break;
   }
   return issues;
+}
+
+/** Refresh only new planning jobs: old bot audit text must not become the next task. */
+export async function freshIssueInput(token: string, repo: string, number: number): Promise<Signal> {
+  const issue = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
+  if (issue.number !== number || issue.state !== "open" || issue.pull_request) throw new Error("GitHub issue is no longer open");
+  let latest: GitHubPayload["comment"];
+  const at = (comment: NonNullable<GitHubPayload["comment"]>) => Date.parse(comment.updated_at ?? comment.created_at ?? "") || 0;
+  for (let page = 1; page <= 5; page++) {
+    const comments = await gh<NonNullable<GitHubPayload["comment"]>[]>(`/repos/${repo}/issues/${number}/comments?per_page=100&page=${page}`, token);
+    if (!Array.isArray(comments)) throw new Error("GitHub issue feedback unavailable");
+    for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
+    if (comments.length < 100) {
+      const again = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
+      const stamp = (value: GitHubIssue) => JSON.stringify([value.number, value.state, !!value.pull_request, value.title, value.body ?? "", value.labels ?? [], value.updated_at]);
+      if (stamp(issue) !== stamp(again)) throw new Error("Issue changed while reading feedback");
+      return normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+    }
+  }
+  throw new Error("Issue feedback exceeds the bounded planning window; narrow the issue before planning");
 }
 
 export async function issueReporters(token: string, repo: string, issue: GitHubIssue): Promise<string[]> {

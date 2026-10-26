@@ -80,7 +80,7 @@ describe("live gauntlet in the Factory", () => {
       if (url.endsWith("/access_tokens")) return json({ token: "t" });
       if (url.includes("/pulls/99/files")) return json([{ filename: "web/src/cart.ts", status: "modified", patch: "-a\n+b" }, { filename: "web/src/cart.test.ts", status: "added", patch: "+test" }]);
       if (url.endsWith("/chat/completions")) return json({ choices: [{ message: { content: '{"verdict":"pass","reason":"Fixes the empty cart crash.","findings":[]}' } }] });
-      if (url.endsWith("/issues/99/comments")) return ++commentTries === 1 ? new Response("nope", { status: 403 }) : json({ id: 1 });
+      if (url.endsWith("/issues/99/comments")) return ++commentTries === 1 ? new Response("unavailable", { status: 503 }) : json({ id: 1 });
       if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); return json({ merged: true }); }
       if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged: false });
       throw new Error(`unexpected ${url}`);

@@ -21,19 +21,26 @@ export interface GitHubPayload {
   action?: string;
   repository?: GitHubRepository;
   installation?: { id: number; account?: { login: string; type?: string }; permissions?: Record<string, string> };
-  sender?: { login: string };
   issue?: GitHubIssue;
-  comment?: { id: number; body: string; created_at?: string; user?: { login: string } };
+  comment?: { id: number; body: string; created_at?: string; updated_at?: string; user?: { login: string; type?: string }; performed_via_github_app?: { id: number } | null };
   repositories?: GitHubRepository[];
   repositories_added?: GitHubRepository[];
   repositories_removed?: GitHubRepository[];
+  sender?: { id?: number; login?: string };
   [key: string]: unknown;
+}
+
+/** Our own plan audit trail is output, not a new request to change that plan. */
+export function isOwnPlanComment(comment: GitHubPayload["comment"]): boolean {
+  return comment?.user?.login.toLowerCase() === "shiptorio[bot]" && comment.user.type === "Bot"
+    && /^🧠 \*\*Shiptorio planned this(?: rework)?\*\* with Meta Muse Spark \(/.test(comment.body);
 }
 
 export function normalizeGitHub(payload: unknown): Signal[] {
   const p = payload as GitHubPayload;
   const issue = p?.issue;
   if (!issue || issue.pull_request || !Number.isInteger(issue.number) || !p.repository?.full_name) return [];
+  if (isOwnPlanComment(p.comment)) return [];
   const body = issue.body ?? "";
   const labels = issue.labels?.map((l) => l.name) ?? [];
   // These are inspectable evidence hints, not priority or cross-source linking decisions.
