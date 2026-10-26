@@ -80,6 +80,7 @@ describe("orbit watch in the Factory", () => {
       async put(k: string, v: unknown) { data.set(k, structuredClone(v)); },
       async delete(k: string) { return data.delete(k); },
       async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); },
+      async transaction<T>(fn: (tx: { get(key: string): Promise<unknown>; put(key: string, value: unknown): Promise<void> }) => Promise<T>): Promise<T> { return fn(storage); },
       async getAlarm() { return alarm; },
       async setAlarm(v: number) { alarm = v; },
     };

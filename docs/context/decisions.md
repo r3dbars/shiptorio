@@ -235,3 +235,5 @@ simulator is building automatically; waiting for a suggested merge before CI is 
 is not itself an app failure. Console findings belong only to the current navigation.
 - 2026-10-26: Name the dock action Place so it cannot be confused with the Build view. The field-guide tooltip counts concepts found, separate from the tour step count.
 - 2026-10-26: Local supervisor checks need an OS boundary, not just an environment allowlist. macOS verification uses deny-default sandbox-exec with checkout/private scratch writes, isolated HOME, and offline checks; unsupported platforms fail closed. Dependency installation is an explicit scripts-disabled network phase. Publication must not trust repository-controlled Git hooks/configuration after agent/test execution.
+
+- 2026-10-26: Launch credit is durable per merged PR and commits atomically with science and permit counters. Orbit regressions keep their scars and new work when old merge receipts replay. Idle orbit watches schedule their actual 24-hour deadline; incoming work can preempt that distant alarm. This records elapsed observation, not proof of customer impact.
