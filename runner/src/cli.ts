@@ -100,7 +100,7 @@ async function execute(job: Job) {
     if (JSON.stringify(await snapshotApproved(sandbox, paths)) !== JSON.stringify(frozen)) throw new Error("Checks changed approved files");
     // Publication is rebuilt from a fresh trusted clone; hostile hooks/config never see credentials.
     const sha = await publishApproved(job, frozen);
-    summary = `Approved paths: ${paths.join(", ")}. Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
+    summary = `Changed files: ${paths.join(", ")} (approved: ${job.allowedPaths.join(", ")}). Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
     await Bun.write(resolve(root, ".work", `${job.id}.receipt.json`), JSON.stringify(receipt));
     console.log(JSON.stringify(await api("finish", receipt)));
