@@ -39,6 +39,8 @@ Live prototype: https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK (a copy is in 
 
 ## Item notes
 
+**Locked by Justin on Oct 26:** the Item Lab as of PR #7 is the art baseline for all 12 items.
+
 The Item Lab (`docs/item-lab.html`, live: https://claude.ai/artifact/1LRgfMxAMrZ5gv1r2dkkKy) is the reference for
 every item's model, states and animation. Port builders from there.
 
