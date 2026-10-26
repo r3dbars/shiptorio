@@ -845,25 +845,66 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     const lampM = own(0x3a3f47);
     for (const x of [-0.13, 0.13]) box(0.12, 0.12, 0.08, lampM, -1.05 + x, 2.68, 0.96, g).rotation.x = -0.4;
     const flood = new THREE.PointLight(0xfff1c0, 0, 6); flood.position.set(-1.0, 2.5, 0.8); g.add(flood);
-    // rocket
+    // rocket: a two-stage white stack on a bell engine, built like the real thing. Thrust skirt with stringers,
+    // black-and-white roll pattern, panel seams, a cable raceway, a ribbed interstage, a framed porthole, and an
+    // ogive fairing with a tip spike. Four clipped-delta fins, swept back, thin, with root fillets.
     const lift = group(g, 0, 0.28, 0), rocket = group(lift);
-    cyl(0.18, 0.26, 0.26, 0x3a3f47, 10, 0, 0.45, 0, rocket);
-    cyl(0.32, 0.34, 2.1, 0xf2f2ee, 12, 0, 1.6, 0, rocket);
-    cyl(0.345, 0.345, 0.12, 0xff5e52, 12, 0, 0.85, 0, rocket);
-    cyl(0.345, 0.345, 0.12, 0xff5e52, 12, 0, 2.35, 0, rocket);
-    for (let i = 0; i < 4; i++) box(0.08, 0.08, 0.02, 0x2b2f36, Math.cos(i * 1.57) * 0.335, 1.4, Math.sin(i * 1.57) * 0.335, rocket);
-    cyl(0.1, 0.1, 0.05, own(0x3b82f6, 0x10305f), 10, 0, 2.0, 0.32, rocket).rotation.x = Math.PI / 2;
-    cone(0.32, 0.75, 0xff5e52, 12, 0, 3.02, 0, rocket);
-    for (let i = 0; i < 4; i++) { const a = i / 4 * Math.PI * 2 + Math.PI / 4; const f = box(0.06, 0.6, 0.42, 0xff5e52, Math.cos(a) * 0.38, 0.8, Math.sin(a) * 0.38, rocket); f.rotation.y = -a + Math.PI / 2; }
-    const flame = group(rocket, 0, 0.2, 0);
+    const lathe = (pts, m, segs, y, p) => mesh(new THREE.LatheGeometry(pts.map(([r, h]) => new THREE.Vector2(r, h)), segs || 16), m, 0, y, 0, p);
+    const arc = (r, h, from, len, m, y, p) => mesh(new THREE.CylinderGeometry(r, r, h, 4, 1, false, from, len), m, 0, y, 0, p);
+    // engine: bell nozzle (gimbals on launch), glowing throat, copper ring, thrust skirt with stringers
+    const engine = group(rocket, 0, 0.52, 0);
+    const bellM = own(0x3a3f47); bellM.side = THREE.DoubleSide;
+    lathe([[0.17, -0.22], [0.15, -0.14], [0.115, -0.06], [0.08, 0.0], [0.07, 0.03]], bellM, 14, 0, engine);
+    const throatM = own(0x2b2f36); throatM.side = THREE.BackSide;
+    lathe([[0.155, -0.21], [0.135, -0.13], [0.1, -0.06], [0.065, 0.0]], throatM, 14, 0, engine);
+    mesh(new THREE.TorusGeometry(0.168, 0.016, 4, 14), 0xb5583a, 0, -0.215, 0, engine).rotation.x = Math.PI / 2;
+    cyl(0.08, 0.1, 0.08, 0xb5583a, 10, 0, 0.06, 0, engine);
+    cyl(0.33, 0.24, 0.16, 0x4a505a, 16, 0, 0.6, 0, rocket);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; box(0.03, 0.16, 0.03, 0x2b2f36, Math.cos(a) * 0.29, 0.6, Math.sin(a) * 0.29, rocket).rotation.y = -a; }
+    // first stage: roll pattern, red band, seams, raceway
+    cyl(0.33, 0.33, 2.0, 0xf2f2ee, 16, 0, 1.68, 0, rocket);
+    for (let i = 0; i < 4; i++) arc(0.333, 0.22, i * Math.PI / 2, Math.PI / 4, 0x22252b, 0.8, rocket);
+    cyl(0.338, 0.338, 0.12, 0xff5e52, 16, 0, 0.98, 0, rocket);
+    for (const y of [1.3, 2.05]) cyl(0.335, 0.335, 0.012, 0xc9ccd2, 16, 0, y, 0, rocket);
+    // interstage: dark ribbed ring with vent slots
+    cyl(0.34, 0.34, 0.12, 0x4a505a, 16, 0, 1.77, 0, rocket);
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; box(0.025, 0.12, 0.02, 0x2b2f36, Math.cos(a) * 0.345, 1.77, Math.sin(a) * 0.345, rocket).rotation.y = -a + Math.PI / 2; }
+    // second stage: red band, framed porthole, hatch outline, blade antennas
+    cyl(0.338, 0.338, 0.1, 0xff5e52, 16, 0, 2.42, 0, rocket);
+    const port = group(rocket, 0, 2.18, 0.33); port.rotation.x = Math.PI / 2;
+    cyl(0.1, 0.1, 0.04, own(0x3b82f6, 0x10305f), 12, 0, 0, 0, port);
+    mesh(new THREE.TorusGeometry(0.1, 0.02, 4, 12), 0x8a94a3, 0, 0.02, 0, port).rotation.x = Math.PI / 2;
+    const hatch = group(rocket, 0, 2.15, 0); hatch.rotation.y = -Math.PI / 4;
+    for (const [w, h, x, y] of [[0.02, 0.26, -0.09, 0], [0.02, 0.26, 0.09, 0], [0.2, 0.02, 0, 0.13], [0.2, 0.02, 0, -0.13]]) box(w, h, 0.01, 0xc9ccd2, x, y, 0.333, hatch);
+    // cable raceway down the side, and the umbilical plate facing the gantry
+    box(0.05, 1.7, 0.06, 0xd5d8de, 0.34, 1.62, 0, rocket);
+    for (let y = 0.9; y < 2.5; y += 0.32) box(0.07, 0.03, 0.08, 0x8a94a3, 0.345, y, 0, rocket);
+    box(0.14, 0.18, 0.03, 0x4a505a, 0, 1.4, -0.335, rocket);
+    // ogive fairing with a tip spike, and two blade antennas below it
+    const ogive = []; for (let i = 0; i <= 8; i++) { const k = i / 8; ogive.push([0.33 * Math.pow(Math.cos(k * Math.PI / 2), 0.95), k * 0.9]); }
+    lathe(ogive, 0xff5e52, 16, 2.47, rocket);
+    cyl(0.012, 0.025, 0.18, 0x8a94a3, 6, 0, 3.44, 0, rocket);
+    for (const a of [Math.PI / 2, -Math.PI / 2]) box(0.012, 0.1, 0.06, 0x8a94a3, 0, 2.3, Math.sin(a) * 0.35, rocket);
+    // fins: clipped delta, leading edge swept back, tip trailing past the base, dark tip cap and root fillet
+    const finShape = new THREE.Shape();
+    finShape.moveTo(0, 0.42); finShape.lineTo(0, 1.08); finShape.lineTo(0.4, 0.58); finShape.lineTo(0.42, 0.3); finShape.lineTo(0, 0.42);
+    const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 1 });
+    finGeo.translate(0, 0, -0.02);
+    for (let i = 0; i < 4; i++) {
+      const a = i / 4 * Math.PI * 2 + Math.PI / 4, fg = group(rocket); fg.rotation.y = -a;
+      mesh(finGeo, 0xff5e52, 0.3, 0, 0, fg);
+      box(0.03, 0.3, 0.07, 0x2b2f36, 0.715, 0.44, 0, fg).rotation.z = -0.07;
+      box(0.06, 0.6, 0.08, 0xd5d8de, 0.32, 0.76, 0, fg);
+    }
+    const flame = group(engine, 0, -0.22, 0);
     cone(0.26, 1.2, basic(0xffb340), 8, 0, -0.5, 0, flame).rotation.x = Math.PI;
     cone(0.14, 0.7, basic(0xfff3c0), 8, 0, -0.3, 0, flame).rotation.x = Math.PI;
     flame.children.forEach((c) => (c.castShadow = false));
     // shock diamonds in the plume, and four little vernier jets around the base
     const diamonds = [0, 1, 2].map((i) => { const s = 0.13 - i * 0.03, d = box(s, s, s, basic(0xffffff), 0, -0.35 - i * 0.32, 0, flame); d.rotation.set(0.6, 0.8, 0); d.castShadow = false; return d; });
-    const verniers = [0, 1, 2, 3].map((i) => { const a = i / 4 * Math.PI * 2 + Math.PI / 4; const j = cone(0.06, 0.34, basic(0xffd25a), 6, Math.cos(a) * 0.3, 0.32, Math.sin(a) * 0.3, rocket); j.rotation.x = Math.PI; j.castShadow = false; j.visible = false; return j; });
+    const verniers = [0, 1, 2, 3].map((i) => { const a = i / 4 * Math.PI * 2 + Math.PI / 4; cyl(0.025, 0.045, 0.08, 0x3a3f47, 6, Math.cos(a) * 0.26, 0.47, Math.sin(a) * 0.26, rocket); const j = cone(0.05, 0.3, basic(0xffd25a), 6, Math.cos(a) * 0.26, 0.28, Math.sin(a) * 0.26, rocket); j.rotation.x = Math.PI; j.castShadow = false; j.visible = false; return j; });
     const glow = new THREE.PointLight(0xffb040, 0, 8); glow.position.y = 0.2; rocket.add(glow);
-    let clock = 0, cd = 0, cd2 = 0, ringed = false;
+    let clock = 0, cd = 0, cd2 = 0, vent = 0, ringed = false;
     return { g, update(t, dt, s) {
       cd -= dt; cd2 -= dt;
       beacon.material.emissive.setHex(Math.sin(t * 4) > 0 ? 0xff5e52 : 0);
@@ -882,8 +923,17 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
         spawn(g, 1.16, 1.2, -0.74, R() * 0.3, 0.6, R() * 0.3, 0xeef1fa, 1.0, 0.14, -0.4);
         const sx = Math.random() < 0.5 ? -1 : 1; spawn(g, sx * 1.55, 0.35, R() * 0.4, sx * 0.8, 0.3, R() * 0.4, 0xeef1fa, 1.2, 0.16, -0.3);
       }
+      // the rocket breathes: liquid oxygen boils off its vents, cold vapor sinks; heavy during countdown
+      vent -= dt;
+      if (vent <= 0 && !(s === 'LAUNCH' && clock > 0.6)) {
+        vent = s === 'COUNTDOWN' ? 0.05 : 0.9 + Math.random() * 1.6;
+        const y = lift.position.y + (Math.random() < 0.6 ? 1.72 : 2.4), a = -Math.PI / 4 + R() * 1.2;
+        spawn(g, Math.cos(a) * 0.36, y, Math.sin(a) * 0.36, Math.cos(a) * 0.35, 0.05, Math.sin(a) * 0.35, 0xeef1fa, s === 'COUNTDOWN' ? 1.3 : 0.9, s === 'COUNTDOWN' ? 0.12 : 0.08, 0.35);
+      }
       if (s === 'LAUNCH') {
         clock += dt; const c = clock % 4.2;
+        engine.rotation.x = c < 3.4 ? Math.sin(t * 13) * 0.05 : 0; engine.rotation.z = c < 3.4 ? Math.sin(t * 9.7) * 0.05 : 0;
+        throatM.emissive.setHex(c < 3.4 ? (Math.random() < 0.5 ? 0xff7a2a : 0xffb340) : 0);
         const k = Math.max(0, c - 0.6);
         rocket.position.y = c < 3.4 ? 0.5 * k * k * 3.4 : 0;
         rocket.position.x = c < 3.4 ? Math.sin(c * 40) * 0.015 : 0;
@@ -894,7 +944,7 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
         else if (!ringed) { ringed = true; for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; spawn(g, Math.cos(a) * 0.7, 0.4, Math.sin(a) * 0.7, Math.cos(a) * 3, 0.4, Math.sin(a) * 3, i % 3 ? 0xd8dbe2 : 0xffb340, 1.0, 0.2, -0.2); } }
         if (c < 3.4 && cd <= 0) { cd = 0.03; spawn(g, R() * 0.3, rocket.position.y + 0.38, R() * 0.3, R() * 1.5, -0.5, R() * 1.5, Math.random() < 0.5 ? 0xb8bcc6 : 0xeef1fa, 1.4, 0.22, -0.3); }
         if (c < 2.2 && cd2 <= 0) { cd2 = 0.04; const sx = Math.random() < 0.5 ? -1 : 1; spawn(g, sx * 1.7, 0.4, R() * 0.4, sx * (2 + Math.random()), 0.9, R() * 0.8, Math.random() < 0.3 ? 0xffb340 : 0xd8dbe2, 1.2, 0.24, -0.3); }
-      } else { clock = 0; ringed = false; rocket.position.set(0, 0, 0); flame.visible = false; glow.intensity = 0; verniers.forEach((j) => (j.visible = false)); }
+      } else { clock = 0; ringed = false; rocket.position.set(0, 0, 0); flame.visible = false; engine.rotation.set(0, 0, 0); throatM.emissive.setHex(s === 'COUNTDOWN' && Math.sin(t * 20) > 0.6 ? 0x3e1d0a : 0); glow.intensity = 0; verniers.forEach((j) => (j.visible = false)); }
     } };
   }
 
