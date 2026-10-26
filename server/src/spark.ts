@@ -194,7 +194,7 @@ export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: str
       return { plan, files, heeded };
     } else if (out.tool === "ask_player") {
       await record({ tool: out.tool, reason: out.reason.slice(0, 1000), result: "Paused for player input", at: Date.now() });
-      throw new SparkError("Spark requested player input");
+      throw new SparkError(`Spark requested player input: ${out.reason.replace(/\s+/g, " ").slice(0, 200)}`);
     } else throw new SparkError("Spark requested an unavailable or unapproved tool");
     await record({ tool: out.tool!, reason: out.reason.slice(0, 1000), result: `Read ${out.path ?? "issue"} (${result.length} characters)`, at: Date.now() });
     observations.push({ tool: out.tool!, result });

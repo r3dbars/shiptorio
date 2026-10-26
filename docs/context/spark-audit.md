@@ -71,6 +71,12 @@ permission stay deterministic so the automation earned by playing is provable.
    per field, `parseJsonReply` repairs trailing commas and smart quotes, and `sparkJson` asks once more
    with the rejection reason before the fixed rule decides.
 
+10. The game master burned about half of a day's budget (200 calls) on failing re-ranks during the Testing run.
+    Now it re-ranks at most once a minute, and only when the card set changes (pile size is no longer part of the key).
+    After a failure it backs off 1, 2, 4, 8, then 15 minutes, and it stops at half the daily calls or tokens. Spark also
+    can't switch a card's suggested option to a do-nothing "Later" when the card has a real next step, which stalled
+    autopilot on Plan cards.
+
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.
 
