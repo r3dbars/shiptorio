@@ -163,12 +163,17 @@ export const SCAPES: Record<ScapeKind, Scape> = {
       if (chance(0.15 + f.busy * 0.3)) s.tone({ f: pick([1500, 1800, 2100, 2500]), dur: 0.03, type: "triangle", vol: 0.04, at: s.now, out });
     },
   },
-  // Launch pad: wind over the pad, flame trench hiss, clamps creak; countdown pips when a PR waits on you
+  // Launch pad: wind through the gantry, the rocket's oxygen vents hissing off, the tank pump ticking, steel
+  // creaking in the cold; countdown pips when a PR waits on you
   pad: {
-    start: (s, out) => bed(s, out, { noise: { vol: 0.03, lp: 700, rate: 0.3 }, wobble: [0.15, 0.6] }),
+    start: (s, out) => bed(s, out, { noise: { vol: 0.03, lp: 700, rate: 0.3 }, osc: [["sine", 46, 0.015]], wobble: [0.15, 0.6] }),
     step: (s, out, i, f) => {
-      if (f.busy > 0 && i % 8 === 0) s.tone({ f: 880, dur: 0.06, vol: 0.04, at: s.now, out });
-      if (chance(0.02)) s.tone({ f: 140, to: 120, dur: 0.3, type: "sawtooth", vol: 0.03, at: s.now, out });
+      const t = s.now;
+      if (f.busy > 0 && i % 8 === 0) s.tone({ f: 880, dur: 0.06, vol: 0.04, at: t, out });
+      if (chance(0.035)) s.noise({ dur: 0.5 + Math.random() * 0.6, vol: 0.05, hp: 3200, at: t, attack: 0.15, out });
+      if (i % 6 === 0) s.noise({ dur: 0.02, vol: 0.025, bp: 1400, at: t, out });
+      if (chance(0.02)) s.tone({ f: 140, to: 120, dur: 0.3, type: "sawtooth", vol: 0.03, at: t, out });
+      if (chance(0.01)) s.tone({ f: 2400, to: 2250, dur: 0.25, type: "sine", vol: 0.012, at: t, out });
     },
   },
   // Rework belt: chattering rollers, a grumbling motor, louder the more that's riding it
