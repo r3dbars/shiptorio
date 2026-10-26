@@ -81,7 +81,7 @@ describe("Factory lifecycle", () => {
       const assigned = claimed.find(Boolean)!;
       expect(assigned.token).toBe("fake-install-token");
       expect(f.saved().items[0].state).toBe("working");
-      expect(f.saved().move ?? null).toBeNull();
+      expect(f.saved().deck?.some(m => m.options.some(o => o.actions.some(a => a.tool === "approve_runner_job")))).toBe(false);
       const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };
       await expect(f.factory.finishRunner(pair, { ...receipt, checks: [] })).rejects.toThrow("check receipts");
       await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");
@@ -146,8 +146,8 @@ describe("Factory lifecycle", () => {
       const declined = await prepareBrowserPlan();
       await declined.g.factory.webSocketMessage({} as never, JSON.stringify({ type: "defer_move", moveId: declined.approval.id }));
       expect(await declined.g.factory.claimRunner(declined.pairing, ["codex"])).toBeNull();
-      expect(declined.g.saved().move).toBeNull();
-      expect((await declined.g.factory.runnerJobs())[0].status).toBe("failed");
+      expect(declined.g.saved().deck?.some(m => m.id === declined.approval.id)).toBe(false);
+      expect((await declined.g.factory.runnerJobs())[0].status).toBe("awaiting_approval"); // Later keeps the exact plan for the next check-in.
 
       const stale = await prepareBrowserPlan();
       for (const signal of normalizeGitHub({ repository: { full_name: "r3dbars/demo" }, issue: { number: 1, title: "Changed scope", body: "New request", html_url: "https://github.com/r3dbars/demo/issues/1", updated_at: "2026-10-26T19:00:00Z" } })) await stale.g.factory.ingestSignal(signal);
