@@ -196,7 +196,7 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
     return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)))].map(b => b.toString(16).padStart(2, '0')).join('');
   }
   const sentryBody = JSON.stringify({ action: 'created', data: { issue: { id: '1', title: 'test' } } });
-  const sentry = async (repo: string, secretKey: string) => app.fetch(new Request(`${origin}/webhooks/sentry/${repo}`, { method: 'POST', headers: { 'sentry-hook-signature': await sign(secretKey, sentryBody), 'sentry-hook-resource': 'issue', 'request-id': 'same-event' }, body: sentryBody }), env as never);
+  const sentry = async (repo: string, secretKey: string) => app.fetch(new Request(`${origin}/webhooks/sentry/${repo}`, { method: 'POST', headers: { 'sentry-hook-signature': await sign(secretKey, sentryBody), 'sentry-hook-resource': 'issue', 'request-id': 'same-event' }, body: sentryBody }), env as never, { waitUntil() {} } as never);
   expect((await sentry('bob/private', 'alice-secret')).status).toBe(401);
   expect(queued).toEqual([]);
   expect((await sentry('alice/private', 'alice-secret')).status).toBe(202);
