@@ -314,21 +314,32 @@ export class FactoryScene {
   }
 
   // Zoom out just enough that the whole machine line, ore to launch pad, fits beside the HUD.
+  // Phones have no HUD column, so the line gets the full width.
   private fitLine(state: FactoryState) {
-    if (!state.machines.length || this.width <= 760 || this.height <= 500) return;
+    if (!state.machines.length) return;
     const xs = state.machines.map((m) => m.x * CELL);
     const span = (Math.max(...xs) - Math.min(...xs)) * Math.cos(YAW) + 7;
-    const free = (this.width - HUD_RIGHT_PX - 40) / this.height;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (19 * free)));
+    const free = (this.width - (this.hasHudColumn() ? HUD_RIGHT_PX + 40 : 16)) / this.height;
+    this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (this.baseViewHeight() * free)));
     this.target.x = (Math.max(...xs) + Math.min(...xs)) / 2;
     this.applyCamera();
   }
 
+  private hasHudColumn() {
+    return this.width > 760 && this.height > 500; // matches the phone breakpoint in styles.css
+  }
+
+  // world units shown top to bottom at zoom 1; portrait phones see more so the line isn't cramped
+  private baseViewHeight() {
+    const a = this.width / this.height;
+    return a < 1 ? (24 / a) * 0.78 : 19;
+  }
+
   private applyCamera() {
     const a = this.width / this.height;
-    const vh = (a < 1 ? (24 / a) * 0.78 : 19) * this.zoom;
+    const vh = this.baseViewHeight() * this.zoom;
     // keep the factory centered in the space the HUD cards on the right leave free
-    const shift = this.width > 760 && this.height > 500 ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
+    const shift = this.hasHudColumn() ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
     Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
