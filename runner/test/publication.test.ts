@@ -3,7 +3,7 @@ import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkSandbox } from "../src/sandbox";
-import { prepareApprovedCommit, snapshotApproved } from "../src/publication";
+import { assemblerContext, prepareApprovedCommit, snapshotApproved } from "../src/publication";
 
 test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX === "1")("publication freezes approved bytes and ignores hostile metadata and hooks", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-publication-test-"));
@@ -28,6 +28,7 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
     await Bun.write(hook, `#!/bin/sh\nprintf escaped > '${marker}'\n`); await chmod(hook, 0o755);
     await git(work, "config", "core.hooksPath", join(work, ".git", "hooks"));
     sandbox = await checkSandbox(work);
+    expect(await assemblerContext(sandbox, ["value.ts", "new.test.ts"])).toEqual([{ path: "value.ts", content: "export const value = 2;\n" }, { path: "new.test.ts", content: "File does not exist yet" }]);
     const files = await snapshotApproved(sandbox, ["value.ts"]);
     await Bun.write(join(work, "value.ts"), "export const value = 999;\n");
     commit = await prepareApprovedCommit({ sourceUrl: source, baseSha: base, allowedPaths: ["value.ts"] }, files, "fake-publication-token");
