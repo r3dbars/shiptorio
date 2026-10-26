@@ -351,6 +351,12 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put("runnerPair", pairId); // Re-pairing revokes the previous token.
     return pairId;
   }
+  async revokeRunner(): Promise<void> {
+    await this.ctx.storage.delete("runnerPair");
+    await this.ctx.storage.delete("runnerPresence");
+    await this.load();
+    if (this.state) await this.patch({ power: this.state.power.filter(p => !p.id.startsWith("solar-")) });
+  }
   async isRunnerPaired(pairId: string): Promise<boolean> {
     return await this.ctx.storage.get("runnerPair") === pairId;
   }
@@ -458,6 +464,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   async claimRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
+      const running = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
+      if ([...running.values()].some(j => j.status === "running" && j.deadline && j.deadline > Date.now())) return null;
       await this.load();
       await this.ctx.storage.put("runnerPresence", { harnesses, seenAt: Date.now() });
       const localPower = harnesses.map(h => ({ id: `solar-${h}`, kind: "solar" as const, name: h === "codex" ? "ChatGPT" : "Claude", level: 1, online: true }));
