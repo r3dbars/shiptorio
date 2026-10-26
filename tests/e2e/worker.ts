@@ -14,6 +14,10 @@ const files = [
   { filename: 'src/cart.test.ts', status: 'modified', changes: 2, patch: '-expect(total()).toBe(0);\n+expect(total()).toBe(1);' },
 ];
 const reply = (value: unknown) => Response.json(value);
+const promptJson = (content: string) => {
+  const envelope = content.match(/^UNTRUSTED_DATA_BEGIN\n([\s\S]*)\nUNTRUSTED_DATA_END$/);
+  return JSON.parse(envelope ? JSON.parse(envelope[1]) : content);
+};
 // Fail closed: accidental unstubbed provider requests cannot reach the internet.
 globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
@@ -22,7 +26,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const dev = body.messages[0].content as string;
     let out: unknown;
     if (dev.includes('ONE tool per turn')) {
-      const brief = JSON.parse(body.messages[1].content);
+      const brief = promptJson(body.messages[1].content);
       const read = brief.alreadyRead as string[];
       out = !read.includes('issue') ? { tool: 'read_issue', reason: 'Read issue' }
         : !read.includes('src/cart.ts') ? { tool: 'read_file', path: 'src/cart.ts', reason: 'Read implementation' }
@@ -30,7 +34,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     } else if (dev.includes('Pick the files')) out = { files: ['src/cart.ts', 'src/cart.test.ts'] };
     else if (dev.includes('triage incoming')) out = { kind: 'bug', district: 'src', reason: 'Cart defect' };
     else if (dev.includes('game master')) {
-      const brief = JSON.parse(body.messages[1].content);
+      const brief = promptJson(body.messages[1].content);
       out = { order: brief.cards.map((c: { id: string }) => c.id), reason: 'Oldest first', picks: {} };
     } else if (dev.includes('"verdict"')) out = { verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
     else throw new Error(`Unstubbed Meta prompt: ${dev.slice(0, 80)}`);
