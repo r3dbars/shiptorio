@@ -19,7 +19,12 @@ export async function smoke({ tab, baseUrl, fs, outputDir, scenarios = ['quiet-m
     let interacted=false;
     try {
       const suggested=tab.playwright.getByRole('button',{name:/SUGGESTED/}).first();
-      await suggested.waitFor({state:'visible',timeoutMs:15000});
+      let ready=false;
+      for(let attempt=0; attempt<5 && !ready; attempt++) {
+        try { await suggested.waitFor({state:'visible',timeoutMs:3000}); ready=true; }
+        catch(error) { tree=await tab.getAXState({emit:false}); if(attempt===4) throw error; }
+      }
+      tree=await tab.getAXState({emit:false});
       await suggested.click();
       tree=await tab.getAXState({emit:false}); interacted=true;
     } catch(error) { findings.push({severity:'P2',title:'Suggested action unavailable or failed',detail:String(error).slice(0,500)}); }
