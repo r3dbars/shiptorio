@@ -57,7 +57,6 @@ const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
-const TOP_BAR_PX = 64; // the top bar (score chips, mode toggle, icons); map labels stay below it
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -216,6 +215,11 @@ function bakedItem(key: string, states: string[] | undefined, make: () => Built)
     setSeed(after);
     return copy;
   }, states);
+}
+
+// Only touch the DOM when a value changes; style writes invalidate layout even when equal-looking.
+function setStyle(el: HTMLElement, prop: "display" | "transform", v: string) {
+  if (el.style[prop] !== v) el.style[prop] = v;
 }
 
 // Where the label sits above each model, from the Item Lab's item heights.
@@ -1486,9 +1490,12 @@ export class FactoryScene {
     });
   }
 
+  // Reads every label's size once, then writes every position: interleaving the two forced a
+  // layout per label per frame. Labels that would overlap stack upward instead.
   private placeLabels() {
     const w = this.width, h = this.height;
     let teachingRow = 0;
+    const placed: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const l of this.labels) {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y;
@@ -1500,27 +1507,49 @@ export class FactoryScene {
       if (teaching) y -= (teachingRow++ % 3) * 24;
       const shown = teaching || this.showAll || l.el.classList.contains("hot") || l.el.classList.contains("island") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
-      l.el.style.display = off ? "none" : "flex";
-      // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
-      if (!off) y = Math.max(y, TOP_BAR_PX + l.el.offsetHeight);
-      if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
+      setStyle(l.el, "display", off ? "none" : "flex");
+      if (!off) placed.push({ el: l.el, x, y, w: 0, h: 0 });
     }
+    const tags: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const pe of this.pings) {
       const l = [...this.labels].find((x) => x.key === pe.key);
       if (!l) {
-        pe.el.style.display = "none";
+        setStyle(pe.el, "display", "none");
         continue;
       }
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y * 0.55;
       this.v3.project(this.camera);
       const x = ((this.v3.x + 1) / 2) * w;
-      let y = ((1 - this.v3.y) / 2) * h;
-      pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
-      y = Math.max(y, TOP_BAR_PX + pe.el.offsetHeight / 2);
-      pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      const y = ((1 - this.v3.y) / 2) * h;
+      const off = x < -40 || x > w + 40 || y < -20 || y > h + 20;
+      setStyle(pe.el, "display", off ? "none" : "flex");
+      if (!off) tags.push({ el: pe.el, x, y, w: 0, h: 0 });
+    }
+    // one layout for everything, including where the HUD sits (its chips and the Check in / Build
+    // lens move around on phones, and the notch pushes them down)
+    for (const p of [...placed, ...tags]) (p.w = p.el.offsetWidth), (p.h = p.el.offsetHeight);
+    const hud = [...document.querySelectorAll(".topbar > *, .lens")].map((e) => e.getBoundingClientRect());
+    const canvasTop = this.labelRoot.getBoundingClientRect().top;
+    const below = (x: number, half: number) =>
+      hud.reduce((m, r) => (r.right > x - half && r.left < x + half && r.top < canvasTop + h / 2 ? Math.max(m, r.bottom - canvasTop + 4) : m), 0);
+    // a label that would hide under the HUD stops just below it; then, top to bottom, a label that
+    // overlaps one already placed moves down under it
+    for (const p of placed) p.y = Math.max(p.y, below(p.x, p.w / 2) + p.h);
+    placed.sort((a, b) => a.y - b.y);
+    for (let i = 0; i < placed.length; i++) {
+      const p = placed[i];
+      for (let j = 0; j < i; j++) {
+        const q = placed[j];
+        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 && p.y > q.y - q.h && p.y - p.h < q.y) p.y = q.y + p.h + 2;
+      }
+      setStyle(p.el, "transform", `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`);
+    }
+    for (const t of tags) {
+      const y = Math.max(t.y, below(t.x, t.w / 2) + t.h / 2);
+      setStyle(t.el, "transform", `translate(${Math.round(t.x)}px,${Math.round(y)}px)`);
       // keep the tag on screen: flip it to the dot's left near the right edge
-      pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
+      t.el.classList.toggle("flip", t.x + t.w > w - 8);
     }
   }
 

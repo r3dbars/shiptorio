@@ -366,7 +366,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
             )}
             {end}
             <p className="ci-quote">The score isn't how many you cleared. It's how few need you tomorrow.</p>
-            <button type="button" className="nm-btn" onClick={close}>
+            <button type="button" className="btn nm-btn" onClick={close}>
               Back to the floor
             </button>
           </div>
