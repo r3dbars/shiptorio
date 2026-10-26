@@ -6,6 +6,7 @@ import { useState, type ReactNode } from "react";
 import type { Item, Move, WebToServer } from "@shiptorio/shared";
 import type { LogLine } from "../store";
 import { Icon, type IconName } from "./icons";
+import { ACTIVITY, WORDS } from "../copy";
 
 const UNDO_MS = 5 * 60_000;
 const FEED_MAX = 40;
@@ -48,24 +49,24 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
   return (
     <>
       <div className="tray-scrim" onClick={onClose} aria-hidden="true" />
-      <aside className="tray" aria-label="Activity">
+      <aside className="tray" aria-label={ACTIVITY.title}>
         <div className="tray-top">
           <div>
-            <h2>Activity</h2>
+            <h2>{ACTIVITY.title}</h2>
             <div className="tray-sub">{header}</div>
           </div>
-          <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close activity">
+          <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={ACTIVITY.close}>
             <Icon name="cross" size={14} />
           </button>
         </div>
 
-        <h3>You should</h3>
+        <h3>{ACTIVITY.yourMove}</h3>
         {onCheckin && deck.length > 1 && (
           <button type="button" className="btn rec tray-checkin" onClick={onCheckin}>
-            Check in · {deck.length} cards
+            {ACTIVITY.checkin(deck.length)}
           </button>
         )}
-        {deck.length === 0 && ready.length === 0 && <p className="tray-empty">Nothing needs you right now.</p>}
+        {deck.length === 0 && ready.length === 0 && <p className="tray-empty">{ACTIVITY.nothing}</p>}
         {deck.map((m) => {
           const id = `m:${m.id}`;
           const on = open === id;
@@ -85,13 +86,13 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
                     {m.options.map((o) => (
                       <button key={o.id} type="button" className={o.recommended ? "btn rec" : "btn"} onClick={() => send({ type: "choose_move", moveId: m.id, optionId: o.id })}>
                         {o.label}
-                        {o.recommended && <span className="sugg">Suggested</span>}
+                        {o.recommended && <span className="sugg">{WORDS.suggested}</span>}
                       </button>
                     ))}
                   </div>
                   {m.focus && (
                     <button type="button" className="btn ghost" onClick={() => onShow(m.focus!)}>
-                      Show on map
+                      {ACTIVITY.showOnMap}
                     </button>
                   )}
                 </div>
@@ -107,20 +108,20 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
               <button type="button" className="tcard-head" aria-expanded={on} onClick={() => toggle(id)}>
                 <span className="tdot warn"><Icon name="rocket" size={14} /></span>
                 <span className="tt">
-                  Launch #{i.prNumber} {i.title}
+                  {ACTIVITY.launchRow(`#${i.prNumber}`, i.title)}
                   {i.district && <code>{i.district}</code>}
                 </span>
               </button>
               {on && (
                 <div className="tmore">
-                  <p>Passed every check. Launching merges it.</p>
+                  <p>{ACTIVITY.launchWhy}</p>
                   <div className="tbtns">
                     <button type="button" className="btn rec" onClick={() => onLaunch(i)}>
-                      Launch
+                      {ACTIVITY.launch}
                     </button>
                     {i.prUrl && (
                       <a className="btn" href={i.prUrl} target="_blank" rel="noreferrer">
-                        Open PR
+                        {WORDS.openPr}
                       </a>
                     )}
                   </div>
@@ -130,8 +131,8 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
           );
         })}
 
-        <h3>Happening now</h3>
-        {feed.length === 0 && <p className="tray-empty">Quiet so far.</p>}
+        <h3>{ACTIVITY.feed}</h3>
+        {feed.length === 0 && <p className="tray-empty">{ACTIVITY.feedEmpty}</p>}
         {feed.map((l, n) => {
           const id = `l:${l.at}-${n}`;
           const on = open === id;
@@ -147,12 +148,12 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
               </button>
               {on && (
                 <div className="tmore">
-                  {l.reason && <p>Why: {l.reason}</p>}
+                  {l.reason && <p>{ACTIVITY.why(l.reason)}</p>}
                   {l.tool && <code>{l.tool}</code>}
-                  {l.approvedBy === "autonomy" && <p>Done on its own.</p>}
+                  {l.approvedBy === "autonomy" && <p>{ACTIVITY.onItsOwn}</p>}
                   {canUndo && (
                     <button type="button" className="btn ghost" onClick={() => send({ type: "undo", actionId: l.actionId! })}>
-                      Undo
+                      {ACTIVITY.undo}
                     </button>
                   )}
                 </div>
@@ -163,11 +164,11 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
 
         {stats && (
           <>
-            <h3>Stats</h3>
+            <h3>{ACTIVITY.stats}</h3>
             {stats}
           </>
         )}
-        <h3>Settings</h3>
+        <h3>{ACTIVITY.settings}</h3>
         <div className="tray-settings">{settings}</div>
       </aside>
     </>
