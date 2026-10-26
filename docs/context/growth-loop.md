@@ -1,5 +1,7 @@
 # The growth loop (prototype)
 
+**Review boundary:** live growth remains opt-in behind the existing default-off `newFeatures` kill switch and is paused until an authorized ordered, whole-window unique-person funnel query is implemented. The existing route traffic poll is context only. Simulator cohorts are synthetic; no real conversion or impact is validated by this prototype. Final comparisons require the full fixed window; missing/underpowered evidence stays inconclusive.
+
 The first loop past code, toward the long-term vision in `docs/VISION.md` ("Where it goes": marketing,
 acquisition, retention, same game, more districts). PR #177.
 
@@ -7,11 +9,9 @@ acquisition, retention, same game, more districts). PR #177.
 
 ## The loop
 
-1. **Signal.** Route traffic (the PostHog mine's existing poll) only *picks* the step to watch
-   (`guessFunnel`). Conversion always comes from a separate per-person funnel query (`funnelQuery`): people
-   whose first `from` pageview on a UTC day is followed by a `to` pageview later that same day. Same person,
-   in order, one-day window (`funnelDays` is the same rule in code, with disjoint-cohort and cross-day tests).
-   A step that converts at least 20% worse yesterday than its 7-day baseline, with all 8 days present, is a drop.
+1. **Signal.** An ordered funnel query must count the same people progressing through the steps over
+   exact, complete windows. The current route-traffic poll cannot provide that evidence. The simulator
+   supplies explicitly synthetic cohort windows. A conversion drop is at least 20% below its 7-day baseline.
 2. **Proposal.** Spark proposes one small, reversible experiment (copy, a CTA, an onboarding tweak, a small
    layout change) through `Factory.think("growth")`, so it lands in "How it thinks". No Meta key, or no
    answer: a fixed rule picks one (`fallbackExperiment`) and it's logged as a fallback. Spark never writes it.
@@ -19,13 +19,12 @@ acquisition, retention, same game, more districts). PR #177.
    normal line: triage, the player's go, the player's assembler, the whole gauntlet, the merge gate. No
    shortcuts. In the sim, the yes is a Next Move card: "/cart → /checkout fell 31%. Run an experiment?"
 4. **Measure.** After the launch, the **measure station** (new machine `measure-1`, next to orbit watch)
-   freezes the 7 days before the launch as the baseline (A), then adds each full day after the launch (B)
-   and runs a two-proportion z-test.
-5. **Verdict, once, at the predeclared 7-day horizon** (no daily peeking: stopping on the first p < 0.05
-   inflates false wins). Before day 7 it's always "still measuring"; a significant drop only shows as an
-   advisory early warning. At day 7: `inconclusive` if any day is missing or either side has under 200 people,
-   else `lift` (p < 0.05, at least +2%), `hurt` (p < 0.05, at least −2%) or `no lift`. It pops over the
-   station (`+20% LIFT`, `NO LIFT`, `HURT`, `NO CALL`) and the sim offers a card: keep it / roll it back.
+   compares one complete 7-day baseline query (A) with one complete 7-day after-launch query (B).
+   Intermediate reads are provisional; daily unique-user totals are not added together.
+5. **Verdict.** After the complete fixed window, adequate baseline/after samples may show an observed
+   `lift` or `hurt` (p < 0.05, at least 2% relative). Otherwise the comparison is `no clear lift` or
+   `inconclusive` when data is missing, underpowered or invalid. Before/after differences do not establish
+   that the PR caused the change. Only the simulator offers keep / rollback cards; no external revert is issued.
 
 ## Where things live
 
@@ -43,21 +42,21 @@ acquisition, retention, same game, more districts). PR #177.
 
 ## Thresholds (shared/src/growth.ts)
 
-`FUNNEL_MIN_ENTERED` 50 people/day, `FUNNEL_DROP` 20%, `MEASURE_DAYS` 7, `MIN_SAMPLE` 200 people on each side
-(before and after), `ALPHA` 0.05, `MIN_LIFT` 2%.
+`FUNNEL_MIN_ENTERED` 50 people/day, `FUNNEL_DROP` 20%, `MEASURE_DAYS` 7, `MIN_SAMPLE` 200 people in each complete baseline/after window, `ALPHA` 0.05, `MIN_LIFT` 2%.
 
 ## Known gaps (next slices)
 
-- **Funnel choice.** Live picks the step with `guessFunnel` (`/cart → /checkout`, `/pricing → /signup`,
+- **Funnel choice.** The future live adapter can suggest the step with `guessFunnel` (`/cart → /checkout`, `/pricing → /signup`,
   `/ → /signup`, `/ → /pricing`). Next: let the player name the funnel on the PostHog connect page, or ask
   PostHog for its saved funnels.
-- **Fixed horizon, not sequential.** One call at day 7 keeps the 5% error rate honest. An anytime-valid
-  sequential test (mSPRT / always-valid p-values) would allow a real early stop; not built yet.
 - **Before/after, not A/B.** It compares the week before the launch with the days after. Seasonality and
   other launches can fool it. Next: ship the change behind a PostHog feature flag and measure the split.
 - **Roll back is a log line in the sim.** Live has no "keep / roll back" card yet; the verdict lands in the
   floor log and the station panel. Next: a deck card that opens a revert PR through the gauntlet.
-- **Live verdicts are plain math**, so they go in the floor log, not "How it thinks". Spark could explain
+- **Future live verdicts are plain comparisons**, so they belong in the floor log, not "How it thinks". Spark could explain
   *why* it moved (or didn't) and pick the next idea; that's the obvious next Spark call.
-- The funnel query looks back 21 days: enough for a 7-day baseline before the launch plus the 7-day watch,
-  as long as the poll after the launch runs within a week of it (it runs every 5 minutes).
+- **Ordered cohort producer is not implemented.** Tenant-authorized, definition-matched PostHog funnel
+  queries must supply whole-window unique-person counts before the guarded live adapter can run.
+  Missing baseline/after windows leave measurements pending; route traffic alone never creates an experiment.
+
+The author's per-person/day ordered funnel query and parser are retained in the PostHog source module as prototype helpers. Their daily uniques are not a whole-window unique-person sample, so the guarded live adapter does not feed them into experiment verdicts. A future producer must provide exact, definition-matched cohort windows.

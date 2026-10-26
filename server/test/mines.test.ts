@@ -184,27 +184,13 @@ it("Factory: FAKE_POSTHOG polls on the alarm and drops ore on the checkout distr
   expect(traffic(f.saved().items).length).toBe(2);
 });
 
-it("Factory: a PostHog funnel drop becomes one experiment on the line (growth loop), once", async () => {
+it("Factory: route traffic alone never creates a measured growth experiment", async () => {
   const f = factoryFixture({ FAKE_POSTHOG: "1" });
   await f.factory.connectMine("posthog");
   await f.factory.alarm();
-  const exps = f.saved().experiments ?? [];
-  expect(exps.length).toBe(1);
-  const [exp] = exps;
-  expect(exp.step.label).toBe("/cart → /checkout");
-  expect(exp.state).toBe("building");
-  expect(exp.title.startsWith("Experiment:")).toBe(true);
-  const item = f.saved().items.find((i) => i.id === exp.itemId)!;
-  expect(item.kind).toBe("feature");
-  expect(item.ore?.fingerprint).toBe(`growth:${exp.id}`);
-  expect(item.body).toContain("measure station");
-  // no Meta key in the fixture: the fixed rule picked it, and nothing pretends Spark did
-  expect(f.saved().brain?.thoughts.some((t) => t.decision === "growth" && t.by === "spark")).toBe(false);
-  // the measure station goes on the map with the first experiment
-  expect(f.saved().machines.some((m) => m.id === "measure-1")).toBe(true);
-  expect(f.saved().stations?.find((st) => st.kind === "measure")?.wip).toBe(0);
-  await f.factory.alarm();
-  expect((f.saved().experiments ?? []).length).toBe(1);
+  expect(f.saved().experiments ?? []).toEqual([]);
+  expect(f.saved().items.some(i => i.ore?.fingerprint.startsWith("growth:"))).toBe(false);
+  expect(f.saved().machines.some(m => m.id === "measure-1")).toBe(false);
 });
 
 it("Factory: keys set as Worker secrets plug the mines in when the map opens, and stay unplugged once disconnected", async () => {

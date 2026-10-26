@@ -26,8 +26,6 @@ import {
   WebToServer,
   emptyResearch,
   fallbackExperiment,
-  type FunnelDay,
-  type FunnelStep,
   insertCheck,
   researchBlocked,
   suggestResearch,
@@ -35,6 +33,7 @@ import {
   TECHS,
   type Belt,
   type FactoryState,
+  type FunnelWindow,
   type Item,
   type Machine,
   type Move,
@@ -63,8 +62,8 @@ import { buildDeck, moveScope, enrichMove } from "./deck";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
-import { analyze, fakeFunnelDays, fakePostHogRows, fetchFunnelDays, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
-import { experimentSignal, funnelFromTraffic, growthTick, MEASURE_ID, measureMachine, newExperiment, stepsToQuery } from "./growth";
+import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
+import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
@@ -1041,7 +1040,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.ctx.storage.put("posthogPoll", { nextAt: now + pollDelay(POLL_MS), failures: 0 });
       await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
-      await this.growthPoll(rows, now, (step) => (fake ? Promise.resolve(fakeFunnelDays(now, step)) : fetchFunnelDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! }, step)));
+      await this.growthPoll(rows, creds.keyEvent || "$pageview", now);
       const top = traffic.slice(0, 3).map((t) => `${t.route} ${t.usersPerDay}/day`).join(", ");
       const status = this.state!.sources?.find((source) => source.kind === "posthog") ?? (await this.mineStatus("posthog"));
       await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "connected", detail: top ? `Busiest routes: ${top}.` : status.detail, lastEventAt: status.lastEventAt ?? now }] });
@@ -1055,25 +1054,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   /** The growth loop (server/src/growth.ts): measure launched experiments, and turn a funnel drop into a new one. */
-  private async growthPoll(rows: RouteDay[], now: number, funnel: (step: FunnelStep) => Promise<FunnelDay[]>): Promise<void> {
+  private async growthPoll(rows: RouteDay[], keyEvent: string, now: number, windows: FunnelWindow[] = []): Promise<void> {
     const s = this.state!;
-    // traffic rows only pick the step to watch; conversion always comes from a per-person funnel query
-    const watch = funnelFromTraffic(rows);
-    const funnels = new Map<string, FunnelDay[]>();
-    for (const step of stepsToQuery(s.experiments ?? [], watch)) {
-      try { funnels.set(step.label, await funnel(step)); } catch (err) { this.log("warn", `PostHog funnel ${step.label} didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Measuring waits for the next poll.`); }
-    }
-    const tick = growthTick(s.experiments ?? [], s.items, funnels, now, watch);
+    const users = routeUsers(rows, keyEvent); // Traffic context, not an ordered funnel.
+    // The route poll cannot supply unique-person cohort conversions. A future
+    // authorized funnel query must provide these windows before live growth runs.
+    if (!(await flagEnabled(this.env, "newFeatures")) || !windows.length) return;
+    const tick = growthTick(s.experiments ?? [], s.items, windows, now);
     if (tick.changed) await this.patch({ experiments: tick.experiments });
     for (const exp of tick.decided) {
       // the call is plain math (shared/src/growth.ts), so it goes in the floor log, not the planner's decision log
-      this.log(exp.state === "won" ? "success" : exp.state === "lost" ? "warn" : "info", `Measure station: ${exp.line}${exp.state === "inconclusive" ? "" : ` (p = ${(exp.p ?? 1).toFixed(3)})`}`, exp.itemId);
+      this.log(exp.state === "won" ? "success" : exp.state === "lost" ? "warn" : "info", `Measure station: ${exp.line} (p = ${(exp.p ?? 1).toFixed(3)})`, exp.itemId);
     }
     const drop = tick.drop;
     if (!drop) return;
     const districts = s.districts.map((d) => d.name);
     const fallback = () => ({ ...fallbackExperiment(drop), district: districts[0] ?? "/", reason: "A fixed rule picked the experiment." });
-    const busiestRoutes = [...new Set(rows.map((r) => r.route))].slice(0, 20);
+    const busiestRoutes = [...new Set(users.map((u) => u.route))].slice(0, 20);
     const pick = !sparkConfigured(this.env)
       ? fallback()
       : await this.think("growth", { title: `${drop.step.label} −${drop.dropPct}%`, target: "ore-posthog" },
