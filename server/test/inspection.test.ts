@@ -1,5 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test";
-import { inspectPullRequest, openPullRequest } from "../src/github";
+import { inspectPullRequest, openIssues, openPullRequest } from "../src/github";
 
 async function inspection(checks: unknown[], statuses: unknown[] = [], eventSha = "current") {
   const fetcher = spyOn(globalThis, "fetch").mockImplementation((async (url: RequestInfo | URL) => {
@@ -13,6 +13,20 @@ async function inspection(checks: unknown[], statuses: unknown[] = [], eventSha 
 }
 
 describe("current-commit inspection", () => {
+  it("paginates issue backfill, excludes PRs and caps it at fifty issues", async () => {
+    const pages: number[] = [];
+    const fetcher = spyOn(globalThis, "fetch").mockImplementation((async (url: RequestInfo | URL) => {
+      const page = Number(new URL(String(url)).searchParams.get("page"));
+      pages.push(page);
+      return Response.json(Array.from({ length: 25 }, (_, index) => ({ number: (page - 1) * 25 + index, ...(index === 0 ? { pull_request: {} } : {}) })));
+    }) as unknown as typeof fetch);
+    try {
+      const issues = await openIssues("fake-token", "example/demo");
+      expect(issues).toHaveLength(50);
+      expect(issues.some((issue) => issue.pull_request)).toBe(false);
+      expect(pages).toEqual([1, 2, 3]);
+    } finally { fetcher.mockRestore(); }
+  });
   it("cannot pass on stale, absent, skipped-only, or partially completed checks", async () => {
     expect((await inspection([{ name: "CI", status: "completed", conclusion: "success" }], [], "old")).state).toBe("pending");
     expect((await inspection([])).state).toBe("pending");
