@@ -185,6 +185,7 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
 // Gauntlet stations are inspector-type machines; the station kind picks the Item Lab model.
 const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4 };
 const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
+const CAUGHT_SLAM_MS = 620; // the verify bay's ram slam in the sound (shiptorio:station), so the CAUGHT! lands on it
 const FOCUS_ZOOM = 0.5; // how close the camera flies in on a picked machine
 const clickable = (key: string) => !key.startsWith("d:") && key !== "drone";
 
@@ -941,10 +942,15 @@ export class FactoryScene {
   }
 
   // The demo moment: CI waved a fix through and the verify bay caught it anyway.
+  // The bay goes red at once (with the sound's klaxon); the slam lands on the sound's ram hit, CAUGHT_SLAM_MS later.
   private caught(st: Station, m: Machine, item: Item, at: THREE.Vector3) {
+    window.dispatchEvent(new CustomEvent("shiptorio:caught", { detail: { itemId: item.id, title: item.title, stationId: st.id } }));
+    setTimeout(() => this.slam(m, item, at), CAUGHT_SLAM_MS);
+  }
+
+  private slam(m: Machine, item: Item, at: THREE.Vector3) {
     const why = item.scars?.at(-1)?.reason ?? item.failure;
-    this.pop(at, "CAUGHT!", "caught", why ? `passed CI · ${why}` : "passed CI · failed verify", 3.2);
-    window.dispatchEvent(new CustomEvent("shiptorio:caught", { detail: { itemId: item.id, title: item.title, stationId: st.id, reason: why } }));
+    this.pop(at, "CAUGHT!", "caught", !why ? "passed CI · failed verify" : /\bCI\b/.test(why) ? why : `passed CI · ${why}`, 3.2);
     if (this.reduceMotion) return;
     const base = this.machinePos(m);
     for (const delay of [0, 0.18, 0.36]) {
