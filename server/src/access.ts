@@ -80,6 +80,7 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
       if (!referrer) sameSite = request.headers.get("sec-fetch-site") === "same-origin" && request.headers.get("sec-fetch-mode") === "navigate";
     }
     if (!sameSite && (origin === null || origin === "null") && request.headers.get("sec-fetch-site") !== "cross-site") sameSite = await validForm(request, secret, form.get("csrf"));
+    if (request.headers.get("sec-fetch-site") === "cross-site") sameSite = false;
     if (!sameSite) return gate(request, secret, "Please reopen this site with https://, then enter the password again.", "/", 403);
     const digest = async (value: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
     const [given, expected] = await Promise.all([digest(form.get("password") ?? ""), digest(env.APP_PASSWORD)]);

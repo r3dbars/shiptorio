@@ -109,6 +109,7 @@ it("supports header-stripping Firefox privacy using a signed expiring form proof
   expect((await post({ cookie, origin: "null" }))?.status).toBe(303);
   expect((await post({ cookie, origin: "https://evil.example" }))?.status).toBe(403);
   expect((await post({ cookie, "sec-fetch-site": "cross-site" }))?.status).toBe(403);
+  expect((await post({ cookie, referer: "https://shiptorio.com/", "sec-fetch-site": "cross-site" }))?.status).toBe(403);
   expect((await post({ cookie: cookie + "forged" }))?.status).toBe(403);
   expect((await post({ cookie }, csrf + "forged"))?.status).toBe(403);
   expect((await post({}))?.status).toBe(403);
