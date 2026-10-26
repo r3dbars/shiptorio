@@ -276,7 +276,15 @@ app.post("/webhooks/sentry", async (c) => {
   return c.json({ ok: true, queued: true }, 202);
 });
 
-// Everything else is the web app.
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+// Everything else is the web app. Vite content-hashes everything under /assets/, so the browser
+// keeps those for a year (private: the site sits behind the preview gate) and a returning player
+// only downloads what a deploy changed. Pages themselves always revalidate.
+app.all("*", async (c) => {
+  const res = await c.env.ASSETS.fetch(c.req.raw);
+  if (!res.ok || !c.req.path.startsWith("/assets/")) return res;
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "private, max-age=31536000, immutable");
+  return out;
+});
 
 export default app;
