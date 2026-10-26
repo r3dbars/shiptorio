@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "./index";
 import { FLAG_DEFAULTS, flagKey, flagName, readFlags } from "./flags";
-import { isAllowed, readSession } from "./session";
+import { currentUser } from "./accounts";
 
 export const ops = new Hono<{ Bindings: Env; Variables: { admin: string } }>();
 const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
@@ -28,12 +28,13 @@ ops.get("/api/health", async c => {
   return c.json({ ok, checks: { d1, kv, durableObject } }, ok ? 200 : 503);
 });
 ops.get("/api/flags", async c => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  return c.json(await readFlags(c.env, login && isAllowed(c.env.ALLOWED_LOGINS, login) ? login : undefined));
+  const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+  return c.json(await readFlags(c.env, user?.login));
 });
 for (const path of ["/admin", "/api/admin/*"]) ops.use(path, async (c, next) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ADMIN_LOGINS ?? "", login)) return c.json({ error: "admin login required" }, 403);
+  const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+  const login = user?.login;
+  if (!login || !(c.env.ADMIN_LOGINS ?? "").split(",").some(admin => admin.trim().toLowerCase() === login.toLowerCase())) return c.json({ error: "admin login required" }, 403);
   c.set("admin", login);
   await next();
 });

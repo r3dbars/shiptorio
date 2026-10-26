@@ -12,12 +12,12 @@ function fixture() {
   const values = new Map<string, string>();
   const CACHE = { get: async (key: string) => values.get(key) ?? null, put: async (key: string, value: string) => { values.set(key, value); }, delete: async (key: string) => { values.delete(key); } };
   const env = { SESSION_SECRET: secret, APP_PASSWORD: password, ADMIN_LOGINS: "admin", ALLOWED_LOGINS: "admin,player", CACHE,
-    DB: { prepare: () => ({ first: async () => ({ 1: 1 }) }) },
+    DB: { prepare: () => ({ first: async () => ({ 1: 1 }), bind: (_hash: string, uid: number) => ({ first: async () => uid === 1 ? { id: 1, login: "admin" } : { id: 2, login: "player" } }) }) },
     FACTORY: { idFromName: (name: string) => name, get: () => ({ health: async () => ({ ok: true }) }) } };
   return { values, env, request: (path: string, init?: RequestInit) => app.fetch(new Request(`https://shiptorio.dev${path}`, init), env as never) };
 }
 async function cookies(user: string) {
-  return [(await makeSessionCookie(secret, user)).split(";")[0], (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
+  return [(await makeSessionCookie(secret, user, Date.now(), { sid: "ops-test-session-id", uid: user === "admin" ? 1 : 2 })).split(";")[0], (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
 }
 test("flag precedence, user isolation, defaults and fail-closed storage", async () => {
   const { env, values } = fixture();
@@ -74,4 +74,14 @@ test("permit kill switch blocks existing autonomous launches before any GitHub r
   const launch = factory as unknown as { launch(item: unknown, by: string): Promise<void> };
   // Would read meta/token if the guard were absent. No initialized repo is needed to stop it.
   await launch.launch({ prNumber: 1 }, "autonomy");
+});
+
+test("revoked and legacy signed sessions cannot administer flags", async () => {
+  const { env, request } = fixture();
+  const validCookies = await cookies("admin");
+  (env.DB as unknown as { prepare: unknown }).prepare = () => ({ bind: () => ({ first: async () => null }) });
+  expect((await request("/admin", { headers: { cookie: validCookies } })).status).toBe(403);
+  const legacy = (await makeSessionCookie(secret, "admin")).split(";")[0];
+  const preview = (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
+  expect((await request("/admin", { headers: { cookie: `${legacy}; ${preview}` } })).status).toBe(403);
 });
