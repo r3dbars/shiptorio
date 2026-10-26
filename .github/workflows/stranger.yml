@@ -37,6 +37,17 @@ jobs:
           node-version: 22
       - run: bun install --frozen-lockfile
       - run: bun run build
+      # runner-images configures this signed Ubuntu mirrorlist with Azure first. Its package
+      # downloads can stall without failing over; retain the official archive/security entries.
+      # https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/configure-apt-sources.sh
+      - name: Prefer official Ubuntu mirrors
+        run: |
+          mirrors=/etc/apt/apt-mirrors.txt
+          test -f "$mirrors"
+          grep -Eq '^https://archive\.ubuntu\.com/ubuntu/([[:space:]]|$)' "$mirrors"
+          sudo sed -Ei '\|^https?://azure[.]archive[.]ubuntu[.]com/ubuntu/([[:space:]].*)?$|d' "$mirrors"
+          ! grep -q 'azure.archive.ubuntu.com' "$mirrors"
+          cat "$mirrors"
       - name: Playwright + Chromium
         run: |
           npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-audit --no-fund playwright@1.63.0
