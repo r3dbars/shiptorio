@@ -116,3 +116,21 @@ export function levelMove(book: PermitBook, level: AutonomyLevel, now = Date.now
     ],
   };
 }
+
+/**
+ * Which card the planner may answer on its own at this level, and with which option. Only the recommended option,
+ * only the tools the level covers. Merging (request_merge), overrules, research, customer replies and the level
+ * card itself always wait for the player.
+ */
+export function levelTap(card: Move, level: AutonomyLevel): { optionId: string; why: string } | null {
+  const option = card.options.find((o) => o.recommended);
+  const action = option?.actions[0];
+  if (!option || !action || card.locked) return null;
+  if (action.tool === "plan_runner_job" && card.stage === "build" && !option.id.startsWith("rework-") && rank(level) >= rank("floor"))
+    return { optionId: option.id, why: "Floor: plans start on their own" };
+  if (action.tool === "approve_runner_job" && rank(level) >= rank("build")) return { optionId: option.id, why: "Build: plans get approved on their own" };
+  if (action.tool === "plan_runner_job" && option.id.startsWith("rework-") && rank(level) >= rank("build")) return { optionId: option.id, why: "Build: failed PRs go back with their scar" };
+  if (action.tool === "set_autonomy" && action.args.permit === true && typeof action.args.district === "string" && rank(level) >= rank("lights_out"))
+    return { optionId: option.id, why: "Lights out: earned launch permits are taken" };
+  return null;
+}
