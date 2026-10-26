@@ -736,6 +736,32 @@ export const ONBOARD = {
   first: " first",
   skip: "skip to the sandbox",
   simRepoBlurb: "Demo shop · sample issues",
+  // the sign-in is the foundry's time clock: you punch a card to start your shift
+  eyebrow: "FOUNDRY GATE · TIME CLOCK",
+  clockLabel: "SHIFT CLOCK",
+  clockIn: "PUNCH IN",
+  clockedIn: "CLOCKED IN",
+  card: "CARD 0001",
+  cardName: "NEW HAND",
+  journeyLabel: "Your shift, four stations",
+  journey: [
+    { k: "MINE", d: "issues become ore" },
+    { k: "BUILD", d: "agents build the fix" },
+    { k: "VERIFY", d: "checks prove it" },
+    { k: "LAUNCH", d: "you ship it" },
+  ],
+  pickEyebrow: "CLOCKED IN · PICK YOUR LINE",
+  installCta: "INSTALL SHIPTORIO ON A REPO",
+  installHelp: "Opens GitHub in a new tab. Pick one repo to start; you can add more later. Your repo shows up here by itself once it's installed.",
+  installWaiting: "WAITING FOR GITHUB",
+  find: "Find a repo",
+  findPlaceholder: "filter by name",
+  noMatch: (q: string) => `No repo matches "${q}".`,
+  failed: "Couldn't load your repos from GitHub.",
+  failedHelp: "Try again, or type the repo by hand.",
+  retry: "TRY AGAIN",
+  lampOpen: (n: number) => (n ? `${n} OPEN` : "CLEAR"),
+  lampUnknown: "READY",
 };
 
 // ---------- your empire: every repo is an island ----------
