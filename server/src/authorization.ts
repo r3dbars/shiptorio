@@ -1,4 +1,4 @@
-// The only session adapter: replace this with the accounts lane's user lookup when it lands.
+// Shared adapter over accounts.ts. HTTP, browser sockets and runner grants use one revocable session.
 import { currentUser } from './accounts';
 import { isAllowed, readSessionDetails } from './session';
 import { gh, installationToken, repoInstallationId, type AppCredentials } from './github';
@@ -37,8 +37,8 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   try {
     if (await repoInstallationId(env, repo) !== row.installation_id) return null;
     const token = await installationToken(env, row.installation_id);
-    const result = await gh<{ permission: string }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
-    if (!['read', 'triage', 'write', 'maintain', 'admin'].includes(result.permission)) return null;
+    const result = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
+    if (result.user?.id !== user.id || !['read', 'triage', 'write', 'maintain', 'admin'].includes(result.permission)) return null;
     await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }).catch(() => {});
     return row.installation_id;
   } catch { return null; } // API errors and suspended/uninstalled Apps fail closed.

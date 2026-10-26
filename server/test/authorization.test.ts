@@ -92,7 +92,7 @@ it('GitHub refresh checks installation identity and effective user permission; e
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname; paths.push(path);
     if (fail) return new Response('{}', { status: 503 });
-    return Response.json(path.endsWith('/installation') ? { id: installed } : path.endsWith('/access_tokens') ? { token: 'test-install-token' } : { permission });
+    return Response.json(path.endsWith('/installation') ? { id: installed } : path.endsWith('/access_tokens') ? { token: 'test-install-token' } : { permission, user: { id: 22 } });
   }) as typeof fetch;
   try {
     expect(await repoAccess(f.env as never, user, 'BOB/PRIVATE')).toBe(22);
@@ -146,4 +146,31 @@ it('runner capability is confined to pairing user, installation and repo, includ
   f.installs.delete(22);
   expect((await send('bob/private', 'bob')).status).toBe(403);
   expect(f.calls()).toBe(0);
+});
+
+it('real account logout immediately revokes existing sockets and runner grants even with positive KV membership', async () => {
+  const { testD1, signedInCookie } = await import('./d1-fixture');
+  const { membershipCache } = await import('./browser-fixture');
+  const env = { ...fixture().env, DB: testD1(), CACHE: membershipCache };
+  const loginCookie = await signedInCookie(env, 'alice', ['alice/private'], 11);
+  const user = await requireUser(new Request(origin, { headers: { cookie: loginCookie } }), env as never);
+  expect(user?.id).toBe(11);
+  expect(await repoAccess(env as never, user!, 'alice/private')).toBe(1);
+  const state = FactoryState.parse({ repo: 'alice/private', baseBranch: 'main', districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
+  const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 1 }]]);
+  const storage = { get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
+  let closed = 0, sent = 0;
+  const attachment = { user: user!, login: 'alice', expiresAt: user!.expiresAt, epoch: await browserSocketEpoch(env), repo: state.repo };
+  const ws = { deserializeAttachment: () => attachment, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
+  const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, env as never);
+  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(11).run();
+  expect(await repoAccess(env as never, user!, state.repo)).toBeNull();
+  expect(await requireUser(new Request(origin, { headers: { cookie: loginCookie } }), env as never)).toBeNull();
+  await factory.webSocketMessage(ws, JSON.stringify({ type: 'place_machine', machineType: 'assembler', x: 22, y: 22 }));
+  await (factory as unknown as { broadcast(value: unknown): Promise<void> }).broadcast({ type: 'snapshot', state });
+  expect(closed).toBe(2); expect(sent).toBe(0);
+  expect((data.get('state') as FactoryState).machines).toHaveLength(state.machines.length);
+  const token = await pairToken(secret, { repo: state.repo, pairId: 'test', expires: Date.now() + 60000, user: user! });
+  const response = await app.fetch(new Request(`${origin}/api/runner/${state.repo}/renew`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }), env as never);
+  expect(response.status).toBe(403);
 });

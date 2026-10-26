@@ -4,7 +4,7 @@ import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
 import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
-import { isAllowed, readSession } from "./session";
+import { isAllowed } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
 import { sentryStatus, type SentryPayload } from "./sources/sentry";
@@ -160,8 +160,8 @@ app.get("/api/sources", async (c) => {
 app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "sentry" && kind !== "posthog") return c.notFound();
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  const user = await resolveUser(c.req.raw, c.env);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const url = publicUrl(new URL(c.req.url), c.env);
   const repoParam = c.req.query("repo") ?? "";
   const repo = repoParam.toLowerCase();
@@ -293,7 +293,7 @@ app.post("/webhooks/github", async (c) => {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   // Persistence is acknowledged before returning; API and model work run in the DO alarm.
-  await factory(c.env, repo ?? "github-installations").enqueueGitHub(delivery, event, payload);
+  await factory(c.env, ["installation", "installation_repositories"].includes(event) ? "github-installations" : repo!).enqueueGitHub(delivery, event, payload);
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true, duplicate: !inserted.meta.changes }, 202);
 });
@@ -317,8 +317,9 @@ app.on("POST", ["/webhooks/sentry", "/webhooks/sentry/:owner/:repo"], async (c) 
   const repo = targetRepo;
   if (!repo || !REPO_RE.test(repo)) return c.json({ ok: true, ignored: true, reason: "Sentry isn't plugged into a map yet" });
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
-  const delivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
+  const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const delivery = `${repo}:${sourceDelivery}`;
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {

@@ -98,7 +98,7 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
   const good = await sign(env.SENTRY_CLIENT_SECRET, body);
   expect((await send(good)).status).toBe(202);
   expect((await (await send(good)).json() as { duplicate?: boolean }).duplicate).toBe(true);
-  expect(queued).toEqual(["req-1:issue"]);
+  expect(queued).toEqual(["example/shop:req-1:issue"]);
 });
 
 const { Factory } = await import("../src/factory");
