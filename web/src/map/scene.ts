@@ -45,7 +45,6 @@ const ZOOM_MAX = 2.6;
 const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
-const HUD_RIGHT_PX = 340; // width of the HUD column in styles.css
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
 
 export const HARNESS_COLOR: Record<Harness, number> = {
@@ -327,20 +326,16 @@ export class FactoryScene {
     this.target.z = Math.max(b.z0, Math.min(b.z1, this.target.z));
   }
 
-  // Zoom out just enough that the whole machine line, ore to launch pad, fits beside the HUD.
-  // Phones have no HUD column, so the line gets the full width.
+  // Zoom out just enough that the whole machine line, ore to launch pad, fits the screen.
+  // The HUD floats at the top and bottom edges (no side column), so the line gets the full width.
   private fitLine(state: FactoryState) {
     if (!state.machines.length) return;
     const xs = state.machines.map((m) => m.x * CELL);
     const span = (Math.max(...xs) - Math.min(...xs)) * Math.cos(YAW) + 7;
-    const free = (this.width - (this.hasHudColumn() ? HUD_RIGHT_PX + 40 : 16)) / this.height;
+    const free = (this.width - 16) / this.height;
     this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (this.baseViewHeight() * free)));
     this.target.x = (Math.max(...xs) + Math.min(...xs)) / 2;
     this.applyCamera();
-  }
-
-  private hasHudColumn() {
-    return this.width > 760 && this.height > 500; // matches the phone breakpoint in styles.css
   }
 
   // world units shown top to bottom at zoom 1; portrait phones see more so the line isn't cramped
@@ -352,9 +347,7 @@ export class FactoryScene {
   private applyCamera() {
     const a = this.width / this.height;
     const vh = this.baseViewHeight() * this.zoom;
-    // keep the factory centered in the space the HUD cards on the right leave free
-    const shift = this.hasHudColumn() ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
-    Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
+    Object.assign(this.camera, { left: (-vh * a) / 2, right: (vh * a) / 2, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
     this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
