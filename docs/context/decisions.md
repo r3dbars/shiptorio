@@ -180,3 +180,5 @@ persist in D1; wrong-call notes reach the planner brief. Dismissals have five-mi
 undo, including retracting their pending automation preference. The single
 `recordApproval(kind, scope)` hook records intent for the autonomy lane; it cannot
 create a permit or silently authorize a build/merge. No web or workflow changes.
+- 2026-10-26: Firefox native form submissions may omit Origin. Preview login accepts a same-origin Referer, or same-origin navigation Fetch Metadata when Referer is also absent, only if Origin is absent; explicit foreign origins remain blocked; opaque origins require the signed form proof below. A stale HTTP POST redirects to a fresh HTTPS form without replaying its password, and refused requests show recovery instructions.
+- 2026-10-26: Header-stripping Firefox privacy modes can authenticate using a hidden HMAC form token plus matching HttpOnly SameSite=Strict cookie, bound to the origin and expiring in ten minutes. Missing/opaque Origin can use that proof; explicit foreign Origin or cross-site Fetch Metadata cannot. Gate responses forbid framing and third-party form targets.

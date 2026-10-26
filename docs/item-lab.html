@@ -1063,8 +1063,8 @@ dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
       walkLegs(bug, t, fail ? 22 : 14);
       bug.mand.forEach((m, i) => (m.rotation.y = (i ? -1 : 1) * (fail ? 0.15 + Math.abs(Math.sin(t * 12)) * 0.6 : 0.15)));
       const col = fail ? 0xff5e52 : killed ? 0x5bd18b : 0x6fb2ff;
-      scanRing.visible = busy; scanRing.position.y = 0.45 + (Math.sin(t * 2.2) + 1) / 2 * 1.15; scanRing.material.color.setHex(col);
-      lampM.emissive.setHex(!busy ? 0x0b1630 : Math.sin(t * 6) > 0 ? col : 0x10305f);
+      scanRing.visible = true; scanRing.position.y = 0.45 + (Math.sin(t * (busy ? 2.2 : 0.7)) + 1) / 2 * 1.15; scanRing.material.color.setHex(busy ? col : 0x2a4a80);
+      lampM.emissive.setHex(!busy ? (Math.sin(t * 1.5) > 0.4 ? 0x1d3a66 : 0x0b1630) : Math.sin(t * 6) > 0 ? col : 0x10305f);
       floorM.emissive.setHex(!busy ? 0 : fail ? 0x3a0c08 : killed ? 0x0f3a22 : 0x0b1a3a);
       glassM.color.setHex(fail && Math.sin(t * 10) > 0 ? 0xff8a80 : 0x9fd6ff);
       bars.forEach((b, i) => b.material.emissive.setHex(!busy ? (i === 0 ? 0x2a3550 : 0) : fail ? (i === 0 || Math.floor(t * 6 + i) % 3 === 0 ? 0xff5e52 : 0) : killed ? 0x5bd18b : (i === 0 ? 0x6fb2ff : Math.floor(t * 6 + i) % 3 === 0 ? 0x6fb2ff : 0x1d3a66)));

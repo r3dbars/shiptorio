@@ -5,6 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
+import { ghostSpots } from "../map/scene";
 import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
@@ -125,6 +126,49 @@ export const SCENARIOS = {
       { at: 24, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
     ],
   },
+  // Three mines feeding one factory: GitHub issues, Sentry errors (biters) and a PostHog traffic drop.
+  // The drop on /checkout is the same problem as the Sentry error, so it folds in.
+  mines: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    ores: [
+      {
+        at: 2,
+        title: "TypeError: cart.total is undefined",
+        kind: "bug",
+        district: "checkout",
+        source: "sentry",
+        users: 112,
+        spark: [{ tool: "get_sentry_issue", text: "New error on /checkout: TypeError: cart.total is undefined, 112 users", reason: "Sentry webhook" }],
+      },
+      {
+        at: 5,
+        title: "/checkout traffic dropped 70% yesterday",
+        kind: "bug",
+        district: "checkout",
+        source: "posthog",
+        users: 86,
+        linkTo: "TypeError: cart.total is undefined",
+        spark: [
+          { tool: "read_posthog", text: "PostHog: /checkout pageviews 72 yesterday vs 240/day (−70%)", reason: "Traffic poll" },
+          { tool: "link_items", text: "Same problem as the cart.total crash: same route, same day", reason: "Route + timing match" },
+        ],
+      },
+      { at: 9, title: "Add order notes to the cart", kind: "feature", district: "cart" },
+      {
+        at: 14,
+        title: "Error spike on /api/orders: 48 exceptions yesterday",
+        kind: "bug",
+        district: "api",
+        source: "posthog",
+        users: 31,
+        failAt: "verify",
+        failFirst: "CI passed, but the orders endpoint still 500s on an empty body (repro attached)",
+        spark: [{ tool: "read_posthog", text: "PostHog: $exception on /api/orders 48 yesterday vs 2/day", reason: "Traffic poll" }],
+      },
+      { at: 20, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
+    ],
+  },
   // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
   checkin: {
     districts: SHOP_DISTRICTS,
@@ -209,9 +253,11 @@ function initialState(sc: Scenario): FactoryState {
   }
   if (sc.ores.some((o) => o.source === "sentry")) machines.push({ id: "ore-sentry", type: "ore_deposit", x: -6, y: -3, tier: 1, state: "idle" });
   if (sc.ores.some((o) => o.source === "inbox")) machines.push({ id: "ore-inbox", type: "ore_deposit", x: -6, y: 3, tier: 1, state: "idle" });
+  if (sc.ores.some((o) => o.source === "posthog")) machines.push({ id: "ore-posthog", type: "ore_deposit", x: -6, y: sc.ores.some((o) => o.source === "inbox") ? 6 : 3, tier: 1, state: "idle" });
   const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
   const districts = sc.districts ?? REPO_DISTRICTS;
+  const mines = (["sentry", "posthog"] as const).filter((kind) => sc.ores.some((o) => o.source === kind));
   // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
   // and the starter factory is built only when the player says yes.
   const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
@@ -236,6 +282,8 @@ function initialState(sc: Scenario): FactoryState {
       ranAlone: 0,
     },
     foreman: { thinking: false },
+    // Mines this scenario's ore comes from show as plugged in, so the map doesn't offer to connect them.
+    sources: mines.length ? mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })) : undefined,
     stations: [...GAUNTLET, ORBIT].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
   };
 }
@@ -485,7 +533,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   };
 
   const arrive = (o: Ore, now: number) => {
-    for (const line of o.spark ?? []) spark(line, { target: o.source === "sentry" ? "ore-sentry" : o.source === "inbox" ? "ore-inbox" : "ore-issues" });
+    for (const line of o.spark ?? []) spark(line, { target: o.source === "sentry" || o.source === "posthog" || o.source === "inbox" ? `ore-${o.source}` : "ore-issues" });
     const into = o.linkTo ? s.items.find((i) => i.id === byTitle.get(o.linkTo!)) : undefined;
     if (into) {
       const before = into;
@@ -973,12 +1021,42 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "place_machine":
           apply({
-            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
+            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, district: msg.district, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
           });
           break;
         case "remove_machine":
           apply({ removed: [{ kind: "machine", id: msg.id }] });
           break;
+        case "move_machine": {
+          const m = s.machines.find((x) => x.id === msg.id);
+          const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
+          if (m && !taken) apply({ machines: [{ ...m, x: msg.x, y: msg.y }] });
+          break;
+        }
+        case "set_harness": {
+          const m = s.machines.find((x) => x.id === msg.machineId);
+          if (m?.type !== "assembler") break;
+          const plant = s.power.find((p) => p.id === `solar-${msg.harness}`);
+          apply({ machines: [{ ...m, harness: msg.harness, powerId: plant ? plant.id : m.powerId }] });
+          log("info", `${m.id} now runs on ${SOLAR_NAME[msg.harness] ?? msg.harness}`, m.id);
+          break;
+        }
+        case "connect_source": {
+          // sim: the empty mine fills in where the map showed it, and feeds the splitter
+          const kind = msg.kind as string; // posthog lands in SourceKind with the mines PR
+          if (kind !== "sentry" && kind !== "posthog") break;
+          const id = `ore-${kind}`;
+          if (s.machines.some((m) => m.id === id)) break;
+          const spot = ghostSpots(s).find((g) => g.kind === kind);
+          if (!spot) break;
+          const splitter = s.machines.find((m) => m.type === "splitter");
+          apply({
+            machines: [{ id, type: "ore_deposit", x: spot.x, y: spot.y, tier: 1, state: "idle" }],
+            belts: splitter ? [{ id: `belt-${id}`, from: id, to: splitter.id }] : [],
+          });
+          log("success", kind === "sentry" ? "Sentry connected: errors now arrive as ore, and biters show where they hit" : "PostHog connected: user signals now weigh what gets built first");
+          break;
+        }
         case "connect_belt":
           apply({ belts: [{ id: `belt-${s.tick}-${msg.from}`, from: msg.from, to: msg.to, carries: msg.carries }] });
           break;

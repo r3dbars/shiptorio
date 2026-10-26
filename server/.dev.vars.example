@@ -15,3 +15,9 @@ GITHUB_CLIENT_SECRET=
 GITHUB_WEBHOOK_SECRET=
 # The .pem GitHub gives you, as-is (PKCS#1 or PKCS#8 both work)
 GITHUB_APP_PRIVATE_KEY=""
+# Sentry mine (optional; or paste it on /connect/sentry). Any fake value works with `bun run fake:sentry`.
+SENTRY_CLIENT_SECRET=
+# PostHog mine (optional; or paste it on /connect/posthog). FAKE_POSTHOG=1 uses canned traffic data.
+POSTHOG_API_KEY=
+POSTHOG_PROJECT_ID=
+FAKE_POSTHOG=0

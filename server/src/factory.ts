@@ -12,13 +12,15 @@ import {
   type Move,
   type Patch,
   type ServerToWeb,
+  type SourceKind,
+  type SourceStatus,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { pickFiles, planLocalTask, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
-import { foldSignal } from "./ore";
+import { foldSignal, matchDistrict } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, reviewComment, reviewDiff, reworkMove, setStage, stageOf, verifyFromDiff } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
@@ -26,8 +28,12 @@ import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
 import { deriveBottleneck, stageForItem, type StageHistory } from "./bottleneck";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
+import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
+import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
+import { linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 
-export interface FactoryEnv extends AppCredentials, SparkEnv {
+export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv {
+  PUBLIC_URL?: string;
   GITHUB_WEBHOOK_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
@@ -38,6 +44,9 @@ export interface FactoryEnv extends AppCredentials, SparkEnv {
 
 const TICK_MS = 2000;
 const MAX_ATTEMPTS = 3;
+const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
+// Where each mine's ore deposit sits on the live map, left of the splitter.
+const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
 const workRevision = (item: Item) => issueRevision(item.title, JSON.stringify({ body: item.body ?? "", failure: item.failure ?? "", scars: item.scars ?? [] }));
 
 interface Meta {
@@ -439,19 +448,27 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.scheduleTick();
   }
 
+  /** Same durable queue as GitHub, for the Sentry mine. `resource` is the Sentry-Hook-Resource header. */
+  async enqueueSentry(deliveryId: string, resource: string, payload: SentryPayload): Promise<void> {
+    const key = `delivery:sentry-${deliveryId}`;
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0 });
+    await this.scheduleTick();
+  }
+
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ event: string; payload: GitHubPayload; attempts: number }>({ prefix: "delivery:", limit: 4 });
+    const pending = await this.ctx.storage.list<{ source?: "sentry"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number }>({ prefix: "delivery:", limit: 4 });
     for (const [key, delivery] of pending) {
       try {
-        await this.handleGitHub(delivery.event, delivery.payload);
-        const id = key.slice("delivery:".length);
-        await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = 'github' AND delivery_id = ?").bind(id).run();
+        if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
+        else await this.handleGitHub(delivery.event, delivery.payload);
+        const id = delivery.deliveryId ?? key.slice("delivery:".length);
+        await this.env.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = ? AND delivery_id = ?").bind(delivery.source ?? "github", id).run();
         await this.ctx.storage.delete(key);
       } catch {
         // Keep the original payload durably queued. Never log credentials or raw API bodies.
         const attempts = delivery.attempts + 1;
         await this.ctx.storage.put(key, { ...delivery, attempts });
-        this.log("error", `GitHub delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
+        this.log("error", `${delivery.source === "sentry" ? "Sentry" : "GitHub"} delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
         await this.ctx.storage.setAlarm(Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)));
         break;
       }
@@ -521,6 +538,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!(await this.load())) return;
     const s = this.state!;
     const existing = s.items.find((i) => i.ore?.fingerprint === signal.fingerprint || (signal.source === "github_issue" && i.id === `gh-${signal.externalId}`));
+    if (signal.action === "resolved" && signal.source === "sentry" && existing && (existing.state === "launched" || existing.state === "on_pad")) {
+      // Sentry went quiet after our fix shipped: the biters are dead.
+      const m = s.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
+      await this.patch({ metrics: { ...m, bitersKilled: m.bitersKilled + 1 } });
+      this.log("success", `Biters cleared: Sentry marked "${existing.title}" resolved.`, existing.id);
+      return;
+    }
     if (signal.action === "close" || signal.action === "resolved") {
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === existing?.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status));
       if (jobs.some(j => j.status === "running")) return; // Preserve the in-flight build's eventual PR receipt.
@@ -529,14 +553,103 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (existing && !existing.prNumber && existing.state !== "launched") await this.patch({ removed: [{ kind: "item", id: existing.id }] });
       return;
     }
-    const item = foldSignal(existing, signal);
-    if (item === existing) return;
-    const status = s.sources?.find((source) => source.kind === "github") ?? githubStatus(this.env);
+    const folded = foldSignal(existing, signal);
+    if (folded === existing) return;
+    // New ore lands on the district its stack frame or route points at; triage can still move it.
+    const item = existing || !signal.districtHint ? folded : { ...folded, district: matchDistrict(signal.districtHint, s.districts.map((d) => d.name)) };
+    const kind = MINE_KIND[signal.source] ?? "github";
+    const status = s.sources?.find((source) => source.kind === kind) ?? (kind === "github" ? githubStatus(this.env) : await this.mineStatus(kind as MineKind));
     const now = Date.now();
     const sameDay = status.lastEventAt && new Date(status.lastEventAt).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10);
-    await this.patch({ items: [item], sources: [...(s.sources ?? []).filter((source) => source.kind !== "github"), { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 }] });
-    this.log("info", `${existing ? "Ore updated" : "Ore"}: ${item.title}`, item.id);
+    await this.patch({ items: [item], sources: [...(s.sources ?? []).filter((source) => source.kind !== kind), { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 }] });
+    const verb = signal.source === "sentry" ? (existing ? "More biters" : "Biters") : signal.source === "posthog" ? (existing ? "Traffic ore updated" : "Traffic ore") : existing ? "Ore updated" : "Ore";
+    this.log(signal.source === "sentry" ? "warn" : "info", `${verb}: ${item.title}${!existing && item.district !== "/" ? ` on /${item.district}` : ""}`, item.id);
     await this.scheduleTick();
+  }
+
+  // ---------- Sentry + PostHog mines ----------
+
+  private publicUrl() {
+    return (this.env.PUBLIC_URL || "https://shiptorio.com").replace(/\/$/, "");
+  }
+
+  private async mineStatus(kind: MineKind): Promise<SourceStatus> {
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env), this.publicUrl()) : postHogStatus(await postHogCreds(this.env), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
+    // The connect page needs to know which map to plug the mine into.
+    const repo = this.meta?.repo ?? this.state?.repo;
+    return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
+  }
+
+  /** connect_source for a mine: plug it in if its credentials exist, otherwise answer with setup steps. */
+  async connectMine(kind: MineKind): Promise<SourceStatus | null> {
+    if (!(await this.load())) return null;
+    const status = await this.mineStatus(kind);
+    const others = (this.state!.sources ?? []).filter((entry) => entry.kind !== kind);
+    if (status.state !== "connected") {
+      await this.patch({ sources: [...others, status] });
+      this.log("info", `${kind === "sentry" ? "Sentry" : "PostHog"} needs one step: ${status.setup.steps.join(" ")}`);
+      return status;
+    }
+    await this.ctx.storage.put(`${kind}Linked`, true);
+    await linkRepo(this.env, kind, this.state!.repo);
+    const deposit = `ore-${kind}`;
+    const splitter = this.state!.machines.find((m) => m.type === "splitter");
+    const machines = this.state!.machines.some((m) => m.id === deposit) ? [] : [{ id: deposit, type: "ore_deposit" as const, x: -6, y: DEPOSIT_Y[kind], tier: 1, state: "idle" as const }];
+    const belts = splitter && !this.state!.belts.some((b) => b.from === deposit) ? [{ id: `belt-${deposit}`, from: deposit, to: splitter.id }] : [];
+    await this.patch({ machines, belts, sources: [...others, status] });
+    this.log("success", kind === "sentry" ? "Sentry mine open. New errors will show up as biters on the folder they hit." : "PostHog mine open. Reading traffic per route now.");
+    if (kind === "posthog") {
+      await this.ctx.storage.put("posthogPoll", { nextAt: 0, failures: 0 });
+      await this.scheduleTick();
+    }
+    return status;
+  }
+
+  async disconnectMine(kind: MineKind): Promise<void> {
+    await this.ctx.storage.delete(`${kind}Linked`);
+    if (kind === "posthog") await this.ctx.storage.delete("posthogPoll");
+    if (!(await this.load())) return;
+    await linkRepo(this.env, kind, null);
+    const deposit = `ore-${kind}`;
+    await this.patch({
+      sources: (this.state!.sources ?? []).map((source) => source.kind === kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
+      removed: [
+        ...(this.state!.machines.some((m) => m.id === deposit) ? [{ kind: "machine" as const, id: deposit }] : []),
+        ...this.state!.belts.filter((b) => b.from === deposit).map((b) => ({ kind: "belt" as const, id: b.id })),
+      ],
+    });
+  }
+
+  private async handleSentry(resource: string, payload: SentryPayload): Promise<void> {
+    if (!(await this.load()) || !(await this.ctx.storage.get<boolean>("sentryLinked"))) return;
+    for (const signal of normalizeSentry(payload, resource)) await this.ingestSignal(signal);
+  }
+
+  /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
+  private async pollPostHog(): Promise<void> {
+    if (!(await this.ctx.storage.get<boolean>("posthogLinked"))) return;
+    const poll = (await this.ctx.storage.get<{ nextAt: number; failures: number }>("posthogPoll")) ?? { nextAt: 0, failures: 0 };
+    const now = Date.now();
+    if (now < poll.nextAt) return;
+    const fake = this.env.FAKE_POSTHOG === "1";
+    const creds = await postHogCreds(this.env);
+    try {
+      if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
+      const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
+      const { signals, traffic } = analyze(rows, creds.keyEvent || "$pageview", now);
+      await this.ctx.storage.put("posthogPoll", { nextAt: now + POLL_MS, failures: 0 });
+      await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
+      for (const signal of signals) await this.ingestSignal(signal);
+      const top = traffic.slice(0, 3).map((t) => `${t.route} ${t.usersPerDay}/day`).join(", ");
+      const status = this.state!.sources?.find((source) => source.kind === "posthog") ?? (await this.mineStatus("posthog"));
+      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "connected", detail: top ? `Busiest routes: ${top}.` : status.detail, lastEventAt: status.lastEventAt ?? now }] });
+    } catch (err) {
+      const failures = poll.failures + 1;
+      const retry = (err as { retryAfter?: number }).retryAfter;
+      await this.ctx.storage.put("posthogPoll", { nextAt: now + Math.max((retry ?? 0) * 1000, Math.min(3600000, POLL_MS * 2 ** Math.min(failures, 4))), failures });
+      const status = await this.mineStatus("posthog");
+      await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Retrying.` }] });
+    }
   }
 
   // ---------- state ----------
@@ -593,6 +706,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.sources) s.sources = p.sources;
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
+    if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed) p = { ...p, stations: (s.stations = liveStations(s)) };
@@ -602,7 +716,9 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async scheduleTick() {
-    if ((await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
+    // Pull a far-off alarm (the PostHog poll) in, so work never waits behind it.
+    const at = await this.ctx.storage.getAlarm();
+    if (at == null || at > Date.now() + TICK_MS) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
 
   // ---------- RPC from the Worker ----------
@@ -990,6 +1106,8 @@ export class Factory extends DurableObject<FactoryEnv> {
           const source = githubStatus(this.env);
           await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== "github"), source] });
           this.log("info", source.setup.steps.join(" "));
+        } else if (msg.kind === "sentry" || msg.kind === "posthog") {
+          await this.connectMine(msg.kind);
         } else {
           const source = { kind: msg.kind, state: "needs_action" as const, detail: "Connector setup is not implemented yet.", eventsToday: 0, setup: { steps: ["GitHub is the first source checkpoint. This connector follows the verified shipping loop."] } };
           await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== msg.kind), source] });
@@ -999,6 +1117,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       case "disconnect_source": {
         if (msg.kind === "github") await this.disconnectGitHub();
+        else if (msg.kind === "sentry" || msg.kind === "posthog") await this.disconnectMine(msg.kind);
         else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
         break;
       }
@@ -1030,6 +1149,17 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (!s.machines.some((m) => m.id === msg.from) || !s.machines.some((m) => m.id === msg.to)) return;
         const b: Belt = { id: `belt-${crypto.randomUUID().slice(0, 6)}`, from: msg.from, to: msg.to, carries: msg.carries };
         await this.patch({ belts: [b] });
+        break;
+      }
+      case "move_machine": {
+        const m = s.machines.find((x) => x.id === msg.id);
+        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
+        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
+        break;
+      }
+      case "set_harness": {
+        const m = s.machines.find((x) => x.id === msg.machineId);
+        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
         break;
       }
       case "set_module": {
@@ -1067,6 +1197,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     try {
     await this.processDeliveries();
     if (!(await this.load())) return;
+    await this.pollPostHog();
     await this.planRunnerJobs();
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
@@ -1077,8 +1208,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         const t = await triage(this.env, { title: item.title, body: item.body ?? "", labels: [] }, s.districts.map((d) => d.name)).catch(
           () => null,
         );
-        await this.patch({ items: [{ ...item, kind: t?.kind ?? item.kind, district: t?.district ?? item.district, state: "queued", updatedAt: now }] });
-        this.log("info", `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${t?.district ?? item.district}`, item.id);
+        // Without Spark, a keyword guess shouldn't override a stack frame or route a mine already placed.
+        const district = (!sparkConfigured(this.env) && item.district !== "/" ? item.district : t?.district) ?? item.district;
+        await this.patch({ items: [{ ...item, kind: t?.kind ?? item.kind, district, state: "queued", updatedAt: now }] });
+        this.log("info", `Splitter sorted "${item.title}" as ${t?.kind ?? item.kind} → ${district}`, item.id);
       } else if (item.state === "rejected") {
         if (item.attempts >= MAX_ATTEMPTS) continue; // stays rejected until a human steps in
         if (item.branch?.startsWith("shiptorio/runner-")) continue; // local builds rework only with player approval
@@ -1130,6 +1263,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
+    const poll = await this.ctx.storage.get<{ nextAt: number }>("posthogPoll");
+    if (poll && (await this.ctx.storage.get<boolean>("posthogLinked")) && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Math.max(Date.now() + TICK_MS, poll.nextAt));
     } finally { this.batchingDecisions = false; await this.refreshDecisions(); }
   }
 
