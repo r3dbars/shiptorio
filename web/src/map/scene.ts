@@ -273,6 +273,11 @@ export class FactoryScene {
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
   private readonly glow = box(3.4, 0.06, 3.4, new THREE.MeshBasicMaterial({ color: 0xf2a93b, transparent: true, opacity: 0.4 }), 0, 0.04, 0);
   private rework?: { built: Built; label: Label };
+  // a station's verdict on the item that just left it: the art plays PASS or FAIL for a beat
+  private verdicts = new Map<string, { fail: boolean; until: number }>();
+  // floating "PASS" / "CAUGHT!" pops over stations, and the shockwave rings when the verify bay catches one
+  private pops: { el: HTMLElement; at: THREE.Vector3; until: number }[] = [];
+  private shocks: { mesh: THREE.Mesh; born: number }[] = [];
   // labels show on hover, on the picked thing, when hot, or all of them when toggled on
   private hovered?: string;
   private selected?: string;
@@ -847,6 +852,7 @@ export class FactoryScene {
       (v.mesh.material as THREE.MeshPhongMaterial).emissive.setHex(item.state === "passed" || item.state === "on_pad" ? 0x14402a : 0);
       if (v.state !== item.state || v.at !== item.machineId) {
         const fresh = v.state === null;
+        if (v.state === "inspecting" && v.at) this.verdict(v.at, item);
         v.state = item.state;
         v.at = item.machineId;
         this.plan(v, item, i);
@@ -922,8 +928,67 @@ export class FactoryScene {
     }
   }
 
+  // An item just left a station: it passed if it moved on, failed if it went onto the rework belt.
+  private verdict(machineId: string, item: Item) {
+    const st = this.stationAt(machineId);
+    const m = this.byId(machineId);
+    if (!st || !m || st.kind === "orbit") return;
+    const fail = item.state === "rejected";
+    this.verdicts.set(machineId, { fail, until: this.t + (fail ? 3 : 1.6) });
+    const at = this.machinePos(m).setY((STATION_LABEL_Y[st.kind] ?? 2.4) + 0.6);
+    if (fail && st.kind === "verify") return this.caught(st, m, item, at);
+    this.pop(at, fail ? "FAIL" : "PASS", fail ? "fail" : "pass");
+  }
+
+  // The demo moment: CI waved a fix through and the verify bay caught it anyway.
+  private caught(st: Station, m: Machine, item: Item, at: THREE.Vector3) {
+    const why = item.scars?.at(-1)?.reason ?? item.failure;
+    this.pop(at, "CAUGHT!", "caught", why ? `passed CI · ${why}` : "passed CI · failed verify", 3.2);
+    window.dispatchEvent(new CustomEvent("shiptorio:caught", { detail: { itemId: item.id, title: item.title, stationId: st.id, reason: why } }));
+    if (this.reduceMotion) return;
+    const base = this.machinePos(m);
+    for (const delay of [0, 0.18, 0.36]) {
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.05, 32), new THREE.MeshBasicMaterial({ color: delay ? 0xffb340 : 0xff5e52, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(base.x - 0.35, 0.2, base.z - 0.2);
+      mesh.visible = false;
+      this.scene.add(mesh);
+      this.shocks.push({ mesh, born: this.t + delay });
+    }
+    const flash = document.createElement("div");
+    flash.className = "caught-flash";
+    this.labelRoot.appendChild(flash);
+    setTimeout(() => flash.remove(), 1200);
+    document.body.classList.remove("caught-shake");
+    void document.body.offsetWidth; // restart the shake if two land close together
+    document.body.classList.add("caught-shake");
+    setTimeout(() => document.body.classList.remove("caught-shake"), 700);
+  }
+
+  private pop(at: THREE.Vector3, text: string, kind: string, sub?: string, life = 1.6) {
+    const el = document.createElement("div");
+    el.className = `mappop ${kind}`;
+    const b = document.createElement("b");
+    b.textContent = text;
+    el.append(b);
+    if (sub) {
+      const i = document.createElement("i");
+      i.textContent = sub;
+      el.append(i);
+    }
+    el.style.animationDuration = `${life}s`;
+    this.labelRoot.appendChild(el);
+    this.pops.push({ el, at, until: this.t + life });
+  }
+
   private stationArt(st: Station, m: Machine): string {
     const items = this.state!.items;
+    const v = this.verdicts.get(m.id);
+    if (v && this.t < v.until) {
+      const k = st.kind;
+      if (v.fail) return k === "verify" ? "FAIL" : k === "review" ? "CHANGES" : k === "merge" ? "REJECTED" : "REJECT";
+      return k === "review" || k === "merge" ? "APPROVED" : "PASS";
+    }
     const failing = items.some((i) => i.state === "rejected" && i.machineId === m.id);
     const busy = st.wip > 0;
     const backed = st.wip >= BACKED_UP;
@@ -1049,6 +1114,17 @@ export class FactoryScene {
     }
   }
 
+  private placePops() {
+    const w = this.width, h = this.height;
+    this.pops = this.pops.filter((p) => {
+      if (this.t > p.until) return (p.el.remove(), false);
+      this.v3.copy(p.at).project(this.camera);
+      p.el.style.left = `${((this.v3.x + 1) / 2) * w}px`;
+      p.el.style.top = `${((1 - this.v3.y) / 2) * h}px`;
+      return true;
+    });
+  }
+
   private placeLabels() {
     const w = this.width, h = this.height;
     for (const l of this.labels) {
@@ -1170,12 +1246,23 @@ export class FactoryScene {
     this.sun.position.set(this.target.x + 14, 26, this.target.z + 8);
     this.sun.target.position.copy(this.target);
 
+    for (const sh of this.shocks) {
+      const age = t - sh.born;
+      sh.mesh.visible = age >= 0;
+      sh.mesh.scale.setScalar(1 + Math.max(0, age) * 7);
+      (sh.mesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.9 - age * 1.1);
+      if (age > 0.85) (this.scene.remove(sh.mesh), sh.mesh.geometry.dispose());
+    }
+    this.shocks = this.shocks.filter((sh) => t - sh.born <= 0.85);
+
     this.pass.render(this.renderer, this.scene, this.camera);
     this.placeLabels();
+    this.placePops();
   };
 
   dispose() {
     this.ping?.el.remove();
+    for (const p of this.pops) p.el.remove();
     cancelAnimationFrame(this.raf);
     for (const l of this.labels) l.el.remove();
     this.labels.clear();
