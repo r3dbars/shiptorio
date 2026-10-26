@@ -1,8 +1,20 @@
-# shiptorio
-The factory must grow. Your codebase as a Factorio map, where factories are agent pipelines that ship real PRs.
+# Shiptorio
 
-Built for the Meta AI Developer Hackathon (Oct 26 to Nov 4, 2026). Muse Spark runs the
-factory floor. Coding agents are the machines, and every rocket is a merged PR.
+**The factory must grow.**
+
+Your codebase is a Factorio-style map. Feedback is the ore: Sentry errors, user emails, GitHub issues and
+PostHog traffic. The machines are agents you place and wire together. What ships is real pull requests.
+
+Muse Spark runs the floor: triage, splitting, routing, inspection and planning. Coding work goes to Spark's own
+agent, or to Codex and Claude Code running on your own machine with your own subscriptions.
+
+## Built during the Meta AI Developer Hackathon
+
+Everything in this repository was written between Oct 26 and Nov 4, 2026, during the event.
+Nothing was carried over from an earlier project.
+
+See [PLAN.md](PLAN.md) for the build plan and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the game design.
+The stack is Cloudflare (Workers, Durable Objects, D1, KV), not the Fly/Neon setup those docs describe.
 
 ## Run it
 
@@ -27,5 +39,7 @@ the real factory for that repo.
 | `shared/` | zod model + wire protocol, the contract between the lanes |
 | `server/` | Cloudflare Worker (Hono), GitHub App, webhooks, Factory Durable Object, Muse Spark client |
 | `web/` | Vite + React + Three.js pixel-art map and panels |
+| `docs/` | Plan docs, art direction, and the Pixel Prototype / Item Lab HTML |
+| `briefs/` | Briefs for the other lanes (Codex, Muse Code) |
 
 `AGENTS.md` has the full context for coding agents. `docs/SETUP.md` covers going live.

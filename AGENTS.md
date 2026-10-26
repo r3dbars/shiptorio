@@ -167,6 +167,18 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 - Work on a branch and open a PR. Don't push to `main`.
 - Only original art. The name leans on Factorio, so don't use any Factorio assets.
 
+## Rules for every agent (from the plan)
+
+- Read [PLAN.md](PLAN.md) first. It is the source of truth for scope, lanes and the day-by-day checkpoints.
+  `docs/ARCHITECTURE.md` has the full game design. Both predate the Cloudflare switch, so their Fly/Neon bits are out of date.
+- **Hackathon rule:** only code written during the event (Oct 26 – Nov 4, 2026). Don't copy code from other
+  projects. Libraries from npm are fine.
+- **Stay in your lane** (see Lanes above and `briefs/`). Touching another lane's code needs a note in the PR.
+- **Shared types live in `shared/`.** Changing a type there is a contract change: say so in the PR title.
+- **Small PRs, one checkpoint each.** Every PR says which day's checkpoint it moves forward.
+- **The web app must run against the simulator** (`?source=sim`) at all times, so UI work never waits on the backend.
+- **Spark makes every factory decision.** Don't route triage, splitting, routing or inspection to another model.
+
 ## Design and art
 
 - Art direction: real 3D rendered as pixel art. Orthographic camera at a 45° turn and
@@ -180,9 +192,9 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 - References (claude.ai links): Pixel Prototype https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK,
   Item Lab (all 12 items) https://claude.ai/artifact/1LRgfMxAMrZ5gv1r2dkkKy,
   Feedback Factory canvas, Belts artboard https://claude.ai/artifact/HtWP6pHDcYn9TSByR6UJcn.
-- Justin's local `~/omni/shiptorio` has the plan, `docs/ART.md`,
-  `docs/art-prototype.html`, `docs/item-lab.html` and `briefs/` (including
-  `briefs/codex.md`). It isn't pushed yet. Once it is, those files win over this summary.
+- The plan's own files are in the repo now: `PLAN.md`, `docs/ARCHITECTURE.md`, `docs/ART.md`,
+  `docs/art-prototype.html`, `docs/item-lab.html` and `briefs/` (including `briefs/codex.md`).
+  They win over this summary, except for the stack, which is Cloudflare.
 
 ## Open questions
 
