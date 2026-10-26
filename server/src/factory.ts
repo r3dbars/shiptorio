@@ -60,6 +60,8 @@ const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
+const REVIEW_COMMENT_TRIES = 5;
+interface PendingComment { pr: number; body: string; itemId?: string; tries: number }
 const workRevision = (item: Item) => issueRevision(item.title, JSON.stringify({ body: item.body ?? "", failure: item.failure ?? "", scars: item.scars ?? [] }));
 
 interface Meta {
@@ -1068,6 +1070,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.scheduleOrbitDeadline();
     await this.refreshDecisions();
     this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${launched.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, launched.id);
+    // A merge on GitHub doesn't wait for the gauntlet. Say which stations never got to look, so a missing review is explained.
+    const skipped = (launched.inspection?.stages ?? []).filter(st => st.gate !== "human" && st.state !== "passed").map(st => st.gate === "ai" ? "AI review" : st.gate === "ci" ? "CI" : "the verify bay");
+    if (skipped.length) this.log("warn", `PR #${prNumber} was merged before ${skipped.join(" and ")} finished, so ${skipped.length === 1 ? "it" : "they"} never signed off.`, launched.id);
     if (this.state!.move?.itemId === launched.id) await this.publishGauntletMove(null);
   }
 
@@ -1116,16 +1121,46 @@ export class Factory extends DurableObject<FactoryEnv> {
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = current();
         if (!now) return;
-        await gh(`/repos/${this.meta.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body: reviewComment(verdict, builder) }) }).catch(() => null);
+        await this.postReviewComment(token, pr, reviewComment(verdict, builder), item.id);
         await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
-    } catch {
-      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr}. It will retry on the next event.`, item.id);
+    } catch (e) {
+      this.log("warn", `The ${gate === "ai" ? "AI review" : gate === "checks" ? "researched checks" : "verify bay"} couldn't run on PR #${pr} (${e instanceof Error ? e.message : "unknown error"}). It will retry on the next event.`, item.id);
     } finally {
       this.gauntletRunning = false;
+    }
+  }
+
+  /**
+   * Spark's review verdict goes on the PR as a comment so it's checkable in GitHub. A failed post is never silent:
+   * it's logged, shows in "how it thinks", and is queued to retry on the next ticks.
+   */
+  private async postReviewComment(token: string, pr: number, body: string, itemId?: string, tries = 0): Promise<boolean> {
+    try {
+      await gh(`/repos/${this.meta!.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body }) });
+      if (tries) this.log("success", `AI review comment posted on PR #${pr} after ${tries} ${tries === 1 ? "retry" : "retries"}.`, itemId);
+      return true;
+    } catch (e) {
+      const why = e instanceof Error ? e.message : "unknown error";
+      const queue = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
+      const giveUp = tries + 1 >= REVIEW_COMMENT_TRIES;
+      await this.ctx.storage.put("pendingReviewComments", [...queue.filter(c => c.pr !== pr), ...(giveUp ? [] : [{ pr, body, itemId, tries: tries + 1 }])]);
+      this.log(giveUp ? "error" : "warn", giveUp ? `AI review comment on PR #${pr} still won't post (${why}). Gave up after ${REVIEW_COMMENT_TRIES} tries; check the app's pull request and issue write permission.` : `AI review comment on PR #${pr} didn't post (${why}). Retrying.`, itemId);
+      await this.note({ decision: "review", by: "spark", ms: 0, itemId, title: `Comment on PR #${pr}`, outcome: giveUp ? "Verdict made, but the comment never reached GitHub" : "Verdict made, comment didn't post yet; retrying", reason: why });
+      return false;
+    }
+  }
+
+  private async retryReviewComments(): Promise<void> {
+    const queue = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
+    if (!queue.length || !this.meta) return;
+    const token = await installationToken(this.env, this.meta.installationId);
+    for (const c of queue) if (await this.postReviewComment(token, c.pr, c.body, c.itemId, c.tries)) {
+      const left = (await this.ctx.storage.get<PendingComment[]>("pendingReviewComments")) ?? [];
+      await this.ctx.storage.put("pendingReviewComments", left.filter(x => x.pr !== c.pr));
     }
   }
 
@@ -1601,6 +1636,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.processDeliveries();
     if (!(await this.load())) return;
     await this.pollPostHog();
+    await this.retryReviewComments().catch(() => null); // each failure already logs itself
     await this.planRunnerJobs();
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
