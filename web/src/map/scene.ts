@@ -122,6 +122,7 @@ interface PingEl {
   key: string;
   el: HTMLButtonElement;
   title: HTMLElement;
+  join: HTMLElement; // a hidden " in " so a screen reader says "Needs a look in /api"
   code: HTMLElement;
 }
 
@@ -650,9 +651,12 @@ export class FactoryScene {
         const tag = document.createElement("span");
         const title = document.createElement("b");
         const code = document.createElement("code");
-        tag.append(title, code);
+        const join = document.createElement("span");
+        join.className = "sr";
+        join.textContent = " in ";
+        pe = { key: p.key, el, title, code, join };
+        tag.append(title, join, code);
         el.append(dot, tag);
-        pe = { key: p.key, el, title, code };
         const me = pe;
         el.addEventListener("click", () => this.onPick?.(me.key));
         this.labelRoot.appendChild(el);
@@ -660,7 +664,7 @@ export class FactoryScene {
       }
       pe.key = p.key;
       pe.el.className = `mapping${p.quiet ? " quiet" : ""}${p.tone === "ok" ? " ok" : ""}`;
-      pe.el.setAttribute("aria-label", `${p.title}${p.code ? ` in ${p.code}` : ""}`);
+      pe.join.hidden = !p.code;
       if (pe.title.textContent !== p.title) pe.title.textContent = p.title;
       if (pe.code.textContent !== (p.code ?? "")) pe.code.textContent = p.code ?? "";
     });
