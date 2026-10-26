@@ -44,6 +44,7 @@ import {
   type WebToServer,
 } from "@shiptorio/shared";
 import type { Listener, Source, StatusListener } from "../source";
+import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
 
 const TICK_MS = 900;
 
@@ -101,6 +102,7 @@ interface Scenario {
   permits?: string[]; // lanes that start with a launch permit
   science?: FactoryState["science"]; // packs already shipped, so the research tree has something to spend
   rockets?: number; // PRs already shipped
+  support?: SimMail[]; // customer mail at the support well (sim/support.ts)
   geothermal?: boolean; // the runner found a local model: a free, capped geothermal plant runs small, low-risk jobs
 }
 
@@ -224,6 +226,28 @@ export const SCENARIOS = {
         spark: [{ tool: "read_posthog", text: "PostHog: $exception on /api/orders 48 yesterday vs 2/day", reason: "Traffic poll" }],
       },
       { at: 20, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
+    ],
+  },
+  // The support mine (docs/context/support-mine.md): customer email and Intercom chats come up the support well.
+  // Dana's checkout bug links to the Sentry crash on the floor, Rio's coupon bug gets filed as an issue, Lee's
+  // question and Sam's feature ask get answers, spam is closed. Every reply waits on your tap, and each fix that
+  // launches drafts an "it's fixed" reply.
+  support: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    rockets: 3,
+    support: SUPPORT_MAIL,
+    ores: [
+      { at: 1, title: "Add order notes to the cart", kind: "feature", district: "cart" },
+      {
+        at: 2,
+        title: "TypeError: cart.total is undefined",
+        kind: "bug",
+        district: "checkout",
+        source: "sentry",
+        users: 112,
+        spark: [{ tool: "get_sentry_issue", text: "New error on /checkout: TypeError: cart.total is undefined, 112 users", reason: "Sentry webhook" }],
+      },
     ],
   },
   // Orbit watch (docs/LOOP.md station 5): /checkout has a launch permit, a fix ships, and three hours later Sentry
@@ -459,9 +483,9 @@ function initialState(sc: Scenario): FactoryState {
     power.push({ id: GEO_PLANT, kind: "geothermal", name: "Your computer", level: 0.75, online: true });
   }
   if (sc.ores.some((o) => o.source === "sentry")) machines.push({ id: "ore-sentry", type: "ore_deposit", x: -6, y: -3, tier: 1, state: "idle" });
-  if (sc.ores.some((o) => o.source === "inbox")) machines.push({ id: "ore-inbox", type: "ore_deposit", x: -6, y: 3, tier: 1, state: "idle" });
+  if (sc.ores.some((o) => o.source === "inbox") || sc.support) machines.push({ id: "ore-inbox", type: "ore_deposit", x: -6, y: 3, tier: 1, state: "idle" });
   if (sc.growth) machines.push({ id: "measure-1", type: "inspector", x: 18, y: 3, tier: 1, state: "idle" });
-  if (sc.growth || sc.ores.some((o) => o.source === "posthog")) machines.push({ id: "ore-posthog", type: "ore_deposit", x: -6, y: sc.ores.some((o) => o.source === "inbox") ? 6 : 3, tier: 1, state: "idle" });
+  if (sc.growth || sc.ores.some((o) => o.source === "posthog")) machines.push({ id: "ore-posthog", type: "ore_deposit", x: -6, y: sc.ores.some((o) => o.source === "inbox") || sc.support ? 6 : 3, tier: 1, state: "idle" });
   const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
   if (sc.geothermal) belts.push({ id: "belt-local-in", from: "splitter-1", to: "assembler-local" }, { id: "belt-local-out", from: "assembler-local", to: GAUNTLET[0].id });
@@ -494,7 +518,8 @@ function initialState(sc: Scenario): FactoryState {
     foreman: { thinking: false },
     brain: { model: "sim", online: true, decisions: 0, fallbacks: 0, thoughts: [], score: { plans: 0, shipped: 0, reviews: 0, catches: 0, open: [] } },
     // Mines this scenario's ore comes from show as plugged in, so the map doesn't offer to connect them.
-    sources: mines.length ? mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })) : undefined,
+    sources: mines.length || sc.support ? [...mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })), ...(sc.support ? [{ kind: "email" as const, state: "connected" as const, detail: "Support mine connected (sim)", eventsToday: 0, setup: { steps: [] } }] : [])] : undefined,
+    support: sc.support ? [] : undefined,
     experiments: sc.growth ? [] : undefined,
     stations: [...GAUNTLET, ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
   };
@@ -553,7 +578,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let pr = 140;
   let seq = 0;
 
-  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth" };
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { read_feedback: "support", draft_customer_reply: "support", triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
@@ -610,6 +635,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.autonomy) s.autonomy = p.autonomy;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
     if (p.research) s.research = p.research;
+    if (p.support) s.support = p.support;
     if (p.experiments) s.experiments = p.experiments;
     emit({ type: "patch", patch: { ...p, tick: s.tick } });
   };
@@ -626,13 +652,14 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     s.deck = [...(s.move ? [s.move] : []), ...pending].slice(0, 12);
     emit({ type: "deck", deck: s.deck });
   };
-  const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void) => {
-    if (sc.intro) return; // the tour's own cards do the asking
+  const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void): string => {
+    if (sc.intro) return ""; // the tour's own cards do the asking
     const m: Move = { ...move, id: `move-${++seq}`, createdAt: Date.now() };
     onChoose.set(m.id, then);
     if (s.move) pending.push(m);
     else open(m);
     dealDeck();
+    return m.id;
   };
   const open = (m: Move) => {
     s.move = m;
@@ -646,7 +673,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (s.move?.id === moveId) {
       s.move = null;
       const next = pending.shift();
-      if (next) later(delay, () => open(next));
+      // A card retracted while it waited to open (a sent reply clears its ticket's other cards) stays closed.
+      if (next) later(delay, () => {
+        if (s.move) { if (onChoose.has(next.id)) pending.unshift(next); dealDeck(); }
+        else if (onChoose.has(next.id)) open(next);
+        else if (pending.length) open(pending.shift()!);
+        else dealDeck();
+      });
     }
     dealDeck();
   };
@@ -774,6 +807,30 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     );
   };
 
+  // ---------- the support well (sim/support.ts) ----------
+
+  const support = sc.support
+    ? simSupport(sc.support, {
+        tick: () => s.tick - (clock0 === Infinity ? s.tick : clock0),
+        state: () => s,
+        setSupport: (tickets) => apply({ support: tickets }),
+        itemId: (title) => byTitle.get(title),
+        think: (tool, text, reason, opts) => spark({ tool, text, reason }, { itemId: opts.itemId, target: "ore-inbox" }),
+        log,
+        propose,
+        retract: (moveId) => {
+          if (!onChoose.delete(moveId)) return;
+          emit({ type: "move_resolved", moveId, actor: "player" });
+          pull(moveId, 0);
+        },
+        fileIssue: (title, district) => {
+          arrive({ at: 0, title, kind: "bug", district }, Date.now());
+          return byTitle.get(title)!;
+        },
+        answered: () => bumpMetrics({ customersAnswered: s.metrics!.customersAnswered + 1 }),
+      })
+    : null;
+
   // ---------- the floor ----------
 
   const machine = (type: Machine["type"]) => s.machines.find((m) => m.type === type);
@@ -889,6 +946,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
     if (sc.intro && clock0 !== Infinity) introFeed(now);
     while (script.length && script[0].at + clock0 <= s.tick) arrive(script.shift()!, now);
+    support?.tick();
     while (growthScript.length && growthScript[0].at + clock0 <= s.tick) funnelDrop(growthScript.shift()!, now);
     measureTick(now);
 
@@ -1560,8 +1618,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   function connectMine(kind: string) {
           // sim: the empty mine fills in where the map showed it, and feeds the splitter
-          if (kind !== "sentry" && kind !== "posthog") return;
-          const id = `ore-${kind}`;
+          if (kind !== "sentry" && kind !== "posthog" && kind !== "email") return;
+          const id = kind === "email" ? "ore-inbox" : `ore-${kind}`;
           if (s.machines.some((m) => m.id === id)) return;
           const spot = ghostSpots(s).find((g) => g.kind === kind);
           if (!spot) return;
@@ -1572,7 +1630,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           });
           // Only the explicitly guided local demo introduces fixture errors on connection.
           if (sc.intro && kind === "sentry") INTRO_SENTRY.forEach((o, n) => script.push({ ...o, at: s.tick - clock0 + 2 + n * 5 }));
-          spark({ tool: "connect_source", text: kind === "sentry" ? "Sentry mine open. Future errors can feed your line." : "PostHog mine open. Future user signals can feed your line.", reason: "You chose to grow the input loop" }, { target: id, approvedBy: "player" });
+          spark({ tool: "connect_source", text: kind === "sentry" ? "Sentry mine open. Future errors can feed your line." : kind === "email" ? "Support mine open. Customer mail comes up the well, with a reply drafted for you to send." : "PostHog mine open. Future user signals can feed your line.", reason: "You chose to grow the input loop" }, { target: id, approvedBy: "player" });
   }
 
   onStatus("live");
@@ -1649,6 +1707,18 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         }
         case "connect_source":
           connectMine(msg.kind);
+          break;
+        case "send_reply":
+          support?.send(msg.ticketId, msg.draftHash);
+          break;
+        case "edit_reply":
+          support?.edit(msg.ticketId, msg.text);
+          break;
+        case "file_issue":
+          support?.file(msg.ticketId);
+          break;
+        case "close_ticket":
+          support?.close(msg.ticketId);
           break;
         case "connect_belt":
           apply({ belts: [{ id: `belt-${s.tick}-${msg.from}`, from: msg.from, to: msg.to, carries: msg.carries }] });

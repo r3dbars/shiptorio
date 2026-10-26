@@ -43,6 +43,7 @@ import {
   type ServerToWeb,
   type SourceKind,
   type SourceStatus,
+  type SupportTicket,
   type Thought,
   type ThoughtDecision,
   summarizeIsland,
@@ -55,7 +56,7 @@ import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickRe
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
-import { foldSignal, matchDistrict } from "./ore";
+import { foldSignal, matchDistrict, oreWeight } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
@@ -68,10 +69,13 @@ import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type 
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, legacyCredentialOwner, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
+import { isOperatorSupport, supportCreds, supportStatus, type SupportEnv, type SupportMessage } from "./sources/support";
+import { deliverReply, fallbackDraft, foldMessage, heuristicSupport, issueFor, issueMove, linkCandidates, makeDraft, playerTap, replyMove, type PlayerTap } from "./support";
+import { draftReply, triageSupport, type SupportTriage } from "./spark-support";
 
 import { loadFactoryState, saveFactoryState, stateSize, persistedState } from "./state-storage";
 
-export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv, TelemetryEnv {
+export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv, TelemetryEnv, SupportEnv {
 
   PUBLIC_URL?: string;
   GITHUB_WEBHOOK_SECRET?: string;
@@ -92,6 +96,9 @@ const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
 const REVIEW_COMMENT_TRIES = 5;
 interface PendingComment { pr: number; body: string; itemId?: string; tries: number }
 const workRevision = (item: Item) => issueRevision(item.title, JSON.stringify({ body: item.body ?? "", failure: item.failure ?? "", scars: item.scars ?? [] }));
+
+/** Who tapped, for the send log. Sockets carry their verified login (browser-socket.ts). */
+const playerLogin = (auth: unknown) => (auth && typeof auth === "object" && typeof (auth as { login?: unknown }).login === "string" ? (auth as { login: string }).login : "player");
 
 interface Meta {
   repo: string;
@@ -756,7 +763,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async processDeliveries(): Promise<void> {
-    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
+    const pending = await this.ctx.storage.list<{ trace?: Trace; source?: "sentry" | "support"; deliveryId?: string; event: string; payload: GitHubPayload; attempts: number; nextAt?: number }>({ prefix: "delivery:", limit: 100 });
     let processed = 0;
 
     for (const [key, delivery] of pending) {
@@ -767,6 +774,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!completed) {
           await inTrace(delivery.trace ?? { requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
           if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
+          else if (delivery.source === "support") await this.handleSupport(delivery.payload as unknown as SupportMessage);
           else await this.handleGitHub(delivery.event, delivery.payload);
           log("info", "webhook.processed", { deliveryId: delivery.deliveryId ?? key.slice(9), webhookEvent: delivery.event });
         });
@@ -793,7 +801,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           continue;
         }
         await this.ctx.storage.put(key, { ...delivery, attempts, nextAt: Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)) * (0.5 + Math.random()) });
-        this.log("error", `${delivery.source === "sentry" ? "Sentry" : "GitHub"} delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
+        this.log("error", `${delivery.source === "sentry" ? "Sentry" : delivery.source === "support" ? "Support" : "GitHub"} delivery deferred (attempt ${attempts}); check App configuration and API availability.`);
         await this.ctx.storage.setAlarm(Date.now() + Math.min(600000, 5000 * 2 ** Math.min(attempts, 7)));
         break;
       }
@@ -1118,6 +1126,245 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
+  // ---------- support mine (docs/context/support-mine.md) ----------
+  // Customer email and Intercom chats land at the support well. Spark sorts each one and drafts a reply;
+  // only a player's tap sends it. PlayerTap is minted in webSocketMessage and nowhere else.
+
+  /** Same durable queue as the other mines. The Worker already checked the token or signature. */
+  async enqueueSupport(deliveryId: string, message: SupportMessage): Promise<void> {
+    const key = `delivery:support-${deliveryId}`;
+    if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "support", deliveryId, event: message.channel, payload: message, attempts: 0 });
+    await this.scheduleTick();
+  }
+
+  private async supportStatusNow(): Promise<SourceStatus> {
+    const repo = this.meta?.repo ?? this.state?.repo;
+    return supportStatus(await supportCreds(this.env, repo), this.publicUrl(), repo, this.env.FAKE_SUPPORT === "1");
+  }
+
+  /** Plug the support well into the map: the deposit, its belt, and the source status. */
+  async connectSupport(): Promise<SourceStatus | null> {
+    if (!(await this.load())) return null;
+    const status = await this.supportStatusNow();
+    const others = (this.state!.sources ?? []).filter((entry) => entry.kind !== "email");
+    if (status.state !== "connected") {
+      await this.patch({ sources: [...others, status] });
+      this.log("info", `Support mine needs one step: ${status.setup.steps[0]}`);
+      return status;
+    }
+    await this.ctx.storage.put("supportLinked", true);
+    const splitter = this.state!.machines.find((m) => m.type === "splitter");
+    const machines = this.state!.machines.some((m) => m.id === "ore-inbox") ? [] : [{ id: "ore-inbox", type: "ore_deposit" as const, x: -6, y: 6, tier: 1, state: "idle" as const }];
+    const belts = splitter && !this.state!.belts.some((b) => b.from === "ore-inbox") ? [{ id: "belt-ore-inbox", from: "ore-inbox", to: splitter.id }] : [];
+    const previous = this.state!.sources?.find((entry) => entry.kind === "email");
+    await this.patch({ machines, belts, sources: [...others, { ...status, lastEventAt: previous?.lastEventAt, eventsToday: previous?.eventsToday ?? 0 }] });
+    if (machines.length) this.log("success", "Support mine open. Customer messages will show up as mail at the support well, with a reply drafted for you to send.");
+    return status;
+  }
+
+  async disconnectSupport(): Promise<void> {
+    await this.ctx.storage.delete("supportLinked");
+    if (!(await this.load())) return;
+    await this.patch({
+      sources: (this.state!.sources ?? []).map((source) => source.kind === "email" ? { ...source, state: "not_connected", detail: "Disconnected" } : source),
+      removed: [
+        ...(this.state!.machines.some((m) => m.id === "ore-inbox") ? [{ kind: "machine" as const, id: "ore-inbox" }] : []),
+        ...this.state!.belts.filter((b) => b.from === "ore-inbox").map((b) => ({ kind: "belt" as const, id: b.id })),
+      ],
+    });
+  }
+
+  private async handleSupport(message: SupportMessage): Promise<void> {
+    if (!(await this.load())) return;
+    // A message that passed the token or signature check means the player set the inlet up: open the well.
+    if (!(await this.ctx.storage.get<boolean>("supportLinked"))) await this.connectSupport();
+    const seen = (await this.ctx.storage.get<string[]>("supportSeen")) ?? [];
+    const folded = await foldMessage(this.state!.support ?? [], message, seen);
+    if (!folded.ticket) return;
+    await this.ctx.storage.put("supportSeen", [...seen, `${message.channel}:${message.messageId}`].slice(-500));
+    const now = Date.now();
+    const status = this.state!.sources?.find((source) => source.kind === "email") ?? (await this.supportStatusNow());
+    const sameDay = status.lastEventAt && new Date(status.lastEventAt).toISOString().slice(0, 10) === new Date(now).toISOString().slice(0, 10);
+    await this.patch({ support: folded.tickets, sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "email"), { ...status, state: "connected", lastEventAt: now, eventsToday: (sameDay ? status.eventsToday : 0) + 1 }] });
+    this.log("info", `${folded.isNew ? "Mail" : "More mail"} at the support well: ${folded.ticket.subject}`, folded.ticket.id);
+    await this.scheduleTick();
+  }
+
+  /** Spark sorts the message and links it to work in the factory; the keyword rule stands in when it can't. */
+  private async supportTriage(t: SupportTicket): Promise<SupportTriage & { by: "spark" | "fallback" }> {
+    const s = this.state!, districts = s.districts.map((d) => d.name);
+    const fallback = async (why: string) => {
+      const h = heuristicSupport(t.subject, t.body, districts);
+      await this.note({ decision: "support", by: "fallback", ms: 0, title: t.subject, outcome: `${h.kind} → ${h.district}`, reason: why, model: "keyword rule" });
+      return { ...h, reason: why, by: "fallback" as const };
+    };
+    if (!sparkConfigured(this.env)) return fallback("No Meta API key, so a keyword rule sorted it.");
+    return this.think("support", { title: t.subject, target: "ore-inbox" },
+      () => triageSupport(this.sparkEnv(), t, districts, linkCandidates(s.items)),
+      (out) => ({ outcome: `${out.kind} → ${out.district}${out.linkedItemId ? `, same as ${s.items.find((i) => i.id === out.linkedItemId)?.title ?? out.linkedItemId}` : ""}`, reason: out.reason }),
+    ).then((out) => ({ ...out, by: "spark" as const })).catch(() => fallback("Spark didn't answer, so a keyword rule sorted it."));
+  }
+
+  private async supportDraft(t: SupportTicket, purpose: "answer" | "fixed"): Promise<SupportTicket["draft"]> {
+    const kind = t.triage?.kind ?? "question";
+    const linked = this.state!.items.find((i) => i.id === t.triage?.linkedItemId);
+    if (!sparkConfigured(this.env)) return makeDraft(t.id, fallbackDraft(t, kind, purpose), purpose, "fallback");
+    try {
+      const out = await this.think("support", { title: `${purpose === "fixed" ? "“It's fixed” reply" : "Reply"}: ${t.subject}`, itemId: linked?.id, target: "ore-inbox" },
+        () => draftReply(this.sparkEnv(), { purpose, ticket: t, kind, summary: t.triage?.summary ?? t.subject, linked: linked && { title: linked.title, state: linked.state, prUrl: linked.prUrl }, product: this.state!.repo.split("/")[1] ?? this.state!.repo }),
+        (d) => ({ outcome: `Drafted a ${purpose === "fixed" ? "“it's fixed”" : kind} reply for you to send`, reason: d.reason }));
+      return makeDraft(t.id, out.text, purpose, "spark");
+    } catch {
+      return makeDraft(t.id, fallbackDraft(t, kind, purpose), purpose, "fallback");
+    }
+  }
+
+  /** Runs on the alarm: triage and draft a few tickets per tick, draft "it's fixed" replies, offer the cards. */
+  private async tickSupport(): Promise<void> {
+    const s = this.state!;
+    let tickets = s.support ?? [];
+    if (!tickets.length) return;
+    let budget = 3, changed = false;
+    for (const id of tickets.map((t) => t.id)) {
+      let t = tickets.find((x) => x.id === id)!;
+      if (budget <= 0) break;
+      if (t.state === "new") {
+        budget--;
+        if (!t.triage) {
+          const tri = await this.supportTriage(t);
+          t = { ...t, triage: { kind: tri.kind, district: tri.district, summary: tri.summary, reason: tri.reason, linkedItemId: tri.linkedItemId ?? (t.issue ? `gh-${t.issue.number}` : undefined), by: tri.by } };
+          if (tri.linkedItemId) await this.supportBoost(tri.linkedItemId, t);
+        }
+        t = t.triage!.kind === "spam" ? { ...t, state: "closed" } : { ...t, draft: await this.supportDraft(t, "answer"), state: "drafted" };
+      } else if (t.state === "waiting_fix") {
+        const item = s.items.find((i) => i.id === t.triage?.linkedItemId);
+        if (item?.state !== "launched" || t.sent.some((x) => x.purpose === "fixed")) continue;
+        budget--;
+        t = { ...t, draft: await this.supportDraft(t, "fixed"), state: "drafted" };
+        this.log("success", `“${item.title}” shipped. A reply telling ${t.name ?? "the customer"} it's fixed is ready for you to send.`, t.id);
+      } else continue;
+      tickets = (this.state!.support ?? tickets).map((x) => (x.id === id ? t : x));
+      changed = true;
+    }
+    if (changed) await this.patch({ support: tickets });
+    await this.offerSupportMoves();
+  }
+
+  /** A customer asking about work already in the factory makes that work weigh more. */
+  private async supportBoost(itemId: string, t: SupportTicket): Promise<void> {
+    const item = this.state!.items.find((i) => i.id === itemId);
+    if (!item) return;
+    const reporter = `support:${t.id}`;
+    if (item.customer?.reporters.includes(reporter)) return;
+    const ore = item.ore && { ...item.ore, reporters: [...item.ore.reporters, reporter].slice(-100), paying: item.ore.paying || !!t.paying };
+    const customer = { usersAffected: item.customer?.usersAffected ?? 0, linked: item.customer?.linked ?? [], ...item.customer, reporters: [...(item.customer?.reporters ?? []), reporter].slice(-100), paying: item.customer?.paying || !!t.paying };
+    await this.patch({ items: [{ ...item, ore, customer, value: ore ? oreWeight(ore, Date.now()) : item.value }] });
+    this.broadcast({ type: "log", level: "info", text: `A customer wrote in about “${item.title}”. It weighs more now.`, at: Date.now(), itemId, actor: "spark", tool: "link_items", reason: t.triage?.reason });
+  }
+
+  private async offerSupportMoves(): Promise<void> {
+    await this.decisionData();
+    const want = (this.state!.support ?? []).flatMap((t) => [replyMove(t), issueMove(t)]).filter((m): m is Move => !!m);
+    const ids = new Set(want.map((m) => m.id));
+    const before = this.openMoves!.length;
+    this.openMoves = this.openMoves!.filter((m) => !m.id.startsWith("support:") || ids.has(m.id));
+    let dirty = before !== this.openMoves.length;
+    for (const move of want) {
+      const open = this.openMoves.find((m) => m.id === move.id);
+      if (open && open.why === move.why && open.title === move.title) continue;
+      if (open) this.openMoves = this.openMoves.filter((m) => m.id !== move.id);
+      this.openMoves.push(enrichMove(move, this.state!));
+      dirty = true;
+    }
+    if (dirty) await this.refreshDecisions();
+  }
+
+  private supportSending = new Set<string>();
+
+  /** The only way a reply leaves: a player's tap on that exact draft. */
+  private async sendSupportReply(tap: PlayerTap): Promise<void> {
+    const s = this.state!;
+    const t = s.support?.find((x) => x.id === tap.ticketId);
+    if (!t?.draft || t.state !== "drafted" || t.draft.hash !== tap.draftHash) return;
+    const key = `supportSend:${t.id}:${t.draft.hash}`;
+    // Synchronous guard covers concurrent events in this instance; storage covers reconnect/restart.
+    if (this.supportSending.has(key)) return;
+    this.supportSending.add(key);
+    try {
+      if (await this.ctx.storage.get(key)) { this.log("warn", "This draft already has a delivery attempt. Check its result before sending again.", t.id); return; }
+      await this.ctx.storage.put(key, { state: "sending", at: Date.now() });
+      const creds = await supportCreds(this.env, this.meta?.repo ?? s.repo);
+      const operator = await isOperatorSupport(this.env, s.repo);
+      const sendEnv = operator ? this.env : { ...this.env, RESEND_API_KEY: undefined, SUPPORT_FROM: undefined };
+      // All credential/identity awaits finish before the last exact-draft check.
+      const current = this.state!.support?.find(x => x.id === t.id);
+      if (current?.draft?.hash !== t.draft.hash || current.state !== "drafted") return;
+      const result = await deliverReply(sendEnv, creds, t, tap).catch(() => ({ via: "outbox" as const, ok: false, error: "Delivery result is uncertain. Check the provider before trying again." }));
+      await this.ctx.storage.put(key, { state: result.ok ? "sent" : "uncertain", at: Date.now() });
+      if (!result.ok) { this.log("warn", result.error ?? "The reply did not confirm delivery. Check the provider.", t.id); return; }
+      const latest = this.state!.support?.find(x => x.id === t.id);
+      if (!latest) return;
+      const unchanged = latest.draft?.hash === t.draft.hash && latest.messages === t.messages;
+      const purpose = t.draft.purpose, kind = t.triage?.kind;
+      const tracked = !!t.triage?.linkedItemId || !!t.issue;
+      const done = purpose === "fixed" || !(kind === "bug" || kind === "feature") || !tracked;
+      const next: SupportTicket = { ...latest, ...(unchanged ? { state: done ? "answered" as const : "waiting_fix" as const, draft: undefined } : {}), sent: [...latest.sent, { at: Date.now(), purpose, via: result.via, ...(result.via === "outbox" ? { text: t.draft.text } : {}) }].slice(-20) };
+      const m = this.state!.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
+      const answered = result.via !== "outbox" && unchanged && done && kind !== "spam";
+      await this.patch({ support: (this.state!.support ?? []).map(x => x.id === t.id ? next : x), ...(answered ? { metrics: { ...m, customersAnswered: m.customersAnswered + 1, shipScore: m.shipScore + 10 } } : {}) });
+      await this.offerSupportMoves();
+      this.log("success", result.via === "outbox" ? "Reply saved to the outbox; no external message was sent." : `Reply sent by ${result.via}.`, t.id);
+    } finally { this.supportSending.delete(key); }
+  }
+
+  private async editSupportReply(ticketId: string, text: string): Promise<void> {
+    const t = this.state!.support?.find((x) => x.id === ticketId);
+    if (!t || t.state === "closed") return;
+    const draft = await makeDraft(t.id, text, t.draft?.purpose ?? "answer", "player");
+    await this.patch({ support: this.state!.support!.map((x) => (x.id === t.id ? { ...x, draft, state: "drafted" } : x)) });
+    await this.offerSupportMoves();
+  }
+
+  /** A customer's bug becomes a real GitHub issue, so it rides the belt like any other. */
+  private async fileSupportIssue(ticketId: string): Promise<void> {
+    const s = this.state!, t = s.support?.find((x) => x.id === ticketId);
+    if (!t || t.issue || !this.meta) return;
+    const { title, body } = issueFor(t);
+    let issue: { number: number; html_url: string; title: string; body?: string | null; state?: string; updated_at?: string; created_at?: string; user?: { login: string }; labels?: { name: string }[] };
+    try {
+      const token = await installationToken(this.env, this.meta.installationId);
+      issue = await gh(`/repos/${this.meta.repo}/issues`, token, { method: "POST", body: JSON.stringify({ title, body, labels: ["bug"] }) });
+    } catch (e) {
+      this.log("warn", `Couldn't file the issue (${e instanceof Error ? e.message.slice(0, 80) : "GitHub error"}). Try again from the support well.`, t.id);
+      return;
+    }
+    const itemId = `gh-${issue.number}`;
+    const next: SupportTicket = { ...t, issue: { number: issue.number, url: issue.html_url }, triage: t.triage && { ...t.triage, linkedItemId: itemId }, state: t.state === "answered" ? "waiting_fix" : t.state };
+    await this.patch({ support: (s.support ?? []).map((x) => (x.id === t.id ? next : x)) });
+    for (const signal of normalizeGitHub({ repository: { full_name: this.meta.repo }, issue: { ...issue, body: issue.body ?? body, state: "open" } } as GitHubPayload)) await this.ingestSignal({ ...signal, reporters: [`support:${t.id}`], paying: t.paying });
+    this.broadcast({ type: "log", level: "success", text: `Filed issue #${issue.number} from a customer's report. It's on the belt.`, at: Date.now(), actor: "player", tool: "file_support_issue", approvedBy: "player", reason: "You chose to file it.", itemId });
+    await this.offerSupportMoves();
+  }
+
+  private async closeTicket(ticketId: string): Promise<void> {
+    const t = this.state!.support?.find((x) => x.id === ticketId);
+    if (!t) return;
+    await this.patch({ support: this.state!.support!.map((x) => (x.id === t.id ? { ...x, state: "closed", draft: undefined } : x)) });
+    await this.offerSupportMoves();
+  }
+
+  /** Card buttons for support cards. Send only runs with a tap minted from this player's own message. */
+  private async chooseSupportMove(card: Move, option: Move["options"][number], tapFor: (tool: string, ticketId: string, draftHash: string) => PlayerTap | null): Promise<boolean> {
+    if (!card.id.startsWith("support:")) return false;
+    const action = option.actions[0];
+    const ticketId = String(action?.args.ticketId ?? card.id.split(":").pop());
+    if (action?.tool === "review_customer_reply") return true; // the browser opens the full preview; never send from a summary card
+    if (action?.tool === "send_customer_reply") return true; // retire legacy summary-card sends
+    if (action?.tool === "file_support_issue") await this.fileSupportIssue(ticketId);
+    else await this.swipe(card, option.id === "skip" ? "once" : "defer");
+    return true;
+  }
+
   /** The growth loop (server/src/growth.ts): measure launched experiments, and turn a funnel drop into a new one. */
   private async growthPoll(rows: RouteDay[], keyEvent: string, now: number, windows: FunnelWindow[] = []): Promise<void> {
     const s = this.state!;
@@ -1303,6 +1550,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
+    if (p.support) s.support = p.support;
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research || p.experiments) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
@@ -2048,7 +2296,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("warn", "Run the missing checks before launching.");
       } else {
         const before = JSON.stringify(await this.runnerJobs());
-        const handled = await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
+        const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(msg.moveId, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
@@ -2056,6 +2304,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.refreshDecisions(); return;
     }
     switch (msg.type) {
+      case "send_reply":
+        await this.sendSupportReply(playerTap(msg.ticketId, msg.draftHash, playerLogin(auth)));
+        await this.refreshDecisions();
+        break;
+      case "edit_reply":
+        await this.editSupportReply(msg.ticketId, msg.text);
+        break;
+      case "file_issue":
+        await this.fileSupportIssue(msg.ticketId);
+        break;
+      case "close_ticket":
+        await this.closeTicket(msg.ticketId);
+        break;
       case "set_goal":
         await this.patch({ goal: msg.text });
         break;
@@ -2073,6 +2334,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           this.log("info", source.setup.steps.join(" "));
         } else if (msg.kind === "sentry" || msg.kind === "posthog") {
           await this.connectMine(msg.kind);
+        } else if (msg.kind === "email") {
+          await this.connectSupport();
         } else {
           const source = { kind: msg.kind, state: "needs_action" as const, detail: "Connector setup is not implemented yet.", eventsToday: 0, setup: { steps: ["GitHub is the first source checkpoint. This connector follows the verified shipping loop."] } };
           await this.patch({ sources: [...(s.sources ?? []).filter((entry) => entry.kind !== msg.kind), source] });
@@ -2083,6 +2346,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       case "disconnect_source": {
         if (msg.kind === "github") await this.disconnectGitHub();
         else if (msg.kind === "sentry" || msg.kind === "posthog") await this.disconnectMine(msg.kind);
+        else if (msg.kind === "email") await this.disconnectSupport();
         else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
         break;
       }
@@ -2291,6 +2555,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.githubStopped()) return;
     if (!(await this.load())) return;
     await this.guard("pollPostHog", () => this.pollPostHog());
+    await this.guard("tickSupport", () => this.tickSupport());
     await this.guard("retryReviewComments", () => this.retryReviewComments());
     await this.guard("planRunnerJobs", () => this.planRunnerJobs());
     await this.guard("reconcileGitHub", () => this.reconcileGitHub());
