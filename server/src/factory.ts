@@ -2102,5 +2102,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 }
 
-export const Factory = Sentry.instrumentDurableObjectWithSentry((env: FactoryEnv) => sentryOptions(env), FactoryBase);
-export type Factory = FactoryBase;
+const InstrumentedFactory = Sentry.instrumentDurableObjectWithSentry((env: FactoryEnv) => sentryOptions(env), FactoryBase);
+// Export a concrete class: production RPC dispatch must see a native class prototype,
+// while Sentry still owns invocation isolation and error flushing in the base constructor.
+export class Factory extends InstrumentedFactory {}

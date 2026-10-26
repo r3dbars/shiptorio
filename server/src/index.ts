@@ -1,3 +1,4 @@
+import { factoryRpc } from "./factory-rpc";
 import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
 
@@ -59,7 +60,7 @@ const factory = (env: Env, repo: string) => {
       headers.set("X-Request-ID", trace.requestId);
       return target.fetch(new Request(request, { headers }));
     };
-    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+    return (...args: unknown[]) => factoryRpc(target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }, String(method), args, trace);
   } }) as typeof stub;
 };
 
