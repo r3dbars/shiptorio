@@ -1,12 +1,12 @@
 // Which world the map draws. Black Iron (docs/art/IRON-STYLE.md §9) is the oily foundry look from
-// PR #204; "classic" is the sunny moss island it replaces. ?world=iron | ?world=classic picks one.
-// While the iron world is being built it is opt-in; the final rollout flips DEFAULT_WORLD.
+// PR #204 and the default; "classic" is the sunny moss island it replaced, kept for one release
+// behind ?world=classic so anyone can compare (then this file and the classic branches go).
 
 import * as THREE from "three";
 import type { Finish } from "./pixel";
 
 export type WorldStyle = "iron" | "classic";
-const DEFAULT_WORLD: WorldStyle = "classic";
+const DEFAULT_WORLD: WorldStyle = "iron";
 
 function pick(): WorldStyle {
   try {

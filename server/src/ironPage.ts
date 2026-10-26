@@ -1,13 +1,15 @@
-// Black Iron shell for server-rendered pages (docs/art/IRON-STYLE.md): one riveted iron plate on the
-// furnace sky. Inline CSS only, so it works under `style-src 'unsafe-inline'`. Fonts come from the
+// Black Iron shell for the Worker's utility pages (connect, settings, admin, sign-in errors, runner pairing).
+// Shares fonts with iron-page.ts (the gate and waitlist plate); this one adds options for wide/doc/alarm
+// plates and a font-free mode (docs/art/IRON-STYLE.md): one riveted iron plate on the furnace sky.
+// Inline CSS only, so it works under `style-src 'unsafe-inline'`. Fonts come from the
 // self-hosted /fonts/*.woff2 (public past the preview gate); pages whose own CSP forbids fonts pass
 // `fonts: false` and fall back to a monospace stack with the same colors and plates.
 
+import { IRON_FONTS } from "./iron-page";
+
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-const FONT_FACES = `@font-face{font-family:"Silkscreen";font-weight:400;font-display:swap;src:url("/fonts/silkscreen-400.woff2") format("woff2")}
-@font-face{font-family:"Silkscreen";font-weight:700;font-display:swap;src:url("/fonts/silkscreen-700.woff2") format("woff2")}
-@font-face{font-family:"JetBrains Mono";font-weight:400 700;font-display:swap;src:url("/fonts/jetbrains-mono.woff2") format("woff2")}`;
+
 
 /** The shared Black Iron CSS for server pages. Same hex values as web/src/iron.css. */
 export const IRON_CSS = `*{box-sizing:border-box}
@@ -118,7 +120,7 @@ export interface IronPageOptions {
 export function ironPage(o: IronPageOptions): string {
   const head = `<header class="iron-head${o.alarm ? " alarm" : ""}">${COG}<a href="${esc(o.home ?? "/")}">Shiptorio</a>${o.nav ? `<nav class="iron-nav">${o.nav}</nav>` : ""}${o.eyebrow ? `<span class="iron-eyebrow">${esc(o.eyebrow)}</span>` : ""}</header>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1c120c"><link rel="icon" href="/brand/favicon.svg" type="image/svg+xml"><title>${esc(o.title)} · Shiptorio</title>
-<style>${o.fonts === false ? "" : FONT_FACES}
+<style>${o.fonts === false ? "" : IRON_FONTS}
 ${IRON_CSS}</style>${o.head ?? ""}</head>
 <body><main class="iron${o.wide ? " wide" : ""}${o.doc ? " doc" : ""}">${o.alarm ? `<div class="iron-stripe" aria-hidden="true"></div>` : ""}${head}<div class="iron-body">${o.body}</div></main></body></html>`;
 }

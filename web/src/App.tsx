@@ -14,6 +14,7 @@ import { whatsNext, type NudgeAction } from "./ui/whatsNext";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
+import { Mark } from "./ui/Logo";
 import { Icon } from "./ui/icons";
 import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
@@ -409,6 +410,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <header className="topbar">
           <div className="chips">
+            <span className="brand" aria-hidden="true"><Mark size={32} decorative /></span>
             {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
 
             {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
