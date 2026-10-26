@@ -209,6 +209,10 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
+  if (c.req.param("action") === "revoke") {
+    await f.revokeRunner();
+    return c.json({ revoked: true });
+  }
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
     const pairId = await f.pairRunner();
