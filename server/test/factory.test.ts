@@ -1,4 +1,4 @@
-import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -29,9 +29,9 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-  const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
-  const factory = new Factory(ctx as never, env as never);
-  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
+  const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
+  const factory = new Factory(ctx as never, { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never);
+  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, { ...env, DB: authorizedDB(env.DB), CACHE: membershipCache } as never), saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
@@ -52,6 +52,7 @@ describe("Factory lifecycle", () => {
   it("rejects invalid or unauthorized goal messages without saving or broadcasting", async () => {
     const f = fixture();
     f.data.set("state", { ...f.saved(), goal: "Keep the existing goal" });
+    await (f.factory as unknown as { load(): Promise<FactoryState | null> }).load();
     const before = structuredClone(f.saved());
     for (const raw of [
       "not JSON",

@@ -1,4 +1,4 @@
-import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
 import { foldSignal, matchDistrict } from "../src/ore";
 import { fakeSentry, normalizeSentry, topInAppPath } from "../src/sources/sentry";
@@ -85,9 +85,9 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("SELECT installation_id") ? { installation_id: 1 } : rows.get(String(values[0])) ?? null,
       };
-      expect(sql).toContain("sentry");
+      expect(sql.includes("sentry") || sql.includes("SELECT installation_id")).toBe(true);
       return statement;
     } },
     FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("example/shop"); queued.push(`${id}:${resource}`); } }) },
@@ -98,7 +98,7 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
   const good = await sign(env.SENTRY_CLIENT_SECRET, body);
   expect((await send(good)).status).toBe(202);
   expect((await (await send(good)).json() as { duplicate?: boolean }).duplicate).toBe(true);
-  expect(queued).toEqual(["req-1:issue"]);
+  expect(queued).toEqual(["example/shop:req-1:issue"]);
 });
 
 const { Factory } = await import("../src/factory");
@@ -126,6 +126,7 @@ function factoryFixture(env: Record<string, unknown>) {
     ...browserEnv,
     DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
     CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
+    SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop",
     ...env,
   };
   const factory = new Factory(ctx as never, fullEnv as never);
@@ -143,7 +144,7 @@ it("Factory: unconfigured mine answers with setup steps and a connect link for t
 it("Factory: Sentry mine opens a deposit, spawns biters on the right district, grows them, and counts the kill", async () => {
   const f = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret" });
   expect((await f.factory.connectMine("sentry"))?.state).toBe("connected");
-  expect(f.kv.get("link:sentry")).toBe("example/shop");
+  expect(f.kv.get("link:sentry")).toBeUndefined();
   expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(true);
   expect(f.saved().belts.some((b) => b.from === "ore-sentry" && b.to === "splitter-1")).toBe(true);
   await f.factory.enqueueSentry("d1", "issue", fakeSentry("issue.created"));
@@ -182,7 +183,7 @@ it("Factory: keys set as Worker secrets plug the mines in when the map opens, an
   const f = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", FAKE_POSTHOG: "1" });
   await f.factory.ensure("example/shop", 1);
   expect(f.saved().machines.filter((m) => m.id.startsWith("ore-")).map((m) => m.id).sort()).toEqual(["ore-issues", "ore-posthog", "ore-sentry"]);
-  expect(f.kv.get("link:sentry")).toBe("example/shop");
+  expect(f.kv.get("link:sentry")).toBeUndefined();
   await f.factory.disconnectMine("sentry");
   await f.factory.ensure("example/shop", 1);
   expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);

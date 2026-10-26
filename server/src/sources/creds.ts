@@ -30,7 +30,7 @@ async function stored<T>(env: CredsEnv, kind: MineKind, repo?: string | null): P
 async function secretsApply(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<boolean> {
   if (!repo) return true;
   const linked = await linkedRepo(env, kind);
-  return !linked || linked === repo.toLowerCase();
+  return linked === repo.toLowerCase();
 }
 
 export async function sentryCreds(env: CredsEnv, repo?: string | null): Promise<SentryCreds> {
@@ -54,8 +54,6 @@ export async function linkedRepo(env: CredsEnv, kind: MineKind): Promise<string 
   return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`)) ?? null);
 }
 
-export async function linkRepo(env: CredsEnv, kind: MineKind, repo: string | null): Promise<void> {
-  if (!env.CACHE) return;
-  if (repo) await env.CACHE.put(`link:${kind}`, repo.toLowerCase());
-  else await env.CACHE.delete(`link:${kind}`);
+export async function linkRepo(_env: CredsEnv, _kind: MineKind, _repo: string | null): Promise<void> {
+  // Per-repo DO state owns connection lifecycle. Legacy global links are read-only.
 }
