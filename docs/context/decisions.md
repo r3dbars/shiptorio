@@ -285,3 +285,5 @@ session expiry. `/connect`, `/api/sources` and `/api/setup/status` need an expli
 `repo` query parameter. Source keys must be repo-scoped; the encrypted-credential
 lane owns their final storage integration (PR #155). Factory-generated PRs remain
 launchable only through the game. See [security.md](security.md) for the inventory.
+
+- 2026-10-26: Shiptorio's own GitHub planner audit comment is output, not fresh work input. Identify it by the exact bot login, Bot actor type and planner header; human lookalikes, other bots and substantive comments retain revision protection. New plans refresh canonical issue context before pinning their input revision so persisted planner chatter cannot teach the next plan its own previous scope. Existing ready jobs are never rewritten or approved by this cleanup.

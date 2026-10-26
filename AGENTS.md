@@ -186,10 +186,14 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 - Work on a branch and open a PR. Don't push to `main`.
 - **Commit and push often** (Justin, 2026-10-26). Push WIP to your branch after every meaningful step, and open a
   draft PR early so the work is visible on GitHub. Never sit on unpushed local work.
+- **Run `bun run check` (typecheck + tests + build) before you mark a PR ready.** CI skips draft PRs, so push WIP
+  as a draft freely; it only runs (and only fails) once you mark it ready. Merge `main` in first so you test against it.
 - **Merge your own PR once CI is green** (Justin, 2026-10-26: "auto merge every thing"). Squash merge, then check
   the Deploy run on `main` went green before calling it live. Don't merge drafts that are stale (#3, #4) or a PR
   another agent is still working on. GitHub's repo auto-merge setting is not on yet; Justin can flip it in
   Settings → General → "Allow auto-merge".
+- **D1 migrations:** before you merge, merge `main` into your branch and renumber your `server/migrations/NNNN_*.sql` to
+  the next free number. `server/test/migrations.test.ts` fails CI on a duplicate or gap. Deploy applies them to prod.
 - **Never merge a PR the factory built** (runner PRs from `shiptorio[bot]` / `shiptorio/runner-*` branches, or anything
   in r3dbars/Testing) directly on GitHub. Those go through the in-game gauntlet and the Launch card, or auto-launch
   via a launch permit. A green CI is not enough: the verify bay and AI review can still flag them (#128 got merged
