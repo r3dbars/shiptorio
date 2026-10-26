@@ -20,7 +20,13 @@ export type Sfx =
   | "chirp"
   | "think"
   | "arm"
-  | "shipped";
+  | "shipped"
+  | "ci_buzz"
+  | "verify_caught"
+  | "review_stamp"
+  | "gate_clank"
+  | "orbit_clear"
+  | "orbit_alarm";
 
 import { SCAPES, type Focus } from "./scapes";
 
@@ -50,6 +56,8 @@ class SoundEngine {
   private step = 0;
   private noiseBuf: AudioBuffer | null = null;
   private hum: GainNode | null = null;
+  private stationHum: GainNode | null = null;
+  private stationsBusy = 0;
   private workTimer: number | undefined;
   private workRate = 0; // working machines
   private humLevel = 0; // 0..1, how busy the belts are
@@ -146,6 +154,12 @@ class SoundEngine {
     if (this.ctx && this.hum) this.hum.gain.setTargetAtTime(0.012 + this.humLevel * 0.05, this.ctx.currentTime, 0.4);
   }
 
+  // Gauntlet stations with work in them hum: a low electrical chord that thickens as more stations get busy.
+  setStationsBusy(n: number) {
+    this.stationsBusy = n;
+    if (this.ctx && this.stationHum) this.stationHum.gain.setTargetAtTime(Math.min(4, n) * 0.012, this.ctx.currentTime, 0.5);
+  }
+
   private startHum() {
     const ctx = this.ctx!;
     const g = ctx.createGain();
@@ -169,6 +183,29 @@ class SoundEngine {
     lfo.start();
     lp.connect(g).connect(this.floor!);
     this.hum = g;
+    // station hum: 98 + 147 Hz mains-ish buzz through a soft filter, pulsing slowly
+    const sg = ctx.createGain();
+    sg.gain.value = 0;
+    const slp = ctx.createBiquadFilter();
+    slp.type = "lowpass";
+    slp.frequency.value = 500;
+    const trem = ctx.createGain();
+    const tl = ctx.createOscillator();
+    const ta = ctx.createGain();
+    tl.frequency.value = 0.7;
+    ta.gain.value = 0.35;
+    tl.connect(ta).connect(trem.gain);
+    for (const [f, type] of [[98, "square"], [147, "triangle"], [196.3, "triangle"]] as const) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      o.connect(slp);
+      o.start();
+    }
+    tl.start();
+    slp.connect(trem).connect(sg).connect(this.floor!);
+    this.stationHum = sg;
+    this.setStationsBusy(this.stationsBusy);
     this.setAmbience(this.humLevel, this.workRate);
   }
 
@@ -318,7 +355,7 @@ class SoundEngine {
     const now = performance.now();
     if (now - (this.last.get(s) ?? 0) < MIN_GAP_MS) return;
     this.last.set(s, now);
-    const t = this.ctx!.currentTime + delay;
+    let t = this.ctx!.currentTime + delay;
     switch (s) {
       case "click":
         this.tone({ f: 1320, dur: 0.035, vol: 0.08, at: t });
@@ -360,7 +397,10 @@ class SoundEngine {
       case "ai_fail":
         this.tone({ f: 330, to: 220, dur: 0.2, type: "triangle", vol: 0.12, at: t });
         break;
-      case "rework": // item rattles back down the rework belt
+      case "rework": // a heavy clunk as it drops onto the rework belt, then it rattles away
+        this.tone({ f: 110, to: 45, dur: 0.22, type: "square", vol: 0.22, at: t });
+        this.noise({ dur: 0.1, vol: 0.22, lp: 700, at: t });
+        t += 0.12;
         for (let i = 0; i < 5; i++) this.tone({ f: 520 - i * 70, dur: 0.05, vol: 0.08, at: t + i * 0.06 });
         this.noise({ dur: 0.35, vol: 0.05, lp: 1200, at: t, rate: 0.25 });
         break;
@@ -409,6 +449,38 @@ class SoundEngine {
         for (let i = 0; i < 6; i++) this.tone({ f: [2093, 2637, 3136, 4186][i % 4], dur: 0.12, type: "sine", vol: 0.05, at: hold + 0.15 + i * 0.09 });
         break;
       }
+      case "ci_buzz": // CI failed: the inspector's harsh reject buzzer, two blasts
+        for (const d of [0, 0.28]) {
+          this.tone({ f: 110, dur: 0.22, type: "sawtooth", vol: 0.16, at: t + d });
+          this.tone({ f: 116, dur: 0.22, type: "square", vol: 0.1, at: t + d });
+        }
+        break;
+      case "verify_caught": // verify bay caught a bad fix: klaxon whoop, then the ram slams it back
+        for (const d of [0, 0.3]) this.tone({ f: 440, to: 880, dur: 0.26, type: "square", vol: 0.1, at: t + d });
+        this.noise({ dur: 0.3, vol: 0.3, lp: 600, sweepTo: 120, at: t + 0.62, rate: 0.5 });
+        this.tone({ f: 80, to: 38, dur: 0.32, vol: 0.3, at: t + 0.62 });
+        this.tone({ f: 1568, dur: 0.06, type: "triangle", vol: 0.08, at: t + 1.0 }); // "gotcha" tick
+        break;
+      case "review_stamp": // AI review approves: a solid rubber stamp, then a warm two-note OK
+        this.noise({ dur: 0.06, vol: 0.32, lp: 900, at: t });
+        this.tone({ f: 70, to: 40, dur: 0.12, type: "sine", vol: 0.35, at: t });
+        this.tone({ f: 659, dur: 0.1, type: "triangle", vol: 0.1, at: t + 0.12 });
+        this.tone({ f: 988, dur: 0.18, type: "triangle", vol: 0.1, at: t + 0.21 });
+        break;
+      case "gate_clank": // merge gate: heavy bolts slide back, chain rattle, the gate clanks open
+        this.noise({ dur: 0.05, vol: 0.25, hp: 1200, at: t });
+        this.tone({ f: 180, to: 120, dur: 0.08, vol: 0.2, at: t });
+        for (let i = 0; i < 6; i++) this.noise({ dur: 0.03, vol: 0.1, bp: 2500 + i * 200, at: t + 0.1 + i * 0.045 });
+        this.tone({ f: 65, to: 45, dur: 0.35, type: "square", vol: 0.2, at: t + 0.4 });
+        this.noise({ dur: 0.18, vol: 0.25, lp: 900, at: t + 0.4 });
+        break;
+      case "orbit_clear": // orbit watch: two rising radar pings, all clear
+        this.tone({ f: 1046, dur: 0.12, type: "sine", vol: 0.1, at: t });
+        this.tone({ f: 1568, dur: 0.25, type: "sine", vol: 0.1, at: t + 0.16 });
+        break;
+      case "orbit_alarm": // orbit watch saw new errors after launch
+        for (let i = 0; i < 3; i++) this.tone({ f: 988, to: 740, dur: 0.18, type: "square", vol: 0.1, at: t + i * 0.22 });
+        break;
       case "think": // Spark is thinking: a soft data warble
         for (let i = 0; i < 4; i++) this.tone({ f: 600 + Math.random() * 900, dur: 0.04, type: "triangle", vol: 0.05, at: t + i * 0.05 });
         break;

@@ -7,12 +7,36 @@ import { sound, type Focus, type Sfx } from "./engine";
 import type { ScapeKind } from "./scapes";
 import { celebrateShip } from "./ship";
 
-const GATE_SFX: Record<Inspection["stages"][number]["gate"], [pass: Sfx, fail: Sfx]> = {
-  ci: ["stamp_pass", "stamp_fail"],
-  verify: ["verify_pop", "verify_ram"],
-  ai: ["ai_pass", "ai_fail"],
-  human: ["dock", "stamp_fail"],
+// Each gauntlet station's verdict sounds: [pass, fail].
+const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
+  ci: ["stamp_pass", "ci_buzz"],
+  verify: ["verify_pop", "verify_caught"],
+  review: ["review_stamp", "ai_fail"],
+  merge: ["gate_clank", "stamp_fail"],
+  orbit: ["orbit_clear", "orbit_alarm"],
+  custom: ["stamp_pass", "stamp_fail"],
 };
+// Inspection gates are the older name for the same stations.
+const GATE_KIND: Record<Inspection["stages"][number]["gate"], Station["kind"]> = { ci: "ci", verify: "verify", ai: "review", human: "merge" };
+
+export const STATION_EVENT = "shiptorio:station";
+export interface StationVerdict {
+  stationId: string;
+  kind: Station["kind"];
+  ok: boolean;
+  text: string;
+}
+
+// Stations whose last verdict just changed. Works for sim and live: both write station.lastLog on every pass and fail.
+export function stationVerdicts(prev: FactoryState, next: FactoryState): StationVerdict[] {
+  const out: StationVerdict[] = [];
+  for (const st of next.stations ?? []) {
+    const l = st.lastLog;
+    const old = prev.stations?.find((x) => x.id === st.id)?.lastLog;
+    if (l && (l.text !== old?.text || l.ok !== old?.ok)) out.push({ stationId: st.id, kind: st.kind, ok: l.ok, text: l.text });
+  }
+  return out;
+}
 // Which part of the factory each sound comes from, so it plays up close when you're focused there.
 const SFX_FROM: Partial<Record<Sfx, ScapeKind>> = {
   ore: "ore",
@@ -23,6 +47,12 @@ const SFX_FROM: Partial<Record<Sfx, ScapeKind>> = {
   verify_ram: "verify",
   ai_pass: "review",
   ai_fail: "review",
+  ci_buzz: "ci",
+  verify_caught: "verify",
+  review_stamp: "review",
+  gate_clank: "merge",
+  orbit_clear: "orbit",
+  orbit_alarm: "orbit",
   rework: "rework",
   dock: "pad",
   launch: "pad",
@@ -73,6 +103,12 @@ const MOVING: Item["state"][] = ["queued", "working", "inspecting", "rejected"];
 // Sounds for one tick's worth of changes, in the order they should play.
 export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
   const out: Sfx[] = [];
+  // stations first: their verdict is the sound; item-level fallbacks below only fill gaps
+  const heard = new Set<Station["kind"]>();
+  for (const v of stationVerdicts(prev, next)) {
+    out.push(STATION_SFX[v.kind][v.ok ? 0 : 1]);
+    heard.add(v.kind);
+  }
   const before = new Map(prev.items.map((i) => [i.id, i]));
   for (const item of next.items) {
     const was = before.get(item.id);
@@ -80,28 +116,32 @@ export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
       out.push(item.state === "launched" ? "launch" : "ore");
       continue;
     }
-    // inspection stations, one sound per gate that just resolved
-    let stamped = false;
+    // inspection gates that just resolved, unless that station already spoke this tick
     for (const st of item.inspection?.stages ?? []) {
       const old = was.inspection?.stages.find((s) => s.gate === st.gate);
-      if (st.state !== "pending" && old?.state !== st.state) {
-        out.push(GATE_SFX[st.gate][st.state === "passed" ? 0 : 1]);
-        stamped = true;
+      const kind = GATE_KIND[st.gate];
+      if (st.state !== "pending" && old?.state !== st.state && !heard.has(kind)) {
+        out.push(STATION_SFX[kind][st.state === "passed" ? 0 : 1]);
+        heard.add(kind);
       }
+    }
+    // a new scar names the station that caught it
+    const scar = (item.scars?.length ?? 0) > (was.scars?.length ?? 0) ? item.scars!.at(-1) : undefined;
+    if (scar && !heard.has(scar.station)) {
+      out.push(STATION_SFX[scar.station][1]);
+      heard.add(scar.station);
     }
     if (was.state === item.state) continue;
     switch (item.state) {
       case "working":
-        out.push(was.state === "rejected" ? "rework" : "machine_start");
-        break;
-      case "queued":
-        if (was.state === "rejected") out.push("rework");
+        if (was.state !== "rejected") out.push("machine_start");
         break;
       case "rejected":
-        if (!stamped) out.push("stamp_fail");
+        if (!heard.size) out.push("stamp_fail");
+        out.push("rework"); // clunk onto the rework belt
         break;
       case "passed":
-        if (!stamped) out.push("stamp_pass");
+        if (!heard.size) out.push("stamp_pass");
         break;
       case "on_pad":
         out.push("dock");
@@ -130,8 +170,11 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     if (!state) return;
     const moving = state.items.filter((i) => MOVING.includes(i.state)).length;
     sound.setAmbience(moving / 6, state.machines.filter((m) => m.state === "working").length);
+    sound.setStationsBusy(state.stations?.filter((st) => st.wip > 0).length ?? 0);
     // first snapshot (or a new repo/scenario) sets the scene silently
     if (!p || p.repo !== state.repo) return;
+    // so the art's station effects (stamp flash, ram slam, gate swing) can land on the same beat
+    for (const v of stationVerdicts(p, state)) window.dispatchEvent(new CustomEvent<StationVerdict>(STATION_EVENT, { detail: v }));
     diffSounds(p, state).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
     // each PR that just launched gets the full celebration (event for the art + launch, fanfare, streak)
     const was = new Map(p.items.map((i) => [i.id, i.state]));
