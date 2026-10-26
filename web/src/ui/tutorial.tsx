@@ -125,6 +125,8 @@ export function useTutorial(state: FactoryState | null, on: boolean) {
 
   const lesson = LESSONS.find((l) => l.id === open) ?? null;
   return {
+    on,
+    learned: done, // lesson ids met so far; the field guide shows these
     show: (p: HudPart) => shown.has(p),
     lesson,
     step: lesson ? LESSONS.indexOf(lesson) + 1 : done.length,
