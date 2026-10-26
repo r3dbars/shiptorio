@@ -47,7 +47,7 @@ existing honest `brain.fallbacks` counter records the denial and its specific re
 longer records the same failed Spark call twice. Successful thoughts append a small `Budget: calls/cap,
 tokens/cap today (UTC)` line in **how it thinks**, using the existing thought payload; no protocol/UI
 contract change. `/admin` shows current-day usage and limits (`?format=json` for machine-readable data),
-and requires a live operator session. The budget section is integrated into the existing ops dashboard,
+and requires a live operator session. The budget section is integrated into the diagnostics dashboard,
 with `/api/admin/budget` for operators. Missing `ADMIN_LOGINS` denies admin access.
 
 Standalone `bun run spark:check` uses a separate persistent SQLite ledger at
