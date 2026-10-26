@@ -54,6 +54,7 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 | #122 | Orbit watch: last station watches every launch for 24h | merged |
 | #124 | Muse Spark visibly drives the factory: decision log, game master, plan comments | merged |
 | #127 | Research tree: unlock real checks with science packs | merged |
+| #174 | Achievements: 14 badges for real outcomes (first rocket, auto-launch, verify catch, 10 clean...), unlock toast + sound, HUD sheet, account pref | merged |
 | #95, #98, #101, #111 | Codex: phone + Firefox login, security hardening, fresh CI before merge | merged |
 | #96 | Codex: live bottleneck + check-in deck from factory state | merged |
 | #100, #103, #117 | Codex: mobile/onboarding papercuts, first-run loop never idles | merged |
