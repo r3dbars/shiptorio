@@ -177,6 +177,10 @@ test("zero, invalid, incomplete or underpowered windows are inconclusive, never 
   }
 });
 
+test("a zero baseline cannot be labelled no-lift when relative lift is undefined", () => {
+  expect(verdict(measure({ entered: 1000, converted: 0, days: 7 }, { entered: 1000, converted: 300, days: 7 }), 7)).toBe("inconclusive");
+});
+
 test("an early noisy spike cannot freeze a winner that vanishes over the complete window", () => {
   const exp = { id: "noise", step, title: "CTA", hypothesis: "h", change: "cta" as const, district: "checkout", state: "measuring" as const, baseline: { entered: 2800, converted: 840, days: 7 }, windowDays: 7, proposedAt: NOW - 9 * DAY, launchedAt: NOW - 7 * DAY };
   const early = updateExperiment(exp, { entered: 1200, converted: 430, days: 3 }, 3, NOW - 4 * DAY);

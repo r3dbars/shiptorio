@@ -907,7 +907,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const users = routeUsers(rows, keyEvent); // Traffic context, not an ordered funnel.
     // The route poll cannot supply unique-person cohort conversions. A future
     // authorized funnel query must provide these windows before live growth runs.
-    if (!windows.length) return;
+    if (!(await flagEnabled(this.env, "newFeatures")) || !windows.length) return;
     const tick = growthTick(s.experiments ?? [], s.items, windows, now);
     if (tick.changed) await this.patch({ experiments: tick.experiments });
     for (const exp of tick.decided) {

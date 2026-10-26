@@ -130,7 +130,7 @@ export function measure(before: StepCounts, after: StepCounts): Measurement {
  * Before/after differences remain observational, not proof that the PR caused them. */
 export function verdict(m: Measurement, daysWatched: number, windowDays = MEASURE_DAYS): ExperimentVerdict {
   if (daysWatched < windowDays) return "too_early";
-  if (!m.valid || m.days < windowDays || m.baselineDays < windowDays || m.sample < MIN_SAMPLE || m.baselineSample < MIN_SAMPLE) return "inconclusive";
+  if (!m.valid || m.baseRate <= 0 || m.days < windowDays || m.baselineDays < windowDays || m.sample < MIN_SAMPLE || m.baselineSample < MIN_SAMPLE) return "inconclusive";
   const sure = m.p < ALPHA;
   if (sure && m.lift >= MIN_LIFT) return "lift";
   if (sure && m.lift <= -MIN_LIFT) return "hurt";
