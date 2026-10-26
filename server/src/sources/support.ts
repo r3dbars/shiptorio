@@ -134,7 +134,7 @@ const idPart = (s: string | undefined) => s?.trim().replace(/^<|>$/g, "").slice(
 interface EmailPayload {
   // generic
   from?: string; name?: string; subject?: string; text?: string; html?: string;
-  messageId?: string; inReplyTo?: string; references?: string; date?: string; paying?: boolean;
+  messageId?: string; inReplyTo?: string; references?: string; date?: string; paying?: boolean; // inReplyTo/references: accepted, not needed
   // Postmark inbound
   From?: string; FromName?: string; FromFull?: { Email?: string; Name?: string }; Subject?: string;
   TextBody?: string; HtmlBody?: string; StrippedTextReply?: string; MessageID?: string; Date?: string;
@@ -153,12 +153,11 @@ export function normalizeEmail(payload: unknown, now = Date.now()): SupportMessa
   const subject = (p.subject ?? p.Subject ?? "").trim().slice(0, 300) || "(no subject)";
   if (!text && subject === "(no subject)") return null;
   const messageId = idPart(p.messageId ?? header("message-id") ?? p.MessageID) ?? `${addr.email}:${now}`;
-  const references = (p.references ?? header("references") ?? "").split(/\s+/).map(idPart).filter(Boolean) as string[];
-  const root = references[0] ?? idPart(p.inReplyTo ?? header("in-reply-to"));
   return {
     channel: "email",
-    // Mail clients don't always keep References; same sender + same subject is the same conversation.
-    threadId: root ?? `${addr.email}|${normSubject(subject)}`,
+    // Mail clients drop References often enough that it can't be the key: same sender + same subject
+    // (minus Re:/Fwd:) is the same conversation. Replies still thread on the newest Message-ID.
+    threadId: `${addr.email}|${normSubject(subject)}`,
     messageId,
     from: addr.email,
     name: (p.name ?? p.FromName ?? addr.name)?.slice(0, 80) || undefined,
