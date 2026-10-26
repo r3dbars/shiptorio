@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import { FactoryScene, type Cosmetics, type Ping } from "./scene";
 
+import type { SatelliteSpec } from "./empire";
+
 interface Props {
   state: FactoryState | null;
   onPick?: (id: string) => void;
@@ -13,11 +15,15 @@ interface Props {
   wide?: number | null; // no focus: pull back over the whole island, this far out (the welcome tour)
   lift?: number; // keep what the camera's on this much higher, as a fraction of height (a card sits below)
   cosmetics?: Cosmetics; // progression unlocks drawn on the island
+
+  satellites?: SatelliteSpec[]; // the player's other repos, floating nearby
+  empire?: boolean; // pulled back over every island (the empire overview)
 }
 
 const NO_PINGS: Ping[] = [];
+const NO_SATS: SatelliteSpec[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -106,6 +112,16 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     else sceneRef.current?.focus(focus);
     // the wide shot refits as the island grows
   }, [focus, wide, wide && state?.districts.length, wide && state?.machines.length]);
+  const satKey = JSON.stringify(satellites);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => sceneRef.current?.setSatellites(satellites), [satKey]);
+  const wasEmpire = useRef(false);
+  useEffect(() => {
+    if (empire) sceneRef.current?.empireView();
+    else if (wasEmpire.current) sceneRef.current?.backToLine();
+    wasEmpire.current = empire;
+    // the overview refits when an island joins
+  }, [empire, empire && satellites.length]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
   useEffect(() => sceneRef.current?.setLift(lift), [lift]);
   const cosmeticsKey = JSON.stringify(cosmetics ?? null);

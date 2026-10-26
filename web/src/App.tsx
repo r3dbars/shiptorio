@@ -26,6 +26,8 @@ import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
 import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
 
+import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
+
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
   queued: "queued",
@@ -118,6 +120,8 @@ function buildSlot(state: FactoryState) {
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
+  const empire = useEmpire(cfg, state);
+  const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -157,7 +161,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (progressing && state) prog.open(deck.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -170,6 +174,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // map picks: an empty mine opens its connect sheet, anything else its panel
   const pickOnMap = (k: string | null) => {
     if (intro) return tourly.pick(k);
+    if (k?.startsWith("island:")) return void (location.href = empire.hrefFor(k.slice(7)));
     if (k?.startsWith("src:")) {
       setSource(k.slice(4));
       setCheckin(false);
@@ -249,7 +254,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -337,6 +342,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
           pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
           cosmetics={cosmeticsOf(prog.p, progressing)}
+
+          satellites={intro ? undefined : satellites}
+          empire={!intro && sheet === "empire"}
         />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
@@ -347,6 +355,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         <header className="topbar">
           <div className="chips">
             {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
+
+            {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             {show("score") && (
               <div className={progressing ? "chip desk" : "chip"} title="PRs merged">
                 <span className="badge" style={{ background: "var(--amber)" }}>
@@ -478,6 +488,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "thinks" ? (
           <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+        ) : sheet === "empire" ? (
+          <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
         ) : sheet === "guide" ? (

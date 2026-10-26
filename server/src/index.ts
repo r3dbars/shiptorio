@@ -1,9 +1,11 @@
+import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
-import { canSeeRepo, currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
+import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
+import { isAllowed } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
@@ -14,6 +16,7 @@ import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserMutationAllowed, securityHeaders } from "./security";
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
@@ -41,15 +44,12 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
+const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+
 type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
 const app = new Hono<AppEnv>();
-
-const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) =>
-  currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
-
-/** Route guard: 401s unless a real session is signed in, and puts the player on c.get("user"). */
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
-  const user = await signedIn(c);
+  const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.json({ error: "login required" }, 401);
   c.set("user", user);
   await next();
@@ -83,6 +83,7 @@ app.use("*", async (c, next) => {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
+    if (!identity.user || !isAllowed(c.env.ALLOWED_LOGINS, identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({ error: "repository access denied" }, 403);
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
@@ -102,6 +103,25 @@ app.onError((err, c) => {
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  await next();
+});
+
+app.use("*", async (c, next) => {
+  const path = c.req.path;
+  const match = path.match(/^\/api\/repos\/([^/]+)\/([^/]+)/);
+  const scoped = !!match || path.startsWith("/connect/") || ["/api/sources", "/api/setup/status"].includes(path);
+  if (path === "/setup" || path === "/setup/callback") {
+    if (c.env.GITHUB_APP_ID) return c.notFound();
+    const user = await resolveUser(c.req.raw, c.env);
+    if (!user) return c.json({ error: "login required" }, 401);
+  }
+  if (scoped) {
+    const user = await resolveUser(c.req.raw, c.env);
+    if (!user) return c.json({ error: "login required" }, 401);
+    const repo = match ? `${match[1]}/${match[2]}` : c.req.query("repo") ?? "";
+    if (!validRepo(repo) || !await repoAccess(c.env, user, repo)) return c.json({ error: "repository access denied" }, 403);
+    c.set("user", user);
+  }
   await next();
 });
 
@@ -147,8 +167,8 @@ async function installUrl(env: Env): Promise<string | null> {
 }
 
 app.get("/api/setup/status", async (c) => c.json({
-  sentry: !!(await sentryCreds(c.env)).clientSecret,
-  posthog: c.env.FAKE_POSTHOG === "1" || !!(await postHogCreds(c.env)).apiKey,
+  sentry: !!(await sentryCreds(c.env, c.req.query("repo"))).clientSecret,
+  posthog: c.env.FAKE_POSTHOG === "1" || !!(await postHogCreds(c.env, c.req.query("repo"))).apiKey,
   github: !!(c.env.GITHUB_APP_ID && c.env.GITHUB_APP_PRIVATE_KEY && c.env.GITHUB_WEBHOOK_SECRET && c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET),
   spark: !!c.env.META_API_KEY,
   githubAppId: !!c.env.GITHUB_APP_ID,
@@ -161,12 +181,8 @@ app.get("/api/setup/status", async (c) => c.json({
 app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
 
 app.get("/api/sources", async (c) => {
-  const user = await signedIn(c);
-  if (!user) return c.json({ error: "login required" }, 401);
   const url = publicUrl(new URL(c.req.url), c.env);
-  const asked = (c.req.query("repo") ?? "").toLowerCase();
-  const repo = REPO_RE.test(asked) && (await canSeeRepo(c.env, user, asked)) ? asked : null;
-  return c.json({ sources: [githubSource.status(c.env), sentryStatus(repo ? await sentryCreds(c.env, repo) : {}, url, repo), postHogStatus(repo ? await postHogCreds(c.env, repo) : {}, url, c.env.FAKE_POSTHOG === "1")] });
+  return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env, c.req.query("repo")), url, c.req.query("repo")), postHogStatus(await postHogCreds(c.env, c.req.query("repo")), url, c.env.FAKE_POSTHOG === "1")] });
 });
 
 // ---------- connect a mine (Sentry, PostHog): paste the key once ----------
@@ -174,16 +190,13 @@ app.get("/api/sources", async (c) => {
 app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "sentry" && kind !== "posthog") return c.notFound();
-  const user = await signedIn(c);
+  const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const url = publicUrl(new URL(c.req.url), c.env);
   const repoParam = c.req.query("repo") ?? "";
-  const repo = REPO_RE.test(repoParam) ? repoParam.toLowerCase() : await linkedRepo(c.env, kind);
-  // Keys belong to one map, and only someone who can open that map may set them.
-  if (!repo) return c.text("Open this page from the map you want to plug it into.", 400);
-  if (!(await canSeeRepo(c.env, user, repo))) return c.text("You don't have access to that repo's factory.", 403);
-  const connected = kind === "sentry" ? !!(await sentryCreds(c.env, repo)).clientSecret : !!(await postHogCreds(c.env, repo)).apiKey;
+  const repo = repoParam.toLowerCase();
   const webhookUrl = sentryWebhookUrl(url, repo);
+  const connected = kind === "sentry" ? !!(await sentryCreds(c.env, c.req.query("repo"))).clientSecret : !!(await postHogCreds(c.env, c.req.query("repo"))).apiKey;
   if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl }));
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
   const form = await c.req.formData();
@@ -206,31 +219,35 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
 });
 
 app.get("/api/repos", async (c) => {
-  const user = await signedIn(c);
+  const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.json({ error: "login required" }, 401);
-  // Only repos this player's GitHub account can reach through an App installation.
   const repos = { results: await reposFor(c.env, user) };
   // Preserve the legacy database fields while serving the browser's repo-card contract.
   // Issue counts are not available from this query; omit them rather than inventing zero.
-  return c.json({ repos: repos.results.map(repo => ({
+  return c.json({ repos: (await Promise.all(repos.results.map(async repo => await repoAccess(c.env, user, repo.full_name) ? repo : null))).filter((repo): repo is NonNullable<typeof repo> => !!repo).map(repo => ({
     ...repo,
     fullName: repo.full_name,
     blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
   })) });
 });
 
-// ---------- the factory (browser websocket) ----------
-
-app.use("/api/repos/:owner/:repo/*", async (c, next) => {
+// The empire overview: one small summary per repo this player can reach (shared/src/empire.ts).
+// Repos never opened come back as ready: false; the map still draws them as islands.
+app.get("/api/empire", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
-  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
-  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  // Same answer for "no such factory" and "not yours", so repo names can't be probed.
-  if (!(await canSeeRepo(c.env, user, repo))) return c.json({ error: "not found" }, 404);
-  c.set("user", user);
-  await next();
+  const repos = (await reposFor(c.env, user)).slice(0, 24);
+  const islands = await Promise.all(repos.map(async (r): Promise<IslandSummary> => {
+    const summary = await Promise.race([
+      factory(c.env, r.full_name).summary().catch(() => null),
+      new Promise<null>((ok) => setTimeout(() => ok(null), 2500)),
+    ]);
+    return summary ?? emptyIsland(r.full_name);
+  }));
+  return c.json({ islands } satisfies Empire);
 });
+
+// ---------- the factory (browser websocket) ----------
 
 app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
@@ -245,7 +262,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "pair") {
     const pairId = await f.pairRunner();
     const expires = Date.now() + 8 * 60 * 60 * 1000;
-    return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires }), expires });
+    return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
   }
   if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
   const text = await c.req.text();
@@ -341,35 +358,33 @@ app.post("/webhooks/github", async (c) => {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   // Persistence is acknowledged before returning; API and model work run in the DO alarm.
-  await factory(c.env, repo ?? "github-installations").enqueueGitHub(delivery, event, payload);
+  await factory(c.env, ["installation", "installation_repositories"].includes(event) ? "github-installations" : repo!).enqueueGitHub(delivery, event, payload);
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true, duplicate: !inserted.meta.changes }, 202);
 });
 
 // ---------- Sentry webhooks ----------
 
-// /webhooks/sentry/<owner>/<repo> is checked with that map's own secret. The bare URL is the
-// pre-accounts one and still feeds the repo the legacy shared key is linked to.
-app.post("/webhooks/sentry/:owner/:repo", (c) => sentryWebhook(c, `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase()));
-app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
-
-async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
-  if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
+app.on("POST", ["/webhooks/sentry", "/webhooks/sentry/:owner/:repo"], async (c) => {
   if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
   const body = await c.req.text();
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
-  const { clientSecret } = await sentryCreds(c.env, perRepo);
+  const namedRepo = c.req.param("owner") && c.req.param("repo") ? `${c.req.param("owner")}/${c.req.param("repo")}` : null;
+  const targetRepo = (namedRepo ?? c.req.query("repo"))?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
+  const { clientSecret } = await sentryCreds(c.env, targetRepo);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   const resource = c.req.header("sentry-hook-resource") ?? "";
   if (!["issue", "event_alert", "error"].includes(resource)) return c.json({ ok: true, ignored: true });
+  if (!targetRepo || !validRepo(targetRepo) || !await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(targetRepo).first()) return c.json({ error: "repository access denied" }, 403);
   let payload: SentryPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
-  const repo = perRepo ?? (await linkedRepo(c.env, "sentry"));
+  const repo = targetRepo;
   if (!repo || !REPO_RE.test(repo)) return c.json({ ok: true, ignored: true, reason: "Sentry isn't plugged into a map yet" });
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
-  const delivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
+  const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const delivery = `${repo}:${sourceDelivery}`;
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
@@ -379,7 +394,10 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true }, 202);
-}
+});
+
+app.all("/api/*", (c) => c.notFound());
+app.all("/connect/*", (c) => c.notFound());
 
 // Everything else is the web app.
 app.all("*", async (c) => {
