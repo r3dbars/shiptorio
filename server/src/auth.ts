@@ -1,3 +1,4 @@
+import { signupAllowed, addPending, redeemInvite } from './signup';
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
 import { gh, registerGithubCredential, convertManifestCode } from "./github";
@@ -52,15 +53,20 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   if (!access_token) return new Response("GitHub login failed", { status: 401 });
   const user = await gh<GitHubUser>("/user", access_token);
   if (!Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
-  if (!isAllowed(env.ALLOWED_LOGINS, user.login)) return new Response(`${user.login} isn't on the allow list`, { status: 403 });
   await registerGithubCredential(access_token, env.DB, `github:user:${user.id}`);
-  await upsertUser(env, user);
-  await saveReach(env, user.id, await fetchReach(access_token));
-  const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
-  const headers = new Headers({ location: sameOriginPath(next && decodeURIComponent(next), url.origin) });
-  headers.append("set-cookie", await createSession(env, { id: user.id, login: user.login }, request.headers.get("user-agent")));
-  headers.append("set-cookie", "shiptorio_oauth_state=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
-  return new Response(null, { status: 302, headers });
+  user.login = user.login.toLowerCase();
+  const invite = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_invite=([^;]+)/)?.[1];
+  if (invite) { try { await redeemInvite(env,decodeURIComponent(invite),user.login); } catch {} }
+  const allowed = await signupAllowed(env,user.login);
+  if (!allowed) await addPending(env,user.login,'github');
+  await upsertUser(env,user);
+  // Pending accounts get a revocable session, but no factory access or installation discovery.
+  if (allowed) await saveReach(env,user.id,await fetchReach(access_token));
+  const next = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
+  const headers = new Headers({location:allowed ? sameOriginPath(next && decodeURIComponent(next),url.origin) : '/waitlist'});
+  headers.append('set-cookie',await createSession(env,{id:user.id,login:user.login},request.headers.get('user-agent')));
+  for (const name of ['shiptorio_invite','shiptorio_oauth_state','shiptorio_next']) headers.append('set-cookie',`${name}=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  return new Response(null,{status:302,headers});
 }
 
 export async function logout(request: Request, env: Env): Promise<Response> {

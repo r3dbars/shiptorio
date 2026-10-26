@@ -1,4 +1,5 @@
 import { gh } from "./github";
+import { signupAllowed } from "./signup";
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
@@ -49,7 +50,7 @@ export async function createSession(env: AccountsEnv, user: User, userAgent: str
 }
 
 /** The signed-in player, or null. A cookie only counts while its session row exists and the login is allowed. */
-export async function currentUser(env: AccountsEnv, cookie: string | null, url: URL | null = null, now = Date.now()): Promise<User | null> {
+export async function currentUser(env: AccountsEnv, cookie: string | null, url: URL | null = null, now = Date.now(), allowPending = false): Promise<User | null> {
   const dev = devUser(env, url);
   if (dev) return dev;
   const session = await readSessionDetails(env.SESSION_SECRET, cookie, now);
@@ -58,7 +59,7 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   const row = await env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
     .bind(await sha256(session.ref.sid), session.ref.uid, now)
     .first<{ id: number; login: string }>();
-  if (!row || !isAllowed(env.ALLOWED_LOGINS ?? "", row.login)) return null;
+  if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
   return { id: row.id, login: row.login };
 }
 
