@@ -1,0 +1,71 @@
+{
+  "repo": "owner/repo",
+  "baseBranch": "main",
+  "districts": [],
+  "machines": [
+    {
+      "id": "ci-1",
+      "type": "inspector",
+      "x": 3,
+      "y": 0,
+      "tier": 1,
+      "state": "idle"
+    },
+    {
+      "id": "launch-pad",
+      "type": "launch_pad",
+      "x": 6,
+      "y": 0,
+      "tier": 1,
+      "state": "idle"
+    },
+    {
+      "id": "orbit-1",
+      "type": "inspector",
+      "x": 15,
+      "y": 3,
+      "tier": 1,
+      "state": "idle"
+    }
+  ],
+  "belts": [],
+  "items": [
+    {
+      "id": "gh-1",
+      "kind": "bug",
+      "source": "github_issue",
+      "title": "Keep the checkout fix",
+      "district": "/",
+      "state": "queued",
+      "attempts": 0,
+      "updatedAt": 1
+    }
+  ],
+  "power": [],
+  "science": {
+    "red": 3,
+    "green": 2,
+    "grey": 1,
+    "blue": 0
+  },
+  "trust": 0.5,
+  "tick": 24,
+  "goal": "Fix checkout",
+  "foreman": {
+    "thinking": false
+  },
+  "deck": [],
+  "move": null,
+  "research": {
+    "done": [],
+    "spent": 0
+  },
+  "brain": {
+    "model": "muse-spark-1.3",
+    "online": false,
+    "decisions": 0,
+    "fallbacks": 0,
+    "thoughts": []
+  },
+  "schemaVersion": 2
+}
