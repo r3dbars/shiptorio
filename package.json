@@ -22,5 +22,8 @@
     "test": "bun test",
     "spark:check": "bun server/scripts/spark-check.ts",
     "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
   }
 }
