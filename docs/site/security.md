@@ -30,9 +30,9 @@ GitHub is the only login. No passwords.
 | --- | --- |
 | Database (Cloudflare D1) | Your GitHub user (id, login, name, avatar), session hashes, which repos you can reach, App installs, your "not this kind" card rules and settings, webhook delivery ids (kept 7 days) |
 | Factory state (one per repo) | The game: ore (issue titles and bodies, Sentry and PostHog summaries), machines, PRs, scars, the log, runner jobs |
-| Key store (Cloudflare KV) | Sentry and PostHog keys, one set per factory |
+| Database, encrypted | Sentry and PostHog keys, one set per factory, encrypted (below) |
 
-> **Heads up** Sentry and PostHog keys are stored server-side for that one factory and never shown again, but they aren't encrypted at rest yet. Encryption with per-write keys is being built now. Until it lands, use the narrowest key you can (PostHog: Query Read and Project Read only).
+Sentry and PostHog keys are encrypted with AES-256-GCM using a fresh key for every write, and that key is wrapped by a server master key. Each key is bound to its one factory, is never shown again, and can be revoked. Use the narrowest key you can anyway (PostHog: Query Read and Project Read only).
 
 Sentry user emails and IPs are only used to count affected users. They aren't stored.
 
@@ -50,10 +50,11 @@ Prompts treat all of that as untrusted evidence, never as instructions.
 
 ## What your runner and agent can do
 
-- The agent gets a minimal environment, not your shell's secrets.
+- The agent gets a minimal environment, not your shell's secrets, and signs in from its own dedicated folder, not your normal config.
 - Codex runs in `workspace-write` sandbox mode. Claude Code gets only Read, Edit, Write, Glob and Grep.
 - It may only change the files you approved in the plan: at most 10 files and 500 changed lines.
-- `.env*`, `.git*`, key files (`.pem`, `.key`, `.p12`, `.pfx`), `node_modules` and anything outside the repo are never in scope.
+- `.env*`, `.git*`, CI config, key files (`.pem`, `.key`, `.p12`, `.pfx`), `node_modules` and anything outside the repo are never in scope.
+- Shell tools are off. The agent edits files, and the runner runs the checks.
 - The finished patch is scanned for secret-looking strings before anything is pushed.
 - Checks run inside the macOS sandbox, with no network except a locked-down dependency install.
 - The runner's GitHub token only covers one repo and lasts eight hours.
@@ -72,6 +73,6 @@ Protect `main` with GitHub's branch rules anyway. A repo-scoped token can't be l
 
 ## Removing your data
 
-Uninstall the GitHub App from a repo and Shiptorio drops that repo and its access rows. Self-serve export and account deletion are being built.
+The repo owner can download a factory's whole state as JSON from `/api/repos/owner/name/export`. Uninstall the GitHub App from a repo and Shiptorio drops that repo and its access rows. Self-serve account deletion is being built.
 
 Found a security problem? Open an issue on the repo, or tell the maintainer directly if it's sensitive.

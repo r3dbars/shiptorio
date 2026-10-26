@@ -39,6 +39,8 @@ test("preview access alone, disallowed logins, pre-accounts cookies, signed-out 
 
 test("a factory is only served to players who can reach its repo", async () => {
   const env = { ...baseEnv(), FACTORY: { idFromName: (r: string) => r, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), fetch: async () => new Response("factory"), runnerJobs: async () => ({ jobs: [] }) }) } };
+  await env.DB.prepare("INSERT INTO repos (full_name, installation_id, repo_id) VALUES ('r3dbars/shiptorio', 1, 501), ('friend/app', 2, 502)").run();
+
   const mine = `${await signedInCookie(env, "r3dbars", ["r3dbars/shiptorio"])}; ${await preview()}`;
   const theirs = `${await signedInCookie(env, "friend", ["friend/app"])}; ${await preview()}`;
   expect((await get(env, "/api/repos/r3dbars/shiptorio/runner/jobs", mine)).status).toBe(200);

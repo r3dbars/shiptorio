@@ -4,8 +4,9 @@ import { signupAllowed } from "./signup";
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
 
+import { authorizationRevoked, isAllowed, makeSessionCookie, readSessionDetails } from "./session";
 import { parseProgress, validProgress, type Progress } from "@shiptorio/shared";
-import { isAllowed, makeSessionCookie, readSessionDetails } from "./session";
+
 
 export interface AccountsEnv {
   DB: D1Database;
@@ -60,7 +61,9 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   const row = await env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
     .bind(await sha256(session.ref.sid), session.ref.uid, now)
     .first<{ id: number; login: string }>();
+  if (await authorizationRevoked(env.DB, session.login, session.issuedAt)) return null;
   if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
+
   return { id: row.id, login: row.login };
 }
 
@@ -120,8 +123,8 @@ export interface RepoRow { full_name: string; installation_id: number; default_b
 
 export async function reposFor(env: AccountsEnv, user: User): Promise<RepoRow[]> {
   const query = user.dev
-    ? env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name")
-    : env.DB.prepare("SELECT ur.repo AS full_name, ur.installation_id, r.default_branch FROM user_repos ur LEFT JOIN repos r ON r.full_name = ur.repo WHERE ur.user_id = ? ORDER BY ur.repo").bind(user.id);
+    ? env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos WHERE archived_at IS NULL ORDER BY full_name")
+    : env.DB.prepare("SELECT ur.repo AS full_name, ur.installation_id, r.default_branch FROM user_repos ur LEFT JOIN repos r ON r.full_name = ur.repo WHERE ur.user_id = ? AND r.archived_at IS NULL ORDER BY ur.repo").bind(user.id);
   return (await query.all<RepoRow>()).results;
 }
 

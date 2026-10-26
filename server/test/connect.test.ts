@@ -12,7 +12,8 @@ const backUrl = (html: string) => new URL(html.match(/href="([^"]+)">Back to the
 test("saving either source returns the signed-in player to the actual live repo", async () => {
   const secret = "connect-session", password = "connect-preview";
   const DB = testD1();
-  await DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?)").bind("example/shop", 1).run();
+  await DB.prepare("INSERT INTO repos (full_name, installation_id, repo_id) VALUES ('example/shop', 1, 501)").run();
+
   const cookie = [await signedInCookie({ DB, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars" }, "r3dbars", ["example/shop"]), (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
   for (const kind of ["sentry", "posthog"] as const) {
     const writes: string[] = [], connections: string[] = [];
@@ -23,8 +24,8 @@ test("saving either source returns the signed-in player to the actual live repo"
     const destination = backUrl(await response.text());
     expect(readConfig(destination.search)).toMatchObject({ kind: "live", repo: "example/shop" });
     expect(writes.filter(key => !key.startsWith("ops:"))).toEqual([]);
+    expect(connections).toEqual([`repo:501:${kind}`]);
 
-    expect(connections).toEqual([`example/shop:${kind}`]);
   }
 });
 
