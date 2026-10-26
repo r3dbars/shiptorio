@@ -3,11 +3,22 @@ import app, { Factory as ProductionFactory, type Env } from '../../server/src/in
 import { makeSessionCookie } from '../../server/src/session';
 import { createSession, upsertUser, saveReach } from '../../server/src/accounts';
 const knownRepos = new Set<string>();
+const installationId = (repo: string) => repo === 'load/crowd' ? 1000
+  : repo.startsWith('load/factory-') ? 1001 + Number(repo.slice('load/factory-'.length)) : 1;
 export class Factory extends ProductionFactory {
-  constructor(ctx: DurableObjectState, env: Env) {
+  constructor(ctx: DurableObjectState<{}>, env: Env) {
     super(ctx, env);
     // Test pacing is explicit: a slow fake-provider call must not race a natural alarm.
-    ctx.storage.setAlarm = async () => {};
+    const storage = new Proxy(ctx.storage, { get(target, key) {
+      if (key === 'setAlarm') return async () => {};
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    this.ctx = new Proxy(ctx, { get(target, key) {
+      if (key === 'storage') return storage;
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
   }
   // Use the real alarm body, with test-controlled pacing to avoid card-ID races.
   async alarm() { await super.alarm(); await this.ctx.storage.deleteAlarm(); }
@@ -53,8 +64,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p === '/user/installations/1/repositories') return reply({ repositories: [...knownRepos].map(full_name => ({ full_name, default_branch: 'main' })) });
   const collaborator = p.match(/\/collaborators\/fixture([1-5])?\/permission$/);
   if (collaborator) return reply({ permission: 'write', user: { id: 123 + Number(collaborator[1] ?? 0) } });
-  if (p.endsWith('/access_tokens')) return reply({ token: 'fixture-installation-token' });
-  if (p.endsWith('/installation')) return reply({ id: 1 });
+  if (p.endsWith('/access_tokens')) return reply({ token: `public-test-installation-${p.split('/')[3]}-token` });
+  if (p.endsWith('/installation')) return reply({ id: installationId(p.split('/').slice(2, 4).join('/')) });
   if (p.includes('/git/trees/')) return reply({ sha: BASE, tree: files.map(f => ({ path: f.filename, type: 'blob', size: 100 })), truncated: false });
   if (p.includes('/git/ref/heads/')) return reply({ object: { sha: p.endsWith('/main') ? BASE : HEAD } });
   if (p.includes('/contents/')) return reply({ content: btoa('export const total = () => 0;'), encoding: 'base64' });
@@ -78,7 +89,7 @@ export default {
       // The load target is DO fan-out, not GitHub's upstream request queue. Model
       // already-warm provider permission grants; D1 membership/session checks still run.
       await Promise.all([...knownRepos].flatMap(repo => Array.from({ length: 5 }, (_, i) =>
-        env.CACHE.put(`access:v2:1:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }))));
+        env.CACHE.put(`access:v2:${installationId(repo)}:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }))));
       return reply({ ok: true });
     }
     if (url.pathname === '/__test/access' || url.pathname === '/__test/session') {
@@ -90,8 +101,8 @@ export default {
       await upsertUser(env, user);
       // Explicitly grant the load accounts enough factories; production quotas still execute.
       await env.DB.prepare('INSERT OR REPLACE INTO signup_allowlist (login, enabled, approved_by, factories, repos, runs_daily, updated_at) VALUES (?, 1, ?, 51, 51, 20, ?)').bind(user.login, 'test-fixture', Date.now()).run();
-      await saveReach(env, user.id, { installations: [{ id: 1, account: 'fixture' }], repos: [...knownRepos].map(repo => ({ repo, installationId: 1, defaultBranch: 'main' })) });
-      if (index) await Promise.all([...knownRepos].map(repo => env.CACHE.put(`access:v2:1:${repo}:${user.id}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 })));
+      await saveReach(env, user.id, { installations: [...new Set([...knownRepos].map(installationId))].map(id => ({ id, account: 'fixture' })), repos: [...knownRepos].map(repo => ({ repo, installationId: installationId(repo), defaultBranch: 'main' })) });
+      if (index) await Promise.all([...knownRepos].map(repo => env.CACHE.put(`access:v2:${installationId(repo)}:${repo}:${user.id}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 })));
       const session = await createSession(env, user, 'load fixture');
       return reply({ cookie: `${session.split(';')[0]}; ${preview.split(';')[0]}` });
     }
@@ -102,9 +113,10 @@ export default {
       if (req.method !== 'POST') return new Response('POST required', { status: 405 });
       if (match[3] === 'seed') {
         knownRepos.add(repo);
-        await env.DB.prepare('INSERT OR IGNORE INTO installations (id, account_login) VALUES (1, ?)').bind('fixture').run();
-        await env.DB.prepare('INSERT OR REPLACE INTO repos (full_name, installation_id, default_branch) VALUES (?, 1, ?)').bind(repo, 'main').run();
-        await f.ensure(repo, 1);
+        const id = installationId(repo);
+        await env.DB.prepare('INSERT OR IGNORE INTO installations (id, account_login) VALUES (?, ?)').bind(id, 'fixture').run();
+        await env.DB.prepare('INSERT OR REPLACE INTO repos (full_name, installation_id, default_branch) VALUES (?, ?, ?)').bind(repo, id, 'main').run();
+        await f.ensure(repo, id);
         if (url.searchParams.get('ore') !== '0') await f.ingestIssue({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', labels: ['bug'], url: `https://github.com/${repo}/issues/1` });
       } else if (match[3] === 'check') await f.onCheckSuite([99], true, 'CI green', HEAD);
       else await (f as unknown as { testTick(): Promise<void> }).testTick();

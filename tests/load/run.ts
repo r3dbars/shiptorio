@@ -26,7 +26,8 @@ try {
     await Bun.sleep(200);
   }
   const repos = ['load/crowd', ...Array.from({ length: 50 }, (_, i) => `load/factory-${i}`)];
-  // Provision sequentially through the real GitHub request budget (one installation).
+  // Each repository models an independent installation. The App's own provisioning
+  // budget still serializes token creation; per-installation polling stays independent.
   for (const repo of repos) await post(`/__test/${repo}/seed`);
   // Five legitimate player identities/IPs keep each cohort below the real 60 upgrades/min budget.
   const identities = await Promise.all(Array.from({ length: 5 }, async (_, i) => {
@@ -59,7 +60,10 @@ try {
   };
   // Ramp handshakes in batches; the measured phase still keeps all 250 sockets open.
   const connections = [...Array.from({ length: 200 }, () => repos[0]), ...repos.slice(1)];
-  for (let i = 0; i < connections.length; i += 25) await Promise.all(connections.slice(i, i + 25).map(connect));
+  for (let i = 0; i < connections.length; i += 25) {
+    await post('/__test/warm-load-grants');
+    await Promise.all(connections.slice(i, i + 25).map(connect));
+  }
   await post('/__test/warm-load-grants');
   // CDP samples measure local workerd isolate CPU, never billed Cloudflare CPU.
   const targets = await (await fetch('http://localhost:9249/json')).json() as { webSocketDebuggerUrl: string }[];
@@ -102,7 +106,7 @@ try {
     if (!['(idle)', '(root)', '(program)'].includes(node?.callFrame.functionName)) activeUs += us;
     let ancestor = node, factory = false;
     while (ancestor) {
-      if (['alarm', 'webSocketMessage', 'broadcast', 'refreshDecisions', 'runGauntlet', 'offerRunnerPlan'].includes(ancestor.callFrame.functionName)) factory = true;
+      if (['alarm', 'tick', 'webSocketMessage', 'broadcast', 'refreshDecisions', 'runGauntlet', 'offerRunnerPlan'].includes(ancestor.callFrame.functionName)) factory = true;
       ancestor = nodes.get(parent.get(ancestor.id)!);
     }
     if (factory) factoryUs += us;

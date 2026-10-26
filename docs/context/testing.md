@@ -78,12 +78,12 @@ its intended stripping behavior; the tests do not change the shared contract.
 ## Load methodology and CPU limits
 
 `bun run test:load` starts the isolated Worker, seeds one busy factory plus 50 other
-factories, opens 200 WebSockets on the first and one on each of the others (250 total),
+factories on independent fake installations, opens 200 WebSockets on the first and one on each of the others (250 total),
 uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets, with explicit 51-factory signup allocations), ramps handshakes in batches of 25, then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
 client must receive the round's tick before the next round starts. It measures
 request-start → client patch receipt and tick RPC wall time, fails on disconnects or
 invalid messages and requires all 5,000 expected tick deliveries. GitHub provisioning runs sequentially through its real request budget. Fixture
-external permission grants are warmed in KV before measurement; D1 session,
+external permission grants are warmed in KV during the connection ramp and before measurement; D1 session,
 membership and signup checks remain active on every frame. This is a fan-out
 and tick-contention test with fixture ore, not a production API/provider soak test.
 Set `LOAD_ROUNDS=40` to lengthen it (allowed range 5–100).
@@ -101,12 +101,6 @@ every socket. Factory broadcasts now share one check per session **within that
 frame only**. A regression test verifies separate sessions remain separate, all 200
 sockets receive a frame, and revoking access prevents the next frame reaching any
 of them. There is no new access TTL or cross-frame authorization cache.
-
-Reference macOS arm64 local measurement with tenant/session/signup guards enabled:
-5,000/5,000 deliveries, zero failures; message p50 62.51 ms, p95 787.37 ms,
-max 902.32 ms; tick RPC p95 1,651.66 ms; sampled active isolate CPU 18,797.08 ms,
-Factory stacks 6,312.04 ms (6.19 ms per requested tick), 24.89 s measured window.
-Hardware/runner results differ; compare equivalent environments and revisions.
 
 Outputs: `test-results/load.json` (latency, RPC, sampled CPU and failures),
 `load.cpuprofile` (inspect in DevTools) and `load-worker.log` (startup/errors).

@@ -42,7 +42,12 @@ jobs:
         with:
           node-version: '22'
       - run: bun install --frozen-lockfile
-      - run: bun x playwright install --with-deps chromium
+      - run: bun x playwright install chromium
+      # Hosted runners normally have Chrome's OS libraries. Avoid minutes of apt
+      # work on every manual run; install missing libraries only if launch fails.
+      - name: Check browser libraries
+        run: |
+          node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
       - run: bun run test:e2e ${{ inputs.update_baselines && '--update-snapshots' || '' }}
       - uses: actions/upload-artifact@v4
         if: always()
