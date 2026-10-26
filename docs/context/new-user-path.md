@@ -53,3 +53,22 @@ A human adds reading time: the full welcome tour is 8 beats, GitHub's install pa
 - `web/src/ui/NextMove.tsx`, `web/src/App.tsx`: "Connect a local agent" opens Power in live.
 - `server/src/index.ts`: `GET /github/installed`. `server/src/auth.ts`: manifest `setup_url`.
 - `playtest/stranger/`: the dry run. `.github/workflows/stranger.yml`: runs it on path changes.
+
+## Current-main integration verification (2026-10-26)
+
+The Linux installation timeout reproduced locally with a successfully signed installation
+webhook and persisted membership, but 17 picker polls still returned no accessible repo.
+The GitHub fixture lacked the collaborator-permission endpoint now required by production
+revalidation. It now grants access only for the fixture's installed repo, exact user and
+installation token, and supplies real-shaped repository IDs and installation permissions.
+No authorization, signup quota or membership check is bypassed.
+
+The first browser and installation backfill could also initialize a factory concurrently,
+letting a late empty initializer replace new work. Initialization now coalesces. A held-network
+Factory regression covers shared completion, failed initialization followed by retry, differing
+installation IDs, and pause/migration during lookup without resurrecting state.
+
+The real Worker/browser dry run then completed all eight steps locally in 15.4 seconds;
+the installed repo appeared automatically in 3 seconds. That observation is desktop fixture
+proof, not a physical-phone or real-GitHub account claim. Current-main full `bun run check`
+passes (549 tests, two platform skips); the Linux Stranger workflow is the release gate.
