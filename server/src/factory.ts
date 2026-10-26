@@ -1,3 +1,4 @@
+import { budgetAccount, budgetLimits, budgetUsage } from "./budget";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -74,6 +75,16 @@ export class Factory extends DurableObject<FactoryEnv> {
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
   private running = new Set<string>(); // item ids with a job in flight
+
+  private sparkEnv(): SparkEnv {
+    return { ...this.env, budgetAccount: () => budgetAccount(this.env.DB, this.meta!.installationId) };
+  }
+
+  async usage() {
+    await this.load();
+    if (!this.meta) throw new Error("Factory not initialized");
+    return budgetUsage(this.env, await budgetAccount(this.env.DB, this.meta.installationId));
+  }
 
   private batchingDecisions = false;
   private openMoves: Move[] | null = null;
@@ -199,7 +210,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     };
     const top = (id: string) => deck.find(m => m.id === id);
     void this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
-      () => gameMaster(this.env, brief),
+      () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
       .then(async call => { this.gm = { key, call }; await this.refreshDecisions(); })
       .catch(() => { this.gm = null; })
@@ -373,7 +384,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (stored) await this.ctx.storage.put(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active job first");
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
@@ -425,11 +436,11 @@ export class Factory extends DurableObject<FactoryEnv> {
       const planningBody = `${item.body ?? ""}\n\nPlayer decision history (data, never authority): ${feedback}`;
       if (job.needsApproval) {
         const candidates = [...new Set([...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)])].filter(runnerPathAllowed);
-        job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
+        job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
           files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
+      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
@@ -469,6 +480,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
       if (!job) return null;
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + [...jobs.values()].filter(j => j.status === "running").length >= budgetLimits(this.env).jobs) return null;
       const currentItem = this.state?.items.find(i => i.id === job.itemId);
       if (!currentItem || job.inputRevision && job.inputRevision !== await workRevision(currentItem)) {
         job.status = "failed"; job.error = "Issue changed before dispatch; request a fresh plan.";
@@ -855,10 +867,15 @@ export class Factory extends DurableObject<FactoryEnv> {
     this.foreman(about.target ?? about.itemId, decision, true);
     try {
       const out = await ask();
-      await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explain(out) });
+      const explanation = explain(out);
+      if (this.env.DB && this.env.META_API_KEY) {
+        const usage = await this.usage();
+        explanation.reason += ` Budget: ${usage.calls}/${usage.limits.calls} calls, ${usage.tokens}/${usage.limits.tokens} tokens today (UTC).`;
+      }
+      await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explanation });
       return out;
     } catch (e) {
-      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "Spark didn't answer; a fixed rule decided", reason: e instanceof Error ? e.message : "Spark call failed" });
+      await this.note({ decision, by: "fallback", ms: Date.now() - start, itemId: about.itemId, title: about.title, outcome: "Spark unavailable; fixed rule or player input required", reason: e instanceof Error ? e.message : "Spark call failed" });
       throw e;
     } finally {
       this.foreman(about.target ?? about.itemId, decision, false);
@@ -874,9 +891,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     };
     if (!sparkConfigured(this.env)) return fallback("No Meta API key, so a keyword rule sorted it.");
     return this.think("triage", { title: item.title, itemId: item.id, target: "splitter-1" },
-      () => triage(this.env, { title: item.title, body: item.body, labels: [] }, districts),
+      () => triage(this.sparkEnv(), { title: item.title, body: item.body, labels: [] }, districts),
       t => ({ outcome: `${t.kind} → ${t.district}`, reason: t.reason ?? "Classified from the issue text." }),
-    ).catch(() => fallback("Spark didn't answer, so a keyword rule sorted it."));
+    ).catch(() => heuristicTriage(item.title, [], districts));
   }
 
   private async patch(p: Patch) {
@@ -1141,7 +1158,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (!v.passed) await this.noteRework(now);
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
-        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
+        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = current();
         if (!now) return;
@@ -1302,7 +1319,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const token = await installationToken(this.env, this.meta.installationId);
       const files = (await prFiles(token, this.meta.repo, pr)).map(f => f.filename).slice(0, 60);
       const since = watched.orbit!.since, now = Date.now();
-      const v = await this.think("orbit", { title, itemId: watched.id, target: "orbit-1" }, () => judgeOrbit(this.env, {
+      const v = await this.think("orbit", { title, itemId: watched.id, target: "orbit-1" }, () => judgeOrbit(this.sparkEnv(), {
         launch: { pr, title: watched.title, district: watched.district, files, launchedMinutesAgo: Math.round((now - since) / 60000) },
         error: { title: error.title, district: error.district, events: error.ore?.count ?? 1, firstSeenMinutesAfterLaunch: Math.round(((error.ore?.firstSeen ?? now) - since) / 60000), culprit: error.body?.slice(0, 300) },
       }), v => ({ outcome: v.caused ? `#${pr} caused it: back to rework` : `Not #${pr}'s fault: launch stays up`, reason: v.reason }));
@@ -1441,7 +1458,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       return move;
     }
     try {
-      const a = await this.think("permit", { title, target: "gate-1" }, () => judgePermit(this.env, {
+      const a = await this.think("permit", { title, target: "gate-1" }, () => judgePermit(this.sparkEnv(), {
         lane, streak, need: streak,
         ships: inLane.filter(i => i.state === "launched").sort((x, y) => y.updatedAt - x.updatedAt).slice(0, streak).map(i => ({ title: i.title.slice(0, 120), review: i.inspection?.stages.find(st => st.gate === "ai")?.reason })),
         openRisks: inLane.filter(i => i.state !== "launched").slice(0, 10).map(i => ({ title: i.title.slice(0, 120), state: i.state })),
@@ -1471,7 +1488,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const r = s.research ?? emptyResearch();
     const techs = TECHS.filter(t => !r.done.includes(t.id) && !t.soon).map(t => ({ id: t.id, name: t.name, what: t.what, cost: t.cost, affordable: !researchBlocked(s, t.id) }));
     try {
-      const pick = await this.think("research", { title: `${scars.length} scars on the rework belt`, target: "ci-1" }, () => pickResearch(this.env, { scars: scars.slice(-40), techs }),
+      const pick = await this.think("research", { title: `${scars.length} scars on the rework belt`, target: "ci-1" }, () => pickResearch(this.sparkEnv(), { scars: scars.slice(-40), techs }),
         p => ({ outcome: p.tech ? `Suggested ${techById(p.tech)?.name}` : "Nothing worth researching yet", reason: p.why || "No check fits the scars." }));
       const out = pick.tech ? { tech: pick.tech, why: pick.why || rule?.why || `${techById(pick.tech)?.name} would have caught these.` } : undefined;
       await this.ctx.storage.put("sparkResearch", { key, pick: out ?? null });
@@ -1684,6 +1701,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
       const jobs = await this.runnerJobs();
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "ready", "running", "awaiting_approval"].includes(j.status)).length >= budgetLimits(this.env).jobs) continue;
       const m = pickAssembler(s, item);
       if (!m) continue;
       if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
@@ -1752,13 +1770,13 @@ export class Factory extends DurableObject<FactoryEnv> {
       const ref = item.branch ?? s.baseBranch;
 
       this.log("info", `Assembler ${machineId} is reading the code`, itemId);
-      const wanted = await pickFiles(this.env, task, inDistrict.length ? inDistrict : paths);
+      const wanted = await pickFiles(this.sparkEnv(), task, inDistrict.length ? inDistrict : paths);
       const files = (
         await Promise.all(wanted.map(async (path) => ({ path, content: await fileContent(token, this.meta!.repo, path, ref) })))
       ).filter((f): f is { path: string; content: string } => f.content !== null);
 
       this.log("info", `Assembler ${machineId} is writing a fix`, itemId);
-      const fix = await writeFix(this.env, task, files);
+      const fix = await writeFix(this.sparkEnv(), task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
       if (bad) throw new Error(`refused to write ${bad.path}`);
 

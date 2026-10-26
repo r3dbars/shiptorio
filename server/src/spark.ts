@@ -1,10 +1,12 @@
 // Muse Spark on Meta Model API (OpenAI-compatible chat completions).
 // Spark runs the floor. Local subscription agents execute its plans.
 
+import { BudgetError, budgetLimits, reserveSpark, settleSpark, type BudgetEnv } from "./budget";
 import type { ItemKind } from "@shiptorio/shared";
 import type { FileChange } from "./github";
 
-export interface SparkEnv {
+export interface SparkEnv extends BudgetEnv {
+  budgetAccount?: () => Promise<string>;
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
@@ -27,15 +29,21 @@ export const sparkModel = (env: SparkEnv): string => env.SPARK_MODEL || "muse-sp
 
 export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: Effort = "low"): Promise<string> {
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
+  if (env.SPARK_DISABLED === "1") throw new BudgetError("Spark budget: global kill switch is on");
+  const output = budgetLimits(env).output;
+  // UTF-8 bytes overestimate input tokens, including framing overhead. Reserve BEFORE fetch.
+  const reservedTokens = new TextEncoder().encode(JSON.stringify(messages)).length + messages.length * 32 + output;
+  const reservation = env.DB ? await reserveSpark(env, env.budgetAccount ? await env.budgetAccount() : (() => { throw new BudgetError("Budget account missing; Spark paused"); })(), reservedTokens) : undefined;
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     signal: AbortSignal.timeout(90000),
     headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: sparkModel(env), messages, reasoning_effort: effort }),
+    body: JSON.stringify({ model: sparkModel(env), messages, reasoning_effort: effort, max_completion_tokens: output }),
   });
   if (!res.ok) throw new SparkError(`Spark request failed (${res.status}). Check API access and credits.`);
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const data = (await res.json()) as { usage?: { total_tokens?: number }; choices?: { message?: { content?: string } }[] };
+  if (reservation) await settleSpark(env, reservation, data.usage?.total_tokens);
   const text = data.choices?.[0]?.message?.content;
   if (!text) throw new SparkError("Spark returned no content");
   return text;
