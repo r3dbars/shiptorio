@@ -5,6 +5,7 @@
 // FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
+import { lineFrame } from "./framing";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex } from "./kit";
 import {
@@ -290,6 +291,8 @@ export class FactoryScene {
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
   private worldKey = "";
   private districtCount = 0;
+  private lineKey = "";
+  private teachingKeys = new Set<string>();
   private rising: THREE.Object3D[] = []; // new districts climb out of the void (the onboarding scan)
   private glide: THREE.Vector3 | null = null; // camera eases here when the island grows
   private beltKey = "";
@@ -365,6 +368,7 @@ export class FactoryScene {
     this.renderer.setSize(this.width, this.height, false);
     this.applyCamera();
     if (!this.camGoal) this.bias = this.biasFor(!!this.home);
+    if (this.state && !this.home) this.fitLine(this.state, true);
   }
 
   private biasFor(focused: boolean) {
@@ -395,14 +399,13 @@ export class FactoryScene {
 
   // Zoom out just enough that the whole machine line, ore to launch pad, fits the screen.
   // The HUD floats at the top and bottom edges (no side column), so the line gets the full width.
-  private fitLine(state: FactoryState) {
-    if (!state.machines.length) return;
-    const xs = state.machines.map((m) => m.x * CELL);
-    const span = (Math.max(...xs) - Math.min(...xs)) * Math.cos(YAW) + 7;
-    const free = (this.width - 16) / this.height;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(1, span / (this.baseViewHeight() * free)));
-    this.target.x = (Math.max(...xs) + Math.min(...xs)) / 2;
-    this.applyCamera();
+  private fitLine(state: FactoryState, immediate = false) {
+    const frame = lineFrame(state.machines, this.width, this.height, this.baseViewHeight());
+    if (!frame) return;
+    const goal = { target: new THREE.Vector3(frame.x, 0, frame.z), zoom: Math.min(ZOOM_MAX, frame.zoom) };
+    if (this.home) { this.home = goal; return; } // keep a station panel focused; its return view stays current
+    if (immediate || this.reduceMotion) { this.target.copy(goal.target); this.zoom = goal.zoom; this.applyCamera(); }
+    else this.camGoal = goal;
   }
 
   // world units shown top to bottom at zoom 1; portrait phones see more so the line isn't cramped
@@ -432,8 +435,10 @@ export class FactoryScene {
       if (first) this.target.copy(center);
       else if (state.districts.length !== this.districtCount) this.glide = center;
       this.districtCount = state.districts.length;
-      if (first) this.fitLine(state);
+
     }
+    const lineKey = JSON.stringify(state.machines.map(m => [m.id, m.x, m.y]));
+    if (lineKey !== this.lineKey) { this.lineKey = lineKey; this.fitLine(state, first); }
     this.syncBelts(state);
     this.syncDistricts(state);
     this.syncItems(state.items);
@@ -508,6 +513,10 @@ export class FactoryScene {
 
   clearHover() {
     this.hovered = undefined;
+  }
+
+  setTeachingKeys(keys: string[]) {
+    this.teachingKeys = new Set(keys);
   }
 
   setShowAllLabels(on: boolean) {
@@ -1213,7 +1222,9 @@ export class FactoryScene {
       this.v3.y += l.y;
       this.v3.project(this.camera);
       const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
-      const shown = this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
+      const teaching = !!l.key && this.teachingKeys.has(l.key);
+      l.el.classList.toggle("teaching", teaching);
+      const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
       l.el.style.display = off ? "none" : "flex";
       if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;

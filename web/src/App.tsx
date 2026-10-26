@@ -12,7 +12,7 @@ import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
-import { Coach, useTutorial } from "./ui/tutorial";
+import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
 import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
@@ -291,7 +291,7 @@ export function App() {
   return (
     <div className={panel ? "app picked" : "app"}>
       <main className="floor">
-        <FactoryMap state={state} onPick={pickOnMap} focus={focusKey ?? panel} showLabels={showLabels} pings={show("line") ? pings : undefined} />
+        <FactoryMap state={state} onPick={pickOnMap} focus={focusKey ?? panel} showLabels={showLabels} pings={show("line") ? pings : undefined} teachingKeys={lessonFocus(state, tour.lesson?.id)} />
         <ShipCelebration state={state} />
 
         <header className="topbar">
