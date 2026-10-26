@@ -4,6 +4,7 @@ import { signupAllowed } from "./signup";
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
 
+import { parseProgress, validProgress, type Progress } from "@shiptorio/shared";
 import { isAllowed, makeSessionCookie, readSessionDetails } from "./session";
 
 export interface AccountsEnv {
@@ -144,5 +145,26 @@ export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<str
   await env.DB.batch(entries.map(([k, v]) =>
     env.DB.prepare("INSERT INTO user_prefs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
       .bind(user.id, k, v as string, now)));
+  return true;
+}
+
+// ---- progression (migration 0008) ----
+
+export const MAX_PROGRESS_BYTES = 32 * 1024;
+
+export async function readProgress(env: AccountsEnv, user: User): Promise<Progress | null> {
+  if (user.dev) return null;
+  const row = await env.DB.prepare("SELECT value FROM user_progress WHERE user_id = ?").bind(user.id).first<{ value: string }>();
+  return row ? parseProgress(row.value) : null;
+}
+
+/** Stores a progress blob only if the shared schema accepts it, so a bad client can't park junk here. */
+export async function writeProgress(env: AccountsEnv, user: User, raw: string, now = Date.now()): Promise<boolean> {
+  if (raw.length > MAX_PROGRESS_BYTES) return false;
+  const p = validProgress(raw);
+  if (!p) return false;
+  if (user.dev) return true;
+  await env.DB.prepare("INSERT INTO user_progress (user_id, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
+    .bind(user.id, JSON.stringify(p), now).run();
   return true;
 }

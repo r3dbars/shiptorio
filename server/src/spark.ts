@@ -1,4 +1,6 @@
+import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
+
 // Muse Spark on Meta Model API (OpenAI-compatible chat completions).
 // Spark runs the floor. Local subscription agents execute its plans.
 
@@ -42,7 +44,7 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   return retry("Spark completion", async () => {
     // A provider retry is another billable call: reserve every attempt independently.
     const reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens);
-    const res = await fetch(`${base}/chat/completions`, {
+    const res = await observedFetch("spark", `${base}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(90000),
       headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },

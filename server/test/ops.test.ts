@@ -6,7 +6,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const { Factory } = await import("../src/factory");
 const secret = "ops-test-session", password = "ops-test-preview";
 function fixture() {
@@ -61,7 +61,7 @@ test("admin flag write requires admin session and same origin; validates and res
   expect((await personal.json() as { research: boolean }).research).toBe(false);
   expect((await post("admin", undefined, "name=research&value=inherit&user=player")).status).toBe(303);
   expect(values.has(flagKey("research", "player"))).toBe(false);
-  expect((await request("/admin", { headers: { cookie: await cookies("admin") } })).status).toBe(200);
+  expect((await request("/admin/flags", { headers: { cookie: await cookies("admin") } })).status).toBe(200);
 });
 test("DO health probe reads storage without initializing a factory or scheduling work", async () => {
   const reads: string[] = [];
@@ -81,8 +81,8 @@ test("revoked and legacy signed sessions cannot administer flags", async () => {
   const { env, request } = fixture();
   const validCookies = await cookies("admin");
   (env.DB as unknown as { prepare: unknown }).prepare = () => ({ bind: () => ({ first: async () => null }) });
-  expect((await request("/admin", { headers: { cookie: validCookies } })).status).toBe(403);
+  expect((await request("/admin/flags", { headers: { cookie: validCookies } })).status).toBe(403);
   const legacy = (await makeSessionCookie(secret, "admin")).split(";")[0];
   const preview = (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
-  expect((await request("/admin", { headers: { cookie: `${legacy}; ${preview}` } })).status).toBe(403);
+  expect((await request("/admin/flags", { headers: { cookie: `${legacy}; ${preview}` } })).status).toBe(403);
 });

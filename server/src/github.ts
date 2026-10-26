@@ -1,5 +1,7 @@
 import { githubCooldown, RateLimitError } from "./rate-limit";
+import { observedFetch } from "./telemetry";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
+
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -131,7 +133,7 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
     if (init.body) headers.set("content-type", "application/json");
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     if (cached && cached.expires > Date.now()) headers.set("if-none-match", cached.etag);
-    const res = await fetch(API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
+    const res = await observedFetch("github", API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
     const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
     const next = githubCooldown(res, Date.now(), state.failures, secondary);
     const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
@@ -392,7 +394,7 @@ export async function convertManifestCode(code: string): Promise<{
   pem: string;
   webhook_secret: string;
 }> {
-  const res = await fetch(`${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const res = await observedFetch("github", `${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: { accept: "application/vnd.github+json", "user-agent": UA },
   });

@@ -1,4 +1,6 @@
+import { observedFetch } from "./telemetry";
 import { signupAllowed, addPending, redeemInvite } from './signup';
+
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
 import { gh, registerGithubCredential, convertManifestCode } from "./github";
@@ -39,7 +41,7 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const state = url.searchParams.get("state");
   const expected = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_oauth_state=([^;]+)/)?.[1];
   if (!code || !state || state !== expected) return new Response("bad login state, try again", { status: 400 });
-  const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
+  const tokenRes = await observedFetch("github", "https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({
