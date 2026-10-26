@@ -19,5 +19,5 @@ let child: ReturnType<typeof Bun.spawn> | undefined;
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => { child?.kill(signal); process.exit(0); });
 const run = async (args: string[]) => { const p = child = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' }); if (await p.exited) throw new Error(args.join(' ')); };
 await run(['bun', 'run', 'build']);
-await run(['bun', 'server/node_modules/wrangler/bin/wrangler.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
-await run(['bun', 'server/node_modules/wrangler/bin/wrangler.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', '8799', '--inspector-port', '9249']);
+await run(['node', 'server/node_modules/wrangler/bin/wrangler.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
+await run(['node', 'server/node_modules/wrangler/bin/wrangler.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', '8799', '--inspector-port', '9249']);

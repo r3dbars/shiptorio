@@ -1,6 +1,8 @@
 // TEST ENTRY ONLY. Production wrangler.jsonc never imports this module.
 import app, { Factory as ProductionFactory, type Env } from '../../server/src/index';
 export class Factory extends ProductionFactory {
+  // Use the real alarm body, with test-controlled pacing to avoid card-ID races.
+  async alarm() { await super.alarm(); await this.ctx.storage.deleteAlarm(); }
   async testTick() { await this.alarm(); }
 }
 const BASE = 'a'.repeat(40), HEAD = 'b'.repeat(40);

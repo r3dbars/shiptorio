@@ -4,9 +4,15 @@ permissions:
 # Actions minutes are metered on this private repo: one run per branch at a time (a new push
 # cancels the old run), docs-only changes skip it, and main is checked by the Deploy run instead.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 on:
+  workflow_dispatch:
+    inputs:
+      update_baselines:
+        description: Generate Linux visual baselines for review
+        type: boolean
+        default: false
   pull_request:
     paths-ignore:
       - "**/*.md"
@@ -20,6 +26,45 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun test
+      - run: bun run test:fast
       - run: bun run build
+  browser:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bun install --frozen-lockfile
+      - run: bun x playwright install --with-deps chromium
+      - run: bun run test:e2e ${{ inputs.update_baselines && '--update-snapshots' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: |
+            test-results/
+            playwright-report/
+            tests/e2e/baselines/linux/
+          retention-days: 7
+  load:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bun install --frozen-lockfile
+      - run: bun run test:load
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-evidence
+          path: test-results/load*
+          retention-days: 7

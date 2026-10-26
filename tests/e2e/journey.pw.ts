@@ -5,13 +5,17 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   const repo = `fixture/${info.project.name}`;
   const errors: string[] = [], wireErrors: string[] = [], messages: any[] = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error' || m.text().includes('bad message from server')) errors.push(m.text()); });
+  page.on('console', m => {
+    // Repo discovery before sign-in intentionally returns 401. All other console errors fail.
+    if (m.location().url.endsWith('/api/repos') && m.text().includes('401')) return;
+    if (m.type() === 'error' || m.text().includes('bad message from server')) errors.push(m.text()); });
   page.on('websocket', ws => ws.on('framereceived', ({ payload }) => {
     if (typeof payload !== 'string') return;
     const raw = JSON.parse(payload);
     const result = ServerToWeb.safeParse(raw);
     if (!result.success) wireErrors.push(result.error.message);
     messages.push(raw);
+    if (raw.type === 'log' && raw.level === 'error') console.log('Worker:', raw.text);
   }));
   const post = async (path: string, data?: unknown, token?: string) => {
     const res = await page.request.post(path, { data, headers: { origin: 'http://localhost:8799', ...(token ? { authorization: `Bearer ${token}` } : {}) } });
@@ -38,10 +42,12 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await post(`/__test/${repo}/tick`);
   const card = page.getByRole('region', { name: 'Next move', exact: true });
   await card.getByRole('button', { name: /Plan with Codex/ }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json()).length).toBe(1);
   await post(`/__test/${repo}/tick`);
   await expect(card).toContainText('Approve');
   await expect(card).toHaveScreenshot('approve-plan.png');
   await card.getByRole('button', { name: /Approve and build/ }).click();
+  await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json())[0]?.status).toBe('ready');
   const { job } = await post(`/api/runner/${repo}/claim`, { harnesses: ['codex'] }, token);
   expect(job).toBeTruthy();
   await post(`/api/runner/${repo}/finish`, { jobId: job.id, lease: job.lease, ok: true, sha: 'b'.repeat(40), summary: 'Fixture regression fixed', checks: ['typecheck', 'test', 'build'], proof: { baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40), failsOnBase: true, passesOnHead: true, command: 'bun test src/cart.test.ts', logTail: 'Fixture receipt; no actual coding agent executes in this suite.' } }, token);

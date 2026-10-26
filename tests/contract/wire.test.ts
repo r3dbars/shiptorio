@@ -51,6 +51,23 @@ describe('wire contract drift guards', () => {
     expect(applyPatch(withMachine, { removed: [{ kind: 'machine', id: 'm' }] }).machines).toEqual([]);
   });
 
+  it('accounts for every production browser-message emitter', () => {
+    const source = ts.createSourceFile('factory.ts', read('server/src/factory.ts'), ts.ScriptTarget.Latest, true);
+    const emitted = new Set<string>();
+    const visit = (node: ts.Node) => {
+      if (ts.isObjectLiteralExpression(node)) {
+        const tag = node.properties.find(p => ts.isPropertyAssignment(p) && p.name.getText(source) === 'type');
+        if (tag && ts.isPropertyAssignment(tag) && ts.isStringLiteral(tag.initializer) && variants.includes(tag.initializer.text as typeof variants[number])) emitted.add(tag.initializer.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect([...emitted].sort()).toEqual([...variants].sort());
+    // broadcast's typed argument plus workspace typecheck guards payload fields at all call sites.
+    expect(source.text).toContain('private broadcast(msg: ServerToWeb)');
+    expect(read('web/src/source/live.ts')).toContain('ServerToWeb.safeParse(value)');
+  });
+
   it('requires a web message branch for every variant and keeps the fallback reserved for log', () => {
     const code = read('web/src/store.ts');
     const source = ts.createSourceFile('store.ts', code, ts.ScriptTarget.Latest, true);
