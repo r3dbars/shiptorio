@@ -24,13 +24,26 @@ function fixture(items: Item[] = []) {
     async setAlarm(value: number) { alarm = value; },
   };
   const ctx = { storage, getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-  const factory = new Factory(ctx as never, {} as never);
+  const factory = new Factory(ctx as never, { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) } } as never);
   return { factory, data, events, saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: 1, ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("durably queues delivery work and folds it before acknowledgment", async () => {
+    const f = fixture();
+    const payload = { action: "opened", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 9, title: "Broken checkout", body: "Customer context", html_url: "https://github.com/r3dbars/demo/issues/9", user: { login: "example-user" }, updated_at: "2026-10-26T12:00:00Z" } };
+    await f.factory.enqueueGitHub("fake-delivery-9", "issues", payload);
+    await f.factory.enqueueGitHub("fake-delivery-9", "issues", payload);
+    expect(f.data.has("delivery:fake-delivery-9")).toBe(true);
+    expect(f.saved().items).toHaveLength(0);
+    await f.factory.alarm();
+    expect(f.data.has("delivery:fake-delivery-9")).toBe(false);
+    expect(f.saved().items).toHaveLength(1);
+    expect(f.saved().items[0].ore?.count).toBe(1);
+    expect(f.saved().bottleneck?.stage).toBe("resources");
+  });
   it("awards one rocket and one science pack for redelivered merge webhooks", async () => {
     const f = fixture([item()]);
     await f.factory.onPullClosed(42, true);
