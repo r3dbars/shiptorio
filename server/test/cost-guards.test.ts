@@ -68,7 +68,8 @@ it("GitHub recognizes secondary 403 without treating permission errors as rate l
   globalThis.fetch = (async () => Response.json({ message: "You have exceeded a secondary rate limit." }, { status: 403 })) as unknown as typeof fetch;
   await expect(gh("/secondary", "secondary-test")).rejects.toThrow("rate limit");
   globalThis.fetch = (async () => Response.json({ message: "Resource not accessible" }, { status: 403 })) as unknown as typeof fetch;
-  await expect(gh("/permissions", "permission-test")).rejects.toThrow("failed (403)");
+  try { await gh("/permissions", "permission-test"); throw new Error("expected permission failure"); }
+  catch (error) { expect((error as { cause?: { status: number } }).cause?.status).toBe(403); }
 });
 it("GitHub polling sends an ETag and returns the cached body only on 304", async () => {
   let calls = 0, conditional = "";
@@ -118,4 +119,13 @@ it("persisted GitHub cooldown applies to a replacement credential and Worker con
 it("Spark fails closed without its ledger or user identity", async () => {
   globalThis.fetch = (() => { throw new Error("must never fetch"); }) as unknown as typeof fetch;
   await expect(sparkChat({ META_API_KEY: "test" }, [])).rejects.toThrow("ledger/account unavailable");
+});
+
+it("each Spark provider retry is reserved and the daily cap stops retries before fetch", async () => {
+  const env = { ...sparkTestEnv(), SPARK_DAILY_CALLS: "1" };
+  let requests = 0;
+  globalThis.fetch = (async () => { requests++; return new Response("", { status: 503 }); }) as unknown as typeof fetch;
+  await expect(sparkChat(env, [])).rejects.toThrow("budget exhausted");
+  expect(requests).toBe(1);
+  expect((await budgetUsage(env, "owner")).calls).toBe(1);
 });

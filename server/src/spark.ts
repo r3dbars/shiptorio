@@ -1,3 +1,4 @@
+import { retry, OutboundError } from "./reliability";
 // Muse Spark on Meta Model API (OpenAI-compatible chat completions).
 // Spark runs the floor. Local subscription agents execute its plans.
 
@@ -37,20 +38,23 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   // UTF-8 bytes overestimate input tokens, including framing overhead. Reserve BEFORE fetch.
   const reservedTokens = new TextEncoder().encode(JSON.stringify(requestMessages)).length + requestMessages.length * 32 + output;
   if (!env.DB || !env.budgetAccount) throw new BudgetError("Budget ledger/account unavailable; Spark paused");
-  const reservation = await reserveSpark(env, await env.budgetAccount(), reservedTokens);
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
-  const res = await fetch(`${base}/chat/completions`, {
-    method: "POST",
-    signal: AbortSignal.timeout(90000),
-    headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output }),
-  });
-  if (!res.ok) throw new SparkError(`Spark request failed (${res.status}). Check API access and credits.`);
-  const data = (await res.json()) as { usage?: { total_tokens?: number }; choices?: { message?: { content?: string } }[] };
-  if (reservation) await settleSpark(env, reservation, data.usage?.total_tokens);
-  const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Spark returned no content");
-  return text;
+  return retry("Spark completion", async () => {
+    // A provider retry is another billable call: reserve every attempt independently.
+    const reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens);
+    const res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      signal: AbortSignal.timeout(90000),
+      headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output }),
+    });
+    if (!res.ok) throw new OutboundError(res.status);
+    const data = (await res.json()) as { usage?: { total_tokens?: number }; choices?: { message?: { content?: string } }[] };
+    await settleSpark(env, reservation, data.usage?.total_tokens);
+    const text = data.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Spark returned no content");
+    return text;
+  }, { shouldRetry: error => !(error instanceof BudgetError) && !(error instanceof OutboundError && error.status === 429) });
 }
 
 // Pulls the first JSON object out of a reply, tolerating ```json fences and chatter around it.

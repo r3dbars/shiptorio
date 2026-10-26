@@ -31,11 +31,12 @@ that player's daily cap. Keys use stable GitHub user ids, not login names. All f
 the same player share `user:<id>` usage. Unclaimed repos pause Spark until a player signs in/connects.
 Billing-owner transfer is an explicit operator/database change, not a browser parameter.
 
-Every individual chat completion, including planner repeat reads, reserves one call plus a conservative
+Every individual chat completion, including planner repeat reads and every provider retry, reserves one call plus a conservative
 input allowance (UTF-8 message bytes + framing) and the full maximum output before fetch. A single atomic
 conditional SQL upsert enforces both caps across racing factories. Successful responses with valid
 `usage.total_tokens` settle the reservation; failed, timed-out or unmeasured calls keep the full reservation.
-Calls are never refunded. Existing in-flight reservations remain on their original UTC day at midnight.
+Calls are never refunded. Budget denials are never retried, and provider 429s return immediately instead of
+spending more calls on the short transient retry loop. Existing in-flight reservations remain on their original UTC day at midnight.
 This is a safety ceiling, not a dollar-price estimate. Provider billing remains authoritative.
 
 Missing ledger, missing owner, kill switch, or exhausted cap fails closed: no paid fallback model is
@@ -61,7 +62,8 @@ bypasses reservation checks and does not share the deployed D1 ledger. No creden
   `X-RateLimit-Reset`. Primary exhaustion and secondary 403/429 honor `Retry-After`, with exponential
   secondary cooldown starting at one minute. Cooldowns persist across Worker restarts and token rotation.
   Short pacing waits are at most five seconds; longer cooldowns throw a typed retry error so existing
-  durable queues/alarms can retry. Requests are not blindly replayed, especially mutations. File/ref
+  durable queues/alarms can retry without exhausting webhook failure attempts. Existing bounded transient
+  retries and idempotent comment recovery remain; every retry goes through the rate guard. File/ref
   reads propagate rate limits rather than pretending a file/branch is absent. Ordinary permission 403s
   are not treated as secondary limits.
 - GET responses with ETags are revalidated with `If-None-Match`; 304 returns a credential-isolated cached

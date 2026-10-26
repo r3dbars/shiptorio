@@ -1,4 +1,5 @@
 import { githubCooldown, RateLimitError } from "./rate-limit";
+import { retry, OutboundError, RetryExhausted } from "./reliability";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -98,7 +99,7 @@ function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
 export async function registerGithubCredential(token: string, db: D1Database, scope: string) {
   boundedSet(contexts, await credentialKey(token), { db, scope });
 }
-export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
   if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
   queued.set(scope, (queued.get(scope) ?? 0) + 1);
@@ -138,7 +139,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
     if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
     if (res.status === 304 && cached) return structuredClone(cached.value) as T;
-    if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
+    if (!res.ok) throw new OutboundError(res.status);
     if (res.status === 204) return undefined as T;
     const value = await res.json();
     if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
@@ -150,6 +151,31 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
     if (left) queued.set(scope, left); else queued.delete(scope);
     if (queues.get(scope) === request) queues.delete(scope);
   }
+}
+export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+
+  const comment = init.method === "POST" && /\/issues\/\d+\/comments$/.test(path) && typeof init.body === "string";
+  let marker: string | undefined;
+  if (comment) {
+    const payload = JSON.parse(init.body as string) as { body: string };
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.body));
+    marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
+    init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
+  }
+  const request = async () => {
+    if (marker) {
+      for (let page = 1; ; page++) {
+        if (page > 20) throw new OutboundError(409); // do not post if duplicate history cannot be checked within budget
+        const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
+        const existing = comments.find(c => c.body?.includes(marker!));
+        if (existing) return existing as T;
+        if (comments.length < 100) break;
+      }
+    }
+    return ghRequest<T>(path, token, init);
+  };
+  // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
+  return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { shouldRetry: error => !(error instanceof RateLimitError), attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
 }
 
 interface InstallationTokenScope {
@@ -259,8 +285,8 @@ export async function fileContent(token: string, fullName: string, path: string,
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
   } catch (error) {
-    if (error instanceof RateLimitError) throw error;
-    return null;
+    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
   }
 }
 
@@ -269,8 +295,8 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
   } catch (error) {
-    if (error instanceof RateLimitError) throw error;
-    return null;
+    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
   }
 }
 
@@ -309,9 +335,14 @@ export async function commitToBranch(
       body: JSON.stringify({ sha: commit.sha }),
     });
   } else {
-    await gh(`/repos/${fullName}/git/refs`, token, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    await retry("Create branch", async () => {
+      const recovered = await branchSha(token, fullName, branch);
+      if (recovered === commit.sha) return;
+      if (recovered) throw new OutboundError(409);
+      await gh(`/repos/${fullName}/git/refs`, token, {
+        method: "POST",
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+      });
     });
   }
   return commit.sha;
@@ -324,12 +355,14 @@ export async function openPullRequest(
 ): Promise<{ number: number; html_url: string }> {
   // A crash can occur after GitHub accepts the PR but before the Factory saves it.
   // Recover the existing PR on retry rather than opening another one.
-  const owner = fullName.split("/")[0];
-  const existing = await gh<{ number: number; html_url: string }[]>(
-    `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
-  );
-  if (existing[0]) return existing[0];
-  return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  return retry("Open pull request", async () => {
+    const owner = fullName.split("/")[0];
+    const existing = await gh<{ number: number; html_url: string }[]>(
+      `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
+    );
+    if (existing[0]) return existing[0];
+    return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  });
 }
 
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */

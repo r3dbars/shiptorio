@@ -14,6 +14,8 @@ import { connectPage } from "./connect";
 import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
+import { browserMutationAllowed, securityHeaders } from "./security";
+import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
 
@@ -39,7 +41,7 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
 const app = new Hono<AppEnv>();
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) =>
@@ -55,9 +57,25 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 
 app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
-  if (redirect) return redirect;
+  if (redirect) c.res = redirect;
+  else await next();
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce")))) c.header(key, value);
+});
+
+app.use("*", async (c, next) => {
+  // Use the router's decoded path, so encoded aliases consume the same budget.
+  const budget = requestBudget(c.req.raw, c.req.path);
+  if (budget) {
+    const user = await signedIn(c);
+    for (const subject of [ipSubject(c.req.raw), ...(user ? [`user:${user.id}`] : [])]) {
+      const result = await rateLimit(c.env, subject, budget);
+      if (!result.allowed) {
+        c.header("Retry-After", String(result.retryAfter));
+        return c.json({ error: "too many requests" }, 429);
+      }
+    }
+  }
   await next();
-  if (new URL(c.req.url).protocol === "https:") c.header("Strict-Transport-Security", "max-age=31536000");
 });
 
 app.use("*", async (c, next) => {
@@ -79,7 +97,12 @@ app.use("*", async (c, next) => {
 
 app.onError((err, c) => {
   console.error(err);
-  return c.json({ error: err.message }, 500);
+  return c.json({ error: "internal server error" }, 500);
+});
+
+app.use("*", async (c, next) => {
+  if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  await next();
 });
 
 app.route("/", ops);
@@ -115,10 +138,10 @@ app.put("/api/me/prefs", async (c) => {
 async function installUrl(env: Env): Promise<string | null> {
   if (env.GITHUB_APP_SLUG) return `https://github.com/apps/${env.GITHUB_APP_SLUG}/installations/new`;
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
-  let slug = await env.CACHE?.get("app:slug").catch(() => null);
+  let slug = await env.CACHE?.get("app:slug");
   if (!slug) {
-    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug).catch(() => null);
-    if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 }).catch(() => null);
+    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug);
+    if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 });
   }
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
 }
@@ -178,7 +201,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, repo);
   }
   // Plug it straight into the map it came from.
-  await factory(c.env, repo).connectMine(kind).catch(() => null);
+  await factory(c.env, repo).connectMine(kind);
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
@@ -265,7 +288,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
-    const installationId = await installationFor(c.env, repo).catch(() => null);
+    const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }
   return f.fetch(c.req.raw);
@@ -340,10 +363,21 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
+  c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true }, 202);
 }
 
 // Everything else is the web app.
-app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
+app.all("*", async (c) => {
+  const response = await c.env.ASSETS.fetch(c.req.raw);
+  // Only trusted static art contains inline executable scripts. Never add nonces
+  // to user-provided text or relax the application/API policy to allow them.
+  if (/^\/art\/(prototype|item-lab)(?:\.html)?\/?$/.test(c.req.path) && response.headers.get("content-type")?.includes("text/html")) {
+    const nonce = crypto.randomUUID().replaceAll("-", "");
+    c.set("artNonce", nonce);
+    return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
+  }
+  return response;
+});
 
 export default app;
