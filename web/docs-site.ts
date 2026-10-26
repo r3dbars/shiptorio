@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Marked, type Tokens } from "marked";
 import type { Plugin } from "vite";
@@ -9,6 +9,10 @@ import type { Plugin } from "vite";
 
 const SRC = resolve(__dirname, "../docs/site");
 const IMG = resolve(SRC, "img");
+const PUBLIC = resolve(__dirname, "public");
+
+/** True when a site-wide public file (/fonts/*, /brand/*, served from web/public) exists, so the docs can use it. */
+export const publicFile = (path: string) => /^\/(fonts|brand)\/[\w.-]+$/.test(path) && existsSync(resolve(PUBLIC, path.slice(1)));
 
 export interface DocPage { slug: string; title: string; description: string; section: string; order: number; html: string; toc: { id: string; text: string }[]; sections: SearchEntry[] }
 export interface SearchEntry { url: string; page: string; heading: string; text: string }
@@ -58,7 +62,7 @@ function render(slug: string, raw: string): DocPage {
         return `<div class="table">${html}</div>\n`;
       },
       code({ text, lang }: Tokens.Code) {
-        return `<div class="code"><pre><code${lang ? ` class="lang-${esc(lang)}"` : ""}>${esc(text)}</code></pre><button class="copy" type="button" aria-label="Copy">copy</button></div>\n`;
+        return `<div class="code"><pre tabindex="0"><code${lang ? ` class="lang-${esc(lang)}"` : ""}>${esc(text)}</code></pre><button class="copy" type="button" aria-label="Copy">copy</button></div>\n`;
       },
       link({ href, title, tokens }: Tokens.Link) {
         const inner = new Marked().parseInline(tokens.map((t) => t.raw).join("")) as string;
@@ -101,6 +105,10 @@ function pageHtml(page: DocPage, pages: DocPage[]): string {
   const prev = pages[i - 1];
   const next = pages[i + 1];
   const toc = page.toc.length > 1 ? `<nav class="toc" aria-label="On this page"><p>On this page</p><ul>${page.toc.map((t) => `<li><a href="#${t.id}">${esc(t.text)}</a></li>`).join("")}</ul></nav>` : "";
+  const wordmark = publicFile("/brand/wordmark.svg") ? '<img src="/brand/wordmark.svg" alt="Shiptorio" height="30">' : '<span class="word">Shiptorio</span>';
+  const icons = publicFile("/brand/favicon.svg")
+    ? `<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">${publicFile("/brand/favicon-32.png") ? '\n<link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png">' : ""}${publicFile("/brand/apple-touch-icon.png") ? '\n<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">' : ""}`
+    : '<link rel="icon" href="/docs/img/icon.png">';
   const desc = esc(page.description || "Shiptorio turns your repo into a factory game where every rocket is a real merged pull request.");
   return `<!doctype html>
 <html lang="en">
@@ -111,23 +119,22 @@ function pageHtml(page: DocPage, pages: DocPage[]): string {
 <meta name="description" content="${desc}">
 <meta property="og:title" content="${esc(page.title)} · Shiptorio docs">
 <meta property="og:description" content="${desc}">
-<meta property="og:image" content="/docs/img/hero.png">
-<meta name="theme-color" content="#171a22">
-<link rel="icon" href="/docs/img/icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<meta property="og:image" content="${publicFile("/brand/og.png") ? "/brand/og.png" : "/docs/img/hero.png"}">
+<meta name="theme-color" content="#0b0806">
+${icons}
+<link rel="preload" href="/fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/silkscreen-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/docs/docs.css">
 </head>
 <body>
 <a class="skip" href="#content">Skip to content</a>
 <header class="top">
-  <a class="brand" href="/docs/"><img src="/docs/img/icon.png" alt="" width="28" height="28"><span>SHIPTORIO</span><small>DOCS</small></a>
+  <a class="brand" href="/docs/">${wordmark}<small>Docs</small></a>
   <div class="search" role="search">
     <input id="q" type="search" placeholder="Search docs" aria-label="Search docs" autocomplete="off" spellcheck="false"><kbd>/</kbd>
-    <div id="results" class="results" role="listbox" hidden></div>
+    <div id="results" class="results" role="listbox" aria-label="Search results" hidden></div>
   </div>
-  <a class="play" href="/">Open the factory</a>
+  <a class="play" href="/"><span class="long">Open the factory</span><span class="short">Play</span></a>
 </header>
 <div class="shell">
   <details class="side" open>
@@ -135,7 +142,7 @@ function pageHtml(page: DocPage, pages: DocPage[]): string {
     <nav aria-label="Docs">${nav(pages, page.slug)}</nav>
   </details>
   <main id="content">
-    <article>${page.html}</article>
+    <article><p class="eyebrow"><b>${esc(page.section)}</b> · Shiptorio field manual</p>${page.html}</article>
     <nav class="pager" aria-label="Next and previous">
       ${prev ? `<a class="prev" href="${href(prev.slug)}"><small>Previous</small>${esc(prev.title)}</a>` : "<span></span>"}
       ${next ? `<a class="next" href="${href(next.slug)}"><small>Next</small>${esc(next.title)}</a>` : "<span></span>"}

@@ -10,7 +10,7 @@ function fixture() {
   const kv = new Map<string, string>();
   const db = credentialDB();
   const env = {
-    DB: db, CRED_MASTER_KEY: btoa("a".repeat(32)),
+    DB: db, SENTRY_REPO_ID: "501", SENTRY_INSTALLATION_ID: "12", POSTHOG_REPO_ID: "501", POSTHOG_INSTALLATION_ID: "12", CRED_MASTER_KEY: btoa("a".repeat(32)),
     CACHE: {
       async get(key: string, type?: string) { const value = kv.get(key); return value === undefined ? null : type === "json" ? JSON.parse(value) : value; },
       async put(key: string, value: string) { kv.set(key, value); },
@@ -171,6 +171,7 @@ test("a revoke racing lazy master-key rotation wins its compare-and-swap", async
 
 test("migrates account-era per-repo plaintext independently from another factory's global key", async () => {
   const { env, kv } = fixture();
+  env.SENTRY_REPO = scope.repo;
   kv.set("cred:sentry:alice/shop", JSON.stringify({ clientSecret: secret }));
   kv.set("cred:sentry", JSON.stringify({ clientSecret: "unrelated-operator-secret" }));
   kv.set("link:sentry", "r3dbars/testing");

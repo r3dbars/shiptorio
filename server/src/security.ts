@@ -24,6 +24,7 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
     ...(turnstile ? ["frame-src https://challenges.cloudflare.com"] : []),
 
     "worker-src 'self' blob:",
+    "manifest-src 'self'",
     "media-src 'self' blob:",
     "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'",
     `form-action 'self'${url.pathname === "/setup" ? " https://github.com" : ""}`,

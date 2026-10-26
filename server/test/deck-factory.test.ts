@@ -30,8 +30,7 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
     if (sql.startsWith('SELECT u.id') || sql.startsWith('SELECT u.login')) return {bind:()=>({first:async()=>({id:1,login:'test-player'})})};
     if (sql.startsWith('SELECT enabled')) return {bind:()=>({first:async()=>null})};
     return { bind(...args: unknown[]) { return {
-
-    async all() { if (!sql.startsWith("SELECT kind, scope")) throw new Error(`Unexpected query ${sql}`); return { results: [...rules.values()].filter(r => r.repo === args[0]).map(({ kind, scope, actionId }) => ({ kind, scope, actionId })) }; },
+    async all() { if (sql.includes("FROM deleted_factories")) return {results: []}; if (!sql.startsWith("SELECT kind, scope")) throw new Error(`Unexpected query ${sql}`); return { results: [...rules.values()].filter(r => r.repo === args[0]).map(({ kind, scope, actionId }) => ({ kind, scope, actionId })) }; },
     async run() {
       if (sql.startsWith("INSERT INTO move_kind_rules")) { const [repo, kind, scope, actionId] = args as string[]; const key = JSON.stringify([repo, kind, scope]); if (!rules.has(key)) rules.set(key, { repo, kind, scope, actionId }); }
       else if (sql.startsWith("DELETE FROM move_kind_rules")) { const [repo, kind, scope, actionId] = args; const key = JSON.stringify([repo, kind, scope]); if (rules.get(key)?.actionId === actionId) rules.delete(key); }

@@ -163,3 +163,24 @@ at LINE view and up close, mobile (--mobile) is readable.
 
 Iterate many rounds. The bar is "phenomenal, extremely detailed, intentional". Report at the end in ≤8 lines:
 what you built, anything you need from core, known rough spots.
+
+## Round 2 additions (after independent QA — read QA.md)
+- **Mine emerge**: a new issue now rolls OUT of its mine tunnel: its cart starts 2.4 units inside the rock
+  (root z = 6.6 − 2.4 = 4.2, at the mine's x, y −9.5) and slides out to the rail over 1.8 s, facing +z, then turns
+  onto the rail. `IRON.on('spawn', e)` gives `{ item, src, s, from, to, dur }` at the START of that motion.
+- **Carrier handoff events** (kill the pop when an item changes carrier): `IRON.on('carrierDrop', e)` fires when an
+  item leaves a path that had a carrier, `IRON.on('carrierPick', e)` when it boards one. `e = { item, carrier, path,
+  pos, quat }` (root-space pose of the carrier at that instant). The owner of the carrier should draw an EMPTY stand-in
+  at exactly that pose that carries on moving (cart tips and rolls back into a siding; the empty cage continues over
+  the top sheave / down the return side; the bucket tips and returns down), and for picks show the empty carrier
+  arriving just before (or keep an empty one waiting at the boarding point and hide it on pick).
+- **Orientation now eases** at corners/handoffs (core slerps); tube items are centered in the glass.
+- **State aura (core)**: every machine now has a floor ring (r 3.75, y 0.14 local: dim blue idle, green working,
+  pulsing amber/red + ping when blocked) and a tall amber beacon beam above it when blocked. Don't fight it: keep
+  y ≈ 0.1–0.2 at radius ~3.75 clear of opaque floor clutter so the ring reads.
+- **Caution posts are 1.3x bigger** by default now — re-check placement.
+- **Warm start**: the line is seeded with work at every stage on load (ore, lift, feed, pass) — your machine will
+  be mid-cycle within seconds.
+- **Fonts**: canvas text may use `'Silkscreen', monospace` (the template waits for the font before building).
+- HUD chips are moving to compact pills at the deck's front edge (template), so the machines themselves are no longer
+  covered.
