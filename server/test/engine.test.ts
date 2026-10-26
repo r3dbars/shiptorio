@@ -40,6 +40,15 @@ describe("pickAssembler", () => {
     s.machines.find((m) => m.id === "assembler-1")!.state = "working";
     expect(pickAssembler(s, item)).toBeUndefined();
   });
+
+  it("stalls when a player disconnects belts, changes belt type, or removes power", () => {
+    const s = state();
+    s.power[0].online = false;
+    expect(pickAssembler(s, item)).toBeUndefined();
+    s.power[0].online = true;
+    s.belts = s.belts.filter((b) => b.from !== "assembler-1");
+    expect(pickAssembler(s, item)).toBeUndefined();
+  });
 });
 
 describe("SAFE_PATH", () => {

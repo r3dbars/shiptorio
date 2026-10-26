@@ -1,5 +1,7 @@
 # `bun run dev` copies this to .dev.vars the first time and fills in what it can.
 SESSION_SECRET=
+# Required in production; protects the entire site, including static assets.
+APP_PASSWORD=
 # On localhost, /auth/login signs you in as this user without GitHub. Ignored anywhere else.
 DEV_LOGIN=
 # Muse Spark (Meta Model API). Without it the splitter uses a heuristic and assemblers stay unpowered.

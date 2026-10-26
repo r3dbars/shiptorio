@@ -12,7 +12,7 @@ import {
   type Patch,
   type ServerToWeb,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, installationToken, openPullRequest, repoTree, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, installationToken, inspectPullRequest, openPullRequest, repoTree, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { pickFiles, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
@@ -80,6 +80,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.power) s.power = p.power;
     if (p.science) s.science = p.science;
     if (p.trust !== undefined) s.trust = p.trust;
+    if (p.tick !== undefined) s.tick = p.tick;
     await this.save();
     this.broadcast({ type: "patch", patch: p });
   }
@@ -97,6 +98,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.meta = { repo, installationId };
         await this.ctx.storage.put("meta", this.meta);
       }
+      await this.scheduleTick();
       return;
     }
     this.meta = { repo, installationId };
@@ -144,17 +146,20 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.scheduleTick();
   }
 
-  async onCheckSuite(prNumbers: number[], ok: boolean, summary: string): Promise<void> {
-    if (!(await this.load())) return;
+  async onCheckSuite(prNumbers: number[], _ok: boolean, _summary: string, headSha?: string): Promise<void> {
+    if (!(await this.load()) || !this.meta) return;
+    const token = await installationToken(this.env, this.meta.installationId);
     for (const item of this.state!.items) {
       if (item.state !== "inspecting" || !item.prNumber || !prNumbers.includes(item.prNumber)) continue;
-      if (ok) {
+      const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
+      if (result.state === "pending") continue;
+      if (result.state === "passed") {
         const onPad = this.state!.machines.some((m) => m.type === "launch_pad");
         await this.patch({ items: [{ ...item, state: onPad ? "on_pad" : "passed", failure: undefined, updatedAt: Date.now() }] });
         this.log("success", `Inspector passed PR #${item.prNumber}. Ready to launch.`, item.id);
       } else {
-        await this.patch({ items: [{ ...item, state: "rejected", failure: summary, updatedAt: Date.now() }] });
-        this.log("warn", `Inspector rejected PR #${item.prNumber}: ${summary}`, item.id);
+        await this.patch({ items: [{ ...item, state: "rejected", failure: result.summary, updatedAt: Date.now() }] });
+        this.log("warn", `Inspector rejected PR #${item.prNumber}: ${result.summary}`, item.id);
         await this.scheduleTick();
       }
     }
@@ -163,7 +168,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   async onPullClosed(prNumber: number, merged: boolean): Promise<void> {
     if (!(await this.load())) return;
     const item = this.state!.items.find((i) => i.prNumber === prNumber);
-    if (!item) return;
+    if (!item || item.state === "launched") return;
     if (!merged) {
       await this.patch({ removed: [{ kind: "item", id: item.id }] });
       this.log("info", `PR #${prNumber} closed without merging. Item scrapped.`, item.id);
@@ -193,7 +198,10 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async webSocketMessage(_ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     if (typeof raw !== "string" || raw === "ping") return;
-    const parsed = WebToServer.safeParse(JSON.parse(raw));
+    if (raw.length > 16384) return;
+    let value: unknown;
+    try { value = JSON.parse(raw); } catch { return; }
+    const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
     const s = this.state!;
@@ -206,6 +214,7 @@ export class Factory extends DurableObject<FactoryEnv> {
           y: msg.y,
           district: msg.district,
           harness: msg.harness,
+          powerId: msg.harness === "spark" ? "steam-spark" : undefined,
           tier: 1,
           state: "idle",
         };
@@ -213,6 +222,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         break;
       }
       case "remove_machine":
+        if (s.machines.some((m) => m.id === msg.id && m.state === "working")) break;
         await this.patch({
           removed: [
             { kind: "machine", id: msg.id },
@@ -251,7 +261,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async webSocketClose(ws: WebSocket, code: number): Promise<void> {
-    ws.close(code, "bye");
+    ws.close([1005, 1006, 1015].includes(code) ? 1000 : code, "bye");
   }
 
   // ---------- the tick loop ----------
@@ -259,7 +269,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   async alarm(): Promise<void> {
     if (!(await this.load())) return;
     const s = this.state!;
-    s.tick++;
+    await this.patch({ tick: s.tick + 1 });
     const now = Date.now();
 
     for (const item of [...s.items]) {
@@ -276,18 +286,26 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
     }
 
-    for (const item of s.items.filter((i) => i.state === "queued")) {
+    for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
       const m = pickAssembler(s, item);
       if (!m) continue;
+      if (!sparkConfigured(this.env)) {
+        if (m.state !== "blocked") this.log("warn", "Spark has no power. Add the Meta API key to start this line.", item.id);
+        await this.patch({ machines: [{ ...m, state: "blocked" }] });
+        continue;
+      }
       await this.patch({
         items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
         machines: [{ ...m, state: "working" }],
       });
       this.running.add(item.id);
-      this.ctx.waitUntil(this.runSparkJob(item.id, m.id));
+      // Bounded hosted jobs execute in an alarm, not an HTTP request or a 30-second waitUntil.
+      // One job per alarm keeps total work under the alarm's 15-minute limit.
+      await this.runSparkJob(item.id, m.id);
+      break;
     }
 
-    const busy = s.items.some((i) => ["ore", "queued", "rejected"].includes(i.state) && i.attempts < MAX_ATTEMPTS) || this.running.size > 0;
+    const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if (busy) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
     else await this.save();
   }

@@ -58,7 +58,7 @@ export async function appJwt(appId: string, privateKeyPem: string, now = Date.no
 }
 
 export async function verifyWebhookSignature(secret: string, body: string, header: string | null): Promise<boolean> {
-  if (!header?.startsWith("sha256=")) return false;
+  if (!secret || !header?.startsWith("sha256=")) return false;
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
     "sign",
   ]);
@@ -77,6 +77,7 @@ export interface AppCredentials {
 
 async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(API + path, {
+    signal: AbortSignal.timeout(20000),
     ...init,
     headers: {
       accept: "application/vnd.github+json",
@@ -87,7 +88,7 @@ async function gh<T>(path: string, token: string, init: RequestInit = {}): Promi
       ...init.headers,
     },
   });
-  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} -> ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
   return res.json() as Promise<T>;
 }
 
@@ -199,7 +200,31 @@ export async function openPullRequest(
   fullName: string,
   pr: { head: string; base: string; title: string; body: string },
 ): Promise<{ number: number; html_url: string }> {
+  // A crash can occur after GitHub accepts the PR but before the Factory saves it.
+  // Recover the existing PR on retry rather than opening another one.
+  const owner = fullName.split("/")[0];
+  const existing = await gh<{ number: number; html_url: string }[]>(
+    `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
+  );
+  if (existing[0]) return existing[0];
   return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+}
+
+/** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */
+export async function inspectPullRequest(token: string, repo: string, number: number, eventSha?: string) {
+  const pr = await gh<{ head: { sha: string } }>(`/repos/${repo}/pulls/${number}`, token);
+  if (eventSha && eventSha !== pr.head.sha) return { state: "pending" as const, summary: "Ignoring checks for an older commit" };
+  const [checks, statuses] = await Promise.all([
+    gh<{ total_count: number; check_runs: { name: string; status: string; conclusion: string | null; output?: { summary?: string | null } }[] }>(`/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=100&filter=latest`, token),
+    gh<{ total_count: number; statuses: { state: string; context: string; description: string }[] }>(`/repos/${repo}/commits/${pr.head.sha}/status?per_page=100`, token),
+  ]);
+  const failures = checks.check_runs.filter((c) => c.status === "completed" && !["success", "neutral", "skipped"].includes(c.conclusion ?? ""));
+  const badStatuses = statuses.statuses.filter((s) => ["failure", "error"].includes(s.state));
+  if (failures.length || badStatuses.length) return { state: "failed" as const, summary: [...failures.map((c) => `${c.name}: ${c.conclusion}\n${c.output?.summary ?? ""}`), ...badStatuses.map((s) => `${s.context}: ${s.description}`)].join("\n").slice(0, 3000) };
+  if (!checks.check_runs.length && !statuses.statuses.length || checks.total_count > checks.check_runs.length || statuses.total_count > statuses.statuses.length || checks.check_runs.some((c) => c.status !== "completed") || statuses.statuses.some((s) => s.state !== "success")) return { state: "pending" as const, summary: "Waiting for all checks on the current commit" };
+  // A skipped workflow is not evidence that a fix was tested.
+  if (!checks.check_runs.some((c) => c.conclusion === "success") && !statuses.statuses.some((s) => s.state === "success")) return { state: "pending" as const, summary: "Waiting for a successful check" };
+  return { state: "passed" as const, summary: "All reported checks passed on the current commit" };
 }
 
 export async function convertManifestCode(code: string): Promise<{
