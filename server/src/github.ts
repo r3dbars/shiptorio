@@ -93,12 +93,27 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
   return res.json() as Promise<T>;
 }
 
-export async function installationToken(env: AppCredentials, installationId: number): Promise<string> {
+interface InstallationTokenScope {
+  repositories: string[];
+  permissions: { contents: "write"; metadata: "read" };
+}
+
+export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const res = await gh<{ token: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
     method: "POST",
+    ...(scope ? { body: JSON.stringify(scope) } : {}),
   });
   return res.token;
+}
+
+// Publishing credentials stay inside one repository and cannot create/merge PRs.
+// GitHub does not support branch-scoped installation tokens; repository rules must
+// independently protect main and any other branches the runner must not update.
+export async function runnerInstallationToken(env: AppCredentials, installationId: number, fullName: string): Promise<string> {
+  const match = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(fullName);
+  if (!match || match.slice(1).some(part => part === "." || part === "..")) throw new Error("Invalid runner repository");
+  return installationToken(env, installationId, { repositories: [match[2]], permissions: { contents: "write", metadata: "read" } });
 }
 
 export async function repoInstallationId(env: AppCredentials, fullName: string): Promise<number> {

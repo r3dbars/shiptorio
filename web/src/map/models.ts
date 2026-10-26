@@ -2,7 +2,7 @@
 // Machines come from the Item Lab builders in itemlab.js.
 
 import * as THREE from "three";
-import { box, canvasTex, mat, own, rep, tex } from "./kit";
+import { box, canvasTex, cyl, hash01, mat, own, rep, tex } from "./kit";
 
 // Island look (Justin, Oct 26, option A of the island mockup): a thick moss cap with a soft
 // rounded rim, a soil band, then chunky faceted rock that tapers to a blunt tip. Roots hang
@@ -106,7 +106,7 @@ export function makeIsland(w: number, d: number) {
   const flat = top.map(([x, , z]) => [x, z] as [number, number]);
   flatShape(flat, 0.001, mat(MOSS.top), g);
   const pave = own(0xffffff);
-  pave.map = rep(tex().stone, 1 / 4, 1 / 4);
+  pave.map = rep(tex().stone, 1 / 8, 1 / 8);
   const sx = (w + 1.2 - 1.4) / (w + 1.2), sz = (d + 1.2 - 1.4) / (d + 1.2);
   flatShape(flat.map(([x, z]) => [x * sx, z * sz]), 0.012, pave, g);
 
@@ -136,8 +136,8 @@ export function makeIsland(w: number, d: number) {
   }
   // autumn leaves, mostly near the edges
   const leaves = [0xf08a24, 0xe0552f, 0xf2b13b, 0xc8442a];
-  for (let i = 0; i < Math.round(w * d * 0.11); i++) {
-    const edge = rand() < 0.7;
+  for (let i = 0; i < Math.round(w * d * 0.03); i++) {
+    const edge = rand() < 0.85; // a few blown onto the paving, most along the rim
     const x = edge ? (rand() < 0.5 ? w / 2 - rand() * 2 : (rand() - 0.5) * w) : (rand() - 0.5) * w;
     const z = edge ? (rand() < 0.5 ? d / 2 - rand() * 2 : (rand() - 0.5) * d) : (rand() - 0.5) * d;
     const l = box(0.38, 0.04, 0.38, leaves[i % 4], x, 0.03, z, g);
@@ -211,29 +211,201 @@ export function makeWaterfall(parent: THREE.Object3D, x: number, z: number, rotY
   };
 }
 
-// District: one folder of the repo, as a stone plinth with buildings on it.
+// District: one folder of the repo, as a stone plinth with buildings on it. The folder's name picks
+// what kind of buildings stand there, so /web reads as a shopfront street and /server as a server hall.
 // The roof material is shared so the scene can recolor a district by its health.
-export function makeDistrict(w: number, d: number, buildings: number, seedKey: number) {
+export type DistrictKind = "shop" | "servers" | "warehouse" | "library" | "lab" | "hq";
+
+const KIND_WORDS: [DistrictKind, RegExp][] = [
+  ["lab", /test|spec|e2e|qa|bench/],
+  ["library", /doc|wiki|guide|blog|content|brief|readme/],
+  ["servers", /server|api|backend|worker|func|runner|db|data|infra|cloud|service|queue|job/],
+  ["shop", /web|app|ui|front|client|site|page|checkout|cart|shop|store|view|component|mobile|ios|android/],
+  ["warehouse", /shared|lib|pkg|package|common|core|util|vendor|types|asset|static|public|model/],
+  ["hq", /^\/$|root|script|config|tool|bin|ci|github|deploy|ops/],
+];
+export function districtKind(name: string): DistrictKind {
+  const n = name.toLowerCase();
+  for (const [k, re] of KIND_WORDS) if (re.test(n)) return k;
+  const all: DistrictKind[] = ["shop", "servers", "warehouse", "library", "lab"];
+  return all[Math.floor(hash01(n) * all.length)];
+}
+
+const WALL: Record<DistrictKind, number[]> = {
+  shop: [0xd9cbb0, 0xc7b9a0, 0xe2d6bd],
+  servers: [0x7d8799, 0x6f798c, 0x8a94a6],
+  warehouse: [0xa8806a, 0x9a735e, 0xb48b73],
+  library: [0xd8cfc0, 0xcbc1b0, 0xe0d8ca],
+  lab: [0xe6eaee, 0xd9dee4, 0xf0f2f5],
+  hq: [0x6d7487, 0x5f6679, 0x7b8296],
+};
+const TRIM = 0x3a3f52;
+const GLASS = 0x8fd3ff;
+const DARK_GLASS = 0x2b3150;
+
+type Tick = (t: number) => void;
+
+// Two slabs leaning on a ridge that runs along x: a pitched roof over a w x d footprint at height y.
+function pitched(w: number, d: number, rise: number, m: THREE.Material, wall: number, x: number, y: number, z: number, g: THREE.Group) {
+  const run = d / 2 + 0.06, slope = Math.hypot(run, rise), a = Math.atan2(rise, run);
+  for (const side of [-1, 1]) {
+    const slab = box(w + 0.1, 0.07, slope, m, x, y + rise / 2, z + (side * run) / 2, g);
+    slab.rotation.x = side * a;
+  }
+  // gable ends
+  const shape = new THREE.Shape([new THREE.Vector2(-d / 2, 0), new THREE.Vector2(d / 2, 0), new THREE.Vector2(0, rise)]);
+  const geo = new THREE.ShapeGeometry(shape);
+  const endMat = own(wall);
+  endMat.side = THREE.DoubleSide;
+  for (const side of [-1, 1]) {
+    const end = new THREE.Mesh(geo, endMat);
+    end.castShadow = true;
+    end.rotation.y = Math.PI / 2;
+    end.position.set(x + (side * w) / 2, y, z);
+    g.add(end);
+  }
+}
+interface Lot { x: number; z: number; s: number; h: number; i: number; roof: THREE.Material; g: THREE.Group; ticks: Tick[] }
+
+// A tiny shopfront: glass front, striped awning in the roof color, a glowing sign.
+function shop({ x, z, s, h, i, roof, g, ticks }: Lot) {
+  const wall = WALL.shop[i % 3];
+  box(s, h, s, wall, x, 0.5 + h / 2, z, g);
+  box(s + 0.08, 0.12, s + 0.08, roof, x, 0.5 + h + 0.06, z, g);
+  box(s * 0.8, h * 0.42, 0.04, GLASS, x, 0.5 + h * 0.24, z + s / 2 + 0.02, g);
+  box(0.06, h * 0.42, 0.05, TRIM, x, 0.5 + h * 0.24, z + s / 2 + 0.03, g);
+  for (let k = 0; k < 3; k++) {
+    const a = box(s / 3 - 0.02, 0.06, 0.34, k % 2 ? 0xf1ece0 : roof, x - s / 3 + (k * s) / 3, 0.5 + h * 0.5, z + s / 2 + 0.16, g);
+    a.rotation.x = 0.35;
+  }
+  // upper windows
+  for (const dx of [-0.22, 0.22]) box(0.2, 0.2, 0.04, DARK_GLASS, x + dx * s, 0.5 + h * 0.78, z + s / 2 + 0.02, g);
+  const sign = own(0xffe6a8, 0x3a2a08);
+  box(s * 0.5, 0.18, 0.06, sign, x, 0.5 + h + 0.22, z + s / 2 - 0.08, g);
+  const k = i * 1.7;
+  ticks.push((t) => sign.emissive.setHex(Math.sin(t * 2.2 + k) > 0.6 ? 0x6a4c10 : 0x3a2a08));
+}
+
+// Server hall: a low steel block with rack lights blinking down its face and rooftop fans spinning.
+function servers({ x, z, s, h, i, roof, g, ticks }: Lot) {
+  const hh = h * 0.8;
+  box(s, hh, s, WALL.servers[i % 3], x, 0.5 + hh / 2, z, g);
+  box(s + 0.06, 0.1, s + 0.06, roof, x, 0.5 + hh + 0.05, z, g);
+  box(s * 0.84, hh * 0.7, 0.04, 0x1e2230, x, 0.5 + hh * 0.48, z + s / 2 + 0.02, g);
+  const leds: THREE.MeshPhongMaterial[] = [];
+  const rows = Math.max(2, Math.round(hh / 0.22));
+  for (let r = 0; r < rows; r++)
+    for (const c of [-1, 0, 1]) {
+      const m = own(0x1d6b3d, 0);
+      leds.push(m);
+      box(0.08, 0.05, 0.03, m, x + c * s * 0.26, 0.5 + hh * 0.2 + (r * hh * 0.6) / rows, z + s / 2 + 0.05, g);
+    }
+  const fans: THREE.Object3D[] = [];
+  for (const dx of [-0.22, 0.22]) {
+    cyl(s * 0.18, s * 0.18, 0.1, 0x9aa3b3, 10, x + dx * s, 0.5 + hh + 0.15, z - 0.05, g);
+    const blade = box(s * 0.3, 0.03, 0.06, 0x3a3f52, x + dx * s, 0.5 + hh + 0.22, z - 0.05, g);
+    blade.castShadow = false;
+    fans.push(blade);
+  }
+  const seed = i * 13;
+  ticks.push((t) => {
+    for (const f of fans) f.rotation.y = t * 9;
+    const tick = Math.floor(t * 6);
+    leds.forEach((m, j) => {
+      const on = ((tick + j * 7 + seed) * 2654435761) % 7 > 2;
+      m.color.setHex(on ? 0x5bd18b : 0x1d6b3d);
+      m.emissive.setHex(on ? 0x1f6b3a : 0);
+    });
+  });
+}
+
+// Warehouse: a long brick shed with a pitched roof, a roll-up door and crates stacked by it.
+function warehouse({ x, z, s, h, i, roof, g }: Lot) {
+  const hh = h * 0.75;
+  box(s, hh, s, WALL.warehouse[i % 3], x, 0.5 + hh / 2, z, g);
+  pitched(s, s, s * 0.32, roof, WALL.warehouse[i % 3], x, 0.5 + hh, z, g);
+  box(s * 0.5, hh * 0.6, 0.04, 0x8b8f99, x, 0.5 + hh * 0.3, z + s / 2 + 0.02, g);
+  for (let k = 0; k < 3; k++) box(0.5 * s * 0.96, 0.02, 0.05, 0x6d717b, x, 0.5 + hh * (0.12 + k * 0.17), z + s / 2 + 0.04, g);
+  const crate = 0xb8854a;
+  box(0.22, 0.22, 0.22, crate, x + s * 0.38, 0.61, z + s / 2 + 0.2, g);
+  box(0.2, 0.2, 0.2, 0xa87640, x + s * 0.38, 0.82, z + s / 2 + 0.2, g).rotation.y = 0.4;
+}
+
+// Library: pale stone hall with a gabled roof, columns across the front and a lit reading window.
+function library({ x, z, s, h, i, roof, g, ticks }: Lot) {
+  const hh = h * 0.8;
+  box(s, hh, s * 0.9, WALL.library[i % 3], x, 0.5 + hh / 2, z, g);
+  box(s + 0.12, 0.08, s * 0.9 + 0.12, 0xbfb5a2, x, 0.5 + 0.04, z, g);
+  pitched(s, s * 0.9, s * 0.4, roof, WALL.library[i % 3], x, 0.5 + hh, z, g);
+  for (const dx of [-0.36, -0.12, 0.12, 0.36]) cyl(0.05, 0.05, hh * 0.85, 0xf2ede3, 6, x + dx * s, 0.5 + hh * 0.43, z + s * 0.45 + 0.08, g);
+  const win = own(0xffd88a, 0x4a3410);
+  box(s * 0.3, hh * 0.35, 0.04, win, x, 0.5 + hh * 0.45, z + s * 0.45 + 0.02, g);
+  const k = i * 2.3;
+  ticks.push((t) => win.emissive.setHex(Math.sin(t * 0.8 + k) > 0 ? 0x4a3410 : 0x2a1d08));
+}
+
+// Test lab: white block under a dome with a slit that sweeps around, plus a vent stack.
+function lab({ x, z, s, h, i, roof, g, ticks }: Lot) {
+  const hh = h * 0.6;
+  box(s, hh, s, WALL.lab[i % 3], x, 0.5 + hh / 2, z, g);
+  box(s * 0.84, 0.1, 0.04, 0x2a7fb8, x, 0.5 + hh * 0.6, z + s / 2 + 0.02, g);
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(s * 0.36, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), roof);
+  dome.position.set(x, 0.5 + hh, z);
+  dome.castShadow = true;
+  g.add(dome);
+  const slit = box(0.06, s * 0.2, s * 0.3, 0x1e2230, x, 0.5 + hh + s * 0.14, z, g);
+  cyl(0.06, 0.06, 0.4, 0x9aa3b3, 6, x + s * 0.36, 0.5 + hh + 0.2, z - s * 0.36, g);
+  const k = i * 0.9;
+  ticks.push((t) => {
+    const a = t * 0.6 + k;
+    slit.position.set(x + Math.sin(a) * s * 0.3, 0.5 + hh + s * 0.14, z + Math.cos(a) * s * 0.3);
+    slit.rotation.y = a;
+  });
+}
+
+// HQ: a slate control tower with a glass cab, an antenna with a blinking light and a flag.
+function hq({ x, z, s, h, i, roof, g, ticks }: Lot) {
+  const hh = h * 1.3;
+  box(s * 0.8, hh, s * 0.8, WALL.hq[i % 3], x, 0.5 + hh / 2, z, g);
+  for (let k = 1; k < 4; k++) box(s * 0.82, 0.04, s * 0.82, TRIM, x, 0.5 + (hh * k) / 4, z, g);
+  box(s * 0.92, 0.32, s * 0.92, GLASS, x, 0.5 + hh + 0.16, z, g);
+  box(s * 0.98, 0.08, s * 0.98, roof, x, 0.5 + hh + 0.36, z, g);
+  cyl(0.025, 0.025, 0.7, 0xc9ced6, 4, x - s * 0.25, 0.5 + hh + 0.75, z, g);
+  const beacon = own(0x8a1d18, 0);
+  box(0.08, 0.08, 0.08, beacon, x - s * 0.25, 0.5 + hh + 1.12, z, g);
+  cyl(0.02, 0.02, 0.6, 0xc9ced6, 4, x + s * 0.25, 0.5 + hh + 0.7, z, g);
+  const flag = box(0.28, 0.16, 0.02, roof, x + s * 0.25 + 0.14, 0.5 + hh + 0.92, z, g);
+  const k = i * 1.1;
+  ticks.push((t) => {
+    const on = (t + k) % 1.4 < 0.18;
+    beacon.color.setHex(on ? 0xff5e52 : 0x8a1d18);
+    beacon.emissive.setHex(on ? 0x8a1d18 : 0);
+    flag.rotation.y = Math.sin(t * 3 + k) * 0.25;
+  });
+}
+
+const BUILD: Record<DistrictKind, (l: Lot) => void> = { shop, servers, warehouse, library, lab, hq };
+
+export function makeDistrict(w: number, d: number, buildings: number, name: string) {
   const g = new THREE.Group();
+  const kind = districtKind(name);
   const side = mat(0x8d7c5c);
   const top = own(0xffffff);
-  top.map = rep(tex().stone, w / 3.6, d / 3.6);
+  top.map = rep(tex().stone, w / 7.2, d / 7.2);
   box(w, 0.5, d, [side, side, top, side, side, side], 0, 0.25, 0, g);
   const roof = own(0x4fae73);
-  const win = own(0x2b3150);
+  const ticks: Tick[] = [];
   const cols = Math.max(1, Math.floor(w / 1.7));
   const rows = Math.max(1, Math.floor(d / 1.7));
   const cw = w / cols, cd = d / rows;
   const n = Math.min(cols * rows, Math.max(1, buildings));
+  const seedKey = name.length;
   for (let i = 0; i < n; i++) {
     const c = i % cols, r = Math.floor(i / cols);
     const x = -w / 2 + cw * (c + 0.5), z = -d / 2 + cd * (r + 0.5);
     const h = 1 + ((i * 7 + seedKey) % 5) * 0.28;
     const s = Math.min(cw, cd) * 0.72;
-    box(s, h, s, 0x8d97b5, x, 0.5 + h / 2, z, g);
-    box(s + 0.1, 0.22, s + 0.1, roof, x, 0.6 + h, z, g);
-    box(0.22, 0.22, 0.04, win, x - s * 0.2, 0.5 + h * 0.55, z + s / 2 + 0.02, g);
-    box(0.22, 0.22, 0.04, win, x + s * 0.2, 0.5 + h * 0.55, z + s / 2 + 0.02, g);
+    BUILD[kind]({ x, z, s, h, i, roof, g, ticks });
   }
-  return { group: g, roof, labelY: 2.8 };
+  return { group: g, roof, kind, labelY: 2.8, update: (t: number) => ticks.forEach((f) => f(t)) };
 }

@@ -1,4 +1,5 @@
 import { isLocal } from "./auth";
+import { sameOriginPath } from "./redirect";
 import { makeSessionCookie, readSession } from "./session";
 
 export interface AccessEnv {
@@ -10,7 +11,6 @@ export interface AccessEnv {
 const COOKIE = "shiptorio_access";
 const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "frame-ancestors 'none'; base-uri 'none'; form-action 'self'", "x-content-type-options": "nosniff" };
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const safeNext = (next: string | null) => next && /^\/(?![/\\])/.test(next) && !/[\\\u0000-\u0020\u007f]/.test(next) ? next : "/";
 
 // Secure cookies cannot authenticate an HTTP page. Redirect before showing the form,
 // otherwise a successful password POST looks like a silent return to the same gate.
@@ -58,7 +58,7 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   const secure = secureTransport(request);
   if (secure) return secure;
   const url = new URL(request.url);
-  const next = safeNext(url.searchParams.get("next"));
+  const next = sameOriginPath(url.searchParams.get("next"), url.origin);
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
@@ -86,9 +86,9 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
     const [given, expected] = await Promise.all([digest(form.get("password") ?? ""), digest(env.APP_PASSWORD)]);
     let diff = 0;
     for (let i = 0; i < expected.length; i++) diff |= given[i] ^ expected[i];
-    if (diff !== 0) return gate(request, secret, "That password didn’t work.", safeNext(form.get("next")));
+    if (diff !== 0) return gate(request, secret, "That password didn’t work.", sameOriginPath(form.get("next"), url.origin));
     const cookie = (await makeSessionCookie(secret, "preview")).replace("shiptorio_session=", `${COOKIE}=`);
-    return new Response(null, { status: 303, headers: { location: `/access?check=1&next=${encodeURIComponent(safeNext(form.get("next")))}`, "set-cookie": cookie, "cache-control": "no-store" } });
+    return new Response(null, { status: 303, headers: { location: `/access?check=1&next=${encodeURIComponent(sameOriginPath(form.get("next"), url.origin))}`, "set-cookie": cookie, "cache-control": "no-store" } });
   }
   const cookie = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_access=([^;]+)/)?.[1];
   if (await readSession(secret, cookie ? `shiptorio_session=${cookie}` : null)) {

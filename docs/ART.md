@@ -70,6 +70,22 @@ low-poly floating island. Code: `makeIsland`, `makeWaterfall`, `makeFloater` in 
 **Later (Justin, "for a rainy day"):** option B's glass lake: a glass-walled water pocket cut into the front corner with
 fish and weeds inside, like the reference photo. A good island upgrade for players to unlock.
 
+### Ground and districts (Oct 26, art pass with Justin)
+
+- **Paving**: big, calm concrete slabs (one belt wide per row) with tones within a few percent of each other, a faint lit
+  edge, almost no speckle and only a few leaves. The machines carry the contrast, not the ground. Texture in `kit.ts`.
+- **District buildings**: the folder name picks what stands on the plinth (`districtKind` in `models.ts`), so you can
+  tell folders apart at a glance. Every kind keeps the shared roof material, which still shows health (green, amber, red).
+  - Shopfront (`web`, `app`, `ui`, `checkout`, ...): glass front, striped awning, a sign that flickers on.
+  - Server hall (`server`, `api`, `worker`, `runner`, ...): steel block, rack lights blinking, rooftop fans spinning.
+  - Warehouse (`shared`, `lib`, `core`, `types`, ...): brick shed, pitched roof, roll-up door, crates.
+  - Library (`docs`, `wiki`, `guides`, ...): pale stone hall, gabled roof, columns, a warm reading window.
+  - Test lab (`test`, `spec`, `e2e`, ...): white block under an observatory dome with a sweeping slit.
+  - HQ tower (`/` root, `scripts`, `config`, `.github`, ...): slate tower, glass cab, blinking antenna, flag.
+- **Launch moment**: every launch flies the camera to the pad, rides up with the rocket, then eases back to where you
+  were (skipped if you're focused on something or prefer reduced motion). The SHIPPED card sits low so the rocket shows.
+- **Sign-in**: the real island idles behind the sign-in card (`IslandBackdrop`), so the first screen is the game.
+
 ### Inspection stations (round 2, locked by Justin on Oct 26)
 
 The verification gauntlet from `docs/LOOP.md`, one visible machine per check. Each station has a backed-up state
