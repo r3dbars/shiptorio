@@ -1,8 +1,9 @@
-// The Next Move card: the one thing holding the factory back, and Spark's ask about it.
-// Bottom center, always one card at a time (docs/PRODUCT.md).
+// The Next Move card: the one thing holding the factory back, and the ask about it.
+// Above the dock, always one card at a time (docs/PRODUCT.md). The recommended option says "Suggested".
 
 import type { Bottleneck, Move, Station, WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
+import { Icon } from "./icons";
 
 const STAGE_LABEL: Record<Bottleneck["stage"], string> = {
   intake: "intake",
@@ -31,12 +32,12 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
     return (
       <section className="card nextmove quiet" aria-label="Bottleneck">
         <div className="nm-head">
-          <span className="nm-kicker">BOTTLENECK · {(st?.name ?? STAGE_LABEL[bottleneck.stage]).toUpperCase()}</span>
+          <span className="nm-kicker">Bottleneck · {st?.name ?? STAGE_LABEL[bottleneck.stage]}</span>
         </div>
-        <p className="psub">{bottleneck.summary}</p>
+        <p className="nm-why">{bottleneck.summary}</p>
         {st && onOpen && (
           <div className="nm-options">
-            <button type="button" className="nm-btn" onClick={() => onOpen(st.id)}>
+            <button type="button" className="btn" onClick={() => onOpen(st.id)}>
               Open the {lc(st.name)}
             </button>
           </div>
@@ -48,8 +49,11 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
   return (
     <section className="card nextmove" aria-label="Next move" aria-live="polite">
       <div className="nm-head">
-        <span className="nm-kicker">NEXT MOVE</span>
-        {stage && <span className="nm-stage">{STAGE_LABEL[stage].toUpperCase()}</span>}
+        <span className="nm-kicker">
+          <Icon name="star" size={14} />
+          Next move
+        </span>
+        {stage && <span className="nm-stage">{STAGE_LABEL[stage]}</span>}
       </div>
       <div className="nm-title">{move.title}</div>
       <p className="nm-why">{move.why}</p>
@@ -58,11 +62,12 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
           <button
             key={o.id}
             type="button"
-            className={o.recommended ? "nm-btn rec" : "nm-btn"}
+            className={o.recommended ? "btn rec" : "btn"}
             title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined}
             onClick={() => send({ type: "choose_move", moveId: move.id, optionId: o.id })}
           >
             {o.label}
+            {o.recommended && <span className="sugg">Suggested</span>}
           </button>
         ))}
         {move.url && (

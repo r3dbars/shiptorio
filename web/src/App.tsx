@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AutonomyLevel, FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
+import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import { css, KIND_COLOR } from "./map/palette";
 import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
-import { Coach, useTutorial } from "./ui/tutorial";
 import { CheckIn } from "./ui/CheckIn";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
+import { ActivityTray } from "./ui/ActivityTray";
+import { Icon } from "./ui/icons";
+import { Coach, useTutorial } from "./ui/tutorial";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
 import { ShipCelebration } from "./ui/ShipCelebration";
@@ -17,38 +19,37 @@ import { ShipCelebration } from "./ui/ShipCelebration";
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
   queued: "queued",
-  working: "assembling",
-  inspecting: "inspecting",
+  working: "building",
+  inspecting: "checking",
   rejected: "rework",
   passed: "passed",
   on_pad: "on the pad",
   launched: "launched",
 };
 
-const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#f2a93b", solar: "#5bd18b", geothermal: "#ff7a2a" };
+const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#e8685c" };
 
-// A row of pixel segments, like the prototype's HUD meters.
-function Segs({ value, max = 8, color }: { value: number; max?: number; color: string }) {
-  const lit = Math.max(0, Math.min(max, Math.round(value)));
-  return (
-    <div className="segs" role="meter" aria-valuemin={0} aria-valuemax={max} aria-valuenow={lit}>
-      {Array.from({ length: max }, (_, i) => (
-        <i key={i} style={i < lit ? { background: color } : undefined} />
-      ))}
-    </div>
-  );
-}
+// What the ping on the map says, by where the work is stuck.
+const PING_WORD: Record<NonNullable<Move["stage"]>, string> = {
+  intake: "New work",
+  triage: "Sorting",
+  build: "Ready to build",
+  inspect: "Needs a look",
+  pad: "Ready to launch",
+  release: "Releasing",
+  impact: "Check impact",
+  power: "Needs power",
+  resources: "Needs power",
+};
 
-const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "ADVISOR", floor: "FLOOR", build: "BUILD", lights_out: "LIGHTS OUT" };
+const LEVEL_LABEL: Record<AutonomyLevel, string> = { advisor: "Advisor", floor: "Floor", build: "Build", lights_out: "Lights out" };
 // Subscriptions you can plug in. Each sign-in adds a solar plant and assemblers (docs/PRODUCT.md).
 const SLOTS = [
   { harness: "claude_code", name: "Claude" },
   { harness: "codex", name: "ChatGPT" },
 ] as const;
-const UNDO_MS = 5 * 60_000;
-const LOG_MAX = 60;
 // science packs by item kind (shared SCIENCE_FOR)
-const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "tests" } as const; // newest lines kept in the floor log
+const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "tests" } as const;
 
 function fmtLead(ms?: number) {
   if (ms === undefined) return "–";
@@ -56,33 +57,15 @@ function fmtLead(ms?: number) {
   return m < 90 ? `${m}m` : `${Math.round(m / 60)}h`;
 }
 
-// One floor log line. Spark's lines show the tool it called and why, and an undo while it's fresh.
-function LogRow({ l, send, live }: { l: LogLine; send: (msg: WebToServer) => void; live: boolean }) {
-  if (l.actor !== "spark") return <li className={l.level}>{l.text}</li>;
-  const canUndo = l.actionId && Date.now() - l.at < UNDO_MS;
-  return (
-    <li className={`spark ${l.level}`} title={l.reason ? `why: ${l.reason}` : undefined}>
-      {l.tool && <span className="tool">{l.tool}</span>}
-      <span className="txt">{l.text}</span>
-      {l.approvedBy === "autonomy" && <span className="auto" title="Done on its own">auto</span>}
-      {canUndo && live && (
-        <button type="button" className="undo" onClick={() => send({ type: "undo", actionId: l.actionId! })}>
-          undo
-        </button>
-      )}
-    </li>
-  );
-}
-
 // Big news from the floor log shows up as a caption for a few seconds.
 function useCaption(log: LogLine[]) {
-  const [caption, setCaption] = useState<{ title: string; sub: string }>({ title: "THE FACTORY MUST GROW", sub: "drag to pan · scroll to zoom" });
+  const [caption, setCaption] = useState<{ title: string; sub: string }>({ title: "The factory must grow", sub: "drag to pan · pinch or scroll to zoom" });
   const [on, setOn] = useState(true); // the text stays while the box fades out
   const last = log[log.length - 1];
   useEffect(() => {
     if (!last || last.level === "info") return;
     const [title, ...rest] = last.text.split(": ");
-    setCaption({ title: title.toUpperCase(), sub: rest.join(": ") });
+    setCaption({ title, sub: rest.join(": ") });
     setOn(true);
   }, [last]);
   useEffect(() => {
@@ -110,16 +93,18 @@ export function App() {
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
-  const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
   // ?checkin opens the deck on load, the way a phone check-in would.
   const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
   const [focus, setFocus] = useState<string | null>(null); // what the check-in wants the map to zoom to
-  // the map's pick keys: a station id as-is, any other machine as m:<id>
-  const focusKey = focus && (state?.stations?.some((st) => st.id === focus) || focus === "rework" ? focus : `m:${focus}`);
+  // the map's pick keys: a station id as-is, a folder as d:<name>, any other machine as m:<id>
+  const pickKey = (id: string) =>
+    state?.stations?.some((st) => st.id === id) || id === "rework" || id.includes(":") ? id : state?.districts.some((d) => d.name === id) ? `d:${id}` : `m:${id}`;
+  const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState(false); // phones: the right-hand cards live in a bottom sheet
+  const [sheet, setSheet] = useState<"line" | "power" | null>(null);
+  const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
@@ -128,22 +113,41 @@ export function App() {
   const autonomy = state?.autonomy;
   const permits = autonomy?.districts.filter((d) => d.permit).map((d) => `/${d.district}`) ?? [];
   const shipped = state ? state.science.red + state.science.green + state.science.grey + state.science.blue : 0;
+  // The ping: a pulsing dot on the thing that needs you, tagged with the part of the codebase it's about,
+  // so players learn what each part of their code does. Tap it for the details panel.
+  const ping = useMemo(() => {
+    if (!state) return null;
+    const move = state.move;
+    const station = state.stations?.find((st) => st.id === state.bottleneck?.stationId);
+    const item = state.items.find((i) => i.id === move?.itemId) ?? (station && state.items.find((i) => i.machineId === station.machineId && i.state !== "launched"));
+    const machine = item?.machineId && state.machines.find((m) => m.id === item.machineId);
+    const key = move?.focus ? pickKey(move.focus) : station ? station.id : machine ? pickKey(machine.id) : null;
+    if (!key) return null;
+    const stage = move?.stage ?? state.bottleneck?.stage;
+    const title = item?.state === "rejected" ? "Sent back" : stage ? PING_WORD[stage] : "Needs you";
+    return { key, title, code: item ? (item.district === "/" ? "/" : `/${item.district}`) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+  const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
 
+  const launchItem = (item: Item) => {
+    sound.play("arm");
+    if (cfg.kind === "sim") send({ type: "launch_pr", itemId: item.id });
+    else if (item.prUrl) window.open(item.prUrl, "_blank", "noreferrer");
+  };
   const launch = () => {
     const next = pad.find((i) => i.state === "on_pad") ?? pad[0];
-    if (!next) return;
-    sound.play("arm");
-    if (cfg.kind === "sim") send({ type: "launch_pr", itemId: next.id });
-    else if (next.prUrl) window.open(next.prUrl, "_blank", "noreferrer");
+    if (next) launchItem(next);
   };
   const slot = state ? buildSlot(state) : null;
-  // Spark never codes: a new assembler runs on a subscription you've signed in with
+  // the planner never codes: a new assembler runs on a subscription you've signed in with
   const plugged = SLOTS.find((sl) => state?.power.some((p) => p.id === `solar-${sl.harness}` && p.online));
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
+  const toggleSheet = (s: "line" | "power") => setSheet((v) => (v === s ? null : s));
 
-  // L toggles labels; A and B do what the round buttons say. Ignored while typing.
+  // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show });
   keys.current = { launch, build, show };
   useEffect(() => {
@@ -153,240 +157,276 @@ export function App() {
       if (k === "l") setShowLabels((v) => !v);
       else if (k === "b" && keys.current.show("launch")) keys.current.launch();
       else if (k === "a" && keys.current.show("build")) keys.current.build();
+      else if (k === "escape") {
+        setTray(false);
+        setSheet(null);
+      }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
 
+  const stats = metrics && (
+    <div className="tray-stats">
+      <div title="users unblocked + 10 × customers answered + rockets − 25 × escaped defects">
+        <b>{metrics.shipScore.toLocaleString()}</b>ship score
+      </div>
+      <div title="Users affected by fixed issues">
+        <b>{metrics.usersUnblocked}</b>users unblocked
+      </div>
+      <div title="Customer threads closed with a shipped fix">
+        <b>{metrics.customersAnswered}</b>customers answered
+      </div>
+      <div title="Live Sentry errors your fixes killed">
+        <b>{metrics.bitersKilled}</b>errors fixed
+      </div>
+      <div title="Median time from issue to merged">
+        <b>{fmtLead(metrics.leadTimeMs)}</b>lead time
+      </div>
+      {show("science") &&
+        (["red", "green", "grey", "blue"] as const).map((k) => (
+          <div key={k}>
+            <b>{state?.science[k] ?? 0}</b>
+            {SCIENCE_LABEL[k]} shipped
+          </div>
+        ))}
+    </div>
+  );
+
+  const settings = (
+    <>
+      <SoundControl />
+      {show("labels") && (
+        <div className="row2">
+          <span>Labels on every machine (L)</span>
+          <button type="button" className="toggle" aria-pressed={showLabels} onClick={() => setShowLabels((v) => !v)}>
+            {showLabels ? "On" : "Off"}
+          </button>
+        </div>
+      )}
+      {cfg.kind === "sim" && show("scenarios") && (
+        <nav className="scen" aria-label="Scenarios">
+          {Object.keys(SCENARIOS).map((name) => (
+            <a key={name} href={`?source=sim&scenario=${name}`} aria-current={name === cfg.scenario ? "page" : undefined}>
+              {name}
+            </a>
+          ))}
+          <a href="/art/">art</a>
+        </nav>
+      )}
+    </>
+  );
+
   return (
     <div className="app">
       <main className="floor">
-        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} />
+        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} ping={show("line") ? ping : null} />
         <ShipCelebration state={state} />
 
-        <section className="card hud-left" aria-label="Factory">
-          <div className="ptitle">SHIPTORIO</div>
-          <div className="psub">
-            {cfg.kind === "sim" ? `sim · ${cfg.scenario}` : `${cfg.repo} · ${state?.baseBranch ?? "main"}`}
-            <span className={`status ${status}`}> · {status}</span>
-          </div>
-          {tour.lesson && (
-            <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? "your repo"} onDismiss={tour.dismiss} onSkip={tour.skip} />
-          )}
-          {!show("score") ? null : metrics ? (
-            <>
-              <div className="score" title="users unblocked + 10 × customers answered + rockets − 25 × escaped defects">
-                <span>SHIP SCORE</span>
-                <b>{metrics.shipScore}</b>
-              </div>
-              <div className="stats">
-                <span title="PRs merged">
-                  <b>{metrics.rockets}</b> rockets
+        <header className="topbar">
+          <div className="chips">
+            {show("score") && (
+              <div className="chip" title="PRs merged">
+                <span className="badge" style={{ background: "var(--amber)" }}>
+                  <Icon name="rocket" size={14} />
                 </span>
-                <span title="Users affected by fixed issues">
-                  <b>{metrics.usersUnblocked}</b> unblocked
-                </span>
-                <span title="Customer threads closed with a shipped fix">
-                  <b>{metrics.customersAnswered}</b> answered
-                </span>
-                <span title="Biters are live Sentry errors attacking a district. This counts the ones your fixes killed.">
-                  <b>{metrics.bitersKilled}</b> errors fixed
-                </span>
-                <span title="Median lead time, ore to merged">
-                  <b>{fmtLead(metrics.leadTimeMs)}</b> lead time
-                </span>
-                {metrics.checkouts !== undefined && (
-                  <span title="Demo shop checkouts completed (Stripe test mode)">
-                    <b>{metrics.checkouts.toLocaleString()}</b> checkouts
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="hrow">
-              <span>SHIPPED {shipped}</span>
-              <Segs value={shipped % 8 || (shipped ? 8 : 0)} color="#5bd18b" />
-            </div>
-          )}
-          {!show("autonomy") ? null : autonomy ? (
-            <div className="hrow" title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}>
-              <span>
-                AUTONOMY · {LEVEL_LABEL[autonomy.level]}
-                {autonomy.next && (
-                  <i className="next">
-                    {" "}
-                    → {LEVEL_LABEL[autonomy.next.level]} {autonomy.next.have}/{autonomy.next.need}
-                  </i>
-                )}
-              </span>
-              <Segs value={autonomy.next ? (autonomy.next.have / autonomy.next.need) * 8 : 8} color="#6fb2ff" />
-            </div>
-          ) : (
-            <div className="hrow">
-              <span>TRUST</span>
-              <Segs value={(state?.trust ?? 0) * 8} color="#f2a93b" />
-            </div>
-          )}
-          {show("autonomy") && permits.length > 0 && <div className="psub">LAUNCH PERMIT: {permits.join(", ")}</div>}
-          {show("science") && (
-          <div className="science" aria-label="Science">
-            {(["red", "green", "grey", "blue"] as const).map((k) => (
-              <span key={k} className={`sci ${k}`} title={`${SCIENCE_LABEL[k]} shipped (${k} science)`}>
-                <i aria-hidden="true" />
-                {state?.science[k] ?? 0} <small>{SCIENCE_LABEL[k]}</small>
-              </span>
-            ))}
-          </div>
-          )}
-          <SoundControl />
-        </section>
-
-        <div className={`hud-right${sheet ? " open" : ""}`}>
-          <button type="button" className="sheet-handle" aria-expanded={sheet} onClick={() => setSheet((v) => !v)}>
-            <span>POWER · PAD · LINE · LOG</span>
-            <b>{sheet ? "▾" : "▴"}</b>
-          </button>
-          {show("power") && (
-          <section className="card" aria-label="Power">
-            <div className="ptitle small">POWER</div>
-            {(state?.power ?? []).map((p) => (
-              <div className="hrow" key={p.id}>
                 <span>
-                  {p.kind.toUpperCase()} · {p.name.toUpperCase()}
+                  {metrics?.rockets ?? shipped}
+                  <small>shipped</small>
                 </span>
-                <Segs value={p.online ? p.level * 8 : 0} color={POWER_COLOR[p.kind]} />
+              </div>
+            )}
+            {show("autonomy") && autonomy && (
+              <div
+                className="chip"
+                title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}
+              >
+                <span className="badge" style={{ background: "var(--blue)" }}>
+                  <Icon name="bot" size={14} />
+                </span>
+                <span>
+                  {autonomy.next ? `${autonomy.next.have}/${autonomy.next.need}` : LEVEL_LABEL[autonomy.level]}
+                  <small>{autonomy.next ? `to ${LEVEL_LABEL[autonomy.next.level]}` : "trust"}</small>
+                </span>
+              </div>
+            )}
+            {show("score") && metrics && (
+              <div className="chip desk" title="users unblocked + 10 × customers answered + rockets − 25 × escaped defects">
+                <span className="badge" style={{ background: "var(--green)" }}>
+                  <Icon name="star" size={14} />
+                </span>
+                <span>
+                  {metrics.shipScore.toLocaleString()}
+                  <small>score</small>
+                </span>
+              </div>
+            )}
+          </div>
+          {show("checkin") && deck.length > 1 && !checkin && (
+            <button type="button" className="checkin-chip" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
+              Check in · {deck.length}
+            </button>
+          )}
+          <button type="button" className="hud-iconbtn" aria-label={`Activity, ${waiting} waiting on you`} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
+            {waiting > 0 && <span className="n">{waiting}</span>}
+            <Icon name="bell" size={20} />
+          </button>
+        </header>
+
+        {tour.lesson && (
+          <section className="card coachcard" aria-label="Tour">
+            <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? "your repo"} onDismiss={tour.dismiss} onSkip={tour.skip} />
+          </section>
+        )}
+
+        {checkin ? (
+          <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
+        ) : sheet === "line" ? (
+          <section className="card sheet" aria-label="The line">
+            <div className="sheet-top">
+              <h2>The line</h2>
+              <button type="button" className="hud-iconbtn" onClick={() => setSheet(null)} aria-label="Close">
+                <Icon name="cross" size={14} />
+              </button>
+            </div>
+            <h3>On the pad</h3>
+            {pad.length === 0 && <p className="empty">Nothing ready to launch yet.</p>}
+            {pad.map((i) => (
+              <div key={i.id} className="lrow">
+                <i className="sq" style={{ background: css(KIND_COLOR[i.kind]) }} aria-hidden="true" />
+                <span className="tt">
+                  #{i.prNumber} {i.title}
+                  <code>{i.district}</code>
+                </span>
+                {cfg.kind === "live" && i.prUrl ? (
+                  <a className="pill hot" href={i.prUrl} target="_blank" rel="noreferrer">
+                    Open PR
+                  </a>
+                ) : (
+                  <span className="pill hot">{STATE_LABEL[i.state]}</span>
+                )}
+              </div>
+            ))}
+            <h3>In progress</h3>
+            {inFlight.length === 0 && <p className="empty">The line is quiet.</p>}
+            {inFlight.map((i) => (
+              <div key={i.id} className="lrow" title={i.failure}>
+                <i className="sq" style={{ background: css(KIND_COLOR[i.kind]) }} aria-hidden="true" />
+                <span className="tt">
+                  {i.title}
+                  <code>{i.district}</code>
+                </span>
+                <span className={`pill ${i.state}`}>{STATE_LABEL[i.state]}</span>
+              </div>
+            ))}
+            {permits.length > 0 && <p className="empty">Launches on its own in {permits.join(", ")}</p>}
+          </section>
+        ) : sheet === "power" ? (
+          <section className="card sheet" aria-label="Power">
+            <div className="sheet-top">
+              <h2>Power</h2>
+              <button type="button" className="hud-iconbtn" onClick={() => setSheet(null)} aria-label="Close">
+                <Icon name="cross" size={14} />
+              </button>
+            </div>
+            <p className="empty">Your sign-ins power the builders. More sign-ins, more builders.</p>
+            {(state?.power ?? []).map((p) => (
+              <div className="lrow" key={p.id}>
+                <span className="tt">
+                  {p.name}
+                  <code>{p.kind === "steam" ? "planner" : p.kind}</code>
+                </span>
+                <span className="meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p.level * 100)}>
+                  <i style={{ width: `${p.online ? Math.round(p.level * 100) : 0}%`, background: POWER_COLOR[p.kind] }} />
+                </span>
+                <span className="pill">{p.online ? `${Math.round(p.level * 100)}%` : "offline"}</span>
               </div>
             ))}
             {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
               const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
               return (
-                <div className="hrow slot" key={sl.harness}>
-                  <span>SOLAR · {sl.name.toUpperCase()}</span>
+                <div className="lrow" key={sl.harness}>
+                  <span className="tt">
+                    {sl.name}
+                    <code>not signed in</code>
+                  </span>
                   {opt && state?.move ? (
-                    <button type="button" className="slotbtn" onClick={() => send({ type: "choose_move", moveId: state.move!.id, optionId: opt.id })}>
-                      SIGN IN
+                    <button type="button" className="btn rec" style={{ flex: "none" }} onClick={() => send({ type: "choose_move", moveId: state.move!.id, optionId: opt.id })}>
+                      Sign in
                     </button>
                   ) : (
-                    <span className="locked" title="Run bunx shiptorio-runner pair on your machine to plug it in">
-                      SIGN IN TO UNLOCK
+                    <span className="pill" title="Run bunx shiptorio-runner pair on your machine to plug it in">
+                      pair the runner
                     </span>
                   )}
                 </div>
               );
             })}
           </section>
-          )}
-
-          {show("line") && (
-          <section className="card" aria-label="Launch pad">
-            <div className="ptitle small">ON THE PAD</div>
-            {pad.length === 0 && <p className="psub">Nothing on the pad.</p>}
-            <ul>
-              {pad.map((i) => (
-                <li key={i.id} className="row">
-                  <i className="dot" style={{ background: css(KIND_COLOR[i.kind]) }} aria-hidden="true" />
-                  <span className="grow">
-                    #{i.prNumber} {i.title}
-                  </span>
-                  {cfg.kind === "live" && i.prUrl && (
-                    <a className="tag" href={i.prUrl} target="_blank" rel="noreferrer">
-                      PR
-                    </a>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-          )}
-
-          {show("line") && (
-          <section className="card" aria-label="On the line">
-            <div className="ptitle small">ON THE LINE</div>
-            {inFlight.length === 0 && <p className="psub">The line is quiet.</p>}
-            <ul>
-              {inFlight.map((i) => (
-                <li key={i.id} className="row" title={i.failure}>
-                  <i className="dot" style={{ background: css(KIND_COLOR[i.kind]) }} aria-hidden="true" />
-                  <span className="grow">{i.title}</span>
-                  <span className={`tag ${i.state}`}>{STATE_LABEL[i.state]}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-          )}
-
-          {show("log") && (
-          <section className="card log" aria-label="Floor log">
-            <button type="button" className="ptitle small linkish" aria-expanded={showLog} onClick={() => setShowLog((v) => !v)}>
-              LOG {showLog ? "−" : "+"}
-            </button>
-            {showLog && (
-              <ol>
-                {log.slice(-LOG_MAX).reverse().map((l, n) => (
-                  <LogRow key={`${l.at}-${n}`} l={l} send={send} live={status === "live"} />
-                ))}
-              </ol>
-            )}
-          </section>
-          )}
-        </div>
-
-        {checkin ? (
-          <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
         ) : (
-          <>
-            <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
-            {deck.length > 1 && show("checkin") && (
-              <button type="button" className="card ci-open" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
-                CHECK-IN · {deck.length}
-              </button>
-            )}
-          </>
+          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
+        )}
+
+        {!checkin && (
+        <nav className="dock" aria-label="Actions">
+          <button type="button" className="tool" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")} disabled={!show("line")}>
+            {show("line") && inFlight.length + pad.length > 0 && <span className="n">{inFlight.length + pad.length}</span>}
+            <Icon name="list" size={20} />
+            Line
+          </button>
+          <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={!show("power")}>
+            <Icon name="bolt" size={20} />
+            Power
+          </button>
+          <button type="button" className="tool big" onClick={launch} disabled={!show("launch") || pad.length === 0} aria-label="Launch the PR on the pad" title="Launch (B)">
+            <Icon name="rocket" size={20} />
+            Launch
+          </button>
+          <button
+            type="button"
+            className="tool big go"
+            onClick={build}
+            disabled={!show("build") || !slot || !plugged || cfg.kind === "live"}
+            aria-label={plugged ? `Build another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
+            title={plugged ? `Build another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
+          >
+            <Icon name="bot" size={20} />
+            Build
+          </button>
+        </nav>
         )}
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
 
-        <div className={`card caption${caption.on ? " on" : ""}`} role="status" aria-live="polite">
+        <div className={`card caption${caption.on ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>
           <div className="psub">{caption.sub}</div>
         </div>
 
-        {cfg.kind === "sim" && show("scenarios") && (
-          <nav className="card scenarios" aria-label="Scenarios">
-            {Object.keys(SCENARIOS).map((name) => (
-              <a key={name} href={`?source=sim&scenario=${name}`} aria-current={name === cfg.scenario ? "page" : undefined}>
-                {name.toUpperCase()}
-              </a>
-            ))}
-            <a href="/art/">ART</a>
-          </nav>
+        {tray && (
+          <ActivityTray
+            deck={deck}
+            pad={pad}
+            log={show("log") ? log : []}
+            live={status === "live"}
+            send={send}
+            onShow={(f) => {
+              setPanel(pickKey(f));
+              setTray(false);
+            }}
+            onLaunch={launchItem}
+            onCheckin={show("checkin") ? () => { setTray(false); setCheckin(true); } : undefined}
+            onClose={() => setTray(false)}
+            header={
+              <>
+                {cfg.kind === "sim" ? `sim · ${cfg.scenario}` : `${cfg.repo} · ${state?.baseBranch ?? "main"}`}
+                <span className={`status ${status}`}> · {status}</span>
+              </>
+            }
+            stats={show("score") ? stats : undefined}
+            settings={settings}
+          />
         )}
-
-        {show("labels") && (
-        <button type="button" className="labeltoggle" aria-pressed={showLabels} onClick={() => setShowLabels((v) => !v)} title="Show every label (L)">
-          LABELS {showLabels ? "ON" : "OFF"}
-        </button>
-        )}
-
-        <div className="buttons">
-          {show("launch") && (
-          <button type="button" className="rbtn amber" onClick={launch} disabled={pad.length === 0} aria-label="Launch the PR on the pad">
-            <b>B</b>launch
-          </button>
-          )}
-          {show("build") && (
-          <button
-            type="button"
-            className="rbtn"
-            onClick={build}
-            disabled={!slot || !plugged || cfg.kind === "live"}
-            aria-label={plugged ? `Build another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
-            title={plugged ? `Build another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
-          >
-            <b>A</b>build
-          </button>
-          )}
-        </div>
       </main>
     </div>
   );
