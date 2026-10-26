@@ -19,7 +19,8 @@
 
 ## Real issue acceptance in progress
 
-- Issue #125 remains the real goal-persistence bug for local Codex acceptance.
+- Issue #125 was the original goal-persistence bug for local Codex acceptance;
+  the replacement target is recorded below.
 - The first in-game plan included a reference-only shared schema in writable scope.
   It was not approved. PR #141 separates planning reads from the final editable
   subset, validates that subset and carries it through player approval and runner
@@ -31,7 +32,7 @@
   `a4fc27c5407460577965a47a5d15d7a3feafbaef`.
 - A second plan was not approved because it still included a reference-only file.
   Live testing also exposed self-invalidation: the app's own plan-comment webhook
-  replaced issue context and changed its approval revision. A fix is in progress;
+  replaced issue context and changed its approval revision. PR #146 repaired this path;
   no stale-plan or writable-scope checks were bypassed.
 - No claim of completed issue → approval → local build → PR → Launch until the
   real run below is recorded. Unit/integration tests alone do not satisfy it.
@@ -47,3 +48,12 @@
   assigned for follow-up currently normalizes to `upsert`, recreating factory ore.
   A direct call reproduced it on main. The issue reserves only
   `server/src/sources/sentry.ts` and `server/test/mines.test.ts` for the runner.
+
+## Current proof boundary
+
+- The real #170 plan has the intended two-file scope. Its first approval attempt
+  was rejected as changed input; the replacement plan remains unapproved while
+  runtime revision behavior is investigated. No local fix commit, PR, verify-bay
+  pass or Launch has been demonstrated for this acceptance target.
+- Source ingestion, automated regression coverage and ordinary agent PR merges
+  are separate evidence from this unfinished player-to-runner acceptance.

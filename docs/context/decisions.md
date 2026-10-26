@@ -15,9 +15,19 @@ acceptance are in `live-source-launch-proof.md`.
 
 PRs #141/#142 are merged with green CI and Deploy runs 40401140082/40401524789.
 Both protected version endpoints matched `a4fc27c5407460577965a47a5d15d7a3feafbaef`.
-Only `shiptorio` was deployed. The issue #125 acceptance run remains paused before
-build approval while fixing self-generated plan-comment revision drift; no failed
-verification or approval boundary was bypassed.
+Only `shiptorio` was deployed. PR #146 subsequently repaired planner-comment
+revision handling. Issue #125 was completed by a concurrent agent PR and is not
+counted as game-loop evidence; #170 is reserved for the real runner acceptance.
+That acceptance remains incomplete; no approval or verification boundary was bypassed.
+
+Security hardening checkpoint (Oct 26): preserve the existing signed webhook and
+session boundaries, enforce browser mutation origins centrally, and add durable
+per-IP/per-user budgets using the existing Factory binding (no new Cloudflare
+resources). CSP will allow the app's Google fonts and inline styles; executable
+inline scripts remain blocked except nonce-authorized original art prototypes.
+Tenant membership is a separate concurrent change. Security-only web edits, if
+needed, are limited to untrusted link destinations and rendering regression tests.
+The checkpoint advances the Oct 26 live intake foundation and Oct 29 source intake.
 
 Release verification, Oct 26: live bottleneck/deck #96, repeatable playtests #85,
 Firefox/HTTPS entry #95/#98, repository picker #118, same-head CI/session security

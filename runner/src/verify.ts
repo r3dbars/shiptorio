@@ -15,14 +15,15 @@ export function testOutcome(result: Result): { passed: boolean; reproduced: bool
 }
 
 /** Overlay only the PR's test files on an isolated base tree; production code stays at base. */
-export async function verifyRegression(work: string, baseSha: string, paths: string[], _env: NodeJS.ProcessEnv): Promise<RegressionProof> {
+export async function verifyRegression(work: string, baseSha: string, paths: string[], _env: NodeJS.ProcessEnv, boundaryRoot = work): Promise<RegressionProof> {
   if (!/^[a-f0-9]{40}$/.test(baseSha)) throw new Error("Invalid verify base");
   const tests = [...new Set(paths.filter(p => TEST_PATH.test(p)))];
   if (tests.some(p => p.startsWith("/") || p.includes("..") || !/^[\w./@+-]+$/.test(p))) throw new Error("Unsafe verify path");
   const args = [process.execPath, "test", ...tests.map(p => `./${p}`)];
   const command = `bun test ${tests.map(p => `./${p}`).join(" ")}`.slice(0, 1000);
   if (!tests.length) return { failsOnBase: false, passesOnHead: false, baseSha, command: "No changed test files", logTail: "No reproducible test recipe was attached." };
-  const sandbox = await checkSandbox(work);
+  const boundary = await checkSandbox(boundaryRoot);
+  const sandbox: CheckSandbox = { run: (args, cwd = work, options) => boundary.run(args, cwd, options), close: () => boundary.close() };
   const run = async (args: string[], cwd: string, boundary: CheckSandbox = sandbox, install = false): Promise<Result> => {
     const result = await boundary.run(args, cwd, { install });
     return { code: result.code, log: stripAnsi(result.out + "\n" + result.err) };
