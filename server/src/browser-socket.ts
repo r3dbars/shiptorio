@@ -1,5 +1,4 @@
-import { requireUser } from "./authorization";
-import type { AuthorizationEnv, AccessUser } from "./authorization";
+import type { AccessUser } from "./authorization";
 import { isAllowed, readSessionDetails } from "./session";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string }

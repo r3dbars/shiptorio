@@ -174,3 +174,36 @@ it('real account logout immediately revokes existing sockets and runner grants e
   const response = await app.fetch(new Request(`${origin}/api/runner/${state.repo}/renew`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }), env as never);
   expect(response.status).toBe(403);
 });
+
+it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenant-scoped', async () => {
+  const { testD1 } = await import('./d1-fixture');
+  const DB = testD1();
+  for (const [repo, id] of [['alice/private', 11], ['bob/private', 22]] as const) {
+    await DB.prepare('INSERT INTO installations (id, account_login) VALUES (?, ?)').bind(id, repo.split('/')[0]).run();
+    await DB.prepare('INSERT INTO repos (full_name, installation_id) VALUES (?, ?)').bind(repo, id).run();
+  }
+  const queued: string[] = [];
+  const env = { ...fixture().env, DB, GITHUB_WEBHOOK_SECRET: 'test-github-hook-secret',
+    CACHE: { get: async (key: string) => key === 'cred:sentry:alice/private' ? { clientSecret: 'alice-secret' } : key === 'cred:sentry:bob/private' ? { clientSecret: 'bob-secret' } : null },
+    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({
+      enqueueGitHub: async (_id: string, _event: string, payload: { repository: { full_name: string } }) => { expect(repo).toBe(payload.repository.full_name); queued.push(`github:${repo}`); },
+      enqueueSentry: async (id: string) => { queued.push(`sentry:${repo}:${id}`); },
+    }) },
+  };
+  async function sign(keyText: string, body: string) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(keyText), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)))].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  const sentryBody = JSON.stringify({ action: 'created', data: { issue: { id: '1', title: 'test' } } });
+  const sentry = async (repo: string, secretKey: string) => app.fetch(new Request(`${origin}/webhooks/sentry/${repo}`, { method: 'POST', headers: { 'sentry-hook-signature': await sign(secretKey, sentryBody), 'sentry-hook-resource': 'issue', 'request-id': 'same-event' }, body: sentryBody }), env as never);
+  expect((await sentry('bob/private', 'alice-secret')).status).toBe(401);
+  expect(queued).toEqual([]);
+  expect((await sentry('alice/private', 'alice-secret')).status).toBe(202);
+  expect((await sentry('bob/private', 'bob-secret')).status).toBe(202);
+  expect(queued).toEqual(['sentry:alice/private:alice/private:same-event', 'sentry:bob/private:bob/private:same-event']);
+  const githubBody = JSON.stringify({ action: 'opened', installation: { id: 22 }, repository: { full_name: 'bob/private' }, issue: { number: 1, title: 'Test' } });
+  const github = async (sig: string) => app.fetch(new Request(`${origin}/webhooks/github`, { method: 'POST', headers: { 'x-hub-signature-256': sig, 'x-github-event': 'issues', 'x-github-delivery': 'test-github-delivery' }, body: githubBody }), env as never, { waitUntil() {} } as never);
+  expect((await github('sha256=invalid')).status).toBe(401);
+  expect((await github('sha256=' + await sign(env.GITHUB_WEBHOOK_SECRET, githubBody))).status).toBe(202);
+  expect(queued.at(-1)).toBe('github:bob/private');
+});

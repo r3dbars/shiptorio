@@ -7,7 +7,7 @@ import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accou
 import { isAllowed } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
-import { sentryStatus, type SentryPayload } from "./sources/sentry";
+import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds } from "./sources/creds";
@@ -165,14 +165,15 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const url = publicUrl(new URL(c.req.url), c.env);
   const repoParam = c.req.query("repo") ?? "";
   const repo = repoParam.toLowerCase();
+  const webhookUrl = sentryWebhookUrl(url, repo);
   const connected = kind === "sentry" ? !!(await sentryCreds(c.env, c.req.query("repo"))).clientSecret : !!(await postHogCreds(c.env, c.req.query("repo"))).apiKey;
-  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl: `${url}/webhooks/sentry?repo=${encodeURIComponent(repo)}` }));
+  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl }));
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (kind === "sentry") {
     const clientSecret = field("clientSecret");
-    if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl: `${url}/webhooks/sentry?repo=${encodeURIComponent(repo)}`, error: "That doesn't look like a Sentry Client Secret." }), 400);
+    if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl, error: "That doesn't look like a Sentry Client Secret." }), 400);
     await saveCreds(c.env, "sentry", { clientSecret }, repo);
   } else {
     const apiKey = field("apiKey");
@@ -184,7 +185,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   }
   // Plug it straight into the map it came from.
   if (repo) await factory(c.env, repo).connectMine(kind).catch(() => null);
-  return c.html(connectPage({ kind, repo, connected: true, webhookUrl: `${url}/webhooks/sentry?repo=${encodeURIComponent(repo)}`, saved: true }));
+  return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
 app.get("/api/repos", async (c) => {
