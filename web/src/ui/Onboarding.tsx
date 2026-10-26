@@ -27,13 +27,14 @@ const SIM_REPOS: Repo[] = [
   { fullName: "you/demo-shop", blurb: "Demo shop · sample issues", issues: 3 },
 ];
 
-// The welcome tour plays on the real map, a demo shop in the sim (ui/IntroTour.tsx). It stays off by default
-// until Justin signs off on it (2026-10-26): ?intro=1 shows it.
+// The welcome tour plays on the real map, a demo shop in the sim (ui/IntroTour.tsx). New players see it
+// first, once per browser (Justin approved it, 2026-10-26). ?intro=1 replays it, ?intro=0 skips it.
 const TOUR: SourceConfig = { kind: "sim", repo: "", scenario: "intro" };
-// Storage can be off (private windows), so seen fails open.
-const INTRO_ON = new URLSearchParams(location.search).get("intro") === "1";
+const INTRO_PARAM = new URLSearchParams(location.search).get("intro");
+// Storage can be off (private windows), so seen fails open: the tour plays again, which is fine.
 function introSeen() {
-  if (!INTRO_ON) return true;
+  if (INTRO_PARAM === "0") return true;
+  if (INTRO_PARAM === "1") return false;
   try {
     return localStorage.getItem("shiptorio:intro") === "1";
   } catch {
@@ -58,7 +59,7 @@ function Coach({ children }: { children: React.ReactNode }) {
 
 export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
   // the tour comes first, before anyone's asked to sign in (playtest #107)
-  const [step, setStep] = useState<OnboardStep>(initial === "hello" && !introSeen() ? "intro" : initial === "intro" && !INTRO_ON ? "repo" : initial);
+  const [step, setStep] = useState<OnboardStep>(initial === "hello" && !introSeen() ? "intro" : initial === "intro" && INTRO_PARAM === "0" ? "repo" : initial);
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -112,8 +113,10 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
                 SIGN IN WITH GITHUB
               </button>
-              
             </div>
+            <button type="button" className="linkish ob-replay" onClick={() => setStep("intro")}>
+              Watch the intro again
+            </button>
             {!live && <p className="psub ob-sim-note">Sandbox tour · sample repo and issues · no real sign-in</p>}
             <p className="ob-credit">powered by Meta Muse Spark</p>
           </>
