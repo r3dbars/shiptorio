@@ -1,5 +1,7 @@
 # The growth loop (prototype)
 
+**Review boundary:** live growth is paused until an authorized ordered, whole-window unique-person funnel query is implemented. The existing route traffic poll is context only. Simulator cohorts are synthetic; no real conversion or impact is validated by this prototype. Final comparisons require the full fixed window; missing/underpowered evidence stays inconclusive.
+
 The first loop past code, toward the long-term vision in `docs/VISION.md` ("Where it goes": marketing,
 acquisition, retention, same game, more districts). PR #177.
 

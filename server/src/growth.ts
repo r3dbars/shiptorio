@@ -3,7 +3,7 @@
 // that dropped (with no experiment already on it) comes back as a proposal for Spark to turn into one.
 // Pure: the Factory does the Spark call through think() and ingests the proposal as ore.
 
-import { findFunnelDrop, guessFunnel, MEASURE_DAYS, stepCounts, updateExperiment, type Experiment, type FunnelDrop, type FunnelStep, type Item, type RouteUsers, type Station } from "@shiptorio/shared";
+import { findFunnelDrop, guessFunnel, MEASURE_DAYS, stepCounts, updateExperiment, type Experiment, type FunnelDrop, type FunnelStep, type Item, type RouteUsers, type FunnelWindow, type Station } from "@shiptorio/shared";
 import type { Signal } from "./sources/types";
 import type { RouteDay } from "./sources/posthog";
 
@@ -30,26 +30,30 @@ export interface GrowthTick {
   drop?: FunnelDrop; // a funnel step that dropped with nothing on it yet: ask Spark for an experiment
 }
 
-export function growthTick(experiments: Experiment[], items: Item[], users: RouteUsers[], now: number, step: FunnelStep | null = guessFunnel([...new Set(users.map((u) => u.route))])): GrowthTick {
+export function growthTick(experiments: Experiment[], items: Item[], windows: FunnelWindow[], now: number, step: FunnelStep | null = guessFunnel([...new Set(windows.flatMap(w => [w.from, w.to]))])): GrowthTick {
   const decided: Experiment[] = [];
   const next = experiments.map((exp) => {
     const item = exp.itemId ? items.find((i) => i.id === exp.itemId) : undefined;
     // the PR launched: freeze the week before as the baseline, start the watch
     if (exp.state === "building" && item?.state === "launched") {
       const launchedAt = item.orbit?.since ?? item.updatedAt;
-      return { ...exp, state: "measuring" as const, prNumber: item.orbit?.prNumber ?? item.prNumber, launchedAt, baseline: stepCounts(users, exp.step, daysBefore(launchedAt, 7)), daysWatched: 0 };
+      const baseline = stepCounts(windows, exp.step, daysBefore(launchedAt, 7));
+      if (!baseline) return exp; // No invented zero baseline when the query window is missing.
+      return { ...exp, state: "measuring" as const, prNumber: item.orbit?.prNumber ?? item.prNumber, launchedAt, baseline, daysWatched: 0 };
     }
     if (exp.state === "building" && !item) return { ...exp, state: "dropped" as const }; // the ore was closed before it shipped
     if (exp.state !== "measuring" || !exp.launchedAt) return exp;
     const days = daysAfter(exp.launchedAt, now, exp.windowDays);
     if (!days.size) return exp;
-    const out = updateExperiment(exp, stepCounts(users, exp.step, days), days.size, now);
+    const after = stepCounts(windows, exp.step, days);
+    if (!after) return exp; // Failed/incomplete cohort reads do not finalize the experiment.
+    const out = updateExperiment(exp, after, days.size, now);
     if (out.state !== "measuring" && out !== exp) decided.push(out);
     return out;
   });
   const changed = next.some((e, i) => e !== experiments[i]);
   const open = (e: Experiment) => e.state === "proposed" || e.state === "building" || e.state === "measuring";
-  const drop = step && !next.some((e) => e.step.label === step.label && open(e)) ? findFunnelDrop(users, step, now) ?? undefined : undefined;
+  const drop = step && !next.some((e) => e.step.label === step.label && open(e)) ? findFunnelDrop(windows, step, now) ?? undefined : undefined;
   return { experiments: next.slice(0, MAX_EXPERIMENTS), changed, decided, drop };
 }
 

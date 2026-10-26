@@ -15,6 +15,7 @@ import {
   TECHS,
   type Belt,
   type FactoryState,
+  type FunnelWindow,
   type Item,
   type Machine,
   type Move,
@@ -793,10 +794,13 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   /** The growth loop (server/src/growth.ts): measure launched experiments, and turn a funnel drop into a new one. */
-  private async growthPoll(rows: RouteDay[], keyEvent: string, now: number): Promise<void> {
+  private async growthPoll(rows: RouteDay[], keyEvent: string, now: number, windows: FunnelWindow[] = []): Promise<void> {
     const s = this.state!;
-    const users = routeUsers(rows, keyEvent);
-    const tick = growthTick(s.experiments ?? [], s.items, users, now);
+    const users = routeUsers(rows, keyEvent); // Traffic context, not an ordered funnel.
+    // The route poll cannot supply unique-person cohort conversions. A future
+    // authorized funnel query must provide these windows before live growth runs.
+    if (!windows.length) return;
+    const tick = growthTick(s.experiments ?? [], s.items, windows, now);
     if (tick.changed) await this.patch({ experiments: tick.experiments });
     for (const exp of tick.decided) {
       // the call is plain math (shared/src/growth.ts), so it goes in the floor log, not the planner's decision log

@@ -1174,7 +1174,7 @@ export class FactoryScene {
       case "measure": {
         // the growth loop: the newest experiment past its launch sets the dial
         const exp = this.state!.experiments?.find((e) => e.launchedAt);
-        return !exp ? "IDLE" : exp.state === "won" ? "LIFT" : exp.state === "lost" ? "HURT" : exp.state === "flat" ? "NO LIFT" : "MEASURING";
+        return !exp || exp.state === "inconclusive" ? "IDLE" : exp.state === "won" ? "LIFT" : exp.state === "lost" ? "HURT" : exp.state === "flat" ? "NO LIFT" : "MEASURING";
       }
       default:
         return failing ? "REJECT" : backed ? "BACKED UP" : "SCANNING";

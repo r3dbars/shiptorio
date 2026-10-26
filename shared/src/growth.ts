@@ -18,6 +18,8 @@ export const MIN_LIFT = 0.02; // relative lift under 2% is "no lift" even when s
 
 /** Unique-person counts returned by one ordered-funnel query over the whole window.
  * Summing daily route totals (or daily uniques) cannot recover an ordered cohort. */
+/** Traffic context only; route totals are never conversion evidence. */
+export interface RouteUsers { route: string; day: string; users: number }
 export interface StepCounts { entered: number; converted: number; days: number }
 export interface FunnelWindow extends StepCounts {
   from: string; to: string; startsOn: string; endsOn: string;
