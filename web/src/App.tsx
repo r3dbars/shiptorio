@@ -700,7 +700,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
           </section>
         ) : (
-          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} nudge={whatNext} onNudge={onNudge} />
+          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} />
         )}
 
         {!checkin && (
