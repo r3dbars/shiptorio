@@ -23,6 +23,7 @@ import { ShipCelebration } from "./ui/ShipCelebration";
 import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
+import { AchievementToast, AchievementsSheet, useAchievements } from "./ui/Achievements";
 import { checkStationId } from "@shiptorio/shared";
 
 const STATE_LABEL: Record<Item["state"], string> = {
@@ -67,6 +68,7 @@ const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
+type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "achievements";
 const WORLD_KEY = "shiptorio:world";
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
@@ -116,8 +118,10 @@ function buildSlot(state: FactoryState) {
 // config: the welcome tour runs the App on its own sim (ui/Onboarding.tsx). onIntroDone: where the tour's last button goes.
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
-  const { state, log, status, send } = useFactory(cfg);
+  const { state, log, status, send: sendRaw } = useFactory(cfg);
   const intro = introMode(cfg);
+  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw);
+  const send = ach.send; // a card answered counts toward the day's streak
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
@@ -145,7 +149,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -237,7 +241,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -409,6 +413,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               <Icon name="flask" size={20} />
             </button>
           )}
+          {ach.count > 0 && (
+            // Achievements show up with the first one earned.
+            <button
+              type="button"
+              className={`hud-iconbtn ach-btn${ach.toast ? " new" : ""}`}
+              aria-pressed={sheet === "achievements"}
+              onClick={() => toggleSheet("achievements")}
+              aria-label={`Achievements, ${ach.count} earned`}
+              title={`Achievements · ${ach.count} earned`}
+            >
+              <Icon name="medal" size={20} />
+            </button>
+          )}
           <button type="button" className="hud-iconbtn" aria-label={`Activity, ${waiting} waiting on you`} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
             {waiting > 0 && <span className="n">{waiting}</span>}
             <Icon name="bell" size={20} />
@@ -462,6 +479,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
+        ) : sheet === "achievements" ? (
+          <AchievementsSheet earned={ach.earned} state={state} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
@@ -597,6 +616,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           )}
         </nav>
         )}
+
+        <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
 

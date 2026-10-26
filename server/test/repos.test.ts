@@ -75,6 +75,6 @@ test("achievements get a bigger pref, still capped", async () => {
   expect((await put(JSON.stringify({ achievements: earned }))).status).toBe(200);
   expect((await put(JSON.stringify({ achievements: "x".repeat(2049) }))).status).toBe(400);
   expect((await put(JSON.stringify({ intro: "x".repeat(65) }))).status).toBe(400);
-  const me = await (await get(env, "/api/me", cookie)).json();
+  const me = (await (await get(env, "/api/me", cookie)).json()) as { prefs: Record<string, string> };
   expect(me.prefs.achievements).toBe(earned);
 });
