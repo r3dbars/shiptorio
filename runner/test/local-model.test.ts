@@ -1,0 +1,76 @@
+import { afterEach, expect, test } from "bun:test";
+import { mkdtemp, mkdir, rm, symlink, writeFile, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { assertLocalEndpoint, detectLocalModel, localModelConfig, parseLocalEdits, runLocalAssembler, OLLAMA_URL } from "../src/local-model";
+import { fakeOllama, type FakeOllama } from "./fake-ollama";
+
+let server: FakeOllama | undefined;
+let dirs: string[] = [];
+afterEach(async () => { server?.stop(); server = undefined; for (const d of dirs) await rm(d, { recursive: true, force: true }); dirs = []; });
+const checkout = async () => { const d = await mkdtemp(join(tmpdir(), "shiptorio-local-")); dirs.push(d); return d; };
+const edits = (files: { path: string; content: string }[], summary = "Fixed it") => JSON.stringify({ summary, files });
+
+test("config is opt-in, defaults to Ollama, and refuses endpoints off this machine or LAN", () => {
+  expect(localModelConfig({})).toBeNull();
+  expect(localModelConfig({ SHIPTORIO_LOCAL_MODEL: "qwen2.5-coder:7b" })).toEqual({ baseUrl: OLLAMA_URL, model: "qwen2.5-coder:7b" });
+  for (const ok of ["http://localhost:1234/v1", "http://127.0.0.1:8080/v1", "http://192.168.1.20:11434/v1", "http://gpu-box.local:8000/v1", "http://[::1]:11434/v1"]) expect(() => assertLocalEndpoint(ok)).not.toThrow();
+  for (const bad of ["https://api.openai.com/v1", "http://8.8.8.8/v1", "http://user:pw@localhost/v1", "file:///etc/passwd", "http://localhost.evil.com/v1", "nope"]) expect(() => assertLocalEndpoint(bad)).toThrow();
+  expect(() => localModelConfig({ SHIPTORIO_LOCAL_MODEL: "x; rm -rf /" })).toThrow();
+});
+
+test("detection reports a loaded model and explains a missing one", async () => {
+  server = fakeOllama(() => "{}", ["llama3.2:3b", "qwen2.5-coder:7b"]);
+  expect((await detectLocalModel({ baseUrl: server.url, model: "qwen2.5-coder:7b" })).ok).toBe(true);
+  const missing = await detectLocalModel({ baseUrl: server.url, model: "gemma:2b" });
+  expect(missing.ok).toBe(false);
+  expect(missing.reason).toContain("gemma:2b");
+  expect((await detectLocalModel({ baseUrl: "http://127.0.0.1:1/v1", model: "x" })).ok).toBe(false);
+});
+
+test("the model's reply is untrusted: JSON only, approved paths only, no duplicates", () => {
+  expect(parseLocalEdits("```json\n" + edits([{ path: "README.md", content: "hi" }]) + "\n```", ["README.md"]).files).toHaveLength(1);
+  expect(() => parseLocalEdits("Sure! Here is the fix", ["README.md"])).toThrow("JSON");
+  expect(() => parseLocalEdits(edits([]), ["README.md"])).toThrow("no file edits");
+  expect(() => parseLocalEdits(edits([{ path: ".github/workflows/ci.yml", content: "x" }]), ["README.md"])).toThrow("outside");
+  expect(() => parseLocalEdits(edits([{ path: "README.md", content: "a" }, { path: "README.md", content: "b" }]), ["README.md"])).toThrow("outside");
+  expect(() => parseLocalEdits(JSON.stringify({ files: [{ path: "README.md", content: 5 }] }), ["README.md"])).toThrow("malformed");
+});
+
+test("assembler sends the plan and files to the local model and writes only approved edits", async () => {
+  const work = await checkout();
+  await writeFile(join(work, "README.md"), "Run bun isntall\n");
+  server = fakeOllama(body => {
+    expect(body.model).toBe("qwen2.5-coder:7b");
+    expect(body.messages[1].content).toContain("Fix the typo");
+    expect(body.messages[1].content).toContain("Run bun isntall");
+    return edits([{ path: "README.md", content: "Run bun install\n" }, { path: "docs/new.md", content: "# New\n" }], "Fixed the typo");
+  });
+  const out = await runLocalAssembler({ plan: "Fix the typo in README", allowedPaths: ["README.md", "docs/new.md"] }, work, { baseUrl: server.url, model: "qwen2.5-coder:7b" });
+  expect(out).toEqual({ summary: "Fixed the typo", paths: ["README.md", "docs/new.md"] });
+  expect(await readFile(join(work, "README.md"), "utf8")).toBe("Run bun install\n");
+  expect(await readFile(join(work, "docs/new.md"), "utf8")).toBe("# New\n");
+  expect(server.requests).toHaveLength(1);
+});
+
+test("assembler refuses big jobs, symlink escapes, empty edits and endpoint errors", async () => {
+  const work = await checkout(), outside = await checkout();
+  const config = () => ({ baseUrl: server!.url, model: "qwen2.5-coder:7b" });
+  server = fakeOllama(() => edits([{ path: "link.md", content: "pwned" }]));
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["a", "b", "c", "d"] }, work, config())).rejects.toThrow("subscription");
+  expect(server.requests).toHaveLength(0);
+  await writeFile(join(outside, "secret.md"), "keep");
+  await symlink(join(outside, "secret.md"), join(work, "link.md"));
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["link.md"] }, work, config())).rejects.toThrow("regular file");
+  await mkdir(join(work, "real"));
+  await symlink(outside, join(work, "real", "dir"));
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["real/dir/secret.md"] }, work, config())).rejects.toThrow("regular directory");
+  expect(await readFile(join(outside, "secret.md"), "utf8")).toBe("keep");
+  server.stop();
+  await writeFile(join(work, "same.md"), "same");
+  server = fakeOllama(() => edits([{ path: "same.md", content: "same" }]));
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["same.md"] }, work, config())).rejects.toThrow("no changes");
+  server.stop();
+  server = fakeOllama(() => new Response("model not found", { status: 404 }));
+  await expect(runLocalAssembler({ plan: "x", allowedPaths: ["same.md"] }, work, config())).rejects.toThrow("404");
+});
