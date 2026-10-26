@@ -1,7 +1,7 @@
 // Repo-scoped, expiring runner pairing. This is never a browser session token.
 const enc = new TextEncoder();
 const encode = (s: string) => btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-export interface RunnerIdentity { repo: string; pairId: string; expires: number; user?: { login: string; expiresAt: number } }
+export interface RunnerIdentity { repo: string; pairId: string; expires: number; user?: import("./authorization").AccessUser }
 async function signature(secret: string, text: string) {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return encode(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)))));

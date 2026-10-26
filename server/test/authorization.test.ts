@@ -1,5 +1,5 @@
 import { expect, it, mock } from 'bun:test';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { repoAccess, requireUser } from '../src/authorization';
 import { makeSessionCookie } from '../src/session';
 import { browserSocketEpoch } from '../src/browser-socket';
@@ -12,17 +12,20 @@ const { Factory } = await import('../src/factory');
 const origin = 'https://shiptorio.com';
 const secret = 'test-isolation-session', password = 'test-isolation-preview';
 async function cookies(login: string) {
-  return (await makeSessionCookie(secret, login)).split(';')[0] + '; ' + (await makeSessionCookie(`${secret}:${password}`, 'preview')).split(';')[0].replace('shiptorio_session=', 'shiptorio_access=');
+  return (await makeSessionCookie(secret, login, Date.now(), { sid: login, uid: login === 'alice' ? 11 : 22 })).split(';')[0] + '; ' + (await makeSessionCookie(`${secret}:${password}`, 'preview')).split(';')[0].replace('shiptorio_session=', 'shiptorio_access=');
 }
 function fixture() {
   const repos = new Map([['alice/private', 11], ['bob/private', 22]]);
   const installs = new Set([11, 22]);
   const cache = new Map<string, { expiresAt: number }>();
-  for (const [repo, id] of repos) cache.set(`access:v1:${id}:${repo}:${repo.split('/')[0]}`, { expiresAt: Date.now() + 59000 });
+  for (const [repo, id] of repos) cache.set(`access:v2:${id}:${repo}:${id}`, { expiresAt: Date.now() + 59000 });
   let factoryCalls = 0, writes = 0;
   const DB = { prepare(sql: string) { let args: unknown[] = []; const stmt = {
     bind(...values: unknown[]) { args = values; return stmt; },
     async first() {
+      if (sql.startsWith('SELECT u.id, u.login FROM sessions')) return { id: args[1], login: args[1] === 11 ? 'alice' : 'bob' };
+      if (sql.includes('FROM user_repos WHERE')) return String(args[1]).startsWith(args[0] === 11 ? 'alice/' : 'bob/') ? { installation_id: args[0] } : null;
+      if (sql.includes('FROM user_installations WHERE')) return args[0] === args[1] ? { installation_id: args[1] } : null;
       if (sql === 'SELECT installation_id FROM repos WHERE full_name = ?') return repos.has(String(args[0])) ? { installation_id: repos.get(String(args[0])) } : null;
       if (sql === 'SELECT id FROM installations WHERE id = ?') return installs.has(Number(args[0])) ? { id: args[0] } : null;
       throw new Error(`Unexpected query ${sql}`);
@@ -82,7 +85,7 @@ it('GitHub refresh checks installation identity and effective user permission; e
   f.cache.clear();
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   f.env.GITHUB_APP_PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-  const user = { login: 'bob', expiresAt: Date.now() + 60000 };
+  const user = { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 };
   const original = globalThis.fetch;
   const paths: string[] = [];
   let permission = 'write', installed = 22, fail = false;
@@ -97,9 +100,9 @@ it('GitHub refresh checks installation identity and effective user permission; e
     permission = 'none'; expect(await repoAccess(f.env as never, user, 'bob/private')).toBeNull();
     permission = 'admin'; installed = 11; expect(await repoAccess(f.env as never, user, 'bob/private')).toBeNull();
     installed = 22; fail = true;
-    f.cache.set('access:v1:22:bob/private:bob', { expiresAt: Date.now() - 1 });
+    f.cache.set('access:v2:22:bob/private:22', { expiresAt: Date.now() - 1 });
     expect(await repoAccess(f.env as never, user, 'bob/private')).toBeNull();
-    f.cache.set('access:v1:22:bob/private:bob', { expiresAt: Date.now() + 3600000 });
+    f.cache.set('access:v2:22:bob/private:22', { expiresAt: Date.now() + 3600000 });
     expect(await repoAccess(f.env as never, user, 'bob/private')).toBeNull();
   } finally { globalThis.fetch = original; }
 });
@@ -110,7 +113,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
   const storage = { get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
   let closed = 0, sent = 0;
-  const auth = { login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env), repo: 'bob/private' };
+  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env), repo: 'bob/private' };
   const ws = { deserializeAttachment: () => auth, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
   const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, f.env as never);
   for (const repo of ['bob/private', 'alice/private']) {
@@ -124,7 +127,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   await (factory as unknown as { broadcast(value: unknown): Promise<void> }).broadcast({ type: 'snapshot', state });
   expect((data.get('state') as FactoryState).machines).toHaveLength(state.machines.length);
   expect(sent).toBe(0); expect(closed).toBe(3);
-  auth.login = 'alice';
+  auth.login = 'alice'; auth.user = { id: 11, sessionHash: createHash('sha256').update('alice').digest('hex'), login: 'alice', expiresAt: Date.now() + 60000 };
   await factory.webSocketMessage(ws, JSON.stringify({ type: 'place_machine', machineType: 'assembler', x: 22, y: 22, repo: 'bob/private' }));
   expect((data.get('state') as FactoryState).machines).toHaveLength(state.machines.length);
   f.repos.delete('alice/private');
@@ -135,7 +138,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
 it('runner capability is confined to pairing user, installation and repo, including renewal', async () => {
   const f = fixture();
   const send = async (repo: string, login?: string) => {
-    const token = await pairToken(secret, { repo, pairId: 'test', expires: Date.now() + 60000, ...(login ? { user: { login, expiresAt: Date.now() + 60000 } } : {}) });
+    const token = await pairToken(secret, { repo, pairId: 'test', expires: Date.now() + 60000, ...(login ? { user: { id: login === 'alice' ? 11 : 22, sessionHash: createHash('sha256').update(login).digest('hex'), login, expiresAt: Date.now() + 60000 } } : {}) });
     return app.fetch(new Request(`${origin}/api/runner/${repo}/renew`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }), f.env as never);
   };
   expect((await send('alice/private', 'bob')).status).toBe(403);

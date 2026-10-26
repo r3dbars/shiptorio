@@ -12,31 +12,48 @@ export interface CredsEnv extends SentrySourceEnv, PostHogSourceEnv {
   POSTHOG_REPO?: string;
 }
 
+// Keys are per repo (`cred:<kind>:<owner/name>`), so one player's Sentry or PostHog never feeds another
+// player's map. Keys saved before that (`cred:<kind>`) still count, but only for the repo they were linked to.
+const key = (kind: MineKind, repo: string) => `cred:${kind}:${repo.toLowerCase()}`;
+
 async function stored<T>(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<Partial<T>> {
-  return ((await env.CACHE?.get<T>(repo ? `cred:${kind}:${repo.toLowerCase()}` : `cred:${kind}`, "json").catch(() => null)) ?? {}) as Partial<T>;
+  const read = (k: string) => env.CACHE?.get<T>(k, "json").catch(() => null) ?? Promise.resolve(null);
+  if (repo) {
+    const own = await read(key(kind, repo));
+    if (own) return own as Partial<T>;
+    if ((await linkedRepo(env, kind)) !== repo.toLowerCase()) return {};
+  }
+  return ((await read(`cred:${kind}`)) ?? {}) as Partial<T>;
+}
+
+/** Keys set as Worker secrets belong to the operator's own map: the pinned repo, else whichever map linked them first. */
+async function secretsApply(env: CredsEnv, kind: MineKind, repo?: string | null): Promise<boolean> {
+  if (!repo) return true;
+  const linked = await linkedRepo(env, kind);
+  return linked === repo.toLowerCase();
 }
 
 export async function sentryCreds(env: CredsEnv, repo?: string | null): Promise<SentryCreds> {
-  if (env.SENTRY_CLIENT_SECRET && (!repo || repo.toLowerCase() === await linkedRepo(env, "sentry"))) return { clientSecret: env.SENTRY_CLIENT_SECRET };
+  if (env.SENTRY_CLIENT_SECRET && (await secretsApply(env, "sentry", repo))) return { clientSecret: env.SENTRY_CLIENT_SECRET };
   return stored<SentryCreds>(env, "sentry", repo);
 }
 
 export async function postHogCreds(env: CredsEnv, repo?: string | null): Promise<PostHogCreds> {
-  if (env.POSTHOG_API_KEY && env.POSTHOG_PROJECT_ID && (!repo || repo.toLowerCase() === await linkedRepo(env, "posthog"))) return { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
+  if (env.POSTHOG_API_KEY && env.POSTHOG_PROJECT_ID && (await secretsApply(env, "posthog", repo))) return { apiKey: env.POSTHOG_API_KEY, projectId: env.POSTHOG_PROJECT_ID, host: env.POSTHOG_HOST, keyEvent: env.POSTHOG_KEY_EVENT };
   return stored<PostHogCreds>(env, "posthog", repo);
 }
 
 export async function saveCreds(env: CredsEnv, kind: MineKind, creds: SentryCreds | PostHogCreds, repo: string): Promise<void> {
   if (!env.CACHE) throw new Error("no KV binding");
-  await env.CACHE.put(repo ? `cred:${kind}:${repo.toLowerCase()}` : `cred:${kind}`, JSON.stringify(creds));
+  await env.CACHE.put(key(kind, repo), JSON.stringify(creds));
 }
 
-/** The one repo whose factory a mine feeds (Shiptorio is single-player for now). */
+/** The repo the legacy shared keys and the old /webhooks/sentry URL feed. Per-repo keys don't need it. */
 export async function linkedRepo(env: CredsEnv, kind: MineKind): Promise<string | null> {
   const pinned = kind === "sentry" ? env.SENTRY_REPO : env.POSTHOG_REPO;
   return pinned?.toLowerCase() || ((await env.CACHE?.get(`link:${kind}`).catch(() => null)) ?? null);
 }
 
 export async function linkRepo(_env: CredsEnv, _kind: MineKind, _repo: string | null): Promise<void> {
-  // Connection state is owned by the repo's DO. Legacy global links are read-only.
+  // Per-repo DO state owns connection lifecycle. Legacy global links are read-only.
 }

@@ -3,10 +3,10 @@
 ## Access model
 
 Every live factory belongs to a canonical lowercase `owner/repo`. Preview access
-is an outer gate, never repository authorization. `requireUser(request, env)` is
-the sole adapter to the accounts lane's user/session model; until its changes land,
-it validates the existing signed, expiring session and preview allowlist. There
-are no parallel user/session tables in this change.
+is an outer gate, never repository authorization. `requireUser(request, env)` uses the accounts lane's `currentUser` and revocable session rows from PR #160.
+The same GitHub user id and SHA-256 session reference follow browser sockets and
+runner capabilities; session revocation is checked in D1 on every access check.
+No additional user or session tables are introduced.
 
 `repoAccess(env, user, repo)` requires a current D1 repo row and its installation
 row, verifies the installation against GitHub, and checks the user's effective
@@ -18,7 +18,8 @@ installation token is only used internally; browser responses never contain it.
 
 Positive grants are cached under installation + repo + user in KV for 60 seconds.
 The value also contains an absolute expiry; eventual KV reads cannot extend it.
-Every check first queries D1, so a processed uninstall/removal overrides cached
+Every check first queries D1 for the live session, `user_repos`,
+`user_installations` and the repo/installation rows, so a processed uninstall/removal overrides cached
 grants. Collaborator permission revocation may take up to that 60-second cache
 window (and GitHub's own propagation delay) to become visible. Cache failures cause
 a fresh GitHub check; API failure never converts into permission. D1 is the local
@@ -55,7 +56,7 @@ survive user expiry, allowlist removal or processed repo uninstall.
 | `/auth/{login,callback,logout}` | Existing OAuth state/session flows; account persistence belongs to accounts lane |
 | `/setup`, `/setup/callback` | Disabled once App configured; before configuration also require a signed-in permitted user |
 | `POST /webhooks/github` | No user cookie; GitHub HMAC verified before dispatch, delivery dedupe; target DO selected from signed repo, lifecycle events update installation inventory |
-| `POST /webhooks/sentry?repo=...` | No user cookie; installed target repo and its own Sentry signature secret; target query cannot select another tenant's secret |
+| `POST /webhooks/sentry/:owner/:repo` (also `?repo=...`) | No user cookie; installed target repo and its own Sentry signature secret; target query cannot select another tenant's secret |
 | Legacy `/webhooks/sentry` | Only the deployment's pinned/previously linked legacy repo; never first-reader assignment |
 | Static assets/SPA | Preview gate; static shell contains no live repo state. Unknown `/api/*` and `/connect/*` return 404 rather than the SPA |
 | Admin/debug routes | None exposed. New repo routes inherit the common middleware; new global data routes must explicitly authorize |

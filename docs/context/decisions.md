@@ -275,8 +275,8 @@ is not itself an app failure. Console findings belong only to the current naviga
 All live repository entry points resolve the current signed-in user through
 `server/src/authorization.ts::requireUser`, then require both an installed GitHub App
 and effective GitHub repository permission. The accounts lane owns users/sessions;
-this seam deliberately adds no competing user or session tables. Until that lane
-lands it adapts the existing signed session. Positive membership grants last at
+this seam deliberately adds no competing user or session tables. PR #160 supplies `accounts.ts`, user ids and revocable sessions; the isolation
+integration uses those same rows for HTTP, sockets and runner capabilities. Positive membership grants last at
 most 60 seconds in KV; D1 installation/repo removal always takes precedence.
 Browser socket attachments bind the authenticated user to one canonical repo;
 connect, moves and outgoing broadcasts all check access. Existing runner pairings

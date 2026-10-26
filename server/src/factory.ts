@@ -1,4 +1,4 @@
-import { repoAccess, validRepo } from "./authorization";
+import { repoAccess, requireUser, validRepo } from "./authorization";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
@@ -673,7 +673,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, this.meta?.repo ?? this.state?.repo), this.publicUrl()) : postHogStatus(await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
+    const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, this.meta?.repo ?? this.state?.repo), this.publicUrl(), this.meta?.repo ?? this.state?.repo) : postHogStatus(await postHogCreds(this.env, this.meta?.repo ?? this.state?.repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     // The connect page needs to know which map to plug the mine into.
     const repo = this.meta?.repo ?? this.state?.repo;
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
@@ -799,7 +799,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       for (const ws of this.ctx.getWebSockets("web")) {
         try {
           const auth = ws.deserializeAttachment();
-          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !await repoAccess(this.env, auth, repo)) { ws.close(1008, "Repository access revoked"); continue; }
+          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); continue; }
           ws.send(text);
         } catch { try { ws.close(1008, "Sign in again"); } catch {} }
       }
@@ -1484,12 +1484,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
-    if (!auth) return new Response("login required", { status: 401 });
+    const user = await requireUser(request, this.env);
+    if (!auth || !user) return new Response("login required", { status: 401 });
     const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
     const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
     await this.load();
-    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, auth, repo)) return new Response("repository access denied", { status: 403 });
-    Object.assign(auth, { repo });
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
+    Object.assign(auth, { repo, user });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
@@ -1514,7 +1515,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
     await this.load();
     const repo = this.meta?.repo ?? this.state?.repo;
-    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !await repoAccess(this.env, auth, repo)) { ws.close(1008, "Repository access revoked"); return; }
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     let value: unknown;
