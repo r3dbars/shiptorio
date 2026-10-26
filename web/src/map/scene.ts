@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { lineFrame } from "./framing";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
-import { box, mat, mesh, own, rep, rnd, tex } from "./kit";
+import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
 import {
   buildAssembler,
   buildBattery,
@@ -687,6 +687,7 @@ export class FactoryScene {
       if (!v) {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
         const built = buildModel(m, power, kind);
+        trimShadows(built.g);
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
         const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
