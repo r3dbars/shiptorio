@@ -422,6 +422,15 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .pill.hot { color: var(--dark); background: var(--amber); }
 .meter { flex: none; width: 90px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .meter i { display: block; height: 100%; border-radius: 3px; }
+/* power sheet: one block per plant, name and cost on top, headroom meter and jobs under it */
+.plant { padding: 8px 0 10px; border-bottom: 1px solid var(--hair); }
+.plant .plant-top { display: flex; align-items: center; gap: 10px; }
+.plant .sq { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.plant-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0 0 20px; }
+.plant-bar .meter { flex: 1; width: auto; }
+.plant-num { flex: none; font: 600 12px var(--mono); color: var(--dim); white-space: nowrap; }
+.plant-note { margin: 8px 0 0 20px; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.plant.geothermal .plant-note { border-left: 2px solid #ff7a2a; padding-left: 8px; }
 .empty { margin: 0; color: var(--dim); font-size: 15px; }
 
 /* activity tray */

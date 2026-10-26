@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { perf } from "./perf";
 import { FrameGovernor } from "./quality";
 import { lineFrame } from "./framing";
+import { withPlants } from "./plants";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
 import {
@@ -73,7 +74,7 @@ export const HARNESS_NAME: Record<Harness, string> = {
   codex: "CODEX",
   cursor: "CURSOR",
   grok: "GROK",
-  local: "LOCAL",
+  local: "LOCAL MODEL",
 };
 
 type Pt = [number, number]; // x, z on the ground
@@ -322,6 +323,9 @@ export class FactoryScene {
   private readonly sun = new THREE.DirectionalLight(0xfff0d2, 0.95 * LEGACY_LIGHT);
   private readonly world = new THREE.Group(); // island + districts, rebuilt when districts change
   private readonly beltGroup = new THREE.Group();
+  private readonly powerGroup = new THREE.Group(); // power lines from each plant to the assemblers it feeds
+  private powerKey = "";
+  private cables: { paint: THREE.MeshPhongMaterial; color: THREE.Color; assembler: string }[] = [];
   private readonly machines = new Map<string, MachineView>();
   private readonly districts = new Map<string, DistrictView>();
   private readonly items = new Map<string, ItemView>();
@@ -418,7 +422,7 @@ export class FactoryScene {
     const small = window.matchMedia?.("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
     this.sun.shadow.mapSize.set(small ? 512 : 1024, small ? 512 : 1024);
     this.sun.shadow.bias = -0.0015;
-    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g, this.glow);
+    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.powerGroup, this.drone.g, this.glow);
     this.glow.visible = false;
     this.glow.castShadow = this.glow.receiveShadow = false;
     this.droneLabel = this.addLabel(this.drone.g, 1.3, "drone");
@@ -506,7 +510,9 @@ export class FactoryScene {
     this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
   }
 
-  update(state: FactoryState) {
+  update(raw: FactoryState) {
+    // a plant the live server only reported in state.power still gets a building on the map
+    const state = withPlants(raw);
     const first = !this.state;
     this.state = state;
     this.syncMachines(state.machines);
@@ -524,6 +530,7 @@ export class FactoryScene {
     const lineKey = JSON.stringify(state.machines.map(m => [m.id, m.x, m.y]));
     if (lineKey !== this.lineKey) { this.lineKey = lineKey; this.fitLine(state, first); }
     this.syncBelts(state);
+    this.syncPowerLines(state);
     this.syncDistricts(state);
     this.syncItems(state.items);
     this.synced = true;
@@ -1040,6 +1047,50 @@ export class FactoryScene {
     mergeStatic(this.beltGroup); // belts only scroll their texture; rails and brackets never move
   }
 
+  // Each solar or geothermal plant runs a power line on two poles to every assembler it feeds. The line sags
+  // between the poles and glows in the plant's color while that assembler is building.
+  private syncPowerLines(state: FactoryState) {
+    const links = state.machines
+      .filter((a) => a.type === "assembler" && a.powerId)
+      .map((a) => [a, state.machines.find((p) => p.id === a.powerId && (p.type === "solar" || p.type === "geothermal"))] as const)
+      .filter((l): l is readonly [Machine, Machine] => !!l[1]);
+    const key = JSON.stringify(links.map(([a, p]) => [a.id, a.x, a.y, p.id, p.type, p.x, p.y]));
+    if (key === this.powerKey) return;
+    this.powerKey = key;
+    this.powerGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.powerGroup.clear();
+    this.cables = [];
+    const H = 2.1, SAG = 0.4;
+    for (const [a, p] of links) {
+      const color = p.type === "geothermal" ? HARNESS_COLOR.local : solarVariant(state.power.find((x) => x.id === p.id)?.name)![1];
+      const A = this.machinePos(p), B = this.machinePos(a);
+      const dir = B.clone().sub(A).setY(0);
+      if (dir.length() < 3) continue;
+      dir.normalize();
+      const ends = [A.clone().addScaledVector(dir, 1.45), B.clone().addScaledVector(dir, -1.45)];
+      const yaw = Math.atan2(dir.x, dir.z);
+      for (const e of ends) {
+        box(0.12, H, 0.12, mat(0x3a3f47), e.x, H / 2, e.z, this.powerGroup).castShadow = false;
+        const arm = box(0.56, 0.07, 0.09, mat(0x8a94a3), e.x, H - 0.05, e.z, this.powerGroup);
+        arm.rotation.y = yaw;
+        arm.castShadow = false;
+        box(0.1, 0.14, 0.1, mat(color), e.x, H + 0.06, e.z, this.powerGroup).castShadow = false; // insulator in the plant's color
+      }
+      const paint = own(0x2b2f36);
+      const n = Math.max(4, Math.round(ends[0].distanceTo(ends[1]) / 0.6));
+      const at = (k: number) => ends[0].clone().lerp(ends[1], k).setY(H + 0.12 - SAG * 4 * k * (1 - k));
+      for (let i = 0; i < n; i++) {
+        const p0 = at(i / n), p1 = at((i + 1) / n);
+        const seg = box(0.07, 0.07, p0.distanceTo(p1) + 0.02, paint, (p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2, this.powerGroup);
+        seg.lookAt(p1);
+        seg.castShadow = false;
+      }
+      this.cables.push({ paint, color: new THREE.Color(color), assembler: a.id });
+    }
+  }
+
   // Every station drops its fails onto one red belt that runs behind the line, back to Spark's splitter.
   private layRework(stations: Machine[]) {
     const spl = this.ofType("splitter")[0];
@@ -1459,9 +1510,12 @@ export class FactoryScene {
         case "battery":
           this.setLabel(v.label, "BATTERY", `${Math.round((p?.level ?? 1) * 100)}% of plan window`);
           break;
-        case "geothermal":
-          this.setLabel(v.label, "GEOTHERMAL", p?.name ?? "local GPU");
+        case "geothermal": {
+          const plant = power.get(m.id);
+          const busy = state.machines.some((x) => x.powerId === m.id && x.state === "working");
+          this.setLabel(v.label, "GEOTHERMAL", plant && !plant.online ? `${plant.name} · offline` : `${plant?.name ?? "your computer"} · free${busy ? " · running" : ""}`, !!plant && !plant.online);
           break;
+        }
         default:
           this.setLabel(v.label, (m.type as string).toUpperCase(), "");
       }
@@ -1597,6 +1651,11 @@ export class FactoryScene {
     }
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
+    for (const c of this.cables) {
+      const live = this.state?.machines.find((m) => m.id === c.assembler)?.state === "working";
+      const k = live ? (this.reduceMotion ? 0.7 : 0.45 + 0.4 * Math.abs(Math.sin(t * 3.2))) : 0.12;
+      c.paint.emissive.copy(c.color).multiplyScalar(k);
+    }
     for (const w of this.waterfalls) w(dt, t);
     for (const e of this.extraTicks) e(t);
     for (const d of this.districts.values()) d.update(t);
