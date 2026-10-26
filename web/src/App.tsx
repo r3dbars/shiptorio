@@ -263,7 +263,18 @@ export function App() {
                 </span>
               </div>
             )}
-            {show("autonomy") && autonomy && (
+            {autonomy?.launches ? (
+              // Live: how much of the shipping runs itself. Shows up after the first rocket.
+              <div className="chip" title={permits.length ? `Ships on its own in ${permits.join(", ")}. The rest waits for you.` : "Every PR waits for you. Clean ships earn launch permits."}>
+                <span className="badge" style={{ background: "var(--blue)" }}>
+                  <Icon name="bot" size={14} />
+                </span>
+                <span>
+                  {Math.round((autonomy.automated ?? 0) * 100)}%
+                  <small>automated</small>
+                </span>
+              </div>
+            ) : show("autonomy") && autonomy && (
               <div
                 className="chip"
                 title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}

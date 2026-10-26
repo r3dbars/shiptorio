@@ -86,6 +86,7 @@ export const Item = z.object({
   body: z.string().optional(),
   url: z.string().optional(),
   district: z.string(), // top-level folder the work lands in, "/" for the root
+  lane: z.string().optional(), // the launch-permit lane its PR's files fall in ("docs", a folder); none = always asks
   state: ItemState,
   machineId: z.string().optional(),
   branch: z.string().optional(),
@@ -275,6 +276,8 @@ export const Autonomy = z.object({
     })
     .nullable(), // null at the top level
   ranAlone: z.number().int().default(0), // actions this week Spark took without asking
+  automated: z.number().min(0).max(1).optional(), // share of rockets that launched on a permit
+  launches: z.number().int().nonnegative().optional(), // rockets counted toward automated
 });
 export type Autonomy = z.infer<typeof Autonomy>;
 
