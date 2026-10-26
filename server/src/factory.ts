@@ -375,8 +375,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     });
   }
   async readyDevice() {
-    const record = await this.ctx.storage.get<DeviceRecord>("device");
-    if (record) { record.ready = true; await this.ctx.storage.put("device", record); }
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      if (record) { record.ready = true; await this.ctx.storage.put("device", record); }
+    });
   }
   async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
     if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
