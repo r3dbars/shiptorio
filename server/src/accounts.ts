@@ -1,4 +1,5 @@
-import { signupAllowed } from './signup';
+import { gh } from "./github";
+import { signupAllowed } from "./signup";
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
@@ -19,7 +20,6 @@ export interface GitHubUser { id: number; login: string; name?: string | null; a
 
 const isLocal = (url: URL) => url.hostname === "localhost" || url.hostname === "127.0.0.1";
 const MAX_AGE_MS = 14 * 86400_000;
-const API = "https://api.github.com";
 
 const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 async function sha256(text: string): Promise<string> {
@@ -72,12 +72,7 @@ export async function endSession(env: AccountsEnv, cookie: string | null): Promi
 // ---- which repos a player can reach ----
 
 async function userApi<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(API + path, {
-    signal: AbortSignal.timeout(15000),
-    headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json", "user-agent": "shiptorio", "x-github-api-version": "2022-11-28" },
-  });
-  if (!res.ok) throw new Error(`GitHub GET ${path} failed (${res.status})`);
-  return res.json() as Promise<T>;
+  return gh<T>(path, token);
 }
 
 interface Reach { installations: { id: number; account: string }[]; repos: { repo: string; installationId: number; defaultBranch: string | null }[] }
