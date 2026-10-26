@@ -144,6 +144,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!job || !this.meta || !this.state) throw new Error("Unknown job");
     if (job.status === "completed" && job.pairId === pairId && job.lease === receipt.lease) {
       await this.clearRunnerMove();
+      const completedItem = this.state.items.find(i => i.id === job.itemId);
+      const prNumber = completedItem?.prNumber ?? Number(job.prUrl?.split("/").at(-1));
+      if (prNumber) {
+        const pr = await gh<{ merged: boolean }>(`/repos/${job.repo}/pulls/${prNumber}`, await installationToken(this.env, this.meta.installationId));
+        if (pr.merged) await this.onPullClosed(prNumber, true);
+        else if (receipt.sha) await this.onCheckSuite([prNumber], true, "Reconcile completion receipt", receipt.sha);
+      }
       return { prUrl: job.prUrl }; // lost acknowledgment
     }
     if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
@@ -163,7 +170,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\nHuman review and merge required. Independent verification/review stations remain pending.` });
     job.status = "completed"; job.prUrl = pr.html_url;
     await this.ctx.storage.put(`runnerJob:${job.id}`, job);
-    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
+    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", inspection: { headSha: receipt.sha, state: "pending", humanApproved: false, stages: [{ gate: "ci", state: "pending", reason: "Waiting for current-head CI" }, { gate: "verify", state: "pending", reason: "Independent proof required" }, { gate: "ai", state: "pending", reason: "Independent review required" }, { gate: "human", state: "pending", reason: "Human merge required" }] }, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
     this.log("success", `Local ${job.harness} opened PR #${pr.number}; waiting for CI and independent verification.`, item.id);
     return { prUrl: pr.html_url };
   }
@@ -258,7 +265,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const s = this.state!;
     const existing = s.items.find((i) => i.ore?.fingerprint === signal.fingerprint || (signal.source === "github_issue" && i.id === `gh-${signal.externalId}`));
     if (signal.action === "close" || signal.action === "resolved") {
-      if (existing && existing.state !== "launched") await this.patch({ removed: [{ kind: "item", id: existing.id }] });
+      if (existing && !existing.prNumber && existing.state !== "launched") await this.patch({ removed: [{ kind: "item", id: existing.id }] });
       return;
     }
     const item = foldSignal(existing, signal);
@@ -392,7 +399,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!(await this.load()) || !this.meta) return;
     const token = await installationToken(this.env, this.meta.installationId);
     for (const item of this.state!.items) {
-      if (item.state !== "inspecting" || !item.prNumber || !prNumbers.includes(item.prNumber)) continue;
+      if (item.state !== "inspecting" || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
       const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
       if (result.state === "pending") continue;
       if (result.state === "passed") {
@@ -414,7 +421,22 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async onPullClosed(prNumber: number, merged: boolean): Promise<void> {
     if (!(await this.load())) return;
-    const item = this.state!.items.find((i) => i.prNumber === prNumber);
+    let item = this.state!.items.find((i) => i.prNumber === prNumber);
+    // Recover pre-fix issue-close ordering from our durable job and GitHub's real issue.
+    // Never synthesize a rocket for an unrelated PR or reopen the GitHub issue.
+    if (!item && merged && this.meta) {
+      const job = (await this.runnerJobs()).find(j => j.status === "completed" && j.prUrl?.endsWith(`/pull/${prNumber}`));
+      if (job) {
+        const token = await installationToken(this.env, this.meta.installationId);
+        const issue = await gh<NonNullable<GitHubPayload["issue"]>>(`/repos/${job.repo}/issues/${job.itemId.slice(3)}`, token);
+        const signal = normalizeGitHub({ repository: { full_name: job.repo }, issue })[0];
+        if (signal) {
+          const classification = await triage(this.env, { title: issue.title, body: issue.body ?? "", labels: [] }, this.state!.districts.map(d => d.name));
+          item = { ...foldSignal(undefined, { ...signal, action: "upsert" }), ...classification, state: "inspecting", branch: job.branch, prNumber, prUrl: job.prUrl, attempts: 1 };
+          await this.patch({ items: [item] });
+        }
+      }
+    }
     if (!item || item.state === "launched") return;
     if (!merged) {
       await this.patch({ removed: [{ kind: "item", id: item.id }] });
