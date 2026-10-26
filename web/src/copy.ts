@@ -366,6 +366,12 @@ export const STATION_COPY: Record<StationKind, PanelCopy> = {
     tag: ["green", "real world"],
     what: "Checks don't stop at merge. For 24 hours after a launch, orbit watch checks the real world: Sentry stays quiet, nobody reverts it, main stays green. If the bug comes back, it rides the rework belt with an orbit scar and that folder loses its launch permit.",
   },
+  measure: {
+    zone: "5 · Growth · after the launch",
+    name: "Measure station",
+    tag: ["green", "did it work?"],
+    what: "Shipping a growth change isn't the end. For a week after the launch, the measure station watches the same PostHog funnel step that dropped and compares it to the week before. Enough people and a clear jump: lift. A clear drop: it hurt, roll it back. Otherwise: no lift, try the next idea.",
+  },
   custom: {
     zone: "3 · Gauntlet",
     name: "Custom check",
@@ -468,11 +474,6 @@ export const MACHINE_NAME: Partial<Record<Machine["type"], string>> = {
 // ---------- sheets ----------
 
 export const THINKS = {
-  scoreTitle: "Scorecard",
-  scorePlans: "plans shipped",
-  scoreReviews: "reviews caught a problem",
-  scoreFallbacks: "calls a rule had to make",
-  scoreRatio: (done: number, total: number) => `${done} of ${total}`,
   title: "How it thinks",
   intro: "One model sorts your work, plans every job, reviews every PR and picks your next card. Your Claude or ChatGPT sign-ins build what it plans. It never writes code or skips a check.",
   decisions: "decisions",
@@ -482,6 +483,13 @@ export const THINKS = {
   latest: (sim: boolean) => `Latest calls${sim ? " · sandbox" : ""}`,
   empty: "Nothing yet. Decisions show up here as work comes in.",
   rule: "rule",
+  scorecard: "Scorecard",
+  plansShipped: "plans shipped",
+  reviewCatches: "reviews caught a problem",
+  ruleShare: "calls a backup rule made",
+  ofTotal: (n: number, total: number) => `${n} of ${total}`,
+  /** The one-line why on every card. */
+  why: "Why:",
   /** The credit, linked to the judge page on how the planner runs the factory. */
   credit: (model?: string) => `${CREDIT}${model ? ` · ${model}` : ""} · see how it runs Shiptorio →`,
   verb: {
@@ -495,6 +503,7 @@ export const THINKS = {
     research: "Picked a check",
     permit: "Weighed a permit",
     route: "Picked the power plant",
+    growth: "Picked an experiment",
   } as Record<ThoughtDecision, string>,
 };
 
