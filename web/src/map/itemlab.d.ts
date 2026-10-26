@@ -28,6 +28,7 @@ export function buildLaunchPad(): Built; // IDLE · COUNTDOWN · LAUNCH
 export function buildSolar(o: BuildOpts): Built; // SUNNY · CAPPED
 export function buildBelt(): Built; // RUNNING · JAMMED
 export function buildOre(o: BuildOpts): Built; // RICH · DEPLETED
+export function buildSupport(): Built; // QUIET · RICH · WAITING
 
 // The verification gauntlet (docs/LOOP.md), art round 2
 export function buildVerify(): Built; // IDLE · VERIFYING · PASS · FAIL · BACKED UP
