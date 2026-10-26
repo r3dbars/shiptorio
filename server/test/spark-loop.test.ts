@@ -24,7 +24,7 @@ test("assignment narrows reference files to explicit edit paths and refuses miss
   const candidates = ["server/src/factory.ts", "server/test/factory.test.ts", "shared/src/protocol.ts"];
   const run = async (files: unknown) => {
     let call = 0;
-    globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify(++call === 1 ? { tool: "read_issue", reason: "Understand goal persistence" } : call === 2 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Confirm existing protocol without editing it" } : { tool: "assign_job", reason: "Schema already supports goals", plan: "Persist the existing goal without changing schemas.", acceptance: ["Survives reload"], files }) } }] })) as typeof fetch;
+    globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify(++call === 1 ? { tool: "read_issue", reason: "Understand goal persistence" } : call === 2 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Confirm existing protocol without editing it" } : { tool: "assign_job", reason: "Schema already supports goals", plan: "Persist the existing goal without changing schemas.", acceptance: ["Survives reload"], files }) } }] })) as unknown as typeof fetch;
     return planLocalTask({ META_API_KEY: "test" }, { title: "Persist goal", body: "No schema changes", district: "server" }, candidates, async () => "existing schema", async () => {});
   };
   try {
