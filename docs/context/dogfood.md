@@ -22,9 +22,14 @@ Seeded issues (one per run):
 | --- | --- | --- | --- |
 | 1 | SAVE10 takes 10 cents off instead of 10% | `discount()` treats percent like cents | src |
 | 2 | An order of exactly $50.00 still pays shipping | `shipping()` uses `>` not `>=` | src |
-| 3 | Prices like $12.05 show as "$12.5" | `formatCents()` doesn't pad cents | src |
+| 3 | "Typo in the receipt docs: $12.05 reads as $12.5" | `formatCents()` doesn't pad cents. Title says docs/typo on purpose: Spark triage should see it's a code bug where a keyword rule would say docs | src |
 | 4 | Receipt says "2 items" when I bought 3 | `itemCount()` counts lines, not quantity | src |
 | 5 | README setup says npm, the project uses bun | docs only | docs |
+
+What to capture per run (from the Spark-central thread): Spark's planning comment on the issue
+(triage verdict + reason, each tool call in the five-turn loop, plan, allowed files), its AI review
+comment on the PR, and the `brain` decision log in the game ("how it thinks" panel). Also try one run
+where the first fix doesn't really fix the bug, so AI review fails it and the rework re-plan kicks in.
 
 ## Run log
 
