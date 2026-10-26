@@ -1,3 +1,4 @@
+import { membershipCache } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { unlimitedFactory } from "./browser-fixture";
 import { makeSessionCookie } from "../src/session";
@@ -9,7 +10,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
 const { default: app } = await import("../src/index");
 const secret = "test-repo-session", password = "test-repo-preview";
 const preview = async () => (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
-const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", FACTORY: unlimitedFactory, DB: testD1() });
+const baseEnv = () => ({ APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars,friend", FACTORY: unlimitedFactory, CACHE: membershipCache, DB: testD1() });
 const get = (env: object, path: string, cookie: string) => app.fetch(new Request(`https://shiptorio.com${path}`, { headers: { cookie } }), env as never);
 
 test("a player's repo cards list only the repos their GitHub account reaches, with legacy fields", async () => {
@@ -42,9 +43,9 @@ test("a factory is only served to players who can reach its repo", async () => {
   const theirs = `${await signedInCookie(env, "friend", ["friend/app"])}; ${await preview()}`;
   expect((await get(env, "/api/repos/r3dbars/shiptorio/runner/jobs", mine)).status).toBe(200);
   expect((await get(env, "/api/repos/R3dbars/Shiptorio/runner/jobs", mine)).status).toBe(200);
-  expect((await get(env, "/api/repos/r3dbars/shiptorio/runner/jobs", theirs)).status).toBe(404);
+  expect((await get(env, "/api/repos/r3dbars/shiptorio/runner/jobs", theirs)).status).toBe(403);
   const socket = await app.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/shiptorio/factory", { headers: { cookie: theirs, origin: "https://shiptorio.com" } }), env as never);
-  expect(socket.status).toBe(404);
+  expect(socket.status).toBe(403);
 });
 
 test("signing out deletes the session row, so the same cookie stops working", async () => {
