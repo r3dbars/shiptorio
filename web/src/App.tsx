@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { savePref } from "./account";
-import type { AutonomyLevel, FactoryState, Item, Move, PowerSource } from "@shiptorio/shared";
+import type { AutonomyLevel, FactoryState, Item, Move, PowerSource, WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
@@ -9,7 +9,7 @@ import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
 import { CheckIn } from "./ui/CheckIn";
-import { SupportPanel } from "./ui/SupportPanel";
+import { SupportPanel, supportReviewTarget } from "./ui/SupportPanel";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
@@ -145,6 +145,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     state?.stations?.some((st) => st.id === id) || id === "rework" || id.includes(":") ? id : state?.districts.some((d) => d.name === id) ? `d:${id}` : `m:${id}`;
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
+  const [supportReview, setSupportReview] = useState<string | null>(null);
+  const sendCard = (message: WebToServer) => {
+    const ticketId = supportReviewTarget(message, deck);
+    if (ticketId) { setSupportReview(ticketId); setPanel("m:ore-inbox"); setCheckin(false); return; }
+    send(message);
+  };
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
   const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
@@ -466,7 +472,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
-          <CheckIn deck={deck} autonomy={autonomy} send={send} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
+          <CheckIn deck={deck} autonomy={autonomy} send={sendCard} onFocus={setFocus} onClose={() => { setCheckin(false); setFocus(null); }} />
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label="The line">
             <div className="sheet-top">
@@ -551,7 +557,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             })}
           </section>
         ) : (
-          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
+          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} />
         )}
 
         {!checkin && (
@@ -599,7 +605,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         </nav>
         )}
 
-        {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />)}
+        {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} reviewTicket={supportReview} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />)}
 
         <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
           <div className="ptitle">{caption.title}</div>

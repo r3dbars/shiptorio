@@ -139,6 +139,8 @@ describe("nothing is sent without a player tap", () => {
     const original = globalThis.fetch;
     const outbound: string[] = [];
     let spark = 0;
+    let providerWait: Promise<void> | undefined;
+    let providerStarted: (() => void) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const body = String(init?.body ?? "");
@@ -150,6 +152,7 @@ describe("nothing is sent without a player tap", () => {
         return Response.json({ choices: [{ message: { content: JSON.stringify({ kind: "bug", district: "checkout", reason: "x" }) } }] });
       }
       outbound.push(url);
+      if (url.includes("api.intercom.io") && providerWait) { providerStarted?.(); await providerWait; }
       return Response.json({});
     }) as typeof fetch;
     try {
@@ -173,7 +176,7 @@ describe("nothing is sent without a player tap", () => {
       const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [socket] };
       const env = {
-        ...browserEnv, META_API_KEY: "fake-meta-key", INTERCOM_CLIENT_SECRET: "intercom-client-secret-123", INTERCOM_TOKEN: "intercom-token", INTERCOM_ADMIN_ID: "42",
+        ...browserEnv, META_API_KEY: "fake-meta-key", SUPPORT_REPO: "example/shop", INTERCOM_CLIENT_SECRET: "intercom-client-secret-123", INTERCOM_TOKEN: "intercom-token", INTERCOM_ADMIN_ID: "42",
         DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
         CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
       };
@@ -206,7 +209,9 @@ describe("nothing is sent without a player tap", () => {
 
       // The player taps Send on the card they're looking at: exactly one reply, that text, into the conversation.
       const fresh = saved().deck!.find((m) => m.id === `support:reply:${ticket.id}`)!;
-      await factory.webSocketMessage(socket, JSON.stringify({ type: "choose_move", moveId: fresh.id, optionId: "send" }));
+      await factory.webSocketMessage(socket, JSON.stringify({ type: "choose_move", moveId: fresh.id, optionId: "review" }));
+      expect(outbound.filter((u) => u.includes("api.intercom.io"))).toHaveLength(0);
+      await factory.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: saved().support![0].draft!.hash }));
       expect(outbound.filter((u) => u.includes("api.intercom.io/conversations/1911/reply"))).toHaveLength(1);
       const sent = saved().support![0];
       expect(sent.state).toBe("waiting_fix"); // a tracked bug: the "it's fixed" reply comes after the launch
@@ -220,17 +225,35 @@ describe("nothing is sent without a player tap", () => {
       expect(saved().support![0]).toMatchObject({ state: "drafted", draft: { purpose: "fixed" } });
       expect(outbound.filter((u) => u.includes("api.intercom.io"))).toHaveLength(1);
       const fixedCard = saved().deck!.find((m) => m.id === `support:reply:${ticket.id}`)!;
-      await again.webSocketMessage(socket, JSON.stringify({ type: "choose_move", moveId: fixedCard.id, optionId: "send" }));
+      await again.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: saved().support![0].draft!.hash }));
       expect(outbound.filter((u) => u.includes("api.intercom.io"))).toHaveLength(2);
       expect(saved().support![0].state).toBe("answered");
       expect(saved().metrics?.customersAnswered).toBe(1);
+      // A blocked provider cannot admit the same approved send twice or erase a newer edit.
+      await again.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "One more approved reply" }));
+      const sendHash = saved().support![0].draft!.hash;
+      let release!: () => void;
+      providerWait = new Promise<void>(resolve => { release = resolve; });
+      const started = new Promise<void>(resolve => { providerStarted = resolve; });
+      const pending = again.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
+      await started;
+      await again.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
+      await again.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "A newer draft that must survive" }));
+      release(); await pending;
+      expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
+      expect(saved().support![0].draft!.text).toBe("A newer draft that must survive");
+      expect(saved().support![0].sent).toHaveLength(3);
+      expect(saved().support![0].state).toBe("drafted");
+      const restarted = new Factory(ctx as never, env as never);
+      await restarted.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
+      expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
     } finally { globalThis.fetch = original; }
   });
 
   it("reply cards pin the exact draft and never claim to ship code", () => {
     const t: SupportTicket = { id: "sup-9", channel: "email", thread: "t", from: "lee@example.com", name: "Lee", subject: "Canada?", body: "Do you ship to Canada?", messages: 1, receivedAt: 1, state: "drafted", sent: [], draft: { text: "Hi Lee", hash: "abc", purpose: "answer", by: "spark", at: 1 } };
     const move = replyMove(t)!;
-    expect(move.options[0].actions[0]).toMatchObject({ tool: "send_customer_reply", args: { ticketId: "sup-9", draftHash: "abc" } });
+    expect(move.options[0].actions[0]).toMatchObject({ tool: "review_customer_reply", args: { ticketId: "sup-9" } });
     expect(move.kind).toBe("reply");
     expect(replyMove({ ...t, state: "answered" })).toBeNull();
   });
@@ -242,7 +265,8 @@ describe("support webhooks", () => {
     const queued: string[] = [];
     const token = "a".repeat(40);
     const env = {
-      SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SUPPORT_INBOUND_TOKEN: token, INTERCOM_CLIENT_SECRET: "intercom-client-secret-123",
+      CACHE: { get: async (key: string) => key === "cred:support:other/shop" ? { inboundToken: "c".repeat(40) } : null },
+      SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SUPPORT_REPO: "example/shop", SUPPORT_INBOUND_TOKEN: token, INTERCOM_CLIENT_SECRET: "intercom-client-secret-123",
       DB: { prepare: (sql: string) => {
         let values: unknown[] = [];
         const statement = {
@@ -253,18 +277,30 @@ describe("support webhooks", () => {
         expect(sql).toContain("support");
         return statement;
       } },
-      FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSupport: async (_id: string, m: { channel: string; from: string }) => { expect(repo).toBe("example/shop"); queued.push(`${m.channel}:${m.from}`); } }) },
+      FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSupport: async (_id: string, m: { channel: string; from: string }) => { expect(["example/shop", "other/shop"]).toContain(repo); queued.push(`${m.channel}:${m.from}`); } }) },
     };
     const email = JSON.stringify(fakeEmail("question"));
     const post = (path: string, body: string, headers: Record<string, string> = {}) => app.fetch(new Request(`https://shiptorio.com${path}`, { method: "POST", headers, body }), env as never);
     expect((await post(`/webhooks/support/example/shop/${"b".repeat(40)}`, email)).status).toBe(401);
+    expect((await post(`/webhooks/support/other/private/${token}`, email)).status).toBe(401);
     expect((await post(`/webhooks/support/example/shop/${token}`, email)).status).toBe(202);
     expect(((await (await post(`/webhooks/support/example/shop/${token}`, email)).json()) as { duplicate?: boolean }).duplicate).toBe(true);
+    expect((await post(`/webhooks/support/other/shop/${"c".repeat(40)}`, email)).status).toBe(202);
     const chat = JSON.stringify(fakeIntercom());
     expect((await post("/webhooks/intercom/example/shop", chat, { "x-hub-signature": `sha1=${"0".repeat(40)}` })).status).toBe(401);
     const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.INTERCOM_CLIENT_SECRET), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
     const sig = [...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(chat)))].map((x) => x.toString(16).padStart(2, "0")).join("");
+    expect((await post("/webhooks/intercom/other/private", chat, { "x-hub-signature": `sha1=${sig}` })).status).toBe(401);
     expect((await post("/webhooks/intercom/example/shop", chat, { "x-hub-signature": `sha1=${sig}` })).status).toBe(202);
-    expect(queued).toEqual(["email:lee@example.com", "intercom:rio@example.com"]);
+    expect(queued).toEqual(["email:lee@example.com", "email:lee@example.com", "intercom:rio@example.com"]);
   });
+});
+
+it("operator support secrets are pinned, and repository credentials stay separate", async () => {
+  const { supportCreds } = await import("../src/sources/support");
+  const env = { SUPPORT_REPO: "owner/operator", SUPPORT_INBOUND_TOKEN: "operator-secret", INTERCOM_TOKEN: "operator-intercom", CACHE: { get: async (key: string) => key === "cred:support:friend/shop" ? { inboundToken: "friend-secret" } : null } };
+  expect(await supportCreds(env as never, "owner/operator")).toMatchObject({ inboundToken: "operator-secret", intercomToken: "operator-intercom" });
+  expect(await supportCreds(env as never, "friend/shop")).toMatchObject({ inboundToken: "friend-secret", intercomToken: undefined });
+  expect(await supportCreds(env as never, "victim/private")).toMatchObject({ inboundToken: undefined, intercomToken: undefined });
+  expect(await supportCreds({ ...env, SUPPORT_REPO: undefined } as never, "owner/operator")).toMatchObject({ inboundToken: undefined });
 });

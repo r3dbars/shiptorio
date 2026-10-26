@@ -950,24 +950,41 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (dirty) await this.refreshDecisions();
   }
 
+  private supportSending = new Set<string>();
+
   /** The only way a reply leaves: a player's tap on that exact draft. */
   private async sendSupportReply(tap: PlayerTap): Promise<void> {
     const s = this.state!;
     const t = s.support?.find((x) => x.id === tap.ticketId);
-    if (!t?.draft) return;
-    const result = await deliverReply(this.env, await supportCreds(this.env, this.meta?.repo ?? s.repo), t, tap).catch((e: Error) => ({ via: "outbox" as const, ok: false, error: e.message.slice(0, 120) }));
-    if (!result.ok) { this.log("warn", result.error ?? "The reply didn't go out. Try again.", t.id); return; }
-    const purpose = t.draft.purpose, kind = t.triage?.kind;
-    const tracked = !!t.triage?.linkedItemId || !!t.issue;
-    const done = purpose === "fixed" || !(kind === "bug" || kind === "feature") || !tracked;
-    const next: SupportTicket = { ...t, state: done ? "answered" : "waiting_fix", draft: undefined, sent: [...t.sent, { at: Date.now(), purpose, via: result.via, ...(result.via === "outbox" ? { text: t.draft.text } : {}) }].slice(-20) };
-    const m = s.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
-    const answered = done && kind !== "spam";
-    await this.patch({ support: (s.support ?? []).map((x) => (x.id === t.id ? next : x)), ...(answered ? { metrics: { ...m, customersAnswered: m.customersAnswered + 1, shipScore: m.shipScore + 10 } } : {}) });
-    await this.decisionData();
-    this.openMoves = this.openMoves!.filter((x) => x.id !== `support:reply:${t.id}`);
-    const where = result.via === "intercom" ? "in Intercom" : result.via === "email" ? "by email" : "to the outbox (no mail sender connected yet, copy it from the support well)";
-    this.broadcast({ type: "log", level: "success", text: `Reply ${result.via === "outbox" ? "saved" : "sent"} ${where}${next.state === "waiting_fix" ? ". You'll get an “it's fixed” draft when the fix launches." : "."}`, at: Date.now(), actor: "player", tool: "send_customer_reply", approvedBy: "player", reason: "You tapped Send on the draft.", itemId: t.triage?.linkedItemId });
+    if (!t?.draft || t.state !== "drafted" || t.draft.hash !== tap.draftHash) return;
+    const key = `supportSend:${t.id}:${t.draft.hash}`;
+    // Synchronous guard covers concurrent events in this instance; storage covers reconnect/restart.
+    if (this.supportSending.has(key)) return;
+    this.supportSending.add(key);
+    try {
+      if (await this.ctx.storage.get(key)) { this.log("warn", "This draft already has a delivery attempt. Check its result before sending again.", t.id); return; }
+      await this.ctx.storage.put(key, { state: "sending", at: Date.now() });
+      const creds = await supportCreds(this.env, this.meta?.repo ?? s.repo);
+      const current = this.state!.support?.find(x => x.id === t.id);
+      if (current?.draft?.hash !== t.draft.hash || current.state !== "drafted") return;
+      const operator = this.env.SUPPORT_REPO?.toLowerCase() === s.repo.toLowerCase();
+      const sendEnv = operator ? this.env : { ...this.env, RESEND_API_KEY: undefined, SUPPORT_FROM: undefined };
+      const result = await deliverReply(sendEnv, creds, t, tap).catch(() => ({ via: "outbox" as const, ok: false, error: "Delivery result is uncertain. Check the provider before trying again." }));
+      await this.ctx.storage.put(key, { state: result.ok ? "sent" : "uncertain", at: Date.now() });
+      if (!result.ok) { this.log("warn", result.error ?? "The reply did not confirm delivery. Check the provider.", t.id); return; }
+      const latest = this.state!.support?.find(x => x.id === t.id);
+      if (!latest) return;
+      const unchanged = latest.draft?.hash === t.draft.hash && latest.messages === t.messages;
+      const purpose = t.draft.purpose, kind = t.triage?.kind;
+      const tracked = !!t.triage?.linkedItemId || !!t.issue;
+      const done = purpose === "fixed" || !(kind === "bug" || kind === "feature") || !tracked;
+      const next: SupportTicket = { ...latest, ...(unchanged ? { state: done ? "answered" as const : "waiting_fix" as const, draft: undefined } : {}), sent: [...latest.sent, { at: Date.now(), purpose, via: result.via, ...(result.via === "outbox" ? { text: t.draft.text } : {}) }].slice(-20) };
+      const m = this.state!.metrics ?? { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 };
+      const answered = unchanged && done && kind !== "spam";
+      await this.patch({ support: (this.state!.support ?? []).map(x => x.id === t.id ? next : x), ...(answered ? { metrics: { ...m, customersAnswered: m.customersAnswered + 1, shipScore: m.shipScore + 10 } } : {}) });
+      await this.offerSupportMoves();
+      this.log("success", result.via === "outbox" ? "Reply saved to the outbox; no external message was sent." : `Reply sent by ${result.via}.`, t.id);
+    } finally { this.supportSending.delete(key); }
   }
 
   private async editSupportReply(ticketId: string, text: string): Promise<void> {
@@ -1011,10 +1028,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!card.id.startsWith("support:")) return false;
     const action = option.actions[0];
     const ticketId = String(action?.args.ticketId ?? card.id.split(":").pop());
-    if (action?.tool === "send_customer_reply") {
-      const tap = tapFor(action.tool, ticketId, String(action.args.draftHash ?? ""));
-      if (tap) await this.sendSupportReply(tap);
-    } else if (action?.tool === "file_support_issue") await this.fileSupportIssue(ticketId);
+    if (action?.tool === "review_customer_reply") return true; // the browser opens the full preview; never send from a summary card
+    if (action?.tool === "send_customer_reply") return true; // retire legacy summary-card sends
+    if (action?.tool === "file_support_issue") await this.fileSupportIssue(ticketId);
     else await this.swipe(card, option.id === "skip" ? "once" : "defer");
     return true;
   }
