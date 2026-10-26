@@ -532,15 +532,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             ))}
             <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>See how the planner thinks</button>
-            {cfg.kind === "live" && state?.repo && (
-              <button type="button" className="credit-btn" onClick={async () => {
-                try {
-                  const response = await fetch(`/api/repos/${state.repo}/runner/revoke`, { method: "POST" });
-                  if (!response.ok) throw new Error("Revoke failed");
-                } catch { window.alert("Could not disconnect the runner. Try again."); }
-              }}>Disconnect local runner</button>
-            )}
-
             {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
               const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
               return (

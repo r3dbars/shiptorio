@@ -13,7 +13,7 @@ test.skipIf(process.platform !== "linux" || !Bun.which("bwrap"))("Linux sandbox 
     const attack = `import {readFileSync,writeFileSync} from "node:fs";
 if(process.env.SHIPTORIO_RUNNER_TOKEN)throw Error("credential leaked");
 try{readFileSync(${JSON.stringify(secret)});throw Error("host readable")}catch(e){if(e.message==="host readable")throw e}
-try{writeFileSync(${JSON.stringify(join(root, "escaped"))},"escape");throw Error("host writable")}catch(e){if(e.message==="host writable")throw e}
+try{writeFileSync(${JSON.stringify(join(root, "escaped"))},"escape")}catch{} // A private tmpfs may accept this path; the host file must stay absent below.
 try{await fetch("http://127.0.0.1:${server.port}",{signal:AbortSignal.timeout(500)});throw Error("network open")}catch(e){if(e.message==="network open")throw e}
 const child=Bun.spawn([process.execPath,"-e",${JSON.stringify(`require("node:fs").readFileSync(${JSON.stringify(secret)})`)}],{stdout:"ignore",stderr:"ignore"});
 if(await child.exited===0)throw Error("child escaped");writeFileSync("allowed","ok");console.log("isolated");`;
