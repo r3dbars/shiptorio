@@ -23,6 +23,7 @@ export function redact<T>(value: T): T {
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, SECRET.test(k) ? '[REDACTED]' : visit(x, depth + 1)]));
   };
   return visit(value, 0) as T;
+}
 
 /** One sanitizer for logs, errors and browser output. Never serialize raw Error objects. */
 export class Redactor {

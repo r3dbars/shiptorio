@@ -506,7 +506,7 @@ domain. Local test DSNs and fake credentials belong only in ignored `.dev.vars`.
 
 ### Goal 6 verification
 
-Local full check passed with 327 tests, one platform skip, typechecks and web build. In a real local
+Local full check passed with 343 tests, one platform skip, typechecks and web build. In a real local
 Workers runtime, the SDK delivered event `bb7fd4379e684c0c9307f69e4d5034bb` to an isolated local envelope
 receiver with matching request ID `0b781aa8-14d3-45d0-a4df-e362958ceaee`, `user.id=r3dbars`, and the local
 release marker. Browser Playwright checks verified admin refresh/factory selection, simulator rendering,
