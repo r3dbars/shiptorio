@@ -231,3 +231,20 @@ describe("Factory lifecycle", () => {
     expect(f.saved().science.red).toBe(0);
   });
 });
+
+
+it("offers local runner plans only for real GitHub issues and refuses source-only enqueue", async () => {
+  const external = [item({ id: "posthog-dictation", source: "posthog", state: "queued", prNumber: undefined }), item({ id: "sentry-123", source: "sentry", state: "queued", prNumber: undefined }), item({ id: "gh-999", source: "inbox", state: "queued", prNumber: undefined }), item({ id: "github-invalid", source: "github_issue", state: "queued", prNumber: undefined })];
+  const valid = item({ id: "gh-125", state: "queued", prNumber: undefined });
+  for (const items of [external, [...external, valid]]) {
+    const f = fixture(items);
+    f.data.set("openMoves", [{ id: "stale-posthog-plan", title: "Plan #thog-dictation", why: "Legacy offer", itemId: external[0].id, stage: "build", kind: "build", createdAt: 1, options: [{ id: "codex", label: "Plan with Codex", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness: "codex" }, reason: "Legacy offer" }] }] }]);
+    const pairing = await f.factory.pairRunner();
+    await f.factory.claimRunner(pairing, ["codex"]);
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const plans = (f.saved().deck ?? []).filter(move => move.options.some(option => option.actions.some(action => action.tool === "plan_runner_job")));
+    expect(plans.map(move => move.itemId)).toEqual(items.includes(valid) ? ["gh-125"] : []);
+    for (const item of external) await expect(f.factory.enqueueRunner({ itemId: item.id, harness: "codex", allowedPaths: ["server/src/factory.ts"], needsApproval: true })).rejects.toThrow("not available");
+    expect(await f.factory.runnerJobs()).toEqual([]);
+  }
+});
