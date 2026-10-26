@@ -46,8 +46,9 @@ These are deliberately conservative gates: a legitimate new network integration 
 security configuration or package-manifest edit needs a separate human-authored PR. Prompt formatting and
 pattern matching are defense in depth, not a proof that a model understands every attack. Quoted injection instructions in security reports also
 fail the review station and need human security handling rather than an automatic rework.
-Native subscription CLIs retain their authentication access; this change does not claim
-full OS isolation of the coding harness or protection against every obfuscated program.
+Native subscription CLIs retain access to their dedicated authentication home. The runner
+OS sandbox from #152 remains in force; these checks do not claim protection against every
+obfuscated program. Existing runner installations need the merged code and a restart.
 Changes to already-existing executable scripts can still be dangerous, so tests execute
 inside the OS boundary and publication never trusts agent-owned metadata.
 
