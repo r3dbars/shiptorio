@@ -395,8 +395,10 @@ export class Factory extends DurableObject<FactoryEnv> {
   async runnerStatus() {
     const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
     const jobs = await this.runnerJobs();
-    const last = jobs.at(-1);
-    return { paired: !!await this.ctx.storage.get("runnerPair"), online: !!presence && Date.now() - presence.seenAt < 20000,
+    const lastId = await this.ctx.storage.get<string>("runnerLastJobId");
+    const last = jobs.find(job => job.id === lastId);
+    const paired = !!await this.ctx.storage.get("runnerPair");
+    return { paired, online: paired && !!presence && Date.now() - presence.seenAt < 20000,
       seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
       lastJob: last ? { id: last.id, status: last.status } : null };
   }
@@ -440,6 +442,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
       await this.ctx.storage.put(`runnerJob:${id}`, job);
+      await this.ctx.storage.put("runnerLastJobId", id);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
       await this.scheduleTick();
@@ -539,6 +542,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         await this.ctx.storage.put(`runnerJob:${job.id}`, job);
         return null;
       }
+      await this.ctx.storage.put("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + 30 * 60 * 1000 });
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
