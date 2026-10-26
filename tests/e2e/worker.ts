@@ -46,6 +46,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p === '/user') return reply({ id: 123, login: 'fixture', name: 'Fixture Player' });
   if (p === '/user/installations') return reply({ installations: [{ id: 1, account: { login: 'fixture' } }] });
   if (p === '/user/installations/1/repositories') return reply({ repositories: [...knownRepos].map(full_name => ({ full_name, default_branch: 'main' })) });
+  const collaborator = p.match(/\/collaborators\/fixture([1-5])?\/permission$/);
+  if (collaborator) return reply({ permission: 'write', user: { id: 123 + Number(collaborator[1] ?? 0) } });
   if (p.endsWith('/access_tokens')) return reply({ token: 'fixture-installation-token' });
   if (p.endsWith('/installation')) return reply({ id: 1 });
   if (p.includes('/git/trees/')) return reply({ sha: BASE, tree: files.map(f => ({ path: f.filename, type: 'blob', size: 100 })), truncated: false });
