@@ -238,6 +238,7 @@ it("offers local runner plans only for real GitHub issues and refuses source-onl
   const valid = item({ id: "gh-125", state: "queued", prNumber: undefined });
   for (const items of [external, [...external, valid]]) {
     const f = fixture(items);
+    f.data.set("openMoves", [{ id: "stale-posthog-plan", title: "Plan #thog-dictation", why: "Legacy offer", itemId: external[0].id, stage: "build", kind: "build", createdAt: 1, options: [{ id: "codex", label: "Plan with Codex", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness: "codex" }, reason: "Legacy offer" }] }] }]);
     const pairing = await f.factory.pairRunner();
     await f.factory.claimRunner(pairing, ["codex"]);
     await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
