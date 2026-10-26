@@ -433,6 +433,18 @@ const GAUNTLET: StationDef[] = [
 const MEASURE: StationDef = { id: "measure-1", kind: "measure", name: "Measure station", caught: 0, actions: [act("next", "Suggest the next experiment", true), act("rollback", "Roll back the last experiment")] };
 const DAY_TICKS = 2; // the measure station's "day", sim-sized
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
+// The rest of the repo's open issues: what "pull in more" brings onto the belt once the scripted ore runs out.
+const BACKLOG: { title: string; kind: Item["kind"]; docs?: boolean }[] = [
+  { title: "Search shows stale results after an edit", kind: "bug" },
+  { title: "Fix the broken link in the setup guide", kind: "cleanup", docs: true },
+  { title: "Add a keyboard shortcut to save", kind: "feature" },
+  { title: "Flaky test: session expiry", kind: "tests" },
+  { title: "Error toast hides the retry button on phones", kind: "bug" },
+  { title: "Remove the unused beta flag", kind: "cleanup" },
+  { title: "Explain the env vars in the README", kind: "cleanup", docs: true },
+  { title: "Cover the empty cart with a test", kind: "tests" },
+];
+const QUIET_TICKS = 12; // after "not now", how long the planner waits before asking again
 const FOREMAN_IDLE_TICKS = 5; // quiet ticks before the drone goes back to its plant
 const WATCH_TICKS = 10; // orbit watch, sim-sized: "24 hours" after a launch
 const COMEBACK_TICKS = 4; // a scripted comeback trips orbit watch this long after the launch
@@ -537,7 +549,16 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
   const held = new Set<string>(); // queued items waiting on the player's yes
   const parked = new Set<string>(); // items the player said "not now" to
-  let growthOffered = false;
+  const offeredMines = new Set<string>(); // empty mines the planner already suggested
+  let quietUntil = 0; // tick the planner may ask again after a "not now"
+  let backlogAt = 0; // next open issue to pull from the backlog
+  // more open issues, in this repo's own folders
+  const backlogOre = (n: number): Ore => {
+    const b = BACKLOG[n % BACKLOG.length];
+    const names = (sc.districts ?? REPO_DISTRICTS).map((d) => d.name).filter((d) => d !== "/");
+    const district = b.docs && names.includes("docs") ? "docs" : names.filter((d) => d !== "docs")[n % Math.max(1, names.length - 1)] ?? names[0];
+    return { at: 0, title: b.title, kind: b.kind, district };
+  };
   let lastSpark = 0; // tick of Spark's last tool call
   const byTitle = new Map<string, string>(); // ore title -> item id, for linking
   const onChoose = new Map<string, (optionId: string) => void>(); // move id -> what each answer does
@@ -1033,15 +1054,28 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       stat("orbit-1").lastLog = { who: "Orbit watch", text: `#${it?.prNumber} held 24h: no comeback.`, ok: true };
       log("success", `Orbit watch: #${it?.prNumber} held 24h with no comeback`, id);
     }
-    // Finishing the starter line should teach its next real decision, not strand the tour.
-    if (sc.onboard && !growthOffered && !script.length && s.items.length && s.items.every(i => i.state === "launched") && !s.move && !pending.length) {
+    // The line is caught up: the planner always deals the next real decision, so the game never goes quiet (#105).
+    // First an empty mine to connect, then more open issues to pull in. "Not now" waits a while before asking again.
+    const caughtUp = s.items.length > 0 && s.items.every((i) => i.state === "launched" || parked.has(i.id));
+    if (!sc.intro && clock0 !== Infinity && !script.length && caughtUp && !s.move && !pending.length && s.tick >= quietUntil) {
       const kind = ghostSpots(s)[0]?.kind;
-      if (kind) {
-        growthOffered = true;
+      if (kind && !offeredMines.has(kind)) {
+        offeredMines.add(kind);
         const label = kind === "sentry" ? "Sentry" : "PostHog";
-        propose({ title: `Your first fixes shipped. Connect ${label} next?`, why: "The line is caught up. Add another input so future customer signals can become the next fix.", stage: "intake", kind: "input", focus: `src:${kind}`, grows: ["+1 SOURCE"], plan: [`Open the ${label} mine on this sandbox island.`, "Future signals can feed the splitter; connecting a mine does not invent a customer problem."], options: [{ id: "connect", label: `Connect ${label}`, recommended: true, actions: [{ tool: "connect_source", args: { kind }, reason: "Grow the input loop after your first shipments." }] }, { id: "later", label: "Watch the factory for now", recommended: false, actions: [] }] }, option => {
+        propose({ title: `Your fixes shipped. Connect ${label} next?`, why: "The line is caught up. Add another input so future customer signals can become the next fix.", stage: "intake", kind: "input", focus: `src:${kind}`, grows: ["+1 SOURCE"], plan: [`Open the ${label} mine on this sandbox island.`, "Future signals can feed the splitter; connecting a mine does not invent a customer problem."], options: [{ id: "connect", label: `Connect ${label}`, recommended: true, actions: [{ tool: "connect_source", args: { kind }, reason: "Grow the input loop after your first shipments." }] }, { id: "later", label: "Watch the factory for now", recommended: false, actions: [] }] }, option => {
           if (option === "connect") connectMine(kind);
-          else log("info", "All caught up. Watching the connected mines for the next signal.");
+          else quietUntil = s.tick + QUIET_TICKS;
+        });
+      } else {
+        const batch = Array.from({ length: 3 }, (_, k) => backlogOre(backlogAt + k));
+        propose({ title: `${batch.length} more open issues in ${s.repo}. Pull them in?`, why: `The line is idle. Next up: "${batch[0].title}", plus ${batch.length - 1} more.`, stage: "intake", kind: "input", focus: "ore-issues", grows: [`+${batch.length} ORE`], plan: batch.map((o) => `${o.title} (${o.kind}, /${o.district})`), options: [{ id: "pull", label: "Pull them in", recommended: true, actions: [{ tool: "list_issues", args: { limit: batch.length }, reason: "Keep the line fed." }] }, { id: "later", label: "Not now", recommended: false, actions: [] }] }, option => {
+          if (option !== "pull") {
+            quietUntil = s.tick + QUIET_TICKS;
+            return;
+          }
+          backlogAt += batch.length;
+          batch.forEach((o, k) => script.push({ ...o, at: s.tick - clock0 + 1 + k * 3 }));
+          spark({ tool: "list_issues", text: `${batch.length} more open issues become ore at the deposit`, reason: "the line was idle" }, { target: "ore-issues" });
         });
       }
     }
@@ -1172,6 +1206,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
     if (s.brain?.score?.open.includes(item.id)) score((sc) => ({ ...sc, shipped: sc.shipped + 1, open: sc.open.filter((x) => x !== item.id) }));
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
+    // any card still asking about this PR is answered now; a stale "Launch #N" would strand the player (#105)
+    for (const m of [s.move, ...pending].filter((x) => x?.itemId === item.id)) {
+      onChoose.delete(m!.id);
+      emit({ type: "move_resolved", moveId: m!.id, optionId: "launch", actor: alone ? "spark" : "player" });
+      pull(m!.id, 0);
+    }
     startMeasuring(item, now);
     watching.set(item.id, s.tick + WATCH_TICKS);
     if (comebacks.has(item.id)) trips.set(item.id, s.tick + COMEBACK_TICKS);

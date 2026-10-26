@@ -10,6 +10,7 @@ import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
 import { SupportPanel, supportReviewTarget } from "./ui/SupportPanel";
+import { whatsNext, type NudgeAction } from "./ui/whatsNext";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
@@ -249,6 +250,20 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const plugged = SLOTS.find((sl) => state?.power.some((p) => p.id === `solar-${sl.harness}` && p.online));
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
+  };
+  // No card open: always offer a next move, so the factory never goes quiet after a rocket (#105).
+  // The first-run coach does its own teaching, so it waits until the coach is done.
+  const whatNext = state && !state.move && !tour.lesson && !fork ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
+  const onNudge = (a: NudgeAction) => {
+    if (a.do === "launch") {
+      const item = state?.items.find((i) => i.id === a.itemId);
+      if (item) launchItem(item);
+    } else if (a.do === "checkin") setCheckin(true);
+    else if (a.do === "station") setPanel(a.id);
+    else if (a.do === "research") setSheet("research");
+    else if (a.do === "connect") setSource(a.source);
+    else if (a.do === "place") build();
+    else setSheet(a.sheet);
   };
   const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
@@ -640,7 +655,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
           </section>
         ) : (
-          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} />
+          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} nudge={whatNext} onNudge={onNudge} />
         )}
 
         {!checkin && (
