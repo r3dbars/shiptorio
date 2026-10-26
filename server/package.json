@@ -1,0 +1,20 @@
+{
+  "name": "@shiptorio/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun scripts/dev-setup.ts && wrangler dev",
+    "deploy": "wrangler d1 migrations apply shiptorio --remote && wrangler deploy",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p test"
+  },
+  "dependencies": {
+    "@shiptorio/shared": "workspace:*",
+    "hono": "^4.9.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@types/bun": "latest",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.40.0"
+  }
+}
