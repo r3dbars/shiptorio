@@ -100,11 +100,12 @@ export class Factory extends DurableObject<FactoryEnv> {
         else return;
         await this.ctx.storage.put(`runnerJob:${stored.id}`, stored);
         await this.publishRunnerMove(null);
+        await this.patch({ bottleneck: optionId === "approve" ? { stage: "build", wip: 1, ageMs: 0, throughputPerHour: 0, valueAtRisk: item.value ?? 0, summary: "Plan approved. Waiting for your local agent." } : null });
         this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: "player", reason: "Decision from the game", itemId: item.id });
       });
       return;
     }
-    if (optionId === "decline") { await this.ctx.storage.put(`runnerDeferred:${item.id}`, item.updatedAt); await this.publishRunnerMove(null); return; }
+    if (optionId === "decline") { await this.ctx.storage.put(`runnerDeferred:${item.id}`, item.updatedAt); await this.publishRunnerMove(null); await this.patch({ bottleneck: null }); return; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
     if (action?.tool !== "plan_runner_job" || !["codex", "claude_code"].includes(String(action.args.harness))) return;
     try {
@@ -145,6 +146,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       job.inputRevision = await issueRevision(item.title, item.body);
       await this.ctx.storage.put(`runnerJob:${id}`, job);
+      await this.patch({ bottleneck: { stage: "triage", wip: 1, ageMs: 0, throughputPerHour: 0, valueAtRisk: item.value ?? 0, summary: "Preparing your plan. No build has started." } });
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
       await this.scheduleTick();
       return job;
@@ -199,6 +201,10 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
       await this.load();
       await this.ctx.storage.put("runnerPresence", { harnesses, seenAt: Date.now() });
+      const localPower = harnesses.map(h => ({ id: `solar-${h}`, kind: "solar" as const, name: h === "codex" ? "ChatGPT" : "Claude", level: 1, online: true }));
+      if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
+        await this.patch({ power: [...this.state.power.filter(p => !["power-codex", "power-claude_code", ...localPower.map(p => p.id)].includes(p.id)), ...localPower] });
+      }
       await this.offerRunnerPlan();
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
@@ -214,7 +220,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
       await this.clearRunnerMove();
-      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `power-${job.harness}`, tier: 1, state: "working" }], power: [...this.state!.power.filter(p => p.id !== `power-${job.harness}`), { id: `power-${job.harness}`, kind: "solar", name: job.harness === "codex" ? "Codex subscription" : "Claude subscription", level: 1, online: true }], bottleneck: null });
+      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `solar-${job.harness}`, tier: 1, state: "working" }], bottleneck: null });
       this.log("info", `Local ${job.harness} accepted Spark's plan.`, item.id);
       return job;
     });

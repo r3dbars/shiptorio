@@ -5,6 +5,11 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Justin's delivery rule (Oct 26): push WIP after every meaningful step and open a draft
+PR immediately after the first push. Codex merges its own completed PRs as soon as CI
+is green, verifies Deploy and the live `/api/version` SHA (except docs-only changes),
+and repairs red CI/Deploy in a new PR without waiting for another permission request.
+
 Browser approval checkpoint: reuse the existing Move/choose_move contract. Requesting a
 plan authorizes read-only planning; a durable awaiting_approval state prevents the local
 runner from claiming it. The review card binds files, base commit, plan, item revision
