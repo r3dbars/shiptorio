@@ -1082,7 +1082,7 @@ export class FactoryScene {
       pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
       pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
       // keep the tag on screen: flip it to the dot's left near the right edge
-      pe.el.classList.toggle("flip", x > w - 220);
+      pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
     }
   }
 

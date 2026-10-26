@@ -61,6 +61,7 @@ const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "
 // "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
 type World = "checkin" | "build";
 const WORLD_KEY = "shiptorio:world";
+const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
   try {
     const w = localStorage.getItem(WORLD_KEY);
@@ -134,7 +135,22 @@ export function App() {
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
   const [sheet, setSheet] = useState<"line" | "power" | "guide" | null>(null);
   const met = guideMet(state, tour.learned);
-  const [seenGuide, setSeenGuide] = useState(0); // the chip glows when something new lands
+  // the guide button glows when something new lands; remembered so a returning player isn't told about all of it again
+  const [seenGuide, setSeenGuideState] = useState(() => {
+    try {
+      return Number(localStorage.getItem(GUIDE_SEEN_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  });
+  const setSeenGuide = (n: number) => {
+    setSeenGuideState(n);
+    try {
+      localStorage.setItem(GUIDE_SEEN_KEY, String(n));
+    } catch {
+      // this visit only
+    }
+  };
   const fork = world === null && !!state && state.districts.length > 0 && !tour.lesson;
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
@@ -160,6 +176,7 @@ export function App() {
     return { key, title, code: item ? codePath(item.district) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
+  const narrow = typeof window !== "undefined" && window.innerWidth <= 560; // phones get fewer tags
   // Quiet tags on every other busy machine, naming the code it's working in, so the whole line reads as your codebase.
   const pings = useMemo(() => {
     if (!state) return [];
@@ -169,10 +186,10 @@ export function App() {
       const key = i.machineId && pickKey(i.machineId);
       if (!word || !key || out.some((p) => p.key === key)) continue;
       out.push({ key, title: word, code: codePath(i.district), quiet: true });
-      if (out.length >= 5) break;
+      if (out.length >= (narrow ? 3 : 5)) break;
     }
     return out;
-  }, [state, ping]);
+  }, [state, ping, narrow]);
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
 
   const launchItem = (item: Item) => {
@@ -320,7 +337,6 @@ export function App() {
             aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
             title={`Field guide · ${met.size}/${GUIDE_TOTAL}`}
           >
-            {met.size > seenGuide && <span className="n">{met.size - seenGuide}</span>}
             <Icon name="book" size={20} />
           </button>
           <button type="button" className="hud-iconbtn" aria-label={`Activity, ${waiting} waiting on you`} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
