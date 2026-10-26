@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox } from "./sandbox";
-import { snapshotApproved, publishApproved } from "./publication";
+import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
 
 interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
 const root = resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(import.meta.dir, ".."));
@@ -73,7 +73,7 @@ async function execute(job: Job) {
     await command(["git", "clone", "--no-checkout", "--", `https://github.com/${job.repo}.git`, work], checkout, gitEnv);
     sandbox = await checkSandbox(work);
     await checked(["git", "checkout", "--detach", job.baseSha]);
-    const prompt = assemblerPrompt(job);
+    const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
     console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
     const output = await command([harnessPath(job.harness)!, ...harnessArgs(job.harness, prompt)], work, cleanEnv, 15 * 60 * 1000);
     // Preserve local evidence; never forward raw agent output to the server/browser.

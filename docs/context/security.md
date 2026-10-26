@@ -24,7 +24,8 @@ not grant permissions. This protects the Oct 29 local-runner checkpoint.
   at 17,000 characters, and contain at most 10 explicit writable paths.
 - The runner validates the plan before cloning or launching a harness, then sends it as
   untrusted task data under fixed supervisor restrictions. Codex shell/unified execution,
-  web search and multi-agent tools are disabled; Claude gets only Read/Edit/Write/Glob/Grep.
+  web search and multi-agent tools are disabled. The supervisor supplies bounded approved
+  file contents as untrusted context, so Codex can still use apply_patch without a shell; Claude gets only Read/Edit/Write/Glob/Grep.
   Subscription authentication remains native to the CLI; no server/provider/push secrets
   are inherited by the coding child. Repository scripts run only in the existing OS
   verification sandbox, with a private home and no network except frozen dependency

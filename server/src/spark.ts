@@ -64,7 +64,7 @@ async function sparkJson<S extends z.ZodType>(env: SparkEnv, schema: S, develope
     effort,
   );
   const parsed = schema.safeParse(parseJsonReply<unknown>(text));
-  if (!parsed.success) throw new SparkError("Spark requested an unavailable or unapproved output (schema validation failed)");
+  if (!parsed.success) throw new SparkError("Planner requested an unavailable or unapproved output (schema validation failed)");
   return parsed.data;
 }
 
