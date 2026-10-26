@@ -3,6 +3,7 @@ import { signupAllowed, addPending, redeemInvite } from './signup';
 
 import { convertManifestCode } from "./github";
 import { isAllowed, makeSessionCookie } from "./session";
+import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
 import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
 
@@ -53,26 +54,25 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const userRes = await fetch("https://api.github.com/user", {
     headers: { authorization: `Bearer ${access_token}`, "user-agent": "shiptorio", accept: "application/vnd.github+json" },
   });
-  const { login } = (await userRes.json()) as { login: string };
-  if (!login || !userRes.ok) return new Response('GitHub login failed',{status:401});
-  const normalized = login.toLowerCase();
+  const user = (await userRes.json()) as GitHubUser;
+  if (!userRes.ok || !Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
+  user.login = user.login.toLowerCase();
   const invite = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_invite=([^;]+)/)?.[1];
-  if (invite) await redeemInvite(env,decodeURIComponent(invite),normalized);
-  if (!await signupAllowed(env,normalized)) await addPending(env,normalized,'github');
-  const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
-  return new Response(null, {
-    status: 302,
-    headers: [
-      ['location',await signupAllowed(env,normalized) ? sameOriginPath(next && decodeURIComponent(next), url.origin) : '/waitlist'],
-      ['set-cookie',await makeSessionCookie(env.SESSION_SECRET,normalized)],
-      ['set-cookie','shiptorio_invite=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0'],
-      ['set-cookie','shiptorio_oauth_state=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0'],
-      ['set-cookie','shiptorio_next=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0'],
-    ],
-  });
+  if (invite) { try { await redeemInvite(env,decodeURIComponent(invite),user.login); } catch {} }
+  const allowed = await signupAllowed(env,user.login);
+  if (!allowed) await addPending(env,user.login,'github');
+  await upsertUser(env,user);
+  // Pending accounts get a revocable session, but no factory access or installation discovery.
+  if (allowed) await saveReach(env,user.id,await fetchReach(access_token));
+  const next = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
+  const headers = new Headers({location:allowed ? sameOriginPath(next && decodeURIComponent(next),url.origin) : '/waitlist'});
+  headers.append('set-cookie',await createSession(env,{id:user.id,login:user.login},request.headers.get('user-agent')));
+  for (const name of ['shiptorio_invite','shiptorio_oauth_state','shiptorio_next']) headers.append('set-cookie',`${name}=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
+  return new Response(null,{status:302,headers});
 }
 
-export function logout(): Response {
+export async function logout(request: Request, env: Env): Promise<Response> {
+  await endSession(env, request.headers.get("cookie"));
   return new Response(null, {
     status: 302,
     headers: { location: "/", "set-cookie": "shiptorio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" },

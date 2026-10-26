@@ -1,3 +1,4 @@
+import { currentUser } from './accounts';
 import type { Env } from './index';
 import { isAllowed, readSession } from './session';
 import { isLocal } from './auth';
@@ -11,9 +12,9 @@ export interface SignupEnv {
 export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
 export const isAdmin = (env: Env, login: string) => isAllowed(env.ADMIN_LOGINS || 'r3dbars', login);
-export async function signupAllowed(env: Env, login: string): Promise<boolean> {
+export async function signupAllowed(env: {DB:D1Database;ALLOWED_LOGINS?:string}, login: string): Promise<boolean> {
   const row = await env.DB.prepare('SELECT enabled FROM signup_allowlist WHERE login = ?').bind(login.toLowerCase()).first<{enabled: number}>();
-  return row ? row.enabled === 1 : isAllowed(env.ALLOWED_LOGINS, login);
+  return row ? row.enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", login);
 }
 export async function addPending(env: Env, identity: string, kind: 'email' | 'github') {
   const now = Date.now();
@@ -53,8 +54,8 @@ export function signupPage(env: Env, message = '', status = 200): Response {
 export async function signupGate(request: Request, env: Env): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   if (env.DEV_LOGIN && isLocal(new URL(request.url))) return null;
-  if (['/waitlist','/auth/login','/auth/callback','/auth/logout','/webhooks/github','/webhooks/sentry'].includes(path)) return null;
-  const login = await readSession(env.SESSION_SECRET,request.headers.get('cookie'));
+  if (['/waitlist','/auth/login','/auth/callback','/auth/logout','/webhooks/github','/webhooks/sentry'].includes(path) || path.startsWith('/webhooks/sentry/')) return null;
+  const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url),Date.now(),true))?.login || null;
   if (login && await signupAllowed(env,login)) return null;
   if (path.startsWith('/api/') || request.headers.get('upgrade')) return Response.json({error:login ? 'approval pending' : 'login required'},{status:403});
   return signupPage(env,login ? 'Your request is pending approval. Come back after Justin approves your GitHub account.' : '');
@@ -83,7 +84,7 @@ export async function runQuota(env: Env, login: string): Promise<boolean> {
 }
 
 export async function adminSignup(request: Request, env: Env): Promise<Response> {
-  const login = await readSession(env.SESSION_SECRET,request.headers.get('cookie'));
+  const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url)))?.login || null;
   if (!login || !isAdmin(env,login) || !await signupAllowed(env,login)) return new Response('Admin only',{status:403});
   let message = '';
   if (request.method === 'POST') {
