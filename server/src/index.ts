@@ -1,11 +1,17 @@
+import { signupMode, signupGate, signupPage, signupAllowed, addPending, adminSignup, admit, ipScope, turnstile, resourceQuota, type SignupEnv } from './signup';
 import { repoAccess, requireUser as resolveUser, validRepo } from "./authorization";
+
 import { Redactor } from "./redact";
+import * as Sentry from "@sentry/cloudflare";
+import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
+import { adminRoutes } from "./admin";
+
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
-import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
+import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, repoInstallationId } from "./github";
-import { currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
+import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 import { isAllowed } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
@@ -23,7 +29,7 @@ import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
 
-export interface Env extends FactoryEnv {
+export interface Env extends FactoryEnv, SignupEnv {
   ASSETS: Fetcher;
   DB: D1Database;
   CACHE: KVNamespace;
@@ -43,7 +49,19 @@ export interface Env extends FactoryEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
+const factory = (env: Env, repo: string) => {
+  const stub = env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
+  const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
+  // Capture per call, never put mutable request identity on a shared DO instance.
+  return new Proxy(stub, { get(target, method) {
+    if (method === "fetch") return (request: Request) => {
+      const headers = new Headers(request.headers);
+      headers.set("X-Request-ID", trace.requestId);
+      return target.fetch(new Request(request, { headers }));
+    };
+    return (...args: unknown[]) => (target as unknown as { observedCall(method: string, args: unknown[], trace: Trace): Promise<unknown> }).observedCall(String(method), args, trace);
+  } }) as typeof stub;
+};
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
@@ -57,10 +75,30 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 };
 
 app.use("*", async (c, next) => {
+  const trace: Trace = { requestId: crypto.randomUUID() };
+  const match = c.req.path.match(/^\/api\/repos\/([\w.-]+\/[\w.-]+)/);
+  if (match) trace.repo = match[1].toLowerCase();
+  const start = Date.now();
+  return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
+    c.header("X-Request-ID", trace.requestId);
+    const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+    if (user) { trace.userId = user.login; Sentry.setUser({ id: user.login }); }
+    await next();
+    // A response can be replaced by auth, assets, or a websocket upgrade.
+    c.header("X-Request-ID", trace.requestId);
+    log(c.res.status >= 500 ? "error" : "info", c.req.path.startsWith("/webhooks/") ? "webhook.delivery" : "http.request", {
+      method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - start,
+      ...(c.req.path.startsWith("/webhooks/") ? { deliveryId: c.req.header("x-github-delivery") ?? c.req.header("request-id"), webhookEvent: c.req.header("x-github-event") ?? c.req.header("sentry-hook-resource") } : {}),
+    });
+  });
+});
+
+app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
   if (redirect) c.res = redirect;
   else await next();
-  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce")))) c.header(key, value);
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN))) c.header(key, value);
+
 });
 
 app.use("*", async (c, next) => {
@@ -83,28 +121,37 @@ app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
     const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
-    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
-    if (!identity.user || !isAllowed(c.env.ALLOWED_LOGINS, identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({ error: "repository access denied" }, 403);
+    if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
+      if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
+      return c.json({error:'runner authentication required'},401);
+    }
+    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({error:'repository access denied'},403);
+    if (!await factory(c.env,identity.repo).isRunnerPaired(identity.pairId)) {
+      if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
+      return c.json({error:'runner pairing revoked'},401);
+    }
     c.set("runner", identity);
     await next();
     c.header("Cache-Control", "no-store");
     return;
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
-  const denied = await previewAccess(c.req.raw, c.env);
+  const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
   c.header("Cache-Control", "no-store");
 });
 
 app.onError((err, c) => {
-  console.error(new Redactor(c.env).value({ error: "Request failed" }));
-  return c.json({ error: "internal server error" }, 500);
+  report(err, "http.exception");
+  return c.json({ error: "Something broke. Please reload.", requestId: currentTrace()?.requestId }, 500);
+
 });
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
   await next();
+
 });
 
 app.use("*", async (c, next) => {
@@ -121,6 +168,7 @@ app.use("*", async (c, next) => {
     if (!user) return c.json({ error: "login required" }, 401);
     const repo = match ? `${match[1]}/${match[2]}` : c.req.query("repo") ?? "";
     if (!validRepo(repo) || !await repoAccess(c.env, user, repo)) return c.json({ error: "repository access denied" }, 403);
+    if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
   await next();
@@ -130,9 +178,37 @@ app.route("/", ops);
 
 // ---------- auth + setup ----------
 
-app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
+app.get("/auth/login", (c) => signupMode(c.env) === 'password' ? login(new URL(c.req.url), c.env) : signupPage(c.env));
+app.post('/auth/login', async c => {
+  if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
+  if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
+  const raw = await c.req.text();
+  if (raw.length>4096) return c.text('Too large',413);
+  const form = new URLSearchParams(raw);
+  if (!await turnstile(c.req.raw,c.env,form,'signin')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
+  const response = await login(new URL(c.req.url),c.env);
+  // Store invite on the OAuth path; never include it in GitHub URLs or logs.
+  const invite = form.get('invite') || '';
+  if (invite.length <=100 && invite) response.headers.append('set-cookie',`shiptorio_invite=${encodeURIComponent(invite)}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  return response;
+});
+app.get('/waitlist',c => signupPage(c.env));
+app.post('/waitlist',async c => {
+  if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
+  if (!await admit(c.env,await ipScope(c.req.raw,'waitlist'),5,3600000,'waitlist flood')) return c.text('Try again later',429);
+  const raw = await c.req.text();
+  if (raw.length>4096) return c.text('Too large',413);
+  const form=new URLSearchParams(raw),email=(form.get('email')||'').trim().toLowerCase();
+  if (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return signupPage(c.env,'Enter a valid email.',400);
+  if (!await turnstile(c.req.raw,c.env,form,'waitlist')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
+  await addPending(c.env,email,'email');
+  return signupPage(c.env,'You are on the waitlist. Justin will review your request.');
+});
+app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
+app.post('/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
@@ -152,6 +228,23 @@ app.put("/api/me/prefs", async (c) => {
   let body: unknown;
   try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
+  return c.json({ ok: true });
+});
+
+// Progression (levels, streak, unlocks) follows the player across devices. The web merges, then writes the whole blob.
+app.get("/api/me/progress", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  return c.json({ progress: await readProgress(c.env, user) });
+});
+
+app.put("/api/me/progress", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const text = await c.req.text();
+  if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
+  if (!(await writeProgress(c.env, user, text))) return c.json({ error: "invalid progress" }, 400);
   return c.json({ ok: true });
 });
 
@@ -286,6 +379,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   }
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "pair") {
+    if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
     const expires = Date.now() + 8 * 60 * 60 * 1000;
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
@@ -295,7 +389,11 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (text.length > 8192) return c.json({ error: "too large" }, 413);
   const parsed = EnqueueRunner.safeParse(JSON.parse(text));
   if (!parsed.success) return c.json({ error: "invalid job" }, 400);
-  return c.json(await f.enqueueRunner(parsed.data), 202);
+  try { return c.json(await f.enqueueRunner(parsed.data,c.get("user").login), 202); }
+  catch (error) {
+    if (error instanceof Error && error.message.includes('Daily run quota reached')) return c.json({error:'daily run quota reached'},429);
+    throw error;
+  }
 });
 
 app.get("/api/repos/:owner/:repo/runner/jobs", async (c) => c.json(await factory(c.env, `${c.req.param("owner")}/${c.req.param("repo")}`).runnerJobs()));
@@ -377,6 +475,13 @@ app.post("/webhooks/github", async (c) => {
   const installation = payload.installation?.id;
   if (!Number.isSafeInteger(installation) || installation! <= 0 || (repo && !REPO_RE.test(repo))) return c.json({ error: "invalid installation or repo" }, 400);
   if (!repo && !["installation", "installation_repositories"].includes(event)) return c.json({ error: "repo required" }, 400);
+  if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
+  if (!await admit(c.env,`webhook:github:${installation}`,300,60000,'GitHub webhook flood')) return c.json({error:'webhook throttled'},429);
+  if (event === 'installation' && payload.action === 'created') {
+    const account = payload.installation?.account?.login?.toLowerCase();
+    if (!account || !await admit(c.env,`install:${account}`,10,3600000,'many installs from one account')) return c.json({error:'installation throttled'},429);
+  }
+
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('github', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
@@ -420,7 +525,11 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const sourceDelivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
     || [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (repo && currentTrace()) { currentTrace()!.repo = repo.toLowerCase(); Sentry.setTag("repo", repo.toLowerCase()); }
+  if (!await admit(c.env,`webhook:sentry:${repo.toLowerCase()}`,300,60000,"Sentry webhook flood")) return c.json({error:"webhook throttled"},429);
+
   const delivery = `${repo}:${sourceDelivery}`;
+
   const now = Date.now();
   const inserted = await c.env.DB.prepare("INSERT OR IGNORE INTO webhook_deliveries (source, delivery_id, received_at, expires_at) VALUES ('sentry', ?, ?, ?)").bind(delivery, now, now + 7 * 86400000).run();
   if (!inserted.meta.changes) {
@@ -432,8 +541,11 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   return c.json({ ok: true, queued: true }, 202);
 }
 
+adminRoutes(app, factory);
+
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());
+
 
 // Everything else is the web app.
 app.all("*", async (c) => {
@@ -448,4 +560,5 @@ app.all("*", async (c) => {
   return response;
 });
 
-export default app;
+export { app }; // Unwrapped Hono app for route tests.
+export default Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app.fetch });

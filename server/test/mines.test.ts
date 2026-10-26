@@ -10,7 +10,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 
 const DISTRICTS = ["checkout", "cart", "api", "docs", "/"];
 
@@ -87,9 +87,9 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => sql.includes("SELECT installation_id") ? { installation_id: 1 } : rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("SELECT installation_id") ? { installation_id: 1 } : rows.get(String(values[0])) ?? null,
       };
-      expect(sql.includes("sentry") || sql.includes("SELECT installation_id")).toBe(true);
+      expect(sql.includes("sentry") || sql.includes("SELECT installation_id") || sql.includes("signup_counters")).toBe(true);
       return statement;
     } },
     FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("example/shop"); queued.push(`${id}:${resource}`); } }) },
@@ -124,7 +124,7 @@ function factoryFixture(env: Record<string, unknown>) {
     async getAlarm() { return alarm; },
     async setAlarm(value: number) { alarm = value; },
   };
-  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
+  const ctx = { waitUntil: (_task: Promise<unknown>) => {}, storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
   const fullEnv = {
     ...browserEnv,
     DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },

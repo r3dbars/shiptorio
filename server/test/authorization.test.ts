@@ -8,7 +8,7 @@ import { FactoryState } from '@shiptorio/shared';
 import { starterLine } from '../src/engine';
 import { pairToken } from '../src/runner-auth';
 mock.module('cloudflare:workers', () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
-const { default: app } = await import('../src/index');
+const { testApp: app } = await import('./app-fixture');
 const { Factory } = await import('../src/factory');
 const origin = 'https://shiptorio.com';
 const secret = 'test-isolation-session', password = 'test-isolation-preview';
@@ -24,6 +24,10 @@ function fixture() {
   const DB = { prepare(sql: string) { let args: unknown[] = []; const stmt = {
     bind(...values: unknown[]) { args = values; return stmt; },
     async first() {
+      if (sql.startsWith('SELECT enabled')) return null;
+      if (sql.startsWith('INSERT INTO signup_counters')) return {count:1};
+      if (sql.startsWith('SELECT factories')) return null;
+      if (sql.startsWith('INSERT OR IGNORE INTO signup_resources')) return {resource:'fixture'};
       if (sql.startsWith('SELECT u.id, u.login FROM sessions')) return { id: args[1], login: args[1] === 11 ? 'alice' : 'bob' };
       if (sql.includes('FROM user_repos WHERE')) return String(args[1]).startsWith(args[0] === 11 ? 'alice/' : 'bob/') ? { installation_id: args[0] } : null;
       if (sql.includes('FROM user_installations WHERE')) return args[0] === args[1] ? { installation_id: args[1] } : null;
@@ -34,7 +38,7 @@ function fixture() {
     all: async () => ({ results: [...repos].map(([full_name, installation_id]) => ({ full_name, installation_id, default_branch: 'main' })) }),
   }; return stmt; } };
   const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'alice,bob', GITHUB_APP_ID: 'test', GITHUB_APP_PRIVATE_KEY: 'test',
-    CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async () => { writes++; } },
+    CACHE: { get: async (key: string) => cache.get(key) ?? null, put: async (key: string) => { if (!key.startsWith("ops:")) writes++; } },
     ASSETS: { fetch: async () => new Response('static shell') },
     FACTORY: { idFromName: (name: string) => name, get: (name: string) => { if (name.startsWith("security:")) return { securityLimit: async () => ({ allowed: true, retryAfter: 0 }) }; factoryCalls++; return { runnerJobs: async () => [], fetch: async () => new Response('private factory') }; } },
   };
@@ -115,7 +119,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
   const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
   let closed = 0, sent = 0;
-  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env), repo: 'bob/private' };
+  const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env as never), repo: 'bob/private' };
   const ws = { deserializeAttachment: () => auth, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
   const factory = new Factory({ storage, getWebSockets: () => [ws], blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, credentialEnv(f.env) as never);
   for (const repo of ['bob/private', 'alice/private']) {
