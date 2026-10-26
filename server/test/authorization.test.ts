@@ -227,3 +227,33 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
   expect((await github('sha256=' + await sign(env.GITHUB_WEBHOOK_SECRET, githubBody))).status).toBe(202);
   expect(queued.at(-1)).toBe('github:repo:22');
 });
+
+it('broadcast shares checks per session within a frame but rechecks revocation on the next frame', async () => {
+  const f = fixture();
+  let sessionChecks = 0;
+  const prepare = f.env.DB.prepare.bind(f.env.DB);
+  f.env.DB.prepare = (sql: string) => { if (sql.startsWith('SELECT u.id, u.login FROM sessions')) sessionChecks++; return prepare(sql); };
+  const env = credentialEnv(f.env);
+  const state = FactoryState.parse({ repo: 'alice/private', baseBranch: 'main', districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
+  const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
+  const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
+  const epoch = await browserSocketEpoch(env as never);
+  let sent = 0, closed = 0;
+  const sockets = Array.from({ length: 200 }, (_, index) => ({
+    deserializeAttachment: () => ({ repo: state.repo, login: 'alice', epoch, expiresAt: Date.now() + 60000,
+      // Two sessions for the same user must receive independent checks.
+      user: { id: 11, login: 'alice', sessionHash: createHash('sha256').update(index % 2 ? 'alice-2' : 'alice').digest('hex'), expiresAt: 9999999999999 } }),
+    send: () => { sent++; }, close: () => { closed++; },
+  }));
+  const factory = new Factory({ storage, getWebSockets: () => sockets, blockConcurrencyWhile: (fn: () => unknown) => fn() } as never, env as never);
+  await factory.exportState();
+  const emit = () => (factory as unknown as { broadcast(value: unknown): Promise<void> }).broadcast({ type: 'patch', patch: { tick: 1 } });
+  sessionChecks = 0;
+  await emit();
+  expect(sessionChecks).toBe(2);
+  expect(sent).toBe(200); expect(closed).toBe(0);
+  f.repos.delete(state.repo);
+  await emit();
+  expect(sessionChecks).toBe(4);
+  expect(sent).toBe(200); expect(closed).toBe(200);
+});

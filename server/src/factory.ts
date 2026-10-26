@@ -49,6 +49,7 @@ import {
   type ThoughtDecision,
   summarizeIsland,
   type IslandSummary,
+  type AutonomyLevel,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
@@ -60,6 +61,7 @@ import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
+import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
@@ -1507,7 +1509,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (this.state) {
 
         this.state.stations = liveStations(this.state);
-        this.state.autonomy = autonomyView(await this.permitBook());
+        this.state.autonomy = autonomyView(await this.permitBook(), await flagEnabled(this.env, "autonomy"));
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
       }
     }
@@ -1538,10 +1540,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const text = JSON.stringify(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
+      // A player may have many sockets. Share the same revocable session check only
+      // within this frame; the next frame must query D1 again (no authorization TTL).
+      const access = new Map<string, Promise<boolean>>();
       for (const ws of this.ctx.getWebSockets("web")) {
         try {
           const auth = ws.deserializeAttachment();
-          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); continue; }
+          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user) { ws.close(1008, "Repository access revoked"); continue; }
+          const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login]);
+          let allowed = access.get(key);
+          if (!allowed) { allowed = repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
+          if (!await allowed) { ws.close(1008, "Repository access revoked"); continue; }
           ws.send(text);
         } catch { try { ws.close(1008, "Sign in again"); } catch {} }
       }
@@ -1834,6 +1843,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return;
     }
     const candidate = item;
+    const levels = await flagEnabled(this.env, "autonomy");
     const committed = await this.ctx.blockConcurrencyWhile(async () => {
       const s = this.state!;
       const current = s.items.find(i => i.id === candidate.id);
@@ -1849,7 +1859,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const book = recordShip(await tx.get<PermitBook>("permits") ?? emptyBook(), launchedItem, auto);
         const launched = startWatch({ ...launchedItem, state: "launched", updatedAt: now }, now, mergeSha);
         const items = s.items.some(i => i.id === launched.id) ? s.items.map(i => i.id === launched.id ? launched : i) : [...s.items, launched];
-        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book), brain: scoreShip(s.brain, launched.id) };
+        const next: FactoryState = { ...s, items, science: { ...s.science, [key]: s.science[key] + 1 }, trust: Math.min(1, s.trust + 0.05), autonomy: autonomyView(book, levels), brain: scoreShip(s.brain, launched.id) };
         next.stations = liveStations(next, now);
         await tx.put("state", next);
         await tx.put("permits", book);
@@ -2074,6 +2084,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.patch({ items: [back], metrics: { ...m, escapedDefects: m.escapedDefects + 1, shipScore: m.shipScore - 25 }, trust: Math.max(0, s.trust - 0.1) });
     this.log("warn", `Orbit watch: ${back.orbit!.reason}. It's back on the rework belt with an orbit scar.`, item.id);
     await this.noteRework(back, `#${back.orbit!.prNumber} came back in orbit (${signal === "sentry" ? "Sentry" : signal === "revert" ? "revert PR" : "red on main"})`);
+    await this.escapedDefect(back);
     if (s.move?.itemId === item.id) await this.publishGauntletMove(null);
     await this.scheduleTick();
   }
@@ -2133,7 +2144,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async savePermits(book: PermitBook): Promise<void> {
     await this.accountPut("permits", book);
-    await this.patch({ autonomy: autonomyView(book) });
+    await this.patch({ autonomy: autonomyView(book, await flagEnabled(this.env, "autonomy")) });
   }
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */
@@ -2179,6 +2190,81 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const text = permit ? `${lane} has a launch permit. Its PRs that pass every station now ship on their own.` : `${lane} launch permit is off. Its PRs wait for you again.`;
     await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
     this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: by === "card" ? "You said yes on the permit card." : "You changed it in settings." });
+  }
+
+  // ---------- autonomy levels (src/levels.ts), behind the "autonomy" flag ----------
+
+  /** The next level, once it's earned and not snoozed, becomes a card. */
+  private async offerLevelMove(): Promise<void> {
+    if (!(await flagEnabled(this.env, "autonomy"))) return;
+    const book = await this.permitBook();
+    const level = levelReady(book);
+    if (level) await this.publishGauntletMove(levelMove(book, level));
+  }
+
+  /** Handles the level card. Returns false for every other move. */
+  private async chooseLevelMove(moveId: string, optionId: string): Promise<boolean> {
+    const move = this.state!.move;
+    const level = move?.options[0]?.actions[0]?.args.level;
+    if (!move || move.id !== moveId || move.kind !== "automate" || typeof level !== "string") return false;
+    await this.publishGauntletMove(null);
+    if (optionId !== "allow") { await this.accountPut("permits", snoozeLevel(await this.permitBook())); return true; }
+    if (!(await flagEnabled(this.env, "autonomy"))) return true;
+    const book = grantLevel(await this.permitBook(), level as AutonomyLevel);
+    if (!book) { this.log("info", `${LEVEL_NAME[level as AutonomyLevel] ?? level} isn't earned yet.`); return true; }
+    await this.savePermits(book);
+    const text = `${LEVEL_NAME[level as AutonomyLevel]} unlocked. The planner does more on its own now. Merging still needs you or a lane's permit.`;
+    await this.broadcast({ type: "autonomy_unlocked", level: level as AutonomyLevel, text });
+    this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: "You said yes on the autonomy card." });
+    return true;
+  }
+
+  /**
+   * At Floor and above, the planner answers the cards its level covers (src/levels.ts levelTap) through the same
+   * handlers a player's tap uses, so every job, head and scar check still applies. One card per tick, logged with
+   * approvedBy "autonomy". Nothing here can merge: request_merge is never on the list.
+   */
+  private async runLevel(): Promise<void> {
+    if (!(await flagEnabled(this.env, "autonomy"))) return;
+    const level = ladderOf(await this.permitBook()).level;
+    if (level === "advisor") return;
+    await this.decisionData();
+    const s = this.state!;
+    for (const card of [...this.openMoves!]) {
+      const tap = levelTap(card, level);
+      if (!tap) continue;
+      const label = card.options.find(o => o.id === tap.optionId)?.label ?? tap.optionId;
+      s.move = card;
+      const before = JSON.stringify(await this.runnerJobs());
+      const handled = await this.choosePermitMove(card.id, tap.optionId) || await this.chooseGauntletMove(card.id, tap.optionId);
+      if (!handled) await this.chooseRunnerMove(card.id, tap.optionId);
+      const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
+      await this.refreshDecisions();
+      if (!consumed) continue;
+      this.broadcast({ type: "log", level: "info", text: `${card.title}: ${label}`, at: Date.now(), itemId: card.itemId, actor: "spark", tool: card.options.find(o => o.id === tap.optionId)?.actions[0]?.tool, approvedBy: "autonomy", reason: `${tap.why}. Turn it down in Make it yours.` });
+      return;
+    }
+  }
+
+  /** The player turned the factory's level down. Going up only happens on the card. */
+  private async setLevel(level: AutonomyLevel): Promise<void> {
+    const book = lowerLevel(await this.permitBook(), level);
+    if (!book) return;
+    await this.savePermits(book);
+    const text = `Autonomy is ${LEVEL_NAME[level]} now. The planner asks first for anything above it.`;
+    this.broadcast({ type: "log", level: "info", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: "You changed it in settings." });
+  }
+
+  /** Orbit watch caught an escaped defect: the factory drops back to Advisor and the clean count starts over. */
+  private async escapedDefect(item: Item): Promise<void> {
+    const { book, dropped } = escape(await this.permitBook());
+    await this.savePermits(book);
+    if (!dropped || !(await flagEnabled(this.env, "autonomy"))) return;
+    const card = this.state!.move;
+    if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.level) await this.publishGauntletMove(null);
+    const text = `An escaped defect dropped autonomy from ${LEVEL_NAME[dropped]} to Advisor. Every card waits for you until the factory ships clean again.`;
+    await this.broadcast({ type: "autonomy_unlocked", level: "advisor", text });
+    this.log("warn", text, item.id);
   }
 
   /** Handles the permit card. Returns false for every other move. */
@@ -2384,7 +2470,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("warn", "Run the missing checks before launching.");
       } else {
         const before = JSON.stringify(await this.runnerJobs());
-        const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
+        const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(msg.moveId, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
@@ -2413,6 +2499,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         break;
       case "set_autonomy":
         if (msg.district && msg.permit !== undefined) await this.grantPermit(msg.district, msg.permit, "toggle");
+        else if (msg.level) await this.setLevel(msg.level);
         break;
       case "connect_source": {
         if (msg.kind === "github") {
@@ -2713,8 +2800,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.guard("autoLaunchPermitted", () => this.autoLaunchPermitted());
     await this.guard("offerGauntletMove", () => this.offerGauntletMove());
     await this.guard("offerPermitMove", () => this.offerPermitMove());
+    await this.guard("offerLevelMove", () => this.offerLevelMove());
     await this.guard("offerResearchMove", () => this.offerResearchMove());
     await this.guard("offerRunnerPlan", () => this.offerRunnerPlan());
+    await this.guard("runLevel", () => this.runLevel());
     const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.accountAlarm(Date.now() + TICK_MS);

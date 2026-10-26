@@ -559,6 +559,9 @@ export const YOURS = {
   anyFolder: "any folder",
   agentFor: (id: string) => `Agent for ${id}`,
   notPlugged: (name: string) => `${name} isn't plugged in yet: pair the runner`,
+  level: "Autonomy",
+  levelNow: (level: string) => `The planner is at ${level}. Turn it down and it asks first again. Going back up is earned on a card.`,
+  levelDown: (level: string) => `Down to ${level}`,
   permits: "Launch permits",
   permitsWhy: "These folders ship on their own once every check passes. Turn one off and its PRs wait for you again.",
   permitOff: "Turn off",
@@ -823,4 +826,10 @@ export const PROGRESS = {
   xpRule: "XP only comes from real results: ships, clean ships, launches that hold, checks you add, cards you answer.",
   notifyTitle: (n: number) => `${plural(n, "card")} waiting on you`,
   notifyBody: "The factory needs a decision.",
+};
+
+// Brand art alt text (web/src/ui/Logo.tsx).
+export const BRAND = {
+  wordmarkAlt: "Shiptorio",
+  markAlt: "Shiptorio",
 };
