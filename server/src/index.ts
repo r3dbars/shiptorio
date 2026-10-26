@@ -239,6 +239,9 @@ app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
 app.post('/admin',c=>adminSignup(c.req.raw,c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
 app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+// The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
+// already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
+app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
 app.post("/auth/owner-session", (c) => ownerSession(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));

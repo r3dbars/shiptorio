@@ -1,0 +1,54 @@
+name: Stranger path
+permissions:
+  contents: read
+# A brand-new GitHub account walks signup → install the App → pick a repo → live factory → Power, on the
+# real Worker (Miniflare) with a pretend GitHub. Only runs when the path it covers changes, to save
+# Actions minutes. Friction log: docs/context/new-user-path.md.
+concurrency:
+  group: stranger-${{ github.ref }}
+  cancel-in-progress: true
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "web/src/main.tsx"
+      - "web/src/ui/Onboarding.tsx"
+      - "web/src/ui/NextMove.tsx"
+      - "web/src/ui/IntroTour.tsx"
+      - "server/src/index.ts"
+      - "server/src/auth.ts"
+      - "server/src/accounts.ts"
+      - "server/src/access.ts"
+      - "server/src/session.ts"
+      - "server/migrations/**"
+      - "playtest/stranger/**"
+      - ".github/workflows/stranger.yml"
+  workflow_dispatch:
+jobs:
+  stranger:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Playwright + Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-audit --no-fund playwright@1.63.0
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Walk the stranger path
+        run: node playtest/stranger/run.mjs
+        env:
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/pw/node_modules/playwright/index.js
+          STRANGER_OUT: ${{ runner.temp }}/stranger
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stranger-path
+          path: ${{ runner.temp }}/stranger
+          retention-days: 7
