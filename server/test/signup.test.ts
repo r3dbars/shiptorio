@@ -119,8 +119,9 @@ test('Turnstile sign-in has no GET bypass in waitlist mode; missing keys never s
   expect(post.headers.get('location')).toBeNull();
 });
 
-test('the docs site stays public in waitlist mode; the app does not',async()=>{
+test('the docs site stays public in waitlist mode; the app and its API do not',async()=>{
   const e=env();
   for (const path of ['/docs/','/docs/faq']) expect(await (await app.fetch(req(path),e as never)).text()).toBe('factory app');
-  expect(await (await app.fetch(req('/'),e as never)).text()).not.toBe('factory app');
+  expect((await app.fetch(req('/api/repos'),e as never)).status).toBe(401);
+  expect(await (await app.fetch(req('/art/spark.html'),e as never)).text()).not.toBe('factory app');
 });
