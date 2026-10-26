@@ -81,3 +81,10 @@ operator pin: the authorized repo's current stable identity binds their envelope
 Unproven old connections require reconnecting or operator identity verification;
 this is deliberate rather than guessing ownership from whichever repo owns a name
 now. This follow-up changes no live credential values, revocations, pairing, or pins.
+
+Production preservation for this follow-up was verified before release: GitHub API
+repo ID `1434502633` and D1 installation `175555016` identify `r3dbars/shiptorio`;
+that installation is active, the repo is not archived, both legacy D1 rows are
+linked/unrevoked, and both KV links name this repository. The six non-secret pins
+are committed only in top-level production Wrangler vars. Staging vars are unchanged.
+No provider key values or envelopes were read to establish this proof.
