@@ -54,7 +54,7 @@ export const REWORK_COPY: PanelCopy = {
   zone: "The loop back",
   name: "Rework belt",
   tag: ["red", "fails go back"],
-  what: "Anything that fails a station rides back to Spark, not straight to the builder. It carries a scar tag: what failed and the evidence. Spark re-plans with that. Third strike, it comes to you. Same scar showing up again and again means a check should move up a layer.",
+  what: "Anything that fails a station rides back to the planner, not straight to the builder. It carries a scar tag: what failed and the evidence. The plan gets redone with that. Third strike, it comes to you. Same scar showing up again and again means a check should move up a layer.",
   actions: [
     { id: "turret", label: "Add a test turret on the top scar's district", recommended: true },
     { id: "scars", label: "See all scar tags", recommended: false },
@@ -66,11 +66,11 @@ export const POWER_COPY: PanelCopy = {
   zone: "Power · AI compute",
   name: "Power plants",
   tag: ["green", "your sign-ins"],
-  what: "Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every station spends power, so more checks cost more. Spark spends heavy checks where mistakes are expensive and keeps docs cheap. Spark's own thinking runs on its steam plant.",
+  what: "Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every station spends power, so more checks cost more. Heavy checks go where mistakes are expensive and docs stay cheap. The planner runs on its own steam plant.",
   actions: [
     { id: "sign-in", label: "Sign in with another plan", recommended: false },
     { id: "hold", label: "Hold low-value items", recommended: false },
-    { id: "balance", label: "Let Spark balance power", recommended: true },
+    { id: "balance", label: "Balance power for me", recommended: true },
   ],
 };
 
@@ -80,21 +80,21 @@ export const MACHINE_COPY: Partial<Record<Machine["type"], PanelCopy>> = {
     zone: "1 · Ore · signals in",
     name: "Ore mine",
     tag: ["amber", "signals in"],
-    what: "Every source is a mine: GitHub issues, Sentry errors, customer email. Spark merges duplicates into one weighted chunk, so 40 crash reports about one bug ride the belt as one chunk weighing 40.",
+    what: "Every source is a mine: GitHub issues, Sentry errors, customer email. Duplicates merge into one weighted chunk, so 40 crash reports about one bug ride the belt as one chunk weighing 40.",
     actions: [{ id: "connect", label: "Connect another source", recommended: true }],
   },
   splitter: {
-    zone: "Brain · Spark",
-    name: "Spark's splitter",
+    zone: "Brain · planner",
+    name: "Planner",
     tag: ["blue", "reads, plans, routes"],
-    what: "Spark reads each chunk, restates the problem in plain words, scores who it hurts, picks a machine and writes the plan. Spark never writes code. Its thinking runs on the steam plant.",
+    what: "Reads each chunk, restates the problem in plain words, scores who it hurts, picks a machine and writes the plan. It never writes code. It runs on the steam plant.",
     actions: [{ id: "replan", label: "Re-plan the queue by value", recommended: true }],
   },
   assembler: {
     zone: "2 · Build",
     name: "Assembler",
     tag: ["amber", "your subscription"],
-    what: "Your Claude Code or Codex, running on your own subscription, builds what Spark planned and opens a PR. It has to attach evidence, not just say done.",
+    what: "Your Claude Code or Codex, running on your own subscription, builds what the planner planned and opens a PR. It has to attach evidence, not just say done.",
     actions: [
       { id: "upgrade", label: "Upgrade to MK2 (more parallel jobs)", recommended: true },
       { id: "pause", label: "Pause this assembler", recommended: false },

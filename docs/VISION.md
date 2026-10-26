@@ -36,6 +36,11 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    (phone, web, later voice). The gauntlet makes fast yeses safe, and earned trust means fewer cards.
 7. **Simple, easy, addictive in a good way.** Two minutes from sign-in to your first bottleneck. Justin loves
    games; the game pull is the product. Fun is what makes people keep shipping.
+8. **Plain words in the UI, no "Spark".** Players don't care what the planner model is called. Recommended options
+   just get a "Suggested" tag. No named character. The only credit is one small "powered by Meta Muse Spark" line
+   (onboarding/about). Internally (code, docs, contracts) Spark keeps its name.
+9. **Progressive disclosure, mobile first.** New players see almost nothing: the map and one next move. Each HUD
+   piece unlocks as the game introduces it, so it never feels overwhelming. Big readable text, few boxes.
 
 ## Non-goals (for now)
 
@@ -82,6 +87,7 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 
 - 2026-10-26: Vision written from Justin's project chat, `docs/PRODUCT.md`, `docs/LOOP.md`.
 - 2026-10-26: First sources are GitHub, Sentry, PostHog. Stripe on hold.
+- 2026-10-26: HUD redesign: less dense, mobile first, progressive disclosure, no "Spark" in player-facing UI.
 - 2026-10-26: Humans are the bottleneck in the agentic loop. Shiptorio always points at it, and a swipe
   check-in (8 to 12 cards, right = do it, left = later, down = never + why) lets you push the whole system
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".

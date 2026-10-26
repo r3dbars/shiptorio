@@ -106,7 +106,7 @@ export const SCENARIOS = {
         users: 112,
         failAt: "verify",
         failFirst: "passed CI, but the crash still happens with an empty cart (repro attached)",
-        ask: "Send it to your Claude Code assembler with Spark's plan: guard cart.total, add a coupon-on-empty-cart test.",
+        ask: "Send it to your Claude Code assembler with the plan: guard cart.total, add a coupon-on-empty-cart test.",
         spark: [
           { tool: "get_sentry_issue", text: "New error on /checkout: TypeError: cart.total is undefined, 112 users", reason: "Sentry alert" },
           { tool: "triage", text: "Triaged as a bug in checkout, value 112 users", reason: "Every checkout with a coupon fails" },
@@ -136,7 +136,7 @@ export const SCENARIOS = {
         title: "CSV export is empty",
         kind: "bug",
         district: "api",
-        ask: "3 customers asked. Spark found it: the export reads the wrong date column. Build it on Claude Code?",
+        ask: "3 customers asked. Found it: the export reads the wrong date column. Build it on Claude Code?",
         spark: [{ tool: "triage", text: "Triaged \"CSV export is empty\" as a bug in /api, 3 customers asked", reason: "issue + 2 emails" }],
       },
       { at: 6, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
@@ -152,7 +152,7 @@ export const SCENARIOS = {
         title: "Checkout button spins forever on Safari",
         kind: "bug",
         district: "web",
-        ask: "Send it to your new assembler with Spark's plan: await the payment intent before enabling the button.",
+        ask: "Send it to your new assembler with the plan: await the payment intent before enabling the button.",
         spark: [{ tool: "triage", text: "Triaged as a bug in web: the one worth fixing first", reason: "it blocks checkout on Safari" }],
       },
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
@@ -202,7 +202,7 @@ function initialState(sc: Scenario): FactoryState {
     { id: "orbit-1", type: "inspector", x: 15, y: 3, tier: 1, state: "idle" },
     { id: "steam-spark", type: "steam", x: 0, y: 3, tier: 1, state: "idle" },
   ];
-  const power: PowerSource[] = [{ id: "steam-spark", kind: "steam", name: "Muse Spark", level: 1, online: true }];
+  const power: PowerSource[] = [{ id: "steam-spark", kind: "steam", name: "Planner", level: 1, online: true }];
   if (harness !== "spark" && !sc.unplugged) {
     machines.push({ id: plant, type: "solar", x: 3, y: 3, tier: 1, state: "idle" });
     power.push({ id: plant, kind: "solar", name: SOLAR_NAME[harness] ?? harness, level: 0.9, online: true });
@@ -232,7 +232,7 @@ function initialState(sc: Scenario): FactoryState {
     autonomy: {
       level: "advisor",
       districts: districts.map((d) => ({ district: d.name, score: d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: false })),
-      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "Spark moves approved as-is" },
+      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "suggestions approved as-is" },
       ranAlone: 0,
     },
     foreman: { thinking: false },
@@ -373,8 +373,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const NEVER_LINE = {
     once: "Dropped it.",
     kind: "Noted as a rule: no more cards like this",
-    spark: "Got it: Spark handles this kind on its own from now on",
-    wrong: "Logged a scar: Spark misread this one",
+    spark: "Got it: this kind gets handled on its own from now on",
+    wrong: "Logged a scar: misread this one",
   } as const;
   const dismiss = (moveId: string, why: keyof typeof NEVER_LINE) => {
     const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
@@ -393,12 +393,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const have = a.next.have + 1;
     if (have < a.next.need) return apply({ autonomy: { ...a, next: { ...a.next, have } } });
     const level = a.next.level;
-    const next: Autonomy["next"] = level === "floor" ? { level: "build", have: 0, need: 5, label: "PRs merged from Spark's plans, no escaped defect" } : null;
+    const next: Autonomy["next"] = level === "floor" ? { level: "build", have: 0, need: 5, label: "PRs merged from the plan, no escaped defect" } : null;
     apply({ autonomy: { ...a, level, next } });
     emit({
       type: "autonomy_unlocked",
       level,
-      text: level === "floor" ? "Spark earned Floor: it routes work and tunes machines on its own now" : `Spark earned ${level}`,
+      text: level === "floor" ? "Floor unlocked: work gets routed and machines tuned on their own now" : `${level} unlocked`,
     });
   };
 
@@ -457,7 +457,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: `Reply to ${to.split("@")[0]}`,
-        why: `Spark drafted: "Thanks for the report. Checkout is fixed in #${item.prNumber}, you can pay now. Sorry about that."`,
+        why: `Drafted: "Thanks for the report. Checkout is fixed in #${item.prNumber}, you can pay now. Sorry about that."`,
         stage: "impact",
         kind: "ship",
         focus: "ore-inbox",
@@ -612,7 +612,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (failure && item.attempts === 1 && (failAt.get(item.id) ?? "ci") === st.kind) {
             const scar = { station: st.kind, reason: failure, strike: item.attempts, at: now };
             apply({ items: [{ ...next, state: "rejected", failure, scars: [...(item.scars ?? []), scar] }] });
-            record(st, false, `#${item.prNumber} ${failure}. Back to Spark on the rework belt.`);
+            record(st, false, `#${item.prNumber} ${failure}. Back to the planner on the rework belt.`);
             log("warn", `${st.name} rejected PR #${item.prNumber}: ${failure}`, item.id);
             spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${lc(st.name)} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
             break;
@@ -625,7 +625,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${lc(nextSt.name)}`, item.id);
           } else {
             apply({ items: [{ ...next, state: "on_pad", machineId: "gate-1", failure: undefined }] });
-            stat("gate-1").lastLog = { who: "Spark", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
+            stat("gate-1").lastLog = { who: "Gate", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
             log("success", `PR #${item.prNumber} cleared the gauntlet. Waiting at the merge gate.`, item.id);
             if (!autoLaunch) askToLaunch(next);
           }
@@ -775,7 +775,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: "Plug in power to start building",
-        why: "Spark has read the repo and lined up the first fix, but nothing can build yet. Your own subscriptions power the assemblers.",
+        why: "The repo's read and the first fix is lined up, but nothing can build yet. Your own subscriptions power the assemblers.",
         stage: "resources",
         kind: "input",
         focus: "assembler-1",
@@ -824,7 +824,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       [
         {
           title: "Connect PostHog to rank by real traffic",
-          why: "Spark is guessing which districts matter. With traffic, a bug on /checkout outranks /docs for the right reason.",
+          why: "Right now it's guessing which districts matter. With traffic, a bug on /checkout outranks /docs for the right reason.",
           kind: "input", stage: "intake", focus: "ore-issues", grows: ["+1 SOURCE", "SMARTER DECKS"],
           plan: ["Paste a read-only PostHog key", "Roads light up with traffic per district", "Cards rank by real sessions, not guesses"],
           options: [one("connect", "Connect PostHog"), alt("later", "Not this project")],
@@ -844,10 +844,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       ],
       [
         {
-          title: "Let Spark launch docs PRs on its own?",
-          why: "You merged the last 9 docs PRs exactly as Spark had them. Zero reverts.",
+          title: "Launch docs PRs on their own?",
+          why: "You merged the last 9 docs PRs exactly as suggested. Zero reverts.",
           kind: "automate", stage: "pad", focus: "gate-1", grows: ["+AUTONOMY", "FEWER CARDS"],
-          plan: ["Spark merges docs PRs that pass every station", "Each one still shows in the morning review card", "One revert and the permit pauses itself"],
+          plan: ["Docs PRs that pass every station merge on their own", "Each one still shows in the morning review card", "One revert and the permit pauses itself"],
           options: [one("permit", "Give docs a launch permit"), alt("more", "Ask me 5 more times first")],
         },
         {
@@ -858,7 +858,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       ],
       [
         {
-          title: "Overnight: Spark did 6 things alone. 1 flagged.",
+          title: "Overnight: 6 things done alone. 1 flagged.",
           why: "Flagged: it closed #133 as a duplicate of #129. They look the same, but #133 only happens on mobile.",
           kind: "review", stage: "triage", focus: "splitter-1",
           evidence: [{ station: "5 routine", ok: true, note: "verified" }, { station: "1 flagged", ok: false }],
