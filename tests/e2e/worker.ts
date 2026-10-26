@@ -38,7 +38,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       out = { order: brief.cards.map((c: { id: string }) => c.id), reason: 'Oldest first', picks: {} };
     } else if (dev.includes('"verdict"')) out = { verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
     else throw new Error(`Unstubbed Meta prompt: ${dev.slice(0, 80)}`);
-    return reply({ choices: [{ message: { content: JSON.stringify(out) } }] });
+    return reply({ usage: { total_tokens: 64 }, choices: [{ message: { content: JSON.stringify(out) } }] });
   }
   if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return reply({ access_token: 'fixture-user-token' });
   if (url.hostname !== 'api.github.com') throw new Error(`External fetch blocked: ${url.hostname}`);
@@ -69,9 +69,23 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(req.url);
+    if (url.pathname === '/__test/warm-load-grants') {
+      // The load target is DO fan-out, not GitHub's upstream request queue. Model
+      // already-warm provider permission grants; D1 membership/session checks still run.
+      await Promise.all([...knownRepos].flatMap(repo => Array.from({ length: 5 }, (_, i) =>
+        env.CACHE.put(`access:v2:1:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }))));
+      return reply({ ok: true });
+    }
     if (url.pathname === '/__test/access' || url.pathname === '/__test/session') {
       const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, 'preview')).replace('shiptorio_session=', 'shiptorio_access=');
-      if (url.pathname === '/__test/access') return Response.json({ ok: true }, { headers: { 'set-cookie': preview } });
+      if (url.pathname === '/__test/warm-load-grants') {
+      // The load target is DO fan-out, not GitHub's upstream request queue. Model
+      // already-warm provider permission grants; D1 membership/session checks still run.
+      await Promise.all([...knownRepos].flatMap(repo => Array.from({ length: 5 }, (_, i) =>
+        env.CACHE.put(`access:v2:1:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }))));
+      return reply({ ok: true });
+    }
+    if (url.pathname === '/__test/access') return Response.json({ ok: true }, { headers: { 'set-cookie': preview } });
       const index = Number(url.searchParams.get('user') ?? 0);
       if (!Number.isInteger(index) || index < 0 || index > 5) return new Response('bad fixture user', { status: 400 });
       const user = { id: 123 + index, login: index ? `fixture${index}` : 'fixture' };
@@ -79,6 +93,7 @@ export default {
       // Explicitly grant the load accounts enough factories; production quotas still execute.
       await env.DB.prepare('INSERT OR REPLACE INTO signup_allowlist (login, enabled, approved_by, factories, repos, runs_daily, updated_at) VALUES (?, 1, ?, 51, 51, 20, ?)').bind(user.login, 'test-fixture', Date.now()).run();
       await saveReach(env, user.id, { installations: [{ id: 1, account: 'fixture' }], repos: [...knownRepos].map(repo => ({ repo, installationId: 1, defaultBranch: 'main' })) });
+      if (index) await Promise.all([...knownRepos].map(repo => env.CACHE.put(`access:v2:1:${repo}:${user.id}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 })));
       const session = await createSession(env, user, 'load fixture');
       return reply({ cookie: `${session.split(';')[0]}; ${preview.split(';')[0]}` });
     }

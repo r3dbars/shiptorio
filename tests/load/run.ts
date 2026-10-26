@@ -26,7 +26,8 @@ try {
     await Bun.sleep(200);
   }
   const repos = ['load/crowd', ...Array.from({ length: 50 }, (_, i) => `load/factory-${i}`)];
-  await Promise.all(repos.map(repo => post(`/__test/${repo}/seed`)));
+  // Provision sequentially through the real GitHub request budget (one installation).
+  for (const repo of repos) await post(`/__test/${repo}/seed`);
   // Five legitimate player identities/IPs keep each cohort below the real 60 upgrades/min budget.
   const identities = await Promise.all(Array.from({ length: 5 }, async (_, i) => {
     const { cookie } = await (await fetch(`${origin}/__test/session?user=${i + 1}`, { method: 'POST' })).json() as { cookie: string };
@@ -59,6 +60,7 @@ try {
   // Ramp handshakes in batches; the measured phase still keeps all 250 sockets open.
   const connections = [...Array.from({ length: 200 }, () => repos[0]), ...repos.slice(1)];
   for (let i = 0; i < connections.length; i += 25) await Promise.all(connections.slice(i, i + 25).map(connect));
+  await post('/__test/warm-load-grants');
   // CDP samples measure local workerd isolate CPU, never billed Cloudflare CPU.
   const targets = await (await fetch('http://localhost:9249/json')).json() as { webSocketDebuggerUrl: string }[];
   profileSocket = new WebSocket(targets[0].webSocketDebuggerUrl);

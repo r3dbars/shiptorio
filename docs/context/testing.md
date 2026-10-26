@@ -82,7 +82,9 @@ factories, opens 200 WebSockets on the first and one on each of the others (250 
 uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets, with explicit 51-factory signup allocations), ramps handshakes in batches of 25, then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
 client must receive the round's tick before the next round starts. It measures
 request-start → client patch receipt and tick RPC wall time, fails on disconnects or
-invalid messages and requires all 5,000 expected tick deliveries. This is a fan-out
+invalid messages and requires all 5,000 expected tick deliveries. GitHub provisioning runs sequentially through its real request budget. Fixture
+external permission grants are warmed in KV before measurement; D1 session,
+membership and signup checks remain active on every frame. This is a fan-out
 and tick-contention test with fixture ore, not a production API/provider soak test.
 Set `LOAD_ROUNDS=40` to lengthen it (allowed range 5–100).
 
