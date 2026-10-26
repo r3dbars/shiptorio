@@ -29,7 +29,7 @@ const STATE_WORD: Record<Item["state"], string> = {
   launched: "launched",
 };
 
-const ORE_SOURCE: Record<string, Item["source"]> = { "ore-issues": "github_issue", "ore-sentry": "sentry", "ore-inbox": "inbox" };
+const ORE_SOURCE: Record<string, Item["source"]> = { "ore-issues": "github_issue", "ore-sentry": "sentry", "ore-posthog": "posthog", "ore-inbox": "inbox" };
 
 interface Panel {
   copy: PanelCopy;
