@@ -40,7 +40,7 @@ function Root() {
       live={live}
       step={step === "repo" || step === "intro" ? step : "hello"}
       onDone={(repo) => {
-        if (live) return void (location.href = `?source=live&repo=${encodeURIComponent(repo)}`);
+        if (live) return void (location.href = `?source=live&repo=${encodeURIComponent(repo)}&connect=1`);
         // The sim plays the rest: scan, starter factory, power, first build.
         history.replaceState(null, "", `?source=sim&scenario=first-run&repo=${encodeURIComponent(repo)}`);
         setStep(null);

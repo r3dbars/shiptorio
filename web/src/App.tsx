@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+
 import { savePref } from "./account";
 import type { FactoryState, Item, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
@@ -28,6 +29,7 @@ import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressS
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { RunnerConnection } from "./ui/RunnerConnection";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#ff7a2a" };
 
@@ -148,6 +150,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
   const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -288,12 +291,17 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     </div>
   );
 
+  useEffect(() => {
+    if (cfg.kind === "live" && new URLSearchParams(location.search).has("connect")) setSheet("power");
+  }, [cfg.kind, cfg.repo]);
+
   const settings = (
     <>
       <button type="button" className="credit-btn" onClick={() => { setTray(false); setSheet("thinks"); }}>
         {SETTINGS.howItThinks}
       </button>
       <SoundControl />
+      {cfg.kind === "live" && <button type="button" className="credit-btn" onClick={() => { setTray(false); setSheet("power"); }}>Connect your machine</button>}
       {show("labels") && (
         <div className="row2">
           <span>{SETTINGS.labels}</span>
@@ -465,6 +473,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 ? FORK.bottleneck(state.bottleneck.summary)
                 : FORK.scanned(state.districts.length)}
             </h2>
+            {cfg.kind === "live" && <RunnerConnection repo={cfg.repo} />}
             <div className="opts">
               <button type="button" className="btn rec" onClick={() => { setWorld("checkin"); if (deck.length > 1) setCheckin(true); }}>
                 {FORK.checkin}
@@ -557,6 +566,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
+            {cfg.kind === "live" && <RunnerConnection repo={cfg.repo} />}
             <p className="empty">
               {plants.some((p) => p.kind === "geothermal") ? POWER.introGeo : POWER.intro}
             </p>
@@ -587,15 +597,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 </div>
               );
             })}
+
             <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>{POWER.howItThinks}</button>
-            {cfg.kind === "live" && state?.repo && (
-              <button type="button" className="credit-btn" onClick={async () => {
-                try {
-                  const response = await fetch(`/api/repos/${state.repo}/runner/revoke`, { method: "POST" });
-                  if (!response.ok) throw new Error("Revoke failed");
-                } catch { window.alert(POWER.unplugFailed); }
-              }}>{POWER.unplug}</button>
-            )}
 
             {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
               const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
@@ -647,7 +650,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </button>
           )}
           {world !== "checkin" && (
-          <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={!show("power")}>
+          <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={cfg.kind !== "live" && !show("power")}>
             <Icon name="bolt" size={20} />
             {HUD.dock.power}
           </button>

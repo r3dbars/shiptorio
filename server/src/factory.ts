@@ -19,7 +19,9 @@ import { handleLifecycle, lifecycleEvents, RETENTION_MS } from "./github-lifecyc
 import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
+import { pollDevice, type DeviceRecord } from "./device-pairing";
 import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
@@ -131,7 +133,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private deckRules: DeckRule[] | null = null;
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["ensure", "connectMine", "disconnectMine", "pairRunner", "revokeRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary"];
+    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary"];
+
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
       const start = Date.now();
@@ -421,6 +424,63 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch { this.log("warn", "This work is already queued or has changed. Refresh to see its latest state.", item.id); }
   }
 
+  async allowDeviceStart() {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const now = Date.now();
+      const saved = await this.ctx.storage.get<{ count: number; expires: number }>("deviceRate");
+      const rate = saved && saved.expires > now ? saved : { count: 0, expires: now + 10 * 60_000 };
+      if (rate.count >= 10) return false;
+      rate.count++;
+      await this.ctx.storage.put("deviceRate", rate); await this.ctx.storage.setAlarm(rate.expires);
+      return true;
+    });
+  }
+  async startDevice(secret: string, expires: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.ctx.storage.get("device")) return false;
+      await this.ctx.storage.put("device", { secret, expires } satisfies DeviceRecord);
+      await this.ctx.storage.setAlarm(expires);
+      return true;
+    });
+  }
+  async approveDevice(approved: NonNullable<DeviceRecord["approved"]>) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      if (!record || record.expires <= Date.now() || record.delivered || record.approved) return false;
+      record.approved = approved;
+      await this.ctx.storage.put("device", record);
+      return true;
+    });
+  }
+  async readyDevice() {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      if (record) { record.ready = true; await this.ctx.storage.put("device", record); }
+    });
+  }
+  async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
+    if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
+    await this.ctx.storage.put("runnerPresence", { harnesses, seenAt: Date.now() });
+  }
+  async pollDevice(secret: string) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<DeviceRecord>("device");
+      const result = pollDevice(record, secret);
+      if (record) await this.ctx.storage.put("device", record);
+      return result;
+    });
+  }
+  async runnerStatus() {
+    const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
+    const jobs = await this.runnerJobs();
+    const lastId = await this.ctx.storage.get<string>("runnerLastJobId");
+    const last = jobs.find(job => job.id === lastId);
+    const paired = !!await this.ctx.storage.get("runnerPair");
+    return { paired, online: paired && !!presence && Date.now() - presence.seenAt < 20000,
+      seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
+      lastJob: last ? { id: last.id, status: last.status } : null };
+  }
+  async activateRunner(pairId: string) { await this.ctx.storage.put("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); }
   async pairRunner(): Promise<string> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const pairId = crypto.randomUUID();
@@ -470,6 +530,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
       if (currentTrace()) await this.ctx.storage.put(`trace:${item.id}`, currentTrace());
       await this.ctx.storage.put(`runnerJob:${id}`, job);
+      await this.ctx.storage.put("runnerLastJobId", id);
       await this.refreshDecisions();
       this.broadcast({ type: "log", level: "info", text: `Planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
       await this.scheduleTick();
@@ -604,6 +665,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.ctx.storage.put(`runnerJob:${job.id}`, job);
         return null;
       }
+      await this.ctx.storage.put("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + 30 * 60 * 1000 });
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
@@ -2172,6 +2234,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
+    if (await this.ctx.storage.get("device") || await this.ctx.storage.get("deviceRate")) { await this.ctx.storage.deleteAll(); return; }
     if (await this.ctx.storage.get("migratedTo")) { await this.ctx.storage.deleteAlarm(); return; }
     const lifecycle = await this.ctx.storage.get<{ deleteAt?: number }>("githubLifecycle");
     if (lifecycle) {
@@ -2208,6 +2271,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else if (lifecycle.deleteAt) await this.ctx.storage.setAlarm(lifecycle.deleteAt);
       return;
     }
+
     await this.load();
     return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
