@@ -1,4 +1,4 @@
-# Encrypted mine credentials (goal 3, in progress)
+# Encrypted mine credentials (goal 3)
 
 PR #97 stored `cred:sentry` / `cred:posthog` globally in KV. PR #135 auto-connected
 Worker secrets on map open. New credentials use D1 keyed by installation + repo + kind;
@@ -13,11 +13,11 @@ insert, then is deleted. Revocation tombstones block stale migration and Worker
 secret fallback. Overrides are limited to the legacy owner factory, default
 `r3dbars/shiptorio`, or explicit SENTRY_REPO / POSTHOG_REPO.
 
-Justin sets the master key; this task does not set or print secret values:
+Initial setup command (no key material is printed or saved to a file):
 
 ```sh
 cd /Users/redbars/shiptorio/server
-openssl rand -base64 32 | bunx wrangler secret put CRED_MASTER_KEY --name shiptorio
+openssl rand -base64 32 | bunx wrangler secret put CRED_MASTER_KEY --name shiptorio --env=""
 ```
 
 Key version defaults to `1`. Before changing CRED_MASTER_KEY, retain the old version
@@ -49,3 +49,8 @@ provider credential itself remains a separate provider-side action.
 D1 migration: `0005_encrypted_credentials.sql` (renumber against main before merge).
 The D1 migration runs through the existing Deploy workflow; no new Cloudflare resources.
 Connection-page changes live in server-rendered `server/src/connect.ts`, not `web/`.
+
+Production setup: authorized Wrangler access was available and the secret-name list
+confirmed CRED_MASTER_KEY was absent. Generated 32 random bytes directly into
+`wrangler secret put` on only the `shiptorio` Worker; upload succeeded. No existing
+secrets were replaced, and the key was never printed or written to disk.

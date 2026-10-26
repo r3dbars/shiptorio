@@ -5,6 +5,15 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Security hardening checkpoint (Oct 26): preserve the existing signed webhook and
+session boundaries, enforce browser mutation origins centrally, and add durable
+per-IP/per-user budgets using the existing Factory binding (no new Cloudflare
+resources). CSP will allow the app's Google fonts and inline styles; executable
+inline scripts remain blocked except nonce-authorized original art prototypes.
+Tenant membership is a separate concurrent change. Security-only web edits, if
+needed, are limited to untrusted link destinations and rendering regression tests.
+The checkpoint advances the Oct 26 live intake foundation and Oct 29 source intake.
+
 Release verification, Oct 26: live bottleneck/deck #96, repeatable playtests #85,
 Firefox/HTTPS entry #95/#98, repository picker #118, same-head CI/session security
 #101/#111, sandboxed local verification/publication #104, idle-loop #117 and disposed
@@ -279,5 +288,6 @@ read migrates and deletes plaintext; revocation tombstones prevent stale KV or o
 secret fallback from restoring access. Claude accounts #160 supplies session/user/repo
 membership. Worker-secret overrides stay with the pinned/legacy operator map. Keys
 never enter factory messages, provider errors, logs, or connection responses; shared
-redaction covers those output boundaries. Operator must configure the new master key
-using the command in docs/context/encrypted-credentials.md; no key was set by this task.
+redaction covers those output boundaries. The requested master key was generated directly into Wrangler after confirming
+authorized access and an absent binding, only on shiptorio. No value was printed
+or saved to a file; setup command is in docs/context/encrypted-credentials.md.
