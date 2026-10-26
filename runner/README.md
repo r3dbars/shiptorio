@@ -5,13 +5,14 @@ only a player-approved job can reach a runner. It publishes a PR branch, never m
 
 ## Install (macOS and Linux; Windows through WSL2)
 
-Install git and sign in to either `claude` or `codex` first. Then:
+Install git and either `claude` or `codex` first. Then:
 
 ```sh
 curl -fsSL https://shiptorio.com/install.sh | sh
 ```
 
-Compare the code in your terminal and browser, sign in to Shiptorio, and enter a repo
+Setup opens the provider login for a dedicated Shiptorio agent home if needed. Your normal
+agent settings and credentials stay outside job sandboxes. Then compare the code in your terminal and browser, sign in to Shiptorio, and enter a repo
 where you have write access and the GitHub App is installed. Approve the code. The
 terminal confirms and starts polling for approved jobs. Keep it open; Ctrl-C stops it.
 If the browser doesn't open (including WSL), copy its printed URL into your browser.
@@ -31,6 +32,7 @@ Subscription sign-ins must be made inside WSL, not on the Windows host.
 ## Commands
 
 ```sh
+~/.local/bin/shiptorio-runner login codex # or login claude: dedicated provider sign-in
 ~/.local/bin/shiptorio-runner doctor   # check installed agent sign-ins
 ~/.local/bin/shiptorio-runner watch    # resume after closing the terminal
 ~/.local/bin/shiptorio-runner pair     # add another repo, without stopping watch

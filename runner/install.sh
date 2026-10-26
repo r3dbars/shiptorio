@@ -15,7 +15,6 @@ case "$(uname -m)" in
   x86_64|amd64) arch=x64 ;;
   *) echo 'Unsupported CPU. Use arm64 or x86_64.' >&2; exit 1 ;;
 esac
-[ "$arch" != aarch64 ] || arch=arm64
 command -v git >/dev/null 2>&1 || { echo 'Install git first (macOS: xcode-select --install).' >&2; exit 1; }
 mkdir -p "$support" "$bin"
 chmod 700 "$support"

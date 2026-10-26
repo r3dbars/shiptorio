@@ -9,7 +9,7 @@ import { runnerHome, loadPairings, savePairing, removePairing, pairMachine, type
 
 import { jobWorkspace } from "./workspace";
 import { responseSchemas, type Job } from "./messages";
-const root = runnerHome();
+const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
 const authHome = resolve(root, ".agent-home");
