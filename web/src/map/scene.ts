@@ -135,6 +135,7 @@ interface DistrictView {
   center: THREE.Vector3;
   label: Label;
   files: number;
+  update: (t: number) => void; // rack lights, fans, signs
 }
 
 interface ItemView {
@@ -585,13 +586,13 @@ export class FactoryScene {
       const dep = Math.max(1.4, d.h * S - 0.4);
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
-      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
+      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
       this.world.add(model.group);
       const label = this.addLabel(model.group, model.labelY, `d:${d.name}`);
-      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
+      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files, update: model.update });
       x0 = Math.min(x0, cx - w / 2 - 1.5);
       x1 = Math.max(x1, cx + w / 2 + 1.5);
       z0 = Math.min(z0, cz - dep / 2 - 1.5);
@@ -1265,6 +1266,7 @@ export class FactoryScene {
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterfalls) w(dt, t);
+    for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);
