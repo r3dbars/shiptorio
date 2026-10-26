@@ -121,7 +121,7 @@ function factoryFixture(env: Record<string, unknown>) {
   };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
   const fullEnv = {
-    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) },
+    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
     CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
     ...env,
   };
