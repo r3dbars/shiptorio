@@ -1,3 +1,5 @@
+import { FactoryRoom } from "../server/factory-room";
+import { factoryRoutes } from "../server/routes";
 import {
   convertManifestCode,
   installationToken,
@@ -10,13 +12,14 @@ import { layoutMap } from "./map";
 import { RepoRoom } from "./room";
 import { isAllowed, makeSessionCookie, readSession } from "./session";
 
-export { RepoRoom };
+export { RepoRoom, FactoryRoom };
 
 export interface Env {
   ASSETS: Fetcher;
   DB: D1Database;
   CACHE: KVNamespace;
   REPO_ROOM: DurableObjectNamespace<RepoRoom>;
+  FACTORY: DurableObjectNamespace<FactoryRoom>;
   PUBLIC_URL?: string; // optional override; defaults to the request origin
   DEV_LOGIN?: string; // local only: skip GitHub login on localhost as this user
   ALLOWED_LOGINS: string;
@@ -40,6 +43,7 @@ export default {
     const path = url.pathname;
 
     try {
+      if (/^\/api\/repos\/[^/]+\/[^/]+\/factory$/.test(path)) return await factoryRoutes.fetch(request, env);
       if (path === "/webhooks/github" && request.method === "POST") return await handleWebhook(request, env);
       if (path === "/setup") return setupPage(publicUrl(url, env), env);
       if (path === "/setup/callback") return await setupCallback(url, env);
@@ -145,6 +149,16 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   const installationId: number | undefined = p.installation?.id;
 
   switch (event) {
+    case "issues": {
+      if (p.action !== "opened" || !repo || !installationId || !p.issue || p.issue.pull_request) break;
+      const room = env.FACTORY.get(env.FACTORY.idFromName(repo));
+      const result = await room.fetch(`https://factory/issue?repo=${encodeURIComponent(repo)}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ number: p.issue.number, title: p.issue.title }),
+      });
+      if (!result.ok) return json({ error: "Issue ingestion failed" }, 503);
+      break;
+    }
     case "installation":
     case "installation_repositories": {
       if (p.action === "deleted") {
@@ -307,8 +321,8 @@ export function appManifest(publicUrl: string) {
     redirect_url: `${publicUrl}/setup/callback`,
     callback_urls: [`${publicUrl}/auth/callback`],
     public: false,
-    default_permissions: { contents: "read", pull_requests: "read", checks: "read", metadata: "read" },
-    default_events: ["pull_request", "push", "check_suite"],
+    default_permissions: { contents: "read", pull_requests: "read", checks: "read", metadata: "read", issues: "read" },
+    default_events: ["pull_request", "push", "check_suite", "issues"],
   };
 }
 

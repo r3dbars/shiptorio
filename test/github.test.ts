@@ -34,3 +34,8 @@ describe("appJwt", () => {
     });
   }
 });
+
+// Missing local webhook configuration must fail closed, rather than throw.
+it("rejects a webhook when no signing secret is configured", async () => {
+  expect(await verifyWebhookSignature("", "{}", "sha256=bad")).toBe(false);
+});
