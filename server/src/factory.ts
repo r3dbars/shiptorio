@@ -1,3 +1,4 @@
+import { pollDelay } from "./rate-limit";
 import { budgetAccount, budgetLimits, budgetUsage } from "./budget";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
@@ -384,7 +385,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (stored) await this.ctx.storage.put(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active job first");
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
@@ -777,7 +778,12 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
   private async pollPostHog(): Promise<void> {
     if (!(await this.ctx.storage.get<boolean>("posthogLinked"))) return;
-    const poll = (await this.ctx.storage.get<{ nextAt: number; failures: number }>("posthogPoll")) ?? { nextAt: 0, failures: 0 };
+    let poll = await this.ctx.storage.get<{ nextAt: number; failures: number }>("posthogPoll");
+    if (!poll) {
+      poll = { nextAt: Date.now() + pollDelay(POLL_MS), failures: 0 };
+      await this.ctx.storage.put("posthogPoll", poll);
+      return;
+    }
     const now = Date.now();
     if (now < poll.nextAt) return;
     const fake = this.env.FAKE_POSTHOG === "1";
@@ -786,7 +792,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (!fake && !(creds.apiKey && creds.projectId)) throw new Error("PostHog key missing");
       const rows = fake ? fakePostHogRows(now) : await fetchRouteDays({ ...creds, apiKey: creds.apiKey!, projectId: creds.projectId! });
       const { signals, traffic } = analyze(rows, creds.keyEvent || "$pageview", now);
-      await this.ctx.storage.put("posthogPoll", { nextAt: now + POLL_MS, failures: 0 });
+      await this.ctx.storage.put("posthogPoll", { nextAt: now + pollDelay(POLL_MS), failures: 0 });
       await this.ctx.storage.put("posthogTraffic", traffic.slice(0, 50));
       for (const signal of signals) await this.ingestSignal(signal);
       const top = traffic.slice(0, 3).map((t) => `${t.route} ${t.usersPerDay}/day`).join(", ");
@@ -795,7 +801,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     } catch (err) {
       const failures = poll.failures + 1;
       const retry = (err as { retryAfter?: number }).retryAfter;
-      await this.ctx.storage.put("posthogPoll", { nextAt: now + Math.max((retry ?? 0) * 1000, Math.min(3600000, POLL_MS * 2 ** Math.min(failures, 4))), failures });
+      await this.ctx.storage.put("posthogPoll", { nextAt: now + pollDelay(POLL_MS, failures, (retry ?? 0) * 1000), failures });
       const status = await this.mineStatus("posthog");
       await this.patch({ sources: [...(this.state!.sources ?? []).filter((source) => source.kind !== "posthog"), { ...status, state: "error", detail: `PostHog didn't answer (${err instanceof Error ? err.message.slice(0, 80) : "error"}). Retrying.` }] });
     }

@@ -104,7 +104,7 @@ describe("permits in the Factory", () => {
         async setAlarm(v: number) { alarm = v; },
       };
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-      const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+      const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       const saved = () => data.get("state") as FactoryState;
 
       await f.alarm(); // nothing waiting, so the permit card comes up
@@ -116,7 +116,7 @@ describe("permits in the Factory", () => {
 
       // a clean docs PR on the pad launches on its own, no card
       data.set("state", { ...saved(), items: [passed()] });
-      const g = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+      const g = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await g.alarm();
       expect(merged).toEqual(["77"]);
@@ -129,16 +129,18 @@ describe("permits in the Factory", () => {
       let review: Item = { ...passed({ id: "gh-8", prNumber: 78, lane: undefined }) };
       review = { ...review, state: "inspecting", machineId: "review-1", inspection: { ...review.inspection!, state: "pending", stages: review.inspection!.stages.map((st) => (st.gate === "ai" ? { ...st, state: "pending" as const } : st)) } };
       data.set("state", { ...saved(), items: [review], move: null });
-      const h = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+      const h = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await h.alarm();
+      // Finish the background game-master call before simulating instance replacement.
+      await new Promise(resolve => setTimeout(resolve, 0));
       expect(saved().items[0].state).toBe("rejected");
       expect(saved().items[0].lane).toBe("docs");
       expect(saved().autonomy?.districts.find((d) => d.district === "docs")).toMatchObject({ permit: false, score: 0 });
       expect(events.filter((e) => e.type === "autonomy_unlocked").length).toBe(2);
 
       data.set("state", { ...saved(), items: [passed({ id: "gh-9", prNumber: 79 })], move: null });
-      const k = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+      const k = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await k.alarm();
       expect(merged).toEqual(["77"]);

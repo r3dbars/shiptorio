@@ -101,7 +101,7 @@ describe("live gauntlet in the Factory", () => {
         async setAlarm(v: number) { alarm = v; },
       };
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-      const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+      const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ account_login: "test-owner", calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       const saved = () => data.get("state") as FactoryState;
 
       await f.alarm(); // verify bay

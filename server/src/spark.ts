@@ -33,7 +33,8 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   const output = budgetLimits(env).output;
   // UTF-8 bytes overestimate input tokens, including framing overhead. Reserve BEFORE fetch.
   const reservedTokens = new TextEncoder().encode(JSON.stringify(messages)).length + messages.length * 32 + output;
-  const reservation = env.DB ? await reserveSpark(env, env.budgetAccount ? await env.budgetAccount() : (() => { throw new BudgetError("Budget account missing; Spark paused"); })(), reservedTokens) : undefined;
+  if (!env.DB || !env.budgetAccount) throw new BudgetError("Budget ledger/account unavailable; Spark paused");
+  const reservation = await reserveSpark(env, await env.budgetAccount(), reservedTokens);
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",

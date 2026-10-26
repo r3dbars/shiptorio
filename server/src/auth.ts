@@ -1,6 +1,6 @@
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
-import { convertManifestCode } from "./github";
+import { gh, convertManifestCode } from "./github";
 import { isAllowed, makeSessionCookie } from "./session";
 import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
 import { sameOriginPath } from "./redirect";
@@ -50,13 +50,9 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   });
   const { access_token } = (await tokenRes.json()) as { access_token?: string };
   if (!access_token) return new Response("GitHub login failed", { status: 401 });
-  const userRes = await fetch("https://api.github.com/user", {
-    headers: { authorization: `Bearer ${access_token}`, "user-agent": "shiptorio", accept: "application/vnd.github+json" },
-  });
-  const user = (await userRes.json()) as GitHubUser;
-  if (!userRes.ok || !Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
+  const user = await gh<GitHubUser>("/user", access_token);
+  if (!Number.isSafeInteger(user.id) || typeof user.login !== "string") return new Response("GitHub login failed", { status: 401 });
   if (!isAllowed(env.ALLOWED_LOGINS, user.login)) return new Response(`${user.login} isn't on the allow list`, { status: 403 });
-  // The account and its repo list come from GitHub on every sign-in, so signing in again refreshes them.
   await upsertUser(env, user);
   await saveReach(env, user.id, await fetchReach(access_token));
   const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];

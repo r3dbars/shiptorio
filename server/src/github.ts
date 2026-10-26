@@ -1,3 +1,4 @@
+import { githubCooldown, RateLimitError } from "./rate-limit";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -75,23 +76,65 @@ export async function verifyWebhookSignature(secret: string, body: string, heade
 export interface AppCredentials {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
+  DB?: D1Database;
 }
 
+// In-isolate queues serialize each credential; D1 also spaces requests and preserves cooldowns
+// across isolates/restarts for installation credentials. Keys are hashes, never stored tokens.
+const queues = new Map<string, Promise<unknown>>();
+const contexts = new Map<string, { db: D1Database; scope: string }>();
+const cooldowns = new Map<string, { next: number; failures: number }>();
+const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
+const tokenCache = new Map<string, { token: string; expires: number }>();
+async function credentialKey(token: string) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
+  if (map.size >= 500 && !map.has(key)) map.delete(map.keys().next().value!);
+  map.set(key, value);
+}
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(API + path, {
-    signal: AbortSignal.timeout(20000),
-    ...init,
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "user-agent": UA,
-      "x-github-api-version": "2022-11-28",
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-    },
+  const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
+  const previous = queues.get(scope) ?? Promise.resolve();
+  const request = previous.catch(() => {}).then(async () => {
+    let state = cooldowns.get(scope) ?? { next: 0, failures: 0 };
+    if (context) {
+      const row = await context.db.prepare("SELECT next_at, failures FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number; failures: number }>();
+      if (row) state = { next: Math.max(state.next, row.next_at), failures: Math.max(state.failures, row.failures) };
+    }
+    if (state.next > Date.now() + 5000) throw new RateLimitError(state.next);
+    if (context) {
+      const slot = await context.db.prepare(`INSERT INTO api_limits(scope, next_at) VALUES (?, ?)
+        ON CONFLICT(scope) DO UPDATE SET next_at = MAX(next_at, ?) + 1000 RETURNING next_at`)
+        .bind(scope, Date.now() + 1000, Date.now()).first<{ next_at: number }>();
+      state.next = Math.max(state.next, (slot?.next_at ?? Date.now() + 1000) - 1000);
+    }
+    const delay = state.next - Date.now();
+    if (delay > 5000) throw new RateLimitError(state.next);
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+    const cacheKey = `${key}:${path}`;
+    const cached = (init.method ?? "GET") === "GET" ? etags.get(cacheKey) : undefined;
+    const headers = new Headers({ accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": UA, "x-github-api-version": "2022-11-28" });
+    if (init.body) headers.set("content-type", "application/json");
+    new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+    if (cached && cached.expires > Date.now()) headers.set("if-none-match", cached.etag);
+    const res = await fetch(API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
+    const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
+    const next = githubCooldown(res, Date.now(), state.failures, secondary);
+    const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
+    boundedSet(cooldowns, scope, { next, failures });
+    if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
+    if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
+    if (res.status === 304 && cached) return structuredClone(cached.value) as T;
+    if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
+    if (res.status === 204) return undefined as T;
+    const value = await res.json();
+    if ((init.method ?? "GET") === "GET" && res.headers.has("etag")) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
+    return value as T;
   });
-  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
-  return res.json() as Promise<T>;
+  queues.set(scope, request);
+  try { return await request; } finally { if (queues.get(scope) === request) queues.delete(scope); }
 }
 
 interface InstallationTokenScope {
@@ -100,11 +143,17 @@ interface InstallationTokenScope {
 }
 
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {
+  const cacheKey = `${env.GITHUB_APP_ID}:${await credentialKey(env.GITHUB_APP_PRIVATE_KEY)}:${installationId}:${JSON.stringify(scope ?? null)}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) return cached.token;
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
   const res = await gh<{ token: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
     method: "POST",
     ...(scope ? { body: JSON.stringify(scope) } : {}),
   });
+  if (env.DB) boundedSet(contexts, await credentialKey(res.token), { db: env.DB, scope: `github:installation:${installationId}` });
+  boundedSet(tokenCache, cacheKey, { token: res.token, expires: Date.now() + 45 * 60000 });
   return res.token;
 }
 
@@ -193,7 +242,8 @@ export async function fileContent(token: string, fullName: string, path: string,
     if (f.encoding !== "base64" || f.content == null) return null;
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
-  } catch {
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
     return null;
   }
 }
@@ -202,7 +252,8 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
   try {
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
-  } catch {
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
     return null;
   }
 }
