@@ -85,10 +85,11 @@ it("upgrades remote HTTP before authentication and sets HSTS on HTTPS gate respo
 
 it("runner revoke is a same-origin signed-in web action and invalidates renewal", async () => {
   const { browserCookies, browserEnv } = await import("./browser-fixture");
+  const { testD1, signedInCookie } = await import("./d1-fixture");
   let paired = true;
-  const env = { ...browserEnv, FACTORY: { idFromName: (s: string) => s, get: () => ({ revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
+  const env = { ...browserEnv, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get: () => ({ revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
   const url = "https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/revoke";
-  const cookie = await browserCookies();
+  const cookie = await signedInCookie(env, "test-player", ["r3dbars/shiptorio"]) + "; " + (await browserCookies()).split("; ")[1];
   expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://evil.example" } }), env as never)).status).toBe(403);
   expect(paired).toBe(true);
   expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://shiptorio.com" } }), env as never)).status).toBe(200);
