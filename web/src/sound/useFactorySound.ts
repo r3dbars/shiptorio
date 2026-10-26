@@ -5,6 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { FactoryState, Inspection, Item, Machine, Station } from "@shiptorio/shared";
 import { sound, type Focus, type Sfx } from "./engine";
 import type { ScapeKind } from "./scapes";
+import { celebrateShip } from "./ship";
 
 const GATE_SFX: Record<Inspection["stages"][number]["gate"], [pass: Sfx, fail: Sfx]> = {
   ci: ["stamp_pass", "stamp_fail"],
@@ -131,7 +132,10 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     sound.setAmbience(moving / 6, state.machines.filter((m) => m.state === "working").length);
     // first snapshot (or a new repo/scenario) sets the scene silently
     if (!p || p.repo !== state.repo) return;
-    diffSounds(p, state).forEach((s, i) => sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
+    diffSounds(p, state).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
+    // each PR that just launched gets the full celebration (event for the art + launch, fanfare, streak)
+    const was = new Map(p.items.map((i) => [i.id, i.state]));
+    state.items.filter((i) => i.state === "launched" && was.get(i.id) !== "launched").forEach((i, n) => celebrateShip(i, n * 0.4));
   }, [state]);
 }
 

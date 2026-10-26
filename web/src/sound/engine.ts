@@ -18,7 +18,9 @@ export type Sfx =
   | "dock"
   | "launch"
   | "chirp"
-  | "think";
+  | "think"
+  | "arm"
+  | "shipped";
 
 import { SCAPES, type Focus } from "./scapes";
 
@@ -179,6 +181,20 @@ class SoundEngine {
     const pitch = [196, 220, 247, 294][Math.floor(Math.random() * 4)];
     this.tone({ f: pitch, dur: 0.05, type: "square", vol: 0.05, at: t });
     this.noise({ dur: 0.04, vol: 0.06, hp: 2000, at: t });
+  }
+
+  // Ship streak: one rising note per ship in the streak (capped), each a half step higher, so a run sounds like it's building.
+  streak(n: number, delay = 0) {
+    if (!this.live || n < 2) return;
+    this.out = this.floor!;
+    const t = this.ctx!.currentTime + delay;
+    const steps = Math.min(n, 6);
+    for (let i = 0; i < steps; i++) {
+      const f = 784 * 2 ** ((i * 2 + n - 2) / 12);
+      this.tone({ f, dur: 0.09, vol: 0.1, at: t + i * 0.08 });
+      this.tone({ f: f * 1.5, dur: 0.09, type: "triangle", vol: 0.05, at: t + i * 0.08 });
+    }
+    this.tone({ f: 784 * 2 ** ((steps * 2 + n) / 12), dur: 0.4, type: "triangle", vol: 0.1, at: t + steps * 0.08 });
   }
 
   // ---------- focus ----------
@@ -361,12 +377,36 @@ class SoundEngine {
         this.noise({ dur: 3.0, vol: 0.32, lp: 300, sweepTo: 2400, at: ign, rate: 0.5, attack: 0.15 });
         this.tone({ f: 55, to: 180, dur: 2.6, type: "sawtooth", vol: 0.12, at: ign, attack: 0.2 });
         this.noise({ dur: 0.4, vol: 0.3, lp: 800, at: ign });
+        // the kick you feel in your chest, then exhaust crackle
+        this.tone({ f: 120, to: 32, dur: 0.6, type: "sine", vol: 0.45, at: ign });
+        for (let i = 0; i < 14; i++) this.noise({ dur: 0.03, vol: 0.12, hp: 2500, at: ign + 0.25 + Math.random() * 1.8 });
         break;
       }
       case "chirp": { // Spark drone: two quick bird-like blips
         const b = 1400 + Math.random() * 500;
         this.tone({ f: b, to: b * 1.5, dur: 0.05, type: "sine", vol: 0.09, at: t });
         this.tone({ f: b * 1.2, to: b * 1.8, dur: 0.06, type: "sine", vol: 0.08, at: t + 0.07 });
+        break;
+      }
+      case "arm": // you hit LAUNCH: a chunky switch, then a charge-up whine
+        this.noise({ dur: 0.05, vol: 0.3, lp: 2000, at: t });
+        this.tone({ f: 160, to: 80, dur: 0.08, vol: 0.25, at: t });
+        this.tone({ f: 220, to: 880, dur: 0.45, type: "sawtooth", vol: 0.07, at: t + 0.05, attack: 0.1 });
+        this.tone({ f: 1320, dur: 0.08, type: "triangle", vol: 0.1, at: t + 0.5 });
+        break;
+      case "shipped": {
+        // the "you shipped it" fanfare: a quick climbing arpeggio into a big held major chord with sparkles
+        [523, 659, 784, 1047].forEach((f, i) => {
+          this.tone({ f, dur: 0.11, vol: 0.13, at: t + i * 0.07 });
+          this.tone({ f: f / 2, dur: 0.11, type: "triangle", vol: 0.1, at: t + i * 0.07 });
+        });
+        const hold = t + 0.3;
+        for (const [f, type] of [[523, "square"], [659, "square"], [784, "triangle"], [1047, "triangle"], [262, "triangle"]] as const) {
+          this.tone({ f, dur: 1.1, type, vol: type === "square" ? 0.07 : 0.1, at: hold, attack: 0.01 });
+        }
+        this.noise({ dur: 0.08, vol: 0.18, lp: 1200, at: hold }); // a little drum hit under the chord
+        this.tone({ f: 130, to: 60, dur: 0.18, type: "sine", vol: 0.3, at: hold });
+        for (let i = 0; i < 6; i++) this.tone({ f: [2093, 2637, 3136, 4186][i % 4], dur: 0.12, type: "sine", vol: 0.05, at: hold + 0.15 + i * 0.09 });
         break;
       }
       case "think": // Spark is thinking: a soft data warble

@@ -11,6 +11,7 @@ import { CheckIn } from "./ui/CheckIn";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { useFactorySound } from "./sound/useFactorySound";
+import { sound } from "./sound/engine";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -130,6 +131,7 @@ export function App() {
   const launch = () => {
     const next = pad.find((i) => i.state === "on_pad") ?? pad[0];
     if (!next) return;
+    sound.play("arm");
     if (cfg.kind === "sim") send({ type: "launch_pr", itemId: next.id });
     else if (next.prUrl) window.open(next.prUrl, "_blank", "noreferrer");
   };
