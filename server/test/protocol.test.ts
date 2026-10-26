@@ -86,3 +86,41 @@ describe("foreman contract", () => {
     expect(WebToServer.safeParse({ type: "set_goal", text: "x".repeat(201) }).success).toBe(false);
   });
 });
+
+describe("gauntlet contract", () => {
+  test("stations, scar tags and station actions", () => {
+    const state = FactoryState.parse({
+      ...base,
+      stations: [
+        {
+          id: "verify-1",
+          kind: "verify",
+          name: "Verify bay",
+          machineId: "verify-1",
+          wip: 4,
+          oldestWaitMs: 23 * 60e3,
+          caughtThisWeek: 5,
+          lastLog: { who: "Verify bay", text: "#41 passed CI but the crash still happens", ok: false },
+          actions: [{ id: "second-bay", label: "Build a second verify bay", recommended: true }, { id: "recipe", label: "Teach a /checkout verify recipe" }],
+        },
+      ],
+      bottleneck: { stage: "inspect", stationId: "verify-1", wip: 4, ageMs: 1, throughputPerHour: 1, valueAtRisk: 4, summary: "4 PRs waiting on the verify bay" },
+      items: [
+        {
+          id: "i1",
+          kind: "bug",
+          source: "sentry",
+          title: "cart.total is undefined",
+          district: "checkout",
+          state: "rejected",
+          updatedAt: 1,
+          scars: [{ station: "verify", reason: "still repros with an empty cart", strike: 2 }],
+        },
+      ],
+    });
+    expect(state.stations?.[0].actions[1].recommended).toBe(false);
+    expect(state.items[0].scars?.[0].strike).toBe(2);
+    expect(WebToServer.safeParse({ type: "station_action", stationId: "verify-1", action: "second-bay" }).success).toBe(true);
+    expect(FactoryState.safeParse({ ...base, stations: [{ id: "x", kind: "lint", name: "x", wip: 0, caughtThisWeek: 0 }] }).success).toBe(false);
+  });
+});
