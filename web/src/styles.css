@@ -1,5 +1,5 @@
-/* Pixel UI from docs/art-prototype.html: full-bleed map, HUD cards pinned to the corners,
-   Silkscreen lettering in dark boxes with thin light borders, round A/B buttons. */
+/* HUD v3 over the pixel map (docs/ART.md): full-bleed map, a top bar and a bottom dock in rounded glass,
+   Barlow for words, Barlow Semi Condensed for numbers, JetBrains Mono for code paths. */
 :root {
   --stone: #c9b48a;
   --cliff: #3a4268;
@@ -615,3 +615,51 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .seg button:disabled { opacity: 0.4; cursor: default; }
 .pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
 .sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }
+
+/* v3 pass over the older cards (check-in deck, station panel, setup bits): same rounded glass, one sentence-case
+   font, small caps only for section labels, pills for tags. Overrides the original rules above. */
+.ci-open { border-radius: 999px; font: 600 14px var(--mono); letter-spacing: 0; }
+.ci-bar { border-radius: 12px; font: 500 13px var(--mono); letter-spacing: 0; }
+.ci-bar b { font: 600 15px var(--mono); letter-spacing: 0; }
+.ci-pips i { border-radius: 3px; }
+.ci-x { min-width: 32px; min-height: 32px; border-radius: 8px; font: 600 18px var(--mono); }
+.ci-where { font: 600 13px var(--mono); letter-spacing: 0; }
+.ci-card { border-radius: 16px; padding: 16px; gap: 10px; }
+.ci-kicker { font: 500 13px var(--mono); letter-spacing: 0; }
+.ci-tag { border-radius: 6px; font: 600 12px var(--mono); padding: 2px 8px; }
+.ci-title { font: 600 20px/1.25 var(--mono); letter-spacing: 0; }
+.ci-title.small { font-size: 17px; }
+.ci-stamps span, .ci-grows span { border-radius: 999px; font: 500 12px var(--mono); letter-spacing: 0; padding: 2px 10px; }
+.ci-lock { font: 600 13px var(--mono); letter-spacing: 0; }
+.ci-pick { border-top: 1px solid var(--hair); padding-top: 10px; }
+.ci-pick .lbl, .ci-sec { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+.ci-pick .do { font: 600 17px var(--mono); letter-spacing: 0; }
+.ci-pick .alt { font-size: 14px; color: var(--dim); }
+.ci-stampbig { border-radius: 12px; font: 700 24px var(--pixel); letter-spacing: 0.02em; }
+.ci-act { border-radius: 12px; min-height: 58px; font: 500 13px var(--mono); letter-spacing: 0; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.ci-act .k { font: 700 18px var(--mono); }
+.ci-act.do { border-color: var(--green); }
+.ci-sheet { border-radius: 16px; }
+.ci-close { border-radius: 8px; font: 600 13px var(--mono); letter-spacing: 0; padding: 6px 10px; }
+.ci-opt { border-radius: 10px; font: 500 14px var(--mono); letter-spacing: 0; padding: 10px 12px; }
+.ci-opt.why b { font: 600 12px var(--mono); letter-spacing: 0; }
+.ci-tally div { border-radius: 10px; }
+.ci-meter, .ci-toast { font: 500 13px var(--mono); letter-spacing: 0; }
+.ci-toast { border-radius: 999px; }
+.ci-quote { border-left-width: 3px; border-radius: 2px; }
+
+.stationpanel { border-radius: 16px; padding: 14px 16px; gap: 10px; }
+.sp-zone, .sp-h { font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+.sp-close { min-width: 38px; min-height: 38px; border-radius: 10px; background: var(--chip); font: 600 16px var(--mono); }
+.sp-name .ptitle { font: 600 20px var(--mono); letter-spacing: 0; }
+.sp-tag { border-radius: 999px; font: 600 12px var(--mono); letter-spacing: 0; text-transform: none; padding: 1px 9px; }
+.sp-stats { gap: 6px; }
+.sp-stats div { padding: 6px 10px; }
+.sp-stats dt { font: 500 12px var(--mono); text-transform: none; }
+.sp-stats dd { font: 700 17px var(--pixel); }
+.sp-jobs li { border-radius: 8px; padding: 6px 10px; }
+.sp-jobs .st { font: 600 12px var(--mono); }
+.sp-flow b { font: 600 12px var(--mono); }
+.sp-log { border-radius: 8px; border-left-width: 3px; }
+.sp-log b { font: 600 12px var(--mono); }
+.sp-actions .btn { flex: none; flex-direction: row; justify-content: space-between; text-align: left; min-height: 44px; }

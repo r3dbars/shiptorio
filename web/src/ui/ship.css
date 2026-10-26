@@ -33,6 +33,7 @@ body.ship-shake canvas.map {
   pointer-events: auto;
   cursor: pointer;
   min-width: 260px;
+  border-radius: 18px;
   max-width: min(420px, calc(100vw - 32px));
   padding: 18px 22px 16px;
   text-align: center;
@@ -56,9 +57,8 @@ body.ship-shake canvas.map {
 }
 
 .ship-title {
-  font-family: Silkscreen, monospace;
-  font-size: 30px;
-  letter-spacing: 2px;
+  font: 700 34px/1.1 var(--pixel);
+  letter-spacing: 0.01em;
   color: #5bd18b;
   text-shadow: 0 3px 0 #1f6b44;
   animation: ship-pop 0.36s 0.25s cubic-bezier(0.2, 1.6, 0.4, 1) both;
@@ -86,10 +86,10 @@ body.ship-shake canvas.map {
   display: none;
 }
 .ship-badges .b {
-  font-family: Silkscreen, monospace;
-  font-size: 11px;
-  padding: 3px 7px;
-  border: 2px solid currentColor;
+  font: 600 12px var(--mono);
+  padding: 3px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
   animation: ship-stamp 0.3s cubic-bezier(0.2, 1.8, 0.4, 1) both;
 }
 .ship-badges .first {
@@ -103,8 +103,7 @@ body.ship-shake canvas.map {
 
 .ship-score {
   margin-top: 10px;
-  font-family: Silkscreen, monospace;
-  font-size: 18px;
+  font: 700 20px var(--pixel);
   color: #f2a93b;
   animation: ship-rise 0.4s 0.6s ease-out both;
 }
@@ -115,8 +114,7 @@ body.ship-shake canvas.map {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-family: Silkscreen, monospace;
-  font-size: 11px;
+  font: 600 13px var(--mono);
   color: var(--blue, #6fb2ff);
   animation: ship-fade-in 0.3s 0.9s both;
 }
@@ -127,8 +125,9 @@ body.ship-shake canvas.map {
 .ship-auto .segs i {
   width: 8px;
   height: 10px;
-  background: #1a2244;
-  border: 1px solid #2c3766;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hair);
 }
 .ship-auto .segs i.on {
   background: #6fb2ff;
