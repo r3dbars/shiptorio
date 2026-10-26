@@ -238,11 +238,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
-  const keys = useRef({ launch, build, show });
-  keys.current = { launch, build, show };
+  const keys = useRef({ launch, build, show, intro });
+  keys.current = { launch, build, show, intro };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
       else if (k === "b" && keys.current.show("launch")) keys.current.launch();
