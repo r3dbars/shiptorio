@@ -135,8 +135,13 @@ describe("the record", () => {
     expect(parseEarned(JSON.stringify({ v: 2 }))).toEqual(emptyEarned());
     expect(parseEarned(JSON.stringify({ ...e, got: { ...e.got, "not-a-thing": { at: 1 } } })).got).toEqual(e.got);
     // everything earned still fits the account pref
-    const all = { ...e, got: Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, { at: T0, repo: "some-long-owner-name/some-long-repo-name" }])) };
-    expect(JSON.stringify(all).length).toBeLessThanOrEqual(2048);
+    const all = { ...e, got: Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, { at: T0, repo: `${"o".repeat(39)}/${"r".repeat(100)}` }])) };
+    expect(JSON.stringify(all).length).toBeLessThanOrEqual(4096);
+  });
+
+  test("malformed stored fields cannot crash badge rendering or forge nonfinite streaks", () => {
+    const bad = '{"v":1,"got":{"first-rocket":{"at":1,"repo":{"bad":true}},"first-permit":{"at":1e999}},"streak":"7","best":1e999,"last":{}}';
+    expect(parseEarned(bad)).toEqual(emptyEarned());
   });
 
   test("merging two browsers keeps the earliest unlock and the best streak", () => {

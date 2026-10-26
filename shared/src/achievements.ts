@@ -85,8 +85,9 @@ export function parseEarned(raw: string | null | undefined): Earned {
   try {
     const e = JSON.parse(raw) as Earned;
     if (e?.v !== 1 || typeof e.got !== "object" || !e.got) return emptyEarned();
-    const got = Object.fromEntries(Object.entries(e.got).filter(([id, g]) => achievementById(id) && typeof g?.at === "number"));
-    return { ...emptyEarned(), ...e, got };
+    const got = Object.fromEntries(Object.entries(e.got).filter(([id, g]) => achievementById(id) && Number.isFinite(g?.at) && g.at >= 0 && (g.repo === undefined || typeof g.repo === "string" && g.repo.length <= 256)));
+    const count = (n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && n >= 0 ? n : 0;
+    return { v: 1, got, streak: count(e.streak), best: Math.max(count(e.best), count(e.streak)), last: typeof e.last === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.last) ? e.last : null };
   } catch {
     return emptyEarned();
   }

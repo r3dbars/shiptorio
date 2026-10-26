@@ -128,8 +128,8 @@ export async function reposFor(env: AccountsEnv, user: User): Promise<RepoRow[]>
 // ---- per-player settings ----
 
 // Only these keys are stored, each with a length cap, so the table can't become a dumping ground.
-// achievements: the player's earned badges as JSON (shared/src/achievements.ts), about 1 KB with all of them.
-const PREF_LIMIT = { intro: 64, guideSeen: 64, achievements: 2048 } as const;
+// achievements: the player's earned badges as JSON (shared/src/achievements.ts), bounded to 4 KB including long repository names.
+const PREF_LIMIT = { intro: 64, guideSeen: 64, achievements: 4096 } as const;
 const PREF_KEYS = Object.keys(PREF_LIMIT) as (keyof typeof PREF_LIMIT)[];
 export type PrefKey = (typeof PREF_KEYS)[number];
 export const isPrefKey = (key: string): key is PrefKey => (PREF_KEYS as readonly string[]).includes(key);

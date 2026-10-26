@@ -234,7 +234,7 @@ app.put("/api/me/prefs", async (c) => {
   if (!user) return c.json({ error: "login required" }, 401);
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
-  if (text.length > 6144) return c.json({ error: "too large" }, 413); // an escaped 2 KB achievements pref, with room
+  if (text.length > 6144) return c.json({ error: "too large" }, 413); // a bounded achievements record, with room for JSON escaping
   let body: unknown;
   try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);

@@ -75,10 +75,14 @@ test("achievements get a bigger pref, still capped", async () => {
   const earned = JSON.stringify({ v: 1, got: { "first-rocket": { at: 1, repo: "r3dbars/testing" } }, streak: 1, best: 1, last: "2026-10-26" });
   expect(earned.length).toBeGreaterThan(64);
   expect((await put(JSON.stringify({ achievements: earned }))).status).toBe(200);
-  expect((await put(JSON.stringify({ achievements: "x".repeat(2049) }))).status).toBe(400);
+  expect((await put(JSON.stringify({ achievements: "x".repeat(4097) }))).status).toBe(400);
   expect((await put(JSON.stringify({ intro: "x".repeat(65) }))).status).toBe(400);
   const me = (await (await get(env, "/api/me", cookie)).json()) as { prefs: Record<string, string> };
   expect(me.prefs.achievements).toBe(earned);
+  const { ACHIEVEMENTS } = await import("@shiptorio/shared");
+  const all = JSON.stringify({ v: 1, got: Object.fromEntries(ACHIEVEMENTS.map(a => [a.id, { at: Date.now(), repo: `${"o".repeat(39)}/${"r".repeat(100)}` }])), streak: 1, best: 1, last: "2026-10-26" });
+  expect(all.length).toBeGreaterThan(2048);
+  expect((await put(JSON.stringify({ achievements: all }))).status).toBe(200);
 });
 
 test("admin budget usage requires a live operator session and includes daily limits", async () => {
