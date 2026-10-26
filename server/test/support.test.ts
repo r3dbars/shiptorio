@@ -144,6 +144,7 @@ describe("nothing is sent without a player tap", () => {
     let spark = 0;
     let providerWait: Promise<void> | undefined;
     let providerStarted: (() => void) | undefined;
+    let identityWait: Promise<void> | undefined, identityStarted: (() => void) | undefined, identityReads = 0;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       const body = String(init?.body ?? "");
@@ -183,7 +184,7 @@ describe("nothing is sent without a player tap", () => {
       const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [socket] };
       const env = {
         ...browserEnv, META_API_KEY: "fake-meta-key", SUPPORT_REPO: "example/shop", SUPPORT_REPO_ID: "101", SUPPORT_INSTALLATION_ID: "1", INTERCOM_CLIENT_SECRET: "intercom-client-secret-123", INTERCOM_TOKEN: "intercom-token", INTERCOM_ADMIN_ID: "42",
-        DB: authorizedDB({ prepare: (sql: string) => sql.includes("SELECT r.repo_id") ? { bind: () => ({ first: async () => ({ repo_id: 101, installation_id: 1, archived_at: null, status: "active" }) }) } : /spark_usage|api_limits|factory_budget_owners|user_repos/.test(sql) ? budget.prepare(sql) : { bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }), first: async () => null }) } }),
+        DB: authorizedDB({ prepare: (sql: string) => sql.includes("SELECT r.repo_id") ? { bind: () => ({ first: async () => { if (identityWait && ++identityReads === 2) { identityStarted?.(); await identityWait; } return { repo_id: 101, installation_id: 1, archived_at: null, status: "active" }; } }) } : /spark_usage|api_limits|factory_budget_owners|user_repos/.test(sql) ? budget.prepare(sql) : { bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }), first: async () => null }) } }),
         CACHE: { get: async (k: string, type?: string) => { if (k.startsWith("access:v2:")) return membershipCache.get(k); const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
       };
       const factory = new Factory(ctx as never, env as never);
@@ -256,6 +257,20 @@ describe("nothing is sent without a player tap", () => {
       const restarted = new Factory(ctx as never, env as never);
       await restarted.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: sendHash }));
       expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
+      // Pause the final operator-identity lookup, then edit: the obsolete approved
+      // draft must never reach the provider after that awaited read completes.
+      await restarted.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "Draft before identity lookup" }));
+      const beforeIdentity = saved().support![0].draft!.hash;
+      let resumeIdentity!: () => void;
+      identityWait = new Promise<void>(resolve => { resumeIdentity = resolve; });
+      const identityReached = new Promise<void>(resolve => { identityStarted = resolve; });
+      const blocked = restarted.webSocketMessage(socket, JSON.stringify({ type: "send_reply", ticketId: ticket.id, draftHash: beforeIdentity }));
+      await identityReached;
+      await restarted.webSocketMessage(socket, JSON.stringify({ type: "edit_reply", ticketId: ticket.id, text: "New draft during identity lookup" }));
+      resumeIdentity(); await blocked;
+      expect(outbound.filter(u => u.includes("api.intercom.io"))).toHaveLength(3);
+      expect(saved().support![0].draft!.text).toBe("New draft during identity lookup");
+      expect(saved().support![0].sent).toHaveLength(3);
     } finally { globalThis.fetch = original; }
   });
 
