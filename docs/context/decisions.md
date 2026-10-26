@@ -161,3 +161,4 @@ The connection and automatic deployment checkpoints above supersede that initial
 | Does Spark accept images (visual QA)? Rate limits, credit balance? | Anyone with a key |
 
 - 2026-10-26: Upgrade non-local HTTP to HTTPS before any authentication path; secure-only preview cookies otherwise make a successful HTTP password form appear to do nothing. Keep the gate as a native HTML form, verify cookie acceptance with an explicit recovery message, and preserve the requested factory URL. HTTPS responses include HSTS; local HTTP development stays available.
+- 2026-10-26: Firefox native form submissions may omit Origin. Preview login accepts a same-origin Referer, or same-origin navigation Fetch Metadata when Referer is also absent, only if Origin is absent; explicit foreign/opaque origins remain blocked. A stale HTTP POST redirects to a fresh HTTPS form without replaying its password, and refused requests show recovery instructions.

@@ -18,7 +18,10 @@ export function secureTransport(request: Request): Response | null {
   const url = new URL(request.url);
   if (url.protocol !== "http:" || isLocal(url)) return null;
   url.protocol = "https:";
-  return new Response(null, { status: 308, headers: { location: url.toString(), "cache-control": "no-store" } });
+  // A stale HTTP form must reload securely, not replay its POST with an HTTP Origin.
+  const stalePost = request.method !== "GET" && request.method !== "HEAD";
+  if (stalePost) { url.pathname = "/"; url.search = ""; }
+  return new Response(null, { status: stalePost ? 303 : 308, headers: { location: url.toString(), "cache-control": "no-store" } });
 }
 
 const page = (error = "", next = "/") => `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shiptorio</title><style>body{background:#1b2448;color:#e6e1d6;font:18px system-ui;display:grid;place-items:center;min-height:95vh}main{max-width:340px;padding:24px}input,button{box-sizing:border-box;width:100%;padding:14px;margin-top:16px;font:inherit;border-radius:8px;border:0}button{background:#f2a93b;color:#1b2448;cursor:pointer}p{line-height:1.5}small{color:#ff9d9d}</style><main><h1>Shiptorio</h1><p>The factory must grow.</p><form method="post" action="/access"><input type="hidden" name="next" value="${escapeHtml(next)}"><input aria-label="Password" id="password" name="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required autofocus><button type="submit">Enter the factory</button><small role="alert">${error}</small></form></main></html>`;
@@ -34,7 +37,17 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;
   if (url.pathname === "/access" && request.method === "POST") {
-    if (request.headers.get("origin") !== url.origin) return new Response("Invalid origin", { status: 403 });
+    // Some Firefox/privacy configurations omit Origin on native form navigations.
+    // Only accept browser same-origin evidence when Origin is absent; an explicit
+    // foreign or opaque Origin is always refused, even with a forged Referer.
+    const origin = request.headers.get("origin");
+    let sameSite = origin === url.origin;
+    if (origin === null) {
+      const referrer = request.headers.get("referer");
+      try { sameSite = !!referrer && new URL(referrer).origin === url.origin; } catch { sameSite = false; }
+      if (!referrer) sameSite = request.headers.get("sec-fetch-site") === "same-origin" && request.headers.get("sec-fetch-mode") === "navigate";
+    }
+    if (!sameSite) return new Response(page("Please reopen this site with https://, then enter the password again.", "/"), { status: 403, headers });
     if (Number(request.headers.get("content-length") ?? 0) > 4096) return new Response("Too large", { status: 413 });
     const form = new URLSearchParams(await request.text());
     const digest = async (value: string) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
