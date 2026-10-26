@@ -5,6 +5,7 @@
 import type { Belt, FactoryState, Inspection, Item, Machine, Move, ScarTag, Station, StationKind } from "@shiptorio/shared";
 import { gh } from "./github";
 import { parseJsonReply, sparkChat, type SparkEnv } from "./spark";
+import type { RegressionProof } from "./runner-job";
 
 type Gate = Inspection["stages"][number]["gate"];
 interface StationDef { id: string; kind: StationKind; name: string; gate: Gate }
@@ -86,11 +87,16 @@ const DOCS_FILE = /\.(md|mdx|txt)$|(^|\/)docs\//i;
  * Docs-only changes have nothing to reproduce. The real bay (the PR's test fails on base, passes on head)
  * runs in the local runner next (docs/context/live-loop.md).
  */
-export function verifyFromDiff(files: string[], runnerReceipts: boolean): { passed: boolean; reason: string } {
+export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?: RegressionProof): { passed: boolean; reason: string } {
   if (!files.length) return { passed: false, reason: "The PR has no changed files to verify." };
-  if (files.every((f) => DOCS_FILE.test(f))) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
+  if (files.every((f) => DOCS_FILE.test(f)) && !proof) return { passed: true, reason: "Docs-only change, nothing to reproduce." };
   const tests = files.filter((f) => TEST_FILE.test(f));
   if (!tests.length) return { passed: false, reason: "No proof: the PR changes code but adds no test that shows the fix works." };
+  if (proof) {
+    if (!proof.passesOnHead) return { passed: false, reason: "The regression test did not pass on the fix commit." };
+    if (!proof.failsOnBase) return { passed: false, reason: "The test did not reproduce the problem on base. Revise the verify recipe." };
+    return { passed: true, reason: `Regression reproduced on base and passed on head. ${proof.command}`.slice(0, 500) };
+  }
   const where = runnerReceipts ? " Local typecheck, tests and build passed on this commit." : "";
   return { passed: true, reason: `Proof attached: ${tests.slice(0, 3).join(", ")}.${where}` };
 }
@@ -166,7 +172,22 @@ export function launchMove(item: Item, now = Date.now()): Move {
   };
 }
 
-export function reworkMove(item: Item, now = Date.now()): Move {
+export function canRework(item: Item): boolean {
+  const counts = new Map<string, number>();
+  for (const scar of item.scars ?? []) {
+    const count = (counts.get(scar.station) ?? 0) + 1;
+    counts.set(scar.station, count);
+    if (count >= 3 || scar.strike >= 3) return false;
+  }
+  return true;
+}
+
+export function proofComment(proof: RegressionProof): string {
+  const fence = String.fromCharCode(96).repeat(3);
+  return [`<!-- shiptorio-proof:${proof.headSha} -->`, `### Verify bay — ${proof.headSha.slice(0, 8)}`, "", `Base fails: **${proof.failsOnBase}**; head passes: **${proof.passesOnHead}**.`, `Base: ${proof.baseSha}`, "", `Command: ${proof.command}`, "", `${fence}text`, proof.logTail.replace(/`/g, "'"), fence].join("\n");
+}
+
+export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "claude_code" = "codex"): Move {
   const scar = item.scars?.at(-1);
   const station = GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";
   return {
@@ -180,7 +201,8 @@ export function reworkMove(item: Item, now = Date.now()): Move {
     focus: GAUNTLET.find((g) => g.kind === scar?.station)?.id,
     createdAt: now,
     options: [
-      { id: "later", label: "Look later", recommended: true, actions: [] },
+      ...(canRework(item) ? [{ id: `rework-${harness}`, label: `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
+      { id: "later", label: "Look later", recommended: !canRework(item), actions: [] },
       { id: "overrule", label: "Overrule and launch", recommended: false, actions: [{ tool: "request_merge", args: { pr: item.prNumber, overrule: true }, reason: "The player is the merge gate." }] },
     ],
   };

@@ -137,7 +137,7 @@ app.post("/api/runner/:owner/:repo/renew", async (c) => {
 app.post("/api/runner/:owner/:repo/finish", async (c) => {
   const identity = c.get("runner");
   const body = await c.req.text();
-  if (body.length > 8192) return c.json({ error: "too large" }, 413);
+  if (body.length > 16384) return c.json({ error: "too large" }, 413);
   const parsed = RunnerReceipt.safeParse(JSON.parse(body));
   if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
   return c.json(await factory(c.env, identity.repo).finishRunner(identity.pairId, parsed.data));

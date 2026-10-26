@@ -43,7 +43,19 @@ AI review, merge gate) → merge → rocket + ship celebration.
 
 ## Next (Codex)
 
-- Rework belt for local builds: a scarred runner PR gets a "Send back to Codex with the scar" card;
-  Spark re-plans with the scar and the runner pushes a fix commit to the same branch, then the gauntlet reruns.
-- Real verify bay: run the PR's tests on base (must fail) and head (must pass) in the runner; attach the log.
+- Built in the Codex rework/proof checkpoint: a scarred runner PR gets a recommended
+  "Send back to Codex/Claude with the scar" card. Planning reads the current PR head and
+  latest failure/scars; approval binds that plan. The supervisor adds one fix commit to
+  the same branch and updates the existing PR. Inspection resets for the new head.
+- The real verify bay overlays the PR's changed test files on an isolated base tree,
+  requires a real failing test there, and runs those tests against the fix. Empty runs,
+  missing imports and syntax errors are not reproductions. Receipts bind base/head SHAs,
+  command and bounded log tail; the PR body carries the receipt. A supplied failed proof
+  cannot fall back to the legacy coverage-only rule. Third strike at a station leaves
+  the player card without a recommended rework option.
+- Acceptance tests drive scar → re-plan → approve → second commit → fresh gauntlet →
+  Launch, preserve diff-scope rules, reject stale CI/proof, and verify one merge/rocket.
+  A separate temporary-Git test executes real base/head tests over two fix commits.
+- Live browser approval/runner acceptance and the reusable whole-game playtest system
+  are still tracked separately from these integration tests.
 - Different-family reviewer on the player's other subscription when both are connected.

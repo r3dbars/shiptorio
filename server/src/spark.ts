@@ -135,13 +135,14 @@ export interface Task {
   body: string;
   district: string;
   failure?: string;
+  scars?: { station: string; reason: string; strike: number; evidenceUrl?: string }[];
 }
 
 export async function pickFiles(env: SparkEnv, task: Task, paths: string[]): Promise<string[]> {
   const out = await sparkJson<{ files?: string[] }>(
     env,
     "You are a coding agent planning a small, focused change. Pick the files you need to read and probably edit. At most 4.",
-    `Task: ${task.title}\n\n${task.body.slice(0, 4000)}\n\nRepo files:\n${paths.slice(0, 600).join("\n")}\n\nJSON shape: {"files": ["path", ...]}`,
+    `Task: ${task.title}\n\n${task.body.slice(0, 4000)}\nLatest failure: ${task.failure ?? "none"}\nScars: ${JSON.stringify(task.scars?.slice(-5) ?? [])}\n\nRepo files:\n${paths.slice(0, 600).join("\n")}\n\nJSON shape: {"files": ["path", ...]}`,
     "medium",
   );
   return (out.files ?? []).filter((f) => paths.includes(f)).slice(0, 4);
