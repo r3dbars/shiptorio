@@ -510,7 +510,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .ob-credit { margin: 0; font-size: 12px; color: var(--faint); letter-spacing: 0.02em; }
 @media (max-width: 760px) { .caption.coached { display: none; } }
 
-/* the in-world ping (map/scene.ts setPing): a pulsing dot on what needs you, tagged with its code path */
+/* the in-world ping (map/scene.ts setPings): a pulsing dot on what needs you, tagged with its code path */
 .mapping {
   position: absolute; left: 0; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 0; margin: 0;
   background: none; border: 0; color: var(--amber); cursor: pointer; pointer-events: auto; translate: -11px -11px;
@@ -606,3 +606,12 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .mapping.quiet code { color: var(--ink); }
 .mapping.quiet.flip { translate: calc(-100% + 7px) -7px; }
 @media (max-width: 560px) { .mapping.quiet b { display: none; } } /* phones: just the code path */
+
+/* Make it yours + connect a source (ui/MakeItYours.tsx) */
+.seg { display: inline-flex; flex: none; border: 1px solid var(--panel-line); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: none; color: var(--dim); font: 600 13px var(--pixel); padding: 7px 10px; cursor: pointer; min-width: 34px; }
+.seg button + button { border-left: 1px solid var(--panel-line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--dark); }
+.seg button:disabled { opacity: 0.4; cursor: default; }
+.pickm { flex: 1; min-width: 0; background: var(--chip); color: var(--ink); border: 1px solid var(--hair); border-radius: 8px; padding: 7px 8px; font: 14px var(--mono); }
+.sheet .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--dim); }

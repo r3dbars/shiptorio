@@ -14,6 +14,7 @@ import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
+import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
 import { ShipCelebration } from "./ui/ShipCelebration";
@@ -133,7 +134,15 @@ export function App() {
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | null>(null);
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | null>(null);
+  const [source, setSource] = useState<string | null>(null); // an empty mine you tapped
+  // map picks: an empty mine opens its connect sheet, anything else its panel
+  const pickOnMap = (k: string | null) => {
+    if (k?.startsWith("src:")) {
+      setSource(k.slice(4));
+      setCheckin(false);
+    } else setPanel(k);
+  };
   const met = guideMet(state, tour.learned);
   // the guide button glows when something new lands; remembered so a returning player isn't told about all of it again
   const [seenGuide, setSeenGuideState] = useState(() => {
@@ -207,7 +216,7 @@ export function App() {
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show });
@@ -282,7 +291,7 @@ export function App() {
   return (
     <div className={panel ? "app picked" : "app"}>
       <main className="floor">
-        <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} pings={show("line") ? pings : undefined} />
+        <FactoryMap state={state} onPick={pickOnMap} focus={focusKey ?? panel} showLabels={showLabels} pings={show("line") ? pings : undefined} />
         <ShipCelebration state={state} />
 
         <header className="topbar">
@@ -298,7 +307,18 @@ export function App() {
                 </span>
               </div>
             )}
-            {show("autonomy") && autonomy && (
+            {autonomy?.launches ? (
+              // Live: how much of the shipping runs itself. Shows up after the first rocket.
+              <div className="chip" title={permits.length ? `Ships on its own in ${permits.join(", ")}. The rest waits for you.` : "Every PR waits for you. Clean ships earn launch permits."}>
+                <span className="badge" style={{ background: "var(--blue)" }}>
+                  <Icon name="bot" size={14} />
+                </span>
+                <span>
+                  {Math.round((autonomy.automated ?? 0) * 100)}%
+                  <small>automated</small>
+                </span>
+              </div>
+            ) : show("autonomy") && autonomy && (
               <div
                 className="chip"
                 title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}
@@ -384,6 +404,10 @@ export function App() {
             </div>
             <p className="empty">You can switch any time.</p>
           </section>
+        ) : source && state ? (
+          <ConnectSource kind={source} state={state} send={send} onClose={() => setSource(null)} />
+        ) : sheet === "yours" && state ? (
+          <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
@@ -481,6 +505,12 @@ export function App() {
             <Icon name="list" size={20} />
             Line
           </button>
+          {world !== "checkin" && show("build") && (metrics?.rockets ?? shipped) > 0 && (
+            <button type="button" className="tool" aria-pressed={sheet === "yours"} onClick={() => toggleSheet("yours")}>
+              <Icon name="wrench" size={20} />
+              Yours
+            </button>
+          )}
           {world !== "checkin" && (
           <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={!show("power")}>
             <Icon name="bolt" size={20} />

@@ -1,3 +1,4 @@
+import "./gauntlet.css";
 import { useEffect, useRef } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import { FactoryScene, type Ping } from "./scene";

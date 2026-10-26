@@ -325,6 +325,15 @@ route on its own?"*
 | **3. Launch permit** (per district) | District trust above its risk threshold, PR at its minimum quality tier | Merge (and release) in that district |
 | **4. Lights out** | Permits on most districts, a week clean | Run unattended within the budget; you get a morning summary |
 
+**Live today (launch permits, `server/src/permits.ts`):** a PR's lane is `docs` (docs-only files) or the one
+top-level folder it touches; root and cross-folder PRs have no lane and always wait for you. A clean ship is a
+merge where every gauntlet station passed with zero rework. 5 clean in a row (docs) or 10 (code folders) brings
+up the card "5 docs PRs shipped clean, zero rework. Let docs ship on their own?" (Allow is Suggested; Not yet
+asks again 3 clean ships later). With a permit, a PR in that lane that passes every station on its current head
+merges on its own. Any rework in the lane (CI, verify bay, AI review) revokes the permit and resets the streak.
+The HUD shows **Automated %**: rockets launched on a permit over all rockets. Escaped-defect revocation (revert or
+new Sentry errors) comes with orbit watch.
+
 Thresholds are tuning, not fixed. A level can always be turned back down with one click, and an escaped
 defect drops it automatically (Build falls back to Advisor in that district, the permit is revoked).
 

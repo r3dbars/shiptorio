@@ -7,10 +7,10 @@ import { z } from "zod";
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
 export type ItemKind = z.infer<typeof ItemKind>;
 
-export const OreSource = z.enum(["github_issue", "sentry", "inbox", "lint"]);
+export const OreSource = z.enum(["github_issue", "sentry", "posthog", "inbox", "lint"]);
 export type OreSource = z.infer<typeof OreSource>;
 
-export const SourceKind = z.enum(["github", "sentry", "email", "stripe", "claude", "chatgpt"]);
+export const SourceKind = z.enum(["github", "sentry", "posthog", "email", "stripe", "claude", "chatgpt"]);
 export type SourceKind = z.infer<typeof SourceKind>;
 export const SourceStatus = z.object({
   kind: SourceKind,
@@ -86,6 +86,7 @@ export const Item = z.object({
   body: z.string().optional(),
   url: z.string().optional(),
   district: z.string(), // top-level folder the work lands in, "/" for the root
+  lane: z.string().optional(), // the launch-permit lane its PR's files fall in ("docs", a folder); none = always asks
   state: ItemState,
   machineId: z.string().optional(),
   branch: z.string().optional(),
@@ -275,6 +276,8 @@ export const Autonomy = z.object({
     })
     .nullable(), // null at the top level
   ranAlone: z.number().int().default(0), // actions this week Spark took without asking
+  automated: z.number().min(0).max(1).optional(), // share of rockets that launched on a permit
+  launches: z.number().int().nonnegative().optional(), // rockets counted toward automated
 });
 export type Autonomy = z.infer<typeof Autonomy>;
 

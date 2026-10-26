@@ -20,6 +20,7 @@ import { pickFiles, planLocalTask, sparkConfigured, triage, writeFix, type Spark
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, reviewComment, reviewDiff, reworkMove, setStage, stageOf, verifyFromDiff } from "./gauntlet";
+import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 
@@ -420,6 +421,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         for (const m of this.state.machines) if (m.state === "working") m.state = "idle";
         migrateGauntlet(this.state);
         this.state.stations = liveStations(this.state);
+        this.state.autonomy = autonomyView(await this.permitBook());
       }
     }
     return this.state;
@@ -461,6 +463,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.sources) s.sources = p.sources;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
+    if (p.autonomy) s.autonomy = p.autonomy;
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
@@ -536,6 +539,10 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (item.state !== "inspecting" || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
       const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
       if (result.state === "pending") continue;
+      if (item.branch?.startsWith("shiptorio/runner-") && !item.lane) {
+        const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(files.map((f) => f.filename))).catch(() => null);
+        if (lane) item.lane = lane;
+      }
       if (result.state === "passed") {
         if (item.branch?.startsWith("shiptorio/runner-")) {
           // Every check run reports in; only a new head (or the first green) restarts the gauntlet.
@@ -552,6 +559,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       } else if (item.branch?.startsWith("shiptorio/runner-")) {
         await this.patch({ items: [setStage(item, "ci", "rework", result.summary.split("\n")[0] || "CI failed")] });
         this.log("warn", `CI inspector sent PR #${item.prNumber} back: ${result.summary.split("\n")[0]}`, item.id);
+        await this.noteRework(item);
         await this.scheduleTick();
       } else {
         await this.patch({ items: [{ ...item, state: "rejected", failure: result.summary, updatedAt: Date.now() }] });
@@ -587,12 +595,17 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
     const s = this.state!;
     const key = SCIENCE_FOR[item.kind];
+    const auto = (await this.ctx.storage.get<number>(`autoLaunch:${item.id}`)) === prNumber;
+    const before = await this.permitBook();
+    const book = recordShip(before, item, auto);
+    await this.ctx.storage.put("permits", book);
     await this.patch({
       items: [{ ...item, state: "launched", updatedAt: Date.now() }],
       science: { ...s.science, [key]: s.science[key] + 1 },
       trust: Math.min(1, s.trust + 0.05),
+      autonomy: autonomyView(book),
     });
-    this.log("success", `Rocket launched: PR #${prNumber} merged.`, item.id);
+    this.log("success", auto ? `Rocket launched on its own: PR #${prNumber} merged on the ${item.lane} launch permit.` : `Rocket launched: PR #${prNumber} merged.`, item.id);
     if (s.move?.itemId === item.id) await this.publishGauntletMove(null);
   }
 
@@ -616,13 +629,18 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
-      const current = () => this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
+      const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
+      const current = () => {
+        const now = this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
+        return now && lane && !now.lane ? { ...now, lane } : now;
+      };
       if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
         const now = current();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
+        if (!v.passed) await this.noteRework(now);
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
         const verdict = await reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files));
@@ -631,6 +649,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         await gh(`/repos/${this.meta.repo}/issues/${pr}/comments`, token, { method: "POST", body: JSON.stringify({ body: reviewComment(verdict, builder) }) }).catch(() => null);
         await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
+        if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
     } catch {
@@ -687,22 +706,98 @@ export class Factory extends DurableObject<FactoryEnv> {
     const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed";
     const overrule = optionId === "overrule" && item.state === "rejected";
     if (!ready && !overrule) return true;
+    await this.launch(item, overrule ? "overrule" : "player");
+    return true;
+  }
+
+  /** Merges at the merge gate: the player's tap, an overrule, or a launch permit doing it on its own. */
+  private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
+    if (!item.prNumber || !this.meta) return;
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
-      if (ready && item.inspection?.headSha !== head) throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+      if (by !== "overrule" && item.inspection?.headSha !== head) throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
+      if (by === "autonomy") await this.ctx.storage.put(`autoLaunch:${item.id}`, item.prNumber);
       await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
-      const reason = overrule ? "You overruled the gauntlet and merged." : "You merged at the merge gate.";
+      const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
-      await this.patch({ items: [{ ...item, inspection: item.inspection && { ...item.inspection, stages, humanApproved: true }, updatedAt: Date.now() }] });
-      this.broadcast({ type: "log", level: "success", text: `Launching #${item.prNumber}.`, at: Date.now(), actor: "player", tool: "request_merge", approvedBy: "player", reason, itemId: item.id });
-      await this.publishGauntletMove(null);
-      await this.patch({ bottleneck: null });
+      await this.patch({ items: [{ ...item, inspection: item.inspection && { ...item.inspection, stages, humanApproved: by !== "autonomy" }, updatedAt: Date.now() }] });
+      this.broadcast({ type: "log", level: "success", text: by === "autonomy" ? `Launching #${item.prNumber} on its own.` : `Launching #${item.prNumber}.`, at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: "request_merge", approvedBy: by === "autonomy" ? "autonomy" : "player", reason, itemId: item.id });
+      if (this.state!.move?.itemId === item.id) await this.publishGauntletMove(null);
+      if (this.state!.bottleneck?.stationId === "gate-1") await this.patch({ bottleneck: null });
       await this.onPullClosed(item.prNumber, true);
     } catch (err) {
+      if (by === "autonomy") {
+        await this.ctx.storage.delete(`autoLaunch:${item.id}`);
+        await this.ctx.storage.put(`autoLaunchFailed:${item.id}`, item.inspection?.headSha); // falls back to the launch card
+      }
       const why = err instanceof Error && err.message.startsWith("The PR changed") ? err.message : "GitHub didn't accept the merge. Open the PR to see why.";
       this.log("warn", why, item.id);
     }
+  }
+
+  // ---------- launch permits (docs/PRODUCT.md "Autonomy is earned") ----------
+
+  private async permitBook(): Promise<PermitBook> {
+    return (await this.ctx.storage.get<PermitBook>("permits")) ?? emptyBook();
+  }
+
+  private async savePermits(book: PermitBook): Promise<void> {
+    await this.ctx.storage.put("permits", book);
+    await this.patch({ autonomy: autonomyView(book) });
+  }
+
+  /** A station sent work back. Its lane's streak resets and any permit there is revoked. */
+  private async noteRework(item: Item): Promise<void> {
+    if (!item.lane) return;
+    const { book, revoked } = recordRework(await this.permitBook(), item.lane);
+    await this.savePermits(book);
+    const card = this.state!.move;
+    if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.district === item.lane) await this.publishGauntletMove(null);
+    if (revoked) {
+      const text = `${item.lane} lost its launch permit: PR #${item.prNumber} needed rework. Its PRs wait for you again until the lane earns trust back.`;
+      this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
+      this.log("warn", text, item.id);
+    }
+  }
+
+  /** PRs in a lane with a permit launch on their own once every station passed. Runs before any card is offered. */
+  private async autoLaunchPermitted(): Promise<void> {
+    const book = await this.permitBook();
+    for (const item of this.state?.items.filter((i) => mayAutoLaunch(book, i)) ?? []) {
+      if ((await this.ctx.storage.get<string>(`autoLaunchFailed:${item.id}`)) === item.inspection?.headSha) continue;
+      await this.launch(item, "autonomy");
+    }
+  }
+
+  /** A lane with a clean streak gets its permit card, when nothing else is waiting on the player. */
+  private async offerPermitMove(): Promise<void> {
+    const s = this.state;
+    if (!s || s.move) return;
+    const ready = permitReady(await this.permitBook());
+    if (ready) await this.publishGauntletMove(permitMove(ready));
+  }
+
+  private async grantPermit(lane: string, permit: boolean, by: "card" | "toggle"): Promise<void> {
+    const book = await this.permitBook();
+    const r = book.lanes[lane];
+    if (!r || r.permit === permit) return;
+    if (permit && !earned(r)) { this.log("info", `${lane} hasn't earned a launch permit yet.`); return; }
+    await this.savePermits(setPermit(book, lane, permit));
+    const text = permit ? `${lane} has a launch permit. Its PRs that pass every station now ship on their own.` : `${lane} launch permit is off. Its PRs wait for you again.`;
+    this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
+    this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: by === "card" ? "You said yes on the permit card." : "You changed it in settings." });
+  }
+
+  /** Handles the permit card. Returns false for every other move. */
+  private async choosePermitMove(moveId: string, optionId: string): Promise<boolean> {
+    const move = this.state!.move;
+    if (!move || move.id !== moveId || move.kind !== "automate") return false;
+    const lane = move.options[0]?.actions[0]?.args.district;
+    if (typeof lane !== "string") return false;
+    await this.publishGauntletMove(null);
+    if (optionId === "allow") await this.grantPermit(lane, true, "card");
+    else await this.ctx.storage.put("permits", snooze(await this.permitBook(), lane));
     return true;
   }
 
@@ -727,6 +822,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
     const s = this.state!;
+    if ((msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") && (await this.choosePermitMove(msg.moveId, msg.type === "choose_move" ? msg.optionId : "not_yet"))) return;
     if ((msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") && (await this.chooseGauntletMove(msg.moveId, msg.type === "choose_move" ? msg.optionId : "later"))) return;
     switch (msg.type) {
       case "choose_move":
@@ -735,6 +831,9 @@ export class Factory extends DurableObject<FactoryEnv> {
       case "defer_move":
       case "dismiss_move":
         await this.chooseRunnerMove(msg.moveId, "decline");
+        break;
+      case "set_autonomy":
+        if (msg.district && msg.permit !== undefined) await this.grantPermit(msg.district, msg.permit, "toggle");
         break;
       case "connect_source": {
         if (msg.kind === "github") {
@@ -782,6 +881,17 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (!s.machines.some((m) => m.id === msg.from) || !s.machines.some((m) => m.id === msg.to)) return;
         const b: Belt = { id: `belt-${crypto.randomUUID().slice(0, 6)}`, from: msg.from, to: msg.to, carries: msg.carries };
         await this.patch({ belts: [b] });
+        break;
+      }
+      case "move_machine": {
+        const m = s.machines.find((x) => x.id === msg.id);
+        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
+        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
+        break;
+      }
+      case "set_harness": {
+        const m = s.machines.find((x) => x.id === msg.machineId);
+        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
         break;
       }
       case "set_module": {
@@ -873,7 +983,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     }
 
     await this.runGauntlet();
+    await this.autoLaunchPermitted();
     await this.offerGauntletMove();
+    await this.offerPermitMove();
     await this.offerRunnerPlan();
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if (busy && (await this.ctx.storage.getAlarm()) == null) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
