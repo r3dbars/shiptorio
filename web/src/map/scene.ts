@@ -6,6 +6,7 @@
 
 import * as THREE from "three";
 import { perf } from "./perf";
+import { FrameGovernor } from "./quality";
 import { lineFrame } from "./framing";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
@@ -336,6 +337,7 @@ export class FactoryScene {
   private last = performance.now();
   private t = 0;
   private launchUntil = -1;
+  private readonly governor = new FrameGovernor(window.matchMedia?.("(pointer: coarse)").matches ?? false);
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
   // Spark, the Foreman, flying to whatever it's touching
@@ -378,6 +380,7 @@ export class FactoryScene {
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.renderer.shadowMap.autoUpdate = false; // the frame governor (quality.ts) says when
     this.scene.background = new THREE.Color(PALETTE.void);
 
     this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
@@ -425,6 +428,7 @@ export class FactoryScene {
 
   // factor > 1 zooms out
   zoomBy(factor: number) {
+    this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
@@ -432,6 +436,7 @@ export class FactoryScene {
   }
 
   panBy(dx: number, dy: number) {
+    this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
     const k = (this.camera.top - this.camera.bottom) / this.height;
@@ -540,6 +545,7 @@ export class FactoryScene {
 
   // What's under a screen point: the key of a labelled thing (machine, station, rework belt, district, drone).
   keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+    this.governor.poke();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.ray.setFromCamera(ndc, this.camera);
     const targets = [...this.labels].filter((l) => l.key);
@@ -1370,7 +1376,8 @@ export class FactoryScene {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
-    perf.frame(now, this.renderer.info);
+    if (!this.governor.draw(now, !!(this.camGoal || this.glide || this.launchCam || this.biasGoal))) return;
+    perf.frame(now, this.renderer.info, this.governor.tier);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
@@ -1482,6 +1489,7 @@ export class FactoryScene {
     }
     this.shocks = this.shocks.filter((sh) => t - sh.born <= 0.85);
 
+    this.renderer.shadowMap.needsUpdate = this.governor.shadows();
     this.pass.render(this.renderer, this.scene, this.camera);
     this.placeLabels();
     this.placePops();

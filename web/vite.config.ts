@@ -31,6 +31,18 @@ function artPages(): Plugin {
 // `bun run dev:web` serves the UI on :5173 and proxies the API + websockets to `wrangler dev` on :8787.
 export default defineConfig({
   plugins: [react(), artPages()],
+  build: {
+    rollupOptions: {
+      output: {
+        // vendors in their own chunks: we deploy many times a day, and three + react don't change,
+        // so a returning player only re-downloads the game code
+        manualChunks(id) {
+          if (id.includes("node_modules/three/") || id.includes("node_modules/.bun/three@")) return "three";
+          if (/node_modules\/(\.bun\/)?(react|react-dom|scheduler)[@/]/.test(id)) return "react";
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       "/api": { target: "http://localhost:8787", ws: true },

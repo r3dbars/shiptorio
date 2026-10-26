@@ -4,20 +4,20 @@ import type * as THREE from "three";
 
 let frames = 0, since = performance.now(), fps = 0, workMs = 0, workSum = 0;
 let info: THREE.WebGLInfo | null = null;
-let last = { calls: 0, triangles: 0 };
+let last = { calls: 0, triangles: 0, tier: 0 };
 let el: HTMLElement | null = null;
 
 export const perf = {
-  frame(now: number, i: THREE.WebGLInfo) {
+  frame(now: number, i: THREE.WebGLInfo, tier = 0) {
     info = i;
-    last = { calls: i.render.calls, triangles: i.render.triangles };
+    last = { calls: i.render.calls, triangles: i.render.triangles, tier };
     i.reset();
     frames++;
     if (now - since >= 1000) {
       fps = (frames * 1000) / (now - since);
       workMs = workSum / frames;
       frames = 0; workSum = 0; since = now;
-      if (el) el.textContent = `${fps.toFixed(0)} fps · ${workMs.toFixed(1)} ms · ${last.calls} calls · ${(last.triangles / 1000).toFixed(0)}k tris`;
+      if (el) el.textContent = `${fps.toFixed(0)} fps · ${workMs.toFixed(1)} ms · ${last.calls} calls · ${(last.triangles / 1000).toFixed(0)}k tris · q${last.tier}`;
     }
   },
   work(ms: number) { workSum += ms; },
