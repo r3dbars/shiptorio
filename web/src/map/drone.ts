@@ -17,6 +17,7 @@ export interface Drone {
 export function buildDrone(): Drone {
   const g = new THREE.Group();
   const body = group(g);
+  body.scale.setScalar(1.5);
   // hull: dark plate with a Spark-blue band and a face screen
   box(0.7, 0.26, 0.7, 0x2b3150, 0, 0, 0, body);
   box(0.74, 0.08, 0.74, SPARK_BLUE, 0, 0.06, 0, body);
