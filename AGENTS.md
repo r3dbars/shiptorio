@@ -8,7 +8,7 @@ before you change anything.
 so check open PRs and recent `main` commits before you start.**
 
 **The loop in one page: [`docs/LOOP.md`](docs/LOOP.md)** (visual: `docs/loop.html`). Ore → power → line →
-**verification gauntlet** (CI gate, proof bay, review tribunal, launch pad, orbit watch) → rocket; fails ride the
+**verification gauntlet** (CI inspector, verify bay, AI review, merge gate, orbit watch) → rocket; fails ride the
 rework belt back to Spark with a scar tag; every station is clickable.
 
 **Product spec: [`docs/PRODUCT.md`](docs/PRODUCT.md).** How Muse Spark runs the factory as the Foreman

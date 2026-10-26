@@ -90,9 +90,9 @@ changes the real product.
 ### The verification gauntlet (Justin, 2026-10-26)
 
 "Inspect" is not one machine, it's a **gauntlet** of visible stations between the assemblers and the rocket:
-**CI gate → proof bay → review tribunal → launch pad**, then **orbit watch** after the merge. Agent output is
-untrusted until it shows evidence (Lauren Tan's idea): the proof bay reproduces the bug on the real app before
-and proves it's gone after; the review tribunal is a different model than the builder. Every failure rides the
+**CI inspector → verify bay → AI review → merge gate**, then **orbit watch** after the merge. Agent output is
+untrusted until it shows evidence (Lauren Tan's idea): the verify bay reproduces the bug on the real app before
+and proves it's gone after; the AI review is a different model than the builder. Every failure rides the
 **rework belt back to Spark** with a **scar tag** (station, reason, evidence); third strike goes to the player.
 Repeated scars make Spark offer to **promote the check up a layer** (a recurring review comment becomes a lint
 rule). Players **add stations through research**, and a district's risk sets which stations its launch permit
@@ -138,8 +138,8 @@ The game always shows **one bottleneck and one next move**. That's the core UX p
 
 ### How Spark finds it
 
-The factory is a pipeline of stages: `intake → triage → build → ci → proof → review → pad → release → impact`
-(the inspect step is the gauntlet; each station is its own stage, so a pile at the proof bay shows as its own bottleneck).
+The factory is a pipeline of stages: `intake → triage → build → ci → verify → review → merge → release → impact`
+(the inspect step is the gauntlet; each station is its own stage, so a pile at the verify bay shows as its own bottleneck).
 Every tick the Factory DO computes, per stage, from real state:
 
 - **WIP** (items waiting), **age** (oldest item's wait), **throughput** (items out per hour, rolling)
@@ -155,8 +155,8 @@ model guess, so it's stable and cheap. Spark's job is the next part: explain it 
 | Build | Assemblers all busy, queue on the belt | Add an assembler, move one to a solar plant with charge left, or ask you to plug in another subscription |
 | No resources | Belt full, no machines can run | "Sign in with Claude / ChatGPT to build" |
 | Inspect | Items bouncing in the rework loop | Add an inspector, give the assembler a test-writing loadout, split the item smaller |
-| Proof | PRs waiting for or failing reproduction | Add a second proof bay, teach a proof recipe for the district, let low-risk districts skip proof |
-| Review | Review tribunal backed up or rejecting | Move review to the plant with power left, add a reviewer, promote the recurring comment to a lint rule |
+| Verify | PRs waiting for or failing reproduction | Add a second verify bay, teach a verify recipe for the district, let low-risk districts skip verify |
+| Review | AI review backed up or rejecting | Move review to the plant with power left, add a reviewer, promote the recurring comment to a lint rule |
 | Pad (review) | Rockets stacking on the pad | Ask the player to review (top PR first), or offer auto-launch for low-risk districts |
 | Release | Merged but not deployed | Ask to cut a release |
 | Impact | Shipped, but Sentry still firing | Reopen the ore with the new stack trace, flag the PR that missed |
@@ -226,9 +226,9 @@ own; everything else comes to you as a move.
 | `start_job(item_id, machine_id, plan)` | Hand an item and Spark's plan (files, approach, done-when) to one of the player's assemblers; the job opens a PR |
 | `request_rework(item_id, failure, hint)` | Read the failed CI / review, tell the assembler what broke and what to try |
 | `inspect_pr(pr, gates[])` | Run the gates (lint, types, tests, visual), Spark reads the diff and results, sets the quality tier |
-| `run_proof(pr, recipe)` | Proof bay: a job on the player's machine reproduces the bug before and checks it's gone after, on the running app; attaches the evidence to the PR |
-| `request_review(pr, machine_id)` | Review tribunal: a different model than the builder reviews the diff; Spark reads the verdict |
-| `promote_check(scar, layer)` | Turn a repeated scar into a stronger check (lint rule, test turret, proof recipe); starts a job, lands as a PR |
+| `run_verify(pr, recipe)` | Verify bay: a job on the player's machine reproduces the bug before and checks it's gone after, on the running app; attaches the evidence to the PR |
+| `request_review(pr, machine_id)` | AI review: a different model than the builder reviews the diff; Spark reads the verdict |
+| `promote_check(scar, layer)` | Turn a repeated scar into a stronger check (lint rule, test turret, verify recipe); starts a job, lands as a PR |
 | `comment_on_issue(issue, text)` | Status note on the source issue ("fix is in #41") |
 | `add_turret(district, test_plan)` | Start a job that adds tests around a district |
 
@@ -300,7 +300,7 @@ Spark may merge (and release) PRs in that district on its own. The player can re
 one click, and a single escaped defect revokes it automatically. This is "you earn the right to automate".
 
 **Permits need the gauntlet.** A district's risk sets which stations a launch permit requires (`/checkout`:
-CI, proof, review, canary, you; `docs/`: CI, review). Removing a station from a district is allowed but caps its
+CI, verify, review, canary, you; `docs/`: CI, review). Removing a station from a district is allowed but caps its
 autonomy below a permit.
 
 **Hard limits that no trust level lifts:** no pushes to `main`, no force pushes, no workflow or secret
@@ -429,7 +429,7 @@ Backup: if the live fix fails on camera, the sim's `heal` scenario replays the s
 reporters[], linked[]), `Autonomy` (level, per-district trust, risk, permit, progress to next unlock),
 `Metrics` on `FactoryState`. Protocol: server → web `move`, `move_resolved`, `autonomy_unlocked`;
 web → server `choose_move {moveId, option}`, `undo {actionId}`, `set_autonomy {level, district?}`,
-`set_goal {text}`. Gauntlet (see `docs/LOOP.md`): `Station` (id, kind `ci|proof|review|pad|orbit|custom`,
+`set_goal {text}`. Gauntlet (see `docs/LOOP.md`): `Station` (id, kind `ci|verify|review|merge|orbit|custom`,
 district rules, wip, oldestWait, passRate, caughtThisWeek, lastLog, actions[]), `ScarTag` on `Item` (station,
 reason, evidence url, strike), web → server `station_action {stationId, action}`. Every action carries `actor: "spark" | "player"`, `approvedBy: "player" | "autonomy"`
 and Spark's `reason`.
@@ -442,8 +442,8 @@ unlocks, Sentry + inbound email ingest, metrics rollup in D1.
 
 **UI (Claude + Justin, `web/`):** Next Move card (approve / change / skip), "sign in to unlock" power slots,
 Foreman drone on the map that flies to whatever Spark is touching, floor log with Spark's lines and an undo,
-HUD with the score row and autonomy level, the gauntlet stations (CI gate, proof bay, review tribunal, launch
-pad, orbit watch) with piles and a red rework belt back to Spark, a click-to-act station panel (see
+HUD with the score row and autonomy level, the gauntlet stations (CI inspector, verify bay, AI review, merge
+gate, orbit watch) with piles and a red rework belt back to Spark, a click-to-act station panel (see
 `docs/loop.html` for the layout), unlock moment animation, onboarding scan animation. The sim (`web/src/sim/`) gets a `heal` scenario that plays the cascade table exactly.
 
 ## Product calls (all decided)

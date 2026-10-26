@@ -12,7 +12,7 @@ rework belt back to Spark. Where stuff piles up is the bottleneck, and the bottl
 
 ```
  1 ORE            BRAIN        2 BUILD            3 THE GAUNTLET                                 4 SHIPPED
- mines ──belt──► Spark ──────► assemblers ──────► CI gate ─► proof bay ─► review ─► launch pad ─► orbit watch
+ mines ──belt──► Spark ──────► assemblers ──────► CI inspector ─► verify bay ─► review ─► merge gate ─► orbit watch
  (issues, Sentry,  (reads,      (your Claude Code    │           │            │          (you)        (24h real-world
   email, Stripe)   restates,     / Codex, on your    ▼           ▼            ▼                        check)
   deduped into     plans,        subscriptions)   ◄──────────── REWORK BELT (scar tags) ◄─────────────────┘
@@ -42,10 +42,10 @@ only scale (more machines, more autonomy) once the checks are trustworthy.
 
 | # | Station | What it checks | Fail looks like | Hackathon? |
 | --- | --- | --- | --- | --- |
-| 1 | **CI gate** | Lint, types, unit tests. Cheap and fast, so nothing expensive runs on broken code | `types: Cart.total possibly undefined` | Yes |
-| 2 | **Proof bay** | Reproduce the bug on the real app before, prove it's gone after. The PR carries receipts: a failing test that turns green, a screenshot or log from the running app | "Passed CI, but the crash still happens with an empty cart" | **Yes (the demo moment)** |
-| 3 | **Review tribunal** | A *different* model than the builder attacks the diff (Claude built → Codex reviews, and the reverse). Looks for what tests miss: wrong approach, swallowed errors, security, scope creep | "Hides the error instead of fixing the null" | Yes |
-| 4 | **Launch pad** | The player, with the receipts from 1–3 on the card. Merge = rocket. Districts earn launch permits over time | Player rejects with a reason | Yes |
+| 1 | **CI inspector** | Lint, types, unit tests. Cheap and fast, so nothing expensive runs on broken code | `types: Cart.total possibly undefined` | Yes |
+| 2 | **Verify bay** | Reproduce the bug on the real app before, prove it's gone after. The PR carries receipts: a failing test that turns green, a screenshot or log from the running app | "Passed CI, but the crash still happens with an empty cart" | **Yes (the demo moment)** |
+| 3 | **AI review** | A *different* model than the builder attacks the diff (Claude built → Codex reviews, and the reverse). Looks for what tests miss: wrong approach, swallowed errors, security, scope creep | "Hides the error instead of fixing the null" | Yes |
+| 4 | **Merge gate** | The player, with the receipts from 1–3 on the card. Merge = rocket. Districts earn launch permits over time | Player rejects with a reason | Yes |
 | 5 | **Orbit watch** | 24h after deploy: Sentry quiet, metric back, customer answered. A comeback reopens the ore and costs district trust | "Sentry #8812 fired again 3h after #38" | Stretch (Sentry-based) |
 
 ### Fails go back to Spark, with a scar tag
@@ -59,10 +59,10 @@ Third strike on the same item → it goes to the player as a Next Move. This is 
 Checks live on a ladder. Layer 1 is strongest because it never forgets and never gets skipped:
 
 1. Guardrail in the code (make the bad thing impossible: types, safe helpers, banned imports)
-2. CI gate
-3. Proof bay
-4. Review tribunal
-5. The player at the launch pad
+2. CI inspector
+3. Verify bay
+4. AI review
+5. The player at the merge gate
 
 **Same scar twice → Spark offers to promote it up a layer.** A review comment that keeps coming back becomes a
 lint rule. A proof that keeps failing on `/checkout` becomes a test turret. The gauntlet gets stronger every
@@ -77,9 +77,9 @@ tower (ship to 5% first), arena (two machines build, a judge keeps the better on
 ### Rigor follows risk
 
 Heavy checks cost power, so spend them where mistakes are expensive. A district's risk sets which stations its
-launch permit needs: `/checkout` (high) = CI, proof, review, canary, you. `/cart` (medium) = CI, proof, review.
+launch permit needs: `/checkout` (high) = CI, verify, review, canary, you. `/cart` (medium) = CI, verify, review.
 `docs/` (low) = CI, review. Players may remove a station per district, but that caps the district's autonomy.
-The launch pad can only be skipped with an earned permit.
+The merge gate can only be skipped with an earned permit. The rocket still launches from the launch pad after the merge.
 
 ## Click any station, take an action
 
@@ -88,8 +88,8 @@ Every station on the map is a button. Clicking opens a panel with:
 - **What happens here**, in one or two plain sentences
 - **Right now**: pile (WIP), oldest wait, pass rate, and **caught this week** (bugs it stopped before shipping)
 - **The last log line** from that station (the latest fail or pass, with the reason)
-- **1–3 actions**, one marked as Spark's pick. Examples: proof bay → "Build a second proof bay", "Teach a
-  /checkout proof recipe", "Let docs PRs skip proof". Rework belt → "Add a test turret on /checkout".
+- **1–3 actions**, one marked as Spark's pick. Examples: verify bay → "Build a second verify bay", "Teach a
+  /checkout verify recipe", "Let docs PRs skip verify". Rework belt → "Add a test turret on /checkout".
 
 Actions are Next Move options scoped to that station: the same `choose_move` path, logged, with undo.
 Power plants and the rework belt are clickable too.
@@ -107,7 +107,7 @@ Power plants and the rework belt are clickable too.
 
 Same ore → power → gauntlet → rocket loop, as add-on islands, each with its own ore and its own proof:
 
-| Factory | Ore | Rocket | Proof |
+| Factory | Ore | Rocket | Verify |
 | --- | --- | --- | --- |
 | Product (now) | Issues, errors, crashes, feedback | Merged fix | The bug is gone |
 | Acquisition | Traffic, funnel drop-offs, search terms | Landing page / onboarding test | Signup rate moved |
@@ -117,7 +117,7 @@ Same ore → power → gauntlet → rocket loop, as add-on islands, each with it
 
 ## Open calls (recommendations, waiting on Justin)
 
-1. **Demo stations:** CI gate, proof bay, review tribunal, launch pad; orbit watch if time. *Recommend.*
+1. **Demo stations:** CI inspector, verify bay, AI review, merge gate; orbit watch if time. *Recommend.*
 2. **Where fails go:** back to Spark with a scar tag, third strike to the player. *Recommend.*
 3. **Who reviews:** a different model family from the builder when both are plugged in; with one sign-in, a
    fresh session with a hostile reviewer loadout. *Recommend.*

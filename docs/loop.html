@@ -253,13 +253,13 @@ footer a { color: var(--blue); }
         <div class="belt"></div>
         <button class="station" data-id="build" aria-pressed="false"><canvas class="sprite" data-s="arm"></canvas><span class="name">Assemblers</span><span class="pile"><i class="red"></i></span><span class="meta">2 / 3 busy</span></button>
         <div class="belt hot"></div>
-        <button class="station gate" data-id="ci" aria-pressed="false"><canvas class="sprite" data-s="ci"></canvas><span class="name">CI gate</span><span class="pile"><i class="green"></i></span><span class="meta">78% pass</span></button>
+        <button class="station gate" data-id="ci" aria-pressed="false"><canvas class="sprite" data-s="ci"></canvas><span class="name">CI inspector</span><span class="pile"><i class="green"></i></span><span class="meta">78% pass</span></button>
         <div class="belt hot"></div>
-        <button class="station gate bottleneck" data-id="proof" aria-pressed="false"><canvas class="sprite" data-s="proof"></canvas><span class="name">Proof bay</span><span class="pile"><i class="red"></i><i class="red"></i><i class="red"></i><i class="green"></i></span><span class="meta">23m wait</span></button>
+        <button class="station gate bottleneck" data-id="proof" aria-pressed="false"><canvas class="sprite" data-s="proof"></canvas><span class="name">Verify bay</span><span class="pile"><i class="red"></i><i class="red"></i><i class="red"></i><i class="green"></i></span><span class="meta">23m wait</span></button>
         <div class="belt hot"></div>
-        <button class="station gate" data-id="review" aria-pressed="false"><canvas class="sprite" data-s="review"></canvas><span class="name">Review tribunal</span><span class="pile"><i class="green"></i></span><span class="meta">84% pass</span></button>
+        <button class="station gate" data-id="review" aria-pressed="false"><canvas class="sprite" data-s="review"></canvas><span class="name">AI review</span><span class="pile"><i class="green"></i></span><span class="meta">84% pass</span></button>
         <div class="belt hot"></div>
-        <button class="station gate" data-id="pad" aria-pressed="false"><canvas class="sprite" data-s="pad"></canvas><span class="name">Launch pad</span><span class="pile"><i class="red"></i><i class="blue"></i></span><span class="meta">you merge</span></button>
+        <button class="station gate" data-id="pad" aria-pressed="false"><canvas class="sprite" data-s="pad"></canvas><span class="name">Merge gate</span><span class="pile"><i class="red"></i><i class="blue"></i></span><span class="meta">you merge</span></button>
         <div class="belt"></div>
         <button class="station" data-id="orbit" aria-pressed="false"><canvas class="sprite" data-s="orbit"></canvas><span class="name">Orbit watch</span><span class="pile"><i class="red"></i><i class="green"></i><i class="green"></i></span><span class="meta">24h watch</span></button>
       </div>
@@ -297,10 +297,10 @@ footer a { color: var(--blue); }
     <p>Fix each problem at the strongest layer that can catch it. Layer 1 is strongest: it never forgets and never gets skipped. Your own review is the last net, not the first.</p>
     <div class="ladder">
       <div class="rung"><span class="n">1</span><div><b>Guardrail in the code</b><small>Make the bad thing impossible. Types, safe helpers, banned imports.</small></div><span class="tag green">strongest</span></div>
-      <div class="rung"><span class="n">2</span><div><b>CI gate</b><small>Lint, types, tests. Fast, cheap, runs on every PR.</small></div><span class="tag steel">cheap</span></div>
-      <div class="rung"><span class="n">3</span><div><b>Proof bay</b><small>Reproduce before, prove gone after, on the running app.</small></div><span class="tag amber">evidence</span></div>
-      <div class="rung"><span class="n">4</span><div><b>Review tribunal</b><small>A different model attacks the diff. Finds shortcuts tests miss.</small></div><span class="tag blue">2nd opinion</span></div>
-      <div class="rung"><span class="n">5</span><div><b>You, at the launch pad</b><small>Best at taste and intent. Worst at catching the same bug twice.</small></div><span class="tag steel">final say</span></div>
+      <div class="rung"><span class="n">2</span><div><b>CI inspector</b><small>Lint, types, tests. Fast, cheap, runs on every PR.</small></div><span class="tag steel">cheap</span></div>
+      <div class="rung"><span class="n">3</span><div><b>Verify bay</b><small>Reproduce before, prove gone after, on the running app.</small></div><span class="tag amber">evidence</span></div>
+      <div class="rung"><span class="n">4</span><div><b>AI review</b><small>A different model attacks the diff. Finds shortcuts tests miss.</small></div><span class="tag blue">2nd opinion</span></div>
+      <div class="rung"><span class="n">5</span><div><b>You, at the merge gate</b><small>Best at taste and intent. Worst at catching the same bug twice.</small></div><span class="tag steel">final say</span></div>
     </div>
     <p class="promote"><b>Promote a check.</b> Same failure twice? Spark offers to move it up a layer. A review comment that keeps coming back becomes a lint rule. A proof that keeps failing on <code>/checkout</code> becomes a test turret. The gauntlet gets stronger every time it catches something.</p>
   </section>
@@ -321,8 +321,8 @@ footer a { color: var(--blue); }
     <table>
       <thead><tr><th>District</th><th>Risk</th><th>Stations a launch permit needs</th></tr></thead>
       <tbody>
-        <tr><td>/checkout</td><td><span class="dot" style="background:var(--red)"></span>high</td><td>CI, proof, review, canary, you</td></tr>
-        <tr><td>/cart</td><td><span class="dot" style="background:var(--amber)"></span>medium</td><td>CI, proof, review</td></tr>
+        <tr><td>/checkout</td><td><span class="dot" style="background:var(--red)"></span>high</td><td>CI, verify, review, canary, you</td></tr>
+        <tr><td>/cart</td><td><span class="dot" style="background:var(--amber)"></span>medium</td><td>CI, verify, review</td></tr>
         <tr><td>docs/</td><td><span class="dot" style="background:var(--green)"></span>low</td><td>CI, review</td></tr>
       </tbody>
     </table>
@@ -360,10 +360,10 @@ footer a { color: var(--blue); }
   <span class="eyebrow">For Justin</span>
   <h2>Calls to make</h2>
   <div class="calls">
-    <div class="call"><h3>Which stations ship for the Nov 4 demo?</h3><p>CI gate, proof bay, review tribunal, launch pad. Orbit watch as a Sentry check if there's time. Research tree shown, one unlock on camera.</p><p><b>Recommend:</b> those four. The proof bay is the thing nobody else has, so it's the demo moment.</p></div>
+    <div class="call"><h3>Which stations ship for the Nov 4 demo?</h3><p>CI inspector, verify bay, AI review, merge gate. Orbit watch as a Sentry check if there's time. Research tree shown, one unlock on camera.</p><p><b>Recommend:</b> those four. The verify bay is the thing nobody else has, so it's the demo moment.</p></div>
     <div class="call"><h3>Where do fails go?</h3><p>Back to Spark at the start of the line, carrying a scar tag (what failed, the evidence). Spark re-plans. Third strike comes to you.</p><p><b>Recommend:</b> Spark, not straight back to the builder. That's how the loop learns.</p></div>
     <div class="call"><h3>Who runs the review?</h3><p>A different model than the builder: Claude builds, Codex reviews, and the reverse. With one sign-in, a fresh session with a hostile reviewer loadout.</p><p><b>Recommend:</b> different model family when both are plugged in. It costs power, so it shows on the meter.</p></div>
-    <div class="call"><h3>Can players remove a station?</h3><p>Per district, yes. But launch permits need the stations their risk calls for, so cutting checks caps autonomy. The launch pad can't be removed without a permit.</p><p><b>Recommend:</b> allowed, with the trust cost shown.</p></div>
+    <div class="call"><h3>Can players remove a station?</h3><p>Per district, yes. But launch permits need the stations their risk calls for, so cutting checks caps autonomy. The merge gate can't be removed without a permit.</p><p><b>Recommend:</b> allowed, with the trust cost shown.</p></div>
   </div>
 </section>
 
@@ -406,32 +406,32 @@ const S = {
   spark: { zone:"Brain · the game master", name:"Spark", sprite:"spark", tag:["blue","never writes code"],
     what:"Spark reads every chunk, says the problem back in plain words, scores who it hurts, picks a machine and writes the plan. On risky districts you confirm its read before anything gets built. Every fail comes back here, so Spark is also where the loop learns.",
     stats:[["Waiting","2"],["Avg wait","1m"],["Reads you fixed","1 / 14"]],
-    log:["Spark","#41 came back from the proof bay: crash still happens with an empty cart. Re-planning with the repro attached."],
+    log:["Spark","#41 came back from the verify bay: crash still happens with an empty cart. Re-planning with the repro attached."],
     acts:[["Confirm Spark's read of #41",1],["Change the plan",0],["Split into smaller items",0]] },
   build: { zone:"2 · Build · your machines", name:"Assemblers", sprite:"arm", tag:["steel","your subscriptions"],
     what:"Your own Claude Code and Codex, running on your subscriptions through the local runner. They take the item and Spark's plan, write the fix and open a PR. They have to attach evidence (a failing test that now passes, a screenshot), not just say done.",
     stats:[["Busy","2 / 3"],["PRs today","6"],["Evidence attached","5 / 6"]],
     log:["Claude Code","opened #42 for the cart total bug. Attached: failing test → passing, screenshot of /cart."], ok:true,
     acts:[["Add an assembler",0],["Give it a test-first loadout",1],["Move it to the Claude plant",0]] },
-  ci: { zone:"3 · Gauntlet · station 1", name:"CI gate", sprite:"ci", tag:["green","cheap + fast"],
+  ci: { zone:"3 · Gauntlet · station 1", name:"CI inspector", sprite:"ci", tag:["green","cheap + fast"],
     what:"The first and cheapest check: lint, types, unit tests. It catches the boring breaks fast, so nothing expensive runs on broken code.",
     stats:[["In line","1"],["Pass rate","78%"],["Caught this week","9"]],
     log:["CI","#40 failed types: Cart.total is possibly undefined. Sent to the rework belt."],
     acts:[["Open the CI log",0],["Send back with a hint",0],["Turn this into a lint rule",1]] },
-  proof: { zone:"3 · Gauntlet · station 2", name:"Proof bay", sprite:"proof", tag:["amber","bottleneck"],
+  proof: { zone:"3 · Gauntlet · station 2", name:"Verify bay", sprite:"proof", tag:["amber","bottleneck"],
     what:"The real check. Run the bug against the real app, before and after. Before: the crash happens. After: it's gone. The PR carries the receipts: the failing test that turns green, a log or screenshot from the running app. Done means evidence.",
     stats:[["In line","4"],["Oldest wait","23m"],["Caught this week","5"]],
-    log:["Proof bay","#41 passed CI but the crash still happens with an empty cart. Back to Spark."],
-    acts:[["Build a second proof bay",1],["Teach a /checkout proof recipe",0],["Let docs PRs skip proof",0]] },
-  review: { zone:"3 · Gauntlet · station 3", name:"Review tribunal", sprite:"review", tag:["blue","second opinion"],
+    log:["Verify bay","#41 passed CI but the crash still happens with an empty cart. Back to Spark."],
+    acts:[["Build a second verify bay",1],["Teach a /checkout verify recipe",0],["Let docs PRs skip verify",0]] },
+  review: { zone:"3 · Gauntlet · station 3", name:"AI review", sprite:"review", tag:["blue","second opinion"],
     what:"A different model than the one that wrote it tries to break it. Claude built it, so Codex reviews (or the reverse). It looks for what tests miss: the wrong approach, swallowed errors, security holes, scope creep.",
     stats:[["In line","1"],["Pass rate","84%"],["Caught this week","3"]],
     log:["Codex reviewer","#39 hides the error instead of fixing the null. Rejected, with the line."],
     acts:[["Read the review",0],["Overrule it, with a reason",0],["Add a security reviewer",1]] },
-  pad: { zone:"3 · Gauntlet · station 4", name:"Launch pad", sprite:"pad", tag:["amber","you"],
-    what:"You. Every PR that gets here has passed every station, and the card shows the receipts: CI, proof, review. Merge and the rocket launches. Districts earn launch permits over time, so routine PRs can launch on their own.",
+  pad: { zone:"3 · Gauntlet · station 4", name:"Merge gate", sprite:"pad", tag:["amber","you"],
+    what:"You. Every PR that gets here has passed every station, and the card shows the receipts: CI, verify, review. Merge and the rocket launches. Districts earn launch permits over time, so routine PRs can launch on their own.",
     stats:[["Waiting on you","2"],["Oldest","40m"],["Launched this week","17"]],
-    log:["Spark","#42 is ready. CI green, proof attached, Codex review approved. Fixes the cart total for 31 users."], ok:true,
+    log:["Spark","#42 is ready. CI green, verified on the app, Codex review approved. Fixes the cart total for 31 users."], ok:true,
     acts:[["Review #42 with receipts",1],["Merge and launch",0],["Give docs a launch permit",0]] },
   orbit: { zone:"4 · Shipped · after the merge", name:"Orbit watch", sprite:"orbit", tag:["green","real world"],
     what:"Checks don't stop at merge. For 24 hours after a deploy, orbit watch checks the real world: Sentry quiet, checkouts back up, the customer answered. If the bug comes back, the ore reopens and that district loses trust.",
