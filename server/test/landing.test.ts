@@ -14,7 +14,11 @@ async function previewCookie() {
 describe("public landing page", () => {
   it("shows the landing page at / to visitors and the app to preview players", async () => {
     expect(await publicRoute(at("/"), env)).toBe("landing");
-    expect(await publicRoute(at("/?source=sim"), env)).toBe("landing");
+    expect(await publicRoute(at("/?utm_source=x&ref=hn"), env)).toBe("landing");
+    expect(await publicRoute(at("/?joined=1"), env)).toBe("landing");
+    // App deep links keep going through the password form with next intact.
+    expect(await publicRoute(at("/?onboard=repo&source=live"), env)).toBeNull();
+    expect(await publicRoute(at("/?source=sim"), env)).toBeNull();
     expect(await publicRoute(at("/"), { SESSION_SECRET: "" })).toBe("landing");
     expect(await publicRoute(at("/", { headers: { cookie: await previewCookie() } }), env)).toBeNull();
     expect(await publicRoute(new Request("http://localhost/"), { ...env, DEV_LOGIN: "r3dbars" })).toBeNull();

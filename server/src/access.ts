@@ -64,6 +64,9 @@ export async function publicRoute(request: Request, env: AccessEnv): Promise<Pub
   if (read && PUBLIC_FILE.test(url.pathname)) return "file";
   if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
   if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;
+  // App deep links (/?onboard=repo&source=live from the GitHub install, ?source=sim, ...) still go to the
+  // password form, which keeps them as next; only a bare visit or a campaign link gets the landing page.
+  if ([...url.searchParams.keys()].some((key) => !/^(?:utm_\w+|ref|joined)$/.test(key))) return null;
   return (await hasPreviewAccess(request, env)) ? null : "landing";
 }
 async function hasPreviewAccess(request: Request, env: AccessEnv): Promise<boolean> {

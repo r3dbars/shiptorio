@@ -9,7 +9,8 @@ Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind th
     With the cookie (or `DEV_LOGIN` on localhost), `/` is the app as before.
   - Public files: `/welcome/*`, `/robots.txt`, `/sitemap.xml` (`public, max-age=3600`, byte ranges for Safari video).
   - `POST /api/waitlist` is public. Everything else (`/index.html`, `/assets/*`, `/api/*`, `/setup`, `/art/`) is still gated.
-  - "Enter the factory" links to `/access?next=%2F`, which shows the password form and lands on the app.
+  - "Sign in" / "Enter the factory" link to `/access?next=%2F`: password form, then the app and its GitHub sign-in (#190 flow).
+  - Only a bare `/` (or `utm_*`, `ref`, `joined` params) gets the landing; app deep links like `/?onboard=repo&source=live` still hit the password form with `next` kept.
 - **Waitlist:** `server/src/waitlist.ts`. JSON or form post `{email, website (honeypot), ref}`. Stored in KV
   `CACHE` as `waitlist:email:<email>` → `{email, at, ref}`, 5 tries per IP per hour, same-origin only.
   **Codex goal 12 (PR #161, D1 `signup_waitlist` + Turnstile) can take this route over**: import the KV keys
