@@ -24,6 +24,7 @@ import {
   type Step,
   type Unlock,
 } from "@shiptorio/shared";
+import { PressureGauge } from "./ironArt";
 import { Icon, type IconName } from "./icons";
 import { sound } from "../sound/engine";
 import { PROGRESS, WORDS } from "../copy";
@@ -179,7 +180,9 @@ export function ProgressChip({ p, onOpen }: { p: Progress; onOpen: () => void })
   const streak = liveStreak(p, Date.now());
   const today = p.last === dayKey(Date.now());
   return (
-    <button type="button" className="chip lvl-chip" onClick={onOpen} aria-label={PROGRESS.chipLabel(lv.level, streak)} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
+    <button type="button" className="chip lvl-chip" onClick={onOpen} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
+      {/* the name is what the chip shows plus this, so voice control can say what it sees */}
+      <span className="sr">{PROGRESS.chipLabel(lv.level, streak)}</span>
       <span className={`badge flame${today ? " lit" : ""}`}>
         <Icon name="flame" size={14} />
       </span>
@@ -355,11 +358,13 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
         </button>
       </div>
       <div className="pg-level">
-        <div className="pg-bar">
-          <i style={{ width: `${Math.round(lv.into * 100)}%` }} />
-        </div>
-        <span>
-          {PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}
+        <PressureGauge into={lv.into} />
+        <span className="pg-odo">
+          <span className="iron-eyebrow">{PROGRESS.gauge}</span>
+          <span className="pg-digits" aria-hidden="true">
+            {String(lv.level).padStart(2, "0").split("").map((d, i) => <i key={i}>{d}</i>)}
+          </span>
+          <span>{PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}</span>
         </span>
       </div>
       <div className="pg-streak">
