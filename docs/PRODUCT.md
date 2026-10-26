@@ -1,6 +1,6 @@
 # Shiptorio product spec: Spark runs the factory
 
-> Status: draft v1, 2026-10-26. Owner: Justin. This sharpens `PLAN.md` and `docs/ARCHITECTURE.md`
+> Status: draft v2, 2026-10-26 (v2: Spark is the brain, never the coder; your subscriptions do the building; autonomy is earned). Owner: Justin. This sharpens `PLAN.md` and `docs/ARCHITECTURE.md`
 > (it doesn't replace them). Where this doc and those disagree on **product behavior**, this doc wins.
 > Stack is Cloudflare (see `AGENTS.md`). Open product calls are at the bottom, each with a recommendation.
 
@@ -10,9 +10,22 @@
 ends as a real PR, a real release, a real reply to a real customer. The more you play, the more you ship,
 and shipping is what gets you customers and money.
 
-Shiptorio is simple to start: sign in with GitHub, pick a repo, and in about a minute Muse Spark has built
-you a starter factory and shown you the first bottleneck. There is always a bottleneck, there is always a
-next move, and it never ends. That's the game. Shipping is the point.
+Shiptorio is simple to start: sign in with GitHub, pick a repo, and in about a minute Muse Spark has read
+it, laid out a starter factory and shown you the first bottleneck. Then you plug in your own agents (sign in
+with Claude, sign in with ChatGPT) and each one becomes a power plant and machines on the map. There is
+always a bottleneck, there is always a next move, and it never ends. That's the game. Shipping is the point.
+
+**Three ideas hold the whole product up (Justin, 2026-10-26):**
+
+1. **Spark is the brain and the game master, not a coder.** It reads every input, finds the bottleneck,
+   plans the work, routes it, judges the results, and pulls you into the loop with the next move. It never
+   writes the code itself.
+2. **Your subscriptions are the raw resources.** Code is written by the agents you already pay for
+   (Claude Code, Codex, later Cursor, Grok, local models) through the local runner. Every sign-in unlocks
+   more machines and power. More resources, bigger factory.
+3. **Autonomy is earned by playing.** On day one Spark asks before it does anything. The more you play
+   (approve, merge, ship clean), the more Spark is allowed to do on its own. The game gets more automatic
+   the longer you play it, the way a Factorio base does.
 
 ## Who does what
 
@@ -20,13 +33,28 @@ Three actors. Keep them straight, everything else follows.
 
 | Actor | Role in the game | Real thing |
 | --- | --- | --- |
-| **Player** (you) | Factory owner. Sets direction, approves anything that leaves the building, spends science | Founder / dev who owns the repo |
-| **Spark, the Foreman** | Runs the floor. Watches every input, finds the bottleneck, moves work, places and tunes machines, proposes the next move | Muse Spark (`muse-spark-1.3`, Meta Model API) in a tool-calling loop inside the repo's Factory Durable Object |
-| **Assemblers** | Workers. Take one task from Spark, write the code, push a branch | Spark itself (hosted), or Claude Code / Codex / Cursor / Grok through the local runner |
+| **Player** (you) | Factory owner. Approves Spark's moves, plugs in resources, merges, spends science | Founder / dev who owns the repo |
+| **Spark, the Foreman** | The brain and game master. Watches every input, finds the bottleneck, plans and routes work, judges results, asks you for the next move. Never writes code | Muse Spark (`muse-spark-1.3`, Meta Model API) in a tool-calling loop inside the repo's Factory Durable Object |
+| **Assemblers** | Workers. Take one task and Spark's plan, write the code, push a branch | The player's own agents through the local runner: Claude Code (Claude sign-in), Codex (ChatGPT sign-in), later Cursor, Grok, local models |
 
 Spark is never a chat sidebar. Spark is the thing making the factory move. You see Spark as a character
 on the map (the Foreman drone flying between machines) and as one voice in the floor log and the
 Next Move card.
+
+### Resources: sign in to unlock
+
+| Sign-in | Unlocks on the map | Real thing |
+| --- | --- | --- |
+| GitHub (required) | The island (your repo as districts), the ore mine, the launch pad | GitHub App install |
+| Claude | Solar plant + battery, Claude Code assemblers | `claude -p` in the local runner on your login |
+| ChatGPT | Solar plant + battery, Codex assemblers | `codex exec` in the local runner on your login |
+| Sentry, feedback inbox, PostHog | New ore patches (crater, well, roads) | Webhooks / API keys |
+| Later: Cursor, Grok, a local GPU | More solar, geothermal | Their CLIs / a local endpoint |
+
+The Spark steam plant (Meta API, paid by Shiptorio) powers only the brain: triage, planning, routing,
+judging. It doesn't run assemblers. With no subscription plugged in, the factory can read, plan and show
+you the bottleneck, but nothing gets built, and the Next Move card says exactly that: *"Plug in Claude or
+ChatGPT to start building."* That's the first hook.
 
 ## The core loop
 
@@ -43,8 +71,9 @@ One session, as the player sees it:
 
 1. **Open Shiptorio.** The map shows your repo as districts. Overnight: 2 biters on `/checkout` (new Sentry
    errors), 5 new ore chunks (3 issues, 2 customer emails), 3 PRs sitting on the launch pad.
-2. **Read the Next Move card.** Spark has already done the obvious stuff (triaged, merged duplicates, started
-   2 fixes). The card says the one thing that is holding the factory back right now:
+2. **Read the Next Move card.** Spark has already read and triaged everything (looking is free), and
+   lined up its moves. Early on it asks for each one; once you've earned it, it has already done the
+   routine ones. The card says the one thing that is holding the factory back right now:
    *"Bottleneck: launch pad. 3 PRs waiting on your review for 9h. Merging #41 closes the checkout crash
    hitting 112 users. [Review #41] [Let Spark auto-launch docs PRs]"*
 3. **Make the call.** You merge (rocket launches), or approve a build Spark wants, or spend science on research.
@@ -108,12 +137,13 @@ model guess, so it's stable and cheap. Spark's job is the next part: explain it 
 | Bottleneck | What it looks like on the map | Typical Spark move |
 | --- | --- | --- |
 | Intake | Ore piling up untriaged | Raise splitter effort, add a splitter |
-| Build | Assemblers all busy, queue on the belt | Add an assembler, switch one to a solar plant with charge left |
+| Build | Assemblers all busy, queue on the belt | Add an assembler, move one to a solar plant with charge left, or ask you to plug in another subscription |
+| No resources | Belt full, no machines can run | "Sign in with Claude / ChatGPT to build" |
 | Inspect | Items bouncing in the rework loop | Add an inspector, give the assembler a test-writing loadout, split the item smaller |
 | Pad (review) | Rockets stacking on the pad | Ask the player to review (top PR first), or offer auto-launch for low-risk districts |
 | Release | Merged but not deployed | Ask to cut a release |
 | Impact | Shipped, but Sentry still firing | Reopen the ore with the new stack trace, flag the PR that missed |
-| Power | Machines blocked, batteries empty | Switch to steam (Spark API), lower effort on low-value items |
+| Power | Machines blocked, batteries empty | Move work to the plant with charge left, hold low-value items until the battery recharges, or ask for another sign-in |
 
 ### The Next Move card
 
@@ -134,14 +164,17 @@ factory. On top of that:
   is a visible game resource, so Spark's own thinking shows up on the power grid.
 
 Each wake is one Spark call with tools (OpenAI-compatible `tools` on `api.meta.ai/v1`), fed a compact
-**factory brief**: bottleneck table, top 10 items with customer context, machines and power, trust per district,
-and the last few player decisions. Spark replies with tool calls; the DO validates each one against the
-trust rules, applies it, and logs it. Long work (writing code) is never inside a Spark call; it's a job
-handed to an assembler.
+**factory brief**: bottleneck table, top 10 items with customer context, machines and power, autonomy level
+per district, and the last few player decisions. Spark replies with tool calls; the DO checks each one
+against the player's autonomy level. Allowed → applied and logged. Not yet allowed → turned into a move on
+the Next Move card, and applied when the player says yes. Spark never writes code: building is always a job
+handed to one of the player's assemblers through the runner, with Spark's plan attached.
 
 ### Spark's tools
 
-Grouped by how far the effect reaches. The **tier** decides who has to approve (see trust below).
+Grouped by how far the effect reaches. The **tier** sets how much autonomy the player has to have unlocked
+before Spark may call it without asking (see "Autonomy is earned" below). On day one only tier 0 runs on its
+own; everything else comes to you as a move.
 
 **Look (tier 0, always allowed)**
 
@@ -155,7 +188,7 @@ Grouped by how far the effect reaches. The **tier** decides who has to approve (
 | `get_feedback(thread_id)` | Customer email thread |
 | `get_metrics(window)` | Lead time, throughput, escaped defects, cost, users affected |
 
-**Run the floor (tier 1, Spark does it, player can undo)**
+**Run the floor (tier 1, asks first until you unlock Floor autonomy)**
 
 | Tool | Does |
 | --- | --- |
@@ -163,23 +196,23 @@ Grouped by how far the effect reaches. The **tier** decides who has to approve (
 | `link_items(a, b, reason)` | "This email is the same bug as this Sentry error"; merges ore, sums value |
 | `split_item(item_id, parts[])` | Break a big item into smaller tasks |
 | `route_item(item_id, machine_id)` | Send an item to an assembler |
-| `set_effort(machine_id, effort)` | Spark reasoning effort (`minimal`…`xhigh`) as the machine's module |
-| `set_power(machine_id, source_id)` | Move a machine between solar / steam / geothermal |
+| `set_loadout(machine_id, loadout)` | The machine's module: which agent, model and effort, plus a prompt/tool loadout (e.g. "write tests first") |
+| `set_power(machine_id, source_id)` | Move a machine between the player's plants (Claude solar, Codex solar, geothermal) |
 | `place_machine(type, harness, at)` | Build within the factory's current unlocks and budget |
 | `remove_machine(machine_id)` | Tear down an idle machine |
 | `post_log(text)` | One line in the floor log, in Spark's voice |
 
-**Change the repo (tier 2, opens PRs only, never touches `main`)**
+**Start building (tier 2, asks first until you unlock Build autonomy; PRs only, never `main`)**
 
 | Tool | Does |
 | --- | --- |
-| `start_job(item_id, harness, plan)` | Hand an item to an assembler with a short plan; the job opens a PR |
-| `request_rework(item_id, failure, hint)` | Send a rejected item back with what failed and what to try |
-| `inspect_pr(pr, gates[])` | Run the gates (lint, types, tests, visual) and set the PR's quality tier |
+| `start_job(item_id, machine_id, plan)` | Hand an item and Spark's plan (files, approach, done-when) to one of the player's assemblers; the job opens a PR |
+| `request_rework(item_id, failure, hint)` | Read the failed CI / review, tell the assembler what broke and what to try |
+| `inspect_pr(pr, gates[])` | Run the gates (lint, types, tests, visual), Spark reads the diff and results, sets the quality tier |
 | `comment_on_issue(issue, text)` | Status note on the source issue ("fix is in #41") |
 | `add_turret(district, test_plan)` | Start a job that adds tests around a district |
 
-**Leave the building (tier 3, the player approves by default)**
+**Leave the building (tier 3, the player approves; only a district launch permit lifts it)**
 
 | Tool | Does |
 | --- | --- |
@@ -196,28 +229,45 @@ Every tool call becomes a `log` line and an entry in the item's history, so the 
 
 | Decision | Player | Spark |
 | --- | --- | --- |
-| Which repo, which inputs to connect | ✓ | |
+| Which repo, which inputs to connect, which subscriptions to plug in | ✓ | asks for more when you're short |
 | Goal for the week ("ship checkout fixes", "grow signups") | ✓ sets it | uses it to weight value |
-| Triage, duplicates, linking email ↔ Sentry | can override | ✓ |
-| Which machine gets which item, effort, power | can override | ✓ |
-| Placing / removing machines (within budget) | can do it by hand | ✓ |
+| Reading, triage, linking email ↔ Sentry, finding the bottleneck | can override | ✓ always (it's just looking) |
+| Which machine gets which item, loadout, power | ✓ approves at first | ✓ once Floor is unlocked |
+| Placing / removing machines | ✓ approves at first | ✓ once Floor is unlocked |
+| Starting a build (an agent writes code, opens a PR) | ✓ approves at first | ✓ once Build is unlocked |
+| Writing the code | | never. Your agents do |
 | Spending science on research | ✓ | recommends |
-| Opening PRs | | ✓ (through assemblers) |
-| Merging PRs (rocket launch) | ✓ | only with an earned launch permit |
+| Merging PRs (rocket launch) | ✓ | only with an earned district launch permit |
 | Releasing | ✓ | only with an earned permit |
 | Emailing a customer | ✓ approves the draft | drafts it |
 | Closing issues as won't-fix | ✓ | proposes |
 | Spending real money beyond the set budget | ✓ | never |
 
-Rule of thumb: **inside the factory, Spark acts and you can undo. Anything that leaves the factory
-(merge, release, customer email, money) needs you, until you've earned the trust to hand it off.**
+Rule of thumb: **Spark always thinks for free, and asks before it acts. Each thing you approve over and
+over, cleanly, is something you can hand to Spark next.**
 
-## Trust and approvals
+## Autonomy is earned
 
-- **Tier 0–1:** Spark just does it. Every action shows on the map and in the log with an undo for 5 minutes.
-- **Tier 2:** Spark does it, but only ever as a PR on a `shiptorio/*` branch. Never `main`, never `.github/`,
+Shiptorio starts manual and gets more automatic the more you play. Autonomy unlocks like research, and the
+game tells you when one is ready: *"You've approved 10 of Spark's routing moves without a change. Let Spark
+route on its own?"*
+
+| Level | Unlocks when | Spark may then, without asking |
+| --- | --- | --- |
+| **0. Advisor** (start) | Connect a repo | Look, triage, link, find the bottleneck, write moves |
+| **1. Floor** | ~10 floor moves approved as-is | Route items, set loadouts, move power, place/remove machines (5-min undo on each) |
+| **2. Build** | ~5 PRs merged from Spark's plans with no escaped defect | Start jobs on your agents and run the rework loop (still PRs only) |
+| **3. Launch permit** (per district) | District trust above its risk threshold, PR at its minimum quality tier | Merge (and release) in that district |
+| **4. Lights out** | Permits on most districts, a week clean | Run unattended within the budget; you get a morning summary |
+
+Thresholds are tuning, not fixed. A level can always be turned back down with one click, and an escaped
+defect drops it automatically (Build falls back to Advisor in that district, the permit is revoked).
+
+Always true, whatever the level:
+
+- Tier 2 work only ever lands as a PR on a `shiptorio/*` branch. Never `main`, never `.github/`,
   never secrets (`SAFE_PATH` in `engine.ts`).
-- **Tier 3:** goes to the Next Move card for the player. Exception: a **launch permit**.
+- Tier 3 goes to the Next Move card unless the district holds a **launch permit**.
 
 **Trust meter, per district.** Starts at 0. A clean launch (merged, released, no new Sentry errors from that
 PR within 24 h) adds trust; an escaped defect (new errors traced to the PR, or a revert) costs a lot more
@@ -245,6 +295,7 @@ Every number on the HUD is a real metric with a game skin. No fake points.
 | **Customers answered** | Feedback threads closed with a shipped fix | Inbox |
 | **Users unblocked** | Sum of users affected by resolved ore | Sentry / PostHog |
 | **Cost per rocket** | Steam credits + solar usage per merged PR | Power grid |
+| **Autonomy** | Your level and permits; how much ran without you this week | Factory DO history |
 | **Revenue** (later) | MRR / conversions in districts Shiptorio touched | Stripe / PostHog |
 
 The headline number is **Ship Score** for the week: `users unblocked + 10 × customers answered + rockets`,
@@ -263,9 +314,9 @@ The demo story, step by step. Every row is a real effect.
 | --- | --- | --- |
 | Biters swarm `/checkout` | `get_sentry_issue`, `triage(bug, checkout, value=112 users)` | Sentry error on the demo shop |
 | An envelope at the well glows | `get_feedback`, `link_items(email, sentry, "same stack")` | Customer emailed "checkout broke" |
-| Next Move: "Checkout crash, 112 users, fix it at high effort?" [Go] | `propose_move` | |
-| You click **Go** | `set_effort(asm1, high)`, `start_job(item, spark, plan)` | Spark assembler writes the fix |
-| Item enters the inspector, gets stamped red | `inspect_pr(#41, [lint, types, tests])` → fail, `request_rework` | CI fails on the PR |
+| Next Move: "Checkout crash, 112 users. Send it to your Claude Code assembler with this plan?" [Go] | `propose_move` (plan: files, approach, done-when) | |
+| You click **Go** | `start_job(item, claude_code_1, plan)` | Claude Code, on your subscription, writes the fix on your machine |
+| Item enters the inspector, gets stamped red | `inspect_pr(#41, [lint, types, tests])` → fail, `request_rework` with what broke | CI fails on the PR; Spark tells Claude Code why |
 | Second pass, stamped green, rocket on the pad | `inspect_pr` → rare tier, `request_merge(#41)` | PR #41 green |
 | You merge, rocket launches | `cut_release([#41])`, `comment_on_issue` | Merged, deployed |
 | Biters die, crater fills | metrics tick: biters killed +1, users unblocked +112 | Sentry quiet |
@@ -280,36 +331,45 @@ The demo story, step by step. Every row is a real effect.
    → ore, CI config → which inspectors exist, a quick risk pass per district. Spark writes a one-line read of
    the repo in the log ("Next.js shop, checkout and cart carry most of the risk, 14 open issues, no tests
    around checkout").
-4. **Starter factory.** Spark places splitter → assembler (Spark on steam) → inspector → launch pad, with belts,
-   and starts on the highest-value issue. First item is moving before the player does anything.
-5. **Connect more ore** (optional, from the map, not a form): Sentry (paste DSN org + token or install the
-   integration), feedback address (we give you `feedback+repo@…`, forward your support inbox to it),
-   PostHog key.
-6. **Add your own agents** (optional): `bunx shiptorio-runner pair ABCD-1234` adds solar plants for the
-   player's Claude / Codex subscriptions.
-7. **Set a goal** (one line, can skip): "fix checkout", "ship the onboarding redesign". Spark uses it to weight value.
-8. **First Next Move card** appears. Usually the first PR is on the pad inside 5 minutes.
+4. **Starter factory, as a proposal.** Spark shows a ghosted layout (splitter → assembler → inspector →
+   launch pad, with belts) and the issue it would start on. First Next Move: *"Build this?"* You click yes,
+   it snaps into place. That's your first approved move.
+5. **Plug in power.** The assembler sits dark until it has power: *"Sign in with Claude or ChatGPT to start
+   building."* Under the hood: `bunx shiptorio-runner pair ABCD-1234` on your machine; the runner finds your
+   logged-in `claude` / `codex` and each becomes a solar plant + battery on the map. This is the step the
+   whole game pushes you toward, and each extra sign-in is more machines.
+6. **First build.** Spark asks to send the top issue to your new assembler with its plan. Yes → the arm
+   starts welding. Usually the first PR is on the pad inside 5 minutes.
+7. **Connect more ore** (from the map, not a form, whenever Spark suggests it): Sentry, the feedback address
+   (we give you `feedback+repo@…`, forward your support inbox to it), PostHog.
+8. **Set a goal** (one line, can skip): "fix checkout", "ship the onboarding redesign". Spark uses it to weight value.
 
 ## Scope: hackathon (by noon CT Wed Nov 4) vs later
 
 | Area | In the demo | Later |
 | --- | --- | --- |
 | Inputs | GitHub issues, Sentry, feedback email (demo shop) | PostHog traffic, lint/complexity pollution, Linear, Slack, Intercom |
-| Spark loop | Event wakes + heartbeat, tools from all four tiers, factory brief, budget | Long-horizon planning, weekly goals that steer research |
+| Spark loop | Event wakes + heartbeat, tools from all four tiers, factory brief, budget, ask-or-act check | Long-horizon planning, weekly goals that steer research |
 | Bottleneck engine | Stage table, value × wait, Next Move card | Per-district bottlenecks, forecasting ("pad will jam by 3 PM") |
-| Assemblers | Spark (hosted), one subscription CLI via runner | Cursor, Grok, local Glimmer (geothermal) |
-| Trust | Tiers, trust meter, one launch permit shown (docs auto-launch) | Permits on every district, automatic revocation tuned on real data |
+| Assemblers | Claude Code + Codex through the local runner on the player's subscriptions | Cursor, Grok, local Glimmer (geothermal), hosted runner for teams |
+| Autonomy | Advisor → Floor → Build shown, one launch permit earned on camera (docs auto-launch) | Lights out, permits on every district, thresholds tuned on real data |
 | Outputs | PR, merge, release on the demo shop, customer reply draft + send | Real deploy integrations (Cloudflare, Vercel), changelog |
 | Score | Rockets, lead time, biters killed, customers answered, users unblocked, Ship Score | Revenue from Stripe, cohort impact |
 | Onboarding | Steps 1–4, 5 for Sentry + email | Self-serve Sentry install, any inbox |
 
 **Demo must-haves, in priority order:** (1) the Next Move card driven by the real bottleneck,
-(2) the heal cascade table above, live, (3) Spark's tool calls visible in the floor log, (4) the score moving
-on real numbers, (5) a launch permit earned on camera (docs PR auto-launches).
+(2) the heal cascade table above, live, (3) Spark's tool calls visible in the floor log, (4) plugging in a
+subscription lights up new machines, (5) the score moving on real numbers, (6) an autonomy unlock on camera
+(Spark earns Floor, then a docs PR auto-launches on a permit).
 
-**First proof (build this before anything else):** one real GitHub issue → Spark triages and plans →
-assembler opens a fix PR → CI inspects, rejects, Spark reworks → green → human merge → rocket. One useful,
-verified change shipped. Sentry, email, other agents and voice layer on after that loop is real. (Matches
+**First proof (build this before anything else):** one real GitHub issue → Spark triages and plans → you
+approve → your Claude Code or Codex assembler (local runner) opens a fix PR → CI inspects, rejects, Spark
+reads the failure and sends it back → green → human merge → rocket. One useful, verified change shipped.
+
+**Heads up for the backend lane:** today's `server/` has a hosted Spark assembler that writes code
+(`engine.ts` / `spark.ts`). That goes against this spec. Keep it only as a dev fallback behind a flag
+(handy for testing without a runner); the product path is runner assemblers, and the local runner moves up
+to the top of the backend list. Sentry, email, other agents and voice layer on after that loop is real. (Matches
 the backend lane's plan.) Revenue and customer counts are the long-term goal; in the demo they're the
 demo shop's numbers.
 
@@ -321,12 +381,13 @@ make each one obvious without a voiceover explaining it.
 | Time | Beat | Hits |
 | --- | --- | --- |
 | 0:00 | "Every team has more feedback than hands. Shiptorio turns your repo into a factory that Meta's Muse Spark runs, and you just play." | Impact |
-| 0:15 | Sign in, pick the demo shop repo. Spark scans it, the island rises, Spark places the starter factory and the first item is already moving | Meta tools, demo |
+| 0:15 | Sign in, pick the demo shop repo. Spark scans it, the island rises, Spark proposes a starter factory, you click Build | Meta tools, demo |
+| 0:30 | Assembler sits dark. "Sign in with Claude." Solar plant drops in, battery fills, machine lights up. "Your subscriptions are the power. Spark is the brain." | Demo, technical depth |
 | 0:40 | Break checkout on camera. Sentry fires, biters swarm `/checkout`, a customer email lands and Spark links it to the same error. Floor log shows the tool calls (`get_sentry_issue`, `link_items`, `triage`) | Meta tools, technical depth |
-| 1:05 | Next Move card: "Checkout crash, 112 users. Fix at high effort?" Click Go. Spark assembler writes the fix | Demo, Meta tools |
-| 1:25 | Inspector stamps red (CI fails), Spark reads the failure and reworks, second pass green, real PR #N on GitHub | Technical depth |
+| 1:05 | Next Move card: "Checkout crash, 112 users. Send to Claude Code with this plan?" Click Go. The arm starts welding | Demo, Meta tools |
+| 1:25 | Inspector stamps red (CI fails), Spark reads the failure and tells the assembler what broke, second pass green, real PR #N on GitHub | Technical depth, Meta tools |
 | 1:50 | Bottleneck moves to the pad. Merge. Rocket launches, release ships, biters die, Sentry goes quiet. Spark drafts the customer reply, click Send | Impact, demo |
-| 2:15 | Scale: queue backs up, Spark adds an assembler on a Claude Code solar plant. "Bring your own agents, Spark runs the floor." Docs district earns a launch permit and a docs PR auto-launches | Technical depth, Meta tools |
+| 2:15 | Scale: queue backs up, Spark asks for more power, sign in with ChatGPT, Codex machines appear. Then "Spark has earned Floor autonomy" and it starts routing on its own; docs district earns a launch permit and a docs PR auto-launches. "The more you play, the more it runs itself." | Technical depth, Meta tools |
 | 2:35 | HUD: real lead time (minutes), users unblocked, customers answered, PRs Shiptorio shipped to its own repo this week | Impact |
 | 2:50 | "There's always a bottleneck. The factory must grow. Shiptorio." | |
 
@@ -340,26 +401,29 @@ Backup: if the live fix fails on camera, the sim's `heal` scenario replays the s
 ## What each lane builds from this
 
 **Contract (`shared/`, its own PR):** add `Stage` and `Bottleneck` (stage, wip, age, throughput, valueAtRisk),
-`Move` (id, title, why, options[], recommended), `CustomerContext` on `Item` (usersAffected, reporters[],
-linked[]), `Trust` per district (score, risk, permit), `Metrics` on `FactoryState`. Protocol: server → web `move`,
-`move_resolved`; web → server `choose_move {moveId, option}`, `undo {actionId}`, `revoke_permit {district}`,
-`set_goal {text}`. Every Spark action carries `actor: "spark" | "player"` and a `reason`.
+`Move` (id, title, why, options[], recommended, actions[]), `CustomerContext` on `Item` (usersAffected,
+reporters[], linked[]), `Autonomy` (level, per-district trust, risk, permit, progress to next unlock),
+`Metrics` on `FactoryState`. Protocol: server → web `move`, `move_resolved`, `autonomy_unlocked`;
+web → server `choose_move {moveId, option}`, `undo {actionId}`, `set_autonomy {level, district?}`,
+`set_goal {text}`. Every action carries `actor: "spark" | "player"`, `approvedBy: "player" | "autonomy"`
+and Spark's `reason`.
 
-**Backend (Codex, `server/`):** `server/src/foreman.ts` (the Spark tool loop: brief builder, tool schemas,
-validation against tiers, budget), `server/src/bottleneck.ts` (pure stage math, unit-tested), Sentry + inbound
-email ingest, metrics rollup in D1, permits in `engine.ts`.
+**Backend (Codex, `server/` + `runner/`):** the local runner (pairing, finds `claude` / `codex`, reports
+them as power sources, runs jobs in worktrees) moves to the top, since nothing builds without it.
+`server/src/foreman.ts` (Spark tool loop: brief builder, tool schemas, the ask-or-act check against the
+autonomy level, budget), `server/src/bottleneck.ts` (pure stage math, unit-tested), autonomy counters and
+unlocks, Sentry + inbound email ingest, metrics rollup in D1.
 
-**UI (Claude + Justin, `web/`):** Next Move card, Foreman drone on the map that flies to whatever Spark is
-touching, floor log with Spark's lines and an undo, HUD with the score row, district trust/permit badges,
-onboarding scan animation. The sim (`web/src/sim/`) gets a `heal` scenario that plays the cascade table exactly.
+**UI (Claude + Justin, `web/`):** Next Move card (approve / change / skip), "sign in to unlock" power slots,
+Foreman drone on the map that flies to whatever Spark is touching, floor log with Spark's lines and an undo,
+HUD with the score row and autonomy level, unlock moment animation, onboarding scan animation. The sim (`web/src/sim/`) gets a `heal` scenario that plays the cascade table exactly.
 
 ## Open product calls
 
 These need Justin. Each has the recommendation we're building toward until told otherwise.
 
-1. **How autonomous is Spark by default?** Recommend: Spark acts on everything inside the factory (tiers 0–2)
-   without asking, and asks for anything that leaves it (tier 3). Alternative: Spark only proposes, the player
-   clicks every move (more "game", slower, weaker "Spark runs the floor" story).
+1. ~~How autonomous is Spark by default?~~ **Decided (Justin):** Spark asks first, never writes code,
+   autonomy is earned by playing, and code runs on the player's own subscriptions. See the top of this doc.
 2. **Where does "money" come from in the demo?** Recommend: the demo shop runs Stripe test mode, and a
    "checkout completed" counter on the HUD goes back up after the fix ships. Real Stripe connector is later.
 3. **Customer replies:** Recommend Spark drafts, the player clicks Send (always, in v1). Alternative: auto-send
