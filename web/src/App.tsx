@@ -183,6 +183,7 @@ export function App() {
                 {name.toUpperCase()}
               </a>
             ))}
+            <a href="/art/">ART</a>
           </nav>
         )}
 
