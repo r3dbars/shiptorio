@@ -1,11 +1,25 @@
 import { expect, it, mock } from "bun:test";
 import { fakeGitHub } from "../src/sources/github";
+import { pairToken } from "../src/runner-auth";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
 const { default: app } = await import("../src/index");
+
+it("runner transport authenticates independently without opening the preview or other repos", async () => {
+  let claims = 0;
+  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", FACTORY: { idFromName: (repo: string) => repo, get: () => ({ claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
+  const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", expires: Date.now() + 10000 });
+  const send = (repo: string, bearer = token) => app.fetch(new Request(`https://shiptorio.com/api/runner/${repo}/claim`, { method: "POST", headers: { authorization: `Bearer ${bearer}` }, body: JSON.stringify({ harnesses: ["codex"] }) }), env as never);
+  expect((await send("r3dbars/shiptorio", "forged")).status).toBe(401);
+  expect((await send("r3dbars/other")).status).toBe(401);
+  expect((await send("r3dbars/shiptorio")).status).toBe(200);
+  expect(claims).toBe(1);
+  expect((await app.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/pair", { method: "POST" }), env as never)).status).toBe(401);
+  expect((await app.fetch(new Request("https://shiptorio.com/", { headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
+});
 
 it("authenticates, durably enqueues before 202, and deduplicates completed deliveries", async () => {
   const rows = new Map<string, { state: string }>();

@@ -2,8 +2,8 @@
 
 import type { Belt, FactoryState, Item, Machine } from "@shiptorio/shared";
 
-// Spark may only write ordinary repo paths: no escaping the repo, no CI config.
-export const SAFE_PATH = /^(?!\/)(?!.*\.\.)(?!\.github\/)[\w./@+-]+$/;
+// Spark may only write ordinary repo paths: no escapes, git metadata, CI config or secrets.
+export const SAFE_PATH = /^(?!\/)(?!.*\.\.)(?!\.github\/)(?!.*\s)(?!.*(?:^|\/)\.(?:env|dev\.vars)(?:\.|\/|$))(?!.*(?:^|\/)\.(?:git|github)(?:\/|$))(?!.*\.(?:pem|key|p12|pfx)$)[\w./@+-]+$/i;
 
 export function upsert<T extends { id: string }>(list: T[], next: T) {
   const i = list.findIndex((x) => x.id === next.id);

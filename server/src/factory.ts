@@ -12,10 +12,11 @@ import {
   type Patch,
   type ServerToWeb,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { pickFiles, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
+import { pickFiles, planLocalTask, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
+import { runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal } from "./ore";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
@@ -41,6 +42,138 @@ export class Factory extends DurableObject<FactoryEnv> {
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private running = new Set<string>(); // item ids with a job in flight
+
+  private async clearRunnerMove(): Promise<void> {
+    if (this.state?.move?.stage !== "resources") return;
+    const moveId = this.state.move.id;
+    this.state.move = null;
+    await this.save();
+    this.broadcast({ type: "move_resolved", moveId, actor: "player" });
+  }
+
+  async pairRunner(): Promise<string> {
+    const pairId = crypto.randomUUID();
+    await this.ctx.storage.put("runnerPair", pairId); // Re-pairing revokes the previous token.
+    return pairId;
+  }
+
+  async runnerJobs(): Promise<RunnerJob[]> {
+    const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
+    return [...jobs.values()].map(({ lease, ...job }) => job);
+  }
+
+  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[] }): Promise<RunnerJob> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
+      const item = this.state!.items.find(i => i.id === input.itemId);
+      if (!item || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber) throw new Error("Item is not available to build");
+      if (!input.allowedPaths.every(runnerPathAllowed)) throw new Error("Unsafe approved path");
+      const jobs = await this.runnerJobs();
+      for (const old of jobs.filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now())) {
+        const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${old.id}`);
+        if (stored) await this.ctx.storage.put(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
+        old.status = "failed";
+      }
+      if (jobs.some(j => ["planning", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      const id = crypto.randomUUID();
+      const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
+      await this.ctx.storage.put(`runnerJob:${id}`, job);
+      this.broadcast({ type: "log", level: "info", text: `Spark is planning ${item.title} for ${job.harness}.`, at: Date.now(), actor: "spark", tool: "assign_job", approvedBy: "player", reason: "Player approved this issue and exact file scope.", itemId: item.id });
+      await this.scheduleTick();
+      return job;
+    });
+  }
+
+  private async planRunnerJobs(): Promise<void> {
+    const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
+    const job = [...jobs.values()].find(j => j.status === "planning");
+    if (!job || !this.meta || !this.state) return;
+    try {
+      if (job.planningStarted) throw new Error("Interrupted planning requires a new player-approved attempt");
+      job.planningStarted = true;
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+      const item = this.state.items.find(i => i.id === job.itemId);
+      if (!item) throw new Error("Item removed");
+      const token = await installationToken(this.env, this.meta.installationId);
+      const tree = await repoTree(token, this.meta.repo);
+      job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
+      job.steps = [];
+      job.plan = await planLocalTask(this.env, { title: item.title, body: item.body ?? "", district: item.district, failure: item.failure }, job.allowedPaths,
+        path => fileContent(token, job.repo, path, job.baseSha!), async step => {
+          job.steps!.push(step);
+          await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+          this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
+        });
+      job.baseBranch = tree.branch;
+      job.status = "ready";
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+      this.log("success", `Spark's plan is ready for ${job.harness}. Waiting for the local runner.`, item.id);
+    } catch {
+      job.status = "failed"; job.error = "Spark planning failed; inspect configuration and approve a new attempt.";
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+      this.log("error", job.error, job.itemId);
+    }
+  }
+
+  async claimRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
+    const job = await this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
+      await this.load();
+      const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
+      const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
+      if (!job) return null;
+      Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + 30 * 60 * 1000 });
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+      const item = this.state!.items.find(i => i.id === job.itemId)!;
+      const machineId = `runner-${job.harness}`;
+      await this.clearRunnerMove();
+      await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `power-${job.harness}`, tier: 1, state: "working" }], power: [...this.state!.power.filter(p => p.id !== `power-${job.harness}`), { id: `power-${job.harness}`, kind: "solar", name: job.harness === "codex" ? "Codex subscription" : "Claude subscription", level: 1, online: true }], bottleneck: null });
+      this.log("info", `Local ${job.harness} accepted Spark's plan.`, item.id);
+      return job;
+    });
+    if (!job) return null;
+    if (!this.meta) throw new Error("Missing repo");
+    // Installation tokens go only to the runner supervisor, never to an agent child.
+    return { ...job, token: await installationToken(this.env, this.meta.installationId) };
+  }
+
+  async finishRunner(pairId: string, receipt: RunnerReceipt) {
+    if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
+    await this.load();
+    const job = await this.ctx.storage.get<RunnerJob>(`runnerJob:${receipt.jobId}`);
+    if (!job || !this.meta || !this.state) throw new Error("Unknown job");
+    if (job.status === "completed" && job.pairId === pairId && job.lease === receipt.lease) {
+      await this.clearRunnerMove();
+      const completedItem = this.state.items.find(i => i.id === job.itemId);
+      const prNumber = completedItem?.prNumber ?? Number(job.prUrl?.split("/").at(-1));
+      if (prNumber) {
+        const pr = await gh<{ merged: boolean }>(`/repos/${job.repo}/pulls/${prNumber}`, await installationToken(this.env, this.meta.installationId));
+        if (pr.merged) await this.onPullClosed(prNumber, true);
+        else if (receipt.sha) await this.onCheckSuite([prNumber], true, "Reconcile completion receipt", receipt.sha);
+      }
+      return { prUrl: job.prUrl }; // lost acknowledgment
+    }
+    if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
+    const item = this.state.items.find(i => i.id === job.itemId)!;
+    if (!receipt.ok) {
+      job.status = "failed"; job.error = "Local build failed; player must approve another attempt.";
+      await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+      await this.patch({ items: [{ ...item, state: "rejected", failure: job.error, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "blocked" as const })) });
+      return { status: "failed" };
+    }
+    if (!receipt.sha || !["typecheck", "test", "build"].every(c => receipt.checks.includes(c as RunnerReceipt["checks"][number]))) throw new Error("Missing local check receipts");
+    const token = await installationToken(this.env, this.meta.installationId);
+    const head = await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${job.branch}`, token);
+    if (head.object.sha !== receipt.sha) throw new Error("Pushed head mismatch");
+    const diff = await gh<{ status: string; ahead_by: number; files: { filename: string; status: string; previous_filename?: string; changes: number }[] }>(`/repos/${job.repo}/compare/${job.baseSha}...${receipt.sha}`, token);
+    if (diff.status !== "ahead" || diff.ahead_by !== 1 || !diff.files.length || diff.files.length > 10 || diff.files.some(f => !job.allowedPaths.includes(f.filename) || !runnerPathAllowed(f.filename) || f.status === "renamed" || f.status === "removed") || diff.files.reduce((n, f) => n + f.changes, 0) > 500) throw new Error("Pushed diff exceeds the approved scope");
+    const pr = await openPullRequest(token, job.repo, { head: job.branch, base: job.baseBranch!, title: item.title, body: `Closes #${item.id.slice(3)}\n\nMuse Spark planned this task; the local ${job.harness} subscription executed it.\n\n${job.plan}\n\nLocal supervisor receipts: typecheck, tests and web build passed on ${receipt.sha}.\n\n${receipt.summary}\n\nHuman review and merge required. Independent verification/review stations remain pending.` });
+    job.status = "completed"; job.prUrl = pr.html_url;
+    await this.ctx.storage.put(`runnerJob:${job.id}`, job);
+    await this.patch({ items: [{ ...item, branch: job.branch, prNumber: pr.number, prUrl: pr.html_url, state: "inspecting", inspection: { headSha: receipt.sha, state: "pending", humanApproved: false, stages: [{ gate: "ci", state: "pending", reason: "Waiting for current-head CI" }, { gate: "verify", state: "pending", reason: "Independent proof required" }, { gate: "ai", state: "pending", reason: "Independent review required" }, { gate: "human", state: "pending", reason: "Human merge required" }] }, updatedAt: Date.now() }], machines: this.state.machines.filter(m => m.id === item.machineId).map(m => ({ ...m, state: "idle" as const })) });
+    this.log("success", `Local ${job.harness} opened PR #${pr.number}; waiting for CI and independent verification.`, item.id);
+    return { prUrl: pr.html_url };
+  }
 
   /** Acknowledge only after durable enqueue. No API calls, backfill or model work here. */
   async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
@@ -132,7 +265,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const s = this.state!;
     const existing = s.items.find((i) => i.ore?.fingerprint === signal.fingerprint || (signal.source === "github_issue" && i.id === `gh-${signal.externalId}`));
     if (signal.action === "close" || signal.action === "resolved") {
-      if (existing && existing.state !== "launched") await this.patch({ removed: [{ kind: "item", id: existing.id }] });
+      if (existing && !existing.prNumber && existing.state !== "launched") await this.patch({ removed: [{ kind: "item", id: existing.id }] });
       return;
     }
     const item = foldSignal(existing, signal);
@@ -266,10 +399,15 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!(await this.load()) || !this.meta) return;
     const token = await installationToken(this.env, this.meta.installationId);
     for (const item of this.state!.items) {
-      if (item.state !== "inspecting" || !item.prNumber || !prNumbers.includes(item.prNumber)) continue;
+      if (item.state !== "inspecting" || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
       const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
       if (result.state === "pending") continue;
       if (result.state === "passed") {
+        if (item.branch?.startsWith("shiptorio/runner-")) {
+          await this.patch({ items: [{ ...item, inspection: { headSha: headSha ?? "unknown", state: "pending", humanApproved: false, stages: [{ gate: "ci", state: "passed", reason: result.summary }, { gate: "verify", state: "pending", reason: "Independent proof required" }, { gate: "ai", state: "pending", reason: "Independent review required" }, { gate: "human", state: "pending", reason: "Human merge required" }] }, updatedAt: Date.now() }] });
+          this.log("success", `CI passed PR #${item.prNumber}; independent verification and review remain pending.`, item.id);
+          continue;
+        }
         const onPad = this.state!.machines.some((m) => m.type === "launch_pad");
         await this.patch({ items: [{ ...item, state: onPad ? "on_pad" : "passed", failure: undefined, updatedAt: Date.now() }] });
         this.log("success", `Inspector passed PR #${item.prNumber}. Ready to launch.`, item.id);
@@ -283,7 +421,22 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   async onPullClosed(prNumber: number, merged: boolean): Promise<void> {
     if (!(await this.load())) return;
-    const item = this.state!.items.find((i) => i.prNumber === prNumber);
+    let item = this.state!.items.find((i) => i.prNumber === prNumber);
+    // Recover pre-fix issue-close ordering from our durable job and GitHub's real issue.
+    // Never synthesize a rocket for an unrelated PR or reopen the GitHub issue.
+    if (!item && merged && this.meta) {
+      const job = (await this.runnerJobs()).find(j => j.status === "completed" && j.prUrl?.endsWith(`/pull/${prNumber}`));
+      if (job) {
+        const token = await installationToken(this.env, this.meta.installationId);
+        const issue = await gh<NonNullable<GitHubPayload["issue"]>>(`/repos/${job.repo}/issues/${job.itemId.slice(3)}`, token);
+        const signal = normalizeGitHub({ repository: { full_name: job.repo }, issue })[0];
+        if (signal) {
+          const classification = await triage(this.env, { title: issue.title, body: issue.body ?? "", labels: [] }, this.state!.districts.map(d => d.name));
+          item = { ...foldSignal(undefined, { ...signal, action: "upsert" }), ...classification, state: "inspecting", branch: job.branch, prNumber, prUrl: job.prUrl, attempts: 1 };
+          await this.patch({ items: [item] });
+        }
+      }
+    }
     if (!item || item.state === "launched") return;
     if (!merged) {
       await this.patch({ removed: [{ kind: "item", id: item.id }] });
@@ -403,6 +556,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   async alarm(): Promise<void> {
     await this.processDeliveries();
     if (!(await this.load())) return;
+    await this.planRunnerJobs();
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
     const now = Date.now();

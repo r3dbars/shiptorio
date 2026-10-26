@@ -4,10 +4,13 @@
   "type": "module",
   "workspaces": [
     "shared",
+    "runner",
     "server",
     "web"
   ],
   "scripts": {
+    "runner": "bun --env-file=runner/.dev.vars runner/src/cli.ts",
+    "runner:control": "bun --env-file=server/.dev.vars server/scripts/runner-control.ts",
     "dev": "bun run build && bun run --filter './server' dev",
     "dev:web": "bun run --filter './web' dev",
     "build": "bun run --filter './web' build",
