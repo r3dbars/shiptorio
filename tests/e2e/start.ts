@@ -12,12 +12,12 @@ const config = {
   migrations: [{ tag: 'v1', new_sqlite_classes: ['Factory'] }],
   d1_databases: [{ binding: 'DB', database_name: 'test', database_id: '00000000-0000-0000-0000-000000000001', migrations_dir: '../server/migrations' }],
   kv_namespaces: [{ binding: 'CACHE', id: 'local-only' }],
-  vars: { DEV_LOGIN: 'fixture', ALLOWED_LOGINS: 'fixture', SESSION_SECRET: 'public-test-only-session', APP_PASSWORD: 'public-test-only-preview', GITHUB_APP_SLUG: 'fixture-app', GITHUB_CLIENT_ID: 'fixture-client', GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem, GITHUB_WEBHOOK_SECRET: 'public-test-hook', META_API_KEY: 'fixture', SPARK_BASE_URL: 'https://fixture.meta/v1' },
+  vars: { DEV_LOGIN: 'fixture', ALLOWED_LOGINS: 'fixture,fixture1,fixture2,fixture3,fixture4,fixture5', SESSION_SECRET: 'public-test-only-session', APP_PASSWORD: 'public-test-only-preview', GITHUB_APP_SLUG: 'fixture-app', GITHUB_CLIENT_ID: 'fixture-client', GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem, GITHUB_WEBHOOK_SECRET: 'public-test-hook', META_API_KEY: 'fixture', SPARK_BASE_URL: 'https://fixture.meta/v1' },
 };
 await Bun.write(`${dir}/wrangler.json`, JSON.stringify(config));
 let child: ReturnType<typeof Bun.spawn> | undefined;
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => { child?.kill(signal); process.exit(0); });
 const run = async (args: string[]) => { const p = child = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' }); if (await p.exited) throw new Error(args.join(' ')); };
 await run(['bun', 'run', 'build']);
-await run(['node', 'server/node_modules/wrangler/bin/wrangler.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
-await run(['node', 'server/node_modules/wrangler/bin/wrangler.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', '8799', '--inspector-port', '9249']);
+await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
+await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', '8799', '--inspector-port', '9249']);

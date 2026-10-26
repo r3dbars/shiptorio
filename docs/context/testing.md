@@ -32,7 +32,7 @@ outbound calls get deterministic fake responses; every unrecognized request fail
 closed. The fake GitHub authorization page redirects to the real OAuth callback,
 which checks state, exchanges the fake code, persists an account/session in D1 and
 loads installed repos. The suite opens the intro, advances one beat, skips the rest,
-signs in, picks a repo, sees issue ore, requests and approves Spark's plan, submits a
+signs in, picks a repo, ingests a signed GitHub issue webhook into ore, requests and approves Spark's plan, submits a
 fake runner receipt, opens a fake PR, passes CI/verify/AI review, clicks Launch and
 asserts both the launched wire state and the UI rocket event/celebration. It also
 opens a real sim scenario and interacts with the Line panel. Every browser frame is
@@ -71,14 +71,15 @@ resolution, unlocks and log retention. It does not maintain a second reducer.
 
 The existing #85 harness runs all simulator scenarios against the same schemas and
 actual `applyPatch`; browser E2E validates the real Worker-emitted messages. These
-layers catch shape drift plus state/handler behavior, while preserving zod's intended
-stripping of undeclared fields rather than silently changing the wire contract.
+layers catch shape drift plus state/handler behavior. `assertWire` recursively fails
+on undeclared emitted fields even if zod would strip them. Production parsing retains
+its intended stripping behavior; the tests do not change the shared contract.
 
 ## Load methodology and CPU limits
 
 `bun run test:load` starts the isolated Worker, seeds one busy factory plus 50 other
 factories, opens 200 WebSockets on the first and one on each of the others (250 total),
-then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
+uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets), then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
 client must receive the round's tick before the next round starts. It measures
 request-start → client patch receipt and tick RPC wall time, fails on disconnects or
 invalid messages and requires all 5,000 expected tick deliveries. This is a fan-out

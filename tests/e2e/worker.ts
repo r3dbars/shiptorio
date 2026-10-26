@@ -11,7 +11,7 @@ export class Factory extends ProductionFactory {
 const BASE = 'a'.repeat(40), HEAD = 'b'.repeat(40);
 const files = [
   { filename: 'src/cart.ts', status: 'modified', changes: 2, patch: '-return 0;\n+return 1;' },
-  { filename: 'src/cart.test.ts', status: 'modified', changes: 2, patch: '+expect(total()).toBe(1);' },
+  { filename: 'src/cart.test.ts', status: 'modified', changes: 2, patch: '-expect(total()).toBe(0);\n+expect(total()).toBe(1);' },
 ];
 const reply = (value: unknown) => Response.json(value);
 // Fail closed: accidental unstubbed provider requests cannot reach the internet.
@@ -66,9 +66,12 @@ export default {
     if (url.pathname === '/__test/access' || url.pathname === '/__test/session') {
       const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, 'preview')).replace('shiptorio_session=', 'shiptorio_access=');
       if (url.pathname === '/__test/access') return Response.json({ ok: true }, { headers: { 'set-cookie': preview } });
-      await upsertUser(env, { id: 123, login: 'fixture' });
-      await saveReach(env, 123, { installations: [{ id: 1, account: 'fixture' }], repos: [...knownRepos].map(repo => ({ repo, installationId: 1, defaultBranch: 'main' })) });
-      const session = await createSession(env, { id: 123, login: 'fixture' }, 'load fixture');
+      const index = Number(url.searchParams.get('user') ?? 0);
+      if (!Number.isInteger(index) || index < 0 || index > 5) return new Response('bad fixture user', { status: 400 });
+      const user = { id: 123 + index, login: index ? `fixture${index}` : 'fixture' };
+      await upsertUser(env, user);
+      await saveReach(env, user.id, { installations: [{ id: 1, account: 'fixture' }], repos: [...knownRepos].map(repo => ({ repo, installationId: 1, defaultBranch: 'main' })) });
+      const session = await createSession(env, user, 'load fixture');
       return reply({ cookie: `${session.split(';')[0]}; ${preview.split(';')[0]}` });
     }
     const match = url.pathname.match(/^\/__test\/([\w-]+)\/([\w-]+)\/(seed|tick|check)$/);
@@ -78,12 +81,19 @@ export default {
       if (req.method !== 'POST') return new Response('POST required', { status: 405 });
       if (match[3] === 'seed') {
         knownRepos.add(repo);
+        await env.DB.prepare('INSERT OR IGNORE INTO installations (id, account_login) VALUES (1, ?)').bind('fixture').run();
         await env.DB.prepare('INSERT OR REPLACE INTO repos (full_name, installation_id, default_branch) VALUES (?, 1, ?)').bind(repo, 'main').run();
         await f.ensure(repo, 1);
-        await f.ingestIssue({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', labels: ['bug'], url: `https://github.com/${repo}/issues/1` });
+        if (url.searchParams.get('ore') !== '0') await f.ingestIssue({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', labels: ['bug'], url: `https://github.com/${repo}/issues/1` });
       } else if (match[3] === 'check') await f.onCheckSuite([99], true, 'CI green', HEAD);
       else await (f as unknown as { testTick(): Promise<void> }).testTick();
       return reply({ ok: true });
+    }
+    // Miniflare overwrites CF-Connecting-IP. Only this non-production entry may emulate edge IPs.
+    const ip = req.headers.get('x-fixture-client-ip');
+    if (ip && /^192\.0\.2\.[1-5]$/.test(ip)) {
+      const headers = new Headers(req.headers); headers.set('cf-connecting-ip', ip);
+      req = new Request(req, { headers });
     }
     return app.fetch(req, { ...env, DEV_LOGIN: undefined }, ctx);
   },

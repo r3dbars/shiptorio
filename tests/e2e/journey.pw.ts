@@ -1,5 +1,6 @@
+import { createHmac } from 'node:crypto';
 import { test, expect } from '@playwright/test';
-import { ServerToWeb } from '../../shared/src';
+import { assertWire } from '../contract/assert-wire';
 
 test('intro → sign in → repo → approve → PR → gauntlet → launch → rocket', async ({ page }, info) => {
   const repo = `fixture/${info.project.name}`;
@@ -13,8 +14,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   page.on('websocket', ws => ws.on('framereceived', ({ payload }) => {
     if (typeof payload !== 'string') return;
     const raw = JSON.parse(payload);
-    const result = ServerToWeb.safeParse(raw);
-    if (!result.success) wireErrors.push(result.error.message);
+    try { assertWire(raw); } catch (e) { wireErrors.push(String(e)); }
     messages.push(raw);
     if (raw.type === 'log' && raw.level === 'error') console.log('Worker:', raw.text);
   }));
@@ -23,7 +23,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     expect(res.ok(), `${path}: ${await res.text()}`).toBe(true);
     return res.json();
   };
-  await post(`/__test/${repo}/seed`);
+  await post(`/__test/${repo}/seed?ore=0`);
   await post('/__test/access');
   // Stub only GitHub's authorization screen. The Worker callback validates real OAuth state,
   // exchanges the fake code and creates the real D1 account/session/repo membership.
@@ -49,7 +49,12 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   signedIn = true;
   await page.getByRole('button', { name: repo }).click();
   await expect(page).toHaveURL(/source=live&repo=/);
-  await expect.poll(() => messages.some(m => m.type === 'snapshot' && m.state.items.some((i: any) => i.title === 'Fix cart total'))).toBe(true);
+  await expect.poll(() => messages.some(m => m.type === 'snapshot')).toBe(true);
+  const issue = JSON.stringify({ action: 'opened', installation: { id: 1 }, repository: { full_name: repo, default_branch: 'main' }, issue: { number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', html_url: `https://github.com/${repo}/issues/1`, state: 'open', labels: [{ name: 'bug' }], user: { login: 'fixture' } } });
+  const delivery = await page.request.post('/webhooks/github', { data: issue, headers: { 'content-type': 'application/json', 'x-github-event': 'issues', 'x-github-delivery': crypto.randomUUID(), 'x-hub-signature-256': `sha256=${createHmac('sha256', 'public-test-hook').update(issue).digest('hex')}` } });
+  expect(delivery.status()).toBe(202);
+  await post(`/__test/${repo}/tick`);
+  await expect.poll(() => messages.some(m => m.type === 'patch' && m.patch.items?.some((i: any) => i.title === 'Fix cart total'))).toBe(true);
   const { token } = await post(`/api/repos/${repo}/runner/pair`);
   await post(`/api/runner/${repo}/claim`, { harnesses: ['codex'] }, token);
   const card = page.getByRole('region', { name: 'Next move', exact: true });

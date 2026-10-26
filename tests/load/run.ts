@@ -1,13 +1,14 @@
 import WebSocket from 'ws';
-import { mkdir } from 'node:fs/promises';
-import { ServerToWeb } from '../../shared/src';
+import { mkdir, rm } from 'node:fs/promises';
+import { assertWire } from '../contract/assert-wire';
 
 const origin = 'http://localhost:8799';
 const rounds = Number(process.env.LOAD_ROUNDS ?? 20);
 if (!Number.isInteger(rounds) || rounds < 5 || rounds > 100) throw new Error('LOAD_ROUNDS must be 5..100');
 await mkdir('test-results', { recursive: true });
+await rm('test-results/load-worker.log', { force: true });
 const output = Bun.file('test-results/load-worker.log');
-const server = Bun.spawn(['bun', 'tests/e2e/start.ts'], { stdout: output, stderr: output });
+const server = Bun.spawn(['bun', 'tests/e2e/start.ts'], { stdout: output, stderr: output, detached: true });
 const clients: { ws: WebSocket; repo: string; tick: number }[] = [];
 const latencies: number[] = [], tickTimes: number[] = [];
 let profileSocket: WebSocket | undefined;
@@ -25,17 +26,22 @@ try {
   }
   const repos = ['load/crowd', ...Array.from({ length: 50 }, (_, i) => `load/factory-${i}`)];
   await Promise.all(repos.map(repo => post(`/__test/${repo}/seed`)));
-  const { cookie } = await (await fetch(origin + '/__test/session', { method: 'POST' })).json() as { cookie: string };
+  // Five legitimate player identities/IPs keep each cohort below the real 60 upgrades/min budget.
+  const identities = await Promise.all(Array.from({ length: 5 }, async (_, i) => {
+    const { cookie } = await (await fetch(`${origin}/__test/session?user=${i + 1}`, { method: 'POST' })).json() as { cookie: string };
+    return { cookie, ip: `192.0.2.${i + 1}` };
+  }));
+  let clientNumber = 0;
   const sentAt = new Map<string, number>();
   const failures: string[] = [];
   const connect = async (repo: string) => {
-    const ws = new WebSocket(`${origin.replace('http', 'ws')}/api/repos/${repo}/factory`, { headers: { cookie, origin } });
+    const identity = identities[clientNumber++ % identities.length];
+    const ws = new WebSocket(`${origin.replace('http', 'ws')}/api/repos/${repo}/factory`, { headers: { cookie: identity.cookie, origin, 'x-fixture-client-ip': identity.ip } });
     const client = { ws, repo, tick: -1 };
     clients.push(client);
     ws.onmessage = event => {
-      const parsed = ServerToWeb.safeParse(JSON.parse(String(event.data)));
-      if (!parsed.success) { failures.push(parsed.error.message); return; }
-      const m = parsed.data;
+      let m: ReturnType<typeof assertWire>;
+      try { m = assertWire(JSON.parse(String(event.data))); } catch (e) { failures.push(String(e)); return; }
       if (m.type === 'snapshot') client.tick = m.state.tick;
       if (m.type === 'patch' && m.patch.tick !== undefined) {
         client.tick = m.patch.tick;
@@ -43,11 +49,15 @@ try {
         if (t !== undefined) latencies.push(performance.now() - t);
       }
     };
-    ws.onerror = () => failures.push(`Socket error ${repo}`);
+    ws.on('unexpected-response', (_request, response) => { failures.push(`Upgrade ${repo}: HTTP ${response.statusCode}`); response.resume(); });
+    ws.onerror = e => failures.push(`Socket error ${repo}: ${e.message}`);
     ws.onclose = () => failures.push(`Unexpected close ${repo}`);
-    await waitFor(() => client.tick >= 0);
+    await waitFor(() => client.tick >= 0 || failures.length > 0);
+    if (failures.length) throw new Error(failures.slice(0, 5).join('\n'));
   };
-  await Promise.all([...Array.from({ length: 200 }, () => connect(repos[0])), ...repos.slice(1).map(connect)]);
+  // Ramp handshakes in batches; the measured phase still keeps all 250 sockets open.
+  const connections = [...Array.from({ length: 200 }, () => repos[0]), ...repos.slice(1)];
+  for (let i = 0; i < connections.length; i += 25) await Promise.all(connections.slice(i, i + 25).map(connect));
   // CDP samples measure local workerd isolate CPU, never billed Cloudflare CPU.
   const targets = await (await fetch('http://localhost:9249/json')).json() as { webSocketDebuggerUrl: string }[];
   profileSocket = new WebSocket(targets[0].webSocketDebuggerUrl);
@@ -104,6 +114,8 @@ try {
 } finally {
   profileSocket?.close();
   for (const { ws } of clients) { ws.onclose = null; ws.close(); }
-  server.kill('SIGTERM');
-  await server.exited;
+  // Kill the complete Wrangler/workerd process group, including failure paths.
+  try { process.kill(-server.pid, 'SIGTERM'); } catch {}
+  await Promise.race([server.exited, Bun.sleep(5000)]);
+  if (server.exitCode === null) { try { process.kill(-server.pid, 'SIGKILL'); } catch {} }
 }

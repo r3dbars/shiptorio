@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { FactoryState, Patch, ServerToWeb } from '../../shared/src';
+import { assertWire } from './assert-wire';
 import { applyPatch } from '../../web/src/store';
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -28,6 +29,13 @@ describe('wire contract drift guards', () => {
         expect(ServerToWeb.safeParse(invalid).success, `${raw.type}.${key} must be required`).toBe(false);
       }
     }
+  });
+
+  it('fails on undeclared emitted fields, including nested payload drift', () => {
+    for (const fixture of Object.values(fixtures)) expect(() => assertWire(fixture)).not.toThrow();
+    expect(() => assertWire({ ...fixtures.log, newField: true })).toThrow('Undeclared wire field');
+    expect(() => assertWire({ type: 'patch', patch: { newStateField: true } })).toThrow('message.patch.newStateField');
+    expect(() => assertWire({ type: 'snapshot', state: { ...state, token: 'must-not-escape' } })).toThrow('message.state.token');
   });
 
   it('covers every Patch field in the actual web reducer (new fields fail closed)', () => {
