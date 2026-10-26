@@ -6,10 +6,11 @@
 // Behind a flag while Justin looks at it: ?empire=1 turns it on (and remembers), ?empire=0 off.
 
 import { useEffect, useMemo, useState } from "react";
-import { Empire as EmpireSchema, rollup, stuckScore, summarizeIsland, type FactoryState, type IslandSummary } from "@shiptorio/shared";
+import { rollup, stuckScore, summarizeIsland, type FactoryState, type IslandSummary } from "@shiptorio/shared";
 import type { SourceConfig } from "../source";
 import type { SatelliteSpec } from "../map/empire";
 import { Icon } from "./icons";
+import { EMPIRE, WORDS } from "../copy";
 
 const FLAG_KEY = "shiptorio:empire";
 
@@ -78,8 +79,10 @@ function simIslands(current: string, t: number): IslandSummary[] {
 async function fetchIslands(): Promise<IslandSummary[] | null> {
   const r = await fetch("/api/empire", { credentials: "same-origin" }).catch(() => null);
   if (r?.ok) {
-    const parsed = EmpireSchema.safeParse(await r.json().catch(() => null));
-    if (parsed.success) return parsed.data.islands;
+    // the schema (and zod) load only when there's an empire to check
+    const schemas = await import("../source/schemas").catch(() => null);
+    const parsed = schemas?.Empire.safeParse(await r.json().catch(() => null));
+    if (parsed?.success) return parsed.data.islands;
   }
   // older servers: the repo list alone still draws the islands
   const repos = await fetch("/api/repos", { credentials: "same-origin" }).catch(() => null);
@@ -131,11 +134,11 @@ export function useEmpire(cfg: SourceConfig, state: FactoryState | null): Empire
 
 // What a satellite's label says: what's waiting on you there, else what's stuck, else all clear.
 export function islandLine(i: IslandSummary): string {
-  if (!i.ready) return "not opened yet";
-  const auto = i.launches ? ` · ${Math.round(i.automated * 100)}% auto` : "";
-  if (i.waiting) return `${i.waiting} waiting on you${auto}`;
+  if (!i.ready) return EMPIRE.notOpened;
+  const auto = i.launches ? EMPIRE.auto(Math.round(i.automated * 100)) : "";
+  if (i.waiting) return EMPIRE.waiting(i.waiting, auto);
   if (i.bottleneck) return i.bottleneck.summary.length > 42 ? `${i.bottleneck.summary.slice(0, 40)}…` : i.bottleneck.summary;
-  return `all clear · ${i.rockets} shipped${auto}`;
+  return EMPIRE.clear(i.rockets, auto);
 }
 
 export function satellitesFor(e: EmpireView): SatelliteSpec[] {
@@ -155,9 +158,9 @@ export function satellitesFor(e: EmpireView): SatelliteSpec[] {
 
 export function IslandChip({ e, open, onToggle }: { e: EmpireView; open: boolean; onToggle: () => void }) {
   const waitingElsewhere = e.others.reduce((n, i) => n + i.waiting, 0);
-  const name = e.here ? shortName(e.here.repo) : "island";
+  const name = e.here ? shortName(e.here.repo) : EMPIRE.island;
   return (
-    <button type="button" className="island-chip" aria-pressed={open} onClick={onToggle} aria-label={`Your islands: on ${name}, ${e.others.length + 1} in all${waitingElsewhere ? `, ${waitingElsewhere} waiting on other islands` : ""}`}>
+    <button type="button" className="island-chip" aria-pressed={open} onClick={onToggle} aria-label={EMPIRE.chipLabel(name, e.others.length + 1, waitingElsewhere)}>
       <Icon name="island" size={16} />
       <span className="ic-name">{name}</span>
       <span className="ic-n">{e.others.length + 1}</span>
@@ -174,27 +177,27 @@ export function EmpireSheet({ e, live, onClose }: { e: EmpireView; live: boolean
   const mine = new Set(e.here?.research ?? []);
   const elsewhere = r.research.filter((t) => !mine.has(t));
   return (
-    <section className="card sheet empire" aria-label="Your empire">
+    <section className="card sheet empire" aria-label={EMPIRE.title}>
       <div className="sheet-top">
-        <h2>Your empire</h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <h2>{EMPIRE.title}</h2>
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
       <div className="em-roll">
-        <span><b>{r.islands}</b><small>islands</small></span>
-        <span><b>{r.rockets}</b><small>shipped</small></span>
-        <span><b>{Math.round(r.automated * 100)}%</b><small>automated</small></span>
-        <span className={r.waiting ? "hot" : ""}><b>{r.waiting}</b><small>on you</small></span>
+        <span><b>{r.islands}</b><small>{EMPIRE.islands}</small></span>
+        <span><b>{r.rockets}</b><small>{EMPIRE.shipped}</small></span>
+        <span><b>{Math.round(r.automated * 100)}%</b><small>{EMPIRE.automated}</small></span>
+        <span className={r.waiting ? "hot" : ""}><b>{r.waiting}</b><small>{EMPIRE.onYou}</small></span>
       </div>
       {r.worst && (
         <a className="em-worst" href={r.worst.repo === here ? undefined : e.hrefFor(r.worst.repo)} onClick={r.worst.repo === here ? onClose : undefined}>
-          <span className="rs-tag">Most stuck</span>
+          <span className="rs-tag">{EMPIRE.mostStuck}</span>
           <span className="em-worst-body">
             <b>{shortName(r.worst.repo)}</b>
-            <small>{r.worst.waiting ? `${r.worst.waiting} card${r.worst.waiting === 1 ? "" : "s"} waiting on you` : r.worst.bottleneck?.summary}</small>
+            <small>{r.worst.waiting ? EMPIRE.cardsWaiting(r.worst.waiting) : r.worst.bottleneck?.summary}</small>
           </span>
-          <span className="em-go">{r.worst.repo === here ? "Here" : "Go"}</span>
+          <span className="em-go">{r.worst.repo === here ? EMPIRE.here : EMPIRE.go}</span>
         </a>
       )}
       <div className="em-list">
@@ -204,13 +207,13 @@ export function EmpireSheet({ e, live, onClose }: { e: EmpireView; live: boolean
             <a key={i.repo} className={`em-row${isHere ? " here" : ""}`} href={isHere ? undefined : e.hrefFor(i.repo)} onClick={isHere ? onClose : undefined} aria-current={isHere ? "location" : undefined}>
               <span className="em-ico" aria-hidden="true"><Icon name="island" size={20} /></span>
               <span className="em-body">
-                <span className="em-name">{shortName(i.repo)}{isHere && <em>you're here</em>}</span>
+                <span className="em-name">{shortName(i.repo)}{isHere && <em>{EMPIRE.youreHere}</em>}</span>
                 <span className="em-line">{islandLine(i)}</span>
-                {i.permits.length > 0 && <span className="em-permits">Ships on its own in {i.permits.join(", ")}</span>}
+                {i.permits.length > 0 && <span className="em-permits">{EMPIRE.permits(i.permits.join(", "))}</span>}
               </span>
               <span className="em-stats">
-                <span title="shipped"><Icon name="rocket" size={10} /> {i.rockets}</span>
-                {i.waiting > 0 && <span className="hot" title="waiting on you"><Icon name="bell" size={10} /> {i.waiting}</span>}
+                <span title={EMPIRE.shipped}><Icon name="rocket" size={10} /> {i.rockets}</span>
+                {i.waiting > 0 && <span className="hot" title={EMPIRE.waitingOnYou}><Icon name="bell" size={10} /> {i.waiting}</span>}
               </span>
             </a>
           );
@@ -218,14 +221,14 @@ export function EmpireSheet({ e, live, onClose }: { e: EmpireView; live: boolean
       </div>
       {elsewhere.length > 0 && (
         <p className="em-note">
-          <Icon name="flask" size={12} /> {elsewhere.length} check{elsewhere.length === 1 ? "" : "s"} researched on your other islands {elsewhere.length === 1 ? "isn't" : "aren't"} running here yet.
+          <Icon name="flask" size={12} />{EMPIRE.checksElsewhere(elsewhere.length)}
         </p>
       )}
       <a className="em-add" href={live ? "/setup" : undefined} aria-disabled={!live}>
         <Icon name="island" size={16} />
         <span>
-          Connect another repo
-          <small>{live ? "Every repo you add becomes a new island." : "In the live game, every repo you add becomes a new island."}</small>
+          {EMPIRE.connect}
+          <small>{live ? EMPIRE.connectLive : EMPIRE.connectSim}</small>
         </span>
       </a>
     </section>

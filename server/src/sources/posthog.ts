@@ -1,8 +1,9 @@
+import { retryAfterMs } from "../rate-limit";
 // PostHog mine: pull, not push. The Factory polls a HogQL query on its alarm and turns
 // sharp drops in a key event (or a spike in $exception) on a route into ore on that district.
 // It only reports what changed; Spark decides if it's real and links it to Sentry or issue ore.
 
-import type { SourceStatus } from "@shiptorio/shared";
+import type { FunnelDay, FunnelStep, SourceStatus } from "@shiptorio/shared";
 import type { Signal } from "./types";
 
 export interface PostHogCreds {
@@ -115,10 +116,11 @@ export async function fetchRouteDays(creds: Required<Pick<PostHogCreds, "apiKey"
   const keyEvent = creds.keyEvent && keyEventOk(creds.keyEvent) ? creds.keyEvent : "$pageview";
   const res = await fetch(`${host}/api/projects/${creds.projectId}/query/`, {
     method: "POST",
+    signal: AbortSignal.timeout(20000),
     headers: { authorization: `Bearer ${creds.apiKey}`, "content-type": "application/json" },
     body: JSON.stringify({ query: { kind: "HogQLQuery", query: postHogQuery(keyEvent) } }),
   });
-  if (res.status === 429) throw Object.assign(new Error("PostHog rate limit"), { retryAfter: Number(res.headers.get("retry-after")) || 60 });
+  if (res.status === 429) throw Object.assign(new Error("PostHog rate limit"), { retryAfter: retryAfterMs(res.headers.get("retry-after")) / 1000 });
   if (!res.ok) throw new Error(`PostHog query failed (${res.status})`);
   return parseRows(await res.json());
 }
@@ -154,4 +156,54 @@ export function postHogStatus(creds: PostHogCreds, publicUrl = "https://shiptori
       actionUrl: `${publicUrl}/connect/posthog`,
     },
   };
+}
+
+// ---------- funnels (the growth loop, shared/src/growth.ts) ----------
+
+/** Only plain literal paths reach a funnel query. */
+export const routeOk = (route: string) => /^\/[\w\-/.]{0,200}$/.test(route) && !route.includes("'");
+
+/**
+ * One funnel step per UTC day, counted per person and in order: people whose first pageview on `from` that day
+ * was followed by a pageview on `to` later the same day. Same rule as `funnelDays` in shared/src/growth.ts.
+ * 21 days back covers a 7-day baseline before a launch plus a 7-day watch after it.
+ */
+export function funnelQuery(step: FunnelStep): string {
+  if (!routeOk(step.from) || !routeOk(step.to)) throw new Error("funnel routes must be plain paths");
+  return `SELECT day, count() AS entered, countIf(last_to > first_from) AS converted FROM (
+  SELECT person_id, toString(toDate(timestamp)) AS day,
+    minIf(timestamp, properties.$pathname = '${step.from}') AS first_from,
+    maxIf(timestamp, properties.$pathname = '${step.to}') AS last_to,
+    countIf(properties.$pathname = '${step.from}') AS froms
+  FROM events WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 21 DAY AND properties.$pathname IN ('${step.from}', '${step.to}')
+  GROUP BY person_id, day
+) WHERE froms > 0 GROUP BY day ORDER BY day`;
+}
+
+export function parseFunnel(json: unknown): FunnelDay[] {
+  const results = (json as { results?: unknown[][] })?.results;
+  if (!Array.isArray(results)) throw new Error("PostHog funnel query returned no results");
+  return results.filter((r) => Array.isArray(r) && r.length >= 3).map((r) => ({ day: String(r[0]).slice(0, 10), entered: Number(r[1]) || 0, converted: Number(r[2]) || 0 }));
+}
+
+export async function fetchFunnelDays(creds: Required<Pick<PostHogCreds, "apiKey" | "projectId">> & PostHogCreds, step: FunnelStep): Promise<FunnelDay[]> {
+  const host = (creds.host || "https://us.posthog.com").replace(/\/$/, "");
+  if (!/^https:\/\/[\w.-]+$/.test(host) || !/^\d{1,12}$/.test(creds.projectId)) throw new Error("bad PostHog host or project id");
+  const res = await fetch(`${host}/api/projects/${creds.projectId}/query/`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${creds.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ query: { kind: "HogQLQuery", query: funnelQuery(step) } }),
+  });
+  if (res.status === 429) throw Object.assign(new Error("PostHog rate limit"), { retryAfter: Number(res.headers.get("retry-after")) || 60 });
+  if (!res.ok) throw new Error(`PostHog funnel query failed (${res.status})`);
+  return parseFunnel(await res.json());
+}
+
+/** Canned funnel for FAKE_POSTHOG: /cart → /checkout converts 45% for weeks, then 30% yesterday. */
+export function fakeFunnelDays(now = Date.now(), step: FunnelStep): FunnelDay[] {
+  if (step.from !== "/cart" || step.to !== "/checkout") return [];
+  return Array.from({ length: 21 }, (_, i) => {
+    const entered = 250;
+    return { day: dayOf(now - (21 - i) * DAY), entered, converted: Math.round(entered * (i === 20 ? 0.3 : 0.45)) };
+  });
 }
