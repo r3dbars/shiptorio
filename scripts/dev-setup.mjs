@@ -17,6 +17,12 @@ if (!existsSync(".dev.vars")) {
   console.log("wrote .dev.vars (DEV_LOGIN=r3dbars, so localhost skips GitHub login)");
 }
 
+// Local smoke tests exercise signed webhooks; initialize only an empty binding.
+const localVars = readFileSync(".dev.vars", "utf8");
+const signedVars = localVars.replace(/^GITHUB_WEBHOOK_SECRET=(?:""|'')?$/m,
+  () => `GITHUB_WEBHOOK_SECRET=${randomBytes(32).toString("hex")}`);
+if (signedVars !== localVars) writeFileSync(".dev.vars", signedVars);
+
 wrangler("d1", "migrations", "apply", "shiptorio", "--local");
 
 // Demo map: this repo's own files.

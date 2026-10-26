@@ -6,13 +6,20 @@
     "dev": "node --experimental-strip-types --no-warnings scripts/dev-setup.mjs && wrangler dev",
     "deploy": "wrangler d1 migrations apply shiptorio --remote && wrangler deploy",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:smoke": "node scripts/smoke-factory.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261026.1",
     "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5",
-    "wrangler": "^4.153.0"
+    "wrangler": "^4.153.0",
+    "ws": "^8.22.0"
+  },
+  "dependencies": {
+    "@shiptorio/shared": "file:shared",
+    "hono": "^4.13.14"
   }
 }

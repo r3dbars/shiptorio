@@ -58,7 +58,7 @@ export async function appJwt(appId: string, privateKeyPem: string, now = Date.no
 }
 
 export async function verifyWebhookSignature(secret: string, body: string, header: string | null): Promise<boolean> {
-  if (!header?.startsWith("sha256=")) return false;
+  if (!secret || !header?.startsWith("sha256=")) return false;
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
     "sign",
   ]);

@@ -5,9 +5,13 @@
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/auth/*", "/webhooks/*", "/setup*"] },
   "durable_objects": {
-    "bindings": [{ "name": "REPO_ROOM", "class_name": "RepoRoom" }]
+    "bindings": [{ "name": "REPO_ROOM", "class_name": "RepoRoom" },
+      { "name": "FACTORY", "class_name": "FactoryRoom" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RepoRoom"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RepoRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["FactoryRoom"] }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
