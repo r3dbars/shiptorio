@@ -69,6 +69,17 @@ detected agents and latest job. A newly selected live repo opens this card.
 - **Claude uses macOS Keychain:** some installations may fail in the dedicated
   sandbox. Do not expose your normal Keychain or home to get around that boundary.
 
+## What your agent can and can't touch
+
+Jobs run in an isolated checkout. The runner publishes only the approved file scope,
+then opens a pull request. It never pushes to the default branch. The OS sandbox
+keeps your normal home, unrelated repositories and supervisor GitHub credentials
+outside the agent and test processes. The agent can read its dedicated subscription
+sign-in and contact its inference provider; tests run without those credentials.
+
+The supervisor runs the repository's checks and verifies the frozen patch before
+publication. You still approve the plan and decide when to merge.
+
 ## Stop, revoke and uninstall
 
 Ctrl-C stops the foreground runner. **Disconnect this machine** in the factory

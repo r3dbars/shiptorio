@@ -1,4 +1,3 @@
-import { runnerPage } from "../server/src/device-pairing";
 // Public standalone assets: bundled source only. Never package env files or credentials.
 import { resolve } from "node:path";
 const root = resolve(import.meta.dir, ".."), dist = resolve(root, "web/dist");
@@ -10,11 +9,3 @@ const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root }).stdout
 await Bun.write(resolve(dist, "runner-manifest.json"), JSON.stringify({ sha256, commit, bun: Bun.version }));
 await Bun.write(resolve(dist, "install.sh"), (await Bun.file(resolve(root, "runner/install.sh")).text()).replaceAll("__BUN_VERSION__", Bun.version));
 console.log(`Standalone runner ${commit.slice(0, 7)}: ${sha256}`);
-
-// The docs-site lane renders this source when present. Until it lands, ship the
-// same public page as a static asset; never shadow /docs/runner in Worker routes.
-const help = resolve(dist, "docs/runner.html");
-if (!await Bun.file(help).exists()) {
-  const markdown = (await Bun.file(resolve(root, "docs/site/runner.md")).text()).replace(/^---\n[\s\S]*?\n---\n/, "").replace(/^# .*\n/, "");
-  await Bun.write(help, runnerPage("Connect your machine", Bun.markdown.html(markdown)));
-}

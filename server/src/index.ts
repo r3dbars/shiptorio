@@ -130,7 +130,7 @@ app.use("*", async (c, next) => {
 app.use("*", async (c, next) => {
   // Installer and device exchange have no browser cookies. Device approval still requires
   // the normal preview + user session and same-origin form submission below.
-  if (["/install.sh", "/runner.mjs", "/runner-manifest.json", "/docs/runner", "/api/runner-device/start", "/api/runner-device/poll"].includes(c.req.path)) {
+  if (["/install.sh", "/runner.mjs", "/runner-manifest.json", "/api/runner-device/start", "/api/runner-device/poll"].includes(c.req.path)) {
     await next(); c.header("Cache-Control", "no-store"); return;
   }
   if (c.req.path.startsWith("/api/runner/")) {
