@@ -113,6 +113,7 @@ test('Turnstile sign-in has no GET bypass in waitlist mode; missing keys never s
   const get=await app.fetch(req('/auth/login'),e as never);
   expect(get.headers.get('location')).toBeNull();
   expect(await get.text()).toContain('data-action="signin"');
+  expect(get.headers.get('content-security-policy')).toContain('frame-src https://challenges.cloudflare.com');
   const post=await app.fetch(req('/auth/login','',{'cf-turnstile-response':'fake'}),e as never);
   expect(post.status).toBe(403);
   expect(post.headers.get('location')).toBeNull();

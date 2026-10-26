@@ -37,7 +37,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
 export function browserSocketAllowed(auth: unknown, env: BrowserSocketEnv, epoch: string | null, now = Date.now()): auth is BrowserSocketAuth {
   if (!auth || typeof auth !== "object") return false;
   const value = auth as Partial<BrowserSocketAuth>;
-  return !!epoch && !!env.SESSION_SECRET && typeof value.login === "string" && (!!env.DB && signupMode(env) !== "password" || isAllowed(env.ALLOWED_LOGINS ?? "", value.login))
+  return !!epoch && !!env.SESSION_SECRET && typeof value.login === "string" && (!!env.DB || isAllowed(env.ALLOWED_LOGINS ?? "", value.login))
     && typeof value.expiresAt === "number" && Number.isFinite(value.expiresAt) && value.expiresAt > now && value.epoch === epoch;
 }
 

@@ -11,7 +11,7 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
-    `connect-src 'self' ${socket}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
+    `connect-src 'self' ${socket}${turnstile ? " https://challenges.cloudflare.com" : ""}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}`,
     ...(turnstile ? ["frame-src https://challenges.cloudflare.com"] : []),
     "worker-src 'self' blob:",
     "media-src 'self' blob:",
