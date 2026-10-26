@@ -465,6 +465,8 @@ const beltTex = tex().belt;
     cyl(0.73, 0.73, 0.06, 0x8f8a80, 18, tx, 2.48, tz, g).material.side = THREE.DoubleSide;
     for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; box(0.08, 0.18, 0.08, 0x8f8a80, tx + Math.cos(a) * 0.92, 0.2, tz + Math.sin(a) * 0.92, g); }
     for (let i = 0; i < 3; i++) box(0.04, 0.02, 0.9, 0x7a766d, tx + 0.62, 1.0 + i * 0.4, tz, g);
+    mesh(new THREE.TorusGeometry(0.76, 0.03, 4, 18), 0xd94a3f, tx, 2.52, tz, g).rotation.x = Math.PI / 2; // top walkway rail
+    ladder(g, tx + 0.18, tz + 0.88, 0.2, 2.3, 0);
     const dx = 0.9, dz = 0.65;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) { const post = box(0.05, 2.1, 0.05, 0xd94a3f, dx + sx * 0.19, 1.15, dz + sz * 0.19, g); post.rotation.z = -sx * 0.09; post.rotation.x = sz * 0.09; }
     for (const [y, w] of [[0.6, 0.5], [1.1, 0.42], [1.6, 0.32]]) { box(w, 0.04, 0.04, 0xd94a3f, dx, y, dz + w / 2 - 0.02, g); box(w, 0.04, 0.04, 0xd94a3f, dx, y, dz - w / 2 + 0.02, g); box(0.04, 0.04, w, 0xd94a3f, dx + w / 2 - 0.02, y, dz, g); box(0.04, 0.04, w, 0xd94a3f, dx - w / 2 + 0.02, y, dz, g); }
@@ -570,6 +572,8 @@ const beltTex = tex().belt;
       cone(r * 0.22, r * 0.8, dark, 5, x, y + r * 0.78, z, b).rotation.x = -0.35;
     });
     const pus = [[-0.3, 0.58, -0.5], [0.3, 0.58, -0.5], [-0.24, 0.55, -0.85], [0.26, 0.55, -0.82]].map(([x, y, z]) => sph(0.065, pusM, x, y, z, b, 6, 4));
+    // twitching antennae
+    const ant = [-1, 1].map((sd) => { const a = group(b, sd * 0.1, 0.74, 0.4); a.rotation.set(-0.7, 0, sd * 0.5); box(0.025, 0.36, 0.025, dark, 0, 0.18, 0, a); box(0.04, 0.04, 0.04, dark, 0, 0.36, 0, a); return a; });
     sph(0.3, skin, 0, 0.62, 0.02, b, 10, 7).scale.set(1, 0.85, 1.1);
     sph(0.28, plate, 0, 0.78, 0.0, b, 10, 5).scale.set(1, 0.35, 1.05);
     sph(0.23, dark, 0, 0.58, 0.38, b, 10, 7);
@@ -592,9 +596,11 @@ const beltTex = tex().belt;
       const tib = box(0.06, 0.6, 0.06, dark, sd * 0.08, -0.28, 0, knee); tib.rotation.z = sd * -0.28;
       legs.push({ hip, femurG, sd, tri: (i === 0 || i === 2 || i === 4) ? 0 : Math.PI });
     }
-    return { b, skin, mand, legs, pus, pusM };
+    return { b, skin, mand, legs, pus, pusM, ant, abd: b.children[0] };
   }
   function walkLegs(body, t, speed) {
+    body.ant.forEach((a, i) => (a.rotation.x = -0.7 + Math.sin(t * 9 + i * 2) * 0.15));
+    body.abd.scale.set(1 + Math.sin(t * 3) * 0.04, 0.72, 1.1 + Math.sin(t * 3) * 0.04); // it breathes
     body.legs.forEach((L) => {
       const ph = t * speed * 0.6 + L.tri;
       L.hip.rotation.y = Math.sin(ph) * 0.35 * L.sd;

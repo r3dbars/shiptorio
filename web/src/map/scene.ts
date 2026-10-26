@@ -724,9 +724,17 @@ export class FactoryScene {
       const top = own(tint ?? 0xffffff);
       top.map = t;
       const side = mat(0x1d2026);
-      const b = box(g.L + 0.7, 0.18, 0.7, [side, side, top, side, side, side], (g.x1 + g.x2) / 2, tint ? 0.13 : 0.09, (g.z1 + g.z2) / 2, this.beltGroup);
-      b.rotation.y = -Math.atan2(g.z2 - g.z1, g.x2 - g.x1);
-      b.castShadow = false;
+      const seg = new THREE.Group();
+      seg.position.set((g.x1 + g.x2) / 2, tint ? 0.13 : 0.09, (g.z1 + g.z2) / 2);
+      seg.rotation.y = -Math.atan2(g.z2 - g.z1, g.x2 - g.x1);
+      this.beltGroup.add(seg);
+      const len = g.L + 0.7;
+      box(len, 0.18, 0.7, [side, side, top, side, side, side], 0, 0, 0, seg).castShadow = false;
+      // steel side rails with a support bracket every metre, like a real conveyor frame
+      for (const z of [-0.37, 0.37]) {
+        box(len, 0.07, 0.05, mat(tint ? 0xb5463d : 0x6b7280), 0, 0.1, z, seg).castShadow = false;
+        for (let x = -len / 2 + 0.3; x < len / 2 - 0.1; x += 1.0) box(0.08, 0.16, 0.08, mat(0x3a3f47), x, 0.02, z * 1.08, seg).castShadow = false;
+      }
     }
   }
 
