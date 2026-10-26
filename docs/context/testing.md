@@ -79,7 +79,7 @@ its intended stripping behavior; the tests do not change the shared contract.
 
 `bun run test:load` starts the isolated Worker, seeds one busy factory plus 50 other
 factories, opens 200 WebSockets on the first and one on each of the others (250 total),
-uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets), then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
+uses five fixture player/IP cohorts (50 sockets each, below the real per-user and per-IP upgrade budgets), ramps handshakes in batches of 25, then requests 20 concurrent rounds of the real alarm body across all 51 DOs. Each
 client must receive the round's tick before the next round starts. It measures
 request-start → client patch receipt and tick RPC wall time, fails on disconnects or
 invalid messages and requires all 5,000 expected tick deliveries. This is a fan-out
@@ -92,6 +92,19 @@ The subset is an **estimate/lower bound**: sampling and async stack breaks can m
 Factory work, and native storage/network CPU is outside it. This is local isolate CPU,
 not Cloudflare billed DO CPU or a production capacity guarantee. No cloud resources
 are created, queried or changed. Repeat on the same hardware before comparing runs.
+
+The suite caught a tenant-authorization fan-out regression: upgrades reached 26 s
+and the 200-client ramp timed out because each frame re-ran identical D1 checks for
+every socket. Factory broadcasts now share one check per session **within that
+frame only**. A regression test verifies separate sessions remain separate, all 200
+sockets receive a frame, and revoking access prevents the next frame reaching any
+of them. There is no new access TTL or cross-frame authorization cache.
+
+Post-fix macOS arm64 local measurement with tenant guards enabled: 5,000/5,000
+deliveries, zero failures; message p50 48.75 ms, p95 634.01 ms, max 908.28 ms;
+tick RPC p95 1,389.01 ms; sampled active isolate CPU 15,690.45 ms, Factory stacks
+5,019.18 ms (4.92 ms per requested tick), 21.06 s measured window. This replaces
+unprotected-load numbers as the relevant local result; hardware/runner results differ.
 
 Outputs: `test-results/load.json` (latency, RPC, sampled CPU and failures),
 `load.cpuprofile` (inspect in DevTools) and `load-worker.log` (startup/errors).

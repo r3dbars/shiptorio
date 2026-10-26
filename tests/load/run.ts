@@ -87,6 +87,7 @@ try {
   }
   const elapsedMs = performance.now() - started;
   const { profile } = await cdp('Profiler.stop');
+  if (!profile.samples?.length || profile.samples.length !== profile.timeDeltas?.length) throw new Error('Inspector returned no usable CPU samples');
   await Bun.write('test-results/load.cpuprofile', JSON.stringify(profile));
   const nodes = new Map<number, any>(profile.nodes.map((n: any) => [n.id, n]));
   const parent = new Map<number, number>();
