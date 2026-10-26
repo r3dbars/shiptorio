@@ -236,5 +236,35 @@ is not itself an app failure. Console findings belong only to the current naviga
 - 2026-10-26: Name the dock action Place so it cannot be confused with the Build view. The field-guide tooltip counts concepts found, separate from the tour step count.
 - 2026-10-26: Local supervisor checks need an OS boundary, not just an environment allowlist. macOS verification uses deny-default sandbox-exec with checkout/private scratch writes, isolated HOME, and offline checks; unsupported platforms fail closed. Dependency installation is an explicit scripts-disabled network phase. Publication must not trust repository-controlled Git hooks/configuration after agent/test execution.
 
+## Live source connections — 2026-10-26
+
+- Connected Sentry and PostHog to `r3dbars/shiptorio` through PR #97's existing
+  authenticated `/connect/<kind>?repo=...` forms. Credentials remain in `CACHE`
+  under `cred:<kind>` and repo links under `link:<kind>`; no new storage or
+  Cloudflare resources. Never copy credential values into this log.
+- PostHog: US project `378427` (Justin's existing Default project, containing
+  Transcripted events), restricted personal key with only `insight:read`,
+  `query:read`, `event_definition:read`, and `project:read`. Use
+  `dictation_completed`, not the web-only `$pageview` default. Live factory
+  reported a successful poll, traffic at `/`, and a queued ore item for
+  `dictation_completed` on 2026-10-25. These are Transcripted product signals;
+  they must not be described as Shiptorio usage or proof of a Shiptorio defect.
+- Sentry: internal integration **Shiptorio factory** in org `r3dbars`, Project
+  and Issue & Event read only, Alert Action enabled, issue lifecycle webhooks
+  enabled at `https://shiptorio.com/webhooks/sentry`. The current Sentry UI
+  disables raw `error` / `error.created` subscriptions despite these read
+  scopes; no write/admin permissions were added to bypass that restriction.
+  Saved its Client Secret through the existing connect form. Live factory
+  shows the Sentry mine connected, but its first Sentry-originated issue
+  delivery remains unverified. No synthetic customer error was inserted.
+- Existing GitHub App's read-only Commit statuses permission is now saved and
+  accepted on the repo-only installation; the legacy commit status API
+  returned HTTP 200. This completes the previously pending permission step.
+- Checked only the `shiptorio` Worker with `wrangler tail`, discarding request
+  headers, query strings, log arguments and exception messages before output.
+  Observed factory alarms and runner/GitHub requests had no exceptions or
+  error logs during this check. Both source deposits are present in the live
+  factory. No other Workers were changed.
+
 - 2026-10-26: The optional real-map welcome tour is explicitly a sandbox. Only the intro simulator source can run its cues or sample Sentry ore; a live-source URL cannot enable it. Repeated tour actions are idempotent. Its dedicated playtest follows all eight actual UI beats, including scar → second verification → launch and automated shipping, and closes mid-build to protect delayed callback cleanup. Protocol proof remains separate from rendered desktop and physical-phone checks.
 - 2026-10-26: Launch credit is durable per merged PR and commits atomically with science and permit counters. Orbit regressions keep their scars and new work when old merge receipts replay. Idle orbit watches schedule their actual 24-hour deadline; incoming work can preempt that distant alarm. This records elapsed observation, not proof of customer impact.
