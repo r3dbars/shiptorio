@@ -537,7 +537,7 @@ export function App() {
             title={plugged ? `Place another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
           >
             <Icon name="bot" size={20} />
-            Build
+            Place
           </button>
           )}
         </nav>
