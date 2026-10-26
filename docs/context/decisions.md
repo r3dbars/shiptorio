@@ -5,6 +5,37 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Release verification, Oct 26: live bottleneck/deck #96, repeatable playtests #85,
+Firefox/HTTPS entry #95/#98, repository picker #118, same-head CI/session security
+#101/#111, sandboxed local verification/publication #104, idle-loop #117 and disposed
+live-source cleanup #119 are merged. Deploy
+https://github.com/r3dbars/shiptorio/actions/runs/40394207368 is green; both protected
+version endpoints matched `3dfcf63af133cd8cc9936b54c312e0ca470ab957`. Only the
+`shiptorio` Worker was deployed. The installed sandbox runner is running with native
+Codex and Claude authentication and its existing pairing; its installation receipt
+contains no credential values. New code never runs with the publisher's Git metadata.
+
+Cloudflare's zone-level Always Use HTTPS is now on for both Shiptorio domains, with
+TLS 1.2 minimum and TLS 1.3 enabled. External HTTP root and /access requests return
+301 to HTTPS on both domains. The password gate remains active. Live browser proof
+confirmed the real `r3dbars/shiptorio` picker entry and opened its factory; phone
+layout proof remains separate from the verified Safari password-entry report.
+
+GitHub CI inspection still needs one external setup repair: the existing App lacks
+Commit statuses read permission, and a real installation-token GET /commits/main/status
+returned 403. The manifest now requests read-only statuses alongside check-runs read;
+this does not update an existing App automatically. Its admin page requires fresh
+GitHub authentication, so the existing installation permission change remains pending
+Justin's confirmation. Keep current-check refresh fail closed; never ignore that 403.
+
+Security audit: the starting c799722 snapshot received an independent baseline and
+architecture review, then parent validation. All 160 tracked text files were reviewed;
+20 static screenshots and external dependency implementations were excluded. Five
+source-backed findings were retained in the generated report. Server fixes and actual
+macOS hostile-code probes are separate remediation evidence, not a claim that the old
+audit snapshot had no findings. A contents-write GitHub token remains capable of merges;
+true branch-only publishing needs mediation or independent GitHub branch rules.
+
 The game approval PR #81 was rebased onto gauntlet PR #73 and merged. Both move handlers
 remain: chooseGauntletMove gets first refusal only for pad/review cards, then runner
 approval handles its own cards. The alarm runs both gauntlet and runner offers. Deploy
