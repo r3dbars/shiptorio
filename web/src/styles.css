@@ -177,3 +177,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 @media (prefers-reduced-motion: reduce) {
   .caption { transition: none; }
 }
+
+/* Spark's drone label */
+.maplabel.drone { border-color: var(--blue); }
+.maplabel.drone b { color: var(--blue); }
