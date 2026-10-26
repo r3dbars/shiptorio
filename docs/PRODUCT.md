@@ -126,7 +126,7 @@ and 1–3 actions (one is Spark's pick). Full detail: `docs/LOOP.md`.
 Every ore chunk carries **who it hurts**. Spark attaches it during triage:
 
 - users affected (Sentry user count, PostHog sessions hitting that route)
-- who asked (email senders, issue reactions), and whether they're paying (later: Stripe)
+- who asked (email senders, issue reactions), and whether they're paying (later: Stripe, on hold)
 - linked items (this email is the same bug as this Sentry error)
 
 That context is what makes Spark's priorities real: a crash on `/checkout` that 112 people hit beats a
@@ -376,6 +376,7 @@ The demo story, step by step. Every row is a real effect.
 | Spark loop | Event wakes + heartbeat, tools from all four tiers, factory brief, budget, ask-or-act check | Long-horizon planning, weekly goals that steer research |
 | Bottleneck engine | Stage table, value × wait, Next Move card | Per-district bottlenecks, forecasting ("pad will jam by 3 PM") |
 | Assemblers | Claude Code + Codex through the local runner on the player's subscriptions | Cursor, Grok, local Glimmer (geothermal), hosted runner for teams |
+| Gauntlet | CI inspector, verify bay, AI review, merge gate live; rework belt back to Spark; click-to-act panels; research tree shown with one unlock on camera | Orbit watch (if Sentry lands, it moves into the demo), canary, security, perf, arena |
 | Autonomy | Advisor → Floor → Build shown, one launch permit earned on camera (docs auto-launch) | Lights out, permits on every district, thresholds tuned on real data |
 | Outputs | PR, merge, release on the demo shop, customer reply draft + send | Real deploy integrations (Cloudflare, Vercel), changelog |
 | Score | Rockets, lead time, biters killed, customers answered, users unblocked, Ship Score | Revenue from Stripe, cohort impact |
@@ -450,10 +451,13 @@ gate, orbit watch) with piles and a red rework belt back to Spark, a click-to-ac
 
 1. **Autonomy (Justin):** Spark asks first, never writes code, autonomy is earned by playing, and code runs
    on the player's own subscriptions. See the top of this doc.
-2. **Demo "money" (Justin OK'd the pick):** the demo shop runs Stripe test mode. A "checkout completed"
-   counter on the HUD drops when checkout breaks and climbs back after the fix ships. No real payments; a
-   real Stripe connector is later.
+2. **Demo "money" (updated 2026-10-26, Justin):** Stripe is **on hold**. The first signal sources are GitHub,
+   Sentry and PostHog. Real-world impact in the demo shows through PostHog (sessions / conversions on the
+   affected route recover after the fix ships) instead of a Stripe checkout counter. Stripe comes back later.
 3. **Customer replies (Justin OK'd the pick):** Spark drafts, the player clicks Send, always in v1. No
    autonomy level auto-sends customer email yet.
 4. **Pitch audience (Justin OK'd the pick):** solo founders and tiny teams with real users. The promise:
    your product gets better, and earns more, while you play.
+5. **Verification gauntlet (Justin, 2026-10-26):** `docs/LOOP.md` is locked. Nov 4 ships CI inspector, verify
+   bay, AI review and merge gate; fails go back to Spark with a scar tag; AI review is a different model family
+   than the builder; stations can be removed per district at a trust cost.

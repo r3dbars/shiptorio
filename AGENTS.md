@@ -3,6 +3,9 @@
 Context for coding agents (Codex, Claude Code, etc.) working on Shiptorio. Read this
 before you change anything.
 
+**North star first: read [`docs/VISION.md`](docs/VISION.md) before deciding what to build next.** It's Justin's
+high-level goals on one page, with a "how to decide what's next" checklist.
+
 **Shared context (decisions, open items, plan export, memory, design refs) lives in
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**

@@ -1,6 +1,6 @@
 # The Shiptorio loop: signals in, proof out
 
-> Status: v1, 2026-10-26. Owner: Justin. Visual one-pager: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr
+> Status: **locked**, 2026-10-26 (Justin approved the whole one-pager and the Nov 4 stations). Owner: Justin. Visual one-pager: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr
 > (copy in `docs/loop.html`). This is the simple model of the whole game. `docs/PRODUCT.md` has the full spec;
 > where they overlap, PRODUCT.md wins on details and this doc wins on the shape of the loop and the gauntlet.
 
@@ -14,7 +14,7 @@ rework belt back to Spark. Where stuff piles up is the bottleneck, and the bottl
  1 ORE            BRAIN        2 BUILD            3 THE GAUNTLET                                 4 SHIPPED
  mines ──belt──► Spark ──────► assemblers ──────► CI inspector ─► verify bay ─► review ─► merge gate ─► orbit watch
  (issues, Sentry,  (reads,      (your Claude Code    │           │            │          (you)        (24h real-world
-  email, Stripe)   restates,     / Codex, on your    ▼           ▼            ▼                        check)
+  PostHog, email)  restates,     / Codex, on your    ▼           ▼            ▼                        check)
   deduped into     plans,        subscriptions)   ◄──────────── REWORK BELT (scar tags) ◄─────────────────┘
   weighted chunks) routes)            ▲
                                  POWER: Claude plant, Codex plant (your usage left), Spark steam (brain only)
@@ -22,9 +22,9 @@ rework belt back to Spark. Where stuff piles up is the bottleneck, and the bottl
 
 ## The four stops
 
-1. **Ore (signals in).** Every source is a mine: GitHub issues, Sentry errors, customer email, Stripe events.
+1. **Ore (signals in).** Every source is a mine: GitHub issues, Sentry errors, PostHog events, customer email.
    Spark merges duplicates into one weighted chunk (40 crash reports about one bug = one chunk weighing 40).
-   More mines = more ore. Connect order: GitHub issues → Sentry → email → Stripe.
+   More mines = more ore. Connect order: GitHub issues → Sentry → PostHog → email. Stripe is on hold (Justin, 2026-10-26).
 2. **Power (AI compute).** Claude and ChatGPT sign-ins are power plants; the meter is the real usage left this
    week. Spark's own thinking runs on its steam plant (Meta API). Local models come later as geothermal.
    There is always more ore than power, so every station's power cost is visible.
@@ -115,10 +115,10 @@ Same ore → power → gauntlet → rocket loop, as add-on islands, each with it
 | Marketing | What shipped this week | Changelog, posts, launch notes | People clicked |
 | Support | Every ticket | An answer, or a fix that kills the ticket type | Fewer tickets |
 
-## Open calls (recommendations, waiting on Justin)
+## Decided calls (Justin, 2026-10-26)
 
-1. **Demo stations:** CI inspector, verify bay, AI review, merge gate; orbit watch if time. *Recommend.*
-2. **Where fails go:** back to Spark with a scar tag, third strike to the player. *Recommend.*
+1. **Demo stations:** CI inspector, verify bay, AI review, merge gate; orbit watch only if Sentry lands in time.
+2. **Where fails go:** back to Spark with a scar tag, third strike to the player.
 3. **Who reviews:** a different model family from the builder when both are plugged in; with one sign-in, a
-   fresh session with a hostile reviewer loadout. *Recommend.*
-4. **Removing stations:** allowed per district, with the trust/autonomy cost shown. *Recommend.*
+   fresh session with a hostile reviewer loadout.
+4. **Removing stations:** allowed per district, with the trust/autonomy cost shown.
