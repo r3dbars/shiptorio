@@ -82,6 +82,9 @@ export function appManifest(publicUrl: string) {
     url: publicUrl,
     hook_attributes: { url: `${publicUrl}/webhooks/github` },
     redirect_url: `${publicUrl}/setup/callback`,
+    // after installing, GitHub sends the player back to pick their repo instead of leaving them on GitHub
+    setup_url: `${publicUrl}/github/installed`,
+    setup_on_update: true,
     callback_urls: [`${publicUrl}/auth/callback`],
     public: false,
     // Agents only ever open PRs; a human merge launches the rocket.

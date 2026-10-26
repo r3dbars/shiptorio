@@ -66,6 +66,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
   const [installUrl, setInstallUrl] = useState<string | null>(null);
+  const [reposFailed, setReposFailed] = useState(false);
 
   // Live: who is signed in and which repositories the existing App installation can see.
   useEffect(() => {
@@ -79,11 +80,24 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
         if (me.login && step === "hello") setStep("repo");
       })
       .catch(() => setLogin(null));
-    fetch("/api/repos")
-      .then((r) => (r.ok ? (r.json() as Promise<{ repos: Repo[] }>) : Promise.reject()))
-      .then((d) => setRepos(d.repos))
-      .catch(() => setRepos([]));
+    loadRepos();
   }, [live]);
+
+  const loadRepos = () =>
+    fetch("/api/repos", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ repos: Repo[] }>) : Promise.reject()))
+      .then((d) => { setRepos(d.repos); setReposFailed(false); })
+      .catch(() => { setRepos((r) => r ?? []); setReposFailed(true); });
+
+  // A brand-new player installs the App in another tab. GitHub's install webhook adds the repo to their
+  // account, so keep looking while the list is empty instead of asking them to sign in again.
+  const waiting = live && !!login && step === "repo" && repos !== null && repos.length === 0;
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(loadRepos, 3000);
+    window.addEventListener("focus", loadRepos);
+    return () => { clearInterval(timer); window.removeEventListener("focus", loadRepos); };
+  }, [waiting]);
 
   const signIn = () => {
     if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
@@ -115,7 +129,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               piece shows up when you need it.
             </Coach>
             <div className="nm-options">
-              <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
+              <button type="button" className="btn rec" onClick={signIn} autoFocus>
                 SIGN IN WITH GITHUB
               </button>
             </div>
@@ -134,6 +148,18 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               {login ? `Hey ${login}. ` : ""}Which repo is the factory? {live ? "We'll read its tree, open issues and CI, then suggest a starter line." : "This sandbox uses a demo shop with sample issues; your real repo stays untouched."}
             </Coach>
             {repos === null && <p className="psub">Looking for repos…</p>}
+            {waiting && (
+              // First visit: nothing installed yet. This is the one thing to do, so it's the big button.
+              <div className="ob-install">
+                <a className="btn rec" href={installUrl ?? "https://github.com/settings/installations"} target="_blank" rel="noreferrer">
+                  INSTALL SHIPTORIO ON A REPO
+                </a>
+                <p className="psub">
+                  Opens GitHub in a new tab. Pick one repo to start; you can add more later. Your repo shows up here by itself
+                  once it's installed.
+                </p>
+              </div>
+            )}
             {repos && repos.length > 0 && (
               <ul className="ob-repos">
                 {repos.map((r) => (
@@ -148,7 +174,8 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                 ))}
               </ul>
             )}
-            {live && (
+            {live && reposFailed && (
+              // only when the list couldn't load: the server still checks the player can reach the repo
               <form
                 className="ob-type"
                 onSubmit={(e) => {
@@ -169,11 +196,11 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                 </button>
               </form>
             )}
-            <p className="psub">
+            {!waiting && <p className="psub">
               {/* the list is the repos your GitHub account reaches through the App; installing on more adds them */}
               Not there? <a href={installUrl ?? "https://github.com/settings/installations"}>Install the Shiptorio app</a> on the repo
               {live && login ? <>, then <a href={`/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`}>refresh</a></> : " first"}.
-            </p>
+            </p>}
           </>
         )}
       </section>

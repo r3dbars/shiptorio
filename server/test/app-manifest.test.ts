@@ -10,3 +10,9 @@ it("registers the mine with separate read access for check runs and legacy commi
   expect(manifest.redirect_url).toBe("https://shiptorio.com/setup/callback");
   expect(manifest.callback_urls).toEqual(["https://shiptorio.com/auth/callback"]);
 });
+
+it("sends a player back to the repo picker after they install the App", () => {
+  const manifest = appManifest("https://shiptorio.com");
+  expect(manifest.setup_url).toBe("https://shiptorio.com/github/installed");
+  expect(manifest.setup_on_update).toBe(true);
+});

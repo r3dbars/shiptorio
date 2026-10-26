@@ -23,9 +23,13 @@ interface Props {
   stations?: Station[];
   send: (msg: WebToServer) => void;
   onOpen?: (stationId: string) => void; // open the bottleneck station's panel
+  // live: "Connect a local agent" is a setup step on this machine, not a server action, so it opens Power
+  onPower?: () => void;
 }
 
-export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
+const plugsInAgent = (o: Move["options"][number]) => o.actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+
+export function NextMove({ move, bottleneck, stations, send, onOpen, onPower }: Props) {
   if (!move) {
     if (!bottleneck) return null;
     const st = stations?.find((x) => x.id === bottleneck.stationId);
@@ -70,7 +74,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
             type="button"
             className={o.recommended ? "btn rec" : "btn"}
             title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined}
-            onClick={() => send({ type: "choose_move", moveId: move.id, optionId: o.id })}
+            onClick={() => (onPower && plugsInAgent(o) ? onPower() : send({ type: "choose_move", moveId: move.id, optionId: o.id }))}
           >
             {o.label}
             {o.recommended && <span className="sugg">Suggested</span>}

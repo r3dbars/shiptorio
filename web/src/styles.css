@@ -748,3 +748,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   .rs-catch { display: none; }
   .rs-why { max-width: 96px; }
 }
+/* first repo: the install button is the whole step (new-user-path.md) */
+.ob-install { display: flex; flex-direction: column; gap: 8px; }
+.ob-install .btn { flex: none; }
