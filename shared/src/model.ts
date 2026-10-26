@@ -67,7 +67,7 @@ export type CustomerContext = z.infer<typeof CustomerContext>;
 
 // The verification gauntlet (docs/LOOP.md): CI inspector → verify bay → AI review → merge gate → orbit watch.
 // Inspection.stages gate names map onto these: ci → ci, verify → verify, ai → review, human → merge.
-export const StationKind = z.enum(["ci", "verify", "review", "merge", "orbit", "custom"]);
+export const StationKind = z.enum(["ci", "verify", "review", "merge", "orbit", "custom", "measure"]);
 export type StationKind = z.infer<typeof StationKind>;
 
 // Why a fail rode the rework belt back to Spark. Spark re-plans with it; third strike goes to the player.
@@ -327,7 +327,7 @@ export type Foreman = z.infer<typeof Foreman>;
 
 // One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
 // and so does every time a rule had to stand in because Spark was down or unconfigured.
-export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit"]);
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "growth", "measure"]);
 export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
 export const Thought = z.object({
   id: z.string(),
@@ -384,6 +384,44 @@ export const Research = z.object({
 });
 export type Research = z.infer<typeof Research>;
 
+// The growth loop (shared/src/growth.ts, docs/context/growth-loop.md). A funnel step from PostHog drops, the
+// planner proposes one small experiment, it ships through the gauntlet, and the measure station calls the result.
+export const FunnelStep = z.object({
+  from: z.string(), // route people enter on: "/cart"
+  to: z.string(), // route that counts as converting: "/checkout"
+  label: z.string(), // "/cart → /checkout"
+});
+export type FunnelStep = z.infer<typeof FunnelStep>;
+export const ExperimentChange = z.enum(["copy", "cta", "onboarding", "layout"]);
+export type ExperimentChange = z.infer<typeof ExperimentChange>;
+export const ExperimentVerdict = z.enum(["too_early", "lift", "no_lift", "hurt"]);
+export type ExperimentVerdict = z.infer<typeof ExperimentVerdict>;
+const StepCounts = z.object({ entered: z.number().nonnegative(), converted: z.number().nonnegative(), days: z.number().int().nonnegative() });
+export const Experiment = z.object({
+  id: z.string(),
+  step: FunnelStep,
+  title: z.string(), // "Clearer checkout button on /cart"
+  hypothesis: z.string(), // what should happen and by how much
+  change: ExperimentChange,
+  district: z.string(), // where the PR lands
+  // proposed → building (yes on the card) → measuring (launched) → won / flat / lost; dropped = player said no
+  state: z.enum(["proposed", "building", "measuring", "won", "flat", "lost", "dropped"]),
+  itemId: z.string().optional(), // the factory item that ships it
+  prNumber: z.number().int().optional(),
+  baseline: StepCounts, // the step before the change
+  after: StepCounts.optional(), // the step since the launch
+  windowDays: z.number().int().positive(),
+  daysWatched: z.number().nonnegative().optional(),
+  lift: z.number().optional(), // relative, 0.16 = +16%
+  p: z.number().min(0).max(1).optional(),
+  verdict: ExperimentVerdict.optional(),
+  line: z.string().optional(), // the measure station's plain sentence
+  proposedAt: z.number(),
+  launchedAt: z.number().optional(),
+  decidedAt: z.number().optional(),
+});
+export type Experiment = z.infer<typeof Experiment>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -407,5 +445,6 @@ export const FactoryState = z.object({
   sources: z.array(SourceStatus).optional(),
   stations: z.array(Station).optional(), // the gauntlet, in line order
   research: Research.optional(),
+  experiments: z.array(Experiment).max(20).optional(), // the growth loop, newest first
 });
 export type FactoryState = z.infer<typeof FactoryState>;

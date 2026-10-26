@@ -15,6 +15,7 @@ const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
   merge: ["gate_clank", "stamp_fail"],
   orbit: ["orbit_clear", "orbit_alarm"],
   custom: ["stamp_pass", "stamp_fail"],
+  measure: ["orbit_clear", "stamp_fail"],
 };
 // Inspection gates are the older name for the same stations.
 const GATE_KIND: Record<Inspection["stages"][number]["gate"], Station["kind"]> = { ci: "ci", verify: "verify", ai: "review", human: "merge" };
@@ -58,7 +59,7 @@ const SFX_FROM: Partial<Record<Sfx, ScapeKind>> = {
   launch: "pad",
 };
 
-const STATION_SCAPE: Record<Station["kind"], ScapeKind> = { ci: "ci", verify: "verify", review: "review", merge: "merge", orbit: "orbit", custom: "other" };
+const STATION_SCAPE: Record<Station["kind"], ScapeKind> = { ci: "ci", verify: "verify", review: "review", merge: "merge", orbit: "orbit", custom: "other", measure: "orbit" };
 const MACHINE_SCAPE: Partial<Record<Machine["type"], ScapeKind>> = {
   inspector: "ci",
   launch_pad: "pad",
