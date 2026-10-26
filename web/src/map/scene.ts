@@ -20,6 +20,7 @@ import {
   buildInspector,
   buildLaunchPad,
   buildOre,
+  buildSupport,
   buildCheck,
   buildOrbit,
   buildMeasure,
@@ -284,7 +285,8 @@ function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built 
     }
   switch (m.type) {
     case "ore_deposit":
-      return buildOre({ variant: ORE_VARIANT[oreKind(m)] });
+      // the support mine is its own model: a well customers' mail comes up out of
+      return oreKind(m) === "inbox" ? buildSupport() : buildOre({ variant: ORE_VARIANT[oreKind(m)] });
     case "splitter":
       return buildSplitter();
     case "assembler": {
@@ -966,7 +968,7 @@ export class FactoryScene {
     for (const sp of spots) {
       let g = this.ghosts.get(sp.kind);
       if (!g) {
-        const built = buildOre({ variant: ORE_VARIANT[sp.kind] });
+        const built = sp.kind === "email" ? buildSupport() : buildOre({ variant: ORE_VARIANT[sp.kind] });
         built.g.traverse((o) => {
           const mesh = o as THREE.Mesh;
           if (!mesh.isMesh) return;
@@ -982,7 +984,7 @@ export class FactoryScene {
         this.scene.add(built.g);
       }
       g.built.g.position.copy(this.machinePos(sp));
-      this.setLabel(g.label, sp.kind.toUpperCase(), "empty mine · tap to connect", ask);
+      this.setLabel(g.label, sp.kind === "email" ? "SUPPORT" : sp.kind.toUpperCase(), sp.kind === "email" ? "customer mail · tap to connect" : "empty mine · tap to connect", ask || sp.kind === "email");
     }
   }
 
@@ -1339,6 +1341,11 @@ export class FactoryScene {
       case "launch_pad":
         return this.t < this.launchUntil ? "LAUNCH" : has("on_pad") || has("passed") ? "COUNTDOWN" : "IDLE";
       case "ore_deposit":
+        if (oreKind(m) === "inbox") {
+          // a drafted reply waits on the player (flag up), new mail is being read (envelopes rise), or quiet
+          const t = s.support ?? [];
+          return t.some((x) => x.state === "drafted") ? "WAITING" : t.some((x) => x.state === "new") || items.some((i) => i.source === "inbox" && i.state === "ore") ? "RICH" : "QUIET";
+        }
         return items.some((i) => i.state === "ore") ? "RICH" : "DEPLETED";
       case "steam":
         if (power && !power.online) return "OVERLOAD";
@@ -1499,6 +1506,13 @@ export class FactoryScene {
           if (kind === "posthog") {
             const n = count((i) => (i.source as string) === "posthog" && (i.state === "ore" || i.state === "queued"));
             this.setLabel(v.label, "POSTHOG", `${n} waiting · user signals`);
+            break;
+          }
+          if (kind === "inbox" && this.state?.support) {
+            const t = this.state.support;
+            const waiting = t.filter((x) => x.state === "drafted").length;
+            const fresh = t.filter((x) => x.state === "new").length;
+            this.setLabel(v.label, "SUPPORT", waiting ? `${waiting} ${waiting === 1 ? "reply" : "replies"} waiting on you` : fresh ? `reading ${fresh} new` : "customer mail", waiting > 0);
             break;
           }
           const src = { sentry: "sentry", inbox: "inbox", issues: "github_issue" }[kind];

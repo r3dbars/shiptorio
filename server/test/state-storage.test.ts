@@ -83,3 +83,14 @@ describe("persisted factory schema", () => {
     await expect(loadFactoryState(f.storage)).rejects.toThrow("Missing factory state chunk");
   });
 });
+
+it("refuses a chunked write when account deletion has stopped the factory", async () => {
+  const f = stateStorage();
+  const state = migrateFactoryState(original);
+  state.items[0].body = "large private body ".repeat(12000);
+  let calls = 0;
+  await expect(saveFactoryState(f.storage, state, () => { if (++calls === 2) throw new Error("Factory deleted"); })).rejects.toThrow("Factory deleted");
+  // The storage transaction rolls back the partially written chunk.
+  expect([...f.rows.keys()]).toEqual(["state"]);
+  expect(f.rows.get("state")).toEqual(original);
+});
