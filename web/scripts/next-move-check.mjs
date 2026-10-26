@@ -50,8 +50,15 @@ async function play(page, label) {
       await page.waitForTimeout(400);
     }
     if (!viaCard) {
-      await page.keyboard.press("Escape"); // close any panel the player left open
-      await launch.click();
+      // close any station panel left open (on phones it's a bottom sheet over the dock)
+      for (let k = 0; k < 5 && (await page.locator(".stationpanel").count()); k++) {
+        await page.locator(".sp-close").first().click({ timeout: 1000 }).catch(() => page.keyboard.press("Escape"));
+        await page.waitForTimeout(300);
+      }
+      if (!(await launch.click({ timeout: 5000 }).then(() => true, () => false))) {
+        n--; // the pad emptied under us (an auto-launch); try this rocket again
+        continue;
+      }
     }
     const at = Date.now();
     // a card counts once it's on screen and isn't the launch card we just answered
