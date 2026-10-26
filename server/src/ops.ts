@@ -1,3 +1,4 @@
+import { log } from "./telemetry";
 import { Hono } from "hono";
 import type { Env } from "./index";
 import { FLAG_DEFAULTS, flagKey, flagName, readFlags } from "./flags";
@@ -31,18 +32,19 @@ ops.get("/api/flags", async c => {
   const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
   return c.json(await readFlags(c.env, user?.login));
 });
-for (const path of ["/admin", "/api/admin/*"]) ops.use(path, async (c, next) => {
+for (const path of ["/admin/flags", "/api/admin/*"]) ops.use(path, async (c, next) => {
   const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
   const login = user?.login;
   if (!login || !(c.env.ADMIN_LOGINS ?? "").split(",").some(admin => admin.trim().toLowerCase() === login.toLowerCase())) return c.json({ error: "admin login required" }, 403);
   c.set("admin", login);
   await next();
 });
-ops.get("/admin", async c => {
+ops.get("/admin/flags", async c => {
   const flags = await readFlags(c.env);
   const rows = Object.entries(flags).map(([name, enabled]) => `<tr><td>${name}</td><td>${enabled}</td><td><form method="post" action="/api/admin/flags"><input type="hidden" name="name" value="${name}"><input name="user" aria-label="GitHub login" placeholder="Global (or GitHub login)"><select name="value"><option>true</option><option>false</option><option>inherit</option></select><button>Save</button></form></td></tr>`).join("");
   c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-  return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Shiptorio flags</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}td{padding:12px}input,select,button{padding:8px}</style><h1>Shiptorio admin</h1><p><a href="/admin/signup">Manage waitlist, allowlist, invite codes, quotas and abuse flags</a></p><h2>Feature flags</h2><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table><p>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</p></html>`);
+  return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Shiptorio flags</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}td{padding:12px}input,select,button{padding:8px}</style><p><a href="/admin">Diagnostics</a></p><h1>Shiptorio admin</h1><p><a href="/admin/signup">Manage waitlist, allowlist, invite codes, quotas and abuse flags</a></p><h2>Feature flags</h2><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table><p>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</p></html>`);
+
 });
 ops.get("/api/admin/flags", async c => {
   const user = c.req.query("user");
@@ -59,6 +61,6 @@ ops.post("/api/admin/flags", async c => {
   if (!flagName(name) || !["true", "false", "inherit"].includes(value ?? "") || (user && !/^[a-z0-9-]{1,39}$/.test(user))) return c.json({ error: "invalid flag override" }, 400);
   if (value === "inherit") await c.env.CACHE.delete(flagKey(name, user));
   else await c.env.CACHE.put(flagKey(name, user), value!);
-  console.info(JSON.stringify({ event: "flag_changed", actor: c.get("admin"), flag: name, user: user ?? "global", value }));
-  return c.redirect("/admin", 303);
+  log("info", "flag.changed", { actor: c.get("admin"), flag: name, user: user ?? "global", value });
+  return c.redirect("/admin/flags", 303);
 });

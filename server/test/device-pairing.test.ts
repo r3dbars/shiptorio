@@ -28,7 +28,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     if (!instances.has(name)) {
       const data = new Map<string, any>(); stores.set(name, data);
       let serial: Promise<unknown> = Promise.resolve();
-      const ctx = { storage: { transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(this); }, get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); }, delete: async (key: string) => data.delete(key), list: async ({ prefix }: { prefix: string }) => new Map([...data].filter(([key]) => key.startsWith(prefix))), setAlarm: async () => {}, deleteAll: async () => data.clear() }, blockConcurrencyWhile(fn: () => Promise<unknown>) { const result = serial.then(fn); serial = result.catch(() => {}); return result; } };
+      const ctx = { waitUntil() {}, storage: { transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(this); }, get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); }, delete: async (key: string) => data.delete(key), list: async ({ prefix }: { prefix: string }) => new Map([...data].filter(([key]) => key.startsWith(prefix))), setAlarm: async () => {}, deleteAll: async () => data.clear() }, blockConcurrencyWhile(fn: () => Promise<unknown>) { const result = serial.then(fn); serial = result.catch(() => {}); return result; } };
       const f = new Factory(ctx as never, env as never); f.ensure = async () => {};
       instances.set(name, f);
     }

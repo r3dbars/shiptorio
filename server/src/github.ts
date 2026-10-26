@@ -1,4 +1,6 @@
+import { observedFetch } from "./telemetry";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
+
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -97,7 +99,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
         if (comments.length < 100) break;
       }
     }
-    const res = await fetch(API + path, {
+    const res = await observedFetch("github", API + path, {
       signal: AbortSignal.timeout(20000),
       ...init,
       headers: {
@@ -114,6 +116,7 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
   };
   // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
   return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
+
 }
 
 interface InstallationTokenScope {
@@ -320,7 +323,7 @@ export async function convertManifestCode(code: string): Promise<{
   pem: string;
   webhook_secret: string;
 }> {
-  const res = await fetch(`${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const res = await observedFetch("github", `${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: { accept: "application/vnd.github+json", "user-agent": UA },
   });

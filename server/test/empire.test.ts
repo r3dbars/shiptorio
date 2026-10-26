@@ -5,7 +5,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const secret = "test-empire-session", password = "test-empire-preview";
 const preview = async () => (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
 const get = (env: object, cookie: string) => app.fetch(new Request("https://shiptorio.com/api/empire", { headers: { cookie } }), env as never);

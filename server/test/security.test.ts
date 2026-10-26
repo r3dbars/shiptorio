@@ -9,7 +9,7 @@ import { authorizedSocket, browserEnv } from "./browser-fixture";
 import { signedInCookie, testD1 } from "./d1-fixture";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 const { Factory } = await import("../src/factory");
 
 function storage() {
