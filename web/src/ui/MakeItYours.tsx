@@ -131,7 +131,7 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
 }
 
 // An empty mine on the map, tapped: what connecting it adds, and how.
-const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog };
+const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog, email: SOURCE.email };
 
 export function ConnectSource({ kind, state, send, onClose }: { kind: string; state: FactoryState; send: (m: WebToServer) => void; onClose: () => void }) {
   const copy = SOURCE_COPY[kind] ?? { name: kind, adds: "" };

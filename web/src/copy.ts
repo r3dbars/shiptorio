@@ -503,6 +503,7 @@ export const THINKS = {
     orbit: "Judged a comeback",
     research: "Picked a check",
     permit: "Weighed a permit",
+    support: "Read a customer message",
     route: "Picked the power plant",
     growth: "Picked an experiment",
   } as Record<ThoughtDecision, string>,
@@ -583,6 +584,7 @@ export const YOURS = {
 export const SOURCE = {
   sentry: { name: "Sentry", adds: "Errors land as ore the moment they happen, and biters show which folder they hit. Fixes that kill biters score big." },
   posthog: { name: "PostHog", adds: "See what users really do. User signals decide what gets built first, and your score counts the users each fix reached." },
+  email: { name: "support", adds: "Customer emails and Intercom chats come up at the support well. Each one is sorted, linked to the work it's about, and gets a reply drafted. You read it and tap Send; nothing goes out on its own. When a fix ships, you get an “it's fixed” reply to send." },
   connected: (name: string) => `${name} is connected`,
   connect: (name: string) => `Connect ${name}`,
   open: (name: string) => `Open ${name}`,
