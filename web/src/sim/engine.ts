@@ -54,6 +54,7 @@ interface Scenario {
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
+  onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -121,6 +122,7 @@ export const SCENARIOS = {
   // Onboarding from docs/PRODUCT.md: Spark reads the repo, but nothing builds until you plug in a subscription.
   "first-run": {
     unplugged: true,
+    onboard: true,
     ores: [
       {
         at: 2,
@@ -128,7 +130,7 @@ export const SCENARIOS = {
         kind: "bug",
         district: "web",
         ask: "Send it to your new assembler with Spark's plan: await the payment intent before enabling the button.",
-        spark: [{ tool: "triage", text: "Read the repo: web and server carry the risk, 1 open bug worth fixing first", reason: "repo scan" }],
+        spark: [{ tool: "triage", text: "Triaged as a bug in web: the one worth fixing first", reason: "it blocks checkout on Safari" }],
       },
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
     ],
@@ -163,12 +165,15 @@ function initialState(sc: Scenario): FactoryState {
   const chain = ["ore-issues", "splitter-1", "assembler-1", "inspector-1", "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
   const districts = sc.districts ?? REPO_DISTRICTS;
+  // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
+  // and the starter factory is built only when the player says yes.
+  const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
   return {
     repo: sc.districts ? "sim/demo-shop" : "sim/shiptorio",
     baseBranch: "main",
-    districts,
-    machines,
-    belts,
+    districts: sc.onboard ? [] : districts,
+    machines: starter,
+    belts: sc.onboard ? [] : belts,
     items: [],
     power,
     science: { red: 0, green: 0, grey: 0, blue: 0 },
@@ -180,7 +185,7 @@ function initialState(sc: Scenario): FactoryState {
     autonomy: {
       level: "advisor",
       districts: districts.map((d) => ({ district: d.name, score: d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: false })),
-      next: { level: "floor", have: 8, need: 10, label: "Spark moves approved as-is" },
+      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "Spark moves approved as-is" },
       ranAlone: 0,
     },
     foreman: { thinking: false },
@@ -195,10 +200,15 @@ const STAGE_OF: Partial<Record<Item["state"], Stage>> = { ore: "intake", queued:
 
 const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + m.rockets - 25 * m.escapedDefects;
 
-export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener): Source {
+export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
+  if (repo) s.repo = repo;
+  // Ore ticks count from here. Onboarding holds the ore until the starter factory stands.
+  let clock0 = sc.onboard ? Infinity : 0;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
   const since = new Map<string, number>(); // item id -> tick it entered its state
   const fails = new Map<string, string | undefined>(); // item id -> scripted inspector failure
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
@@ -243,6 +253,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       if (r.kind === "belt") s.belts = s.belts.filter((x) => x.id !== r.id);
       if (r.kind === "item") s.items = s.items.filter((x) => x.id !== r.id);
     }
+    if (p.districts) s.districts = p.districts;
     if (p.science) s.science = p.science;
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.metrics) s.metrics = p.metrics;
@@ -437,7 +448,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     s.tick++;
     const now = Date.now();
 
-    while (script.length && script[0].at <= s.tick) arrive(script.shift()!, now);
+    while (script.length && script[0].at + clock0 <= s.tick) arrive(script.shift()!, now);
 
     for (const item of [...s.items]) {
       const age = s.tick - (since.get(item.id) ?? s.tick);
@@ -557,9 +568,64 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     );
   };
 
+  // ---------- onboarding: scan the repo, then propose the starter factory ----------
+
+  const SCAN_MS = 650;
+  const scan = () => {
+    const ds = sc.districts ?? REPO_DISTRICTS;
+    const files = ds.reduce((n, d) => n + d.files, 0);
+    spark({ tool: "read_repo", text: `Opening ${s.repo}: reading the tree, issues and CI`, reason: "you picked this repo" }, { target: "steam-spark" });
+    ds.forEach((d, n) =>
+      later(SCAN_MS * (n + 1), () => {
+        apply({ districts: ds.slice(0, n + 1) });
+        log("info", `District ${d.name === "/" ? "/ (root)" : `/${d.name}`}: ${d.files} files`);
+      }),
+    );
+    const t = SCAN_MS * (ds.length + 1);
+    later(t, () => spark({ tool: "list_issues", text: `${sc.ores.length} open issues become ore at the deposit`, reason: "GitHub issues" }, { target: "ore-issues" }));
+    later(t + SCAN_MS, () => spark({ tool: "read_ci", text: "Found GitHub Actions: that's your first inspector", reason: ".github/workflows" }));
+    later(t + SCAN_MS * 2, () => {
+      log("success", `Repo read: ${ds.length} districts, ${files} files, ${sc.ores.length} open issues. ${ds[0].name} carries the most risk`);
+      proposeStarter();
+    });
+  };
+
+  // The splitter → assembler → inspector → launch pad line from initialState, minus what's already down.
+  const proposeStarter = () => {
+    const full = initialState({ ...sc, onboard: false });
+    const first = sc.ores.find((o) => o.ask) ?? sc.ores[0];
+    propose(
+      {
+        title: "Build your starter factory?",
+        why: `A splitter, one assembler, an inspector and a launch pad, with belts. First job: "${first.title}".`,
+        stage: "build",
+        options: [
+          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "smallest line that can ship a PR" }] },
+          { id: "later", label: "Not yet", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt !== "build") {
+          spark({ tool: "post_log", text: "No rush. Say the word and I'll lay it down." });
+          return later(TICK_MS * 6, proposeStarter);
+        }
+        approvedAsIs();
+        const add = full.machines.filter((m) => !s.machines.some((x) => x.id === m.id));
+        add.forEach((m, n) => later(300 * n, () => apply({ machines: [m] })));
+        later(300 * add.length, () => {
+          apply({ belts: full.belts });
+          spark({ tool: "place_machine", text: "Starter factory down. The assembler is dark: it needs power", reason: "you said build" }, { target: "assembler-1", approvedBy: "player" });
+          clock0 = s.tick;
+          later(TICK_MS, askForPower);
+        });
+      },
+    );
+  };
+
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
-  if (sc.unplugged) setTimeout(askForPower, TICK_MS * 1.5);
+  if (sc.onboard) later(TICK_MS, scan);
+  else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, TICK_MS);
 
   return {
@@ -609,6 +675,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     },
     close() {
       clearInterval(timer);
+      timers.forEach(clearTimeout);
       onStatus("offline");
     },
   };
