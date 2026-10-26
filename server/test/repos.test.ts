@@ -14,7 +14,7 @@ const cookie = async (login: string, preview = true) => [
 test("installed repo cards keep legacy fields, expose their full name, and omit unknown issue counts", async () => {
   const rows = [{ full_name: "r3dbars/shiptorio", installation_id: 123, default_branch: "main" }, { full_name: "r3dbars/other", installation_id: 123, default_branch: null }];
   let reads = 0;
-  const env = { APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars", DB: { prepare(sql: string) { expect(sql).toBe("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name"); return { all: async () => { reads++; return { results: rows }; } }; } } };
+  const env = { APP_PASSWORD: password, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars", DB: { prepare(sql: string) { if (sql.includes("github_authorization_revocations")) return { bind: () => ({ first: async () => null }) }; expect(sql).toBe("SELECT full_name, installation_id, default_branch FROM repos WHERE archived_at IS NULL ORDER BY full_name"); return { all: async () => { reads++; return { results: rows }; } }; } } };
   const response = await app.fetch(new Request("https://shiptorio.com/api/repos", { headers: { cookie: await cookie("r3dbars") } }), env as never);
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ repos: [

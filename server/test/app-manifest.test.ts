@@ -5,7 +5,7 @@ it("registers the mine with separate read access for check runs and legacy commi
   const manifest = appManifest("https://shiptorio.com");
   expect(manifest.public).toBe(false);
   expect(manifest.default_permissions).toEqual({ contents: "write", pull_requests: "write", issues: "write", checks: "read", statuses: "read", metadata: "read" });
-  expect(manifest.default_events).toEqual(["issues", "issue_comment", "pull_request", "pull_request_review", "check_suite", "check_run", "push"]);
+  expect(manifest.default_events).toEqual(["issues", "issue_comment", "pull_request", "pull_request_review", "check_suite", "check_run", "push", "repository", "github_app_authorization"]);
   expect(manifest.hook_attributes.url).toBe("https://shiptorio.com/webhooks/github");
   expect(manifest.redirect_url).toBe("https://shiptorio.com/setup/callback");
   expect(manifest.callback_urls).toEqual(["https://shiptorio.com/auth/callback"]);

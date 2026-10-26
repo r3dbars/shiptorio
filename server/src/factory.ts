@@ -1,6 +1,9 @@
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
+import { authorizationRevoked } from "./session";
+import { handleLifecycle, lifecycleEvents, RETENTION_MS } from "./github-lifecycle";
+import { purgeInstallationTokens } from "./github";
 import { DurableObject } from "cloudflare:workers";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import {
@@ -346,6 +349,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async pairRunner(): Promise<string> {
+    if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const pairId = crypto.randomUUID();
     await this.ctx.storage.put("runnerPair", pairId); // Re-pairing revokes the previous token.
     return pairId;
@@ -360,6 +364,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }): Promise<RunnerJob> {
+    if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     return this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
@@ -447,6 +452,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async claimRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
+    if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
       await this.load();
@@ -483,6 +489,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async finishRunner(pairId: string, receipt: RunnerReceipt) {
+    if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
     await this.load();
     const job = await this.ctx.storage.get<RunnerJob>(`runnerJob:${receipt.jobId}`);
@@ -533,12 +540,15 @@ export class Factory extends DurableObject<FactoryEnv> {
   /** Acknowledge only after durable enqueue. No API calls, backfill or model work here. */
   async enqueueGitHub(deliveryId: string, event: string, payload: GitHubPayload): Promise<void> {
     const key = `delivery:${deliveryId}`;
+    if (await this.ctx.storage.get("migratedTo")) throw new Error("Legacy factory migrated");
+    if (!lifecycleEvents.includes(event) && await this.githubStopped()) return;
     if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { event, payload, attempts: 0 });
     await this.scheduleTick();
   }
 
   /** Same durable queue as GitHub, for the Sentry mine. `resource` is the Sentry-Hook-Resource header. */
   async enqueueSentry(deliveryId: string, resource: string, payload: SentryPayload): Promise<void> {
+    if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const key = `delivery:sentry-${deliveryId}`;
     if (!(await this.ctx.storage.get(key))) await this.ctx.storage.put(key, { source: "sentry", deliveryId, event: resource, payload, attempts: 0 });
     await this.scheduleTick();
@@ -568,28 +578,8 @@ export class Factory extends DurableObject<FactoryEnv> {
   private async handleGitHub(event: string, p: GitHubPayload): Promise<void> {
     const installationId = p.installation?.id;
     const repo = p.repository?.full_name;
-    if (event === "installation" || event === "installation_repositories") {
-      if (!installationId) return;
-      const removed = p.action === "deleted" ? await this.env.DB.prepare("SELECT full_name FROM repos WHERE installation_id = ?").bind(installationId).all<{ full_name: string }>() : { results: p.repositories_removed ?? [] };
-      if (p.action === "deleted") {
-        await this.env.DB.batch([this.env.DB.prepare("DELETE FROM repos WHERE installation_id = ?").bind(installationId), this.env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(installationId)]);
-      } else {
-        const added = p.repositories ?? p.repositories_added ?? [];
-        await this.env.DB.batch([
-          this.env.DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (?, ?)").bind(installationId, p.installation?.account?.login ?? ""),
-          ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES (?, ?)").bind(r.full_name.toLowerCase(), installationId)),
-        ]);
-        for (const r of added) {
-          const factory = this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase()));
-          await factory.enqueueGitHub(`install-${installationId}-${r.full_name}-${p.action}`, "shiptorio_install", { repository: { full_name: r.full_name }, installation: p.installation });
-        }
-      }
-      for (const r of removed.results) {
-        await this.env.DB.prepare("DELETE FROM repos WHERE full_name = ?").bind(r.full_name.toLowerCase()).run();
-        await this.env.FACTORY.get(this.env.FACTORY.idFromName(r.full_name.toLowerCase())).disconnectGitHub();
-      }
-      return;
-    }
+    if (lifecycleEvents.includes(event)) { await handleLifecycle(this.env, event, p); return; }
+    if (await this.githubStopped()) return;
     if (!repo || !installationId) return;
     if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
       if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
@@ -618,6 +608,83 @@ export class Factory extends DurableObject<FactoryEnv> {
     const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string; name?: string; html_url?: string; app?: { name?: string } } | undefined;
     if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check?.head_sha && ["failure", "timed_out", "startup_failure"].includes(check.conclusion ?? "")) await this.orbitDeploy(check.head_sha, check.name ?? check.app?.name ?? "CI", check.html_url);
     if (["check_run", "check_suite"].includes(event) && ["completed", "queued", "in_progress", "requested", "rerequested"].includes(p.action ?? "") && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
+  }
+
+  private async githubStopped(): Promise<boolean> {
+    return !!(await this.ctx.storage.get("githubLifecycle")) || !!(await this.ctx.storage.get("migratedTo"));
+  }
+
+  /** Migration snapshots include jobs, dedupe keys, permits, decisions and pending deliveries. */
+  async exportLegacy(target: string): Promise<[string, unknown][]> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      await this.ctx.storage.put("migratedTo", target);
+      await this.ctx.storage.deleteAlarm();
+      for (const ws of this.ctx.getWebSockets("web")) ws.close(1012, "Repository identity upgraded; reconnect");
+      return [...await this.ctx.storage.list()].filter(([key]) => key !== "migratedTo");
+    });
+  }
+
+  async finishLegacy(): Promise<void> {
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const target = await this.ctx.storage.get<string>("migratedTo");
+      if (!target) return;
+      await this.ctx.storage.deleteAll();
+      await this.ctx.storage.put("migratedTo", target);
+      this.state = null; this.meta = null; this.openMoves = null; this.deckBook = null; this.deckRules = null;
+    });
+  }
+
+  async importLegacy(entries: [string, unknown][]): Promise<void> {
+    await this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.ctx.storage.get("legacyImported")) return;
+      if (!(await this.ctx.storage.get("state"))) {
+        for (const [key, value] of entries) await this.ctx.storage.put(key, value);
+      }
+      await this.ctx.storage.put("legacyImported", true);
+      this.state = null; this.meta = null;
+      const lifecycle = await this.ctx.storage.get<{ deleteAt?: number }>("githubLifecycle");
+      if (lifecycle?.deleteAt) await this.ctx.storage.setAlarm(lifecycle.deleteAt);
+      else if (!lifecycle) await this.scheduleTick();
+    });
+  }
+
+  async archiveGitHub(reason: string, at: number, repo?: string, installationId?: number): Promise<void> {
+    if (repo && installationId && !(await this.ctx.storage.get("meta"))) await this.ctx.storage.put("meta", { repo, installationId });
+    await this.pauseGitHub(reason, at + RETENTION_MS);
+  }
+
+  async pauseGitHub(reason: string, deleteAt?: number): Promise<void> {
+    await this.ctx.storage.put("githubLifecycle", { reason, ...(deleteAt ? { deleteAt } : {}) });
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.delete("runnerPair");
+    if (await this.load()) {
+      if (this.meta) purgeInstallationTokens(this.meta.installationId);
+      await this.patch({ sources: [{ ...githubStatus(this.env), state: "needs_action", detail: `${reason}. ${deleteAt ? "Factory archived; reconnect within 30 days to restore it." : "Factory paused until access is restored."}` }] });
+    }
+    if (deleteAt) await this.ctx.storage.setAlarm(deleteAt); // retention only; production ticks stop
+    for (const ws of this.ctx.getWebSockets("web")) ws.close(1008, "GitHub access changed");
+  }
+
+  async restoreGitHub(repo: string, installationId: number): Promise<void> {
+    await this.load();
+    // Metadata can be restored without network I/O; initialization/backfill stays in the queue.
+    this.meta = { repo, installationId };
+    await this.ctx.storage.put("meta", this.meta);
+    if (this.state) {
+      this.state.repo = repo;
+      for (const item of this.state.items) if (item.ore?.fingerprint.startsWith("github:")) item.ore.fingerprint = `github:${repo}#${item.id.replace(/^gh-/, "")}`;
+      await this.save();
+    }
+    await this.ctx.storage.delete("githubLifecycle");
+    await this.ctx.storage.delete("githubDisabled");
+    await this.ctx.storage.deleteAlarm();
+    await this.scheduleTick();
+  }
+
+  async setGitHubPermissions(source: SourceStatus): Promise<void> {
+    if (source.state === "needs_action") await this.pauseGitHub(source.detail);
+    if (await this.load()) await this.patch({ sources: [...(this.state!.sources ?? []).filter(s => s.kind !== "github"), source] });
+    await this.ctx.storage.put("githubPermissions", source);
   }
 
   async disconnectGitHub(): Promise<void> {
@@ -680,6 +747,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** connect_source for a mine: plug it in if its credentials exist, otherwise answer with setup steps. */
   async connectMine(kind: MineKind): Promise<SourceStatus | null> {
+    if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     if (!(await this.load())) return null;
     const status = await this.mineStatus(kind);
     const others = (this.state!.sources ?? []).filter((entry) => entry.kind !== kind);
@@ -886,6 +954,7 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   private async scheduleTick() {
     // Pull a far-off poll/watch alarm in, so work never waits behind it.
+    if (await this.githubStopped()) return;
     const at = await this.ctx.storage.getAlarm();
     if (at == null || at > Date.now() + TICK_MS) await this.ctx.storage.setAlarm(Date.now() + TICK_MS);
   }
@@ -903,8 +972,9 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   async ensure(repo: string, installationId: number): Promise<void> {
+    if (await this.githubStopped()) return;
     if (await this.load()) {
-      if (this.meta?.installationId !== installationId) {
+      if (this.meta?.installationId !== installationId || this.meta?.repo !== repo) {
         this.meta = { repo, installationId };
         await this.ctx.storage.put("meta", this.meta);
       }
@@ -1478,7 +1548,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
     const state = await this.load();
-    if (state) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+    if (state && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
@@ -1486,10 +1556,12 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    if (await this.githubStopped()) { ws.close(1008, "GitHub access changed"); return; }
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
+    if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     let value: unknown;
@@ -1631,9 +1703,26 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
+    if (await this.ctx.storage.get("migratedTo")) { await this.ctx.storage.deleteAlarm(); return; }
+    const lifecycle = await this.ctx.storage.get<{ deleteAt?: number }>("githubLifecycle");
+    if (lifecycle) {
+      await this.ctx.storage.deleteAlarm();
+      if (lifecycle.deleteAt && lifecycle.deleteAt <= Date.now()) {
+        const meta = await this.ctx.storage.get<Meta>("meta");
+        if (meta) await this.env.DB.batch([
+          this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(meta.repo),
+          this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(meta.repo),
+          this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo),
+        ]);
+        await this.ctx.storage.deleteAll();
+        this.state = null; this.meta = null; this.openMoves = null; this.deckBook = null; this.deckRules = null;
+      } else if (lifecycle.deleteAt) await this.ctx.storage.setAlarm(lifecycle.deleteAt);
+      return;
+    }
     this.batchingDecisions = true;
     try {
     await this.processDeliveries();
+    if (await this.githubStopped()) return;
     if (!(await this.load())) return;
     await this.pollPostHog();
     await this.retryReviewComments().catch(() => null); // each failure already logs itself

@@ -74,22 +74,47 @@ export async function verifyWebhookSignature(secret: string, body: string, heade
 export interface AppCredentials {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
+  DB?: D1Database;
 }
 
+export class GitHubError extends Error {
+  constructor(public status: number, path: string, method: string) { super(`GitHub ${method} ${path} failed (${status})`); }
+}
+interface TokenEntry { token: string; expiresAt: number; installationId: number; version: number; env: AppCredentials; scope?: InstallationTokenScope }
+const tokenCache = new Map<string, TokenEntry>();
+const tokenOwners = new Map<string, TokenEntry>();
+const pendingTokens = new Map<string, Promise<string>>();
+const tokenKey = (env: AppCredentials, id: number, scope?: InstallationTokenScope) => JSON.stringify([env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, id, scope]);
+export function purgeInstallationTokens(id: number) {
+  for (const [key, value] of tokenCache) if (value.installationId === id) tokenCache.delete(key);
+  // Keep ownership until expiry so outstanding callers can refresh or fail closed.
+}
+async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
+  if (!env.DB) return 0;
+  const row = await env.DB.prepare("SELECT token_version, status FROM installations WHERE id = ?").bind(id).first<{ token_version: number; status: string }>();
+  if (row && row.status !== "active") throw new Error("GitHub installation is suspended or deleted");
+  return row?.token_version ?? 0;
+}
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(API + path, {
-    signal: AbortSignal.timeout(20000),
-    ...init,
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "user-agent": UA,
-      "x-github-api-version": "2022-11-28",
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-    },
+  const owner = tokenOwners.get(token);
+  if (owner) {
+    const version = await tokenVersion(owner.env, owner.installationId);
+    if (version !== owner.version || owner.expiresAt <= Date.now() + 60000) token = await installationToken(owner.env, owner.installationId, owner.scope);
+  }
+  const request = (credential: string) => fetch(API + path, {
+    signal: AbortSignal.timeout(20000), ...init,
+    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${credential}`, "user-agent": UA,
+      "x-github-api-version": "2022-11-28", ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers },
   });
-  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
+  let res = await request(token);
+  if (owner && [401, 403].includes(res.status)) {
+    await res.body?.cancel();
+    purgeInstallationTokens(owner.installationId);
+    token = await installationToken(owner.env, owner.installationId, owner.scope);
+    res = await request(token); // exactly one retry, including permission/rate-limit failures
+  }
+  if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -99,12 +124,26 @@ interface InstallationTokenScope {
 }
 
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {
-  const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-  const res = await gh<{ token: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
-    method: "POST",
-    ...(scope ? { body: JSON.stringify(scope) } : {}),
-  });
-  return res.token;
+  const key = tokenKey(env, installationId, scope);
+  const version = await tokenVersion(env, installationId);
+  const cached = tokenCache.get(key);
+  if (cached && cached.version === version && cached.expiresAt > Date.now() + 60000) return cached.token;
+  const pendingKey = key + version;
+  if (pendingTokens.has(pendingKey)) return pendingTokens.get(pendingKey)!;
+  const pending = (async () => {
+    const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+    const res = await gh<{ token: string; expires_at?: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
+      method: "POST", ...(scope ? { body: JSON.stringify(scope) } : {}),
+    });
+    if (await tokenVersion(env, installationId) !== version) throw new Error("GitHub installation changed while issuing token");
+    const entry = { token: res.token, expiresAt: Date.parse(res.expires_at ?? "") || Date.now(), installationId, version, env, scope };
+    tokenCache.set(key, entry);
+    for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
+    tokenOwners.set(res.token, entry);
+    return res.token;
+  })();
+  pendingTokens.set(pendingKey, pending);
+  try { return await pending; } finally { pendingTokens.delete(pendingKey); }
 }
 
 // Publishing credentials stay inside one repository and cannot create PRs.
@@ -172,7 +211,8 @@ export async function fileContent(token: string, fullName: string, path: string,
     if (f.encoding !== "base64" || f.content == null) return null;
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
-  } catch {
+  } catch (error) {
+    if (error instanceof GitHubError && [401, 403].includes(error.status)) throw error;
     return null;
   }
 }
@@ -181,7 +221,8 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
   try {
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
-  } catch {
+  } catch (error) {
+    if (error instanceof GitHubError && [401, 403].includes(error.status)) throw error;
     return null;
   }
 }

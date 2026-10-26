@@ -1,7 +1,7 @@
-import { isAllowed, readSessionDetails } from "./session";
+import { authorizationRevoked, isAllowed, readSessionDetails } from "./session";
 
-export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string }
+export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database }
+export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; issuedAt?: number }
 
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
@@ -14,6 +14,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
   const cookie = request.headers.get("cookie");
   const session = await readSessionDetails(env.SESSION_SECRET, cookie, now);
   if (!session || !isAllowed(env.ALLOWED_LOGINS ?? "", session.login)) return null;
+  if (await authorizationRevoked(env.DB, session.login, session.issuedAt)) return null;
   const url = new URL(request.url);
   const local = !!env.DEV_LOGIN && ["localhost", "127.0.0.1"].includes(url.hostname);
   let expiresAt = session.expiresAt;
@@ -24,7 +25,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
     if (!preview) return null;
     expiresAt = Math.min(expiresAt, preview.expiresAt);
   }
-  return { login: session.login, expiresAt, epoch: await browserSocketEpoch(env) };
+  return { login: session.login, expiresAt, issuedAt: session.issuedAt, epoch: await browserSocketEpoch(env) };
 }
 
 export function browserSocketAllowed(auth: unknown, env: BrowserSocketEnv, epoch: string | null, now = Date.now()): auth is BrowserSocketAuth {

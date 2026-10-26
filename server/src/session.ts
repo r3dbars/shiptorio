@@ -19,7 +19,7 @@ export async function makeSessionCookie(secret: string, login: string, now = Dat
   return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`;
 }
 
-export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number } | null> {
+export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number; issuedAt: number } | null> {
   if (!secret) return null;
   const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!match) return null;
@@ -27,7 +27,7 @@ export async function readSessionDetails(secret: string, cookieHeader: string | 
   if (extra || !payload || !sig || (await hmac(secret, payload)) !== sig) return null;
   try {
     const { login, exp } = JSON.parse(atob(payload));
-    return typeof login === "string" && Number.isFinite(exp) && exp > now / 1000 ? { login, expiresAt: exp * 1000 } : null;
+    return typeof login === "string" && Number.isFinite(exp) && exp > now / 1000 ? { login, expiresAt: exp * 1000, issuedAt: (exp - MAX_AGE) * 1000 } : null;
   } catch {
     return null;
   }
@@ -43,4 +43,11 @@ export function isAllowed(allowedLogins: string, login: string): boolean {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
     .includes(login.toLowerCase());
+}
+
+/** Revocation invalidates all cookies issued before the webhook, including legacy cookies. */
+export async function authorizationRevoked(db: D1Database | undefined, login: string, issuedAt: number): Promise<boolean> {
+  if (!db) return false;
+  const row = await db.prepare("SELECT revoked_at FROM github_authorization_revocations WHERE login = ?").bind(login.toLowerCase()).first<{ revoked_at: number }>();
+  return !!row && issuedAt <= row.revoked_at;
 }
