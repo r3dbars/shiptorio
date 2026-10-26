@@ -25,7 +25,7 @@ test("a player's repo cards list only the repos their GitHub account reaches, wi
 });
 
 test("preview access alone, disallowed logins, pre-accounts cookies, signed-out sessions and missing preview access cannot list repos", async () => {
-  const env = baseEnv();
+  const env = {...baseEnv(),SIGNUP_GATE_MODE:"password"};
   const legacy = (await makeSessionCookie(secret, "r3dbars")).split(";")[0];
   const outsider = await signedInCookie({ ...env, ALLOWED_LOGINS: "*" }, "someone-else", ["r3dbars/shiptorio"]);
   const revoked = await signedInCookie(env, "r3dbars", ["r3dbars/shiptorio"]);

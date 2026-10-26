@@ -26,6 +26,7 @@ export async function hash(value: string) {
 // Atomic D1 counter: shared across isolates, bounded by time window, no KV races.
 export async function admit(env: Env, scope: string, cap: number, windowMs: number, reason: string, now = Date.now()): Promise<boolean> {
   const bucket = Math.floor(now/windowMs);
+  if (Math.random() < 0.01) await env.DB.prepare('DELETE FROM signup_counters WHERE rowid IN (SELECT rowid FROM signup_counters WHERE expires_at < ? LIMIT 100)').bind(now).run();
   const result = await env.DB.prepare(`INSERT INTO signup_counters(scope,bucket,count,expires_at) SELECT ?,?,1,? WHERE ? > 0
     ON CONFLICT(scope,bucket) DO UPDATE SET count=count+1 WHERE count < ? RETURNING count`)
     .bind(scope,bucket,(bucket+2)*windowMs,cap,cap).first();
@@ -54,10 +55,11 @@ export function signupPage(env: Env, message = '', status = 200): Response {
 export async function signupGate(request: Request, env: Env): Promise<Response | null> {
   const path = new URL(request.url).pathname;
   if (env.DEV_LOGIN && isLocal(new URL(request.url))) return null;
+  if (path === '/admin' || path.startsWith('/admin/')) return null;
   if (['/waitlist','/auth/login','/auth/callback','/auth/logout','/webhooks/github','/webhooks/sentry'].includes(path) || path.startsWith('/webhooks/sentry/')) return null;
   const login = (await currentUser(env,request.headers.get('cookie'),new URL(request.url),Date.now(),true))?.login || null;
   if (login && await signupAllowed(env,login)) return null;
-  if (path.startsWith('/api/') || request.headers.get('upgrade')) return Response.json({error:login ? 'approval pending' : 'login required'},{status:403});
+  if (path.startsWith('/api/') || request.headers.get('upgrade')) return Response.json({error:login ? 'approval pending' : 'login required'},{status:login ? 403 : 401});
   return signupPage(env,login ? 'Your request is pending approval. Come back after Justin approves your GitHub account.' : '');
 }
 export async function redeemInvite(env: Env, code: string, login: string): Promise<boolean> {

@@ -1,8 +1,9 @@
+import { runQuota } from './signup';
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
 // talks to browsers over websockets, and drives Spark jobs that open real PRs.
 
 import { DurableObject } from "cloudflare:workers";
-import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -359,7 +360,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     return [...jobs.values()].map(({ lease, ...job }) => job);
   }
 
-  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }): Promise<RunnerJob> {
+  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     return this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
@@ -374,6 +375,10 @@ export class Factory extends DurableObject<FactoryEnv> {
         old.status = "failed";
       }
       if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("Finish the active runner job first");
+      if (this.env.SIGNUP_GATE_MODE !== 'password') {
+        const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
+      }
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
@@ -818,7 +823,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     for (const ws of this.ctx.getWebSockets("web")) {
       try {
         if (!browserSocketAllowed(ws.deserializeAttachment(), this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); continue; }
-        ws.send(text);
+        if (this.env.DB && (ws.deserializeAttachment() as {sessionHash?:string})?.sessionHash) {
+          this.ctx.waitUntil(browserSocketActive(ws.deserializeAttachment(),this.env).then(active=> { if (active) ws.send(text); else ws.close(1008,'Access revoked'); }).catch(()=>ws.close(1008,'Access unavailable')));
+        } else ws.send(text);
       } catch {
         // Legacy/unattached sockets reconnect through the authenticated upgrade.
         try { ws.close(1008, "Sign in again"); } catch { /* Already gone. */ }
@@ -1514,6 +1521,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
+    if (!await browserSocketActive(auth,this.env)) { ws.close(1008,'Access revoked'); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     let value: unknown;
@@ -1711,6 +1719,10 @@ export class Factory extends DurableObject<FactoryEnv> {
       this.running.add(item.id);
       // Bounded hosted jobs execute in an alarm, not an HTTP request or a 30-second waitUntil.
       // One job per alarm keeps total work under the alarm's 15-minute limit.
+      if (this.env.SIGNUP_GATE_MODE !== 'password') {
+        const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
+        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
+      }
       await this.runSparkJob(item.id, m.id);
       break;
     }

@@ -13,7 +13,7 @@ test("saving either source returns the signed-in player to the actual live repo"
   const cookie = [await signedInCookie({ DB, SESSION_SECRET: secret, ALLOWED_LOGINS: "r3dbars" }, "r3dbars", ["example/shop"]), (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
   for (const kind of ["sentry", "posthog"] as const) {
     const writes: string[] = [], connections: string[] = [];
-    const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "r3dbars", CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ connectMine: async (mine: string) => { connections.push(`${repo}:${mine}`); } }) } };
+    const env = { DB, SESSION_SECRET: secret, SIGNUP_GATE_MODE: "password", APP_PASSWORD: password, ALLOWED_LOGINS: "r3dbars", CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ connectMine: async (mine: string) => { connections.push(`${repo}:${mine}`); } }) } };
     const form: Record<string, string> = kind === "sentry" ? { clientSecret: "sample_test_secret_only" } : { apiKey: "phx_sample_test_key_only", projectId: "123" };
     const response = await app.fetch(new Request(`https://shiptorio.com/connect/${kind}?repo=Example%2FShop`, { method: "POST", headers: { cookie, origin: "https://shiptorio.com" }, body: new URLSearchParams(form) }), env as never);
     expect(response.status).toBe(200);
@@ -28,7 +28,7 @@ test("a player can't set keys for a repo they can't reach", async () => {
   const secret = "connect-session", password = "connect-preview", DB = testD1();
   const cookie = [await signedInCookie({ DB, SESSION_SECRET: secret, ALLOWED_LOGINS: "*" }, "stranger", ["stranger/app"]), (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
   const writes: string[] = [];
-  const env = { DB, SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "*", CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } } };
+  const env = { DB, SESSION_SECRET: secret, SIGNUP_GATE_MODE: "password", APP_PASSWORD: password, ALLOWED_LOGINS: "stranger", CACHE: { get: async () => null, put: async (key: string) => { writes.push(key); } } };
   const response = await app.fetch(new Request("https://shiptorio.com/connect/sentry?repo=example/shop", { method: "POST", headers: { cookie, origin: "https://shiptorio.com" }, body: new URLSearchParams({ clientSecret: "sample_test_secret_only" }) }), env as never);
   expect(response.status).toBe(403);
   expect(writes).toEqual([]);
