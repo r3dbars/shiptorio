@@ -45,6 +45,7 @@ survive user expiry, allowlist removal or processed repo uninstall.
 | --- | --- |
 | `GET /api/repos` | Signed-in user; results filtered by installation and per-repo permission |
 | `/api/repos/:owner/:repo/*` | Shared authorization middleware before any DO RPC, including jobs, runner pairing, factory websocket and future repo endpoints |
+| `GET /api/repos/:owner/:repo/export` | Common repo authorization plus repository-owner check; export excludes runner leases/pairing credentials |
 | Factory websocket upgrade | Worker check plus independent DO session/preview/Origin/repo/membership check |
 | Factory websocket moves/broadcasts | Authenticated repo attachment and current membership; foreign repo messages close the socket |
 | `POST /api/runner/:owner/:repo/{claim,finish,renew}` | Signed repo capability, pairing user's access and session expiry; no preview-cookie bypass for other paths |

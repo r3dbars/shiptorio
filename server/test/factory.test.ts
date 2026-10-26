@@ -51,6 +51,7 @@ describe("Factory lifecycle", () => {
   it("rejects invalid or unauthorized goal messages without saving or broadcasting", async () => {
     const f = fixture();
     f.data.set("state", { ...f.saved(), goal: "Keep the existing goal" });
+    await (f.factory as unknown as { load(): Promise<FactoryState | null> }).load();
     const before = structuredClone(f.saved());
     for (const raw of [
       "not JSON",

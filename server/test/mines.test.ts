@@ -113,6 +113,7 @@ function factoryFixture(env: Record<string, unknown>) {
   let alarm: number | null = null;
   const events: { type: string; text?: string }[] = [];
   const storage = {
+    async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); },
     async get(key: string) { return structuredClone(data.get(key)); },
     async put(key: string, value: unknown) { data.set(key, structuredClone(value)); },
     async delete(key: string) { return data.delete(key); },

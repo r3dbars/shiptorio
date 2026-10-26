@@ -112,7 +112,7 @@ it('Factory independently rejects another repo upgrade, forged move, revoked mem
   const f = fixture();
   const state = FactoryState.parse({ repo: 'alice/private', baseBranch: 'main', districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 11 }]]);
-  const storage = { get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
+  const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
   let closed = 0, sent = 0;
   const auth = { user: { id: 22, sessionHash: createHash('sha256').update('bob').digest('hex'), login: 'bob', expiresAt: Date.now() + 60000 }, login: 'bob', expiresAt: Date.now() + 60000, epoch: await browserSocketEpoch(f.env), repo: 'bob/private' };
   const ws = { deserializeAttachment: () => auth, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
@@ -159,7 +159,7 @@ it('real account logout immediately revokes existing sockets and runner grants e
   expect(await repoAccess(env as never, user!, 'alice/private')).toBe(1);
   const state = FactoryState.parse({ repo: 'alice/private', baseBranch: 'main', districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
   const data = new Map<string, unknown>([['state', state], ['meta', { repo: state.repo, installationId: 1 }]]);
-  const storage = { get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
+  const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); } };
   let closed = 0, sent = 0;
   const attachment = { user: user!, login: 'alice', expiresAt: user!.expiresAt, epoch: await browserSocketEpoch(env), repo: state.repo };
   const ws = { deserializeAttachment: () => attachment, close: () => { closed++; }, send: () => { sent++; } } as unknown as WebSocket;
