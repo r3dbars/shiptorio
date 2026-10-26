@@ -50,8 +50,8 @@ for (const [name, q, open] of SCREENS) {
   }
   await page.screenshot({ path: join(out, `${name}.png`) });
   // Contrast can't be judged over a WebGL canvas, so axe sees the HUD over the map's darkest backdrop (the void).
-  // Fades are finished first: a caption halfway out isn't text anyone has to read.
-  await page.addStyleTag({ content: "canvas.map{visibility:hidden} html,body,#root,.app,.floor{background:#1b2448 !important} *{backdrop-filter:none !important; transition:none !important}" });
+  // Fades are finished first: a toast or caption halfway in or out isn't text anyone has to read.
+  await page.addStyleTag({ content: "canvas.map{visibility:hidden} html,body,#root,.app,.floor{background:#1b2448 !important} *{backdrop-filter:none !important; transition:none !important; animation:none !important}" });
   await page.waitForTimeout(100);
   await page.addScriptTag({ content: axe });
   const res = await page.evaluate(() => window.axe.run(document, { resultTypes: ["violations"] }));
