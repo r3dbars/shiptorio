@@ -1,0 +1,9 @@
+{
+  "name": "shiptorio-durability-local-drill",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": { "bindings": [{ "name": "FACTORY", "class_name": "Factory" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Factory"] }],
+  "d1_databases": [{ "binding": "DB", "database_name": "shiptorio", "database_id": "153f63dc-f65f-4c02-a0b1-6c78b7d6aa08", "migrations_dir": "../../../migrations" }],
+  "vars": { "DEV_LOGIN": "owner", "SESSION_SECRET": "local-drill-not-a-secret", "ALLOWED_LOGINS": "owner", "SPARK_MODEL": "muse-spark-1.3" }
+}
