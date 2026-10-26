@@ -31,3 +31,42 @@ describe("private preview", () => {
     expect((await previewAccess(new Request("https://shiptorio.com/"), { ...env, DEV_LOGIN: "r3dbars" }))?.status).toBe(401);
   });
 });
+
+it("redirects HTTP entry before rendering or accepting the password", async () => {
+  for (const path of ["/?source=live&repo=r3dbars/shiptorio", "/access", "/api/version"]) {
+    const response = await previewAccess(new Request(`http://shiptorio.com${path}`), env);
+    expect(response?.status).toBe(308);
+    expect(response?.headers.get("location")).toBe(`https://shiptorio.com${path}`);
+    expect(response?.headers.has("set-cookie")).toBe(false);
+  }
+});
+
+it("checks cookie acceptance and preserves the intended factory after native form submission", async () => {
+  const next = "/?source=live&repo=r3dbars/shiptorio&checkin";
+  const gate = await previewAccess(new Request(`https://shiptorio.com${next}`), env);
+  const html = await gate!.text();
+  expect(html).toContain('method="post" action="/access"');
+  expect(html).toContain('name="next"');
+  expect(html).not.toContain("<script");
+  const response = await previewAccess(new Request("https://shiptorio.com/access", {
+    method: "POST", headers: { origin: "https://shiptorio.com" },
+    body: new URLSearchParams({ password: env.APP_PASSWORD, next }),
+  }), env);
+  const target = new URL(response!.headers.get("location")!, "https://shiptorio.com");
+  const blocked = await previewAccess(new Request(target), env);
+  expect(blocked?.status).toBe(401);
+  expect(await blocked!.text()).toContain("did not keep the sign-in cookie");
+  const accepted = await previewAccess(new Request(target, { headers: { cookie: response!.headers.get("set-cookie")!.split(";")[0] } }), env);
+  expect(accepted?.status).toBe(303);
+  expect(accepted?.headers.get("location")).toBe(next);
+});
+
+it("refuses external post-login destinations", async () => {
+  for (const next of ["//attacker.example", "/\\attacker.example", "https://attacker.example"]) {
+    const response = await previewAccess(new Request("https://shiptorio.com/access", {
+      method: "POST", headers: { origin: "https://shiptorio.com" },
+      body: new URLSearchParams({ password: env.APP_PASSWORD, next }),
+    }), env);
+    expect(new URL(response!.headers.get("location")!, "https://shiptorio.com").searchParams.get("next")).toBe("/");
+  }
+});
