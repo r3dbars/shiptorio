@@ -883,6 +883,17 @@ export class Factory extends DurableObject<FactoryEnv> {
         await this.patch({ belts: [b] });
         break;
       }
+      case "move_machine": {
+        const m = s.machines.find((x) => x.id === msg.id);
+        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
+        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
+        break;
+      }
+      case "set_harness": {
+        const m = s.machines.find((x) => x.id === msg.machineId);
+        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
+        break;
+      }
       case "set_module": {
         const m = s.machines.find((x) => x.id === msg.machineId);
         if (m) await this.patch({ machines: [{ ...m, module: msg.module }] });
