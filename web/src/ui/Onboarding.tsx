@@ -2,19 +2,27 @@
 // Then the map takes over: Spark scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { App } from "../App";
 import type { SourceConfig } from "../source";
+import { IslandBackdrop } from "./IslandBackdrop";
+
+// An older phone without WebGL must still be able to sign in.
+class IslandFallback extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? null : this.props.children; }
+}
 
 export type OnboardStep = "hello" | "intro" | "repo";
 
 interface Repo {
   fullName: string;
   blurb: string;
-  issues: number;
+  issues?: number; // omitted when the server has not fetched an actual count
 }
 
-// Sim stand-ins until the server lists the App's installed repos.
+// Only the sandbox uses sample repositories; live reads the App's installed repos.
 const SIM_REPOS: Repo[] = [
   { fullName: "you/demo-shop", blurb: "Demo shop · sample issues", issues: 3 },
 ];
@@ -55,8 +63,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
 
-  // Live: who's signed in, and which repos the App can see. No repo list on the server yet, so live falls
-  // back to typing owner/name.
+  // Live: who is signed in and which repositories the existing App installation can see.
   useEffect(() => {
     if (!live) return;
     fetch("/api/me")
@@ -83,6 +90,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
   return (
     <div className="onboard">
+      <IslandFallback><IslandBackdrop /></IslandFallback>
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
           {["WELCOME", "SIGN IN", "PICK A REPO", "BUILD"].map((s, n) => (
@@ -125,7 +133,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                     <button type="button" className="ob-repo" onClick={() => onDone(r.fullName)}>
                       <b>{r.fullName}</b>
                       <i>
-                        {r.blurb} · {r.issues} open issue{r.issues === 1 ? "" : "s"}
+                        {r.blurb}{typeof r.issues === "number" && <> · {r.issues} open issue{r.issues === 1 ? "" : "s"}</>}
                       </i>
                     </button>
                   </li>

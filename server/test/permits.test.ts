@@ -1,3 +1,4 @@
+import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -77,6 +78,8 @@ describe("permits in the Factory", () => {
     const merged: string[] = [];
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+      if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       if (url.endsWith("/access_tokens")) return Response.json({ token: "t" });
       if (url.endsWith("/files?per_page=100")) return Response.json([{ filename: "docs/SETUP.md", status: "modified", patch: "+x" }]);
       if (url.endsWith("/chat/completions")) return Response.json({ choices: [{ message: { content: '{"verdict":"rework","reason":"The steps are wrong.","findings":[]}' } }] });
@@ -99,20 +102,20 @@ describe("permits in the Factory", () => {
         async getAlarm() { return alarm; },
         async setAlarm(v: number) { alarm = v; },
       };
-      const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-      const f = new Factory(ctx as never, { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: {} } as never);
+      const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
+      const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       const saved = () => data.get("state") as FactoryState;
 
       await f.alarm(); // nothing waiting, so the permit card comes up
       const card = saved().move!;
       expect(card.kind).toBe("automate");
-      await f.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: card.id, optionId: "allow" }));
+      await f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: card.id, optionId: "allow" }));
       expect(saved().autonomy?.districts.find((d) => d.district === "docs")?.permit).toBe(true);
       expect(events.some((e) => e.type === "autonomy_unlocked" && e.district === "docs")).toBe(true);
 
       // a clean docs PR on the pad launches on its own, no card
       data.set("state", { ...saved(), items: [passed()] });
-      const g = new Factory(ctx as never, { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: {} } as never);
+      const g = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await g.alarm();
       expect(merged).toEqual(["77"]);
@@ -125,7 +128,7 @@ describe("permits in the Factory", () => {
       let review: Item = { ...passed({ id: "gh-8", prNumber: 78, lane: undefined }) };
       review = { ...review, state: "inspecting", machineId: "review-1", inspection: { ...review.inspection!, state: "pending", stages: review.inspection!.stages.map((st) => (st.gate === "ai" ? { ...st, state: "pending" as const } : st)) } };
       data.set("state", { ...saved(), items: [review], move: null });
-      const h = new Factory(ctx as never, { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: {} } as never);
+      const h = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await h.alarm();
       expect(saved().items[0].state).toBe("rejected");
@@ -134,7 +137,7 @@ describe("permits in the Factory", () => {
       expect(events.filter((e) => e.type === "autonomy_unlocked").length).toBe(2);
 
       data.set("state", { ...saved(), items: [passed({ id: "gh-9", prNumber: 79 })], move: null });
-      const k = new Factory(ctx as never, { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: {} } as never);
+      const k = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await k.alarm();
       expect(merged).toEqual(["77"]);

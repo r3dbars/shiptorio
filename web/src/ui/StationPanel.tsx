@@ -186,7 +186,7 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
         </button>
       </div>
       <div className="sp-name">
-        <span className="ptitle small">{(p.title ?? p.copy.name).toUpperCase()}</span>
+        <span className="ptitle small">{p.title ?? p.copy.name}</span>
         <span className={`sp-tag ${color}`}>{tag}</span>
         {hot && <span className="sp-tag red">bottleneck</span>}
       </div>
@@ -201,7 +201,7 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
       </dl>
       {p.now && (
         <div className="sp-sec">
-          <div className="sp-h">RIGHT NOW</div>
+          <div className="sp-h">Right now</div>
           {p.now.length ? (
             <ul className="sp-jobs">
               {p.now.slice(0, 4).map((i) => (
@@ -234,7 +234,7 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
       )}
       {recent.length > 0 && (
         <div className="sp-sec">
-          <div className="sp-h">RECENTLY</div>
+          <div className="sp-h">Recently</div>
           <ul className="sp-recent">
             {recent.map((l, n) => (
               <li key={`${l.at}-${n}`} className={l.level}>
@@ -247,9 +247,9 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
       {p.actions.length > 0 && (
         <div className="sp-actions">
           {p.actions.map((a) => (
-            <button key={a.id} type="button" className={a.recommended ? "nm-btn rec" : "nm-btn"} onClick={() => send({ type: "station_action", stationId: p.sendAs ?? id, action: a.id })}>
+            <button key={a.id} type="button" className={a.recommended ? "btn rec" : "btn"} onClick={() => send({ type: "station_action", stationId: p.sendAs ?? id, action: a.id })}>
               {a.label}
-              {a.recommended && <span className="sp-pick">SUGGESTED</span>}
+              {a.recommended && <span className="sugg">Suggested</span>}
             </button>
           ))}
         </div>

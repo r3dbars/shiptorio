@@ -133,8 +133,14 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
 app.get("/api/repos", async (c) => {
   const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
   if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
-  const repos = await c.env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name").all();
-  return c.json({ repos: repos.results });
+  const repos = await c.env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name").all<{ full_name: string; installation_id: number; default_branch: string | null }>();
+  // Preserve the legacy database fields while serving the browser's repo-card contract.
+  // Issue counts are not available from this query; omit them rather than inventing zero.
+  return c.json({ repos: repos.results.map(repo => ({
+    ...repo,
+    fullName: repo.full_name,
+    blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
+  })) });
 });
 
 // ---------- the factory (browser websocket) ----------

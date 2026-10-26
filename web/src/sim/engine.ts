@@ -5,7 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
-import { ghostSpots } from "../map/scene";
+import { ghostSpots } from "../map/ghosts";
 import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
@@ -340,6 +340,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   if (repo) s.repo = repo;
   // Ore ticks count from here. Onboarding holds the ore until the starter factory stands.
   let clock0 = sc.onboard ? Infinity : 0;
+  let closed = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
   const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
   const since = new Map<string, number>(); // item id -> tick it entered its state
@@ -361,7 +362,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let pr = 140;
   let seq = 0;
 
-  const emit = (msg: ServerToWeb) => queueMicrotask(() => onMessage(msg));
+  const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
 
@@ -434,7 +435,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (s.move?.id === moveId) {
       s.move = null;
       const next = pending.shift();
-      if (next) setTimeout(() => open(next), delay);
+      if (next) later(delay, () => open(next));
     }
     dealDeck();
   };
@@ -1072,7 +1073,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
-  if (sc.checkin) setTimeout(dealCheckIn, TICK_MS);
+  if (sc.checkin) later(TICK_MS, dealCheckIn);
   if (sc.onboard) later(TICK_MS, scan);
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, tickMs);
@@ -1164,6 +1165,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       }
     },
     close() {
+      if (closed) return;
+      closed = true;
       clearInterval(timer);
       timers.forEach(clearTimeout);
       onStatus("offline");

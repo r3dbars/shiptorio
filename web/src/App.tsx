@@ -12,7 +12,7 @@ import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
-import { Coach, useTutorial } from "./ui/tutorial";
+import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
 import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
@@ -306,6 +306,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           wide={intro ? tourly.cam.wide : null}
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
+          teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
           pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
         />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
@@ -374,8 +375,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             className={`hud-iconbtn guide-btn${met.size > seenGuide ? " new" : ""}`}
             aria-pressed={sheet === "guide"}
             onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
-            aria-label={`Field guide, ${met.size} of ${GUIDE_TOTAL} found`}
-            title={`Field guide · ${met.size}/${GUIDE_TOTAL}`}
+            aria-label={`Field guide, ${met.size} concepts found`}
+            title={`Field guide · ${met.size} concepts found`}
           >
             <Icon name="book" size={20} />
           </button>
@@ -553,11 +554,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             className="tool big go"
             onClick={build}
             disabled={!show("build") || !slot || !plugged || cfg.kind === "live"}
-            aria-label={plugged ? `Build another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
-            title={plugged ? `Build another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
+            aria-label={plugged ? `Place another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
+            title={plugged ? `Place another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
           >
             <Icon name="bot" size={20} />
-            Build
+            Place
           </button>
           )}
         </nav>

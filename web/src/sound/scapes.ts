@@ -111,6 +111,7 @@ export const SCAPES: Record<ScapeKind, Scape> = {
         s.noise({ dur: 0.35, vol: 0.06, hp: 2500, at: t + 0.4, out });
       }
       if (i % every === 6) s.noise({ dur: 0.12, vol: 0.12, lp: 500, at: t, rate: 0.5, out });
+      if (i % 8 === 0) s.tone({ f: 58, to: 52, dur: 0.3, type: "sine", vol: 0.05, at: t, out }); // the coolant pump throbbing
     },
   },
   // AI review: terminal chatter, little thinking bleeps
@@ -133,11 +134,12 @@ export const SCAPES: Record<ScapeKind, Scape> = {
     start: (s, out) => bed(s, out, { osc: [["sine", 196, 0.02], ["sine", 294, 0.015], ["sine", 392.5, 0.01]], wobble: [0.2, 0.5] }),
     step: (s, out, i) => {
       if (i % 20 === 0) [0, 0.25, 0.5].forEach((d, n) => s.tone({ f: 1200, dur: 0.15, type: "sine", vol: 0.06 / (n + 1), at: s.now + d, out }));
+      if (i % 20 === 10) s.tone({ f: 180, to: 240, dur: 0.5, type: "sawtooth", vol: 0.012, at: s.now, attack: 0.15, out }); // the dish's slew motor
     },
   },
-  // Assembler: servo whine, rhythmic press and clank. Idle machines just tick over.
+  // Assembler: exhaust fan whoosh, servo whine, rhythmic press and clank, the weld arc buzzing. Idle machines just tick over.
   assembler: {
-    start: (s, out) => bed(s, out, { osc: [["sawtooth", 82, 0.02], ["triangle", 330, 0.006]], noise: { vol: 0.01, lp: 800 } }),
+    start: (s, out) => bed(s, out, { osc: [["sawtooth", 82, 0.02], ["triangle", 330, 0.006]], noise: { vol: 0.018, bp: 500 }, wobble: [3.5, 0.25] }),
     step: (s, out, i, f) => {
       const t = s.now;
       if (f.busy <= 0) {
@@ -147,20 +149,26 @@ export const SCAPES: Record<ScapeKind, Scape> = {
       if (i % 4 === 0) s.noise({ dur: 0.08, vol: 0.12, lp: 900, at: t, out });
       if (i % 4 === 2) s.tone({ f: pick([220, 247, 294]), dur: 0.05, vol: 0.05, at: t, out });
       if (i % 8 === 5) s.tone({ f: 400, to: 900, dur: 0.18, type: "sawtooth", vol: 0.025, at: t, out });
+      if (i % 32 >= 18 && i % 32 < 22) {
+        s.tone({ f: 120, dur: 0.12, type: "sawtooth", vol: 0.03, at: t, out }); // the arc's mains buzz
+        s.noise({ dur: 0.1, vol: 0.05, hp: 5000, at: t, out });
+      }
     },
   },
-  // Splitter: sorter flaps flipping left and right
+  // Splitter: the bucket elevator's chain clattering over its head pulley, sorter flaps flipping left and right
   splitter: {
     start: (s, out) => bed(s, out, { osc: [["triangle", 98, 0.02]], noise: { vol: 0.008, lp: 1200 } }),
     step: (s, out, i, f) => {
       if (i % 3 === 0 && chance(0.4 + f.busy * 0.5)) s.tone({ f: i % 6 ? 523 : 392, dur: 0.03, vol: 0.05, at: s.now, out });
+      if (i % 2 === 1) s.noise({ dur: 0.015, vol: 0.03, bp: 2200, at: s.now, out });
     },
   },
-  // Ore mine: grinding drill, rocks clinking into the hopper
+  // Ore mine: the drill engine chugging, the bit grinding, rocks clinking down the chute
   ore: {
     start: (s, out) => bed(s, out, { noise: { vol: 0.05, lp: 500, rate: 0.4 }, osc: [["sawtooth", 41, 0.02]], wobble: [7, 0.5] }),
-    step: (s, out, _i, f) => {
+    step: (s, out, i, f) => {
       if (chance(0.15 + f.busy * 0.3)) s.tone({ f: pick([1500, 1800, 2100, 2500]), dur: 0.03, type: "triangle", vol: 0.04, at: s.now, out });
+      if (i % 4 === 0) s.noise({ dur: 0.06, vol: 0.04, lp: 300, rate: 0.3, at: s.now, out }); // the drill engine's chug
     },
   },
   // Launch pad: wind through the gantry, the rocket's oxygen vents hissing off, the tank pump ticking, steel
@@ -190,6 +198,8 @@ export const SCAPES: Record<ScapeKind, Scape> = {
     step: (s, out, i) => {
       if (i % 4 === 0) s.noise({ dur: 0.18, vol: 0.1, bp: 900, at: s.now, attack: 0.03, out });
       if (i % 32 === 16) s.noise({ dur: 0.8, vol: 0.05, hp: 3000, at: s.now, attack: 0.2, out });
+      if (i % 8 === 2) s.tone({ f: 70, to: 50, dur: 0.12, type: "sine", vol: 0.06, at: s.now, out }); // the pumpjack's crank at the bottom of its stroke
+      if (chance(0.012)) s.tone({ f: 1760, to: 1700, dur: 0.6, type: "sine", vol: 0.02, at: s.now, attack: 0.1, out }); // the leaky valve whistles
     },
   },
   // Solar: a bright shimmering chord, soft sparkles

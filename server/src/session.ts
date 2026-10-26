@@ -19,17 +19,22 @@ export async function makeSessionCookie(secret: string, login: string, now = Dat
   return `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${MAX_AGE}`;
 }
 
-export async function readSession(secret: string, cookieHeader: string | null, now = Date.now()): Promise<string | null> {
+export async function readSessionDetails(secret: string, cookieHeader: string | null, now = Date.now()): Promise<{ login: string; expiresAt: number } | null> {
+  if (!secret) return null;
   const match = cookieHeader?.match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
   if (!match) return null;
-  const [payload, sig] = match[1].split(".");
-  if (!payload || !sig || (await hmac(secret, payload)) !== sig) return null;
+  const [payload, sig, extra] = match[1].split(".");
+  if (extra || !payload || !sig || (await hmac(secret, payload)) !== sig) return null;
   try {
     const { login, exp } = JSON.parse(atob(payload));
-    return exp > now / 1000 ? login : null;
+    return typeof login === "string" && Number.isFinite(exp) && exp > now / 1000 ? { login, expiresAt: exp * 1000 } : null;
   } catch {
     return null;
   }
+}
+
+export async function readSession(secret: string, cookieHeader: string | null, now = Date.now()): Promise<string | null> {
+  return (await readSessionDetails(secret, cookieHeader, now))?.login ?? null;
 }
 
 export function isAllowed(allowedLogins: string, login: string): boolean {

@@ -1,3 +1,4 @@
+import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
 import { foldSignal, matchDistrict } from "../src/ore";
 import { fakeSentry, normalizeSentry, topInAppPath } from "../src/sources/sentry";
@@ -119,9 +120,10 @@ function factoryFixture(env: Record<string, unknown>) {
     async getAlarm() { return alarm; },
     async setAlarm(value: number) { alarm = value; },
   };
-  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
+  const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
   const fullEnv = {
-    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) },
+    ...browserEnv,
+    DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
     CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
     ...env,
   };

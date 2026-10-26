@@ -1,3 +1,4 @@
+import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -72,6 +73,8 @@ describe("live gauntlet in the Factory", () => {
     let mergedWith: unknown = null;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+      if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       calls.push(`${init?.method ?? "GET"} ${url.replace("https://api.github.com", "")}`);
       const json = (v: unknown) => Response.json(v);
       if (url.endsWith("/access_tokens")) return json({ token: "t" });
@@ -96,8 +99,8 @@ describe("live gauntlet in the Factory", () => {
         async getAlarm() { return alarm; },
         async setAlarm(v: number) { alarm = v; },
       };
-      const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-      const f = new Factory(ctx as never, { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: {} } as never);
+      const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
+      const f = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       const saved = () => data.get("state") as FactoryState;
 
       await f.alarm(); // verify bay
@@ -111,7 +114,7 @@ describe("live gauntlet in the Factory", () => {
       expect(card.evidence).toHaveLength(3);
       expect(saved().stations?.find((s) => s.id === "gate-1")?.wip).toBe(1);
 
-      await f.webSocketMessage({} as never, JSON.stringify({ type: "choose_move", moveId: card.id, optionId: "launch" }));
+      await f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: card.id, optionId: "launch" }));
       expect(mergedWith).toMatchObject({ merge_method: "squash", sha: head });
       expect(saved().items[0].state).toBe("launched");
       expect(saved().items[0].inspection?.humanApproved).toBe(true);

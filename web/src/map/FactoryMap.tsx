@@ -8,6 +8,7 @@ interface Props {
   onPick?: (id: string) => void;
   focus?: string | null; // the picked thing the camera flies in on
   showLabels?: boolean; // all labels on; otherwise they show on hover
+  teachingKeys?: string[]; // pinned labels for the concept the tour is teaching
   pings?: Ping[]; // the pulsing marker on whatever needs you, then quiet tags on busy machines
   wide?: number | null; // no focus: pull back over the whole island, this far out (the welcome tour)
   lift?: number; // keep what the camera's on this much higher, as a fraction of height (a card sits below)
@@ -15,7 +16,7 @@ interface Props {
 
 const NO_PINGS: Ping[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, wide = null, lift = 0 }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<FactoryScene | null>(null);
@@ -106,6 +107,8 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   }, [focus, wide, wide && state?.districts.length, wide && state?.machines.length]);
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
   useEffect(() => sceneRef.current?.setLift(lift), [lift]);
+  const teachingKey = JSON.stringify(teachingKeys);
+  useEffect(() => sceneRef.current?.setTeachingKeys(teachingKeys), [teachingKey]);
   const pingKey = JSON.stringify(pings);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => sceneRef.current?.setPings(pings), [pingKey]);

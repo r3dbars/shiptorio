@@ -107,7 +107,9 @@ export async function installationToken(env: AppCredentials, installationId: num
   return res.token;
 }
 
-// Publishing credentials stay inside one repository and cannot create/merge PRs.
+// Publishing credentials stay inside one repository and cannot create PRs.
+// Contents-write still permits merges; independent repository rules must enforce
+// merge restrictions, or publishing must move behind a credential-holding proxy.
 // GitHub does not support branch-scoped installation tokens; repository rules must
 // independently protect main and any other branches the runner must not update.
 export async function runnerInstallationToken(env: AppCredentials, installationId: number, fullName: string): Promise<string> {
@@ -245,18 +247,18 @@ export async function openPullRequest(
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */
 export async function inspectPullRequest(token: string, repo: string, number: number, eventSha?: string) {
   const pr = await gh<{ head: { sha: string } }>(`/repos/${repo}/pulls/${number}`, token);
-  if (eventSha && eventSha !== pr.head.sha) return { state: "pending" as const, summary: "Ignoring checks for an older commit" };
+  if (eventSha && eventSha !== pr.head.sha) return { headSha: pr.head.sha, stale: true, state: "pending" as const, summary: "Ignoring checks for an older commit" };
   const [checks, statuses] = await Promise.all([
     gh<{ total_count: number; check_runs: { name: string; status: string; conclusion: string | null; output?: { summary?: string | null } }[] }>(`/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=100&filter=latest`, token),
     gh<{ total_count: number; statuses: { state: string; context: string; description: string }[] }>(`/repos/${repo}/commits/${pr.head.sha}/status?per_page=100`, token),
   ]);
   const failures = checks.check_runs.filter((c) => c.status === "completed" && !["success", "neutral", "skipped"].includes(c.conclusion ?? ""));
   const badStatuses = statuses.statuses.filter((s) => ["failure", "error"].includes(s.state));
-  if (failures.length || badStatuses.length) return { state: "failed" as const, summary: [...failures.map((c) => `${c.name}: ${c.conclusion}\n${c.output?.summary ?? ""}`), ...badStatuses.map((s) => `${s.context}: ${s.description}`)].join("\n").slice(0, 3000) };
-  if (!checks.check_runs.length && !statuses.statuses.length || checks.total_count > checks.check_runs.length || statuses.total_count > statuses.statuses.length || checks.check_runs.some((c) => c.status !== "completed") || statuses.statuses.some((s) => s.state !== "success")) return { state: "pending" as const, summary: "Waiting for all checks on the current commit" };
+  if (failures.length || badStatuses.length) return { headSha: pr.head.sha, stale: false, state: "failed" as const, summary: [...failures.map((c) => `${c.name}: ${c.conclusion}\n${c.output?.summary ?? ""}`), ...badStatuses.map((s) => `${s.context}: ${s.description}`)].join("\n").slice(0, 3000) };
+  if (!checks.check_runs.length && !statuses.statuses.length || checks.total_count > checks.check_runs.length || statuses.total_count > statuses.statuses.length || checks.check_runs.some((c) => c.status !== "completed") || statuses.statuses.some((s) => s.state !== "success")) return { headSha: pr.head.sha, stale: false, state: "pending" as const, summary: "Waiting for all checks on the current commit" };
   // A skipped workflow is not evidence that a fix was tested.
-  if (!checks.check_runs.some((c) => c.conclusion === "success") && !statuses.statuses.some((s) => s.state === "success")) return { state: "pending" as const, summary: "Waiting for a successful check" };
-  return { state: "passed" as const, summary: "All reported checks passed on the current commit" };
+  if (!checks.check_runs.some((c) => c.conclusion === "success") && !statuses.statuses.some((s) => s.state === "success")) return { headSha: pr.head.sha, stale: false, state: "pending" as const, summary: "Waiting for a successful check" };
+  return { headSha: pr.head.sha, stale: false, state: "passed" as const, summary: "All reported checks passed on the current commit" };
 }
 
 export async function convertManifestCode(code: string): Promise<{

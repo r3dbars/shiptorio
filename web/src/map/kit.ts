@@ -81,30 +81,33 @@ let textures: Textures | null = null;
 // Built on first use, since they need a document.
 export function tex(): Textures {
   if (textures) return textures;
+  // Big, calm concrete slabs (128px = 8 world units, so a slab row is one belt wide). Tones stay
+  // within a few percent of each other so the machines, not the ground, carry the contrast.
   const stone = canvasTex(128, 128, (g) => {
-    g.fillStyle = "#6c604e";
+    g.fillStyle = "#a08c69";
     g.fillRect(0, 0, 128, 128);
-    const tones = ["#c9b48a", "#bfa97f", "#d4c197", "#b49d72", "#c4b088"];
+    const tones = ["#bea97f", "#baa57c", "#c3ae84", "#b6a178"];
     for (let y = 0; y < 128; y += 16) {
-      let x = -Math.floor(rnd() * 12);
+      let x = -Math.floor(rnd() * 24);
       while (x < 128) {
-        const w = 12 + Math.floor(rnd() * 20);
+        const w = 24 + Math.floor(rnd() * 3) * 8;
         g.fillStyle = tones[Math.floor(rnd() * tones.length)];
-        g.fillRect(x + 1, y + 1, w - 2, 14);
-        g.fillStyle = "rgba(0,0,0,0.12)";
-        g.fillRect(x + 1, y + 13, w - 2, 2);
+        g.fillRect(x + 1, y + 1, w - 1, 15);
+        g.fillStyle = "rgba(255,248,230,0.10)"; // lit top edge
+        g.fillRect(x + 1, y + 1, w - 1, 1);
         x += w;
       }
     }
-    for (let i = 0; i < 420; i++) {
-      g.fillStyle = rnd() < 0.5 ? "rgba(60,50,35,0.35)" : "rgba(255,245,220,0.25)";
+    for (let i = 0; i < 90; i++) {
+      g.fillStyle = rnd() < 0.5 ? "rgba(90,75,50,0.12)" : "rgba(255,245,220,0.10)";
       g.fillRect(Math.floor(rnd() * 128), Math.floor(rnd() * 128), 1, 1);
     }
-    for (let i = 0; i < 7; i++) {
-      const mx = rnd() * 128, my = rnd() * 128;
-      for (let j = 0; j < 22; j++) {
-        g.fillStyle = rnd() < 0.5 ? "#5f8b44" : "#4b7436";
-        g.fillRect(Math.floor(mx + (rnd() - 0.5) * 12), Math.floor(my + (rnd() - 0.5) * 8), 2, 2);
+    // a couple of moss seams in the cracks
+    for (let i = 0; i < 3; i++) {
+      const mx = Math.floor(rnd() * 128), my = Math.floor(rnd() * 8) * 16;
+      for (let j = 0; j < 7; j++) {
+        g.fillStyle = rnd() < 0.5 ? "#6f8f4c" : "#5f8242";
+        g.fillRect(mx + j * 2, my, 2, 1);
       }
     }
   });

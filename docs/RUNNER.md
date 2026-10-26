@@ -68,6 +68,18 @@ execution, scars and usage telemetry remain later checkpoints.
 
 Runner publishing tokens must name only the assigned repository and request only
 `contents: write` and `metadata: read`. PR creation and merging use separate server
-credentials. GitHub installation tokens cannot restrict writes to one branch: protect
+credentials in the normal application flow. Contents-write also permits direct PR
+merges: removing pull-request permissions does not remove merge authority. GitHub
+installation tokens cannot restrict writes to one branch: protect
 `main` and other sensitive branches with GitHub rules that apply to this App. A
 repository-scoped token alone does not enforce the supervisor's branch policy.
+
+## Supervisor execution boundary
+
+Local verification currently requires macOS and Apple Command Line Tools. Other platforms fail closed before claiming a job until an OS sandbox backend is implemented. Provider sign-in remains in the native Codex/Claude harness; it is not copied into tests.
+
+Every repository check and offline Git operation runs under a deny-default Seatbelt profile. Only the assigned checkout and a private disposable HOME/TMP directory are writable. Host home files, runner pairing files, keychain services, sibling-process arguments/environments, signals to other processes and check-time network calls are denied. Descendants inherit the boundary. The installer is a separate, tightly selected `bun install --frozen-lockfile --ignore-scripts` phase, with project Bun configuration disabled and only HTTPS/DNS networking. It uses an isolated cache, not the user's cache or credentials.
+
+The verifier executes the base recipe in a second boundary, overlays tests through sandboxed filesystem operations and requires the same failing-base/passing-head evidence. Publication uses frozen approved bytes in a newly cloned trusted checkout; agent/test Git hooks and configuration never run with the installation token. Checks that mutate approved bytes are rejected.
+
+Run `bun test runner/test/sandbox.test.ts runner/test/verify.test.ts runner/test/publication.test.ts` directly on the Mac to exercise real malicious probes, including the numeric `kern.procargs2` syscall, outside-file/symlink/hardlink access, sibling signals, child-process inheritance, network denial, and trusted publication. Those host-boundary tests deliberately skip inside an already confined job, where creating an outside listener/fixture would itself violate the boundary; ordinary repository tests still run offline. Linux CI checks the unsupported-platform refusal and pure rules, while the Mac OS proof must also pass before release.
