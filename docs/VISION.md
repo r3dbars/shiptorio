@@ -35,7 +35,7 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    games; the game pull is the product. Fun is what makes people keep shipping.
 7. **Progressive disclosure: one concept at a time.** Shiptorio is a lot (ore, machines, power, the gauntlet,
    bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by
-   step, with Spark as the guide: your factory is one codebase, then ore, a machine, power, the line, one
+   step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one
    inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until Spark
    introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they
    show up when the player is ready for them.

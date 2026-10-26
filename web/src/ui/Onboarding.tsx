@@ -19,10 +19,9 @@ const SIM_REPOS: Repo[] = [
   { fullName: "you/side-project", blurb: "Python CLI · no CI yet", issues: 0 },
 ];
 
-function Spark({ children }: { children: React.ReactNode }) {
+function Coach({ children }: { children: React.ReactNode }) {
   return (
     <div className="ob-spark">
-      <span className="who">SPARK</span>
       <p>{children}</p>
     </div>
   );
@@ -73,10 +72,10 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
           <>
             <div className="ptitle ob-title">SHIPTORIO</div>
             <p className="psub">The factory must grow.</p>
-            <Spark>
-              I'm Spark. I'll help you build a factory, and your factory is one codebase. We'll start small: one machine, one fix, one
-              rocket. I'll show you each piece as you need it.
-            </Spark>
+            <Coach>
+              Let's build your factory. Your factory is one codebase. We start small: one machine, one fix, one rocket, and each
+              piece shows up when you need it.
+            </Coach>
             <div className="nm-options">
               <button type="button" className="nm-btn rec" onClick={signIn} autoFocus>
                 SIGN IN WITH GITHUB
@@ -89,9 +88,9 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
         {step === "repo" && (
           <>
             <div className="ptitle small">PICK A REPO</div>
-            <Spark>
-              {login ? `Hey ${login}. ` : ""}Which repo is the factory? I'll read its tree, open issues and CI, then propose a starter line.
-            </Spark>
+            <Coach>
+              {login ? `Hey ${login}. ` : ""}Which repo is the factory? We'll read its tree, open issues and CI, then suggest a starter line.
+            </Coach>
             {repos === null && <p className="psub">Looking for repos…</p>}
             {repos && repos.length > 0 && (
               <ul className="ob-repos">

@@ -1,5 +1,5 @@
 // Progressive disclosure for the first run (docs/VISION.md): the HUD starts nearly empty and each piece
-// shows up the moment Spark introduces the idea behind it, one concept at a time. Lessons fire off the
+// shows up the moment the coach card introduces the idea behind it, one concept at a time. Lessons fire off the
 // factory state, so the player learns by doing: ore arrives, then you meet ore.
 //
 // HUD pieces are keyed by concept, not layout, so the HUD can be redesigned without touching this.
@@ -14,7 +14,7 @@ const ALL: HudPart[] = ["spark", "score", "launch", "build", "power", "line", "a
 export interface Lesson {
   id: string;
   title: string; // the concept, one or two words
-  text: string; // Spark's one-liner. {repo} is filled in
+  text: string; // the coach's one-liner. {repo} is filled in
   when: (s: FactoryState) => boolean;
   unlocks: HudPart[];
 }
@@ -52,7 +52,7 @@ export const LESSONS: Lesson[] = [
   {
     id: "inspect",
     title: "Inspection",
-    text: "Nothing ships unchecked. Every PR runs the gauntlet: CI, proof, AI review. A fail rides the red belt back to me with the reason.",
+    text: "Nothing ships unchecked. Every PR runs the gauntlet: CI, proof, AI review. A fail rides the red belt back with the reason, for another try.",
     when: (s) => s.items.some((i) => i.prNumber !== undefined),
     unlocks: [],
   },
@@ -73,14 +73,14 @@ export const LESSONS: Lesson[] = [
   {
     id: "bottleneck",
     title: "Bottleneck",
-    text: "There's always a bottleneck: the one spot where work piles up. I'll point at it. Clear it and the factory grows. Add assemblers with A.",
+    text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows. Add assemblers with A.",
     when: (s) => (s.metrics?.rockets ?? 0) > 0,
     unlocks: ["build", "log", "labels"],
   },
   {
     id: "autonomy",
     title: "Autonomy",
-    text: "Every move you approve teaches me. Approve enough and I earn the right to do the small stuff on my own.",
+    text: "Every suggestion you approve as-is builds trust. Approve enough and the factory earns the right to do the small stuff on its own.",
     when: (s) => (s.autonomy?.next?.have ?? 0) >= 3 || s.autonomy?.level !== "advisor",
     unlocks: ["autonomy", "scenarios"],
   },
@@ -137,7 +137,7 @@ export function Coach({ lesson, step, total, repo, onDismiss, onSkip }: { lesson
   return (
     <div className="coach" role="status" aria-live="polite">
       <div className="coach-head">
-        <span className="who">SPARK · NEW: {lesson.title.toUpperCase()}</span>
+        <span className="who">NEW · {lesson.title.toUpperCase()}</span>
         <span className="coach-step">
           {step}/{total}
         </span>
