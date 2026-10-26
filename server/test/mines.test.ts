@@ -81,20 +81,20 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
   const rows = new Map<string, { state: string }>();
   const queued: string[] = [];
   const env = {
-    SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/shop",
+    SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/shop", SENTRY_REPO_ID: "503", SENTRY_INSTALLATION_ID: "1",
     DB: { prepare: (sql: string) => {
       let values: unknown[] = [];
       const statement = {
         bind: (...args: unknown[]) => { values = args; return statement; },
         run: async () => { const id = String(values[0]); const existed = rows.has(id); if (!existed) rows.set(id, { state: "done" }); return { meta: { changes: existed ? 0 : 1 } }; },
-        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("FROM repos") ? { repo_id: 501, installation_id: 1 } : rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? {count:1} : sql.includes("FROM repos") ? { repo_id: 503, installation_id: 1 } : rows.get(String(values[0])) ?? null,
       };
       if (sql.includes("FROM deleted_factories")) return { bind: () => ({ all: async () => ({ results: [] }) }) };
       expect(sql.includes("sentry") || sql.includes("FROM repos") || sql.includes("FROM installations") || sql.includes("signup_counters")).toBe(true);
 
       return statement;
     } },
-    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:501"); queued.push(`${id}:${resource}`); } }) },
+    FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => ({ enqueueSentry: async (id: string, resource: string) => { expect(repo).toBe("repo:503"); queued.push(`${id}:${resource}`); } }) },
   };
   env.DB = credentialDB(env.DB);
   const body = JSON.stringify(fakeSentry("issue.created"));
@@ -113,7 +113,7 @@ const { starterLine } = await import("../src/engine");
 
 function factoryFixture(env: Record<string, unknown>) {
   const state = FactoryState.parse({ repo: "example/shop", baseBranch: "main", districts: DISTRICTS.map((name, i) => ({ name, x: i * 6, y: 0, w: 4, h: 4, files: 3 })), ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 });
-  const data = new Map<string, unknown>([["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
+  const data = new Map<string, unknown>([["githubRepoId", 503], ["state", structuredClone(state)], ["meta", { repo: state.repo, installationId: 1 }]]);
   const kv = new Map<string, string>();
   let alarm: number | null = null;
   const events: { type: string; text?: string }[] = [];
@@ -131,7 +131,7 @@ function factoryFixture(env: Record<string, unknown>) {
     ...browserEnv,
     DB: { prepare: () => ({ bind: () => ({ first: async () => null, run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) },
     CACHE: { get: async (k: string, type?: string) => { const v = kv.get(k); return v == null ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => void kv.set(k, v), delete: async (k: string) => void kv.delete(k) },
-    SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop",
+    SENTRY_REPO: "example/shop", POSTHOG_REPO: "example/shop", SENTRY_REPO_ID: "503", SENTRY_INSTALLATION_ID: "1", POSTHOG_REPO_ID: "503", POSTHOG_INSTALLATION_ID: "1",
     ...env,
   };
   const factory = new Factory(ctx as never, credentialEnv(fullEnv) as never);
@@ -203,7 +203,7 @@ it("Factory: keys set as Worker secrets plug the mines in when the map opens, an
   await f.factory.ensure("example/shop", 1);
   expect(f.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
   // A mine already linked to another repo isn't stolen.
-  const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other" });
+  const other = factoryFixture({ SENTRY_CLIENT_SECRET: "fake-sentry-client-secret", SENTRY_REPO: "example/other", SENTRY_REPO_ID: "999" });
   await other.factory.ensure("example/shop", 1);
   expect(other.saved().machines.some((m) => m.id === "ore-sentry")).toBe(false);
 });
@@ -249,4 +249,15 @@ it("a failed credential hydration cannot leak state on a second request", async 
   await expect(f.factory.runnerJobs()).rejects.toThrow("Credential encryption key unavailable");
   expect(f.events).toHaveLength(0);
   expect(f.kv.has("cred:sentry:example/shop")).toBe(true);
+});
+
+it("a stale Factory cannot use credentials from a replacement at its old name", async () => {
+  const { saveCreds } = await import("../src/sources/creds");
+  const f = factoryFixture({ CRED_MASTER_KEY: btoa("a".repeat(32)) });
+  const env = (f.factory as unknown as { env: import("../src/sources/creds").CredsEnv }).env;
+  await f.factory.connectMine("sentry"); // hydrating Factory 503 fixes its expected identity
+  const db = env.DB as unknown as { sqlite: import("bun:sqlite").Database };
+  db.sqlite.exec("UPDATE credential_test_repos SET repo_id = 999 WHERE full_name = 'example/shop'");
+  await saveCreds(env, "sentry", { clientSecret: "synthetic-replacement-key" }, { repo: "example/shop", installationId: 1 });
+  expect((await f.factory.connectMine("sentry"))?.state).toBe("needs_action");
 });

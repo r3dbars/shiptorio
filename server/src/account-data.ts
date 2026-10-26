@@ -96,7 +96,10 @@ async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[],
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
   for (const kind of ["sentry", "posthog"] as const) {
-    if (names.has((await linkedRepo(env, kind)) ?? "r3dbars/shiptorio")) {
+    // Erasure uses the captured historical owner, even after its active repository row is gone.
+    // Credential resolution deliberately refuses such inactive/unpinned aliases.
+    const historicalLink = await env.CACHE.get(`link:${kind}`);
+    if (names.has((historicalLink ?? await linkedRepo(env, kind))?.toLowerCase() ?? "r3dbars/shiptorio")) {
       keys.add(`cred:${kind}`); keys.add(`link:${kind}`);
     }
   }

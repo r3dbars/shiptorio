@@ -19,5 +19,5 @@ export function pollDevice(record: DeviceRecord | undefined, secret: string, now
   return { status: "approved" as const, ...pairing };
 }
 export const htmlEscape = (value: string) => value.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
-// The pairing route's CSP is `default-src 'none'`, so this plate skips the web fonts (monospace fallback).
+// Keep pairing font-free under its strict route CSP; the shared plate provides a monospace fallback.
 export const runnerPage = (title: string, body: string) => ironPage({ title, eyebrow: "Runner · pairing", fonts: false, alarm: /expired|unavailable/i.test(title), body: `<h1>${htmlEscape(title)}</h1>${body}` });

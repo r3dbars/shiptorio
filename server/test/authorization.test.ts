@@ -26,6 +26,8 @@ function fixture() {
     async first() {
       if (/github_authorization_revocations|SELECT permissions|token_version|SELECT archived_at/.test(sql)) return null;
       if (sql === 'SELECT * FROM repos WHERE full_name = ?') return repos.has(String(args[0])) ? { full_name: args[0], repo_id: repos.get(String(args[0])), installation_id: repos.get(String(args[0])) } : null;
+      if (sql.startsWith('SELECT r.repo_id, r.installation_id FROM repos')) return repos.has(String(args[0])) && repos.get(String(args[0])) === args[1] ? { repo_id: repos.get(String(args[0])), installation_id: args[1] } : null;
+      if (sql.includes('FROM credentials WHERE')) return null;
       if (sql.includes("api_limits")) return { next_at: Date.now(), failures: 0 };
 
       if (sql.startsWith('SELECT enabled')) return null;
@@ -202,6 +204,9 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
       enqueueSentry: async (id: string) => { queued.push(`sentry:${repo}:${id}`); },
     }) },
   };
+  const { saveCreds } = await import('../src/sources/creds');
+  await saveCreds(env as never, 'sentry', { clientSecret: 'alice-secret' }, { repo: 'alice/private', installationId: 11 });
+  await saveCreds(env as never, 'sentry', { clientSecret: 'bob-secret' }, { repo: 'bob/private', installationId: 22 });
   async function sign(keyText: string, body: string) {
     const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(keyText), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body)))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -213,6 +218,9 @@ it('signed webhooks mutate only their named repo and Sentry dedupe IDs are tenan
   expect((await sentry('alice/private', 'alice-secret')).status).toBe(202);
   expect((await sentry('bob/private', 'bob-secret')).status).toBe(202);
   expect(queued).toEqual(['sentry:repo:11:alice/private:same-event', 'sentry:repo:22:bob/private:same-event']);
+  await DB.prepare("UPDATE repos SET repo_id = 111 WHERE full_name = 'alice/private'").run();
+  expect((await sentry('alice/private', 'alice-secret')).status).toBe(401);
+  expect(queued).toHaveLength(2);
   const githubBody = JSON.stringify({ action: 'opened', installation: { id: 22 }, repository: { full_name: 'bob/private' }, issue: { number: 1, title: 'Test' } });
   const github = async (sig: string) => app.fetch(new Request(`${origin}/webhooks/github`, { method: 'POST', headers: { 'x-hub-signature-256': sig, 'x-github-event': 'issues', 'x-github-delivery': 'test-github-delivery' }, body: githubBody }), env as never, { waitUntil() {} } as never);
   expect((await github('sha256=invalid')).status).toBe(401);

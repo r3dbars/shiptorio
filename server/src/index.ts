@@ -1,6 +1,6 @@
+import { byRepoId, repositoryFactory } from "./repository";
 import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
-import { repositoryFactory } from "./repository";
 import { lifecycleEvents } from "./github-lifecycle";
 import { factoryRpc } from "./factory-rpc";
 
@@ -67,8 +67,8 @@ export interface Env extends FactoryEnv, SignupEnv {
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-const factory = async (env: Env, repo: string) => {
-  const stub = await repositoryFactory(env, repo);
+const factory = async (env: Env, repo: string, repoId?: number) => {
+  const stub = repoId ? byRepoId(env, repoId) : await repositoryFactory(env, repo);
   const trace = { ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: repo.toLowerCase() };
   // Capture per call, never put mutable request identity on a shared DO instance.
   return new Proxy(stub, { get(target, method) {
@@ -307,8 +307,8 @@ async function requestScope(c: Context<AppEnv>): Promise<CredentialScope | null>
   const user = await resolveUser(c.req.raw, c.env);
   const repo = c.req.query("repo")?.toLowerCase();
   if (!user || !repo || !validRepo(repo) || !(await repoAccess(c.env, user, repo))) return null;
-  const row = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
-  return row?.installation_id ? { installationId: row.installation_id, repo, user: String(user.id) } : null;
+  const row = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
+  return row?.installation_id && Number.isSafeInteger(row.repo_id) && row.repo_id > 0 ? { installationId: row.installation_id, repo, repoId: row.repo_id, user: String(user.id) } : null;
 }
 
 app.get("/api/setup/status", async (c) => {
@@ -450,7 +450,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const code = normalizeCode(c.req.query("code") ?? "");
-  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
+  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
@@ -505,7 +505,9 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (field("action") === "revoke") {
     await revokeCreds(c.env, kind, scope);
-    await (await factory(c.env, repo)).disconnectMine(kind);
+    const f = await factory(c.env, repo, scope.repoId);
+    await f.setRepositoryId(scope.repoId!);
+    await f.disconnectMine(kind);
     return c.html(connectPage({ kind, repo, connected: false, webhookUrl, revoked: true }));
   }
   const { connected, workerOverride } = await credentialStatus(c.env, kind, scope);
@@ -524,8 +526,10 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, scope);
   }
   // Plug it straight into the map it came from.
-  await (await factory(c.env, repo)).ensure(repo, scope.installationId);
-  await (await factory(c.env, repo)).connectMine(kind);
+  const f = await factory(c.env, repo, scope.repoId);
+  await f.setRepositoryId(scope.repoId!);
+  await f.ensure(repo, scope.installationId);
+  await f.connectMine(kind);
 
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
@@ -729,9 +733,9 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
   const repo = perRepo ?? c.req.query("repo")?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
   if (!repo || !REPO_RE.test(repo)) return c.json({ error: "repository unavailable" }, 403);
-  const installation = await c.env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
+  const installation = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
   if (!installation) return c.json({ error: "repository unavailable" }, 403);
-  const scope = { repo, installationId: installation.installation_id };
+  const scope = { repo, installationId: installation.installation_id, repoId: installation.repo_id };
   const redactor = new Redactor(c.env);
   const { clientSecret } = await sentryCreds(c.env, scope, redactor);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
@@ -757,7 +761,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
     const previous = await c.env.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'sentry' AND delivery_id = ?").bind(delivery).first<{ state: string }>();
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
-  await (await factory(c.env, repo)).enqueueSentry(delivery, resource, redactor.value(payload));
+  await (await factory(c.env, repo, scope.repoId)).enqueueSentry(delivery, resource, redactor.value(payload));
 
   c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
 
