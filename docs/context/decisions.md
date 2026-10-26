@@ -5,6 +5,20 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+GitHub mine checkpoint: reuse the existing private `Shiptorio` App (id 5483448), rather
+than creating a duplicate. New client/signing credentials were saved only in gitignored
+`.dev.vars`; App JWT authentication was verified. The App webhook now uses the matching
+local signing secret, JSON payloads and verified TLS. Credential upload and repo-only
+installation follow the durable-intake deploy. PR #23 is deployed; PR #26 adds optional
+source, ore-provenance and inspection fields. This checkpoint adds delivery-id dedupe in
+the existing D1 database (migration 0002), durable DO intake, issue backfill and exact ore
+folding; no new Cloudflare resources. Hosted Spark coding defaults off.
+
+Latest scope from Justin: first prove GitHub → the four-station gauntlet → a real shipping
+loop with local Codex/Claude agents. Then use Transcripted as the real-product pilot with
+Sentry, support email and PostHog. Stripe is out of scope. The updated gauntlet checklist
+uses merged contracts/docs #29/#31; do not create a second stations contract.
+
 Deployment handoff (Oct 26, 17:07 UTC): PR #13 merged after CI passed against current
 main (including the pixel map and Foreman contract). `bun run deploy` from main
 successfully deployed only `shiptorio`; both custom domains retain the password gate.
