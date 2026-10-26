@@ -45,7 +45,7 @@ jobs:
           mirrors=/etc/apt/apt-mirrors.txt
           test -f "$mirrors"
           grep -Eq '^https://archive\.ubuntu\.com/ubuntu/([[:space:]]|$)' "$mirrors"
-          sudo sed -i '\|^https\?://azure\.archive\.ubuntu\.com/ubuntu/\([[:space:]].*\)\?$|d' "$mirrors"
+          sudo sed -Ei '\|^https?://azure[.]archive[.]ubuntu[.]com/ubuntu/([[:space:]].*)?$|d' "$mirrors"
           ! grep -q 'azure.archive.ubuntu.com' "$mirrors"
           cat "$mirrors"
       - name: Playwright + Chromium
