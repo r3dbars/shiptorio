@@ -7,7 +7,8 @@ import { useEffect } from "react";
 import { techById, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
 import type { LogLine } from "../store";
-import { MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
+import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
+import { GEO_COPY, MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
 
 function fmtWait(ms?: number) {
   if (ms === undefined) return "–";
@@ -49,7 +50,7 @@ function nameOf(m: Machine | undefined, state: FactoryState) {
   if (!m) return "?";
   const st = state.stations?.find((x) => x.machineId === m.id);
   if (st) return st.name;
-  if (m.type === "assembler") return m.harness ? `${m.harness.replace("_", " ")} assembler` : "assembler";
+  if (m.type === "assembler") return m.harness === "local" ? "local model assembler" : m.harness ? `${m.harness.replace("_", " ")} assembler` : "assembler";
   return MACHINE_COPY[m.type]?.name ?? m.type.replace("_", " ");
 }
 
@@ -85,7 +86,7 @@ function itemsAt(m: Machine, state: FactoryState): Item[] {
   }
 }
 
-function panelFor(id: string, state: FactoryState): Panel | null {
+function panelFor(id: string, state: FactoryState, jobs: Map<string, string> = new Map()): Panel | null {
   if (id === "rework") {
     const items = state.items.filter((i) => i.scars?.length && i.state !== "launched");
     const onBelt = state.items.filter((i) => i.state === "rejected");
@@ -137,18 +138,31 @@ function panelFor(id: string, state: FactoryState): Panel | null {
     };
   }
   const mid = id.startsWith("m:") ? id.slice(2) : id;
-  const m = state.machines.find((x) => x.id === mid);
+  // live plants the map placed from state.power aren't in state.machines, so find them by their power id
+  const reported = state.power.find((p) => p.id === mid);
+  const m = state.machines.find((x) => x.id === mid) ?? (reported && reported.kind !== "steam" ? { id: reported.id, type: reported.kind, x: 0, y: 0, tier: 1, state: "idle" as const } : undefined);
   if (id === "power" || (m && POWER_TYPES.includes(m.type))) {
-    const stats = state.power.map((p): [string, string] => [p.kind === "steam" ? "Planner" : `${p.name} left`, p.online ? pct(p.level) : "offline"]);
+    const ledger = powerLedger(state, jobs);
+    const mine = m && ledger.find((r) => r.id === m.id || (m.type === "steam" && r.kind === "steam"));
+    const stats: [string, string][] = mine
+      ? [
+          ["Cost", mine.cost],
+          ["Headroom", mine.online ? pct(mine.level) : "offline"],
+          [mine.kind === "steam" ? "Decisions" : "Jobs this session", String(mine.jobs)],
+        ]
+      : ledger.map((r): [string, string] => [`${r.name} · ${r.kind === "geothermal" ? "free" : r.kind === "solar" ? "your plan" : "planner"}`, `${r.online ? pct(r.level) : "offline"} · ${r.jobs} ${r.kind === "steam" ? "calls" : "jobs"}`]);
     const low = state.power.find((p) => p.kind !== "steam" && p.level < 0.4);
     const feeds = m ? state.machines.filter((x) => x.powerId === m.id || (m.type === "steam" && x.type === "splitter")) : [];
+    const geo = mine?.kind === "geothermal";
     return {
-      copy: POWER_COPY,
-      title: m ? `${m.type} plant` : undefined,
+      copy: geo ? GEO_COPY : POWER_COPY,
+      title: m ? (geo ? `${mine.name} · geothermal` : `${m.type} plant`) : undefined,
       stats: [...stats, ...(feeds.length ? [["Powers", feeds.map((f) => nameOf(f, state)).join(", ")] as [string, string]] : [])],
       machineId: m?.id,
-      last: low ? { who: "Power", text: `${low.name} is under 40%. Low-value items wait low-value items until it refills.`, ok: true } : undefined,
-      match: (l) => /power|plugged|plant|sign in/i.test(l.text),
+      last: geo
+        ? { who: "Geothermal", text: GEO_EXPLAINER, ok: true }
+        : low ? { who: "Power", text: `${low.name} is under 40%. Low-value items wait until it refills.`, ok: true } : undefined,
+      match: (l) => /power|plugged|plant|sign in|routed|geothermal/i.test(l.text),
       actions: POWER_COPY.actions ?? [],
       sendAs: "power",
     };
@@ -183,16 +197,17 @@ interface Props {
   log: LogLine[];
   send: (msg: WebToServer) => void;
   onClose: () => void;
+  jobs?: Map<string, string>; // item id -> power plant that built it, this session
 }
 
-export function StationPanel({ id, state, log, send, onClose }: Props) {
+export function StationPanel({ id, state, log, send, onClose, jobs }: Props) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
 
-  const p = panelFor(id, state);
+  const p = panelFor(id, state, jobs);
   if (!p) return null;
   const hot = state.bottleneck?.stationId === id;
   const [color, tag] = p.copy.tag;
