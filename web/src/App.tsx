@@ -99,9 +99,9 @@ export function App() {
   const cfg = useMemo(() => readConfig(), []);
   const { state, log, status, send } = useFactory(cfg);
   const caption = useCaption(log);
-  useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
+  useFactorySound(state, panel);
   const [showLabels, setShowLabels] = useState(false);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
