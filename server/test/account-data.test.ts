@@ -48,7 +48,7 @@ async function fixture() {
       deleteAlarm: async () => { record.alarm = null; },
       deleteAll: async () => { record.data.clear(); },
     };
-    const ctx = { storage, blockConcurrencyWhile: <T>(f: () => Promise<T>) => f(), getWebSockets: () => [{close: () => {record.closed++;}, deserializeAttachment: () => ({login: "alice"})}] };
+    const ctx = { id: {toString: () => repo}, storage, blockConcurrencyWhile: <T>(f: () => Promise<T>) => f(), getWebSockets: () => [{close: () => {record.closed++;}, deserializeAttachment: () => ({login: "alice"})}] };
     record.factory = new Factory(ctx as never, env);
     objects.set(repo, record);
   }
@@ -190,6 +190,17 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).factories[0].data.state?.items).toHaveLength(1);
     await deleteAccount(env, user, ["alice/app"]);
     expect(data.size).toBe(0); expect(legacy.data.size).toBe(0); expect(alarm).toBeNull();
+  });
+  it("a cold factory cannot revive after erasure even without saved repo metadata", async () => {
+    const {env, user} = await fixture();
+    await deleteAccount(env, user, ["alice/app"]);
+    const data = new Map<string, unknown>();
+    const storage = {get: async (key: string) => data.get(key), put: async (key: string, value: unknown) => {data.set(key, value);}, list: async () => new Map(data), getAlarm: async () => null, setAlarm: async () => {throw new Error("Deleted factory scheduled an alarm");}};
+    const fresh = new Factory({id: {toString: () => "alice/app"}, storage, getWebSockets: () => []} as never, env);
+    await fresh.alarm();
+    expect(data.size).toBe(0);
+    await expect(fresh.pairRunner()).rejects.toThrow("Factory deleted");
+    expect(data.size).toBe(0);
   });
   it("can retry a failed KV purge without reporting deletion complete early", async () => {
     const {env, user, kv, objects} = await fixture();

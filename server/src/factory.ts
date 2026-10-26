@@ -165,7 +165,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async assertAccountActive(repo?: string) {
-    if (this.accountErased || repo && await factoryDeleted(this.env.DB, repo)) throw new Error("Factory deleted");
+    const object = this.ctx.id?.toString();
+    if (this.accountErased || repo && await factoryDeleted(this.env.DB, repo) || object && await factoryDeleted(this.env.DB, `object:${object}`)) {
+      this.accountErased = true;
+      throw new Error("Factory deleted");
+    }
   }
 
   private accountPut<T>(key: string, value: T) {
@@ -2028,7 +2032,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   // ---------- the tick loop ----------
 
   async alarm(): Promise<void> {
-    await this.load();
+    try { await this.load(); } catch (error) { if (this.accountErased) return; throw error; }
     return inTrace({ requestId: crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.tick(); } catch (error) { report(error, "factory.alarm_failed"); throw error; }
     });

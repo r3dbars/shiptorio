@@ -9,9 +9,12 @@ import { linkedRepo } from "./sources/creds";
 export { repoHash, factoryDeleted } from "./account-lifecycle";
 import { repoHash } from "./account-lifecycle";
 /** Account reads and erasure must not wake/migrate a factory or require GitHub availability. */
-export async function accountFactory(env: Env, repo: string) {
+async function accountObjectName(env: Env, repo: string) {
   const row = await env.DB.prepare("SELECT * FROM repos WHERE full_name = ?").bind(repo.toLowerCase()).first<{repo_id?: number | null}>();
-  return env.FACTORY.get(env.FACTORY.idFromName(row?.repo_id ? `repo:${row.repo_id}` : repo.toLowerCase()));
+  return row?.repo_id ? `repo:${row.repo_id}` : repo.toLowerCase();
+}
+export async function accountFactory(env: Env, repo: string) {
+  return env.FACTORY.get(env.FACTORY.idFromName(await accountObjectName(env, repo)));
 }
 
 /** Only personal installation owners can erase shared repository data. Membership is insufficient. */
@@ -96,7 +99,10 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   for (const repo of repos) if (!archive.factories.some(f => f.repo === repo.full_name)) archive.factories.push({repo: repo.full_name, data: JSON.parse(await (await accountFactory(env, repo.full_name)).exportAccountData()) as AccountFactoryData});
   const now = Date.now();
   // Commit the durable stop before destructive work. Retries can finish partial cleanup.
-  for (const repo of repos) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(repo.full_name), now).run();
+  for (const repo of repos) {
+    const identifiers = [repo.full_name, ...[repo.full_name.toLowerCase(), await accountObjectName(env, repo.full_name)].map(name => `object:${env.FACTORY.idFromName(name).toString()}`)];
+    for (const identifier of identifiers) await env.DB.prepare("INSERT OR IGNORE INTO deleted_factories (repo_hash, deleted_at) VALUES (?, ?)").bind(await repoHash(identifier), now).run();
+  }
   for (const repo of repos) {
     const primary = await accountFactory(env, repo.full_name);
     await primary.eraseAccountData();
