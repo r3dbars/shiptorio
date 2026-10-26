@@ -42,12 +42,12 @@ describe("growth scenario", () => {
     expect(cart.state).toBe("won");
     expect(cart.lift!).toBeGreaterThan(0.1);
     expect(cart.p!).toBeLessThan(0.05);
-    expect(cart.line).toContain("It worked");
+    expect(cart.line).toContain("Observed");
   });
   test("the pricing copy is a wash after the full week", () => {
     expect(pricing.state).toBe("flat");
     expect(pricing.daysWatched).toBe(7);
-    expect(pricing.line).toContain("No real change");
+    expect(pricing.line).toContain("No clear lift");
   });
   test("the planner's proposal lands in how it thinks; the verdict is math, so it's only on the floor log", () => {
     expect(tools).toContain("propose_experiment");

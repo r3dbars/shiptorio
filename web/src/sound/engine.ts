@@ -33,6 +33,7 @@ export type Sfx =
   | "permit_grant"
   | "permit_revoke"
   | "level_up"
+  | "achievement"
   | "beat"
   | "beat_done"
   | "finale";
@@ -599,6 +600,13 @@ class SoundEngine {
       case "level_up": // autonomy level up: a big climbing run into a held chord
         [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone({ f, dur: 0.1, vol: 0.09, at: t + i * 0.06 }));
         for (const f of [523, 784, 1047, 1319]) this.tone({ f, dur: 1.2, type: "triangle", vol: 0.07, at: t + 0.4 });
+        break;
+      case "achievement": // an achievement unlocked: a coin-bright double chime, a sparkle run, a warm held fifth
+        this.tone({ f: 70, to: 50, dur: 0.2, type: "sine", vol: 0.25, at: t });
+        this.tone({ f: 988, dur: 0.08, type: "square", vol: 0.07, at: t });
+        this.tone({ f: 1319, dur: 0.3, type: "square", vol: 0.07, at: t + 0.08 });
+        for (let i = 0; i < 5; i++) this.tone({ f: 2093 + i * 300, dur: 0.05, type: "sine", vol: 0.04, at: t + 0.22 + i * 0.04 });
+        for (const f of [659, 988, 1319]) this.tone({ f, dur: 1, type: "triangle", vol: 0.06, at: t + 0.42 });
         break;
       case "beat": // intro: the next card slides in
         this.noise({ dur: 0.18, vol: 0.06, lp: 2500, sweepTo: 600, at: t, attack: 0.05 });

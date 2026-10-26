@@ -1,0 +1,5 @@
+{
+  "installation": {"id": 40, "account": {"login": "octo-org", "type": "Organization"}, "permissions": {"contents": "write", "pull_requests": "write", "issues": "write", "checks": "read", "statuses": "read", "metadata": "read"}},
+  "repository": {"id": 501, "full_name": "octo-org/demo", "default_branch": "main"},
+  "sender": {"login": "octocat"}
+}

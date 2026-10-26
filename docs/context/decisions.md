@@ -5,6 +5,8 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+- 2026-10-26: The growth draft accepts explicit whole-window ordered-funnel cohort counts, never conversion inferred from route totals. Experiment decisions wait for the complete fixed horizon; insufficient evidence stays inconclusive, and before/after differences are observational. Simulator cohorts are explicitly synthetic. Real tenant-scoped PostHog measurement and dispatch remain unfinished.
+
 Latest live verification, Oct 26: Sentry is now delivering signed issue-created and
 issue-resolved webhooks, not merely configured. Isolated verification issue
 7813706988 appeared as factory ore and disappeared after resolution in Sentry.

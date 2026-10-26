@@ -8,7 +8,7 @@ import { currentUser } from './accounts';
 
 // Deliberately independent of ALLOWED_LOGINS: adding a player never grants diagnostics.
 export const isAdmin = (login: string | null) => login?.toLowerCase() === 'r3dbars';
-export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) => DurableObjectStub<Factory>) {
+export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) => DurableObjectStub<Factory> | Promise<DurableObjectStub<Factory>>) {
   app.use('/admin/*', async (c, next) => {
     const user = await currentUser(c.env, c.req.header('cookie') ?? null, new URL(c.req.url));
     if (!isAdmin(user?.login ?? null)) return c.json({ error: 'admin login required' }, 403);
@@ -26,8 +26,9 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
     const [events, errors, spark, webhooks] = await Promise.all((['events', 'errors', 'spark', 'webhooks'] as const).map(group => recentLogs(env, group, selected)));
     return c.json({ release: env.BUILD_SHA, sentryConfigured: !!env.SHIPTORIO_SENTRY_DSN,
       repos: repos.results.map(r => r.full_name),
-      snapshot: selected ? await factory(env, selected).debugSnapshot() : null,
+      snapshot: selected ? await (await factory(env, selected)).debugSnapshot() : null,
       errors, events, spark, webhooks, budget: await budgetReport(env),
+
       note: 'Last 50 events per category and factory; KV may take up to 60 seconds to propagate. Retention: 7 days.' });
   });
   app.post('/admin/force-error', async c => {

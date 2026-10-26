@@ -16,16 +16,17 @@ export interface GitHubIssue {
   pull_request?: unknown;
   reactions?: { total_count?: number };
 }
+export interface GitHubRepository { id?: number; full_name: string; default_branch?: string }
 export interface GitHubPayload {
   action?: string;
-  repository?: { full_name: string; default_branch?: string };
-  installation?: { id: number; account?: { login: string } };
+  repository?: GitHubRepository;
+  installation?: { id: number; account?: { login: string; type?: string }; permissions?: Record<string, string> };
   issue?: GitHubIssue;
   comment?: { id: number; body: string; created_at?: string; updated_at?: string; user?: { login: string; type?: string }; performed_via_github_app?: { id: number } | null };
-  repositories?: { full_name: string }[];
-  repositories_added?: { full_name: string }[];
-  repositories_removed?: { full_name: string }[];
-  sender?: { id: number; login?: string };
+  repositories?: GitHubRepository[];
+  repositories_added?: GitHubRepository[];
+  repositories_removed?: GitHubRepository[];
+  sender?: { id?: number; login?: string };
   [key: string]: unknown;
 }
 

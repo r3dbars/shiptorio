@@ -265,6 +265,7 @@ export const Move = z.object({
   evidence: z.array(MoveEvidence).optional(), // gauntlet stamps on a merge card
   locked: z.boolean().optional(), // not proven yet: swipe right runs the recommended option, never a merge
   plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
+  because: z.string().optional(), // one plain sentence on why the suggested option is the right call
 });
 export type Move = z.infer<typeof Move>;
 
@@ -344,8 +345,31 @@ export const Brain = z.object({
   decisions: z.number().int(), // Spark decisions since the factory started counting
   fallbacks: z.number().int(),
   thoughts: z.array(Thought).max(40), // newest first
+  // The scorecard: how good its calls turn out, not just how many it makes.
+  score: z.object({
+    plans: z.number().int(), // distinct jobs it planned
+    shipped: z.number().int(), // of those, merged and launched
+    reviews: z.number().int(), // PR verdicts it gave
+    catches: z.number().int(), // of those, sent back for rework
+    open: z.array(z.string()).max(50), // planned item ids not shipped yet
+  }).optional(),
 });
 export type Brain = z.infer<typeof Brain>;
+
+export interface Scorecard { planSuccess: number | null; catchRate: number | null; fallbackRate: number | null; plans: number; shipped: number; reviews: number; catches: number }
+
+/** Plan success, review catch rate and fallback share, as 0..1 (null until there's something to measure). */
+export function scorecard(brain: Brain | undefined): Scorecard {
+  const sc = brain?.score ?? { plans: 0, shipped: 0, reviews: 0, catches: 0 };
+  const total = (brain?.decisions ?? 0) + (brain?.fallbacks ?? 0);
+  return {
+    // Jobs still on the line count as not shipped yet, so the rate only climbs as PRs merge.
+    planSuccess: sc.plans ? sc.shipped / sc.plans : null,
+    catchRate: sc.reviews ? sc.catches / sc.reviews : null,
+    fallbackRate: total ? (brain?.fallbacks ?? 0) / total : null,
+    plans: sc.plans, shipped: sc.shipped, reviews: sc.reviews, catches: sc.catches,
+  };
+}
 
 // A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
 export const StationAction = z.object({
@@ -391,7 +415,7 @@ export const ExperimentChange = z.enum(["copy", "cta", "onboarding", "layout"]);
 export type ExperimentChange = z.infer<typeof ExperimentChange>;
 export const ExperimentVerdict = z.enum(["too_early", "lift", "no_lift", "hurt", "inconclusive"]);
 export type ExperimentVerdict = z.infer<typeof ExperimentVerdict>;
-const StepCounts = z.object({ entered: z.number().nonnegative(), converted: z.number().nonnegative(), days: z.number().int().nonnegative() });
+const StepCounts = z.object({ entered: z.number().int().nonnegative(), converted: z.number().int().nonnegative(), days: z.number().int().nonnegative() }).refine(c => c.converted <= c.entered, "Converted people must belong to the entered cohort");
 export const Experiment = z.object({
   id: z.string(),
   step: FunnelStep,
@@ -399,9 +423,8 @@ export const Experiment = z.object({
   hypothesis: z.string(), // what should happen and by how much
   change: ExperimentChange,
   district: z.string(), // where the PR lands
-  // proposed → building (yes on the card) → measuring (launched) → won / flat / lost / inconclusive (missing or
-  // thin data); dropped = player said no
-  state: z.enum(["proposed", "building", "measuring", "won", "flat", "lost", "inconclusive", "dropped"]),
+  // proposed → building (yes on the card) → measuring (launched) → won / flat / lost; dropped = player said no
+  state: z.enum(["proposed", "building", "measuring", "won", "flat", "lost", "dropped", "inconclusive"]),
   itemId: z.string().optional(), // the factory item that ships it
   prNumber: z.number().int().optional(),
   baseline: StepCounts, // the step before the change
