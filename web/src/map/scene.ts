@@ -44,7 +44,7 @@ import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { PIXEL, pixelSizeFor, PixelPass } from "./pixel";
 import { applyLook, IRON, LOOK } from "./world";
-import { ironize } from "./iron";
+import { C as IC, ironize, ironState, M as IM, makeStatePost } from "./iron";
 import { bakeModel, findDynamic, mergeStatic } from "./bake";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
@@ -141,7 +141,10 @@ interface MachineView {
   kind?: StationKind; // set when this inspector-type machine is a gauntlet station
   label?: Label;
   art: string; // the Item Lab state the model is showing
+  post?: ReturnType<typeof makeStatePost>; // Black Iron: caution beacon + status lamp
 }
+
+const POSTED = new Set<Machine["type"]>(["assembler", "splitter", "inspector", "launch_pad"]);
 
 interface DistrictView {
   name: string;
@@ -952,6 +955,13 @@ export class FactoryScene {
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
         const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
+        if (IRON && POSTED.has(m.type)) {
+          // on the front-right corner as the camera sees it, off the belt line
+          v.post = makeStatePost(this.reduceMotion);
+          mergeStatic(v.post.still);
+          v.post.g.position.set(1.35, 0, 1.45);
+          built.g.add(v.post.g);
+        }
         this.machines.set(m.id, v);
         this.scene.add(built.g);
       }
@@ -1106,13 +1116,14 @@ export class FactoryScene {
       const ends = [A.clone().addScaledVector(dir, 1.45), B.clone().addScaledVector(dir, -1.45)];
       const yaw = Math.atan2(dir.x, dir.z);
       for (const e of ends) {
-        box(0.12, H, 0.12, mat(0x3a3f47), e.x, H / 2, e.z, this.powerGroup).castShadow = false;
-        const arm = box(0.56, 0.07, 0.09, mat(0x8a94a3), e.x, H - 0.05, e.z, this.powerGroup);
+        box(0.12, H, 0.12, IRON ? IM.iron : mat(0x3a3f47), e.x, H / 2, e.z, this.powerGroup).castShadow = false;
+        const arm = box(0.56, 0.07, 0.09, IRON ? IM.brass : mat(0x8a94a3), e.x, H - 0.05, e.z, this.powerGroup);
         arm.rotation.y = yaw;
         arm.castShadow = false;
         box(0.1, 0.14, 0.1, mat(color), e.x, H + 0.06, e.z, this.powerGroup).castShadow = false; // insulator in the plant's color
       }
-      const paint = own(0x2b2f36);
+      // Black Iron: an aether conduit, verdigris at rest and teal while it feeds a working assembler
+      const paint = own(IRON ? 0x2a5e4e : 0x2b2f36);
       const n = Math.max(4, Math.round(ends[0].distanceTo(ends[1]) / 0.6));
       const at = (k: number) => ends[0].clone().lerp(ends[1], k).setY(H + 0.12 - SAG * 4 * k * (1 - k));
       for (let i = 0; i < n; i++) {
@@ -1121,7 +1132,7 @@ export class FactoryScene {
         seg.lookAt(p1);
         seg.castShadow = false;
       }
-      this.cables.push({ paint, color: new THREE.Color(color), assembler: a.id });
+      this.cables.push({ paint, color: new THREE.Color(IRON ? IC.teal : color), assembler: a.id });
     }
   }
 
@@ -1670,6 +1681,7 @@ export class FactoryScene {
     for (const v of this.machines.values()) {
       v.art = this.artState(v.machine);
       v.built.update(t, dt, v.art);
+      v.post?.set(ironState(v.machine.state, v.art), t, dt);
     }
     if (this.rework) this.rework.built.update(t, dt, (this.state?.items.filter((i) => i.state === "rejected").length ?? 0) >= BACKED_UP ? "CLOGGED" : "FLOWING");
     if (this.glow.visible) (this.glow.material as THREE.MeshBasicMaterial).opacity = this.reduceMotion ? 0.4 : 0.25 + Math.abs(Math.sin(t * 2.4)) * 0.3;

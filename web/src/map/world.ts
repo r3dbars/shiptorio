@@ -37,8 +37,8 @@ export interface Look {
 export const IRON_LOOK: Look = {
   sky: { top: 0x1c120c, bottom: 0x7a3a16 },
   fog: { color: 0x3a2416, near: 52, far: 120 },
-  hemi: { sky: 0xbcb4b0, ground: 0x46362a, i: 1.0 * L },
-  sun: { color: 0xffc48e, i: 1.05 * L, offset: [6, 26, 16] },
+  hemi: { sky: 0xbcb4b0, ground: 0x46362a, i: 0.8 * L },
+  sun: { color: 0xffc48e, i: 0.95 * L, offset: [6, 26, 16] },
   under: { color: 0xff7a2a, i: 0.42 * L, pos: [8, -10, 12] },
   finish: {
     levels: 52, dither: 0.06, outline: 0.42, threshold: 0.1, ink: 0x100806, saturation: 1.02, contrast: 1.04,

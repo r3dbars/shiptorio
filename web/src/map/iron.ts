@@ -76,9 +76,10 @@ export function ironTex() {
   if (T) return T;
   const cobble = canvasTex(128, 128, (g) => {
     const r = srand(31);
-    g.fillStyle = "#1c1611";
+    g.fillStyle = "#2e2620";
     g.fillRect(0, 0, 128, 128);
-    const tones = ["#564e46", "#4e4640", "#5c544c", "#48423c", "#625a52", "#524a44", "#4a443e", "#5a5048"];
+    // a narrower spread than the reference so a zoomed-out phone reads it as ground, not noise
+    const tones = ["#544c44", "#4e4640", "#58504a", "#4c463f", "#5a524a", "#524a44", "#4e4841", "#564e46"];
     for (let y = 0; y < 128; y += 9) {
       let x = -Math.floor(r() * 8);
       while (x < 128) {
@@ -86,9 +87,9 @@ export function ironTex() {
         g.fillStyle = tones[Math.floor(r() * tones.length)];
         g.fillRect(x + 1, y + 1 + oy, w - 1, h - 1);
         g.fillRect(x + 2, y + oy, w - 3, 1);
-        g.fillStyle = "rgba(255,236,210,0.09)";
+        g.fillStyle = "rgba(255,236,210,0.07)";
         g.fillRect(x + 2, y + 1 + oy, w - 3, 1);
-        g.fillStyle = "rgba(0,0,0,0.22)";
+        g.fillStyle = "rgba(0,0,0,0.16)";
         g.fillRect(x + 1, y + h - 1 + oy, w - 1, 1);
         if (r() < 0.08) {
           g.fillStyle = "rgba(140,60,20,0.35)";
@@ -233,7 +234,7 @@ export function makeIronIsland(w: number, d: number, depth: number) {
 
   // deck slab: oily cobbles on top, dressed stone on the sides (two meshes, each bakes with its kind)
   worldBox(W, SLAB - 0.02, D, worldMat("stone", 2.6), 0, -0.01 - SLAB / 2, 0, g);
-  worldBox(W, 0.02, D, worldMat("cobble", 4.6), 0, 0, 0, g).castShadow = false;
+  worldBox(W, 0.02, D, worldMat("cobble", 6.4), 0, 0, 0, g).castShadow = false;
   // iron curb frame around the deck, brass-riveted, hazard paint along the two edges the camera sees
   const cy = 0.07;
   for (const sz of [-1, 1]) box(W + 0.12, 0.14, 0.32, M.ironM, 0, cy, (sz * (D - 0.26)) / 2, g);
@@ -324,8 +325,8 @@ export function makeIronIsland(w: number, d: number, depth: number) {
           const a = -len / 2 + 0.75 + (c + 0.5) * ((len - 1.5) / cols);
           const wy = y - 0.45 - (rr + 0.5) * ((h - 0.6) / rows);
           const roll = r();
-          if (roll < 0.3) continue;
-          const m = roll < 0.62 ? glow(0xd8803a) : roll < 0.72 ? glow(0xffc070) : M.soot;
+          if (roll < 0.45) continue;
+          const m = roll < 0.7 ? glow(0xc8702e) : roll < 0.78 ? glow(0xffc070) : M.soot;
           const px = onX ? out + 0.01 : a, pz = onX ? a : out + 0.01;
           box(onX ? 0.02 : 0.34, 0.44, onX ? 0.34 : 0.02, m, px, wy, pz, g).castShadow = false;
           // iron frame: a sill and a mullion
@@ -384,8 +385,42 @@ export function makeIronIsland(w: number, d: number, depth: number) {
     prevD = td;
     y -= h;
   });
+  // under the keel: chains with gas lanterns, downpipes glowing at the mouth, a furnace grate
+  const bw = prevW, bd = prevD;
+  for (let i = 0; i < 9; i++) {
+    const cx = (r() - 0.5) * bw * 0.9, cz = (r() - 0.5) * bd * 0.9;
+    const n = 4 + Math.floor(r() * 9);
+    for (let j = 0; j < n; j++) box(j % 2 ? 0.05 : 0.1, 0.16, j % 2 ? 0.1 : 0.05, M.ironL, cx, y - 0.1 - j * 0.15, cz, g).castShadow = false;
+    const ly = y - 0.2 - n * 0.15;
+    if (r() < 0.6) {
+      box(0.26, 0.32, 0.26, glow(C.gas), cx, ly - 0.1, cz, g).castShadow = false;
+      box(0.32, 0.06, 0.32, M.brassD, cx, ly + 0.08, cz, g).castShadow = false;
+      box(0.32, 0.06, 0.32, M.brassD, cx, ly - 0.28, cz, g).castShadow = false;
+    } else box(0.2, 0.3, 0.2, M.rust, cx, ly - 0.1, cz, g).castShadow = false; // a counterweight
+  }
+  for (const [fx, fz] of [[0.32, 0.3], [-0.3, 0.34], [0.36, -0.28]]) {
+    const px = fx * bw, pz = fz * bd, len = 1.2 + r() * 1.6;
+    cyl(0.16, 0.16, len, M.copperD, 6, px, y - len / 2, pz, g).castShadow = false;
+    cyl(0.22, 0.22, 0.12, M.brass, 6, px, y - len, pz, g).castShadow = false;
+    box(0.2, 0.04, 0.2, glow(C.ember), px, y - len - 0.07, pz, g).castShadow = false;
+  }
+  // a big brass gear half sunk into the front of the second tier
+  {
+    const gy = 0.01 - SLAB - HULL[0].h * k - HULL[1].h * k * 0.5, gz = (D * HULL[1].s) / 2 + 0.06, gx = -W * 0.18;
+    const R = Math.min(1.4, HULL[1].h * k * 0.42);
+    const wheel = cyl(R, R, 0.16, M.brass, 16, gx, gy, gz, g);
+    wheel.rotation.x = Math.PI / 2;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const tooth = box(0.22, 0.22, 0.14, M.brass, gx + Math.cos(a) * (R + 0.08), gy + Math.sin(a) * (R + 0.08), gz, g);
+      tooth.rotation.z = a;
+    }
+    const hub = cyl(R * 0.3, R * 0.3, 0.24, M.ironM, 8, gx, gy, gz + 0.04, g);
+    hub.rotation.x = Math.PI / 2;
+    for (let i = 0; i < 4; i++) box(R * 1.8, 0.12, 0.08, M.brassD, gx, gy, gz + 0.09, g).rotation.z = (i * Math.PI) / 4;
+  }
   // the keel: an iron spire with brass bands down to a glowing ember tip
-  const spireH = Math.max(1.2, depth - (0.01 - y) );
+  const spireH = Math.max(2.4, depth - (0.01 - y));
   const cone = new THREE.Mesh(new THREE.ConeGeometry(Math.min(prevW, prevD) * 0.42, spireH, 8), M.iron);
   cone.rotation.x = Math.PI;
   cone.position.y = y - spireH / 2;
@@ -486,11 +521,11 @@ const EXACT: Record<number, [number, number]> = {
   0x3a3f52: [0x3a322b, 24],
   0x4a505a: [0x5a4a3c, 24],
   0x6b7280: [0x6a5a48, 28],
-  0x8a94a3: [0xa87a34, 38], // the classic steel trim → brass
-  0xc9ced6: [0xd0a24e, 50], // light steel → bright brass
-  0xd5d8de: [0xd8c49a, 40], // polished rods → cream steel
-  0xeef1fa: [0xc4b08a, 20], // white panels → cream enamel
-  0xe8ecf1: [0xc4b08a, 20],
+  0x8a94a3: [0x9a7234, 30], // the classic steel trim → brass
+  0xc9ced6: [0xa8864c, 26], // light steel → worn brass
+  0xd5d8de: [0xc0ac84, 40], // polished rods → cream steel
+  0xeef1fa: [0xb09c78, 20], // white panels → cream enamel
+  0xe8ecf1: [0xb09c78, 20],
   0x10141f: [0x140e0a, 0],
   0x1d2026: [0x1e1814, 0],
   0x16120a: [0x1a140c, 0],
@@ -514,8 +549,14 @@ function ironHex(hex: number): [number, number] | null {
     if (l < 0.32) return [0x463d35, 22];
     if (l < 0.48) return [0x5e5244, 26];
     if (l < 0.66) return [0x8a7458, 30];
-    if (l < 0.82) return [0xb89a64, 40];
+    if (l < 0.82) return [0xa08a62, 26];
     return [0xd8c49a, 24];
+  }
+  // bright saturated paint (yellow tanks, cream walls) would blow out under the warm light and bloom:
+  // knock it down a little and let it pick up grime
+  if (hsl.l > 0.55) {
+    tmp.setHSL(hsl.h, hsl.s * 0.85, 0.5 + (hsl.l - 0.55) * 0.45);
+    return [tmp.getHex(), 0];
   }
   return null;
 }
@@ -530,7 +571,7 @@ export function ironizeMaterial(m: THREE.Material, keep?: Set<THREE.Material>) {
   mm.color.setHex(to[0]);
   if (m instanceof THREE.MeshPhongMaterial && to[1]) {
     m.shininess = to[1];
-    m.specular.setHex(to[0] === 0xa87a34 || to[0] === 0xd0a24e || to[0] === 0xb89a64 ? 0x8a6a30 : 0x2a2a30);
+    m.specular.setHex(to[0] === 0x9a7234 || to[0] === 0xa8864c ? 0x6a5028 : 0x2a2a30);
   }
 }
 export function ironize(root: THREE.Object3D, keep?: Set<THREE.Material>) {
@@ -540,4 +581,106 @@ export function ironize(root: THREE.Object3D, keep?: Set<THREE.Material>) {
     for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) ironizeMaterial(m, keep);
   });
   return root;
+}
+
+// ---------- the state post: caution beacon + status lamp in one fixture (CONTRACT.md "Machine API") ----------
+// IDLE: amber lamp, beacon dark. WORKING: green lamp. BLOCKED: red lamp blinking, the beacon spins and
+// flashes, a hazard "!" sign flips up and rings ping on the floor. Static parts bake into two meshes.
+export type IronState = "IDLE" | "WORKING" | "BLOCKED";
+// Black Iron's three-state language (IRON-STYLE §6), read off the machine and the Item Lab state its model shows.
+const NEEDS_YOU = new Set(["BLOCKED", "BACKED UP", "CLOGGED", "ALERT", "OVERLOAD", "OVERHEAT"]);
+const BUSY = new Set(["WORKING", "SORTING", "VERIFYING", "REVIEWING", "APPROVED", "PASS", "LAUNCH", "COUNTDOWN", "MEASURING", "WATCHING", "REJECT", "FAIL", "CHANGES", "REJECTED"]);
+export function ironState(machine: string, art: string): IronState {
+  if (machine === "blocked" || NEEDS_YOU.has(art)) return "BLOCKED";
+  return machine === "working" || BUSY.has(art) ? "WORKING" : "IDLE";
+}
+let SIGN: THREE.Texture | null = null;
+function signTex() {
+  return (SIGN ??= canvasTex(32, 32, (g) => {
+    g.fillStyle = "#16100a";
+    g.fillRect(0, 0, 32, 32);
+    for (let i = -32; i < 64; i += 8) {
+      g.fillStyle = "#f2b21a";
+      g.beginPath();
+      g.moveTo(i, 0);
+      g.lineTo(i + 4, 0);
+      g.lineTo(i + 4 - 32, 32);
+      g.lineTo(i - 32, 32);
+      g.fill();
+    }
+    g.fillStyle = "#16100a";
+    g.fillRect(4, 4, 24, 24);
+    g.fillStyle = "#ffc21a";
+    g.beginPath();
+    g.moveTo(16, 6);
+    g.lineTo(27, 26);
+    g.lineTo(5, 26);
+    g.closePath();
+    g.fill();
+    g.fillStyle = "#16100a";
+    g.fillRect(15, 11, 3, 9);
+    g.fillRect(15, 22, 3, 3);
+  }));
+}
+const LAMP: Record<IronState, number> = { IDLE: 0xffb030, WORKING: 0x30ff80, BLOCKED: 0xff3020 };
+export function makeStatePost(reduceMotion = false) {
+  const g = new THREE.Group();
+  const still = group(g);
+  const off = (o: THREE.Mesh) => ((o.castShadow = false), o);
+  off(cyl(0.06, 0.08, 1.3, M.iron, 6, 0, 0.65, 0, still));
+  for (let i = 0; i < 4; i++) off(cyl(0.085, 0.085, 0.14, i % 2 ? M.hazardD : M.hazard, 6, 0, 0.16 + i * 0.28, 0, still));
+  off(cyl(0.16, 0.2, 0.08, M.ironM, 8, 0, 0.04, 0, still));
+  off(cyl(0.15, 0.13, 0.06, M.brass, 8, 0, 1.33, 0, still));
+  off(cyl(0.1, 0.12, 0.05, M.brassD, 8, 0, 1.82, 0, still));
+  // status lamp: one block whose color tells the state
+  const lampM = new THREE.MeshBasicMaterial({ color: LAMP.IDLE, fog: false });
+  off(box(0.22, 0.2, 0.22, lampM, 0, 1.46, 0, g));
+  // beacon: a dome that turns amber/red and a reflector that spins
+  const domeM = new THREE.MeshBasicMaterial({ color: 0x5a3a10, fog: false });
+  const dome = off(new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), domeM));
+  dome.position.y = 1.68;
+  g.add(dome);
+  const spin = group(g, 0, 1.68, 0);
+  const refl = off(box(0.2, 0.12, 0.06, glow(0xffe070), 0.08, 0, 0, spin));
+  refl.visible = false;
+  // the "!" sign on a hinge: folded flat against the post until BLOCKED
+  const hinge = group(g, 0, 1.1, 0.09);
+  const signM = new THREE.MeshBasicMaterial({ map: signTex(), fog: false });
+  off(box(0.5, 0.5, 0.04, signM, 0, 0.28, 0, hinge));
+  hinge.rotation.x = -1.45;
+  // ping rings on the floor
+  const ringGeo = new THREE.TorusGeometry(0.55, 0.05, 3, 24);
+  const rings = [0xffb020, 0xff4020].map((c) => {
+    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.8, depthWrite: false, fog: false }));
+    m.rotation.x = Math.PI / 2;
+    m.position.y = 0.06;
+    m.visible = false;
+    off(m);
+    g.add(m);
+    return m;
+  });
+  let fold = 1, state: IronState = "IDLE";
+  return {
+    g,
+    still,
+    set(next: IronState, t: number, dt: number) {
+      state = next;
+      const blk = state === "BLOCKED";
+      const blink = reduceMotion ? true : Math.sin(t * 10) > 0;
+      lampM.color.setHex(blk && !blink ? 0x3a0806 : LAMP[state]);
+      domeM.color.setHex(blk ? (reduceMotion || Math.sin(t * 6) > 0 ? 0xffb020 : 0xff4a10) : 0x5a3a10);
+      refl.visible = blk;
+      if (blk && !reduceMotion) spin.rotation.y += dt * 9;
+      fold += ((blk ? 0 : 1) - fold) * Math.min(1, dt * 6);
+      hinge.rotation.x = -fold * 1.45;
+      for (let i = 0; i < 2; i++) {
+        const r = rings[i];
+        r.visible = blk && !reduceMotion;
+        if (!r.visible) continue;
+        const k = (t * 0.9 + i * 0.5) % 1;
+        r.scale.setScalar(0.4 + k * 2.4);
+        (r.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - k);
+      }
+    },
+  };
 }

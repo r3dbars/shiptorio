@@ -6,7 +6,8 @@ import * as lab from "../map/itemlab";
 import { buildDrone } from "../map/drone";
 import { makeDistrict, makeIsland } from "../map/models";
 import { PixelPass } from "../map/pixel";
-import { applyLook, LOOK } from "../map/world";
+import { applyLook, IRON, LOOK } from "../map/world";
+import { ironize, ironState, makeStatePost } from "../map/iron";
 
 THREE.ColorManagement.enabled = false;
 const q = new URLSearchParams(location.search);
@@ -55,6 +56,17 @@ const name = q.get("item") ?? "pad";
 const built = (ITEMS[name] ?? ITEMS.pad)();
 scene.add(built.g);
 const state = q.get("state") ?? "IDLE";
+// Black Iron: the same re-paint and caution post the game gives line machines
+const post = IRON && ["pad", "assembler", "splitter", "inspector", "verify", "review", "gate", "orbit", "check"].includes(name) ? makeStatePost() : null;
+if (IRON) ironize(built.g);
+if (post) {
+  post.g.position.set(1.35, 0, 1.45);
+  built.g.add(post.g);
+}
+const tick = (tt: number, d: number) => {
+  built.update(tt, d, state);
+  post?.set(ironState(q.get("machine") ?? "", state), tt, d);
+};
 
 const zoom = num("zoom", 1), yaw = (num("yaw", 45) * Math.PI) / 180, tilt = Math.PI / 6;
 const lookY = num("y", 1);
@@ -82,7 +94,7 @@ addEventListener("resize", size);
 const T = num("t", 0), dt = 1 / 60;
 let t = 0;
 if (q.get("freeze") === "1") {
-  while (t < T) { built.update(t, dt, state); lab.updateFx(dt); t += dt; }
+  while (t < T) { tick(t, dt); lab.updateFx(dt); t += dt; }
   place();
   pass.render(renderer, scene, camera);
   (window as unknown as { ready: boolean }).ready = true;
@@ -92,7 +104,7 @@ if (q.get("freeze") === "1") {
     const now = performance.now(), d = Math.min(0.05, (now - last) / 1000);
     last = now; t += d;
     spin += d * num("spin", 0);
-    built.update(t, d, state); lab.updateFx(d);
+    tick(t, d); lab.updateFx(d);
     place();
     pass.render(renderer, scene, camera);
     requestAnimationFrame(loop);
