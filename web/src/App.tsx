@@ -376,7 +376,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             ) : show("autonomy") && autonomy && (
               <div
                 className="chip"
-                title={autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : HUD.trustTop}
+                title={autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : autonomy.level === "advisor" ? HUD.trustAdvisor : HUD.trustTop}
               >
                 <span className="badge" style={{ background: "var(--blue)" }}>
                   <Icon name="bot" size={14} />
