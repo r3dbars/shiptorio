@@ -23,6 +23,7 @@ background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 2px,transparent 2px 
 .iron-head svg{flex:none;width:20px;height:20px;shape-rendering:crispEdges}
 .iron-head a,.iron-eyebrow{font:400 10px/1.2 "Silkscreen","Courier New",monospace;letter-spacing:.14em;text-transform:uppercase;color:#b8a48a;text-decoration:none}
 .iron-head a:hover{color:#f4ead8}
+.iron-nav+.iron-eyebrow{margin-left:16px}
 .iron-head .iron-eyebrow{margin-left:auto;text-align:right}
 .iron-body{padding:22px 22px 24px}
 h1{margin:0 0 14px;font:700 20px/1.25 "Silkscreen","Courier New",monospace;letter-spacing:.08em;text-transform:uppercase;color:#f4ead8;overflow-wrap:anywhere}
@@ -42,6 +43,9 @@ h2 code{font:700 22px/1.3 "JetBrains Mono",ui-monospace,Menlo,monospace;display:
 pre{margin:0 0 12px;padding:12px 14px;font:400 13px/1.5 "JetBrains Mono",ui-monospace,Menlo,monospace;color:#f4ead8;background:#1e1814;border:2px solid #5a4434;box-shadow:inset 0 2px 0 rgba(0,0,0,.5);white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto}
 label{display:block;margin-top:16px;font:400 10px/1.4 "Silkscreen","Courier New",monospace;letter-spacing:.12em;text-transform:uppercase;color:#b8a48a}
 input,select{display:block;width:100%;min-height:48px;margin-top:6px;padding:0 12px;font:400 16px/1.3 "JetBrains Mono",ui-monospace,Menlo,monospace;color:#f4ead8;background:#1e1814;border:2px solid #5a4434;border-radius:0;box-shadow:inset 0 2px 0 rgba(0,0,0,.5);caret-color:#ffb020;letter-spacing:0;text-transform:none}
+label code,label small{text-transform:none;letter-spacing:0}
+input[type=checkbox]{display:inline-block;width:20px!important;height:20px;min-height:0!important;margin:0 10px 0 0;padding:0;vertical-align:-4px;accent-color:#ffb020;box-shadow:none}
+label:has(input[type=checkbox]){font:400 14px/1.5 "JetBrains Mono",ui-monospace,Menlo,monospace;letter-spacing:0;text-transform:none;color:#f4ead8}
 input::placeholder{color:#8a7a66}
 input:hover,select:hover{border-color:#8a6a4c}
 button,.btn{display:block;width:100%;min-height:48px;margin-top:20px;padding:12px 14px;font:400 12px/1.2 "Silkscreen","Courier New",monospace;letter-spacing:.08em;text-transform:uppercase;text-align:center;text-decoration:none;color:#140c02;background:#ffb020;border:2px solid #000;border-radius:0;box-shadow:inset 0 -3px 0 rgba(0,0,0,.3),inset 0 2px 0 rgba(255,255,255,.25);cursor:pointer}
@@ -70,6 +74,17 @@ td form>*{margin:0;width:auto;min-width:0;flex:1 1 120px}
 td form button{flex:0 0 auto;min-width:96px}
 .scroll{overflow-x:auto}
 section{margin:22px 0}
+.iron.doc{width:min(800px,100%)}
+.doc .iron-body>section{margin:18px 0;padding:16px 18px 18px;background:#1a130f;border:2px solid #3a2c22;box-shadow:inset 0 2px 0 rgba(255,220,170,.04)}
+.doc .iron-body>section>h2:first-child{margin-top:0}
+.doc button,.doc .btn{display:inline-block;width:auto;margin:10px 10px 0 0}
+.muted{color:#b8a48a}
+h2.danger{color:#ff4a32}
+.draft{padding:10px 12px;color:#f4ead8;background:#2a1f0a;border:2px solid #ffb020;box-shadow:inset 4px 0 0 #ffb020}
+.item{padding:12px 0;border-top:2px solid #2a211b;overflow-wrap:anywhere}
+.item p{margin:4px 0 0}
+.iron-nav{margin-left:auto;display:flex;gap:16px}
+.iron-foot{display:flex;flex-wrap:wrap;gap:12px 24px;margin-top:24px;padding-top:14px;border-top:2px dotted #5a4434;font-size:13px}
 @media (max-width:520px){body{padding:16px 12px;place-items:start center}.iron-body{padding:18px 16px 20px}h1{font-size:17px}.iron-head .iron-eyebrow{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}`;
 
@@ -87,6 +102,10 @@ export interface IronPageOptions {
   fonts?: boolean;
   /** A wide plate for internal tables and logs. */
   wide?: boolean;
+  /** A reading-width plate for long documents; top-level <section>s become inset sub-plates. */
+  doc?: boolean;
+  /** Trusted header links shown at the right of the plate header. */
+  nav?: string;
   /** Caution stripe on top: something failed or needs the player. */
   alarm?: boolean;
   /** Where the SHIPTORIO stamp in the header links. */
@@ -97,9 +116,9 @@ export interface IronPageOptions {
 
 /** A full Black Iron HTML page: one riveted iron plate on the furnace sky. */
 export function ironPage(o: IronPageOptions): string {
-  const head = `<header class="iron-head${o.alarm ? " alarm" : ""}">${COG}<a href="${esc(o.home ?? "/")}">Shiptorio</a>${o.eyebrow ? `<span class="iron-eyebrow">${esc(o.eyebrow)}</span>` : ""}</header>`;
+  const head = `<header class="iron-head${o.alarm ? " alarm" : ""}">${COG}<a href="${esc(o.home ?? "/")}">Shiptorio</a>${o.nav ? `<nav class="iron-nav">${o.nav}</nav>` : ""}${o.eyebrow ? `<span class="iron-eyebrow">${esc(o.eyebrow)}</span>` : ""}</header>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1c120c"><title>${esc(o.title)} · Shiptorio</title>
 <style>${o.fonts === false ? "" : FONT_FACES}
 ${IRON_CSS}</style>${o.head ?? ""}</head>
-<body><main class="iron${o.wide ? " wide" : ""}">${o.alarm ? `<div class="iron-stripe" aria-hidden="true"></div>` : ""}${head}<div class="iron-body">${o.body}</div></main></body></html>`;
+<body><main class="iron${o.wide ? " wide" : ""}${o.doc ? " doc" : ""}">${o.alarm ? `<div class="iron-stripe" aria-hidden="true"></div>` : ""}${head}<div class="iron-body">${o.body}</div></main></body></html>`;
 }
