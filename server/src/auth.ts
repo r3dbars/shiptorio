@@ -1,7 +1,7 @@
 // GitHub login (user-to-server OAuth through the same App) and the one-time App setup page.
 
 import { convertManifestCode } from "./github";
-import { isAllowed, makeSessionCookie } from "./session";
+import { isAllowed, makeSessionCookie, ownerProof } from "./session";
 import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
 import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
@@ -72,6 +72,18 @@ export async function logout(request: Request, env: Env): Promise<Response> {
     status: 302,
     headers: { location: "/", "set-cookie": "shiptorio_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" },
   });
+}
+
+// Owner scripts (runner pairing, the dogfood autopilot) prove they hold SESSION_SECRET and get a real,
+// revocable session row, like a GitHub sign-in. Only an existing, allowed account qualifies.
+export async function ownerSession(request: Request, env: Env, now = Date.now()): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as { login?: unknown; at?: unknown; proof?: unknown } | null;
+  const { login, at, proof } = body ?? {};
+  if (typeof login !== "string" || typeof at !== "number" || typeof proof !== "string" || Math.abs(now - at) > 60_000 ||
+    proof !== (await ownerProof(env.SESSION_SECRET, login, at))) return Response.json({ error: "bad proof" }, { status: 401 });
+  const user = await env.DB.prepare("SELECT id, login FROM users WHERE lower(login) = lower(?)").bind(login).first<{ id: number; login: string }>();
+  if (!user || !isAllowed(env.ALLOWED_LOGINS, user.login)) return Response.json({ error: "unknown account" }, { status: 403 });
+  return Response.json({ ok: true }, { headers: { "set-cookie": await createSession(env, user, "owner-script", now) } });
 }
 
 // ---- one-time GitHub App setup via the manifest flow ----
