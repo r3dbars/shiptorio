@@ -15,6 +15,7 @@ is the only copy agents outside it (Codex) can see.
 | Iterate on pixel art direction | working | Confirmed the locked look (pixel 3D, slate/amber, Silkscreen); Feedback Factory canvas is layout-only now. Reworked the launch pad base and solar panel in the Item Lab, PR #7 (merged, now the art baseline) |
 | Commit all Shiptorio context to repo | done | This folder (`docs/context/`), PRs #6 and #9 |
 | Design Shiptorio's verification loop one-pager | working | `docs/LOOP.md` + `docs/loop.html` (live: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr). The verification gauntlet (CI inspector → verify bay → AI review → launch pad → orbit watch), rework belt with scar tags, promote-a-check, research stations, click-to-act station panel. PRODUCT.md updated (stages, tools, contract, web). |
+| Add sound to Shiptorio | working | Procedural chiptune sound in `web/src/sound/` (no audio files): belt hum, assembler clank, inspector stamps, verify bay pop/ram, rework rattle, Spark chirps, rocket countdown + launch, UI clicks. Driven by FactoryState diffs so sim and live both work. Mute (M) + volume in the HUD, silent until first click |
 
 ## PRs at a glance
 

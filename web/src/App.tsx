@@ -6,6 +6,8 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
+import { SoundControl } from "./ui/SoundControl";
+import { useFactorySound } from "./sound/useFactorySound";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -96,6 +98,7 @@ export function App() {
   const cfg = useMemo(() => readConfig(), []);
   const { state, log, status, send } = useFactory(cfg);
   const caption = useCaption(log);
+  useFactorySound(state);
   const [showLog, setShowLog] = useState(true);
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
@@ -182,6 +185,7 @@ export function App() {
               </span>
             ))}
           </div>
+          <SoundControl />
         </section>
 
         <div className="hud-right">
