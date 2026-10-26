@@ -55,7 +55,7 @@ every item's model, states and animation. Port builders from there.
   go dark, a cloud parks overhead, the meter blinks red.
 
 
-### Inspection stations (round 2, Oct 26, draft until Justin locks it)
+### Inspection stations (round 2, locked by Justin on Oct 26)
 
 The verification gauntlet from `docs/LOOP.md`, one visible machine per check. Each station has a backed-up state
 (a pile of crates at its input, so the bottleneck shows at a glance) and a small shield board with five pips for
