@@ -65,3 +65,16 @@ test("prefs follow the player and only accept known short keys", async () => {
   const me = await (await get(env, "/api/me", cookie)).json();
   expect(me).toMatchObject({ login: "r3dbars", allowed: true, prefs: { intro: "1", guideSeen: "4" } });
 });
+
+test("achievements get a bigger pref, still capped", async () => {
+  const env = baseEnv();
+  const cookie = `${await signedInCookie(env, "r3dbars")}; ${await preview()}`;
+  const put = (body: string) => app.fetch(new Request("https://shiptorio.com/api/me/prefs", { method: "PUT", headers: { cookie, origin: "https://shiptorio.com" }, body }), env as never);
+  const earned = JSON.stringify({ v: 1, got: { "first-rocket": { at: 1, repo: "r3dbars/testing" } }, streak: 1, best: 1, last: "2026-10-26" });
+  expect(earned.length).toBeGreaterThan(64);
+  expect((await put(JSON.stringify({ achievements: earned }))).status).toBe(200);
+  expect((await put(JSON.stringify({ achievements: "x".repeat(2049) }))).status).toBe(400);
+  expect((await put(JSON.stringify({ intro: "x".repeat(65) }))).status).toBe(400);
+  const me = await (await get(env, "/api/me", cookie)).json();
+  expect(me.prefs.achievements).toBe(earned);
+});

@@ -130,8 +130,10 @@ export async function reposFor(env: AccountsEnv, user: User): Promise<RepoRow[]>
 
 // ---- per-player settings ----
 
-// Only these keys are stored, each a short string, so the table can't become a dumping ground.
-const PREF_KEYS = ["intro", "guideSeen"] as const;
+// Only these keys are stored, each with a length cap, so the table can't become a dumping ground.
+// achievements: the player's earned badges as JSON (shared/src/achievements.ts), about 1 KB with all of them.
+const PREF_LIMIT = { intro: 64, guideSeen: 64, achievements: 2048 } as const;
+const PREF_KEYS = Object.keys(PREF_LIMIT) as (keyof typeof PREF_LIMIT)[];
 export type PrefKey = (typeof PREF_KEYS)[number];
 export const isPrefKey = (key: string): key is PrefKey => (PREF_KEYS as readonly string[]).includes(key);
 
@@ -143,7 +145,7 @@ export async function readPrefs(env: AccountsEnv, user: User): Promise<Partial<R
 
 export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<string, unknown>, now = Date.now()): Promise<boolean> {
   const entries = Object.entries(prefs);
-  if (!entries.length || entries.some(([k, v]) => !isPrefKey(k) || typeof v !== "string" || v.length > 64)) return false;
+  if (!entries.length || entries.some(([k, v]) => !isPrefKey(k) || typeof v !== "string" || v.length > PREF_LIMIT[k])) return false;
   if (user.dev) return true;
   await env.DB.batch(entries.map(([k, v]) =>
     env.DB.prepare("INSERT INTO user_prefs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")

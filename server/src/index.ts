@@ -93,13 +93,13 @@ app.get("/api/me", async (c) => {
   return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
 });
 
-// Settings that follow the player across browsers (intro seen, guide progress).
+// Settings that follow the player across browsers (intro seen, guide progress, achievements).
 app.put("/api/me/prefs", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
-  if (text.length > 1024) return c.json({ error: "too large" }, 413);
+  if (text.length > 6144) return c.json({ error: "too large" }, 413); // an escaped 2 KB achievements pref, with room
   let body: unknown;
   try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
