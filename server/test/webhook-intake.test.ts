@@ -12,7 +12,7 @@ const { testApp: app } = await import("./app-fixture");
 
 it("runner transport authenticates independently without opening the preview or other repos", async () => {
   let claims = 0;
-  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", ALLOWED_LOGINS: "test-player", CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }) }) }) }, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
+  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", ALLOWED_LOGINS: "test-player", CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }) }) }) }, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
   const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", user: fixtureUser(), expires: Date.now() + 10000 });
   const send = (repo: string, bearer = token) => app.fetch(new Request(`https://shiptorio.com/api/runner/${repo}/claim`, { method: "POST", headers: { authorization: `Bearer ${bearer}` }, body: JSON.stringify({ harnesses: ["codex"] }) }), env as never);
   expect((await send("r3dbars/shiptorio", "forged")).status).toBe(401);
@@ -46,7 +46,7 @@ it("authenticates, durably enqueues before 202, and deduplicates completed deliv
           if (!existed) rows.set(id, { state: "pending" });
           return { meta: { changes: existed ? 0 : 1 } };
         },
-        first: async () => rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? { count: 1 } : rows.get(String(values[0])) ?? null,
       };
       return statement;
     } },
@@ -72,7 +72,7 @@ it("authenticates, durably enqueues before 202, and deduplicates completed deliv
 });
 
 it("upgrades remote HTTP before authentication and sets HSTS on HTTPS gate responses", async () => {
-  const env = { APP_PASSWORD: "test-preview", SESSION_SECRET: "test-secret" };
+  const env = { SIGNUP_GATE_MODE: "password", APP_PASSWORD: "test-preview", SESSION_SECRET: "test-secret" };
   const insecure = await app.fetch(new Request("http://shiptorio.com/"), env as never);
   expect(insecure.status).toBe(308);
   expect(insecure.headers.get("location")).toBe("https://shiptorio.com/");

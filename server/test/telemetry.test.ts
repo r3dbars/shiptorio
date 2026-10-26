@@ -69,10 +69,10 @@ it('queries separate recent error and webhook indexes', async () => {
 it('allows only the configured Sentry origin through the browser connection policy', async () => {
   const { securityHeaders } = await import('../src/security');
   const request = new Request('https://shiptorio.com');
-  const policy = securityHeaders(request, undefined, 'https://public@o123.ingest.us.sentry.io/123')['Content-Security-Policy'];
+  const policy = securityHeaders(request, undefined, false, 'https://public@o123.ingest.us.sentry.io/123')['Content-Security-Policy'];
   expect(policy).toContain('https://o123.ingest.us.sentry.io');
   expect(policy).not.toContain('https://*');
-  expect(securityHeaders(request, undefined, 'http://untrusted.example/1')['Content-Security-Policy']).not.toContain('untrusted.example');
+  expect(securityHeaders(request, undefined, false, 'http://untrusted.example/1')['Content-Security-Policy']).not.toContain('untrusted.example');
 });
 
 it('keeps business requests working when diagnostic persistence fails', async () => {
