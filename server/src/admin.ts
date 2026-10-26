@@ -48,7 +48,7 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
 }
 const ADMIN_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>Shiptorio diagnostics</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"><style>body{background:#1b2448;color:#eee;font:15px monospace;max-width:1100px;margin:32px auto;padding:16px}button,select{font:inherit;padding:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#111a30;padding:16px}section{margin:24px 0}</style></head>
-<body><h1>Shiptorio diagnostics</h1><p id="status">Loading…</p><label>Factory <select id="repo"><option value="">All events</option></select></label> <button id="refresh">Refresh</button> <button id="force">Send verification error to Sentry</button><div id="content"></div>
+<body><h1>Shiptorio diagnostics</h1><p><a href="/admin/flags">Feature flags</a></p><p id="status">Loading…</p><label>Factory <select id="repo"><option value="">All events</option></select></label> <button id="refresh">Refresh</button> <button id="force">Send verification error to Sentry</button><div id="content"></div>
 <script type="module" src="/admin/app.js"></script></body></html>`;
 const ADMIN_JS = `
 const repo=document.querySelector('#repo'), status=document.querySelector('#status');

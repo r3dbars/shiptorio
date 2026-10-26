@@ -1,5 +1,6 @@
 import { initTelemetry } from "./telemetry";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { loadFeatureFlags } from "./flags";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -31,7 +32,7 @@ function Root() {
   );
 }
 
-void initTelemetry().then(() => createRoot(document.getElementById("root")!).render(
+void Promise.all([initTelemetry(), loadFeatureFlags()]).then(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary><Root /></ErrorBoundary>
   </StrictMode>,
