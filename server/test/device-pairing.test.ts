@@ -1,3 +1,5 @@
+import { signedInCookie, testD1 } from "./d1-fixture";
+import { makeSessionCookie } from "../src/session";
 import { expect, mock, test } from "bun:test";
 import { pollDevice, secretHash, type DeviceRecord } from "../src/device-pairing";
 import { pairToken, readRunnerToken } from "../src/runner-auth";
@@ -22,7 +24,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
   const key = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", key.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
   const stores = new Map<string, Map<string, any>>(), instances = new Map<string, InstanceType<typeof Factory>>();
-  const env = { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: { prepare() { return { bind(repo: string) { return { first: async () => repo === "you/repo" || repo === "you/second" ? { installation_id: 1 } : null }; } }; } }, FACTORY: { idFromName: (s: string) => s, get(name: string) {
+  const env = { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get(name: string) {
     if (!instances.has(name)) {
       const data = new Map<string, any>(); stores.set(name, data);
       let serial: Promise<unknown> = Promise.resolve();
@@ -47,7 +49,8 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const d = await start.json() as { code: string; secret: string; verificationUri: string };
     const path = `/runner/pair?code=${d.code}`;
     expect((await request(path)).status).toBe(401); // preview gate
-    const cookies = await browserCookies();
+    await env.DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES ('you/repo', 1), ('you/second', 1)").run();
+    const cookies = await signedInCookie(env, "test-player", ["you/repo", "you/second"]) + "; " + (await makeSessionCookie(`${browserEnv.SESSION_SECRET}:${browserEnv.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
     const page = await request(path, { headers: { cookie: cookies } });
     expect(page.status).toBe(200); expect(await page.text()).toContain(d.code);
     const approve = (repo = "you/repo", origin = "https://shiptorio.com") => request(path, { method: "POST", headers: { cookie: cookies, origin }, body: new URLSearchParams({ repo }) });

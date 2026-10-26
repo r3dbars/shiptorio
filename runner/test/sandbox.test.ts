@@ -66,3 +66,26 @@ test("host isolation",async()=>{
     server.stop(true); await sandbox.close(); await rm(root, { recursive: true, force: true });
   }
 }, 15000);
+
+test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX === "1")("agent boundary exposes only its dedicated auth home and kills descendants", async () => {
+  const root = await mkdtemp(join(tmpdir(), "shiptorio-agent-test-"));
+  const work = join(root, "job"), home = join(root, "auth"), secret = join(root, "host-secret");
+  await mkdir(work); await mkdir(home);
+  await Bun.write(secret, "host-canary"); await Bun.write(join(home, "auth.json"), "dedicated-login");
+  const sandbox = await checkSandbox(work, { home, executable: process.execPath });
+  try {
+    const result = await sandbox.run([process.execPath, "-e", `
+      import {readFileSync,writeFileSync} from "node:fs";
+      if(readFileSync(process.env.HOME+"/auth.json","utf8")!=="dedicated-login")throw Error("auth missing");
+      for(const p of [${JSON.stringify(secret)},${JSON.stringify(join(process.env.HOME!, ".ssh/id_rsa"))}]){try{readFileSync(p);process.exit(9)}catch{}}
+      if(process.env.SSH_AUTH_SOCK||process.env.SHIPTORIO_RUNNER_TOKEN||process.env.AWS_SECRET_ACCESS_KEY)process.exit(8);
+      try{writeFileSync(${JSON.stringify(join(root, "escaped"))},"bad");process.exit(7)}catch{}
+      const p=Bun.spawn([process.execPath,"-e","setTimeout(()=>Bun.write('descendant-marker','bad'),500)"],{stdout:"ignore",stderr:"ignore"});
+      console.log("agent-boundary-ok"); process.exit(0);
+    `]);
+    expect(result.code).toBe(0); expect(result.out).toContain("agent-boundary-ok");
+    await Bun.sleep(650);
+    expect(await Bun.file(join(work, "descendant-marker")).exists()).toBe(false);
+    await expect(sandbox.run([process.execPath, "-e", ""], root)).rejects.toThrow("escapes");
+  } finally { await sandbox.close(); await rm(root, { recursive: true, force: true }); }
+});

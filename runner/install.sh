@@ -48,6 +48,6 @@ LAUNCHER
 chmod 700 "$staging/shiptorio-runner"
 mv "$staging/shiptorio-runner" "$bin/shiptorio-runner"
 echo 'Shiptorio runner installed. Checking your local agents…'
-"$bin/shiptorio-runner" doctor
+"$bin/shiptorio-runner" setup
 echo 'Starting your runner. Keep this terminal open; Ctrl-C stops it.'
 exec "$bin/shiptorio-runner" watch

@@ -1,11 +1,12 @@
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
-import { gh, installationToken, repoInstallationId } from "./github";
-import { isAllowed, readSession } from "./session";
+import { appJwt, gh, installationToken, repoInstallationId } from "./github";
+import { canSeeRepo, currentUser, readPrefs, reposFor, writePrefs, type User } from "./accounts";
+
 import { previewAccess, secureTransport } from "./access";
 import { githubSource } from "./sources";
-import { sentryStatus, type SentryPayload } from "./sources/sentry";
+import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds } from "./sources/creds";
@@ -31,13 +32,26 @@ export interface Env extends FactoryEnv {
   SESSION_SECRET: string;
   APP_PASSWORD?: string;
   BUILD_SHA?: string;
+  GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
-const app = new Hono<{ Bindings: Env; Variables: { login: string; runner: RunnerIdentity } }>();
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity } };
+const app = new Hono<AppEnv>();
+
+const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) =>
+  currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+
+/** Route guard: 401s unless a real session is signed in, and puts the player on c.get("user"). */
+export const requireUser = async (c: Context<AppEnv>, next: Next) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  c.set("user", user);
+  await next();
+};
 
 app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
@@ -77,14 +91,40 @@ app.onError((err, c) => {
 
 app.get("/auth/login", (c) => login(new URL(c.req.url), c.env));
 app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
-app.get("/auth/logout", () => logout());
+app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
 app.get("/setup", (c) => setupPage(publicUrl(new URL(c.req.url), c.env), c.env));
 app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
 app.get("/api/me", async (c) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  return c.json({ login, allowed: !!login && isAllowed(c.env.ALLOWED_LOGINS, login) });
+  const user = await signedIn(c);
+  if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
+  return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
 });
+
+// Settings that follow the player across browsers (intro seen, guide progress).
+app.put("/api/me/prefs", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+  const text = await c.req.text();
+  if (text.length > 1024) return c.json({ error: "too large" }, 413);
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
+  return c.json({ ok: true });
+});
+
+/** Where a player installs the App on more repos. The slug is read once from GitHub and cached. */
+async function installUrl(env: Env): Promise<string | null> {
+  if (env.GITHUB_APP_SLUG) return `https://github.com/apps/${env.GITHUB_APP_SLUG}/installations/new`;
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
+  let slug = await env.CACHE?.get("app:slug").catch(() => null);
+  if (!slug) {
+    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug).catch(() => null);
+    if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 }).catch(() => null);
+  }
+  return slug ? `https://github.com/apps/${slug}/installations/new` : null;
+}
 
 app.get("/api/setup/status", async (c) => c.json({
   sentry: !!(await sentryCreds(c.env)).clientSecret,
@@ -101,19 +141,24 @@ app.get("/api/setup/status", async (c) => c.json({
 app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
 
 app.get("/api/sources", async (c) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
   const url = publicUrl(new URL(c.req.url), c.env);
-  return c.json({ sources: [githubSource.status(c.env), sentryStatus(await sentryCreds(c.env), url), postHogStatus(await postHogCreds(c.env), url, c.env.FAKE_POSTHOG === "1")] });
+  const asked = (c.req.query("repo") ?? "").toLowerCase();
+  const repo = REPO_RE.test(asked) && (await canSeeRepo(c.env, user, asked)) ? asked : null;
+  return c.json({ sources: [githubSource.status(c.env), sentryStatus(repo ? await sentryCreds(c.env, repo) : {}, url, repo), postHogStatus(repo ? await postHogCreds(c.env, repo) : {}, url, c.env.FAKE_POSTHOG === "1")] });
 });
 
 // Device-code flow. No subscription credential or browser cookie crosses to the runner.
 const device = (env: Env, code: string) => factory(env, `device:${code}`);
-async function deviceRepoAccess(env: Env, login: string, repo: string): Promise<number | null> {
+async function deviceRepoAccess(env: Env, user: User, repo: string): Promise<number | null> {
   if (!REPO_RE.test(repo) || repo.split("/").some(p => p === "." || p === "..")) return null;
+  if (!await canSeeRepo(env, user, repo)) return null;
   const row = await env.DB.prepare("SELECT installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number }>();
   if (!row) return null;
   try {
     const token = await installationToken(env, row.installation_id);
-    const permission = await gh<{ permission: string }>(`/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`, token);
+    const permission = await gh<{ permission: string }>(`/repos/${repo}/collaborators/${encodeURIComponent(user.login)}/permission`, token);
     return ["write", "maintain", "admin"].includes(permission.permission) ? row.installation_id : null;
   } catch { return null; }
 }
@@ -136,8 +181,8 @@ app.post("/api/runner-device/poll", async c => {
   return c.json(await device(c.env, body.code).pollDevice(await secretHash(body.secret)));
 });
 app.on(["GET", "POST"], "/runner/pair", async c => {
-  const user = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!user || !isAllowed(c.env.ALLOWED_LOGINS, user)) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  const user = await signedIn(c);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const code = normalizeCode(c.req.query("code") ?? "");
   const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
@@ -163,9 +208,9 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Claude and Codex sign-ins stay on your computer.</p>`), 200, headers);
 });
 app.get("/api/repos/:owner/:repo/runner/status", async c => {
-  const user = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
+  const user = await signedIn(c);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
-  if (!user || !isAllowed(c.env.ALLOWED_LOGINS, user) || !await deviceRepoAccess(c.env, user, repo)) return c.json({ error: "repository access required" }, 403);
+  if (!user || !await deviceRepoAccess(c.env, user, repo)) return c.json({ error: "repository access required" }, 403);
   return c.json(await factory(c.env, repo).runnerStatus());
 });
 app.get("/docs/runner", c => c.html(runnerPage("Connect your machine", `<p>macOS and Linux · Windows: use WSL2 with a Linux terminal and browser.</p><ol><li>Install <a href="https://code.claude.com/docs/en/setup">Claude Code</a> or <a href="https://developers.openai.com/codex/cli">Codex CLI</a> and sign in on this computer.</li><li>Run <pre>curl -fsSL https://shiptorio.com/install.sh | sh</pre></li><li>The runner opens a browser. Sign in to Shiptorio, compare the code with your terminal, enter your installed GitHub repo, and approve.</li><li>Return to your terminal for confirmation. Open the factory, choose an issue and request Spark’s plan. Approve its file scope in the plan card to start a job.</li></ol><p>The installer checks git and agent sign-in. macOS jobs need Apple Command Line Tools (<code>xcode-select --install</code>). Linux jobs need bubblewrap (<code>sudo apt install bubblewrap</code>) and working user namespaces.</p><h2>More repos and updates</h2><p>Run <code>~/.local/bin/shiptorio-runner pair</code> to add another repo. One runner serves all paired repos. Rerun the installer to update; pairings stay local. Run <code>~/.local/bin/shiptorio-runner watch</code> to start again after closing the terminal.</p><h2>Troubleshooting</h2><p>Keep the runner terminal open. Run <code>~/.local/bin/shiptorio-runner doctor</code> to check agent sign-ins. If the browser doesn’t open, copy the URL printed in the terminal. A code lasts 10 minutes; run <code>pair</code> again if it expires. If offline, check the terminal error and internet connection. If a token expired while your computer slept, pair that repo again. A plan needs an open GitHub issue; pairing alone does not start a build.</p><h2>Stop, revoke, uninstall</h2><p>Ctrl-C stops the foreground runner. Use Disconnect in the game to revoke the repo credential immediately. To remove the standalone install and its local credentials:</p><pre>~/.local/bin/shiptorio-runner uninstall</pre><p>Local config is owner-only in <code>~/.local/share/shiptorio/runner/pairings/</code>; subscription credentials are never uploaded. Legacy background service users should first run <code>bun run runner:service stop</code> from their checkout.</p>`)));
@@ -175,37 +220,42 @@ app.get("/docs/runner", c => c.html(runnerPage("Connect your machine", `<p>macOS
 app.on(["GET", "POST"], "/connect/:kind", async (c) => {
   const kind = c.req.param("kind");
   if (kind !== "sentry" && kind !== "posthog") return c.notFound();
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
+  const user = await signedIn(c);
+  if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const url = publicUrl(new URL(c.req.url), c.env);
   const repoParam = c.req.query("repo") ?? "";
   const repo = REPO_RE.test(repoParam) ? repoParam.toLowerCase() : await linkedRepo(c.env, kind);
-  const connected = kind === "sentry" ? !!(await sentryCreds(c.env)).clientSecret : !!(await postHogCreds(c.env)).apiKey;
-  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl: `${url}/webhooks/sentry` }));
+  // Keys belong to one map, and only someone who can open that map may set them.
+  if (!repo) return c.text("Open this page from the map you want to plug it into.", 400);
+  if (!(await canSeeRepo(c.env, user, repo))) return c.text("You don't have access to that repo's factory.", 403);
+  const connected = kind === "sentry" ? !!(await sentryCreds(c.env, repo)).clientSecret : !!(await postHogCreds(c.env, repo)).apiKey;
+  const webhookUrl = sentryWebhookUrl(url, repo);
+  if (c.req.method === "GET") return c.html(connectPage({ kind, repo, connected, webhookUrl }));
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
   const form = await c.req.formData();
   const field = (name: string) => String(form.get(name) ?? "").trim();
   if (kind === "sentry") {
     const clientSecret = field("clientSecret");
-    if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl: `${url}/webhooks/sentry`, error: "That doesn't look like a Sentry Client Secret." }), 400);
-    await saveCreds(c.env, "sentry", { clientSecret });
+    if (!/^[\w-]{16,200}$/.test(clientSecret)) return c.html(connectPage({ kind, repo, connected, webhookUrl, error: "That doesn't look like a Sentry Client Secret." }), 400);
+    await saveCreds(c.env, "sentry", { clientSecret }, repo);
   } else {
     const apiKey = field("apiKey");
     const projectId = field("projectId");
     const host = field("host") === "eu" ? "https://eu.posthog.com" : "https://us.posthog.com";
     const keyEvent = field("keyEvent") || "$pageview";
     if (!/^ph[a-z]_[\w]{10,200}$/.test(apiKey) || !/^\d{1,12}$/.test(projectId) || !/^[\w$ .:-]{1,100}$/.test(keyEvent)) return c.html(connectPage({ kind, repo, connected, webhookUrl: "", error: "Check the key (starts with phx_) and the project id (a number)." }), 400);
-    await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent });
+    await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, repo);
   }
   // Plug it straight into the map it came from.
-  if (repo) await factory(c.env, repo).connectMine(kind).catch(() => null);
-  return c.html(connectPage({ kind, repo, connected: true, webhookUrl: `${url}/webhooks/sentry`, saved: true }));
+  await factory(c.env, repo).connectMine(kind).catch(() => null);
+  return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
 app.get("/api/repos", async (c) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
-  const repos = await c.env.DB.prepare("SELECT full_name, installation_id, default_branch FROM repos ORDER BY full_name").all<{ full_name: string; installation_id: number; default_branch: string | null }>();
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  // Only repos this player's GitHub account can reach through an App installation.
+  const repos = { results: await reposFor(c.env, user) };
   // Preserve the legacy database fields while serving the browser's repo-card contract.
   // Issue counts are not available from this query; omit them rather than inventing zero.
   return c.json({ repos: repos.results.map(repo => ({
@@ -217,10 +267,14 @@ app.get("/api/repos", async (c) => {
 
 // ---------- the factory (browser websocket) ----------
 
-app.use("/api/repos/*", async (c, next) => {
-  const login = await readSession(c.env.SESSION_SECRET, c.req.header("cookie") ?? null);
-  if (!login || !isAllowed(c.env.ALLOWED_LOGINS, login)) return c.json({ error: "login required" }, 401);
-  c.set("login", login);
+app.use("/api/repos/:owner/:repo/*", async (c, next) => {
+  const user = await signedIn(c);
+  if (!user) return c.json({ error: "login required" }, 401);
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
+  if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
+  // Same answer for "no such factory" and "not yours", so repo names can't be probed.
+  if (!(await canSeeRepo(c.env, user, repo))) return c.json({ error: "not found" }, 404);
+  c.set("user", user);
   await next();
 });
 
@@ -229,9 +283,13 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
+  if (c.req.param("action") === "revoke") {
+    await f.revokeRunner();
+    return c.json({ revoked: true });
+  }
   await f.ensure(repo, await installationFor(c.env, repo));
   if (c.req.param("action") === "disconnect") {
-    if (!await deviceRepoAccess(c.env, c.get("login"), repo)) return c.json({ error: "repository access required" }, 403);
+    if (!await deviceRepoAccess(c.env, c.get("user"), repo)) return c.json({ error: "repository access required" }, 403);
     await f.revokeRunner(); return c.json({ ok: true });
   }
   if (c.req.param("action") === "pair") {
@@ -337,18 +395,24 @@ app.post("/webhooks/github", async (c) => {
 
 // ---------- Sentry webhooks ----------
 
-app.post("/webhooks/sentry", async (c) => {
+// /webhooks/sentry/<owner>/<repo> is checked with that map's own secret. The bare URL is the
+// pre-accounts one and still feeds the repo the legacy shared key is linked to.
+app.post("/webhooks/sentry/:owner/:repo", (c) => sentryWebhook(c, `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase()));
+app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
+
+async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
+  if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
   if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
   const body = await c.req.text();
   if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
-  const { clientSecret } = await sentryCreds(c.env);
+  const { clientSecret } = await sentryCreds(c.env, perRepo);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   const resource = c.req.header("sentry-hook-resource") ?? "";
   if (!["issue", "event_alert", "error"].includes(resource)) return c.json({ ok: true, ignored: true });
   let payload: SentryPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
-  const repo = await linkedRepo(c.env, "sentry");
+  const repo = perRepo ?? (await linkedRepo(c.env, "sentry"));
   if (!repo || !REPO_RE.test(repo)) return c.json({ ok: true, ignored: true, reason: "Sentry isn't plugged into a map yet" });
   // Sentry sends Request-ID; fall back to a body hash so retries still dedupe.
   const delivery = c.req.header("request-id")?.replace(/[^\w-]/g, "").slice(0, 200)
@@ -361,7 +425,7 @@ app.post("/webhooks/sentry", async (c) => {
   }
   await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
   return c.json({ ok: true, queued: true }, 202);
-});
+}
 
 // Everything else is the web app.
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));

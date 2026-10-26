@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Spark runs Shiptorio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Judge-facing explainer: where Meta Muse Spark makes the calls in Shiptorio. Same tokens as docs/loop.html
+   (the game's own dark UI). Sources: docs/context/spark-audit.md, server/src/spark.ts, PR #87. */
+:root {
+  --ground: #141b38; --tile: #1f2952; --panel: #0e1329; --panel-2: #151c3a;
+  --line: #8d99c9; --line-dim: #3a4677; --ink: #eef1fa; --dim: #a9b2d4;
+  --amber: #f2a93b; --green: #5bd18b; --red: #ff5e52; --blue: #6fb2ff; --clay: #d97757;
+  --pixel: "Silkscreen", "Courier New", monospace;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.6 var(--mono);
+  background-image: linear-gradient(var(--tile) 1px, transparent 1px), linear-gradient(90deg, var(--tile) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font: 700 30px/1.2 var(--pixel); color: var(--amber); margin: 0 0 8px; }
+h2 { font: 700 18px var(--pixel); color: var(--amber); margin: 40px 0 12px; letter-spacing: .02em; }
+p { margin: 0 0 12px; }
+.lede { color: var(--dim); font-size: 16px; max-width: 70ch; }
+.card { background: var(--panel); border: 1px solid var(--line-dim); border-radius: 10px; padding: 16px; margin: 12px 0; }
+svg { width: 100%; height: auto; display: block; }
+.scroll { overflow-x: auto; }
+@media (max-width: 700px) { .scroll svg { min-width: 760px; } table { min-width: 560px; } }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--dim); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line-dim); vertical-align: top; }
+th { color: var(--dim); font-weight: 600; }
+.wrap { overflow-x: auto; }
+.who { font-weight: 600; white-space: nowrap; }
+.spark { color: var(--blue); }
+.rule { color: var(--dim); }
+.build { color: var(--clay); }
+.step { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line-dim); }
+.step:last-child { border-bottom: 0; }
+.step b { font: 700 13px var(--pixel); color: var(--blue); }
+.step code, td code { color: var(--amber); font-size: 13px; }
+blockquote { margin: 8px 0 0; padding: 10px 12px; border-left: 3px solid var(--blue); background: var(--panel-2); color: var(--dim); font-size: 13px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.grid .card { margin: 0; }
+.grid h3 { font: 700 13px var(--pixel); margin: 0 0 6px; color: var(--ink); }
+a { color: var(--amber); }
+small { color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>How Meta Muse Spark runs Shiptorio</h1>
+  <p class="lede">Shiptorio turns a GitHub repo into a factory game, and every PR it ships is real. One model, Meta Muse Spark (<code>muse-spark-1.3</code> on the Meta Model API), is the brain. It sorts the work, plans every job, reviews every PR, judges what happens after launch, and decides which card the player sees next. The player's Claude Code or Codex subscription only builds what Spark planned. Spark never writes code, and it can never merge past a failed check.</p>
+
+  <h2>The loop</h2>
+  <div class="card">
+    <div class="scroll"><svg viewBox="0 0 880 330" role="img" aria-label="The Shiptorio loop: issue, triage, plan, build, CI, verify, AI review, merge, orbit watch, with Spark's decisions highlighted">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8d99c9"/></marker>
+        <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ff5e52"/></marker>
+      </defs>
+      <g font-family="JetBrains Mono, monospace" font-size="12" text-anchor="middle">
+        <!-- top row -->
+        <g><rect x="10" y="40" width="110" height="56" rx="8" fill="#151c3a" stroke="#3a4677"/><text x="65" y="64" fill="#eef1fa">Issue / Sentry</text><text x="65" y="82" fill="#a9b2d4">ore arrives</text></g>
+        <g><rect x="150" y="40" width="110" height="56" rx="8" fill="#0f2240" stroke="#6fb2ff" stroke-width="2"/><text x="205" y="64" fill="#6fb2ff">Triage</text><text x="205" y="82" fill="#a9b2d4">kind + folder</text></g>
+        <g><rect x="290" y="40" width="130" height="56" rx="8" fill="#0f2240" stroke="#6fb2ff" stroke-width="2"/><text x="355" y="64" fill="#6fb2ff">Scope + plan</text><text x="355" y="82" fill="#a9b2d4">5-turn tool loop</text></g>
+        <g><rect x="450" y="40" width="120" height="56" rx="8" fill="#2a1a14" stroke="#d97757" stroke-width="2"/><text x="510" y="64" fill="#d97757">Build</text><text x="510" y="82" fill="#a9b2d4">Claude / Codex</text></g>
+        <g><rect x="600" y="40" width="110" height="56" rx="8" fill="#151c3a" stroke="#3a4677"/><text x="655" y="64" fill="#eef1fa">CI + verify</text><text x="655" y="82" fill="#a9b2d4">real proof</text></g>
+        <g><rect x="740" y="40" width="130" height="56" rx="8" fill="#0f2240" stroke="#6fb2ff" stroke-width="2"/><text x="805" y="64" fill="#6fb2ff">AI review</text><text x="805" y="82" fill="#a9b2d4">2nd opinion</text></g>
+        <path d="M120 68H148M260 68H288M420 68H448M570 68H598M710 68H738" stroke="#8d99c9" stroke-width="2" marker-end="url(#a)" fill="none"/>
+        <!-- down to merge -->
+        <path d="M805 96V160" stroke="#8d99c9" stroke-width="2" marker-end="url(#a)" fill="none"/>
+        <!-- bottom row, right to left -->
+        <g><rect x="740" y="162" width="130" height="56" rx="8" fill="#151c3a" stroke="#f2a93b" stroke-width="2"/><text x="805" y="186" fill="#f2a93b">Merge gate</text><text x="805" y="204" fill="#a9b2d4">you or a permit</text></g>
+        <g><rect x="560" y="162" width="150" height="56" rx="8" fill="#0f2240" stroke="#6fb2ff" stroke-width="2"/><text x="635" y="186" fill="#6fb2ff">Orbit watch 24h</text><text x="635" y="204" fill="#a9b2d4">caused by launch?</text></g>
+        <g><rect x="360" y="162" width="170" height="56" rx="8" fill="#0f2240" stroke="#6fb2ff" stroke-width="2"/><text x="445" y="186" fill="#6fb2ff">Game master</text><text x="445" y="204" fill="#a9b2d4">next card · research</text></g>
+        <path d="M740 190H712M560 190H532" stroke="#8d99c9" stroke-width="2" marker-end="url(#a)" fill="none"/>
+        <!-- rework belt -->
+        <path d="M655 96 C 655 140, 400 120, 360 98" stroke="#ff5e52" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#r)" fill="none"/>
+        <path d="M805 40 C 805 6, 380 6, 362 38" stroke="#ff5e52" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#r)" fill="none"/>
+        <path d="M600 218 C 560 300, 330 300, 340 98" stroke="#ff5e52" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#r)" fill="none"/>
+        <text x="470" y="296" fill="#ff5e52">any fail rides the rework belt back to Spark, with its scar</text>
+      </g>
+    </svg></div>
+    <div class="legend">
+      <span><i style="background:#6fb2ff"></i>Spark decides</span>
+      <span><i style="background:#d97757"></i>player's subscription builds</span>
+      <span><i style="background:#3a4677"></i>fixed rule or real evidence</span>
+      <span><i style="background:#f2a93b"></i>player (or an earned permit)</span>
+    </div>
+  </div>
+
+  <h2>A real run: PR #87</h2>
+  <p>The first factory-built PR on Shiptorio's own repo. Issue <code>#71</code> asked to block direnv credential files from the assembler's path guard. Here is what happened, taken from the PR record.</p>
+  <div class="card">
+    <div class="step"><b>1</b><div>The issue came in from GitHub as ore. The player approved the job and its two-file scope: <code>server/src/engine.ts</code> and <code>server/test/engine.test.ts</code>.</div></div>
+    <div class="step"><b>2</b><div><span class="spark">Spark planned</span> it in its read-only tool loop (<code>read_issue</code> → <code>read_file</code> → <code>assign_job</code>). The plan it handed the builder:
+      <blockquote>“Extend the existing dotenv basename guard … to also block the direnv basename, case-insensitively, at any depth … Keep the public SAFE_PATH test interface unchanged … change no other files, dependencies, or CI deployment configuration.”<br>Acceptance: direnv names refused at any depth · lookalike files still accepted · only the two approved files modified.</blockquote></div></div>
+    <div class="step"><b>3</b><div><span class="build">Codex built it</span> on Justin's Mac through the local runner. The supervisor checked the scope, ran a secret scan, then ran typecheck, tests and build.</div></div>
+    <div class="step"><b>4</b><div><span class="rule">The verify bay</span> proved it with real execution. The new test <em>fails on base</em> (exit 1) and <em>passes on head</em> (11 pass, 0 fail).</div></div>
+    <div class="step"><b>5</b><div>Justin merged it. That run exposed the review-comment gap that #149 fixes. A merge that lands before AI review finishes is now logged as such, and a failed review comment retries out loud.</div></div>
+  </div>
+
+  <h2>Every decision, and who makes it</h2>
+  <div class="card wrap">
+    <table>
+      <tr><th>Decision</th><th>Who</th><th>If Spark can't answer</th></tr>
+      <tr><td>Triage: bug, feature, cleanup or tests, and which folder</td><td class="who spark">Spark</td><td>keyword rule, logged as a fallback</td></tr>
+      <tr><td>Which files a job may touch</td><td class="who spark">Spark</td><td>job stops; the player re-approves</td></tr>
+      <tr><td>The plan: read the issue and code, then assign the job</td><td class="who spark">Spark</td><td>job stops</td></tr>
+      <tr><td>Re-plan after a station sends it back</td><td class="who spark">Spark</td><td>job stops</td></tr>
+      <tr><td>AI review of the diff (posted on the PR)</td><td class="who spark">Spark</td><td>station waits</td></tr>
+      <tr><td>Which card the player sees first, and which option is suggested</td><td class="who spark">Spark</td><td>value × wait ranking</td></tr>
+      <tr><td>After launch: did this new error come from that PR?</td><td class="who spark">Spark</td><td>any spike counts</td></tr>
+      <tr><td>Which check to research next, from the scar pile</td><td class="who spark">Spark</td><td>scar text match</td></tr>
+      <tr><td>Whether a folder's permit card suggests Allow or Not yet</td><td class="who spark">Spark</td><td>streak rule suggests Allow</td></tr>
+      <tr><td>Writing the code</td><td class="who build">Claude Code / Codex</td><td>never Spark</td></tr>
+      <tr><td>Where the jam is, proof a fix works, permit eligibility and revokes</td><td class="who rule">rules</td><td>deliberately not a model call</td></tr>
+    </table>
+  </div>
+
+  <h2>Why the split</h2>
+  <div class="grid">
+    <div class="card"><h3>Spark proposes, rules dispose</h3><p>Spark can reorder cards and suggest options, but it can't invent an action, skip a station or grant a permit. Automation is earned by clean ships, and the proof that earns it stays deterministic.</p></div>
+    <div class="card"><h3>Untrusted inputs</h3><p>Issue text, diffs, Sentry errors and scars all go to Spark as evidence, never as instructions. Every prompt says so, and every reply is parsed against a fixed set of allowed ids.</p></div>
+    <div class="card"><h3>Nothing hidden</h3><p>Every Spark call lands in the in-game "How it thinks" log: what it looked at, what it decided, why, and how long it took. Every time a rule had to stand in, that's counted too.</p></div>
+  </div>
+
+  <h2>Check it yourself</h2>
+  <div class="card">
+    <p><b>On GitHub:</b> each planned issue gets a comment with Spark's triage reason, each tool call and the plan. Each reviewed PR gets a “Muse Spark reviewing X's work” comment.</p>
+    <p><b>In the game:</b> open the bell menu, then <em>powered by Meta Muse Spark · how it thinks</em>.</p>
+    <p><b>In the code:</b> <code>server/src/spark.ts</code> (every prompt), <code>server/src/brain.ts</code> (the decision log), <code>docs/context/spark-audit.md</code> (the audit). <code>bun run spark:check</code> runs every prompt against the live API.</p>
+  </div>
+  <p><small>Shiptorio · Meta AI Developer Hackathon 2026</small></p>
+</main>
+</body>
+</html>
