@@ -41,7 +41,7 @@ import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } 
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
-import { experimentSignal, growthTick, newExperiment, routeUsers } from "./growth";
+import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 
@@ -817,7 +817,8 @@ export class Factory extends DurableObject<FactoryEnv> {
     if ((s.experiments ?? []).some((e) => e.id === exp.id)) return;
     await this.ingestSignal(experimentSignal(exp, drop, now));
     const item = this.state!.items.find((i) => i.ore?.fingerprint === `growth:${exp.id}`);
-    await this.patch({ experiments: [{ ...exp, itemId: item?.id }, ...(this.state!.experiments ?? [])].slice(0, 20) });
+    const station = this.state!.machines.some((m) => m.id === MEASURE_ID) ? [] : [measureMachine()];
+    await this.patch({ experiments: [{ ...exp, itemId: item?.id }, ...(this.state!.experiments ?? [])].slice(0, 20), ...(station.length && { machines: station }) });
     this.log("info", `${drop.step.label} fell ${drop.dropPct}%. New experiment on the line: ${exp.title}`, item?.id);
   }
 
@@ -935,7 +936,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
     // Station piles follow the items, so every item change re-counts the gauntlet.
-    if (p.items || p.removed || p.research) p = { ...p, stations: (s.stations = liveStations(s)) };
+    if (p.items || p.removed || p.research || p.experiments) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
     this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();

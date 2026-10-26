@@ -3,7 +3,7 @@
 // that dropped (with no experiment already on it) comes back as a proposal for Spark to turn into one.
 // Pure: the Factory does the Spark call through think() and ingests the proposal as ore.
 
-import { findFunnelDrop, guessFunnel, MEASURE_DAYS, stepCounts, updateExperiment, type Experiment, type FunnelDrop, type FunnelStep, type Item, type RouteUsers } from "@shiptorio/shared";
+import { findFunnelDrop, guessFunnel, MEASURE_DAYS, stepCounts, updateExperiment, type Experiment, type FunnelDrop, type FunnelStep, type Item, type RouteUsers, type Station } from "@shiptorio/shared";
 import type { Signal } from "./sources/types";
 import type { RouteDay } from "./sources/posthog";
 
@@ -77,5 +77,24 @@ export function experimentSignal(exp: Experiment, drop: FunnelDrop, now: number)
     title: exp.title,
     body: `${exp.hypothesis}\n\nWhy: ${drop.step.label} converted ${Math.round(drop.rate * 100)}% yesterday vs ${Math.round(drop.baseRate * 100)}% the week before (−${drop.dropPct}%), about ${drop.lostPerDay} people a day. After it launches, the measure station watches ${drop.step.label} for ${exp.windowDays} days and calls lift, no lift or hurt.`,
     districtHint: exp.district, usersAffected: drop.lostPerDay, occurredAt: now, rawRef: fingerprint, severity: 1, hints: [`route:${drop.step.from}`, "growth"], action: "upsert",
+  };
+}
+
+// The measure station sits by orbit watch. It goes on the map with the first experiment.
+export const MEASURE_ID = "measure-1";
+export const measureMachine = () => ({ id: MEASURE_ID, type: "inspector" as const, x: 18, y: 3, tier: 1, state: "idle" as const });
+
+export function measureStation(s: { experiments?: Experiment[]; machines: { id: string }[] }): Station | null {
+  const exps = s.experiments ?? [];
+  if (!exps.length || !s.machines.some((m) => m.id === MEASURE_ID)) return null;
+  const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost");
+  const last = [...decided].sort((a, b) => (b.decidedAt ?? 0) - (a.decidedAt ?? 0))[0];
+  return {
+    id: MEASURE_ID, kind: "measure", name: "Measure station", machineId: MEASURE_ID,
+    wip: exps.filter((e) => e.state === "measuring").length,
+    passRate: decided.length ? decided.filter((e) => e.state === "won").length / decided.length : undefined,
+    caughtThisWeek: decided.filter((e) => e.state === "lost").length,
+    lastLog: last?.line ? { who: "Measure", text: last.line.slice(0, 200), ok: last.state !== "lost" } : undefined,
+    actions: [],
   };
 }

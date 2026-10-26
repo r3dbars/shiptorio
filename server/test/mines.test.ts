@@ -194,6 +194,9 @@ it("Factory: a PostHog funnel drop becomes one experiment on the line (growth lo
   expect(item.body).toContain("measure station");
   // no Meta key in the fixture: the fixed rule picked it, and nothing pretends Spark did
   expect(f.saved().brain?.thoughts.some((t) => t.decision === "growth" && t.by === "spark")).toBe(false);
+  // the measure station goes on the map with the first experiment
+  expect(f.saved().machines.some((m) => m.id === "measure-1")).toBe(true);
+  expect(f.saved().stations?.find((st) => st.kind === "measure")?.wip).toBe(0);
   await f.factory.alarm();
   expect((f.saved().experiments ?? []).length).toBe(1);
 });
