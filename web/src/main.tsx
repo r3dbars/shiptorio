@@ -1,4 +1,9 @@
+<<<<<<< HEAD
 import { StrictMode, useEffect, useState } from "react";
+=======
+import { loadFeatureFlags } from "./flags";
+import { StrictMode, useState } from "react";
+>>>>>>> origin/main
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { Onboarding, type OnboardStep } from "./ui/Onboarding";
@@ -45,6 +50,8 @@ function Root() {
     />
   );
 }
+
+await loadFeatureFlags();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

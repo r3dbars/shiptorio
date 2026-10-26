@@ -24,6 +24,7 @@ import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
+import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -117,6 +118,8 @@ function buildSlot(state: FactoryState) {
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
+  const empire = useEmpire(cfg, state);
+  const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -145,7 +148,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
-  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+  const [sheet, setSheet] = useState<"line" | "power" | "guide" | "yours" | "thinks" | "research" | "empire" | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
   useEffect(() => {
@@ -158,6 +161,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // map picks: an empty mine opens its connect sheet, anything else its panel
   const pickOnMap = (k: string | null) => {
     if (intro) return tourly.pick(k);
+    if (k?.startsWith("island:")) return void (location.href = empire.hrefFor(k.slice(7)));
     if (k?.startsWith("src:")) {
       setSource(k.slice(4));
       setCheckin(false);
@@ -237,7 +241,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const build = () => {
     if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
-  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research") => setSheet((v) => (v === s ? null : s));
+  const toggleSheet = (s: "line" | "power" | "guide" | "yours" | "thinks" | "research" | "empire") => setSheet((v) => (v === s ? null : s));
 
   // L toggles labels; A and B do what the launch and build buttons say. Ignored while typing.
   const keys = useRef({ launch, build, show, intro });
@@ -324,6 +328,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
           pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
+          satellites={intro ? undefined : satellites}
+          empire={!intro && sheet === "empire"}
         />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
@@ -333,6 +339,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <header className="topbar">
           <div className="chips">
+            {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             {show("score") && (
               <div className="chip" title="PRs merged">
                 <span className="badge" style={{ background: "var(--amber)" }}>
@@ -460,6 +467,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "thinks" ? (
           <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+        ) : sheet === "empire" ? (
+          <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
           <Research state={state} send={send} onClose={() => setSheet(null)} onResearched={(tech) => { setSheet(null); setLanding(checkStationId(tech)); }} />
         ) : sheet === "guide" ? (
@@ -528,6 +537,15 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             ))}
             <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>See how the planner thinks</button>
+            {cfg.kind === "live" && state?.repo && (
+              <button type="button" className="credit-btn" onClick={async () => {
+                try {
+                  const response = await fetch(`/api/repos/${state.repo}/runner/revoke`, { method: "POST" });
+                  if (!response.ok) throw new Error("Revoke failed");
+                } catch { window.alert("Could not disconnect the runner. Try again."); }
+              }}>Disconnect local runner</button>
+            )}
+
             {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
               const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
               return (

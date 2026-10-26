@@ -23,6 +23,10 @@
     "check": "bun run typecheck && bun test && bun run build",
     "spark:check": "bun server/scripts/spark-check.ts",
     "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts",
+<<<<<<< HEAD
     "stranger": "bun run build && node playtest/stranger/run.mjs"
+=======
+    "autopilot": "bun --env-file=server/.dev.vars server/scripts/autopilot.ts"
+>>>>>>> origin/main
   }
 }

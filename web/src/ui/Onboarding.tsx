@@ -1,3 +1,4 @@
+import { introEnabled } from "../flags";
 // The first screens of the game (docs/PRODUCT.md, Onboarding): sign in with GitHub, pick a repo.
 // Then the map takes over: Spark scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
@@ -61,7 +62,7 @@ function Coach({ children }: { children: React.ReactNode }) {
 
 export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
   // the tour comes first, before anyone's asked to sign in (playtest #107)
-  const [step, setStep] = useState<OnboardStep>(initial === "hello" && !introSeen() ? "intro" : initial === "intro" && INTRO_PARAM === "0" ? "repo" : initial);
+  const [step, setStep] = useState<OnboardStep>(introEnabled && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -106,7 +107,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const at = step === "intro" ? 0 : step === "hello" ? 1 : 2;
   const valid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(typed.trim());
 
-  if (step === "intro") return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep(live && login ? "repo" : "hello"); }} />;
+  if (step === "intro" && introEnabled) return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep(live && login ? "repo" : "hello"); }} />;
 
   return (
     <div className="onboard">
@@ -133,7 +134,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
                 SIGN IN WITH GITHUB
               </button>
             </div>
-            <button type="button" className="linkish ob-replay" onClick={() => setStep("intro")}>
+            <button hidden={!introEnabled} type="button" className="linkish ob-replay" onClick={() => setStep("intro")}>
               Watch the intro again
             </button>
             {!live && <p className="psub ob-sim-note">Sandbox tour · sample repo and issues · no real sign-in</p>}
