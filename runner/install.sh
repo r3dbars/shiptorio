@@ -33,7 +33,7 @@ if [ ! -x "$support/bun" ] || [ "$("$support/bun" --version)" != "$version" ]; t
 fi
 curl -fsSL "$origin/runner-manifest.json" -o "$staging/manifest.json"
 curl -fsSL "$origin/runner.mjs" -o "$staging/runner.mjs"
-"$support/bun" --no-env-file -e '
+"$support/bun" --no-env-file --config=/dev/null -e '
 const [manifest, bundle] = process.argv.slice(1);
 const info = await Bun.file(manifest).json();
 const digest = new Bun.CryptoHasher("sha256").update(await Bun.file(bundle).arrayBuffer()).digest("hex");
@@ -42,7 +42,8 @@ if (!/^[a-f0-9]{64}$/.test(info.sha256) || digest !== info.sha256) throw Error("
 mv "$staging/runner.mjs" "$support/runner.mjs"
 cat > "$staging/shiptorio-runner" <<'LAUNCHER'
 #!/bin/sh
-exec "$HOME/.local/share/shiptorio/runner/bun" --no-env-file "$HOME/.local/share/shiptorio/runner/runner.mjs" "$@"
+cd "$HOME/.local/share/shiptorio/runner"
+exec "$HOME/.local/share/shiptorio/runner/bun" --no-env-file --config=/dev/null "$HOME/.local/share/shiptorio/runner/runner.mjs" "$@"
 LAUNCHER
 chmod 700 "$staging/shiptorio-runner"
 mv "$staging/shiptorio-runner" "$bin/shiptorio-runner"

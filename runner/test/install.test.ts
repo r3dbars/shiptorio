@@ -46,6 +46,8 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
   for (const [name, body] of Object.entries(files)) { await Bun.write(join(fakeBin, name), body); await chmod(join(fakeBin, name), 0o700); }
   const installer = join(home, "install.sh");
   await Bun.write(installer, (await Bun.file(join(import.meta.dir, "../install.sh")).text()).replace("origin=https://shiptorio.com", `origin=${origin}`).replaceAll("__BUN_VERSION__", Bun.version));
+  await Bun.write(join(home, "bunfig.toml"), 'preload = ["./untrusted-preload.ts"]\n');
+  await Bun.write(join(home, "untrusted-preload.ts"), `await Bun.write(${JSON.stringify(join(home, "preload-ran"))}, "unexpected");`);
   const env = { HOME: home, PATH: `${fakeBin}:/usr/bin:/bin`, SHIPTORIO_URL: origin };
   const children: Bun.Subprocess<"ignore", "pipe", "pipe">[] = [];
   const run = (args: string[]) => { const child = Bun.spawn(args, { env, cwd: home, stdin: "ignore", stdout: "pipe", stderr: "pipe" }); children.push(child); return child; };
@@ -64,6 +66,7 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
     const before = await Bun.file(config).text(); expect((await stat(config)).mode & 0o777).toBe(0o600);
     first.kill(); await first.exited;
     claims.clear(); const update = run(["/bin/sh", installer]); await until(() => claims.size === 2);
+    expect(await Bun.file(join(home, "preload-ran")).exists()).toBe(false);
     expect(starts).toBe(2); expect(await Bun.file(config).text()).toBe(before);
     update.kill(); await update.exited;
     corrupt = true;
