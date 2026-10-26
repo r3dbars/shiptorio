@@ -152,7 +152,7 @@ export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<str
   return true;
 }
 
-// ---- progression (migration 0007) ----
+// ---- progression (migration 0008) ----
 
 export const MAX_PROGRESS_BYTES = 32 * 1024;
 
