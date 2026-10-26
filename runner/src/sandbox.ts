@@ -22,15 +22,16 @@ export async function assertVerificationPlatform(): Promise<void> {
   await verificationGit();
 }
 
-export async function checkSandbox(work: string): Promise<CheckSandbox> {
+export async function checkSandbox(work: string, agent?: { home: string; executable: string }): Promise<CheckSandbox> {
   await assertVerificationPlatform();
   const directory = await realpath(work);
   const privateRoot = await realpath(await mkdtemp(join(tmpdir(), "shiptorio-check-")));
-  const home = join(privateRoot, "home"), temp = join(privateRoot, "tmp");
-  await mkdir(home); await mkdir(temp);
+  const home = agent ? await realpath(agent.home) : join(privateRoot, "home"), temp = join(privateRoot, "tmp");
+  if (!agent) await mkdir(home); await mkdir(temp);
   const runtime = await realpath(process.execPath);
   const git = await verificationGit();
-  const bin = join(home, "bin"); await mkdir(bin);
+  const agentBinary = agent ? await realpath(agent.executable) : null;
+  const bin = join(privateRoot, "bin"); await mkdir(bin);
   await symlink(runtime, join(bin, "bun"));
   const node = Bun.which("node");
   const nodeRuntime = node ? await realpath(node) : null;
@@ -39,7 +40,8 @@ export async function checkSandbox(work: string): Promise<CheckSandbox> {
     HOME: home, TMPDIR: temp, TMP: temp, TEMP: temp,
     PATH: [dirname(git), bin, dirname(runtime), ...(nodeRuntime ? [dirname(nodeRuntime)] : []), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
     LANG: "en_US.UTF-8", TERM: "dumb", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1",
-    BUN_INSTALL_CACHE_DIR: join(home, ".bun-cache"),
+    BUN_INSTALL_CACHE_DIR: join(privateRoot, ".bun-cache"),
+    ...(agent ? { CODEX_HOME: join(home, ".codex") } : {}),
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
   };
   const profile = (install: boolean) => `(version 1)
@@ -59,9 +61,9 @@ export async function checkSandbox(work: string): Promise<CheckSandbox> {
 (allow file-read* (literal "/") (subpath "/System") (subpath "/usr/bin") (subpath "/usr/lib") (subpath "/usr/share") (subpath "/usr/libexec") (subpath "/usr/sbin") (subpath "/bin") (subpath "/sbin")
   (subpath "/Library/Developer") (subpath "/Library/Apple") (subpath "/Applications/Xcode.app/Contents/Developer")
   (subpath "/private/etc") (literal "/dev/null") (literal "/dev/random") (literal "/dev/urandom")
-  (subpath "/dev/fd") (literal ${quote(runtime)}) ${nodeRuntime ? `(literal ${quote(nodeRuntime)})` : ""} (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}))
-(allow file-write* (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) (literal "/dev/null") (subpath "/dev/fd"))
-${install ? `(allow network-outbound (literal "/private/var/run/mDNSResponder") (remote tcp "*:443") (remote tcp "*:53") (remote udp "*:53"))
+  (subpath "/dev/fd") (literal ${quote(runtime)}) ${nodeRuntime ? `(literal ${quote(nodeRuntime)})` : ""} (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agentBinary ? `(subpath ${quote(dirname(agentBinary))}) (subpath ${quote(home)})` : ""})
+(allow file-write* (subpath ${quote(directory)}) (subpath ${quote(privateRoot)}) ${agent ? `(subpath ${quote(home)})` : ""} (literal "/dev/null") (subpath "/dev/fd"))
+${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSResponder") (remote tcp "*:443") (remote tcp "*:53") (remote udp "*:53"))
 (allow file-read* (literal "/private/var/run/resolv.conf"))
 (allow mach-lookup (global-name "com.apple.mDNSResponder") (global-name "com.apple.trustd"))` : ""}
 `;
