@@ -81,7 +81,7 @@ it("accepts Firefox native forms without Origin only with same-origin browser ev
     { origin: "null", referer: "https://shiptorio.com/" },
     { origin: "http://shiptorio.com", referer: "https://shiptorio.com/" },
     { origin: "https://evil.example", referer: "https://shiptorio.com/" },
-    { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" }]) {
+    { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" }] as Record<string, string>[]) {
     const response = await post(headers);
     expect(response?.status).toBe(403);
     expect(await response!.text()).toContain("Please reopen this site with https://");
