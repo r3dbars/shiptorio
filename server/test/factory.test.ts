@@ -109,9 +109,9 @@ describe("Factory lifecycle", () => {
       await expect(f.factory.claimRunner(pair, ["codex"])).rejects.toThrow("revoked");
 
       browserPlanning = true;
-      const prepareBrowserPlan = async () => {
+      const prepareBrowserPlan = async (backlog = false) => {
         browserCall = 0;
-        const g = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
+        const g = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 }), ...(backlog ? [item({ id: "gh-2", title: "Another queued issue", state: "queued", prNumber: undefined, attempts: 0 })] : [])], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "fake-meta-key" });
         const pairing = await g.factory.pairRunner();
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         const proposal = g.saved().move!;
@@ -125,6 +125,14 @@ describe("Factory lifecycle", () => {
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         return { g, pairing, approval: g.saved().move! };
       };
+      const backlog = await prepareBrowserPlan(true);
+      expect(backlog.g.saved().move?.id).toBe(backlog.approval.id);
+      await backlog.g.factory.alarm();
+      expect(backlog.g.saved().move?.id).toBe(backlog.approval.id);
+      (backlog.g.factory as unknown as { state: FactoryState }).state.move = { id: "old-resource-card", title: "Connect", why: "legacy", stage: "resources", createdAt: 1, options: [{ id: "connect", label: "Connect", recommended: true, actions: [] }] };
+      expect(await backlog.g.factory.claimRunner(backlog.pairing, ["codex"])).toBeNull();
+      expect(backlog.g.saved().move?.id).toBe(backlog.approval.id);
+      expect(backlog.g.saved().move?.options[0].id).toBe("approve");
       const approved = await prepareBrowserPlan();
       const reconnected = approved.g.reload();
       const approve = JSON.stringify({ type: "choose_move", moveId: approved.approval.id, optionId: "approve" });
