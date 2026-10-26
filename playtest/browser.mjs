@@ -20,15 +20,20 @@ export async function smoke({ tab, baseUrl, fs, outputDir, scenarios = ['quiet-m
     let interacted=false;
     try {
       const suggested=tab.playwright.getByRole('button',{name:/suggested/i}).first();
-      let ready=false;
-      for(let attempt=0; attempt<5 && !ready; attempt++) {
-        try { await suggested.waitFor({state:'visible',timeoutMs:3000}); ready=true; }
-        catch(error) { tree=await tab.getAXState({emit:false}); if(attempt===4) throw error; }
+      const line=tab.playwright.getByRole('checkbox',{name:/Line/i}).first();
+      let control;
+      for(let attempt=0;attempt<6 && !control;attempt++) {
+        if(await suggested.isVisible()) control=suggested;
+        else if(await line.isVisible() && await line.isEnabled()) control=line;
+        else {
+          try { await suggested.waitFor({state:'visible',timeoutMs:3000}); control=suggested; }
+          catch(error) { tree=await tab.getAXState({emit:false}); if(attempt===5) throw error; }
+        }
       }
       tree=await tab.getAXState({emit:false});
-      await suggested.click();
+      await control.click();
       tree=await tab.getAXState({emit:false}); interacted=true;
-    } catch(error) { findings.push({severity:'P2',title:'Suggested action unavailable or failed',detail:String(error).slice(0,500)}); }
+    } catch(error) { findings.push({severity:'P2',title:'Primary game control unavailable or failed',detail:String(error).slice(0,500)}); }
     const errors=(await tab.dev.logs({levels:['error'],limit:30})).filter(e=>Date.parse(e.timestamp)>=startedAt && (!e.url || new URL(e.url).origin===origin.origin));
     if(errors.length) findings.push({severity:'P1',title:'Browser console errors',errors});
     const screenshot=`${outputDir}/${scenario}.png`;
