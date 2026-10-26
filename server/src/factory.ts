@@ -818,19 +818,22 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.ctx.storage.put("state", this.state);
   }
 
+  private broadcastQueue: Promise<void> = Promise.resolve();
   private broadcast(msg: ServerToWeb) {
     const text = JSON.stringify(msg);
-    for (const ws of this.ctx.getWebSockets("web")) {
-      try {
-        if (!browserSocketAllowed(ws.deserializeAttachment(), this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); continue; }
-        if (this.env.DB && (ws.deserializeAttachment() as {sessionHash?:string})?.sessionHash) {
-          this.ctx.waitUntil(browserSocketActive(ws.deserializeAttachment(),this.env).then(active=> { if (active) ws.send(text); else ws.close(1008,'Access revoked'); }).catch(()=>ws.close(1008,'Access unavailable')));
-        } else ws.send(text);
-      } catch {
-        // Legacy/unattached sockets reconnect through the authenticated upgrade.
-        try { ws.close(1008, "Sign in again"); } catch { /* Already gone. */ }
+    const deliver = async () => {
+      for (const ws of this.ctx.getWebSockets("web")) {
+        try {
+          const auth = ws.deserializeAttachment();
+          if (!browserSocketAllowed(auth,this.env,this.socketEpoch) || !await browserSocketActive(auth,this.env)) { ws.close(1008,"Sign in again"); continue; }
+          ws.send(text);
+        } catch { try { ws.close(1008,"Access unavailable"); } catch {} }
       }
-    }
+    };
+    const pending = this.broadcastQueue.then(deliver);
+    this.broadcastQueue = pending.catch(()=>{});
+    this.ctx.waitUntil?.(pending);
+    return pending;
   }
 
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
@@ -911,7 +914,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
-    this.broadcast({ type: "patch", patch: p });
+    await this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();
   }
 
@@ -1361,7 +1364,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (card?.kind === "automate" && card.options[0]?.actions[0]?.args.district === item.lane) await this.publishGauntletMove(null);
     if (revoked) {
       const text = `${item.lane} lost its launch permit: ${why}. Its PRs wait for you again until the lane earns trust back.`;
-      this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
+      await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: item.lane, text });
       this.log("warn", text, item.id);
     }
   }
@@ -1390,7 +1393,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (permit && !earned(r)) { this.log("info", `${lane} hasn't earned a launch permit yet.`); return; }
     await this.savePermits(setPermit(book, lane, permit));
     const text = permit ? `${lane} has a launch permit. Its PRs that pass every station now ship on their own.` : `${lane} launch permit is off. Its PRs wait for you again.`;
-    this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
+    await this.broadcast({ type: "autonomy_unlocked", level: "advisor", district: lane, text });
     this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_autonomy", approvedBy: "player", reason: by === "card" ? "You said yes on the permit card." : "You changed it in settings." });
   }
 
@@ -1513,10 +1516,16 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) server.send(JSON.stringify({ type: "snapshot", state } satisfies ServerToWeb));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    await this.broadcastQueue;
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
+    try { await this.handleBrowserMessage(ws,raw); }
+    finally { await this.broadcastQueue; }
+  }
+
+  private async handleBrowserMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
