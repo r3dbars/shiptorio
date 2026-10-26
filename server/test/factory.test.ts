@@ -26,7 +26,7 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [{ send: (raw: string) => events.push(JSON.parse(raw)) }] };
-  const env = { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }) }) }) }, ...extraEnv };
+  const env = { DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
   const factory = new Factory(ctx as never, env as never);
   return { factory, data, events, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
 }
