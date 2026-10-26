@@ -419,15 +419,14 @@ unlocks, Sentry + inbound email ingest, metrics rollup in D1.
 Foreman drone on the map that flies to whatever Spark is touching, floor log with Spark's lines and an undo,
 HUD with the score row and autonomy level, unlock moment animation, onboarding scan animation. The sim (`web/src/sim/`) gets a `heal` scenario that plays the cascade table exactly.
 
-## Open product calls
+## Product calls (all decided)
 
-These need Justin. Each has the recommendation we're building toward until told otherwise.
-
-1. ~~How autonomous is Spark by default?~~ **Decided (Justin):** Spark asks first, never writes code,
-   autonomy is earned by playing, and code runs on the player's own subscriptions. See the top of this doc.
-2. **Where does "money" come from in the demo?** Recommend: the demo shop runs Stripe test mode, and a
-   "checkout completed" counter on the HUD goes back up after the fix ships. Real Stripe connector is later.
-3. **Customer replies:** Recommend Spark drafts, the player clicks Send (always, in v1). Alternative: auto-send
-   once the district has a permit.
-4. **Who is it for in the pitch?** Recommend: solo founders and tiny teams with real users (the "your product
-   gets better while you play" promise lands hardest there).
+1. **Autonomy (Justin):** Spark asks first, never writes code, autonomy is earned by playing, and code runs
+   on the player's own subscriptions. See the top of this doc.
+2. **Demo "money" (Justin OK'd the pick):** the demo shop runs Stripe test mode. A "checkout completed"
+   counter on the HUD drops when checkout breaks and climbs back after the fix ships. No real payments; a
+   real Stripe connector is later.
+3. **Customer replies (Justin OK'd the pick):** Spark drafts, the player clicks Send, always in v1. No
+   autonomy level auto-sends customer email yet.
+4. **Pitch audience (Justin OK'd the pick):** solo founders and tiny teams with real users. The promise:
+   your product gets better, and earns more, while you play.

@@ -7,6 +7,7 @@ of each section. If you decide something, add it here in the same PR.
 
 | When (2026-10-26, UTC) | Decision | Who |
 | --- | --- | --- |
+| 17:00 | Product calls locked: demo money = Stripe test mode in the demo shop (checkout counter on the HUD); customer replies = Spark drafts, player clicks Send; pitch = solo founders and tiny teams. See `docs/PRODUCT.md` | Justin |
 | 16:57 | **Spark is the brain / game master, not a coder.** It plans, routes, judges and asks; it never writes PRs. Code is written by the player's own subscriptions (Claude Code, Codex) through the local runner, and each sign-in unlocks more machines and power. Spark asks before acting by default; autonomy is earned the more you play. See `docs/PRODUCT.md` | Justin |
 | 16:45 | **Commit and push as often as possible.** Many agents work on this repo at once. `git fetch`, read open PRs and recent `main` commits before you start, push small commits, put shared context in `docs/context/`. | Justin |
 | 16:45 | Anything that needs Justin (merge, decision, login, key, approval) gets pinged to them right away, with the exact action and a link. | Justin |
@@ -22,7 +23,6 @@ of each section. If you decide something, add it here in the same PR.
 
 | Item | Waiting on |
 | --- | --- |
-| Product calls in `docs/PRODUCT.md` (bottom): where demo "money" comes from, customer reply sending, who the pitch is for. Building toward the recommendations until answered | Justin |
 | Which .com Shiptorio lives on (only `r3d.bar` seen on the Cloudflare account) | Justin |
 | `npx wrangler login` + `bun run deploy` (cloud sessions have no Cloudflare token) | Justin |
 | Open `/setup` on the deployed URL to create the GitHub App, then `wrangler secret put` its secrets | Justin, after deploy |
