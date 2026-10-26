@@ -1,4 +1,5 @@
 import { mkdir, lstat } from "node:fs/promises";
+import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
 
@@ -29,12 +30,21 @@ if (process.argv[2] === "doctor") {
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
 if (!["https://shiptorio.com", "https://shiptorio.dev", "http://localhost:8787"].includes(base)) throw new Error("Unsupported Shiptorio origin");
 const repo = process.env.SHIPTORIO_REPO;
-const pairing = process.env.SHIPTORIO_RUNNER_TOKEN;
+let pairing = process.env.SHIPTORIO_RUNNER_TOKEN;
 if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !pairing) throw new Error("Run runner:control pair first");
 async function api(action: string, body: unknown): Promise<any> {
   const r = await fetch(`${base}/api/runner/${repo}/${action}`, { method: "POST", headers: { authorization: `Bearer ${pairing}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error(`Runner ${action} failed (${r.status})`);
   return r.json();
+}
+async function renewPairing() {
+  const claims = JSON.parse(atob(pairing!.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
+  if (claims.expires > Date.now() + 60 * 60 * 1000) return;
+  const renewed = await api("renew", {});
+  pairing = renewed.token;
+  const file = resolve(root, ".dev.vars");
+  await Bun.write(file, `SHIPTORIO_URL=${base}\nSHIPTORIO_REPO=${repo}\nSHIPTORIO_RUNNER_TOKEN=${pairing}\n`, { mode: 0o600 });
+  await chmod(file, 0o600);
 }
 async function execute(job: Job) {
   if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || job.branch !== `shiptorio/runner-${job.id}` || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
@@ -84,6 +94,7 @@ if (process.argv[2] === "retry") {
 } else {
   const once = process.argv[2] !== "watch";
   do {
+    await renewPairing();
     const { job } = await api("claim", { harnesses: available });
     if (job) await execute(job); else if (once) console.log("No approved Spark job is ready.");
     if (!once) await new Promise(resolve => setTimeout(resolve, 5000));

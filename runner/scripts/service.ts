@@ -1,0 +1,35 @@
+// Reversible macOS background service; credentials stay in the existing gitignored vars file.
+import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+const runnerRoot = resolve(import.meta.dir, "..");
+const repoRoot = resolve(runnerRoot, "..");
+const label = "com.shiptorio.runner";
+const domain = `gui/${process.getuid!()}`;
+const plist = resolve(process.env.HOME!, "Library/LaunchAgents", `${label}.plist`);
+const action = process.argv[2] ?? "status";
+const launch = async (args: string[], required = true) => {
+  const p = Bun.spawn(["/bin/launchctl", ...args], { stdout: "pipe", stderr: "pipe" });
+  const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  if (required && code) throw new Error(`launchctl failed: ${err.slice(0, 500)}`);
+  return { code, out };
+};
+if (process.platform !== "darwin") throw new Error("Run runner watch on this platform; service installation currently supports macOS.");
+if (action === "install") {
+  if (!(await Bun.file(resolve(runnerRoot, ".dev.vars")).exists())) throw new Error("Pair this Mac first");
+  const runtime = resolve(runnerRoot, ".work/runtime/bun");
+  await mkdir(dirname(runtime), { recursive: true });
+  await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const args = [runtime, `--env-file=${resolve(runnerRoot, ".dev.vars")}`, resolve(runnerRoot, "src/cli.ts"), "watch"];
+  const path = [...new Set([dirname(runtime), ...[Bun.which("codex"), Bun.which("claude")].filter(Boolean).map(p => dirname(p!)), "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
+  await mkdir(dirname(plist), { recursive: true });
+  await writeFile(plist, `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${args.map(a => `<string>${esc(a)}</string>`).join("")}</array><key>WorkingDirectory</key><string>${esc(repoRoot)}</string><key>EnvironmentVariables</key><dict><key>HOME</key><string>${esc(process.env.HOME!)}</string><key>PATH</key><string>${esc(path)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${esc(resolve(runnerRoot, ".work/service.log"))}</string><key>StandardErrorPath</key><string>${esc(resolve(runnerRoot, ".work/service-error.log"))}</string></dict></plist>`, { mode: 0o600 });
+  await launch(["bootout", `${domain}/${label}`], false);
+  await launch(["bootstrap", domain, plist]);
+  console.log("Shiptorio runner installed and started for this Mac user. Only approved jobs can run.");
+} else if (action === "stop") {
+  await launch(["bootout", `${domain}/${label}`]); console.log("Shiptorio runner stopped.");
+} else if (action === "status") {
+  const r = await launch(["print", `${domain}/${label}`], false);
+  console.log(r.code ? "Shiptorio runner is not loaded." : r.out.split("\n").filter(l => /state =|pid =|last exit code/.test(l)).join("\n"));
+} else throw new Error("Use install, stop or status");

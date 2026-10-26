@@ -57,6 +57,12 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
       </div>
       <div className="nm-title">{move.title}</div>
       <p className="nm-why">{move.why}</p>
+      {!!move.plan?.length && (
+        <details className="nm-plan">
+          <summary>Review plan and files</summary>
+          <ol>{move.plan.map((step, i) => <li key={i}>{step}</li>)}</ol>
+        </details>
+      )}
       <div className="nm-options">
         {move.options.map((o) => (
           <button

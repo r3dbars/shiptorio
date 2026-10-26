@@ -35,7 +35,7 @@ const app = new Hono<{ Bindings: Env; Variables: { login: string; runner: Runner
 
 app.use("*", async (c, next) => {
   if (c.req.path.startsWith("/api/runner/")) {
-    const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish)$/);
+    const match = c.req.path.match(/^\/api\/runner\/([\w.-]+)\/([\w.-]+)\/(claim|finish|renew)$/);
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) return c.json({ error: "runner authentication required" }, 401);
     c.set("runner", identity);
@@ -125,6 +125,13 @@ app.post("/api/runner/:owner/:repo/claim", async (c) => {
   const raw = JSON.parse(body);
   if (!Array.isArray(raw.harnesses) || raw.harnesses.length > 2 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   return c.json({ job: await factory(c.env, identity.repo).claimRunner(identity.pairId, raw.harnesses) });
+});
+
+app.post("/api/runner/:owner/:repo/renew", async (c) => {
+  const identity = c.get("runner");
+  if (!(await factory(c.env, identity.repo).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
+  const expires = Date.now() + 8 * 60 * 60 * 1000;
+  return c.json({ token: await pairToken(c.env.SESSION_SECRET, { ...identity, expires }), expires });
 });
 
 app.post("/api/runner/:owner/:repo/finish", async (c) => {

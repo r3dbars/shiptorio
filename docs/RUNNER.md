@@ -18,6 +18,25 @@ review and human merge remain required.
 
 ## Operator commands
 
+## Approve work in the game
+
+With this Mac's runner connected, new issues get a **Plan with Codex / Claude** card.
+That requests read-only planning. Open **Review plan and files** to see the exact file
+scope, pinned commit, plan and checks. Only **Approve and build** makes that plan
+claimable. **Not now** defers it without starting an agent. Replayed clicks are ignored;
+edited/closed issues invalidate stale plans, and reconnecting retains the review card.
+The existing check-in deck uses the same `choose_move` approval path.
+
+The macOS helper can run in the background: `bun run runner:service install`,
+`bun run runner:service status`, or `bun run runner:service stop`. It runs only for
+this Mac user, with credentials in gitignored vars files, and processes approved jobs
+only. An active runner renews its eight-hour repo-only token before expiry; re-pairing
+revokes renewal too. An already-expired token needs owner pairing again. The Mac must
+be awake and the subscription CLI signed in. These are connection requirements, not
+per-plan terminal commands.
+
+## Advanced operator commands
+
 Run from the repository with Bun installed (or prefix these with `npx --yes`):
 
 ```sh
@@ -36,6 +55,5 @@ the control script's environment. Local evidence and isolated clones stay under
 gitignored `runner/.work/`. A successful push receipt can be acknowledged again with
 `bun run runner retry JOB_UUID` if the network drops before the server responds.
 
-This checkpoint supports explicit operator-approved jobs. Browser swipe/Next Move
-approval wiring, continuous monitoring, independent verification/review execution,
-scars and usage telemetry are later checkpoints, not implied by a green local build.
+Operator commands remain available for recovery. Independent verification/review
+execution, scars and usage telemetry remain later checkpoints.
