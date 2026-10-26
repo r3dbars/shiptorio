@@ -49,7 +49,8 @@ function Coach({ children }: { children: React.ReactNode }) {
 }
 
 export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
-  const [step, setStep] = useState<OnboardStep>(initial === "intro" && !INTRO_ON ? "repo" : initial);
+  // the tour comes first, before anyone's asked to sign in (playtest #107)
+  const [step, setStep] = useState<OnboardStep>(initial === "hello" && !introSeen() ? "intro" : initial === "intro" && !INTRO_ON ? "repo" : initial);
   const [login, setLogin] = useState<string | null>(live ? null : "you");
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -62,7 +63,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
       .then((r) => r.json() as Promise<{ login: string | null }>)
       .then((me) => {
         setLogin(me.login);
-        if (me.login && step === "hello") setStep(introSeen() ? "repo" : "intro");
+        if (me.login && step === "hello") setStep("repo");
       })
       .catch(() => setLogin(null));
     fetch("/api/repos")
@@ -72,19 +73,19 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   }, [live]);
 
   const signIn = () => {
-    if (live) location.href = `/auth/login?next=${encodeURIComponent(INTRO_ON ? "/?onboard=intro&source=live&intro=1" : "/?onboard=repo&source=live")}`;
-    else setStep(introSeen() ? "repo" : "intro");
+    if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
+    else setStep("repo");
   };
-  const at = step === "hello" ? 0 : step === "intro" ? 1 : 2;
+  const at = step === "intro" ? 0 : step === "hello" ? 1 : 2;
   const valid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(typed.trim());
 
-  if (step === "intro") return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep("repo"); }} />;
+  if (step === "intro") return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep(live && login ? "repo" : "hello"); }} />;
 
   return (
     <div className="onboard">
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
-          {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (
+          {["WELCOME", "SIGN IN", "PICK A REPO", "BUILD"].map((s, n) => (
             <span key={s} className={n === at ? "on" : n < at ? "done" : undefined}>
               {n + 1} {s}
             </span>

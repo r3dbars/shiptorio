@@ -297,7 +297,7 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
           </button>
         ) : (
           <button type="button" className="btn rec tour-go" onClick={next} disabled={!ready} autoFocus>
-            {at === BEATS.length - 1 ? "Pick your repo →" : ready ? "Next" : "…"}
+            {at === BEATS.length - 1 ? "Start your factory →" : ready ? "Next" : "…"}
           </button>
         )}
       </div>
