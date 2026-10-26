@@ -517,6 +517,21 @@ export const RESEARCH = {
   catches: (what: string) => `Catches ${what}`,
   go: "Research",
   running: "Running",
+  /** the eyebrow over the board */
+  board: "Schematic board",
+};
+
+/** Achievements (ui/Achievements.tsx): the sheet of medallions and the unlock toast. */
+export const ACHIEVE = {
+  title: "Achievements",
+  earned: (total: number) => `of ${total} earned`,
+  earnedSub: "Each one is something that really happened in your repo.",
+  eyebrow: "Foundry medals",
+  tier: { bronze: "Bronze", silver: "Silver", gold: "Gold" } as Record<"bronze" | "silver" | "gold", string>,
+  unlocked: "Achievement unlocked",
+  more: (n: number) => `And ${n} more`,
+  moreSub: "Tap to see every badge you've earned.",
+  xp: (n: number) => `+${n} XP`,
 };
 
 export const GUIDE = {
