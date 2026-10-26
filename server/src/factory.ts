@@ -515,7 +515,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     const diff = await gh<{ status: string; ahead_by: number; files: { filename: string; status: string; previous_filename?: string; changes: number; patch?: string }[] }>(`/repos/${job.repo}/compare/${job.baseSha}...${receipt.sha}`, token);
     if (diff.status !== "ahead" || diff.ahead_by !== 1 || !diff.files.length || diff.files.length > 10 || diff.files.some(f => !job.allowedPaths.includes(f.filename) || !runnerPathAllowed(f.filename) || f.status === "renamed" || f.status === "removed") || diff.files.reduce((n, f) => n + f.changes, 0) > 500) throw new Error("Pushed diff exceeds the approved scope");
     validatePlan(job.plan ?? "", job.allowedPaths);
-    if (diff.files.some(f => typeof f.patch !== "string")) throw new Error("Missing complete patch evidence");
+    if (diff.files.some(f => typeof f.patch !== "string" || f.patch.split("\n").filter(l => /^[+-]/.test(l)).length !== f.changes)) throw new Error("Missing complete patch evidence");
     validatePatch(diff.files.map(f => f.filename), job.allowedPaths, diff.files.map(f => `+++ b/${f.filename}\n${f.patch}`).join("\n"));
     if (receipt.proof && (receipt.proof.headSha !== receipt.sha || receipt.proof.baseSha !== (job.verifyBaseSha ?? job.baseSha))) throw new Error("Verify proof is not bound to this base/head");
     const evidence = receipt.proof ? proofComment(receipt.proof) : "";
@@ -1742,6 +1742,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       const fix = await writeFix(this.env, task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
       if (bad) throw new Error(`refused to write ${bad.path}`);
+      validatePatch(fix.changes.map(c => c.path), wanted, fix.changes.map(c => `+++ b/${c.path}\n${c.content.split("\n").map(l => `+${l}`).join("\n")}`).join("\n"));
 
       const branch = item.branch ?? `shiptorio/${item.id}`;
       await commitToBranch(token, this.meta.repo, s.baseBranch, branch, fix.changes, `${fix.title}\n\n${fix.summary}`);
