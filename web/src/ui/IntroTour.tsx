@@ -9,6 +9,7 @@ import type { FactoryState, WebToServer } from "@shiptorio/shared";
 import type { SourceConfig } from "../source";
 import { freeNear } from "./MakeItYours";
 import { Icon } from "./icons";
+import { sound } from "../sound/engine";
 
 // what the camera does: fly in on a pick key, or pull back over the island (bigger is further out)
 export type TourCam = { focus: string | null; wide: number | null };
@@ -194,6 +195,19 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
     cued.current.add(at);
     send({ type: "station_action", stationId: "intro", action: beat.cue });
   }, [at, beat.cue, send, state]);
+
+  // sound: a whoosh as each card slides in, the warm finale on the last one, a chime when your move lands
+  useEffect(() => {
+    if (at === 0) return;
+    sound.play(beat.cue === "lights" ? "finale" : "beat");
+  }, [at]);
+  useEffect(() => {
+    if (done) sound.play("beat_done");
+  }, [done]);
+  useEffect(() => {
+    const stamp = (["stamp_pass", "verify_pop", "review_stamp"] as const)[tourAt - 1];
+    if (stamp) sound.play(stamp);
+  }, [tourAt]);
 
   // beat 3: the camera walks the gauntlet while the stamps light up
   useEffect(() => {
