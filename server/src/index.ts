@@ -55,9 +55,13 @@ app.get("/api/me", async (c) => {
 });
 
 app.get("/api/setup/status", (c) => c.json({
-  github: !!(c.env.GITHUB_APP_ID && c.env.GITHUB_APP_PRIVATE_KEY && c.env.GITHUB_WEBHOOK_SECRET),
+  github: !!(c.env.GITHUB_APP_ID && c.env.GITHUB_APP_PRIVATE_KEY && c.env.GITHUB_WEBHOOK_SECRET && c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET),
   spark: !!c.env.META_API_KEY,
-  model: c.env.SPARK_MODEL || "muse-spark-1.3",
+  githubAppId: !!c.env.GITHUB_APP_ID,
+  githubPrivateKey: !!c.env.GITHUB_APP_PRIVATE_KEY,
+  githubWebhookSecret: !!c.env.GITHUB_WEBHOOK_SECRET,
+  githubClientId: !!c.env.GITHUB_CLIENT_ID,
+  githubClientSecret: !!c.env.GITHUB_CLIENT_SECRET,
 }));
 
 app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));

@@ -46,9 +46,11 @@ This only creates the `shiptorio` Worker. No other Worker is touched.
 ## 2. Create the GitHub App
 
 1. Open `<your URL>/setup` and hit **Create GitHub App**. GitHub pre-fills everything:
-   write access to contents and pull requests (to push `shiptorio/*` branches and open PRs,
-   never to merge), read access to issues and checks, plus `issues`, `pull_request`, `push`
-   and `check_suite` webhooks pointed at `/webhooks/github`.
+   write access to contents, pull requests and issues (to push `shiptorio/*` branches,
+   open PRs and post issue-status comments), read access to checks and metadata, plus
+   `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `check_run`,
+   `check_suite` and `push` webhooks pointed at `/webhooks/github`. GitHub automatically
+   delivers `installation` and `installation_repositories`; they aren't selectable subscriptions.
 2. GitHub sends you back to `/setup/callback`, which shows each secret once. From `server/`, run the
    `npx wrangler secret put …` command next to each value.
 3. Also set a session secret: `openssl rand -hex 32 | npx wrangler secret put SESSION_SECRET`,
@@ -66,6 +68,23 @@ The simulator is for UI play; it does not prove the issue-to-real-PR path.
 
 The App's callback URLs come from the URL you open `/setup` on. If you move to a custom
 domain later, set the `PUBLIC_URL` var and update the App's URLs on GitHub.
+
+### Justin does — Phase A GitHub mine
+
+1. Open `https://shiptorio.com/setup`, enter the preview password if asked, and sign in to GitHub.
+2. Create the private App. On its callback, copy the one-time values into the corresponding
+   `wrangler secret put` commands **from `server/`**: `GITHUB_APP_ID`, `GITHUB_CLIENT_ID`,
+   `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_PRIVATE_KEY`.
+   Copy the same values into gitignored `server/.dev.vars` for local real-repo tests;
+   quote the multiline PEM. Never paste credentials into chat, PRs or committed files.
+3. Follow the installation link; choose **Only select repositories** and `r3dbars/shiptorio`.
+   Add a demo repository only after choosing its exact name; don't select all repositories.
+4. After preview login, check `/api/setup/status`. Each credential field is a boolean;
+   `github: true` requires all five GitHub secrets. `spark: true` is independent.
+5. Use `/auth/login?next=/?source=live%26repo=r3dbars/shiptorio` to sign in to the live map.
+
+The canonical `PUBLIC_URL` is `https://shiptorio.com`, including when the `.dev` alias is visited.
+Phase A adds install/backfill, normalized ore and the gauntlet in subsequent small PRs.
 
 ## 3. Who can see maps
 
