@@ -115,10 +115,10 @@ app.put("/api/me/prefs", async (c) => {
 async function installUrl(env: Env): Promise<string | null> {
   if (env.GITHUB_APP_SLUG) return `https://github.com/apps/${env.GITHUB_APP_SLUG}/installations/new`;
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) return null;
-  let slug = await env.CACHE?.get("app:slug").catch(() => null);
+  let slug = await env.CACHE?.get("app:slug");
   if (!slug) {
-    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug).catch(() => null);
-    if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 }).catch(() => null);
+    slug = await gh<{ slug: string }>("/app", await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY)).then((a) => a.slug);
+    if (slug) await env.CACHE?.put("app:slug", slug, { expirationTtl: 86400 });
   }
   return slug ? `https://github.com/apps/${slug}/installations/new` : null;
 }
@@ -178,7 +178,7 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
     await saveCreds(c.env, "posthog", { apiKey, projectId, host, keyEvent }, repo);
   }
   // Plug it straight into the map it came from.
-  await factory(c.env, repo).connectMine(kind).catch(() => null);
+  await factory(c.env, repo).connectMine(kind);
   return c.html(connectPage({ kind, repo, connected: true, webhookUrl, saved: true }));
 });
 
@@ -279,7 +279,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
   if (c.env.GITHUB_APP_ID) {
-    const installationId = await installationFor(c.env, repo).catch(() => null);
+    const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }
   return f.fetch(c.req.raw);
@@ -354,6 +354,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
     if (previous?.state === "done") return c.json({ ok: true, duplicate: true });
   }
   await factory(c.env, repo).enqueueSentry(delivery, resource, payload);
+  c.executionCtx.waitUntil(c.env.DB.prepare("DELETE FROM webhook_deliveries WHERE source = 'sentry' AND expires_at < ? AND state = 'done'").bind(now).run());
   return c.json({ ok: true, queued: true }, 202);
 }
 
