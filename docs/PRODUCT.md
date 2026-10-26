@@ -376,6 +376,7 @@ The demo story, step by step. Every row is a real effect.
 | Spark loop | Event wakes + heartbeat, tools from all four tiers, factory brief, budget, ask-or-act check | Long-horizon planning, weekly goals that steer research |
 | Bottleneck engine | Stage table, value × wait, Next Move card | Per-district bottlenecks, forecasting ("pad will jam by 3 PM") |
 | Assemblers | Claude Code + Codex through the local runner on the player's subscriptions | Cursor, Grok, local Glimmer (geothermal), hosted runner for teams |
+| Gauntlet | CI inspector, verify bay, AI review, merge gate live; rework belt back to Spark; click-to-act panels; research tree shown with one unlock on camera | Orbit watch (if Sentry lands, it moves into the demo), canary, security, perf, arena |
 | Autonomy | Advisor → Floor → Build shown, one launch permit earned on camera (docs auto-launch) | Lights out, permits on every district, thresholds tuned on real data |
 | Outputs | PR, merge, release on the demo shop, customer reply draft + send | Real deploy integrations (Cloudflare, Vercel), changelog |
 | Score | Rockets, lead time, biters killed, customers answered, users unblocked, Ship Score | Revenue from Stripe, cohort impact |
@@ -457,3 +458,6 @@ gate, orbit watch) with piles and a red rework belt back to Spark, a click-to-ac
    autonomy level auto-sends customer email yet.
 4. **Pitch audience (Justin OK'd the pick):** solo founders and tiny teams with real users. The promise:
    your product gets better, and earns more, while you play.
+5. **Verification gauntlet (Justin, 2026-10-26):** `docs/LOOP.md` is locked. Nov 4 ships CI inspector, verify
+   bay, AI review and merge gate; fails go back to Spark with a scar tag; AI review is a different model family
+   than the builder; stations can be removed per district at a trust cost.
