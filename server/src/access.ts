@@ -89,7 +89,7 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
   if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry" || /^\/webhooks\/sentry\/[\w.-]+\/[\w.-]+$/.test(url.pathname)) return null;
   // The docs site is public.
-  if (isPublicDocs(url.pathname)) return null;
+  if (isPublicDocs(url.pathname) && ["GET", "HEAD"].includes(request.method)) return null;
   // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.
   if (url.pathname === "/api/version" && request.method === "GET") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;

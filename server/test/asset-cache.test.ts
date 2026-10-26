@@ -24,3 +24,29 @@ test("the committed font loading markup works without CSP-blocked inline handler
   expect(html).toMatch(/fonts\.googleapis\.com[^>]+rel="stylesheet"/);
   expect((html.match(/<link\b[^>]*>/gi) ?? []).filter(link => link.includes("fonts.googleapis.com")).every(link => !link.includes('media="print"'))).toBe(true);
 });
+
+test("public docs survive password and waitlist gates while private APIs stay gated", async () => {
+  for (const mode of ["password", "waitlist"]) {
+    let assets = 0;
+    const env = {
+      SESSION_SECRET: "docs-session", APP_PASSWORD: "docs-password", SIGNUP_GATE_MODE: mode,
+      ASSETS: { fetch: async (request: Request) => {
+        assets++;
+        return new Response("public documentation", { status: new URL(request.url).pathname.includes("missing") ? 404 : 200 });
+      } },
+    };
+    for (const path of ["/docs", "/docs/runner", "/docs/search.json"]) {
+      const response = await app.fetch(new Request(`https://shiptorio.com${path}`), env as never);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("public documentation");
+      expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+    }
+    const missing = await app.fetch(new Request("https://shiptorio.com/docs/missing"), env as never);
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("cache-control")).toBe("no-store");
+    const before = assets;
+    const privateApi = await app.fetch(new Request("https://shiptorio.com/api/me"), env as never);
+    expect(privateApi.status).toBe(401);
+    expect(assets).toBe(before);
+  }
+});
