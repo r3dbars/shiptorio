@@ -11,6 +11,7 @@ import { runnerHome, loadPairings, savePairing, removePairing, pairMachine, type
 import { jobWorkspace } from "./workspace";
 import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
+import { redactText } from "../../server/src/redact";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
@@ -146,8 +147,8 @@ async function execute(job: Job, pair: Pairing) {
       agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
       const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
       if (result.code) {
-        // The stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
-        console.error(`${job.harness} exited ${result.code}: ${result.err.trim().slice(-2000)}`);
+        // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
+        console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
         throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
       }
       output = result.out;
