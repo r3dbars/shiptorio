@@ -49,7 +49,8 @@ Next Move card.
 | Claude | Solar plant + battery, Claude Code assemblers | `claude -p` in the local runner on your login |
 | ChatGPT | Solar plant + battery, Codex assemblers | `codex exec` in the local runner on your login |
 | Sentry, feedback inbox, PostHog | New ore patches (crater, well, roads) | Webhooks / API keys |
-| Later: Cursor, Grok, a local GPU | More solar, geothermal | Their CLIs / a local endpoint |
+| Later: Cursor, Grok | More solar plants and assemblers | Their CLIs in the local runner |
+| Later: **local AI inference** | Geothermal plant: free, always on, capped throughput, best on smaller items | A model on your own hardware (Mac with MLX / Glimmer, a GPU box with llama.cpp or Ollama) exposed to the runner as an OpenAI-compatible endpoint |
 
 The Spark steam plant (Meta API, paid by Shiptorio) powers only the brain: triage, planning, routing,
 judging. It doesn't run assemblers. With no subscription plugged in, the factory can read, plan and show
