@@ -1,6 +1,6 @@
 # The Shiptorio loop: signals in, proof out
 
-> Status: v1, 2026-10-26. Owner: Justin. Visual one-pager: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr
+> Status: **locked**, 2026-10-26 (Justin approved the whole one-pager and the Nov 4 stations). Owner: Justin. Visual one-pager: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr
 > (copy in `docs/loop.html`). This is the simple model of the whole game. `docs/PRODUCT.md` has the full spec;
 > where they overlap, PRODUCT.md wins on details and this doc wins on the shape of the loop and the gauntlet.
 
@@ -115,10 +115,10 @@ Same ore → power → gauntlet → rocket loop, as add-on islands, each with it
 | Marketing | What shipped this week | Changelog, posts, launch notes | People clicked |
 | Support | Every ticket | An answer, or a fix that kills the ticket type | Fewer tickets |
 
-## Open calls (recommendations, waiting on Justin)
+## Decided calls (Justin, 2026-10-26)
 
-1. **Demo stations:** CI inspector, verify bay, AI review, merge gate; orbit watch if time. *Recommend.*
-2. **Where fails go:** back to Spark with a scar tag, third strike to the player. *Recommend.*
+1. **Demo stations:** CI inspector, verify bay, AI review, merge gate; orbit watch only if Sentry lands in time.
+2. **Where fails go:** back to Spark with a scar tag, third strike to the player.
 3. **Who reviews:** a different model family from the builder when both are plugged in; with one sign-in, a
-   fresh session with a hostile reviewer loadout. *Recommend.*
-4. **Removing stations:** allowed per district, with the trust/autonomy cost shown. *Recommend.*
+   fresh session with a hostile reviewer loadout.
+4. **Removing stations:** allowed per district, with the trust/autonomy cost shown.
