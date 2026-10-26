@@ -93,7 +93,7 @@ export function permitMove(r: LaneRecord, now = Date.now()): Move {
   const name = laneName(r.lane);
   return {
     id: crypto.randomUUID(),
-    title: `${r.streak} ${name} PRs shipped clean, zero rework. Let ${name} ship on its own?`,
+    title: `${r.streak} ${name} PRs shipped clean, zero rework. Let ${name} ship on their own?`,
     why: `Every one passed CI, the verify bay and AI review the first time. With a permit, ${name} PRs that pass every station launch without waiting on you.`,
     stage: "pad",
     kind: "automate",
