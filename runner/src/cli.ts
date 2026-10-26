@@ -1,7 +1,7 @@
 import { mkdir, lstat } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
-import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
+import { agentEnvironment, assemblerPrompt, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox } from "./sandbox";
 import { snapshotApproved, publishApproved } from "./publication";
@@ -55,6 +55,8 @@ async function renewPairing() {
 }
 async function execute(job: Job) {
   if (job.repo !== repo || !/^[a-f0-9]{40}$/.test(job.baseSha) || (!job.reworkPr && job.branch !== `shiptorio/runner-${job.id}` || !!job.reworkPr && (!Number.isInteger(job.reworkPr) || job.reworkPr < 1 || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(job.branch))) || !/^[a-f0-9-]{36}$/.test(job.id) || job.deadline <= Date.now()) throw new Error("Invalid job assignment");
+  assemblerPrompt(job); // Validate before clone or any child process.
+  if (!["codex", "claude_code"].includes(job.harness)) throw new Error("Unsupported harness");
   const work = resolve(root, ".work", job.id);
   const gitEnv = { ...cleanEnv, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader", GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${job.token}`).toString("base64")}`, GIT_TERMINAL_PROMPT: "0" };
   let summary = "";
@@ -71,7 +73,7 @@ async function execute(job: Job) {
     await command(["git", "clone", "--no-checkout", "--", `https://github.com/${job.repo}.git`, work], checkout, gitEnv);
     sandbox = await checkSandbox(work);
     await checked(["git", "checkout", "--detach", job.baseSha]);
-    const prompt = `You are Shiptorio's ${job.harness} assembler, executing Muse Spark's approved plan.\n${job.plan}\n\nOnly edit these exact paths: ${job.allowedPaths.join(", ")}. Read AGENTS.md and relevant product docs. Make the smallest fix and a regression test. Do not commit, push, deploy, access secrets, invoke other agents, change settings, or write outside this checkout. The supervisor will run checks and publish the branch. Return a short summary.\n`;
+    const prompt = assemblerPrompt(job);
     console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
     const output = await command([harnessPath(job.harness)!, ...harnessArgs(job.harness, prompt)], work, cleanEnv, 15 * 60 * 1000);
     // Preserve local evidence; never forward raw agent output to the server/browser.
