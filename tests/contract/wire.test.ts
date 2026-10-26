@@ -51,6 +51,44 @@ describe('wire contract drift guards', () => {
     expect(applyPatch(withMachine, { removed: [{ kind: 'machine', id: 'm' }] }).machines).toEqual([]);
   });
 
+  it('executes every message through the real web handler, including resolution and log retention', () => {
+    const source = ts.createSourceFile('store.ts', read('web/src/store.ts'), ts.ScriptTarget.Latest, true);
+    let handler: ts.ArrowFunction | undefined;
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'onMessage' && node.initializer && ts.isArrowFunction(node.initializer)) handler = node.initializer;
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    expect(handler).toBeDefined();
+    // Run the checked-in hook callback with React's setter contract, without a DOM or a parallel reducer.
+    const js = ts.transpileModule(`const dispatch = ${handler!.getText(source)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+    let current: FactoryState | null = null;
+    let log: any[] = [], unlock: any;
+    const dispatch = new Function('setState', 'setLog', 'setUnlock', 'applyPatch', 'MAX_LOG', `${js}; return dispatch;`)(
+      (value: any) => { current = typeof value === 'function' ? value(current) : value; },
+      (update: any) => { log = update(log); }, (value: any) => { unlock = value; }, applyPatch, 80,
+    );
+    const send = (value: unknown) => dispatch(ServerToWeb.parse(value));
+    send(fixtures.snapshot);
+    expect<unknown>(current).toEqual(state);
+    send(fixtures.patch);
+    expect((current as unknown as FactoryState).tick).toBe(1);
+    send(fixtures.move);
+    expect((current as unknown as FactoryState).move?.id).toBe('move');
+    send(fixtures.deck);
+    expect((current as unknown as FactoryState).deck).toHaveLength(1);
+    send(fixtures.move_resolved);
+    expect((current as unknown as FactoryState).move).toBeNull();
+    expect((current as unknown as FactoryState).deck).toEqual([]);
+    send(fixtures.autonomy_unlocked);
+    expect(unlock.text).toBe('Unlocked');
+    expect(log.at(-1).level).toBe('success');
+    for (let i = 0; i < 81; i++) send({ ...fixtures.log, text: String(i) });
+    expect(log).toHaveLength(80);
+    expect(log[0].text).toBe('1');
+    expect(log.at(-1).text).toBe('80');
+  });
+
   it('accounts for every production browser-message emitter', () => {
     const source = ts.createSourceFile('factory.ts', read('server/src/factory.ts'), ts.ScriptTarget.Latest, true);
     const emitted = new Set<string>();
