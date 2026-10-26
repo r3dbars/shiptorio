@@ -35,7 +35,7 @@ import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 
-const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "#e3a33f", solar: "#6cc28c", geothermal: "#ff7a2a" };
+const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
 const codePath = (district: string) => (district === "/" ? "/" : `/${district}`);
 
@@ -412,8 +412,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
             {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             {show("score") && (
-              <div className={progressing ? "chip desk" : "chip"} title={HUD.shippedTitle}>
-                <span className="badge" style={{ background: "var(--amber)" }}>
+              <div className={progressing ? "chip ship desk" : "chip ship"} title={HUD.shippedTitle}>
+                <span className="badge">
                   <Icon name="rocket" size={14} />
                 </span>
                 <span>
@@ -424,8 +424,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
             {autonomy?.launches ? (
               // Live: how much of the shipping runs itself. Shows up after the first rocket.
-              <div className="chip" title={permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone}>
-                <span className="badge" style={{ background: "var(--blue)" }}>
+              <div className="chip auto" title={permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone}>
+                <span className="badge">
                   <Icon name="bot" size={14} />
                 </span>
                 <span>
@@ -435,10 +435,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             ) : show("autonomy") && autonomy && (
               <div
-                className="chip"
+                className="chip auto"
                 title={autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : autonomy.level === "advisor" ? HUD.trustAdvisor : HUD.trustTop}
               >
-                <span className="badge" style={{ background: "var(--blue)" }}>
+                <span className="badge">
                   <Icon name="bot" size={14} />
                 </span>
                 <span>
@@ -448,8 +448,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             )}
             {show("score") && metrics && (
-              <div className="chip desk" title={HUD.scoreTitle}>
-                <span className="badge" style={{ background: "var(--green)" }}>
+              <div className="chip score desk" title={HUD.scoreTitle}>
+                <span className="badge">
                   <Icon name="star" size={14} />
                 </span>
                 <span>
