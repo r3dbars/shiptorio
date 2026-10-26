@@ -1,0 +1,64 @@
+import { describe, expect, it } from "bun:test";
+import { gh, GitHubError, installationToken, purgeInstallationTokens, runnerInstallationToken } from "../src/github";
+
+async function credentials() {
+  const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  return { GITHUB_APP_ID: crypto.randomUUID(), GITHUB_APP_PRIVATE_KEY: `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----` };
+}
+
+describe("installation token lifecycle", () => {
+  it("coalesces issuance, caches by installation and scope, and refreshes one minute before expiry", async () => {
+    const env = await credentials();
+    const original = globalThis.fetch, clock = Date.now;
+    const now = clock(); let at = now, issued = 0;
+    Date.now = () => at;
+    globalThis.fetch = (async () => Response.json({ token: `cache-${++issued}`, expires_at: new Date(at + 3600000).toISOString() })) as unknown as typeof fetch;
+    try {
+      expect(await Promise.all([installationToken(env, 1), installationToken(env, 1)])).toEqual(["cache-1", "cache-1"]);
+      expect(await installationToken(env, 1)).toBe("cache-1");
+      expect(await runnerInstallationToken(env, 1, "org/demo")).toBe("cache-2");
+      expect(await installationToken(env, 2)).toBe("cache-3");
+      at = now + 3540001;
+      expect(await installationToken(env, 1)).toBe("cache-4");
+      purgeInstallationTokens(1);
+      expect(await installationToken(env, 1)).toBe("cache-5");
+    } finally { globalThis.fetch = original; Date.now = clock; }
+  });
+  for (const status of [401, 403]) {
+    it(`${status} refetches once and surfaces the second failure`, async () => {
+      const env = await credentials(); const original = globalThis.fetch;
+      let issued = 0, requests = 0;
+      globalThis.fetch = (async (url: any) => String(url).endsWith("/access_tokens") ? Response.json({ token: `retry-${env.GITHUB_APP_ID}-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() }) : (requests++, new Response(null, { status }))) as unknown as typeof fetch;
+      try {
+        const token = await installationToken(env, 10);
+        await expect(gh("/test", token)).rejects.toBeInstanceOf(GitHubError);
+        expect(issued).toBe(2); expect(requests).toBe(2);
+      } finally { globalThis.fetch = original; }
+    });
+  }
+  it("uses the replacement credential on a successful retry", async () => {
+    const env = await credentials(); const original = globalThis.fetch;
+    let issued = 0; const used: string[] = [];
+    globalThis.fetch = (async (url: any, init?: RequestInit) => {
+      if (String(url).endsWith("/access_tokens")) return Response.json({ token: `success-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() });
+      used.push(new Headers(init?.headers).get("authorization")!);
+      return used.length === 1 ? new Response(null, { status: 401 }) : Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    try { expect(await gh("/test", await installationToken(env, 11))).toEqual({ ok: true }); expect(used).toEqual(["Bearer success-1", "Bearer success-2"]); } finally { globalThis.fetch = original; }
+  });
+  it("cross-isolate generation changes refresh even tokens held by an ongoing operation; suspension fails closed", async () => {
+    let version = 1, status = "active", issued = 0, calls = 0;
+    const env = { ...await credentials(), DB: { prepare: () => ({ bind: () => ({ run: async () => ({}), first: async () => ({ token_version: version, status }) }) }) } };
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (url: any) => String(url).endsWith("/access_tokens") ? Response.json({ token: `generation-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() }) : (calls++, Response.json({ ok: true }))) as unknown as typeof fetch;
+    try {
+      const old = await installationToken(env as never, 50);
+      version++;
+      await gh("/test", old);
+      expect(issued).toBe(2);
+      status = "suspended";
+      await expect(gh("/test", old)).rejects.toThrow("suspended");
+      expect(calls).toBe(1);
+    } finally { globalThis.fetch = original; }
+  });
+});

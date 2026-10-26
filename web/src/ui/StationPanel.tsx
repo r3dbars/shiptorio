@@ -4,7 +4,7 @@
 // what feeds it and where its work goes, recent history, and 1–3 actions with the planner's pick marked.
 
 import { useEffect } from "react";
-import { techById, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
+import { rate, techById, type Experiment, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
 import type { LogLine } from "../store";
 import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
@@ -33,6 +33,34 @@ interface Panel {
   match: (l: LogLine) => boolean; // which floor log lines are this thing's history
   actions: { id: string; label: string; recommended: boolean }[];
   sendAs?: string; // stationId to send actions as, when it isn't the panel id
+  experiments?: Experiment[]; // the measure station: before vs after, per experiment
+}
+
+const EXP_WORD: Record<Experiment["state"], string> = { proposed: "waiting on you", building: "being built", measuring: "measuring", won: "lift", flat: "no lift", lost: "hurt", dropped: "dropped", inconclusive: "not enough data" };
+
+// Before (A) against after (B) for one experiment, as two bars and the call.
+function ExperimentRow({ e }: { e: Experiment }) {
+  const a = rate(e.baseline);
+  const b = e.after ? rate(e.after) : undefined;
+  const max = Math.max(a, b ?? 0, 0.01);
+  const tone = e.state === "won" ? "good" : e.state === "lost" ? "bad" : e.state === "flat" ? "flat" : "";
+  return (
+    <li className={`sp-exp ${tone}`}>
+      <div className="sp-exp-top">
+        <span className="txt">{e.prNumber ? `#${e.prNumber} ` : ""}{e.title}</span>
+        <span className={`st${e.state === "lost" ? " bad" : ""}`}>{EXP_WORD[e.state]}</span>
+      </div>
+      <div className="sp-exp-bars" aria-label={`${e.step.label}: before ${(a * 100).toFixed(1)}%${b !== undefined ? `, after ${(b * 100).toFixed(1)}%` : ""}`}>
+        <span className="lbl">A</span>
+        <span className="bar a" style={{ width: `${(a / max) * 100}%` }} />
+        <span className="num">{(a * 100).toFixed(1)}%</span>
+        <span className="lbl">B</span>
+        <span className="bar b" style={{ width: `${((b ?? 0) / max) * 100}%` }} />
+        <span className="num">{b === undefined ? "–" : `${(b * 100).toFixed(1)}%`}</span>
+      </div>
+      <p className="sp-exp-line">{e.line ?? e.hypothesis}</p>
+    </li>
+  );
 }
 
 // A short name for a machine, for the in/out list.
@@ -101,6 +129,24 @@ function panelFor(id: string, state: FactoryState, jobs: Map<string, string> = n
   const st = state.stations?.find((x) => x.id === id);
   if (st) {
     const m = state.machines.find((x) => x.id === st.machineId);
+    if (st.kind === "measure") {
+      const exps = (state.experiments ?? []).filter((e) => e.state !== "dropped");
+      const decided = exps.filter((e) => e.state === "won" || e.state === "flat" || e.state === "lost");
+      const live = exps.find((e) => e.state === "measuring");
+      return {
+        copy: STATION_COPY.measure,
+        stats: [
+          ["Measuring", live ? `day ${Math.min(live.windowDays, Math.floor(live.daysWatched ?? 0) + 1)} / ${live.windowDays}` : "nothing"],
+          ["Won", `${decided.filter((e) => e.state === "won").length} / ${decided.length}`],
+          ["Watches", live?.step.label ?? exps[0]?.step.label ?? "a funnel step"],
+        ],
+        experiments: exps,
+        machineId: st.machineId,
+        last: st.lastLog,
+        match: (l) => /measure|experiment|lift/i.test(l.text),
+        actions: st.actions,
+      };
+    }
     if (st.kind === "orbit")
       return {
         copy: STATION_COPY.orbit,
@@ -245,6 +291,20 @@ export function StationPanel({ id, state, log, send, onClose, jobs }: Props) {
             </ul>
           ) : (
             <p className="sp-empty">{PANEL.idle}</p>
+          )}
+        </div>
+      )}
+      {p.experiments && (
+        <div className="sp-sec">
+          <div className="sp-h">Experiments · before (A) vs after (B)</div>
+          {p.experiments.length ? (
+            <ul className="sp-jobs">
+              {p.experiments.slice(0, 3).map((e) => (
+                <ExperimentRow key={e.id} e={e} />
+              ))}
+            </ul>
+          ) : (
+            <p className="sp-empty">No growth change has launched yet.</p>
           )}
         </div>
       )}

@@ -52,6 +52,8 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const path = `/runner/pair?code=${d.code}`;
     expect((await request(path)).status).toBe(401); // preview gate
     const cookies = await signedInCookie(env, "test-player", ["you/repo", "you/second"], 77) + "; " + (await makeSessionCookie(`${browserEnv.SESSION_SECRET}:${browserEnv.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
+    await env.DB.prepare("UPDATE repos SET repo_id = CASE full_name WHEN 'you/repo' THEN 101 ELSE 102 END").run();
+    await env.DB.prepare("UPDATE installations SET permissions = ? WHERE id = 1").bind(JSON.stringify({ metadata: "read", contents: "write", issues: "write", pull_requests: "write", checks: "read" })).run();
     const page = await request(path, { headers: { cookie: cookies } });
     expect(page.status).toBe(200); expect(await page.text()).toContain(d.code);
     const approve = (repo = "you/repo", origin = "https://shiptorio.com") => request(path, { method: "POST", headers: { cookie: cookies, origin }, body: new URLSearchParams({ repo }) });
@@ -64,7 +66,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const result = await (await poll()).json() as { repo: string; token: string; status: string };
     expect(result.status).toBe("approved"); expect(result.repo).toBe("you/repo");
     const claims = await readRunnerToken(browserEnv.SESSION_SECRET, result.token);
-    expect(claims?.repo).toBe("you/repo"); expect(await instances.get("you/repo")!.isRunnerPaired(claims!.pairId)).toBe(true);
+    expect(claims?.repo).toBe("you/repo"); expect(await instances.get("repo:101")!.isRunnerPaired(claims!.pairId)).toBe(true);
     expect((await approve()).status).toBe(409);
     expect(await (await poll()).json()).toEqual({ status: "expired" });
     const heartbeat = () => request("/api/runner/you/repo/heartbeat", { method: "POST", headers: { authorization: `Bearer ${result.token}` }, body: JSON.stringify({ harnesses: ["codex"] }) });
@@ -72,7 +74,7 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const status = await request("/api/repos/you/repo/runner/status", { headers: { cookie: cookies } });
     expect(await status.json()).toMatchObject({ online: true, paired: true, harnesses: ["codex"], lastJob: null });
     expect((await request("/api/runner/you/second/heartbeat", { method: "POST", headers: { authorization: `Bearer ${result.token}` } })).status).toBe(401);
-    await instances.get("you/repo")!.revokeRunner(); expect((await heartbeat()).status).toBe(401);
+    await instances.get("repo:101")!.revokeRunner(); expect((await heartbeat()).status).toBe(401);
     for (let i = 0; i < 9; i++) expect((await request("/api/runner-device/start", { method: "POST" })).status).toBe(200);
     expect((await request("/api/runner-device/start", { method: "POST" })).status).toBe(429);
     const record = stores.get(`device:${d.code.toLowerCase()}`)!.get("device");
