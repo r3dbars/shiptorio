@@ -44,6 +44,8 @@ async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: 
 export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitHubPayload): Promise<void> {
   if (event === "github_app_authorization") {
     if (p.action !== "revoked" || !p.sender?.login) return;
+    const affected = await env.DB.prepare("SELECT DISTINCT r.* FROM repos r JOIN user_repos ur ON ur.repo = r.full_name JOIN users u ON u.id = ur.user_id WHERE lower(u.login) = ?").bind(p.sender.login.toLowerCase()).all<RepoRecord>();
+    for (const row of affected.results) await (await objectFor(env, row)).revokeGitHubUser(p.sender.login);
     await env.DB.prepare("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE lower(login) = ?)").bind(p.sender.login.toLowerCase()).run();
     await env.DB.prepare("DELETE FROM user_repos WHERE user_id IN (SELECT id FROM users WHERE lower(login) = ?)").bind(p.sender.login.toLowerCase()).run();
     await env.DB.prepare("DELETE FROM user_installations WHERE user_id IN (SELECT id FROM users WHERE lower(login) = ?)").bind(p.sender.login.toLowerCase()).run();
@@ -69,6 +71,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     // A transfer can remove access or move it to a DIFFERENT installation. Never trust the old ID.
     const current = await repoInstallationId(env, repo.full_name).catch(error => { if (error instanceof GitHubError && [403, 404].includes(error.status)) return null; throw error; });
     if (!current) { if (row) await archive(env, row, "repository transferred out of installation", repo.id); return; }
+    await env.DB.prepare("INSERT OR IGNORE INTO installations (id, account_login) VALUES (?, ?)").bind(current, repo.full_name.split("/")[0]).run();
     await upsert(env, repo, current);
     await refreshInstallationPermissions(env, current);
     if (row && p.action === "transferred") await env.DB.prepare("DELETE FROM user_repos WHERE repo = ?").bind(repo.full_name.toLowerCase()).run();

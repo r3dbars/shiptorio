@@ -6,7 +6,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
 const { Factory } = await import("../src/factory");
 test("one pairing slot per repository replaces older runners and revoke clears it", async () => {
   const data = new Map<string, unknown>();
-  const storage = { get: async (k: string) => data.get(k), put: async (k: string, v: unknown) => { data.set(k, v); }, delete: async (k: string) => data.delete(k) };
+  const storage = { transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(storage), get: async (k: string) => data.get(k), put: async (k: string, v: unknown) => { data.set(k, v); }, delete: async (k: string) => data.delete(k) };
   const f = new Factory({ storage } as never, {} as never);
   const first = await f.pairRunner(), second = await f.pairRunner();
   expect(await f.isRunnerPaired(first)).toBe(false);

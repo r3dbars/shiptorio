@@ -9,6 +9,7 @@ import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -37,7 +38,7 @@ import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pic
 import { emptyBrain, recordThought } from "./brain";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal, matchDistrict } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
@@ -48,6 +49,8 @@ import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sen
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
+
+import { loadFactoryState, saveFactoryState, stateSize, persistedState } from "./state-storage";
 
 export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
   PUBLIC_URL?: string;
@@ -82,6 +85,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     return { ok: true };
   }
 
+  // Dedicated security objects never load repo state, call Spark, or set alarms.
+  async securityLimit(budget: Budget): Promise<LimitResult> {
+    return consumeBudget(this.ctx.storage, budget);
+  }
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
@@ -631,6 +638,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (lifecycleEvents.includes(event)) { await handleLifecycle(this.env, event, p); return; }
     if (await this.githubStopped()) return;
 
+
     if (!repo || !installationId) return;
     if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
       if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
@@ -659,6 +667,13 @@ export class Factory extends DurableObject<FactoryEnv> {
     const check = (p.check_run ?? p.check_suite) as { pull_requests?: { number: number }[]; head_sha?: string; conclusion?: string; name?: string; html_url?: string; app?: { name?: string } } | undefined;
     if (["check_run", "check_suite"].includes(event) && p.action === "completed" && check?.head_sha && ["failure", "timed_out", "startup_failure"].includes(check.conclusion ?? "")) await this.orbitDeploy(check.head_sha, check.name ?? check.app?.name ?? "CI", check.html_url);
     if (["check_run", "check_suite"].includes(event) && ["completed", "queued", "in_progress", "requested", "rerequested"].includes(p.action ?? "") && check) await this.onCheckSuite((check.pull_requests ?? []).map((pr) => pr.number), check.conclusion === "success", check.conclusion ?? "pending", check.head_sha);
+  }
+
+  async revokeGitHubUser(login: string): Promise<void> {
+    for (const ws of this.ctx.getWebSockets("web")) {
+      const auth = ws.deserializeAttachment() as { login?: string } | null;
+      if (auth?.login?.toLowerCase() === login.toLowerCase()) ws.close(1008, "GitHub authorization revoked");
+    }
   }
 
   private async githubStopped(): Promise<boolean> {
@@ -900,12 +915,16 @@ export class Factory extends DurableObject<FactoryEnv> {
   private async load(): Promise<FactoryState | null> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
-      this.state = (await this.ctx.storage.get<FactoryState>("state")) ?? null;
+      const loaded = await loadFactoryState(this.ctx.storage);
+      if (loaded) {
+        const { schemaVersion: _version, ...wireState } = loaded;
+        this.state = wireState;
+      }
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
       // A local agent can outlive this DO instance. Preserve in-flight work; the watchdog
       // asks the player to inspect it rather than dispatching the same task twice.
       if (this.state) {
-        migrateGauntlet(this.state);
+
         this.state.stations = liveStations(this.state);
         this.state.autonomy = autonomyView(await this.permitBook());
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
@@ -915,7 +934,15 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async save() {
-    await this.ctx.storage.put("state", this.state);
+    if (this.state) await saveFactoryState(this.ctx.storage, this.state);
+  }
+
+  /** Owner authorization is enforced by the Worker route, before DO access. */
+  async exportState() {
+    const state = await this.load();
+    if (!state) return null;
+    return { format: "shiptorio-factory", exportedAt: new Date().toISOString(),
+      state: persistedState(structuredClone(state)), storage: stateSize(state) };
   }
 
   private broadcast(msg: ServerToWeb) {
@@ -1637,14 +1664,17 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    if (await this.githubStopped()) { ws.close(1008, "GitHub access changed"); return; }
     this.socketEpoch = await browserSocketEpoch(this.env);
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
-    if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
+    for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
+      if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
+    }
+    if (await this.githubStopped()) { ws.close(1008, "GitHub access changed"); return; }
+    if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
     const parsed = WebToServer.safeParse(value);
