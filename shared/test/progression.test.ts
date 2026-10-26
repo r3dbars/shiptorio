@@ -88,3 +88,24 @@ describe("progression", () => {
     expect(parseProgress(JSON.stringify({ v: 0 })).xp).toBe(0);
   });
 });
+
+test("valid-looking corrupt storage cannot reach rendering or level math", () => {
+  for (const patch of [{ seen: null }, { unlocked: null }, { xp: -1 }, { xp: 1e300 }, { days: [null] }, { days: [{ day: "2026-99-99", xp: 0, ships: 0, cards: 0, deck: 0 }] }]) {
+    expect(parseProgress(JSON.stringify({ ...emptyProgress(), ...patch }))).toEqual(emptyProgress());
+  }
+  const valid = answered(emptyProgress(), t0, 1).progress;
+  expect(parseProgress(JSON.stringify(valid))).toEqual(valid);
+  expect(levelOf(Number.MAX_SAFE_INTEGER).level).toBeGreaterThan(1_000_000);
+  expect(levelOf(Infinity).level).toBe(1);
+});
+
+test("observing more than 200 visible launches never repays old clean bonuses", () => {
+  const items = Array.from({ length: 250 }, (_, i) => launched(`pr-${i}`));
+  let p = observe(emptyProgress(), "large/repo", state(250, { items }), t0).progress;
+  for (let i = 0; i < 3; i++) {
+    const next = observe(p, "large/repo", state(250, { items }), t0 + i + 1);
+    expect(next.gains).toEqual([]);
+    expect(next.progress.xp).toBe(0);
+    p = next.progress;
+  }
+});

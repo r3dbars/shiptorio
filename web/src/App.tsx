@@ -24,7 +24,7 @@ import { introMode, useIntroTour } from "./ui/IntroTour";
 import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { checkStationId } from "@shiptorio/shared";
-import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
+import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -148,8 +148,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
-  const prog = useProgress(state, cfg.kind === "sim" ? "sim" : "me", cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
-  const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0);
+  const profile = progressProfile(cfg.kind, login);
+  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
+  const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const nudge = useBottleneckNudge(deck, progressing);
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {

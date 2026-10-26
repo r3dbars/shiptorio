@@ -4,6 +4,7 @@
 // The day log keeps each day's deck size, so the end-of-day summary can show tomorrow's deck shrinking as
 // trust grows. Pure rules, no storage: the web keeps one Progress per player and folds factory states in.
 
+import { z } from "zod";
 import type { FactoryState } from "./model";
 
 export const XP = {
@@ -52,13 +53,24 @@ export interface Progress {
 
 export const emptyProgress = (): Progress => ({ v: 1, xp: 0, streak: 0, best: 0, freezes: 0, last: null, days: [], seen: {}, unlocked: [], equip: {} });
 
-/** Loads whatever was stored; anything broken or from an older shape starts fresh. */
+const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(key => {
+  const date = new Date(`${key}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === key;
+});
+const StoredProgress = z.object({
+  v: z.literal(1), xp: count, streak: count, best: count, freezes: count.max(2), last: dateKey.nullable(),
+  days: z.array(z.object({ day: dateKey, xp: count, ships: count, cards: count, deck: count, automated: z.number().min(0).max(1).optional() })).max(30),
+  seen: z.record(z.string(), z.object({ rockets: count, automated: count, checks: count, paid: z.array(z.string()) })),
+  unlocked: z.array(z.string()), equip: z.record(z.string(), z.boolean()),
+});
+
+/** Corrupt or incompatible browser data starts fresh before reaching rendering/math. */
 export function parseProgress(raw: string | null | undefined): Progress {
   if (!raw) return emptyProgress();
   try {
-    const p = JSON.parse(raw) as Progress;
-    if (p?.v !== 1 || typeof p.xp !== "number" || !Array.isArray(p.days)) return emptyProgress();
-    return { ...emptyProgress(), ...p };
+    const parsed = StoredProgress.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : emptyProgress();
   } catch {
     return emptyProgress();
   }
@@ -103,8 +115,11 @@ export function liveStreak(p: Progress, now: number): number {
 export const xpForLevel = (level: number) => 25 * level * (level - 1);
 
 export function levelOf(xp: number) {
-  let level = 1;
-  while (xpForLevel(level + 1) <= xp) level++;
+  xp = Number.isFinite(xp) ? Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, xp)) : 0;
+  // Invert the quadratic directly; browser storage must not drive an unbounded loop.
+  let level = Math.max(1, Math.floor((1 + Math.sqrt(1 + 4 * xp / 25)) / 2));
+  if (xpForLevel(level) > xp) level--;
+  else if (xpForLevel(level + 1) <= xp) level++;
   const from = xpForLevel(level);
   const to = xpForLevel(level + 1);
   return { level, title: TITLES[Math.min(level, TITLES.length) - 1], have: xp - from, need: to - from, into: (xp - from) / (to - from) };
@@ -218,7 +233,7 @@ export function observe(p0: Progress, repo: string, s: FactoryState, now: number
   if (!was) {
     const paid = launched.flatMap((i) => [`clean:${i.id}`, ...(i.orbit?.state === "clear" ? [`orbit:${i.id}`] : [])]);
     const [p] = today(p0, now, deck);
-    return { progress: { ...p, seen: { ...p.seen, [repo]: { ...now0, paid: paid.slice(-200) } } }, gains: [], unlocked: [] };
+    return { progress: { ...p, seen: { ...p.seen, [repo]: { ...now0, paid } } }, gains: [], unlocked: [] };
   }
   const gains: Gain[] = [];
   const ships = Math.max(0, now0.rockets - was.rockets);
@@ -238,7 +253,7 @@ export function observe(p0: Progress, repo: string, s: FactoryState, now: number
       gains.push({ reason: "orbit", xp: XP.orbit, text: "Held in orbit for 24h" });
     }
   }
-  const seen: RepoSeen = { ...now0, paid: [...paid].slice(-200) };
+  const seen: RepoSeen = { ...now0, paid: [...paid] };
   const step = award({ ...p0, seen: { ...p0.seen, [repo]: seen } }, gains, now, deck, ships);
   // remember how much of the shipping ran itself, for the day log
   const launches = s.autonomy?.launches;

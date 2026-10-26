@@ -47,6 +47,8 @@ const store = {
 };
 
 /** ?progress=1 turns progression on for this browser (and remembers it); ?progress=0 turns it back off. */
+export const progressProfile = (kind: "sim" | "live", login?: string | null) => kind === "sim" ? "sim" : `github:${login?.toLowerCase() ?? "signed-out"}`;
+
 export function progressOn(): boolean {
   const q = new URLSearchParams(location.search).get("progress");
   if (q === "1" || q === "demo") store.set(ON_KEY, "1");
@@ -71,7 +73,16 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
   const [pop, setPop] = useState<Pop | null>(null);
   const seq = useRef(0);
   const cur = useRef(p);
+  const loadedKey = useRef(key);
   cur.current = p;
+  useEffect(() => {
+    if (loadedKey.current === key) return;
+    loadedKey.current = key;
+    const next = parseProgress(store.get(key));
+    cur.current = next;
+    setP(next);
+    setPop(null);
+  }, [key]);
 
   const apply = useCallback(
     (step: Step) => {
@@ -226,15 +237,16 @@ export function DayTally({ p }: { p: Progress }) {
 // ---- the morning brief ----
 
 /** Show it once per day, on the first open, when there's something worth saying. */
-export function useBrief(on: boolean, ready: boolean) {
+export function useBrief(on: boolean, ready: boolean, profile = "me") {
+  const key = `${BRIEF_KEY}:${profile}`;
   const [show, setShow] = useState(false);
   useEffect(() => {
     if (!on || !ready) return;
     const today = dayKey(Date.now());
-    if (store.get(BRIEF_KEY) === today) return;
-    store.set(BRIEF_KEY, today);
+    if (store.get(key) === today) return;
+    store.set(key, today);
     setShow(true);
-  }, [on, ready]);
+  }, [on, ready, key]);
   return { show, close: () => setShow(false) };
 }
 
@@ -397,9 +409,9 @@ export function useBottleneckNudge(deck: Move[], on: boolean) {
   const lastAt = useRef(0);
 
   useEffect(() => {
-    if (state !== "on" || !("serviceWorker" in navigator)) return;
+    if (!on || state !== "on" || !("serviceWorker" in navigator)) return;
     navigator.serviceWorker.register("/sw.js").catch(() => {});
-  }, [state]);
+  }, [on, state]);
 
   useEffect(() => {
     const was = lastCount.current;
