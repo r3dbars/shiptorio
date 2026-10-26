@@ -70,6 +70,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
     const current = await repoInstallationId(env, repo.full_name).catch(error => { if (error instanceof GitHubError && [403, 404].includes(error.status)) return null; throw error; });
     if (!current) { if (row) await archive(env, row, "repository transferred out of installation", repo.id); return; }
     await upsert(env, repo, current);
+    await refreshInstallationPermissions(env, current);
     if (row && p.action === "transferred") await env.DB.prepare("DELETE FROM user_repos WHERE repo = ?").bind(repo.full_name.toLowerCase()).run();
     return;
   }
@@ -85,7 +86,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
       ]);
       for (const row of await rows(env, id)) {
         if (status === "deleted") await archive(env, row, "installation deleted");
-        else await (await objectFor(env, row)).pauseGitHub("GitHub installation suspended");
+        else if (!row.archived_at) await (await objectFor(env, row)).pauseGitHub("GitHub installation suspended");
       }
       return;
     }
@@ -106,19 +107,25 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   if (event === "installation" && ["unsuspend", "new_permissions_accepted"].includes(p.action ?? "")) {
     for (const row of await rows(env, id)) if (!row.archived_at) await (await objectFor(env, row)).restoreGitHub(row.full_name, id);
   }
+  await refreshInstallationPermissions(env, id, p);
+}
+
+export async function refreshInstallationPermissions(env: RepositoryEnv, id: number, p?: GitHubPayload): Promise<void> {
+  const account = p?.installation?.account;
   const info = await env.DB.prepare("SELECT permissions, account_login, account_type FROM installations WHERE id = ?").bind(id).first<{ permissions: string | null; account_login: string; account_type: string }>();
-  let permissions = info?.permissions ? JSON.parse(info.permissions) as Record<string, string> : p.installation?.permissions;
+  let permissions = info?.permissions ? JSON.parse(info.permissions) as Record<string, string> : p?.installation?.permissions;
   if (!permissions) {
     const { appJwt } = await import("./github");
-    const installation = await gh<{ permissions: Record<string, string> }>(`/app/installations/${id}`, await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY));
+    const installation = await gh<{ permissions: Record<string, string>; account?: { login: string; type: string } }>(`/app/installations/${id}`, await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY));
     permissions = installation.permissions;
-    await env.DB.prepare("UPDATE installations SET permissions = ? WHERE id = ?").bind(JSON.stringify(permissions), id).run();
+    await env.DB.prepare("INSERT INTO installations (id, account_login, permissions, account_type) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET permissions = excluded.permissions, account_type = excluded.account_type").bind(id, installation.account?.login ?? account?.login ?? "", JSON.stringify(permissions), installation.account?.type ?? account?.type ?? "User").run();
+    if (!account && installation.account) p = { installation: { id, account: installation.account } };
   }
-  const source = permissionStatus(id, permissions, info?.account_login ?? account?.login, info?.account_type ?? account?.type);
+  const source = permissionStatus(id, permissions, info?.account_login ?? p?.installation?.account?.login, info?.account_type ?? p?.installation?.account?.type);
   for (const row of await rows(env, id)) {
     if (row.archived_at) continue;
     const f = await objectFor(env, row);
     await f.setGitHubPermissions(source);
-    if (source.state === "connected") await f.enqueueGitHub(`backfill-${id}-${row.repo_id}`, "shiptorio_install", { repository: { id: row.repo_id ?? undefined, full_name: row.full_name }, installation: p.installation });
+    if (source.state === "connected") await f.enqueueGitHub(`backfill-${id}-${row.repo_id}`, "shiptorio_install", { repository: { id: row.repo_id ?? undefined, full_name: row.full_name }, installation: p?.installation ?? { id } });
   }
 }

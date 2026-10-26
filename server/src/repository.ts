@@ -30,7 +30,7 @@ export async function repositoryFactory(env: RepositoryEnv, name: string): Promi
     }
     return f;
   }
-  // Existing installs are upgraded lazily using the App JWT, including archived rows.
+  // Existing active installs are upgraded lazily using an installation token.
   if (row) {
     const token = await installationToken(env, row.installation_id);
     const repo = await gh<{ id: number }>(`/repos/${name}`, token);

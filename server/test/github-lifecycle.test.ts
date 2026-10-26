@@ -85,6 +85,15 @@ describe("GitHub lifecycle fixture payloads", () => {
     await handleLifecycle(f.env, "installation", { ...payload, action: "unsuspend" });
     expect(obj.data.has("githubLifecycle")).toBe(false); expect(obj.alarm()).not.toBeNull();
   });
+  it("suspending an installation preserves removed repos' deletion deadlines", async () => {
+    const f = fixture(); await install(f);
+    await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "removed", repositories_removed: [payload.repository] });
+    const obj = f.objects.get("repo:501")!, deadline = obj.alarm();
+    await handleLifecycle(f.env, "installation", { ...payload, action: "suspend" });
+    expect(obj.alarm()).toBe(deadline);
+    await handleLifecycle(f.env, "installation", { ...payload, action: "unsuspend" });
+    expect(obj.alarm()).toBe(deadline); expect(f.row()?.archived_at).toBeGreaterThan(0);
+  });
   it("new_permissions_accepted clears drift; missing permissions pause and expose precise settings", async () => {
     const f = fixture(); f.seed();
     await handleLifecycle(f.env, "installation", { ...payload, action: "created", repositories: [payload.repository], installation: { ...payload.installation, permissions: { contents: "read" } } });
@@ -107,7 +116,7 @@ describe("GitHub lifecycle fixture payloads", () => {
       // JWT signer uses a real ephemeral key; GitHub API is replaced below.
       f.env.GITHUB_APP_PRIVATE_KEY = await privateKey();
       const original = globalThis.fetch;
-      globalThis.fetch = (async () => Response.json({ id: 41 })) as unknown as typeof fetch;
+      globalThis.fetch = (async () => Response.json({ id: 41, permissions: payload.installation.permissions, account: payload.installation.account })) as unknown as typeof fetch;
       try { await handleLifecycle(f.env, "repository", { ...payload, action, repository: { ...payload.repository, full_name: "new-org/renamed" } }); } finally { globalThis.fetch = original; }
       expect(f.row()?.full_name).toBe("new-org/renamed"); expect(f.row()?.repo_id).toBe(501);
       expect(f.objects.get("repo:501")!.data.get("state").repo).toBe("new-org/renamed");
