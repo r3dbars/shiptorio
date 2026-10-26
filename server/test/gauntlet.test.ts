@@ -73,6 +73,7 @@ describe("live gauntlet in the Factory", () => {
     let mergedWith: unknown = null, commentTries = 0;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       calls.push(`${init?.method ?? "GET"} ${url.replace("https://api.github.com", "")}`);
@@ -80,7 +81,7 @@ describe("live gauntlet in the Factory", () => {
       if (url.endsWith("/access_tokens")) return json({ token: "t" });
       if (url.includes("/pulls/99/files")) return json([{ filename: "web/src/cart.ts", status: "modified", patch: "-a\n+b" }, { filename: "web/src/cart.test.ts", status: "added", patch: "+test" }]);
       if (url.endsWith("/chat/completions")) return json({ choices: [{ message: { content: '{"verdict":"pass","reason":"Fixes the empty cart crash.","findings":[]}' } }] });
-      if (url.endsWith("/issues/99/comments")) return ++commentTries === 1 ? new Response("unavailable", { status: 503 }) : json({ id: 1 });
+      if (url.endsWith("/issues/99/comments")) return ++commentTries <= 2 ? new Response("forbidden", { status: 403 }) : json({ id: 1 });
       if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); return json({ merged: true }); }
       if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged: false });
       throw new Error(`unexpected ${url}`);
@@ -110,12 +111,12 @@ describe("live gauntlet in the Factory", () => {
       await f.alarm(); // AI review, then the launch card
       expect(saved().items[0].state).toBe("on_pad");
       expect(calls).toContain("POST /repos/r3dbars/demo/issues/99/comments");
-      // The first post failed: it's queued, logged in the decision log, and the next tick retries it.
+      // The first post and its credential retry failed: it's queued, logged in the decision log, and the next tick retries it.
       expect((data.get("pendingReviewComments") as unknown[]).length).toBe(1);
       expect(saved().brain?.thoughts.some((t) => t.outcome.includes("didn't post"))).toBe(true);
       alarm = null;
       await f.alarm();
-      expect(commentTries).toBe(2);
+      expect(commentTries).toBe(3);
       expect(data.get("pendingReviewComments")).toEqual([]);
       const card = events.filter((e) => e.type === "move").at(-1)!.move!;
       expect(card.options.map((o) => o.id)).toEqual(["launch", "later"]);

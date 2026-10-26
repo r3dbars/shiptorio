@@ -1,3 +1,4 @@
+import { retry, OutboundError, RetryExhausted } from "./reliability";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -78,8 +79,8 @@ export interface AppCredentials {
   DB?: D1Database;
 }
 
-export class GitHubError extends Error {
-  constructor(public status: number, path: string, method: string) { super(`GitHub ${method} ${path} failed (${status})`); }
+export class GitHubError extends OutboundError {
+  constructor(status: number, path: string, method: string) { super(status); this.message = `GitHub ${method} ${path} failed (${status})`; }
 }
 interface TokenEntry { token: string; expiresAt: number; installationId: number; version: number; env: AppCredentials; scope?: InstallationTokenScope }
 const tokenCache = new Map<string, TokenEntry>();
@@ -97,35 +98,66 @@ export function purgeInstallationTokens(id: number) {
 async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
   if (!env.DB) return 0;
   const row = await env.DB.prepare("SELECT token_version, status FROM installations WHERE id = ?").bind(id).first<{ token_version: number; status: string }>();
-  if (row && row.status !== "active") throw new Error("GitHub installation is suspended or deleted");
+  if (row && row.status !== "active") {
+    const error = new GitHubError(403, `/app/installations/${id}`, "GET");
+    error.message = "GitHub installation is suspended or deleted";
+    throw error;
+  }
   return row?.token_version ?? 0;
 }
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const owner = tokenOwners.get(await tokenFingerprint(token));
-  if (owner) {
-    const version = await tokenVersion(owner.env, owner.installationId);
-    const repo = /^\/repos\/([^/]+\/[^/?]+)/.exec(path)?.[1]?.toLowerCase();
-    if (repo && owner.env.DB) {
-      const row = await owner.env.DB.prepare("SELECT archived_at, installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ archived_at: number | null; installation_id: number }>();
-      if (row && (row.archived_at != null || row.installation_id !== owner.installationId)) throw new Error("GitHub repository access changed; factory archived or transferred");
-    }
-    if (version !== owner.version || owner.expiresAt <= Date.now() + 60000) token = await installationToken(owner.env, owner.installationId, owner.scope);
+  let authRetried = false;
+  const comment = init.method === "POST" && /\/issues\/\d+\/comments$/.test(path) && typeof init.body === "string";
+  let marker: string | undefined;
+  if (comment) {
+    const payload = JSON.parse(init.body as string) as { body: string };
+    const digest = await crypto.subtle.digest("SHA-256", enc.encode(payload.body));
+    marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
+    init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
   }
-  const request = (credential: string) => fetch(API + path, {
+  const send = (credential: string) => fetch(API + path, {
     signal: AbortSignal.timeout(20000), ...init,
     headers: { accept: "application/vnd.github+json", authorization: `Bearer ${credential}`, "user-agent": UA,
       "x-github-api-version": "2022-11-28", ...(init.body ? { "content-type": "application/json" } : {}), ...init.headers },
   });
-  let res = await request(token);
-  if (owner && [401, 403].includes(res.status)) {
-    await res.body?.cancel();
-    purgeInstallationTokens(owner.installationId);
-    token = await installationToken(owner.env, owner.installationId, owner.scope);
-    res = await request(token); // exactly one retry, including permission/rate-limit failures
+  const request = async (): Promise<T> => {
+    if (owner) {
+      const version = await tokenVersion(owner.env, owner.installationId);
+      const repo = /^\/repos\/([^/]+\/[^/?]+)/.exec(path)?.[1]?.toLowerCase();
+      if (repo && owner.env.DB) {
+        const row = await owner.env.DB.prepare("SELECT archived_at, installation_id FROM repos WHERE full_name = ?").bind(repo).first<{ archived_at: number | null; installation_id: number }>();
+        if (row && (row.archived_at != null || row.installation_id !== owner.installationId)) throw new GitHubError(403, path, init.method ?? "GET");
+      }
+      const current = tokenOwners.get(await tokenFingerprint(token));
+      if (!current || version !== current.version || current.expiresAt <= Date.now() + 60000) token = await installationToken(owner.env, owner.installationId, owner.scope);
+    }
+    if (marker) {
+      for (let page = 1; ; page++) {
+        if (page > 20) throw new OutboundError(409);
+        const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
+        const existing = comments.find(c => c.body?.includes(marker!));
+        if (existing) return existing as T;
+        if (comments.length < 100) break;
+      }
+    }
+    let res = await send(token);
+    if (owner && !authRetried && [401, 403].includes(res.status)) {
+      authRetried = true;
+      await res.body?.cancel();
+      purgeInstallationTokens(owner.installationId);
+      token = await installationToken(owner.env, owner.installationId, owner.scope);
+      res = await send(token); // exactly one auth retry across transient retries
+    }
+    if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
+    return res.status === 204 ? undefined as T : res.json() as Promise<T>;
+  };
+  try {
+    return await retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
+  } catch (error) {
+    if (error instanceof RetryExhausted && error.cause instanceof GitHubError && [401, 403, 404].includes(error.cause.status)) throw error.cause;
+    throw error;
   }
-  if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
 }
 
 interface InstallationTokenScope {
@@ -243,8 +275,9 @@ export async function fileContent(token: string, fullName: string, path: string,
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
   } catch (error) {
-    if (error instanceof GitHubError && [401, 403].includes(error.status)) throw error;
-    return null;
+    if (error instanceof GitHubError && error.status === 404 || error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
+
   }
 }
 
@@ -253,8 +286,9 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
   } catch (error) {
-    if (error instanceof GitHubError && [401, 403].includes(error.status)) throw error;
-    return null;
+    if (error instanceof GitHubError && error.status === 404 || error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
+
   }
 }
 
@@ -293,9 +327,14 @@ export async function commitToBranch(
       body: JSON.stringify({ sha: commit.sha }),
     });
   } else {
-    await gh(`/repos/${fullName}/git/refs`, token, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    await retry("Create branch", async () => {
+      const recovered = await branchSha(token, fullName, branch);
+      if (recovered === commit.sha) return;
+      if (recovered) throw new OutboundError(409);
+      await gh(`/repos/${fullName}/git/refs`, token, {
+        method: "POST",
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+      });
     });
   }
   return commit.sha;
@@ -308,12 +347,14 @@ export async function openPullRequest(
 ): Promise<{ number: number; html_url: string }> {
   // A crash can occur after GitHub accepts the PR but before the Factory saves it.
   // Recover the existing PR on retry rather than opening another one.
-  const owner = fullName.split("/")[0];
-  const existing = await gh<{ number: number; html_url: string }[]>(
-    `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
-  );
-  if (existing[0]) return existing[0];
-  return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  return retry("Open pull request", async () => {
+    const owner = fullName.split("/")[0];
+    const existing = await gh<{ number: number; html_url: string }[]>(
+      `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
+    );
+    if (existing[0]) return existing[0];
+    return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  });
 }
 
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */

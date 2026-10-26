@@ -78,6 +78,7 @@ describe("permits in the Factory", () => {
     const merged: string[] = [];
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       if (url.endsWith("/access_tokens")) return Response.json({ token: "t" });
@@ -132,6 +133,7 @@ describe("permits in the Factory", () => {
       const h = new Factory(ctx as never, { ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "k", DB: { prepare: () => ({ bind: () => ({ first: async () => null, all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
       alarm = null;
       await h.alarm();
+      await new Promise(resolve => setTimeout(resolve, 0)); // settle asynchronous game-master ranking before simulating restart
       expect(saved().items[0].state).toBe("rejected");
       expect(saved().items[0].lane).toBe("docs");
       expect(saved().autonomy?.districts.find((d) => d.district === "docs")).toMatchObject({ permit: false, score: 0 });

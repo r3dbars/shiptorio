@@ -124,7 +124,7 @@ describe("idle orbit deadlines", () => {
       expect(f.alarm()).toBe(deadline);
       now = deadline; f.consumeAlarm(); await f.reload().alarm();
       expect(f.saved().items[0].orbit).toMatchObject({ state: "clear", at: deadline });
-      expect(f.alarm()).toBeNull();
+      expect(f.alarm()).toBe(now + 60_000);
       const clear = structuredClone(f.saved().items[0]);
       now += 1000; await f.reload().alarm();
       expect(f.saved().items[0]).toEqual(clear);
@@ -158,7 +158,7 @@ describe("idle orbit deadlines", () => {
       const factory = f.reload(); await factory.onPullClosed(41, true, merge);
       expect(f.alarm()).toBe(now + 60_000);
       f.consumeAlarm(); await factory.alarm();
-      expect(f.alarm()).toBe(now + WATCH_MS);
+      expect(f.alarm()).toBe(now + 60_000);
       await factory.enqueueGitHub("new-work", "unknown", { repository: { full_name: "r3dbars/demo" }, installation: { id: 1 } });
       expect(f.alarm()).toBe(now + 2000);
     } finally { Date.now = originalNow; }

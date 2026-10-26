@@ -2,7 +2,9 @@
 
 Goal 9, Mon Oct 26 GitHub App checkpoint. Lifecycle delivery is signature-verified,
 deduplicated in D1, and durably queued on the `github-installations` coordinator.
-Only a completed transition marks the delivery done; partial failures retry.
+Only a completed transition marks the delivery done; partial failures retry with backoff.
+After five failures the payload is retained for operator replay, following the shared
+delivery policy.
 
 ## Events and behavior
 
