@@ -132,6 +132,12 @@ describe("Factory lifecycle", () => {
       expect(claimed.filter(Boolean)).toHaveLength(1);
       const assigned = claimed.find(Boolean)!;
       expect(assigned.token).toBe("fake-install-token");
+      const realNow = Date.now;
+      try {
+        // A claim whose response was lost: the same idle runner asking again gets the same job back.
+        Date.now = () => realNow() + 60_000;
+        expect((await f.factory.claimRunner(pair, ["codex"]))?.lease).toBe(assigned.lease);
+      } finally { Date.now = realNow; }
       expect(f.saved().items[0].state).toBe("working");
       expect(f.saved().deck?.some(m => m.options.some(o => o.actions.some(a => a.tool === "approve_runner_job")))).toBe(false);
       const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };

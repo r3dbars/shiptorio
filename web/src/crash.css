@@ -1,0 +1,18 @@
+/* The crash screen (ErrorBoundary): one riveted plate on the furnace sky. docs/art/IRON-STYLE.md */
+.crash { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; box-sizing: border-box; background: radial-gradient(120% 60% at 50% 100%, rgba(255, 122, 42, 0.3), transparent 70%), var(--iron-sky), var(--iron-bg); color: var(--iron-ink); font: 400 15px/1.6 var(--iron-mono); }
+.crash .crash-plate { width: min(460px, 100%); background: var(--iron-panel-solid); box-shadow: var(--iron-plate-shadow), 0 8px 0 rgba(0, 0, 0, 0.45); }
+.crash-stripe { height: 10px; background: var(--iron-caution); border-bottom: 2px solid #000; }
+.crash-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; background: var(--iron-plate); border-bottom: 2px solid var(--iron-line); }
+.crash-head .iron-state { color: var(--iron-amber); text-transform: uppercase; }
+.crash-head .iron-state::before { background: var(--iron-bad); animation: none; }
+.crash-body { display: grid; grid-template-columns: 72px 1fr; gap: 18px; padding: 22px 22px 24px; align-items: start; }
+.crash-gauge { width: 72px; height: 72px; image-rendering: pixelated; shape-rendering: crispEdges; }
+.crash-needle { transform-origin: 18px 22px; animation: crash-shake 0.18s steps(2) infinite; }
+.crash h1 { font: 700 22px/1.15 var(--iron-pixel); letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 10px; color: var(--iron-ink); }
+.crash p { margin: 0 0 10px; }
+.crash .crash-hint { color: var(--iron-dim); font-size: 13px; }
+.crash .iron-btn { width: 100%; min-height: 48px; margin-top: 8px; font-size: 12px; letter-spacing: 0.08em; }
+.crash-ref { margin-top: 12px; font: 400 10px/1.2 var(--iron-pixel); letter-spacing: 0.14em; color: var(--iron-dim); text-transform: uppercase; }
+@keyframes crash-shake { 50% { transform: rotate(6deg); } }
+@media (max-width: 420px) { .crash-body { grid-template-columns: 1fr; } .crash-gauge { width: 56px; height: 56px; } }
+@media (prefers-reduced-motion: reduce) { .crash-needle { animation: none; } }

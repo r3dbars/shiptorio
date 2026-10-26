@@ -517,6 +517,21 @@ export const RESEARCH = {
   catches: (what: string) => `Catches ${what}`,
   go: "Research",
   running: "Running",
+  /** the eyebrow over the board */
+  board: "Schematic board",
+};
+
+/** Achievements (ui/Achievements.tsx): the sheet of medallions and the unlock toast. */
+export const ACHIEVE = {
+  title: "Achievements",
+  earned: (total: number) => `of ${total} earned`,
+  earnedSub: "Each one is something that really happened in your repo.",
+  eyebrow: "Foundry medals",
+  tier: { bronze: "Bronze", silver: "Silver", gold: "Gold" } as Record<"bronze" | "silver" | "gold", string>,
+  unlocked: "Achievement unlocked",
+  more: (n: number) => `And ${n} more`,
+  moreSub: "Tap to see every badge you've earned.",
+  xp: (n: number) => `+${n} XP`,
 };
 
 export const GUIDE = {
@@ -852,6 +867,17 @@ export const PROGRESS = {
   xpRule: "XP only comes from real results: ships, clean ships, launches that hold, checks you add, cards you answer.",
   notifyTitle: (n: number) => `${plural(n, "card")} waiting on you`,
   notifyBody: "The factory needs a decision.",
+};
+
+// The crash screen (ErrorBoundary): a blown boiler plate with one way back.
+export const CRASH = {
+  eyebrow: "Boiler room · fault",
+  state: "Blocked",
+  title: "Boiler blew",
+  body: "Something in this screen overheated and the gauges went dark. Your repo, its PRs and every card you answered are untouched.",
+  hint: "Restart relights the furnace and puts you back on the map.",
+  restart: "Restart",
+  ref: (id: string) => `Fault ${id.slice(0, 8)}`,
 };
 
 // Brand art alt text (web/src/ui/Logo.tsx).

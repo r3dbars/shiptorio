@@ -11,6 +11,8 @@ import { savePref } from "../account";
 import { sound } from "../sound/engine";
 import { SHIP_EVENT, SHIP_TIMING } from "../sound/ship";
 import { Icon, type IconName } from "./icons";
+import { Medallion } from "./ironArt";
+import { ACHIEVE, WORDS } from "../copy";
 
 import { achievementStorageKey, shipBaseline, shippedSince, type ShipBaseline } from "./achievementState";
 const TOAST_MS = 4200;
@@ -18,7 +20,6 @@ const AFTER_SHIP_MS = SHIP_TIMING.doneMs + 3200; // let the ship card have its m
 const MAX_WAIT_MS = 6000; // ...but back-to-back ships (a permit lane) never starve the toasts
 const MAX_TOASTS = 3; // opening a factory that already shipped a lot: three toasts, then one "and N more"
 
-const TIER_LABEL: Record<Achievement["tier"], string> = { bronze: "Bronze", silver: "Silver", gold: "Gold" };
 function readLocal(profile: string): Earned {
   try {
     return parseEarned(localStorage.getItem(achievementStorageKey(profile)));
@@ -141,10 +142,10 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
   return { earned, toast, dismiss: () => { shownAt.current = 0; setToast(null); }, send: sendRaw, count: Object.keys(earned.got).length };
 }
 
-function Badge({ a, got, size = 22 }: { a: Achievement; got: boolean; size?: number }) {
+function Badge({ a, got, size = 40 }: { a: Achievement; got: boolean; size?: number }) {
   return (
     <span className={`ach-badge ${a.tier}${got ? " got" : ""}`} aria-hidden="true">
-      <Icon name={(got ? a.icon : "lock") as IconName} size={size} />
+      <Medallion tier={a.tier} icon={a.icon as IconName} got={got} size={size} />
     </span>
   );
 }
@@ -153,21 +154,22 @@ export function AchievementToast({ toast, onOpen, onDismiss }: { toast: Toast | 
   if (!toast) return null;
   return (
     <div className="ach-toast-wrap" role="status" aria-live="polite">
-      <button type="button" key={toast.key} className={`card ach-toast${toast.a ? ` ${toast.a.tier}` : ""}`} onClick={() => { onDismiss(); onOpen(); }}>
+      <button type="button" key={toast.key} className={`card ach-toast${toast.a ? ` ${toast.a.tier}` : " more"}`} onClick={() => { onDismiss(); onOpen(); }}>
+        <span className="ach-sparks" aria-hidden="true" />
         {toast.a ? (
           <>
-            <Badge a={toast.a} got size={26} />
+            <Badge a={toast.a} got size={56} />
             <span className="ach-tbody">
-              <span className="ach-kicker">Achievement unlocked</span>
+              <span className="ach-kicker">{ACHIEVE.unlocked}</span>
               <span className="ach-tname">{toast.a.name}</span>
               <span className="ach-twhat">{toast.a.what}</span>
             </span>
-            <span className="ach-xp">+{toast.a.xp} XP</span>
+            <span className="ach-xp">{ACHIEVE.xp(toast.a.xp)}</span>
           </>
         ) : (
           <span className="ach-tbody">
-            <span className="ach-kicker">And {toast.more} more</span>
-            <span className="ach-twhat">Tap to see every badge you've earned.</span>
+            <span className="ach-kicker">{ACHIEVE.more(toast.more ?? 0)}</span>
+            <span className="ach-twhat">{ACHIEVE.moreSub}</span>
           </span>
         )}
       </button>
@@ -181,10 +183,13 @@ export function AchievementsSheet({ earned, state, streak = 0, onClose }: { earn
   const rows = board(earned, state, streak);
   const got = rows.filter((r) => r.got).length;
   return (
-    <section className="card sheet achievements" aria-label="Achievements">
+    <section className="card sheet achievements" aria-label={ACHIEVE.title}>
       <div className="sheet-top">
-        <h2>Achievements</h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <div className="sheet-head">
+          <span className="iron-eyebrow">{ACHIEVE.eyebrow}</span>
+          <h2>{ACHIEVE.title}</h2>
+        </div>
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
@@ -193,8 +198,8 @@ export function AchievementsSheet({ earned, state, streak = 0, onClose }: { earn
           <Icon name="medal" size={22} />
         </span>
         <span>
-          <b>{got}</b>of {ACHIEVEMENTS.length} earned
-          <small>Each one is something that really happened in your repo.</small>
+          <b>{got}</b>{ACHIEVE.earned(ACHIEVEMENTS.length)}
+          <small>{ACHIEVE.earnedSub}</small>
         </span>
       </div>
       <div className="ach-list">
@@ -204,7 +209,7 @@ export function AchievementsSheet({ earned, state, streak = 0, onClose }: { earn
             <span className="rs-body">
               <span className="rs-name">
                 {a.name}
-                <span className={`ach-tier ${a.tier}`}>{TIER_LABEL[a.tier]}</span>
+                <span className={`ach-tier ${a.tier}`}>{ACHIEVE.tier[a.tier]}</span>
               </span>
               <span className="rs-what">{a.what}</span>
               {!got && a.need > 1 && (
@@ -213,7 +218,7 @@ export function AchievementsSheet({ earned, state, streak = 0, onClose }: { earn
                 </span>
               )}
             </span>
-            <span className="ach-side">{got ? fmtDay(got.at) : a.need > 1 ? `${have}/${a.need}` : `+${a.xp} XP`}</span>
+            <span className="ach-side">{got ? fmtDay(got.at) : a.need > 1 ? `${have}/${a.need}` : ACHIEVE.xp(a.xp)}</span>
           </div>
         ))}
       </div>
