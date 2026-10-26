@@ -13,8 +13,8 @@ const page = (error = "") => `<!doctype html><html lang="en"><meta charset="utf-
 
 export async function previewAccess(request: Request, env: AccessEnv): Promise<Response | null> {
   const url = new URL(request.url);
-  // GitHub cannot supply a preview password; its webhook is independently HMAC authenticated.
-  if (url.pathname === "/webhooks/github") return null;
+  // GitHub and Sentry cannot supply a preview password; their webhooks are independently HMAC authenticated.
+  if (url.pathname === "/webhooks/github" || url.pathname === "/webhooks/sentry") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;
