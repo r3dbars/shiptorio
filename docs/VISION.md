@@ -31,14 +31,15 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 5. **Verify everything (checks and balances, inspired by Lauren Tan / poteto).** CI → proof → AI review →
    human merge. Fails loop back to Spark. Every station is visible and clickable, piles show the bottleneck,
    and the game rewards adding more checks.
-6. **Simple, easy, addictive in a good way.** Two minutes from sign-in to your first bottleneck. Justin loves
+6. **Point at the human bottleneck.** In an agent loop the person is the slow part, so Shiptorio always
+   shows what's waiting on you and makes it fast to clear: a swipeable check-in deck of 8 to 12 cards
+   (phone, web, later voice). The gauntlet makes fast yeses safe, and earned trust means fewer cards.
+7. **Simple, easy, addictive in a good way.** Two minutes from sign-in to your first bottleneck. Justin loves
    games; the game pull is the product. Fun is what makes people keep shipping.
-7. **Progressive disclosure: one concept at a time.** Shiptorio is a lot (ore, machines, power, the gauntlet,
-   bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by
-   step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one
-   inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until Spark
-   introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they
-   show up when the player is ready for them.
+8. **Plain words in the UI, no "Spark".** Players don't care what the planner model is called. Recommended options
+   just get a "Suggested" tag. No named character. The only credit is one small "powered by Meta Muse Spark" line
+   (onboarding/about). Internally (code, docs, contracts) Spark keeps its name.
+9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until Spark introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
 
 ## Non-goals (for now)
 
@@ -72,6 +73,7 @@ Before starting something, check it against this list. Mostly-yes means go.
 - [ ] Does it keep **Spark as the brain**, not the worker?
 - [ ] Does it respect **earned autonomy** (asks first unless the player unlocked it)?
 - [ ] Does it add or surface a **check**, or at least not bypass one?
+- [ ] Does it **grow the loop** (more checks, more sources, more autonomy) or clear what's waiting on the human?
 - [ ] Will it feel **simple and fun** in the first two minutes?
 - [ ] Does it **show up when the player is ready**, not all at once?
 - [ ] Is it the **current bottleneck**, not a later district (marketing, Stripe, etc.)?
@@ -85,4 +87,8 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 
 - 2026-10-26: Vision written from Justin's project chat, `docs/PRODUCT.md`, `docs/LOOP.md`.
 - 2026-10-26: First sources are GitHub, Sentry, PostHog. Stripe on hold.
-- 2026-10-26: Onboarding is a major focus, built on progressive disclosure (principle 7).
+- 2026-10-26: Onboarding is a major focus, built on progressive disclosure (principle 9).
+- 2026-10-26: HUD redesign: less dense, mobile first, progressive disclosure, no "Spark" in player-facing UI.
+- 2026-10-26: Humans are the bottleneck in the agentic loop. Shiptorio always points at it, and a swipe
+  check-in (8 to 12 cards, right = do it, left = later, down = never + why) lets you push the whole system
+  forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".

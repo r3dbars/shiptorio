@@ -87,7 +87,7 @@ function panelFor(id: string, state: FactoryState): Panel | null {
         ["Strikes", worst ? `${ref(worst)}: ${worst.scars!.length} / 3` : "–"],
       ],
       now: onBelt,
-      last: scar && worst ? { who: "Spark", text: `${ref(worst)} came back from the ${lc(STATION_COPY[scar.station].name)}: ${scar.reason}`, ok: false } : undefined,
+      last: scar && worst ? { who: "Rework", text: `${ref(worst)} came back from the ${lc(STATION_COPY[scar.station].name)}: ${scar.reason}`, ok: false } : undefined,
       match: (l) => /rework|re-plan|rejected/i.test(l.text) || l.tool === "request_rework",
       actions: REWORK_COPY.actions ?? [],
     };
@@ -116,7 +116,7 @@ function panelFor(id: string, state: FactoryState): Panel | null {
   const mid = id.startsWith("m:") ? id.slice(2) : id;
   const m = state.machines.find((x) => x.id === mid);
   if (id === "power" || (m && POWER_TYPES.includes(m.type))) {
-    const stats = state.power.map((p): [string, string] => [p.kind === "steam" ? "Spark steam" : `${p.name} left`, p.online ? pct(p.level) : "offline"]);
+    const stats = state.power.map((p): [string, string] => [p.kind === "steam" ? "Planner" : `${p.name} left`, p.online ? pct(p.level) : "offline"]);
     const low = state.power.find((p) => p.kind !== "steam" && p.level < 0.4);
     const feeds = m ? state.machines.filter((x) => x.powerId === m.id || (m.type === "steam" && x.type === "splitter")) : [];
     return {
@@ -124,7 +124,7 @@ function panelFor(id: string, state: FactoryState): Panel | null {
       title: m ? `${m.type} plant` : undefined,
       stats: [...stats, ...(feeds.length ? [["Powers", feeds.map((f) => nameOf(f, state)).join(", ")] as [string, string]] : [])],
       machineId: m?.id,
-      last: low ? { who: "Spark", text: `${low.name} is under 40%. Spark will hold low-value items until it refills.`, ok: true } : undefined,
+      last: low ? { who: "Power", text: `${low.name} is under 40%. Low-value items wait low-value items until it refills.`, ok: true } : undefined,
       match: (l) => /power|plugged|plant|sign in/i.test(l.text),
       actions: POWER_COPY.actions ?? [],
       sendAs: "power",
@@ -249,7 +249,7 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
           {p.actions.map((a) => (
             <button key={a.id} type="button" className={a.recommended ? "nm-btn rec" : "nm-btn"} onClick={() => send({ type: "station_action", stationId: p.sendAs ?? id, action: a.id })}>
               {a.label}
-              {a.recommended && <span className="sp-pick">SPARK'S PICK</span>}
+              {a.recommended && <span className="sp-pick">SUGGESTED</span>}
             </button>
           ))}
         </div>

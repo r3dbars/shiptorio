@@ -20,6 +20,9 @@ export type Sfx =
   | "chirp"
   | "think";
 
+import { SCAPES, type Focus } from "./scapes";
+
+export type { Focus };
 type Settings = { muted: boolean; volume: number };
 const KEY = "shiptorio.sound";
 const MIN_GAP_MS = 90; // same effect can't stack faster than this
@@ -35,6 +38,14 @@ function load(): Settings {
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  // Two buses: the floor (everything) and the focus (the thing you clicked into).
+  // Focusing muffles and ducks the floor and plays that thing's own soundscape up close.
+  private floor: GainNode | null = null;
+  private floorLp: BiquadFilterNode | null = null;
+  private near: GainNode | null = null;
+  private focus: Focus | null = null;
+  private scapeStop: (() => void) | null = null;
+  private step = 0;
   private noiseBuf: AudioBuffer | null = null;
   private hum: GainNode | null = null;
   private workTimer: number | undefined;
@@ -75,6 +86,14 @@ class SoundEngine {
     this.ctx = ctx;
     this.master = ctx.createGain();
     this.master.connect(ctx.destination);
+    this.floorLp = ctx.createBiquadFilter();
+    this.floorLp.type = "lowpass";
+    this.floorLp.frequency.value = 18000;
+    this.floor = ctx.createGain();
+    this.floor.connect(this.floorLp).connect(this.master);
+    this.near = ctx.createGain();
+    this.near.gain.value = 0;
+    this.near.connect(this.master);
     this.applyVolume();
     // 1s of white noise, sampled at a low rate later for that crunchy 8-bit texture
     const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -83,6 +102,10 @@ class SoundEngine {
     this.noiseBuf = buf;
     this.startHum();
     this.workTimer = window.setInterval(() => this.workTick(), 260);
+    window.setInterval(() => this.scapeTick(), 125);
+    const f = this.focus;
+    this.focus = null;
+    this.setFocus(f);
   }
 
   // ---------- settings ----------
@@ -142,7 +165,7 @@ class SoundEngine {
       o.start();
     }
     lfo.start();
-    lp.connect(g).connect(this.master!);
+    lp.connect(g).connect(this.floor!);
     this.hum = g;
     this.setAmbience(this.humLevel, this.workRate);
   }
@@ -151,15 +174,68 @@ class SoundEngine {
     if (!this.live || this.workRate <= 0) return;
     // more assemblers → denser clanking, capped so it stays a texture
     if (Math.random() > Math.min(0.85, 0.35 + this.workRate * 0.15)) return;
+    this.out = this.floor!;
     const t = this.ctx!.currentTime + Math.random() * 0.05;
     const pitch = [196, 220, 247, 294][Math.floor(Math.random() * 4)];
     this.tone({ f: pitch, dur: 0.05, type: "square", vol: 0.05, at: t });
     this.noise({ dur: 0.04, vol: 0.06, hp: 2000, at: t });
   }
 
+  // ---------- focus ----------
+
+  // What the camera is locked onto, or null for the whole floor. Eases in and out.
+  setFocus(f: Focus | null) {
+    const same = f && this.focus && f.kind === this.focus.kind && f.key === this.focus.key;
+    this.focus = f;
+    if (!this.ctx || !this.floor || !this.floorLp || !this.near) return;
+    const t = this.ctx.currentTime;
+    this.floorLp.frequency.setTargetAtTime(f ? 650 : 18000, t, f ? 0.25 : 0.4);
+    this.floor.gain.setTargetAtTime(f ? 0.35 : 1, t, f ? 0.25 : 0.4);
+    if (same) return;
+    // fade the old scape out, then start the new one
+    const old = this.scapeStop;
+    this.scapeStop = null;
+    this.near.gain.setTargetAtTime(0, t, 0.12);
+    window.setTimeout(() => {
+      old?.();
+      if (!this.focus || this.focus !== f || !this.ctx) return;
+      this.out = this.near!;
+      this.scapeStop = SCAPES[f.kind].start?.(this, this.near!) ?? (() => {});
+      this.near!.gain.setTargetAtTime(1.6, this.ctx.currentTime, 0.3);
+    }, old ? 300 : 0);
+  }
+
+  // Keep the busy level fresh without restarting the scape.
+  updateFocus(f: Focus | null) {
+    if (!f || !this.focus || f.kind !== this.focus.kind || f.key !== this.focus.key) return this.setFocus(f);
+    this.focus = f;
+  }
+
+  focusKey() {
+    return this.focus?.key ?? null;
+  }
+
+  private scapeTick() {
+    if (!this.live || !this.focus || !this.scapeStop) return;
+    this.out = this.near!;
+    SCAPES[this.focus.kind].step?.(this, this.near!, this.step++, this.focus);
+  }
+
+  get now() {
+    return this.ctx!.currentTime;
+  }
+
+  get audio() {
+    return this.ctx!;
+  }
+
+  get noiseBuffer() {
+    return this.noiseBuf!;
+  }
+
   // ---------- primitives ----------
 
-  private tone(o: { f: number; to?: number; dur: number; type?: OscillatorType; vol?: number; at?: number; attack?: number }) {
+  tone(o: { f: number; to?: number; dur: number; type?: OscillatorType; vol?: number; at?: number; attack?: number; out?: AudioNode }) {
     const ctx = this.ctx!;
     const t = o.at ?? ctx.currentTime;
     const osc = ctx.createOscillator();
@@ -171,12 +247,12 @@ class SoundEngine {
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(v, t + (o.attack ?? 0.004));
     g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
-    osc.connect(g).connect(this.master!);
+    osc.connect(g).connect(o.out ?? this.out);
     osc.start(t);
     osc.stop(t + o.dur + 0.02);
   }
 
-  private noise(o: { dur: number; vol?: number; lp?: number; hp?: number; at?: number; rate?: number; sweepTo?: number; attack?: number }) {
+  noise(o: { dur: number; vol?: number; lp?: number; hp?: number; bp?: number; at?: number; rate?: number; sweepTo?: number; attack?: number; out?: AudioNode }) {
     const ctx = this.ctx!;
     const t = o.at ?? ctx.currentTime;
     const src = ctx.createBufferSource();
@@ -191,6 +267,13 @@ class SoundEngine {
       if (o.sweepTo) f.frequency.exponentialRampToValueAtTime(o.sweepTo, t + o.dur);
       node = node.connect(f);
     }
+    if (o.bp) {
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass";
+      f.frequency.value = o.bp;
+      f.Q.value = 4;
+      node = node.connect(f);
+    }
     if (o.hp) {
       const f = ctx.createBiquadFilter();
       f.type = "highpass";
@@ -202,15 +285,20 @@ class SoundEngine {
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(v, t + (o.attack ?? 0.004));
     g.gain.exponentialRampToValueAtTime(0.0001, t + o.dur);
-    node.connect(g).connect(this.master!);
+    node.connect(g).connect(o.out ?? this.out);
     src.start(t);
     src.stop(t + o.dur + 0.02);
   }
 
   // ---------- effects ----------
 
-  play(s: Sfx, delay = 0) {
+  // Where one-shots go right now. play() points this at the near bus for the focused thing's sounds.
+  private out!: AudioNode;
+
+  // near: this sound belongs to the thing you're focused on, so it plays up close, unmuffled
+  play(s: Sfx, delay = 0, near = false) {
     if (!this.live) return;
+    this.out = near && this.focus ? this.near! : this.floor!;
     const now = performance.now();
     if (now - (this.last.get(s) ?? 0) < MIN_GAP_MS) return;
     this.last.set(s, now);

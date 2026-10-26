@@ -58,6 +58,7 @@ interface Scenario {
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
+  checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
   onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
 }
 
@@ -105,7 +106,7 @@ export const SCENARIOS = {
         users: 112,
         failAt: "verify",
         failFirst: "passed CI, but the crash still happens with an empty cart (repro attached)",
-        ask: "Send it to your Claude Code assembler with Spark's plan: guard cart.total, add a coupon-on-empty-cart test.",
+        ask: "Send it to your Claude Code assembler with the plan: guard cart.total, add a coupon-on-empty-cart test.",
         spark: [
           { tool: "get_sentry_issue", text: "New error on /checkout: TypeError: cart.total is undefined, 112 users", reason: "Sentry alert" },
           { tool: "triage", text: "Triaged as a bug in checkout, value 112 users", reason: "Every checkout with a coupon fails" },
@@ -124,6 +125,23 @@ export const SCENARIOS = {
       { at: 24, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
     ],
   },
+  // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
+  checkin: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    checkin: true,
+    ores: [
+      {
+        at: 2,
+        title: "CSV export is empty",
+        kind: "bug",
+        district: "api",
+        ask: "3 customers asked. Found it: the export reads the wrong date column. Build it on Claude Code?",
+        spark: [{ tool: "triage", text: "Triaged \"CSV export is empty\" as a bug in /api, 3 customers asked", reason: "issue + 2 emails" }],
+      },
+      { at: 6, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
+    ],
+  },
   // Onboarding from docs/PRODUCT.md: Spark reads the repo, but nothing builds until you plug in a subscription.
   "first-run": {
     unplugged: true,
@@ -134,7 +152,7 @@ export const SCENARIOS = {
         title: "Checkout button spins forever on Safari",
         kind: "bug",
         district: "web",
-        ask: "Send it to your new assembler with Spark's plan: await the payment intent before enabling the button.",
+        ask: "Send it to your new assembler with the plan: await the payment intent before enabling the button.",
         spark: [{ tool: "triage", text: "Triaged as a bug in web: the one worth fixing first", reason: "it blocks checkout on Safari" }],
       },
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
@@ -184,7 +202,7 @@ function initialState(sc: Scenario): FactoryState {
     { id: "orbit-1", type: "inspector", x: 15, y: 3, tier: 1, state: "idle" },
     { id: "steam-spark", type: "steam", x: 0, y: 3, tier: 1, state: "idle" },
   ];
-  const power: PowerSource[] = [{ id: "steam-spark", kind: "steam", name: "Muse Spark", level: 1, online: true }];
+  const power: PowerSource[] = [{ id: "steam-spark", kind: "steam", name: "Planner", level: 1, online: true }];
   if (harness !== "spark" && !sc.unplugged) {
     machines.push({ id: plant, type: "solar", x: 3, y: 3, tier: 1, state: "idle" });
     power.push({ id: plant, kind: "solar", name: SOLAR_NAME[harness] ?? harness, level: 0.9, online: true });
@@ -214,7 +232,7 @@ function initialState(sc: Scenario): FactoryState {
     autonomy: {
       level: "advisor",
       districts: districts.map((d) => ({ district: d.name, score: d.name === "docs" ? 0.7 : 0.3, risk: d.name === "docs" ? "low" : "medium", permit: false })),
-      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "Spark moves approved as-is" },
+      next: { level: "floor", have: sc.onboard ? 0 : 8, need: 10, label: "suggestions approved as-is" },
       ranAlone: 0,
     },
     foreman: { thinking: false },
@@ -306,25 +324,66 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // ---------- the Next Move card ----------
 
+  // The check-in deck is the open card plus the ones waiting behind it, at most 12.
+  const dealDeck = () => {
+    s.deck = [...(s.move ? [s.move] : []), ...pending].slice(0, 12);
+    emit({ type: "deck", deck: s.deck });
+  };
   const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void) => {
     const m: Move = { ...move, id: `move-${++seq}`, createdAt: Date.now() };
     onChoose.set(m.id, then);
     if (s.move) pending.push(m);
     else open(m);
+    dealDeck();
   };
   const open = (m: Move) => {
     s.move = m;
     emit({ type: "move", move: m });
+    dealDeck();
+  };
+  // Take a move off the deck, wherever it sits. The next one opens right away while the player swipes.
+  const pull = (moveId: string, delay: number) => {
+    const i = pending.findIndex((m) => m.id === moveId);
+    if (i !== -1) pending.splice(i, 1);
+    if (s.move?.id === moveId) {
+      s.move = null;
+      const next = pending.shift();
+      if (next) setTimeout(() => open(next), delay);
+    }
+    dealDeck();
   };
   const resolve = (moveId: string, optionId: string | undefined, actor: "player" | "spark") => {
     const then = onChoose.get(moveId);
-    if (!then || s.move?.id !== moveId) return;
+    if (!then) return;
     onChoose.delete(moveId);
-    s.move = null;
     emit({ type: "move_resolved", moveId, optionId, actor });
+    pull(moveId, s.deck && s.deck.length > 1 ? 0 : 600);
     if (optionId) then(optionId);
-    const next = pending.shift();
-    if (next) setTimeout(() => (s.move ? pending.unshift(next) : open(next)), 600);
+  };
+  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in).
+  const defer = (moveId: string) => {
+    const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
+    if (!m) return;
+    pull(moveId, 0);
+    pending.push(m);
+    if (!s.move) open(pending.shift()!);
+    else dealDeck();
+  };
+  // Swipe down: never, with one tap on why. The why is what Spark learns from.
+  const NEVER_LINE = {
+    once: "Dropped it.",
+    kind: "Noted as a rule: no more cards like this",
+    spark: "Got it: this kind gets handled on its own from now on",
+    wrong: "Logged a scar: misread this one",
+  } as const;
+  const dismiss = (moveId: string, why: keyof typeof NEVER_LINE) => {
+    const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
+    if (!m) return;
+    onChoose.delete(moveId);
+    emit({ type: "move_resolved", moveId, actor: "player" });
+    pull(moveId, 0);
+    spark({ tool: why === "kind" ? "add_rule" : why === "wrong" ? "scar" : "dismiss_move", text: `${NEVER_LINE[why]} ("${m.title}")`, reason: "you swiped never" }, { approvedBy: "player" });
+    if (why === "spark") approvedAsIs();
   };
 
   // Each move the player approves as-is counts toward the next autonomy unlock.
@@ -334,12 +393,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const have = a.next.have + 1;
     if (have < a.next.need) return apply({ autonomy: { ...a, next: { ...a.next, have } } });
     const level = a.next.level;
-    const next: Autonomy["next"] = level === "floor" ? { level: "build", have: 0, need: 5, label: "PRs merged from Spark's plans, no escaped defect" } : null;
+    const next: Autonomy["next"] = level === "floor" ? { level: "build", have: 0, need: 5, label: "PRs merged from the plan, no escaped defect" } : null;
     apply({ autonomy: { ...a, level, next } });
     emit({
       type: "autonomy_unlocked",
       level,
-      text: level === "floor" ? "Spark earned Floor: it routes work and tunes machines on its own now" : `Spark earned ${level}`,
+      text: level === "floor" ? "Floor unlocked: work gets routed and machines tuned on their own now" : `${level} unlocked`,
     });
   };
 
@@ -351,6 +410,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         title: users ? `${item.district === "checkout" ? "Checkout crash" : item.title}, ${users} users` : item.title,
         why: asks.get(item.id) ?? "Build it?",
         stage: "build",
+        kind: "build",
+        focus: asm?.id,
         itemId: item.id,
         options: [
           { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: item.id, machineId: asm?.id }, reason: "highest value on the floor" }] },
@@ -376,6 +437,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         title: "Bottleneck: launch pad",
         why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : `PR #${item.prNumber} passed the gauntlet: ${item.title}`,
         stage: "pad",
+        kind: "ship",
+        focus: "gate-1",
+        evidence: GAUNTLET.slice(0, 3).map((g) => ({ station: g.name, ok: true })),
         itemId: item.id,
         options: [
           { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "green and on the pad" }] },
@@ -393,8 +457,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: `Reply to ${to.split("@")[0]}`,
-        why: `Spark drafted: "Thanks for the report. Checkout is fixed in #${item.prNumber}, you can pay now. Sorry about that."`,
+        why: `Drafted: "Thanks for the report. Checkout is fixed in #${item.prNumber}, you can pay now. Sorry about that."`,
         stage: "impact",
+        kind: "ship",
+        focus: "ore-inbox",
         itemId: item.id,
         options: [
           { id: "send", label: "Send", recommended: true, actions: [{ tool: "send_customer_reply", args: { to }, reason: "the fix shipped" }] },
@@ -546,7 +612,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (failure && item.attempts === 1 && (failAt.get(item.id) ?? "ci") === st.kind) {
             const scar = { station: st.kind, reason: failure, strike: item.attempts, at: now };
             apply({ items: [{ ...next, state: "rejected", failure, scars: [...(item.scars ?? []), scar] }] });
-            record(st, false, `#${item.prNumber} ${failure}. Back to Spark on the rework belt.`);
+            record(st, false, `#${item.prNumber} ${failure}. Back to the planner on the rework belt.`);
             log("warn", `${st.name} rejected PR #${item.prNumber}: ${failure}`, item.id);
             spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the ${lc(st.name)} scar, then back to ${builtBy.get(item.id) ?? "the assembler"}`, reason: failure }, { itemId: item.id, target: "splitter-1" });
             break;
@@ -559,7 +625,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${lc(nextSt.name)}`, item.id);
           } else {
             apply({ items: [{ ...next, state: "on_pad", machineId: "gate-1", failure: undefined }] });
-            stat("gate-1").lastLog = { who: "Spark", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
+            stat("gate-1").lastLog = { who: "Gate", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
             log("success", `PR #${item.prNumber} cleared the gauntlet. Waiting at the merge gate.`, item.id);
             if (!autoLaunch) askToLaunch(next);
           }
@@ -709,8 +775,11 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: "Plug in power to start building",
-        why: "Spark has read the repo and lined up the first fix, but nothing can build yet. Your own subscriptions power the assemblers.",
+        why: "The repo's read and the first fix is lined up, but nothing can build yet. Your own subscriptions power the assemblers.",
         stage: "resources",
+        kind: "input",
+        focus: "assembler-1",
+        grows: ["+1 POWER PLANT", "ASSEMBLERS ON"],
         options: [
           { id: "claude_code", label: "Sign in with Claude", recommended: true, actions: [] },
           { id: "codex", label: "Sign in with ChatGPT", recommended: false, actions: [] },
@@ -718,6 +787,88 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       },
       (opt) => plugIn(opt === "codex" ? "codex" : "claude_code"),
     );
+  };
+
+  // ---------- the check-in deck ----------
+
+  // A morning's worth of Next Moves, dealt at once. Mostly loop-growers: checks, sources, autonomy.
+  const dealCheckIn = () => {
+    const yes = (text: string, tool: string, target: string, extra?: () => void) => () => {
+      spark({ tool, text, reason: "you swiped right" }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${text.toLowerCase()}`) });
+      extra?.();
+      approvedAsIs();
+    };
+    const one = (id: string, label: string, actions: Move["options"][number]["actions"] = []) => ({ id, label, recommended: true, actions });
+    const alt = (id: string, label: string) => ({ id, label, recommended: false, actions: [] });
+    const cards: [Omit<Move, "id" | "createdAt">, Record<string, () => void>][] = [
+      [
+        {
+          title: "Same review note, third time. Make it a lint rule?",
+          why: "AI review flagged a missing null check on cart items in #138, #140 and #143. Each one cost a rework loop.",
+          kind: "verify", stage: "inspect", focus: "review-1", grows: ["+1 CHECK", "−1 REWORK LOOP"],
+          plan: ["Claude Code writes the rule plus a fixture", "It lands as a PR through the same gauntlet", "AI review stops raising it, lint catches it earlier"],
+          options: [one("lint", "Promote it to a lint rule", [{ tool: "promote_check", args: { layer: "lint" }, reason: "3 scars, same reason" }]), alt("turret", "Make it a test turret"), alt("keep", "Keep it as a review note")],
+        },
+        { lint: yes("Promoting the cart null check to a lint rule. PR incoming", "promote_check", "review-1"), turret: yes("Adding a test turret on /cart", "add_turret", "review-1") },
+      ],
+      [
+        {
+          title: "4 PRs stuck at the verify bay for 2h",
+          why: "One bay, and each repro takes about 6 minutes. Everything downstream waits on it.",
+          kind: "unblock", stage: "inspect", focus: "verify-1", grows: ["+1 STATION"],
+          plan: ["Second bay goes on the Claude plant, it has charge left", "The pile splits across both bays", "Wait should drop from 2h to about 40m"],
+          options: [one("second", "Build a second verify bay"), alt("skip-docs", "Let docs PRs skip verify")],
+        },
+        { second: yes("Building a second verify bay", "place_machine", "verify-1"), "skip-docs": yes("Docs PRs skip the verify bay now", "set_loadout", "verify-1") },
+      ],
+      [
+        {
+          title: "Connect PostHog to rank by real traffic",
+          why: "Right now it's guessing which districts matter. With traffic, a bug on /checkout outranks /docs for the right reason.",
+          kind: "input", stage: "intake", focus: "ore-issues", grows: ["+1 SOURCE", "SMARTER DECKS"],
+          plan: ["Paste a read-only PostHog key", "Roads light up with traffic per district", "Cards rank by real sessions, not guesses"],
+          options: [one("connect", "Connect PostHog"), alt("later", "Not this project")],
+        },
+        { connect: yes("PostHog connected: traffic now feeds the ranking", "connect_source", "ore-issues") },
+      ],
+      [
+        {
+          title: "#151 passed CI, but nobody proved the fix",
+          why: "The verify bay has no recipe for /api, so it skipped. CI green isn't proof.",
+          kind: "verify", stage: "inspect", focus: "verify-1", locked: true, grows: ["+1 CHECK", "/API VERIFIABLE"],
+          evidence: [{ station: "CI inspector", ok: true }, { station: "Verify bay", ok: false, note: "no recipe" }, { station: "AI review", ok: true }],
+          plan: ["Codex writes a recipe: call the endpoint, check the response", "Verify bay runs it before and after #151", "If it passes, #151 comes back as a merge card"],
+          options: [one("recipe", "Write an /api verify recipe, then run it"), alt("close", "Close #151")],
+        },
+        { recipe: yes("Writing an /api verify recipe, #151 waits for it", "start_job", "verify-1") },
+      ],
+      [
+        {
+          title: "Launch docs PRs on their own?",
+          why: "You merged the last 9 docs PRs exactly as suggested. Zero reverts.",
+          kind: "automate", stage: "pad", focus: "gate-1", grows: ["+AUTONOMY", "FEWER CARDS"],
+          plan: ["Docs PRs that pass every station merge on their own", "Each one still shows in the morning review card", "One revert and the permit pauses itself"],
+          options: [one("permit", "Give docs a launch permit"), alt("more", "Ask me 5 more times first")],
+        },
+        {
+          permit: yes("Docs has a launch permit now", "set_autonomy", "gate-1", () =>
+            apply({ autonomy: { ...s.autonomy!, districts: s.autonomy!.districts.map((d) => (d.district === "docs" ? { ...d, permit: true } : d)) } }),
+          ),
+        },
+      ],
+      [
+        {
+          title: "Overnight: 6 things done alone. 1 flagged.",
+          why: "Flagged: it closed #133 as a duplicate of #129. They look the same, but #133 only happens on mobile.",
+          kind: "review", stage: "triage", focus: "splitter-1",
+          evidence: [{ station: "5 routine", ok: true, note: "verified" }, { station: "1 flagged", ok: false }],
+          plan: ["Triaged 3 issues", "Linked an email to an open bug", "Closed #133 as a duplicate (flagged)"],
+          options: [one("keep", "Keep all six"), alt("reopen", "Reopen #133")],
+        },
+        { keep: yes("Kept overnight's six moves", "post_log", "splitter-1"), reopen: yes("Reopened #133, it's mobile only", "triage", "splitter-1") },
+      ],
+    ];
+    for (const [move, then] of cards) propose(move, (opt) => then[opt]?.());
   };
 
   // ---------- onboarding: scan the repo, then propose the starter factory ----------
@@ -776,6 +927,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   onStatus("live");
   emit({ type: "snapshot", state: structuredClone(s) });
+  if (sc.checkin) setTimeout(dealCheckIn, TICK_MS);
   if (sc.onboard) later(TICK_MS, scan);
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, TICK_MS);
@@ -792,6 +944,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         }
         case "choose_move":
           resolve(msg.moveId, msg.optionId, "player");
+          break;
+        case "defer_move":
+          defer(msg.moveId);
+          break;
+        case "dismiss_move":
+          dismiss(msg.moveId, msg.why);
           break;
         case "station_action":
           stationAction(msg.stationId, msg.action);

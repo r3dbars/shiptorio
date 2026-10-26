@@ -58,7 +58,7 @@ export const HARNESS_COLOR: Record<Harness, number> = {
 };
 
 export const HARNESS_NAME: Record<Harness, string> = {
-  spark: "SPARK",
+  spark: "PLANNER",
   claude_code: "CLAUDE CODE",
   codex: "CODEX",
   cursor: "CURSOR",
@@ -391,7 +391,7 @@ export class FactoryScene {
     const p = at ? this.machinePos(at) : this.target.clone();
     this.droneTo.set(p.x, at ? (LABEL_Y[at.type] ?? 2) + 1.6 : 4, p.z + (at ? 0.4 : 0));
     if (first) this.drone.g.position.copy(this.droneTo);
-    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : f?.tool && f.targetId ? f.tool.replace(/_/g, " ") : "watching the floor");
+    if (this.droneLabel) this.setLabel(this.droneLabel, "DRONE", f?.thinking ? "thinking…" : f?.tool && f.targetId ? f.tool.replace(/_/g, " ") : "watching the floor");
   }
 
   private droneMode(): DroneMode {
@@ -950,7 +950,7 @@ export class FactoryScene {
           break;
         }
         case "splitter":
-          this.setLabel(v.label, "SPLITTER", `Spark triage${st}`, blocked);
+          this.setLabel(v.label, "SPLITTER", `triage${st}`, blocked);
           break;
         case "assembler":
           if (!m.harness && !m.powerId) this.setLabel(v.label, "ASSEMBLER", "no power · sign in to build", true);
@@ -972,7 +972,7 @@ export class FactoryScene {
           break;
         }
         case "steam":
-          this.setLabel(v.label, "STEAM", `${p?.name ?? "Spark"} API · credits`, p ? !p.online : false);
+          this.setLabel(v.label, "STEAM", `${p?.name ?? "Planner"} · credits`, p ? !p.online : false);
           break;
         case "solar":
           this.setLabel(v.label, "SOLAR", `${p?.name ?? "subscription"} plan`);
@@ -999,7 +999,7 @@ export class FactoryScene {
     if (hot) this.glow.position.copy(this.machinePos(hot)).setY(0.04);
     if (this.rework) {
       const n = state.items.filter((i) => i.state === "rejected").length;
-      this.setLabel(this.rework.label, "REWORK BELT", `back to Spark · ${n} item${n === 1 ? "" : "s"}`, n > 0);
+      this.setLabel(this.rework.label, "REWORK BELT", `back to planner · ${n} item${n === 1 ? "" : "s"}`, n > 0);
     }
   }
 

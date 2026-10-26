@@ -28,3 +28,17 @@ describe("shared simulator and live wire contract", () => {
     expect(RunnerToServer.safeParse({type:"hello",mode:"local",harnesses:["unknown"],powerSources:[]}).success).toBe(false);
   });
 });
+
+describe("check-in deck", () => {
+  const card = { id: "m1", title: "Launch #41", why: "112 users", options: [{ id: "go", label: "Merge", recommended: true }], createdAt: 1, kind: "ship", focus: "gate-1", evidence: [{ station: "CI", ok: true }], locked: false };
+  it("carries a ranked deck on the state and as its own message", () => {
+    expect(FactoryState.parse({ ...state, deck: [card] }).deck?.[0].kind).toBe("ship");
+    expect(ServerToWeb.parse({ type: "deck", deck: [card] }).type).toBe("deck");
+    expect(ServerToWeb.safeParse({ type: "deck", deck: Array.from({ length: 13 }, (_, i) => ({ ...card, id: `m${i}` })) }).success).toBe(false);
+  });
+  it("accepts later and never swipes, and rejects an unknown never reason", () => {
+    expect(WebToServer.parse({ type: "defer_move", moveId: "m1" }).type).toBe("defer_move");
+    expect(WebToServer.parse({ type: "dismiss_move", moveId: "m1", why: "kind" }).type).toBe("dismiss_move");
+    expect(WebToServer.safeParse({ type: "dismiss_move", moveId: "m1", why: "bored" }).success).toBe(false);
+  });
+});
