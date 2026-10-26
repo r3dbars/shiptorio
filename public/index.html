@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shiptorio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="panel bar">
+  <span class="title">Shiptorio</span>
+  <form id="repo-form" class="repo-form">
+    <label for="repo-input" class="sr-only">Repository</label>
+    <input id="repo-input" placeholder="owner/repo" autocomplete="off" spellcheck="false">
+    <button class="btn" type="submit">Load map</button>
+  </form>
+  <div class="stats" aria-live="polite">
+    <span>Files <b id="stat-files">–</b></span>
+    <span>Zones <b id="stat-zones">–</b></span>
+    <span>Open PRs <b id="stat-open" class="orange">–</b></span>
+    <span>CI green <b id="stat-green" class="green">–</b></span>
+    <span id="live" class="live off" title="Live updates">● offline</span>
+  </div>
+</header>
+
+<main id="map-wrap" class="map-wrap">
+  <canvas id="map" aria-label="Repository map"></canvas>
+  <div id="tooltip" class="tooltip" hidden></div>
+  <div id="overlay" class="overlay">
+    <div class="panel card">
+      <p id="overlay-text">Loading…</p>
+      <a id="login-btn" class="btn green" href="/auth/login" hidden>Log in with GitHub</a>
+    </div>
+  </div>
+</main>
+
+<footer class="bottom">
+  <section class="panel">
+    <h2>Review chest</h2>
+    <ul id="open-prs" class="pr-list"></ul>
+  </section>
+  <section class="panel">
+    <h2>Shipped this week</h2>
+    <ul id="shipped-prs" class="pr-list"></ul>
+  </section>
+  <section class="panel legend">
+    <h2>Legend</h2>
+    <ul id="legend"></ul>
+  </section>
+</footer>
+<script src="/app.js" type="module"></script>
+</body>
+</html>
