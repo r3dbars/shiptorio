@@ -326,3 +326,5 @@ never enter factory messages, provider errors, logs, or connection responses; sh
 redaction covers those output boundaries. The requested master key was generated directly into Wrangler after confirming
 authorized access and an absent binding, only on shiptorio. No value was printed
 or saved to a file; setup command is in docs/context/encrypted-credentials.md.
+
+- 2026-10-26: Art direction is **Black Iron** (Cogworks variation 1), brightened, 1x pixels, with height (high rework line) and aether conduits/tesla coils borrowed from the other variations. The art must show the real journey of each work item and obvious IDLE / WORKING / BLOCKED states. Reference build: `docs/black-iron.html`, source in `docs/art/black-iron/`. In-world signage says SHIPTORIO.

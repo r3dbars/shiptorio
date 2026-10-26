@@ -32,7 +32,7 @@ export const sparkShare = (brain: Brain): number => brain.decisions + brain.fall
 /** A Spark plan opens a job on the scorecard (re-plans on rework don't count twice); a Spark verdict counts as a review, a send-back as a catch. */
 function scoreThought(score: Score, t: Omit<Thought, "id">): Score {
   if (t.by !== "spark") return score;
-  if (t.decision === "plan" && t.itemId && !score.open.includes(t.itemId)) return { ...score, plans: score.plans + 1, open: [t.itemId, ...score.open].slice(0, 50) };
+  if (t.decision === "plan" && t.itemId && !score.open.includes(t.itemId)) return { ...score, plans: score.plans + 1, open: [t.itemId, ...score.open] };
   if (t.decision === "review" && /^(Passed|Sent)/.test(t.outcome)) return { ...score, reviews: score.reviews + 1, catches: score.catches + (t.outcome.startsWith("Sent") ? 1 : 0) };
   return score;
 }
