@@ -684,7 +684,8 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (!browserSocketAllowed(ws.deserializeAttachment(), this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); continue; }
         ws.send(text);
       } catch {
-        // gone; the runtime cleans up
+        // Legacy/unattached sockets reconnect through the authenticated upgrade.
+        try { ws.close(1008, "Sign in again"); } catch { /* Already gone. */ }
       }
     }
   }
