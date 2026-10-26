@@ -214,13 +214,13 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
       case 3:
         return done ? f("m:launch-pad") : tourAt >= 0 && tourAt < 3 ? f(VERIFY_TOUR[tourAt]) : f("gate-1");
       case 4:
-        return done ? w(0.95) : f("gate-1");
+        return done ? w(0.8) : f("gate-1");
       case 5:
-        return done && turret ? f(`m:${turret.id}`) : caught ? f("verify-1") : w(0.95);
+        return done && turret ? f(`m:${turret.id}`) : caught ? f("verify-1") : w(0.8);
       case 6:
         return sentry ? f("m:ore-sentry") : f("src:sentry");
       default:
-        return w(1.2);
+        return w(1.0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [at, done, tourAt, !!caught, sentry, turret?.id, has("assembler-1")]);

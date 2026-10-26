@@ -571,7 +571,7 @@ export class FactoryScene {
     this.home = null;
     const b = this.bounds;
     const span = (b.x1 - b.x0) * Math.cos(YAW) + (b.z1 - b.z0) * Math.sin(YAW);
-    const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ((span * 1.1) / (this.baseViewHeight() * (this.width / this.height))) * scale));
+    const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ((span * (this.width < this.height ? 1.3 : 1.75)) / (this.baseViewHeight() * (this.width / this.height))) * scale));
     this.glide = null;
     this.camGoal = { target: new THREE.Vector3((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2 + 1), zoom };
     this.biasGoal = this.biasFor(true);
