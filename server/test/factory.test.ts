@@ -50,13 +50,13 @@ describe("Factory lifecycle", () => {
       if (url.endsWith("/chat/completions") && String(init?.body).includes("game master")) { const brief = JSON.parse(JSON.parse(String(init?.body)).messages[1].content); return json({ choices: [{ message: { content: JSON.stringify({ order: brief.cards.map((c: { id: string }) => c.id), reason: "Oldest jam first.", picks: {} }) } }] }); }
       if (url.endsWith("/chat/completions") && browserPlanning) {
         browserCall++;
-        const action = browserCall === 1 ? { files: ["server/src/engine.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Read guard" } : { tool: "assign_job", reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
+        const action = browserCall === 1 ? { files: ["server/src/engine.ts", "shared/src/protocol.ts"] } : browserCall === 2 ? { tool: "read_issue", reason: "Understand issue" } : browserCall === 3 ? { tool: "read_file", path: "shared/src/protocol.ts", reason: "Read reference schema without editing it" } : { tool: "assign_job", files: ["server/src/engine.ts"], reason: "Ready for player review", plan: "Add direnv coverage to the existing guard.", acceptance: ["Reject .envrc"] };
         return json({ choices: [{ message: { content: JSON.stringify(action) } }] });
       }
-      if (url.endsWith("/chat/completions")) { sparkCalls++; return json({ choices: [{ message: { content: JSON.stringify(sparkCalls === 1 ? { tool: "read_issue", reason: "Understand the approved issue" } : sparkCalls === 2 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect the existing guard" } : { tool: "assign_job", reason: "The scope is clear", plan: "Reject credential paths and add a regression test.", acceptance: ["Ordinary code paths remain accepted", "Secret paths are refused"] }) } }] }); }
+      if (url.endsWith("/chat/completions")) { sparkCalls++; return json({ choices: [{ message: { content: JSON.stringify(sparkCalls === 1 ? { tool: "read_issue", reason: "Understand the approved issue" } : sparkCalls === 2 ? { tool: "read_file", path: "server/src/engine.ts", reason: "Inspect the existing guard" } : { tool: "assign_job", files: ["server/src/engine.ts"], reason: "The scope is clear", plan: "Reject credential paths and add a regression test.", acceptance: ["Ordinary code paths remain accepted", "Secret paths are refused"] }) } }] }); }
       if (url.includes("/contents/")) return json({ content: btoa("export const SAFE_PATH = /.+/;"), encoding: "base64" });
       if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
-      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }], truncated: false });
+      if (url.includes("/git/trees/")) return json({ sha: "tree-is-not-commit", tree: [{ path: "server/src/engine.ts", type: "blob" }, { path: "shared/src/protocol.ts", type: "blob" }], truncated: false });
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4 }] });
@@ -125,6 +125,7 @@ describe("Factory lifecycle", () => {
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         await g.factory.alarm();
         expect((await g.factory.runnerJobs())[0].status).toBe("awaiting_approval");
+        expect((await g.factory.runnerJobs())[0].allowedPaths).toEqual(["server/src/engine.ts"]);
         expect(g.saved().deck?.find(m => m.options.some(o => o.id === "approve"))?.plan?.[0]).toContain("server/src/engine.ts");
         expect(await g.factory.claimRunner(pairing, ["codex"])).toBeNull();
         return { g, pairing, approval: g.saved().deck!.find(m => m.options.some(o => o.id === "approve"))! };
@@ -146,6 +147,7 @@ describe("Factory lifecycle", () => {
       expect((await reconnected.runnerJobs())[0].approvedAt).toBeGreaterThan(0);
       const doubleClaim = await Promise.all([reconnected.claimRunner(approved.pairing, ["codex"]), reconnected.claimRunner(approved.pairing, ["codex"])]);
       expect(doubleClaim.filter(Boolean)).toHaveLength(1);
+      expect(doubleClaim.find(Boolean)!.allowedPaths).toEqual(["server/src/engine.ts"]);
 
       const declined = await prepareBrowserPlan();
       await declined.g.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "defer_move", moveId: declined.approval.id }));

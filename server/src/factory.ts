@@ -414,15 +414,17 @@ export class Factory extends DurableObject<FactoryEnv> {
       if (job.needsApproval) {
         const candidates = [...new Set([...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)])].filter(runnerPathAllowed);
         job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
-          files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo files to read and change.` }));
+          files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
-      job.plan = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
+      const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.env, { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, job.allowedPaths,
         path => fileContent(token, job.repo, path, job.baseSha!), async step => {
           job.steps!.push(step);
           await this.ctx.storage.put(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
         }), () => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${job.harness === "codex" ? "Codex" : "Claude Code"} in ${job.steps!.length} tool calls`, reason: job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+      job.plan = assignment.plan;
+      job.allowedPaths = assignment.files;
       await this.planComment(token, job, item).catch(() => null);
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
