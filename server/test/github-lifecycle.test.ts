@@ -211,3 +211,43 @@ export async function privateKey() {
   const key = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
   return `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", key.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
 }
+
+it("lifecycle replacement cannot inherit stable encrypted keys and retention removes only the original ID's keys", async () => {
+  const { saveCreds, sentryCreds } = await import("../src/sources/creds");
+  const f = fixture(); await install(f);
+  f.env.CRED_MASTER_KEY = btoa("a".repeat(32));
+  await saveCreds(f.env, "sentry", { clientSecret: "synthetic-lifecycle-key" }, { repo: "octo-org/demo", installationId: 40 });
+  await handleLifecycle(f.env, "repository", { ...payload, action: "deleted" });
+  await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "added", repositories_added: [{ ...payload.repository, id: 502 }] });
+  expect(await sentryCreds(f.env, { repo: "octo-org/demo", installationId: 40 })).toEqual({});
+  await saveCreds(f.env, "sentry", { clientSecret: "synthetic-new-owner-key" }, { repo: "octo-org/demo", installationId: 40 });
+  f.objects.get("repo:501")!.data.set("githubLifecycle", { reason: "deleted", deleteAt: Date.now() - 1 });
+  await f.objects.get("repo:501")!.factory.alarm();
+  expect(f.sqlite.query("SELECT scope FROM credentials").all()).toEqual([{ scope: "installation:40:repo-id:502" }]);
+  expect((await sentryCreds(f.env, { repo: "octo-org/demo", installationId: 40 })).clientSecret).toBe("synthetic-new-owner-key");
+});
+
+it("lifecycle rename then old-name reuse preserves only the original ID's connection", async () => {
+  const { saveCreds, sentryCreds } = await import("../src/sources/creds");
+  const f = fixture(); await install(f);
+  f.env.CRED_MASTER_KEY = btoa("a".repeat(32)); f.env.GITHUB_APP_PRIVATE_KEY = await privateKey();
+  await saveCreds(f.env, "sentry", { clientSecret: "synthetic-renamed-key" }, { repo: "octo-org/demo", installationId: 40 });
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ id: 40, permissions: payload.installation.permissions, account: payload.installation.account })) as unknown as typeof fetch;
+  try { await handleLifecycle(f.env, "repository", { ...payload, action: "renamed", repository: { ...payload.repository, full_name: "octo-org/renamed" } }); } finally { globalThis.fetch = original; }
+  await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "added", repositories_added: [{ ...payload.repository, id: 502 }] });
+  expect(await sentryCreds(f.env, { repo: "octo-org/demo", installationId: 40 })).toEqual({});
+  expect((await sentryCreds(f.env, { repo: "octo-org/renamed", installationId: 40 })).clientSecret).toBe("synthetic-renamed-key");
+});
+
+it("expiry deletes identity-pinned legacy plaintext even after the repository row is archived", async () => {
+  const f = fixture(); await install(f);
+  const kv = new Map([['cred:sentry', JSON.stringify({ clientSecret: 'synthetic-expiring-key' })], ['link:sentry', 'octo-org/demo']]);
+  f.env.SENTRY_REPO_ID = '501'; f.env.SENTRY_INSTALLATION_ID = '40';
+  f.env.CACHE = { get: async (key: string, type?: string) => { const value = kv.get(key); return value == null ? null : type === 'json' ? JSON.parse(value) : value; }, delete: async (key: string) => kv.delete(key) };
+  await handleLifecycle(f.env, 'repository', { ...payload, action: 'deleted' });
+  f.objects.get('repo:501')!.data.set('githubLifecycle', { reason: 'deleted', deleteAt: Date.now() - 1 });
+  await f.objects.get('repo:501')!.factory.alarm();
+  expect(kv.has('cred:sentry')).toBe(false);
+  expect(kv.has('link:sentry')).toBe(false);
+});

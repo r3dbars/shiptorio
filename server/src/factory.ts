@@ -70,7 +70,7 @@ import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppr
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
-import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, type CredsEnv, type MineKind } from "./sources/creds";
+import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, legacyCredentialOwner, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
 import { isOperatorSupport, supportCreds, supportStatus, type SupportEnv, type SupportMessage } from "./sources/support";
 import { deliverReply, fallbackDraft, foldMessage, heuristicSupport, issueFor, issueMove, linkCandidates, makeDraft, playerTap, replyMove, type PlayerTap } from "./support";
@@ -91,6 +91,9 @@ export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserS
 
 const TICK_MS = 2000;
 const MAX_ATTEMPTS = 3;
+const RUNNER_LEASE_MS = 30 * 60 * 1000;
+// Longer than the runner's 30s request timeout, so an in-flight claim is never handed out twice.
+const LOST_CLAIM_MS = 45_000;
 // Local runner planning/publication currently requires a real GitHub issue.
 const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/.test(item.id);
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
@@ -124,7 +127,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private socketEpoch: string | null = null;
   private credentialsReady = false;
   private redactor = new Redactor(this.env);
-  private credentialScope() { return this.meta ? { installationId: this.meta.installationId, repo: this.meta.repo } : undefined; }
+  private credentialRepoId: number | null = null;
+  private credentialScope() { return this.meta && this.credentialRepoId ? { installationId: this.meta.installationId, repo: this.meta.repo, repoId: this.credentialRepoId } : undefined; }
   private running = new Set<string>(); // item ids with a job in flight
 
   private sparkEnv(): SparkEnv {
@@ -712,8 +716,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (job.needsApproval) await this.publishRunnerMove(this.runnerApprovalMove(job, item));
       await this.save();
       this.log("success", job.needsApproval ? "Your plan is ready to review. Nothing builds until you approve." : `Plan ready for ${job.harness}. Waiting for the local runner.`, item.id);
-    } catch {
-      job.status = "failed"; job.error = "Planning failed. Check the setup, then approve a new try.";
+    } catch (e) {
+      // Keep the cause on the job and in the log, so a failed plan says why instead of just failing.
+      const why = e instanceof Error ? e.message.replace(/\s+/g, " ").slice(0, 240) : "unknown error";
+      job.status = "failed"; job.error = `Planning failed: ${why}. Check the setup, then approve a new try.`;
       await this.accountPut(`runnerJob:${job.id}`, job);
       this.log("error", job.error, job.itemId);
     }
@@ -724,8 +730,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
       const running = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
-      if ([...running.values()].some(j => j.status === "running" && j.deadline && j.deadline > Date.now())) return null;
+      const expired = [...running.values()].filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now());
+      for (const old of expired) {
+        // An expired lease would otherwise stay "running" forever and block every new plan.
+        Object.assign(old, { status: "failed", error: "Lease expired; another attempt requires player approval." });
+        await this.accountPut(`runnerJob:${old.id}`, old);
+      }
+      const live = [...running.values()].find(j => j.status === "running" && j.deadline && j.deadline > Date.now());
+      // The runner claims only while idle, so the same pairing claiming again well after the lease was
+      // granted means the claim response was lost (reset or client timeout). Hand the same job back.
+      if (live?.pairId === pairId && live.deadline! - RUNNER_LEASE_MS + LOST_CLAIM_MS < Date.now()) {
+        this.log("info", "The local runner lost its last claim, so Shiptorio handed the same job back.", live.itemId);
+        return live;
+      }
+      if (live) return null;
       await this.load();
+      const stranded = this.state?.items.filter(i => i.state === "working" && expired.some(j => j.itemId === i.id)) ?? [];
+      if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) });
       await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
       const localPower = runnerPower(harnesses);
       if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
@@ -745,7 +766,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return null;
       }
       await this.accountPut("runnerLastJobId", job.id);
-      Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + 30 * 60 * 1000 });
+      Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
@@ -994,7 +1015,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async setRepositoryId(id: number): Promise<void> {
-    await this.assertAccountActive(); await this.accountPut("githubRepoId", id); }
+    await this.assertAccountActive();
+    await this.accountPut("githubRepoId", id);
+    this.credentialRepoId = id;
+  }
 
   async retainReferencesById(id: number): Promise<void> {
     await this.assertAccountActive();
@@ -1499,6 +1523,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.state = wireState;
       }
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
+      this.credentialRepoId = await this.ctx.storage.get<number>("githubRepoId") ?? null;
       // A local agent can outlive this DO instance. Preserve in-flight work; the watchdog
       // asks the player to inspect it rather than dispatching the same task twice.
       if (this.state) {
@@ -2693,10 +2718,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           ...(ownsName ? [this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo)] : []),
         ]);
         if (meta && dataKey?.startsWith("repo:")) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`archived:${dataKey}:installation:${meta.installationId}:repo:${meta.repo}`).run();
+        if (meta && repoId) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`installation:${meta.installationId}:repo-id:${repoId}`).run();
         if (meta && ownsName) {
           for (const kind of ["sentry", "posthog"] as const) {
-            await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);
-            if (await linkedRepo(this.env, kind) === meta.repo) {
+            if (repoId && await legacyCredentialOwner(this.env, kind, { repoId, installationId: meta.installationId, repo: meta.repo })) {
+              await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);
               await this.env.CACHE?.delete(`cred:${kind}`);
               await this.env.CACHE?.delete(`link:${kind}`);
             }

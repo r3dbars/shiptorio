@@ -328,4 +328,47 @@ authorized access and an absent binding, only on shiptorio. No value was printed
 or saved to a file; setup command is in docs/context/encrypted-credentials.md.
 
 - 2026-10-26: Art direction is **Black Iron** (Cogworks variation 1), brightened, 1x pixels, with height (high rework line) and aether conduits/tesla coils borrowed from the other variations. The art must show the real journey of each work item and obvious IDLE / WORKING / BLOCKED states. Reference build: `docs/black-iron.html`, source in `docs/art/black-iron/`. In-world signage says SHIPTORIO.
+
+Credential identity security follow-up (Oct 26): #159 protects direct D1 collisions,
+but synthetic tests reproduced name reuse through Worker overrides, unmigrated KV,
+and encrypted old-name scopes after rename. Mine storage/AAD now binds the active
+installation plus immutable GitHub repo ID. Operator overrides and legacy adoption
+require explicit installation/repo ID pins; name-only historical material remains
+unread without identity proof. Same-ID renames retain proven new connections, and
+retention deletes only the original ID's credentials. Existing production ownership
+was verified through nonsecret metadata and its immutable pins are preserved in
+production config; provider key values, revocations and permissions are unchanged.
 - 2026-10-26: Black Iron becomes the style for the **whole game** (Justin: logo, gate, sign-in, landing, intro, tutorial, every sheet, docs, map). Rulebook `docs/art/IRON-STYLE.md`, tokens `web/src/iron.css`, Silkscreen + JetBrains Mono self-hosted in `web/public/fonts/` (public past the gate).
+
+### 2026-10-26 — PR backlog integration receipt
+
+- Cleared the original PR backlog and the follow-up queue through #222 and #226.
+  #222 preserves the runner pairing route's strict CSP and password-protected
+  factory/API while applying the shared page styles. Current-head CI and the
+  actual Stranger onboarding check passed before merge.
+- Full local check for the final styling integration: 644 tests passed, two
+  platform skips, zero failures; typechecks and web/standalone runner builds passed.
+  Six read-only desktop/mobile viewport renders covered Sentry, PostHog and runner
+  pairing, including labelled keyboard focus and unchanged runner CSP. These are
+  browser fixtures, not physical-device or real pairing acceptance.
+- #207 deployed immutable repository credential identity. Authenticated connect
+  reads confirmed both Sentry and PostHog still connected for r3dbars/shiptorio;
+  metadata-only D1 checks confirmed both active encrypted rows at
+  installation:175555016:repo-id:1434502633. No secret rotation or customer send.
+- The heavy playtest release reported 24 simulator journeys, six browser/visual
+  tests and 5,000 deliveries across 250 sockets with zero failures. These do not
+  establish a real issue-to-PR launch. Reserved issue #170 still needs the full
+  in-game approval → local agent → PR → gauntlet → Launch acceptance run; the
+  currently installed local runner targets r3dbars/testing.
+- The existing ten-minute PR monitor remains active. Respect active lane ownership,
+  require current-head checks, and keep runner PRs behind the in-game Launch gate.
+- Production release `0796af32deced1ff4d48a7377c3c72a46ce67818` is live on
+  https://shiptorio.com: Deploy run
+  https://github.com/r3dbars/shiptorio/actions/runs/40416992098 succeeded and
+  `/api/version` returned the exact SHA. Public landing returned 200, while the
+  live factory deep link and `/api/repos` returned 401 without credentials.
+  Authenticated Sentry/PostHog connect reads both returned 200 with connected
+  controls after this release. This receipt is docs-only and does not redeploy.
+- New Claude UI PRs #227 and draft #229 arrived after the backlog cleared; their
+  active owner retains merge/deploy responsibility. They are not part of the
+  release above. Preview/staging on shiptorio.dev was not changed or certified.

@@ -59,22 +59,67 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   }, { shouldRetry: error => !(error instanceof BudgetError) && !(error instanceof OutboundError && error.status === 429) });
 }
 
-// Pulls the first JSON object out of a reply, tolerating ```json fences, chatter around it, trailing commas
-// and smart quotes around keys. Anything still broken throws, and sparkJson asks once more.
+// Pulls the JSON object out of a reply, tolerating ```json fences, chatter around it (even chatter with
+// braces in it), trailing commas, smart quotes, unescaped quotes inside sentences and a reply cut off
+// mid-object. Anything still broken throws, and sparkJson asks once more.
 export function parseJsonReply<T>(text: string): T {
   if (text.length > 100000) throw new SparkError("Oversized model output");
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const body = fenced ? fenced[1] : text;
-  const start = body.indexOf("{");
+  const body = (fenced ? fenced[1] : text).replace(/[\u201c\u201d]/g, '"');
   const end = body.lastIndexOf("}");
-  if (start === -1 || end <= start) throw new SparkError(`expected JSON, got: ${text.slice(0, 200)}`);
-  const raw = body.slice(start, end + 1);
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    const repaired = raw.replace(/[\u201c\u201d]/g, '"').replace(/,\s*([}\]])/g, "$1");
-    try { return JSON.parse(repaired) as T; } catch (e) { throw new SparkError(`malformed JSON: ${e instanceof Error ? e.message : "parse failed"}`); }
+  const starts = [...body.matchAll(/\{/g)].map(m => m.index!).slice(0, 5);
+  if (!starts.length) throw new SparkError(`expected JSON, got: ${text.slice(0, 200)}`);
+  let first: unknown;
+  for (const start of starts) {
+    const whole = end > start ? body.slice(start, end + 1) : "";
+    for (const candidate of [whole, whole && repairJson(whole), closeTruncated(body.slice(start))]) {
+      if (!candidate) continue;
+      try { return JSON.parse(candidate) as T; } catch (e) { first ??= e; }
+    }
   }
+  throw new SparkError(`malformed JSON: ${first instanceof Error ? first.message : "parse failed"} (reply ${text.length} chars, ends ${JSON.stringify(text.slice(-40))})`);
+}
+
+const repairJson = (raw: string) => escapeStrayQuotes(raw).replace(/,\s*([}\]])/g, "$1");
+
+/**
+ * Closes a reply that stopped mid-object (the output cap ran out): drops a half-written string with its
+ * key, a dangling key or comma, and closes every open bracket, so the fields that did arrive still count.
+ */
+export function closeTruncated(raw: string): string {
+  const text = escapeStrayQuotes(raw);
+  const stack: string[] = [];
+  let inString = false, opened = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) { if (c === "\\") i++; else if (c === '"') inString = false; continue; }
+    if (c === '"') { inString = true; opened = i; }
+    else if (c === "{" || c === "[") stack.push(c === "{" ? "}" : "]");
+    else if (c === "}" || c === "]") { stack.pop(); if (!stack.length) return repairJson(text.slice(0, i + 1)); }
+  }
+  // A half-written string is dropped with its key: a cut-off sentence shouldn't reach a card.
+  let out = inString ? text.slice(0, opened) : text;
+  out = out.replace(/,\s*"[^"]*"\s*:?\s*$/, "").replace(/[,:]\s*$/, "");
+  return repairJson(out + stack.reverse().join(""));
+}
+
+/**
+ * Escapes a double quote inside a string value that the model forgot to escape, as in
+ * "because": "Ship "Fix receipt" first". A quote only closes a string when the next non-space
+ * character can follow a JSON string (, : } ] or the end; another quote means a missing comma);
+ * any other quote is part of the text.
+ */
+export function escapeStrayQuotes(json: string): string {
+  let out = "", inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (inString && c === "\\") { out += c + (json[++i] ?? ""); continue; }
+    if (c !== '"') { out += c; continue; }
+    if (!inString) { inString = true; out += c; continue; }
+    const next = json.slice(i + 1).match(/^\s*(.)/)?.[1];
+    if (next === undefined || ',:}]"'.includes(next)) { inString = false; out += c; } else out += '\\"';
+  }
+  return out;
 }
 
 const issues = (e: z.ZodError) => e.issues.slice(0, 3).map(i => `${i.path.join(".") || "reply"}: ${i.message}`).join("; ");
@@ -89,7 +134,7 @@ async function sparkJson<S extends z.ZodType>(env: SparkEnv, schema: S, develope
     const text = await sparkChat(
       env,
       [
-        { role: "developer", content: `${developer}\nReply with a single JSON object and nothing else.${rejected ? ` Your previous reply was rejected (${rejected}). Use exactly the keys and values described.` : ""}` },
+        { role: "developer", content: `${developer}\nReply with a single JSON object and nothing else. When a sentence quotes something, use single quotes inside it.${rejected ? ` Your previous reply was rejected (${rejected}). Use exactly the keys and values described.` : ""}` },
         { role: "user", content: user },
       ],
       effort,
@@ -369,8 +414,10 @@ export async function pickFiles(env: SparkEnv, task: Task, paths: string[]): Pro
     `Task: ${task.title}\n\n${task.body.slice(0, 4000)}\nLatest failure: ${task.failure ?? "none"}\nScars: ${JSON.stringify(task.scars?.slice(-5) ?? [])}\n\nRepo files:\n${paths.slice(0, 600).join("\n")}\n\nJSON shape: {"files": ["path", ...]}`,
     "medium",
   );
-  if (!out.files.every(f => paths.includes(f) && pathAllowed(f))) throw new SparkError("Unapproved file selection");
-  return [...new Set(out.files)];
+  // A pick outside the candidate list is dropped, not fatal: only listed, allowed paths survive.
+  const files = [...new Set(out.files.filter(f => paths.includes(f) && pathAllowed(f)))];
+  if (!files.length) throw new SparkError(`Unapproved file selection (${out.files.slice(0, 4).join(", ").slice(0, 200)})`);
+  return files;
 }
 
 export interface Fix {

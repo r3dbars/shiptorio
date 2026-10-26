@@ -32,7 +32,7 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
 .tbtn { font: 400 10px/1 var(--pixel); letter-spacing: 0.06em; color: var(--ink); background: rgba(20, 14, 10, 0.94); border: 2px solid var(--line); min-height: 30px; padding: 0 9px; cursor: pointer; white-space: nowrap; }
 .tbtn:hover { border-color: var(--dim); }
 .tbtn[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: #120c02; }
-.tbtn:focus-visible, .chip button:focus-visible, #alert:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 #hud { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; z-index: 6; max-width: calc(100% - 20px); }
 #hud h1 { font: 700 18px/1 var(--pixel); letter-spacing: 0.08em; margin: 0; }
@@ -41,26 +41,41 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
 #counts b { font: 700 13px var(--mono); color: var(--ink); margin-left: 4px; }
 #counts .ship b { color: var(--ok); } #counts .rw b { color: var(--bad); } #counts .need b { color: var(--amber); }
 
-#alert { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 7; font: 700 11px/1 var(--pixel); letter-spacing: 0.08em; color: #140c02; background: var(--amber); border: 2px solid #000; padding: 9px 14px; cursor: pointer; animation: ping 1s infinite; }
 @keyframes ping { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(255, 176, 32, 0); } }
+#key { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font: 400 8px/1 var(--pixel); letter-spacing: 0.08em; color: var(--dim); }
+#key span { display: inline-flex; align-items: center; gap: 4px; }
+#key i { width: 9px; height: 9px; display: inline-block; border: 1px solid #000; }
+#key .k-issue { background: linear-gradient(90deg, #ff4a3a 33%, #ffb040 33% 66%, #5aa8ff 66%); } #key .k-cards { background: #ffd890; }
+#key .k-pr { background: #ffa63a; } #key .k-pass { background: #46ff8a; } #key .k-rej { background: #ff3a2a; }
 
+/* needs-you tray: one row per blocked machine, always reachable (desktop: top center, phone: above the controls) */
+#needs { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; gap: 4px; width: min(560px, calc(100% - 20px)); }
+.nrow { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; background: rgba(30, 20, 4, 0.96); border: 2px solid var(--amber); outline: 2px solid #000; animation: ping 1s infinite; }
+.nrow .ic { font: 700 13px var(--pixel); color: var(--amber); flex: none; }
+.nrow .tx { flex: 1; min-width: 0; font-size: 11px; line-height: 1.3; color: #fff1d0; cursor: pointer; }
+.nrow .tx b { font: 700 9px var(--pixel); letter-spacing: 0.08em; color: var(--amber); display: block; }
+.nrow button { font: 700 10px/1 var(--pixel); letter-spacing: 0.06em; padding: 9px 10px; border: 2px solid #000; background: var(--amber); color: #140c02; cursor: pointer; flex: none; }
+.nrow button:focus-visible, .nrow .tx:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* machine pills sit on the deck in FRONT of each machine (never on top of it) */
 #chips, #tags { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
-.chip { position: absolute; left: 0; top: 0; pointer-events: auto; min-width: 150px; max-width: 220px; padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 3px; background: rgba(14, 10, 8, 0.92); border: 2px solid var(--line); outline: 2px solid #000; cursor: pointer; }
-.chip .nm { display: flex; align-items: center; gap: 6px; font: 700 9px/1.1 var(--pixel); letter-spacing: 0.08em; }
+.chip { position: absolute; left: 0; top: 0; pointer-events: auto; max-width: 240px; padding: 4px 7px 5px; display: flex; flex-direction: column; gap: 2px; background: rgba(14, 10, 8, 0.9); border: 2px solid var(--line); outline: 2px solid #000; cursor: pointer; }
+.chip .nm { display: flex; align-items: center; gap: 6px; font: 700 9px/1.1 var(--pixel); letter-spacing: 0.08em; white-space: nowrap; }
 .chip .dot { width: 8px; height: 8px; flex: none; background: var(--idle); }
-.chip .st { font: 700 11px/1 var(--pixel); letter-spacing: 0.06em; color: var(--idle); }
-.chip .det { font-size: 10.5px; color: var(--dim); line-height: 1.35; }
-.chip .pr { font-size: 10.5px; line-height: 1.35; color: #fff1d0; }
-.chip .acts { display: flex; gap: 4px; margin-top: 2px; }
-.chip button { font: 400 9px/1 var(--pixel); letter-spacing: 0.06em; padding: 6px 7px; border: 2px solid #000; cursor: pointer; }
-.chip .rs { background: var(--amber); color: #140c02; }
-.chip .sl { background: transparent; color: var(--dim); border-color: var(--line); }
+.chip .st { font: 700 9px/1 var(--pixel); letter-spacing: 0.06em; color: var(--idle); margin-left: 2px; }
+.chip .short { display: none; }
+.chip .row2 { display: flex; align-items: center; gap: 6px; }
+.chip .det { font-size: 10px; color: var(--dim); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+.chip .bk { font: 400 8px/1 var(--pixel); letter-spacing: 0.06em; padding: 3px 4px; border: 1px solid var(--line); background: transparent; color: var(--dim); cursor: pointer; flex: none; margin-left: auto; }
+.chip .bk:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .chip[data-s="WORKING"] { border-color: #2f7a46; } .chip[data-s="WORKING"] .dot { background: var(--ok); animation: blink 0.9s infinite; } .chip[data-s="WORKING"] .st { color: var(--ok); }
-.chip[data-s="BLOCKED"] { border-color: var(--amber); animation: ping 1s infinite; } .chip[data-s="BLOCKED"] .dot { background: var(--bad); animation: blink 0.4s infinite; } .chip[data-s="BLOCKED"] .st { color: var(--amber); }
+.chip[data-s="BLOCKED"] { border-color: var(--amber); background: rgba(40, 26, 4, 0.95); animation: ping 1s infinite; } .chip[data-s="BLOCKED"] .dot { background: var(--bad); animation: blink 0.4s infinite; } .chip[data-s="BLOCKED"] .st { color: var(--amber); }
+.chip[data-s="BLOCKED"] .bk { display: none; }
 @keyframes blink { 50% { opacity: 0.25; } }
 .tag { position: absolute; left: 0; top: 0; font: 700 9px/1 var(--pixel); letter-spacing: 0.04em; padding: 3px 4px; background: rgba(10, 7, 5, 0.85); border: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
 .tag.k-pass { border-color: #2f9a56; color: #9affc0; } .tag.k-reject { border-color: #a0261a; color: #ffb0a0; } .tag.held { border-color: var(--amber); color: var(--amber); }
 .tag.fol { border-color: var(--focus); color: #cfe6ff; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; font: 700 13px var(--pixel); letter-spacing: 0.12em; color: var(--dim); z-index: 9; background: var(--bg); }
 
 #ticker { position: fixed; left: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: 330px; max-width: calc(100% - 20px); padding: 7px 10px; display: flex; flex-direction: column; gap: 3px; z-index: 5; }
 #ticker div { font-size: 10.5px; line-height: 1.35; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -69,36 +84,37 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
 #ctrl { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 5px; padding: 6px; z-index: 5; align-items: flex-end; }
 #ctrl .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; }
 #ctrl .eyebrow { margin: 0 2px 0 6px; }
-#followBar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(56px + env(safe-area-inset-top, 0px)); z-index: 6; padding: 6px 10px; font-size: 11px; max-width: calc(100% - 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#followBar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 6; padding: 6px 10px; font-size: 11px; max-width: min(620px, calc(100% - 20px)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #followBar b { font: 700 10px var(--pixel); letter-spacing: 0.06em; color: #cfe6ff; margin-right: 6px; }
 
 @media (max-width: 760px) {
-  #hud { padding: 6px 8px; } #hud h1 { font-size: 13px; } #hud .eyebrow { display: none; }
-  #counts b { font-size: 11px; }
-  #ticker { width: auto; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); padding: 5px 8px; }
-  #ticker div:nth-child(n+3) { display: none; }
+  #hud { padding: 6px 8px; gap: 4px; } #hud h1 { font-size: 13px; } #hud .eyebrow, #key { display: none; }
+  #counts { gap: 2px 8px; } #counts b { font-size: 11px; }
+  #ticker { width: auto; right: max(10px, env(safe-area-inset-right, 0px)); padding: 5px 8px; }
+  #ticker div:nth-child(n+2) { display: none; }
   #ctrl { left: max(6px, env(safe-area-inset-left, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); align-items: stretch; }
   #ctrl .row { justify-content: center; }
-  #ctrl .tbtn { min-height: 28px; padding: 0 6px; font-size: 9px; }
+  #ctrl .tbtn { min-height: 30px; padding: 0 6px; font-size: 9px; }
   #ctrl .eyebrow { display: none; }
-  .chip { min-width: 0; max-width: 150px; padding: 4px 6px; }
-  .chip .nm span.full { display: none; }
-  .chip .det { display: none; }
-  #alert { top: auto; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
-  #followBar { top: auto; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+  #needs { top: auto; }
+  #followBar { transform: none; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); max-width: none; font-size: 10px; }
+  .chip { padding: 3px 5px 4px; }
+  .chip .long, .chip .row2 { display: none; } .chip .short { display: inline; }
 }
-@media (prefers-reduced-motion: reduce) { #alert, .chip, .chip .dot { animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { .nrow, .chip, .chip .dot { animation: none !important; } }
 </style>
 
-<canvas id="stage" aria-label="Black Iron: a pixel-art factory line where issues are mined, built into PRs, reviewed by Spark and launched"></canvas>
+<canvas id="stage" aria-label="Shiptorio: a pixel-art factory line where issues are mined, built into PRs, reviewed by Spark and launched"></canvas>
 <div id="tags"></div>
 <div id="chips"></div>
 <div id="hud" class="card">
-  <span class="eyebrow">COGWORKS · BLACK IRON</span>
+  <span class="eyebrow">THE FACTORY FLOOR</span>
   <h1>SHIPTORIO</h1>
   <div id="counts"></div>
+  <div id="key" aria-label="What the items are"><span><i class="k-issue"></i>ISSUE</span>›<span><i class="k-cards"></i>CARDS</span>›<span><i class="k-pr"></i>PR</span>›<span><i class="k-pass"></i>SHIPS</span><span><i class="k-rej"></i>REWORK</span></div>
 </div>
-<button id="alert" hidden></button>
+<div id="needs" aria-live="assertive" hidden></div>
+<div id="loading">BUILDING THE LINE…</div>
 <div id="followBar" class="card" hidden></div>
 <div id="ticker" class="card" aria-live="polite"></div>
 <div id="ctrl" class="card">
@@ -108,7 +124,7 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
   <div class="row"><span class="eyebrow">PIXELS</span>
     <button class="tbtn" data-px="1">1X</button><button class="tbtn" data-px="2">2X</button><button class="tbtn" data-px="3">3X</button><button class="tbtn" data-px="0">SMOOTH</button>
     <span class="eyebrow">SIM</span>
-    <button class="tbtn" id="b-speed">1X</button><button class="tbtn" id="b-intake" aria-pressed="true">INTAKE</button><button class="tbtn" id="b-auto" aria-pressed="true" title="Decisions resolve themselves after a few seconds">AUTO-RESOLVE</button><button class="tbtn" id="b-tags" aria-pressed="true">TAGS</button>
+    <button class="tbtn" id="b-speed">SPEED 1X</button><button class="tbtn" id="b-intake" aria-pressed="true">INTAKE</button><button class="tbtn" id="b-auto" aria-pressed="true" title="Decisions resolve themselves after a few seconds">AUTO-RESOLVE</button><button class="tbtn" id="b-tags" aria-pressed="true">TAGS</button>
   </div>
 </div>
 
@@ -120,6 +136,9 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
 <script>
 (function () {
   'use strict';
+  const fontReady = document.fonts && document.fonts.load ? Promise.race([document.fonts.load('700 16px Silkscreen'), new Promise((r) => setTimeout(r, 2500))]) : Promise.resolve();
+  fontReady.then(boot, boot);
+  function boot() {
   const $ = (id) => document.getElementById(id);
   const I = window.IRON, L = I.LOOK;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -197,11 +216,13 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
   const mobile = () => W < 760;
   function presetGoal() {
     const a = W / H;
-    if (view === 'line') { rootToWorld(0, -3.5, 1.0, tgtGoal); viewGoal = Math.max(22, 40 / a); }
-    else if (view === 'deck') { rootToWorld(0, 2.2, 0.5, tgtGoal); viewGoal = Math.max(12.5, 37 / a); }
-    else if (view === 'under') { rootToWorld(-2, -10, 5, tgtGoal); viewGoal = Math.max(19, 34 / a); }
-    else if (view === 'station' && focusId) { rootToWorld(I.SLOTS[focusId], 2.4, 0.4, tgtGoal); viewGoal = mobile() ? 13 : 10; }
+    const m = mobile();
+    if (view === 'line') { if (m) { rootToWorld(-2, -1.2, 2, tgtGoal); viewGoal = 25; } else { rootToWorld(0, -3.5, 1.0, tgtGoal); viewGoal = Math.max(22, 40 / a); } }
+    else if (view === 'deck') { if (m) { rootToWorld(-1, 2.2, 0.8, tgtGoal); viewGoal = 18; } else { rootToWorld(0, 2.2, 0.5, tgtGoal); viewGoal = Math.max(12.5, 37 / a); } }
+    else if (view === 'under') { if (m) { rootToWorld(-4, -9.5, 5, tgtGoal); viewGoal = 22; } else { rootToWorld(-2, -10, 5, tgtGoal); viewGoal = Math.max(19, 34 / a); } }
+    else if (view === 'station' && focusId) { const S = STATION_VIEW[focusId]; rootToWorld(I.SLOTS[focusId], S[0], 0.4, tgtGoal); viewGoal = S[1] * (m ? 1.3 : 1); }
   }
+  const STATION_VIEW = { assembler: [2.4, 10.5], splitter: [3.0, 11], launch: [4.4, 13.5] };
   function setView(v, id) {
     view = v; focusId = id || null; if (v !== 'follow') followItem = null;
     document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.view === v));
@@ -240,38 +261,73 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
   window.addEventListener('resize', resize);
 
   // ---------- HUD ----------
-  const NAMES = { assembler: ['CLOCKWORK', 'ASSEMBLER'], splitter: ['AETHER SPLITTER', '· SPARK'], launch: ['IRON', 'LAUNCH PAD'] };
+  const NAMES = { assembler: ['CLOCKWORK ASSEMBLER', 'ASSEMBLER'], splitter: ['AETHER SPLITTER · SPARK', 'SPARK'], launch: ['LAUNCH PAD', 'LAUNCH'] };
+  const STATE_WORD = { IDLE: 'IDLE', WORKING: 'WORKING', BLOCKED: 'NEEDS YOU' };
   const chips = {};
   ['assembler', 'splitter', 'launch'].forEach((id) => {
-    const el = document.createElement('div'); el.className = 'chip'; el.tabIndex = 0;
-    el.innerHTML = '<div class="nm"><i class="dot"></i><span>' + NAMES[id][0] + '</span> <span class="full">' + NAMES[id][1] + '</span></div><span class="st"></span><span class="det"></span><span class="pr" hidden></span><div class="acts"><button class="rs" hidden>RESOLVE</button><button class="sl">STALL</button></div>';
-    el.querySelector('.rs').onclick = (e) => { e.stopPropagation(); I.resolve(id); };
-    el.querySelector('.sl').onclick = (e) => { e.stopPropagation(); I.stall(id); };
+    const el = document.createElement('div'); el.className = 'chip'; el.tabIndex = 0; el.setAttribute('role', 'button');
+    el.innerHTML = '<div class="nm"><i class="dot"></i><span class="long">' + NAMES[id][0] + '</span><span class="short">' + NAMES[id][1] + '</span><span class="st"></span></div><div class="row2"><span class="det"></span><button class="bk" title="Make this machine stop and ask you (to see the blocked state)">BLOCK</button></div>';
+    el.querySelector('.bk').onclick = (e) => { e.stopPropagation(); I.stall(id); };
     el.onclick = () => setView('station', id);
-    $('chips').appendChild(el); chips[id] = { el, st: el.querySelector('.st'), det: el.querySelector('.det'), pr: el.querySelector('.pr'), rs: el.querySelector('.rs'), sl: el.querySelector('.sl'), last: '' };
+    el.onkeydown = (e) => { if (e.key === 'Enter' && e.target === el) setView('station', id); };
+    $('chips').appendChild(el); chips[id] = { el, st: el.querySelector('.st'), det: el.querySelector('.det'), last: '' };
   });
-  const STATE_WORD = { IDLE: 'IDLE', WORKING: 'WORKING', BLOCKED: 'NEEDS YOU' };
   function syncChips() {
     for (const id in chips) {
       const c = chips[id], st = I.stations[id]; const s = st.blocked ? 'BLOCKED' : st.state;
-      const sig = s + '|' + st.detail + '|' + st.prompt;
+      const q = I.queueFor(id); const det = st.blocked ? (st.prompt || '') : (st.detail || '') + (q > 1 ? ' · ' + q + ' waiting' : '');
+      const sig = s + '|' + det;
       if (sig === c.last) continue; c.last = sig;
-      c.el.dataset.s = s; c.st.textContent = STATE_WORD[s] || s; c.det.textContent = st.detail || '';
-      c.pr.hidden = !st.blocked; c.pr.textContent = st.prompt || ''; c.rs.hidden = !st.blocked; c.sl.hidden = st.blocked;
+      c.el.dataset.s = s; c.st.textContent = STATE_WORD[s] || s; c.det.textContent = det;
+    }
+  }
+  // needs-you tray
+  const needsRows = {};
+  function syncNeeds() {
+    const tray = $('needs'); let any = false;
+    for (const id in I.stations) {
+      const st = I.stations[id];
+      if (st.blocked) {
+        any = true;
+        let r = needsRows[id];
+        if (!r) {
+          r = document.createElement('div'); r.className = 'nrow';
+          r.innerHTML = '<span class="ic">!</span><span class="tx" tabindex="0" role="button"><b></b><span></span></span><button>RESOLVE</button>';
+          r.querySelector('button').onclick = () => I.resolve(id);
+          r.querySelector('.tx').onclick = () => setView('station', id);
+          tray.appendChild(r); needsRows[id] = r;
+        }
+        r.querySelector('b').textContent = NAMES[id][0] + ' NEEDS YOU';
+        const tx = r.querySelector('.tx span'); if (tx.textContent !== st.prompt) tx.textContent = st.prompt || '';
+      } else if (needsRows[id]) { needsRows[id].remove(); delete needsRows[id]; }
+    }
+    tray.hidden = !any;
+  }
+  // stack the fixed panels so nothing covers anything (phone: tray and ticker sit above the controls)
+  function layout() {
+    const needs = $('needs'), tick = $('ticker'), fb = $('followBar');
+    if (mobile()) {
+      const ctrlTop = $('ctrl').getBoundingClientRect().top;
+      let bottom = H - ctrlTop + 6;
+      if (!needs.hidden) { needs.style.bottom = bottom + 'px'; bottom += needs.offsetHeight + 6; }
+      tick.style.bottom = bottom + 'px';
+      fb.style.top = ($('hud').getBoundingClientRect().bottom + 6) + 'px';
+    } else {
+      needs.style.bottom = ''; tick.style.bottom = '';
+      fb.style.top = (needs.hidden ? 12 : needs.getBoundingClientRect().bottom + 8) + 'px';
     }
   }
   const cv = new THREE.Vector3();
   function project(x, y, z) { rootToWorld(x, y, z, cv); cv.project(cam); return [(cv.x + 1) / 2 * W, (1 - cv.y) / 2 * H, cv.z]; }
-  const CHIP_AT = { assembler: [-10, 6.0, -0.6], splitter: [0, 8.2, -0.4], launch: [10, 8.4, -0.6] };
+  const PILL_AT = { assembler: [-10, 0.1, 5.3], splitter: [0, 0.1, 5.3], launch: [10, 0.1, 5.3] };
   function placeChips() {
-    const hud = $('hud').getBoundingClientRect();
+    const ctrl = $('ctrl').getBoundingClientRect();
     for (const id in chips) {
-      const a = CHIP_AT[id]; let [x, y] = project(a[0], a[1], a[2]); const el = chips[id].el; const w = el.offsetWidth, h = el.offsetHeight;
-      x = Math.max(w / 2 + 8, Math.min(W - w / 2 - 8, x));
-      let minY = h + 8; if (x - w / 2 < hud.right + 6) minY = Math.max(minY, hud.bottom + h + 6);
-      const al = $('alert'); if (!al.hidden) { const ar = al.getBoundingClientRect(); if (x + w / 2 > ar.left - 4 && x - w / 2 < ar.right + 4) minY = Math.max(minY, ar.bottom + h + 6); }
-      y = Math.max(minY, Math.min(H - 8, y));
-      el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px) translate(-50%,-100%)';
+      const a = PILL_AT[id]; const [x, y] = project(a[0], a[1], a[2]); const el = chips[id].el; const w = el.offsetWidth, h = el.offsetHeight;
+      const hud = $('hud').getBoundingClientRect();
+      const off = x < -w / 2 || x > W + w / 2 || y < 0 || y + h > H || (y + h > ctrl.top && x + w / 2 > ctrl.left) || (y < hud.bottom + 4 && x - w / 2 < hud.right + 4);
+      el.style.visibility = off ? 'hidden' : 'visible';
+      el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px) translate(-50%,0)';
     }
   }
   let showTags = window.innerWidth >= 760;
@@ -283,7 +339,7 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
       if (!(showTags || held || fol) || it.hidden) return;
       seen.add(it);
       let el = tagEls.get(it); if (!el) { el = document.createElement('span'); el.className = 'tag'; $('tags').appendChild(el); tagEls.set(it, el); }
-      const txt = it.label() + (fol ? ' ' + it.title : ''); if (el.textContent !== txt) el.textContent = txt;
+      const txt = it.label() + (fol && !mobile() ? ' ' + it.title : ''); if (el.textContent !== txt) el.textContent = txt;
       el.className = 'tag k-' + it.kind + (held ? ' held' : '') + (fol ? ' fol' : '');
       const p = it.mesh.position; const [x, y] = project(p.x, p.y + 0.75, p.z);
       el.style.transform = 'translate(' + Math.round(x) + 'px,' + Math.round(y) + 'px) translate(-50%,-100%)';
@@ -295,12 +351,11 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
     const c = I.counters;
     const html = '<span>MINED<b>' + c.mined + '</b></span><span>ON LINE<b>' + I.items.length + '</b></span><span class="ship">SHIPPED<b>' + c.shipped + '</b></span><span class="rw">REWORK<b>' + c.rework + '</b></span><span class="need">NEEDS YOU<b>' + need.length + '</b></span>';
     if ($('counts').innerHTML !== html) $('counts').innerHTML = html;
-    const al = $('alert');
-    if (need.length) { al.hidden = false; const txt = '⚠ ' + need.length + (need.length > 1 ? ' MACHINES NEED' : ' MACHINE NEEDS') + ' YOU'; if (al.textContent !== txt) al.textContent = txt; al.onclick = () => setView('station', need[0].id); }
-    else al.hidden = true;
+    syncNeeds();
     const fb = $('followBar');
     if (view === 'follow' && followItem) { fb.hidden = false; const h = '<b>FOLLOWING ' + followItem.label() + '</b>' + followItem.title + ' · ' + (followItem.owner ? I.stations[followItem.owner].detail || followItem.stage : followItem.stage); if (fb.innerHTML !== h) fb.innerHTML = h; }
     else fb.hidden = true;
+    layout();
   }
   function syncTicker() {
     const t = $('ticker'); const rows = I.log.slice(0, 4);
@@ -313,7 +368,7 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
   document.querySelectorAll('[data-px]').forEach((b) => b.onclick = () => { pxSel = +b.dataset.px; syncPx(); });
   function syncPx() { document.querySelectorAll('[data-px]').forEach((b) => b.setAttribute('aria-pressed', +b.dataset.px === pxSel)); }
   const speeds = [1, 2, 4]; let si = 0;
-  $('b-speed').onclick = () => { si = (si + 1) % speeds.length; I.policy.speed = speeds[si]; $('b-speed').textContent = speeds[si] + 'X'; };
+  $('b-speed').onclick = () => { si = (si + 1) % speeds.length; I.policy.speed = speeds[si]; $('b-speed').textContent = 'SPEED ' + speeds[si] + 'X'; };
   const tog = (id, fn) => { $(id).onclick = (e) => { const on = e.currentTarget.getAttribute('aria-pressed') !== 'true'; e.currentTarget.setAttribute('aria-pressed', on); fn(on); }; };
   tog('b-intake', (on) => (I.policy.intake = on));
   tog('b-auto', (on) => (I.policy.autoResolve = on));
@@ -349,7 +404,7 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
     } else if (view !== 'free') presetGoal();
     const k = 1 - Math.exp(-dt * (view === 'follow' ? 3 : 5)); tgt.lerp(tgtGoal, k); viewH += (viewGoal - viewH) * k;
   };
-  I.hudStep = function () { syncChips(); syncHud(); syncTicker(); };
+  I.hudStep = function () { syncChips(); syncTicker(); syncHud(); };
   function frame(now) {
     const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now; t += dt * I.policy.speed; I._t = t;
     I.step(t, dt);
@@ -358,6 +413,8 @@ body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
     I.render();
     requestAnimationFrame(frame);
   }
+  I.ready = true; $('loading').hidden = true;
   requestAnimationFrame(frame);
+  }
 })();
 </script>
