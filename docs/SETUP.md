@@ -158,10 +158,30 @@ Each mine feeds one repo's map: the one you connected it from (`link:<kind>` in 
   webhook to localhost:8787 with `SENTRY_CLIENT_SECRET` from `server/.dev.vars`. Connect Sentry on
   the map first so the mine is linked to your local repo.
 
-## 3. Who can see maps
+## 3. Accounts: who can see which maps
 
-Only logins in `ALLOWED_LOGINS` (in `server/wrangler.jsonc`) can view maps, since they show
-private repo structure. Login goes through the same GitHub App.
+GitHub is the only login (the same App's user-to-server OAuth, no passwords). Sign-in
+(`server/src/accounts.ts`, tables in `migrations/0004_accounts.sql`):
+
+1. stores the GitHub user in `users` (keyed by GitHub user id),
+2. reads `GET /user/installations` + each installation's repos with the user's own token and
+   replaces that user's rows in `user_installations` / `user_repos`,
+3. opens a `sessions` row (only a SHA-256 of the random session id is stored) and sets an
+   httpOnly, Secure, SameSite=Lax cookie that names it. `/auth/logout` deletes the row.
+
+Every `/api/repos/<owner>/<repo>/*` route (factory websocket, runner pairing, jobs) and
+`/connect/<kind>` checks `user_repos`, and answers 404 for repos the player can't reach.
+`/api/repos` lists only that player's repos. Installing the App on more repos adds them for the
+installer right away (installation webhook `sender`); anyone else gets them on next sign-in.
+Route code can use `requireUser` from `server/src/index.ts` and read `c.get("user")`.
+
+`ALLOWED_LOGINS` is still the sign-up gate while Shiptorio is private; set it to `*` to open
+sign-up. The shared `APP_PASSWORD` gate in front is separate: unset `APP_PASSWORD` handling in
+`server/src/access.ts` (`previewAccess`) when launching.
+
+Sentry and PostHog keys are per repo in KV (`cred:<kind>:<owner/name>`). Each map has its own
+Sentry webhook URL, `/webhooks/sentry/<owner>/<repo>`. Keys saved before accounts (`cred:<kind>`)
+keep working for the repo in `link:<kind>`, and so does the bare `/webhooks/sentry` URL.
 
 ## Real repos locally
 

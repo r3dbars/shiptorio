@@ -36,6 +36,7 @@ permission stay deterministic so the automation earned by playing is provable.
   the triage verdict + reason, every tool call in the loop with its reason, the plan and allowed files
   (`Factory.planComment`). AI review comments on the PR as "Muse Spark reviewing X's work". The PR
   body says "Muse Spark planned this task; the local X subscription executed it."
+- **Judge page:** `/art/spark.html` (source `docs/spark.html`), linked from the panel.
 - **In the game:** bell → "powered by Meta Muse Spark · how it thinks" (also Power sheet → "See how
   the planner thinks", or `?thinks=1`). It's the decision log (`FactoryState.brain`): count of Spark
   decisions vs rule fallbacks, and the last 40 calls with what it looked at, what it decided, why,
