@@ -28,6 +28,8 @@ import {
   type SourceStatus,
   type Thought,
   type ThoughtDecision,
+  summarizeIsland,
+  type IslandSummary,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
@@ -897,6 +899,12 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   // ---------- state ----------
+
+  // The empire overview's line for this repo. Reads stored state only: no tick, no GitHub calls.
+  async summary(): Promise<IslandSummary | null> {
+    const state = await this.load();
+    return state ? summarizeIsland(state) : null;
+  }
 
   private async load(): Promise<FactoryState | null> {
     await this.assertAccountActive(this.meta?.repo);
