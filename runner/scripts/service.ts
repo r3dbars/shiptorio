@@ -1,5 +1,5 @@
 // Reversible macOS background service; credentials stay in the existing gitignored vars file.
-import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pairingConfig } from "../src/service-config";
 const runnerRoot = resolve(import.meta.dir, "..");
@@ -26,6 +26,13 @@ if (action === "install") {
   await writeFile(resolve(support, ".dev.vars"), config, { mode: 0o600 });
   await chmod(resolve(support, ".dev.vars"), 0o600);
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
+  // A `runner login` from this checkout signs in under runner/.agent-home, but the service runs from
+  // Application Support. Carry the dedicated agent sign-in over, never overwriting one already there.
+  const agentHome = resolve(runnerRoot, ".agent-home");
+  if (await stat(agentHome).then(s => s.isDirectory(), () => false)) {
+    await cp(agentHome, resolve(support, ".agent-home"), { recursive: true, force: false, errorOnExist: false, verbatimSymlinks: true });
+    await chmod(resolve(support, ".agent-home"), 0o700);
+  }
   // Geothermal settings (non-secret) travel with the installed helper.
   if (await Bun.file(resolve(runnerRoot, "local-model.json")).exists()) await copyFile(resolve(runnerRoot, "local-model.json"), resolve(support, "local-model.json"));
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
