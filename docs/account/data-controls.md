@@ -11,3 +11,18 @@ Oct 26 checkpoint: make the live factory safe to leave as well as join.
 - Privacy and terms are drafts for Justin's review, not approved final policies.
 
 Integration watch: auth user model, goal 3 encrypted credentials (installation/repo scope), goal 8 durable state export/backups. Recheck these before merging.
+
+## Verified implementation
+
+- `/settings`, `/api/account/export`, `/api/account/signout`, `/api/account/delete`.
+- Exact repo confirmation protects owned personal installations; organization/collaborator data is preserved.
+- Deletion response includes the pre-delete archive. No archive copy is retained on the server. If cleanup fails, no success receipt is written; retry deletion from Settings after the storage failure is resolved.
+- D1 account, membership, preferences, session, repo, PR, decision-rule, encrypted credential and attributed webhook rows are purged. Per-account security counter DOs are erased too.
+- `deleteAll()` removes every DO key (including state chunks, old schema/backups, runner pairing, leases, retained webhook payloads); the alarm is explicitly removed. Storage writers refuse to write after erasure.
+- Durable SHA-256 repo blocks prevent delayed webhooks from rebuilding deleted factories. These and anonymous deletion receipts are intentional retention, with no raw login/repo data in receipts. Reconnecting a deleted factory requires an explicit future reset flow.
+- Worker operator secrets, external GitHub/Sentry/PostHog data, local runner files, and operator-managed external backups are not user-owned records and are not deleted by this route. Existing pre-attribution D1 webhook delivery IDs contain no payload and age out through the existing seven-day cleanup.
+- Goal 8 integration: export reads chunked state without modifying stored migrations; guarded chunk writes cannot resurrect deleted data. Goal 3 integration: purge encrypted envelopes by installation/repo scope and by credential writer.
+
+Local QA used Cloudflare's local runtime on `http://localhost:8793`: settings at 1280×900 and 390×844, a real JSON download, public privacy/terms navigation and draft labels, no horizontal overflow or app errors. Browser plugin unavailable; Playwright used installed Chrome. Production deletion is deliberately not run against Justin's account.
+
+Storage semantics checked against [Cloudflare's deletion guidance](https://developers.cloudflare.com/durable-objects/best-practices/rules-of-durable-objects/). Provider uninstall guidance: [GitHub App management](https://docs.github.com/en/apps/using-github-apps/reviewing-and-modifying-installed-github-apps).
