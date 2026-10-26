@@ -17,11 +17,12 @@ const brief: GameMasterBrief = {
 
 describe("Spark game master", () => {
   it("keeps only real card ids and real option ids", async () => {
-    reply({ order: ["bottleneck:review-1", "made-up", "ship"], reason: "Review is the jam.", picks: { ship: "later", "bottleneck:review-1": "merge_everything" }, bottleneck: { title: "Review is backed up", why: "Two fixes wait." } });
+    reply({ order: ["bottleneck:review-1", "made-up", "ship"], reason: "Review is the jam.", picks: { ship: "later", "bottleneck:review-1": "merge_everything" }, because: { ship: "  Two  fixes wait on review first. ", ghost: "x" }, bottleneck: { title: "Review is backed up", why: "Two fixes wait." } });
     const call = await gameMaster(env, brief);
     expect(call.order).toEqual(["bottleneck:review-1", "ship"]);
     expect(call.picks).toEqual({ ship: "later" });
     expect(call.bottleneck?.title).toBe("Review is backed up");
+    expect(call.because).toEqual({ ship: "Two fixes wait on review first." });
   });
   it("refuses an empty order so the rule ranking stands", async () => {
     reply({ order: ["nope"], reason: "?" });

@@ -796,3 +796,6 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   /* the overview docks left so the islands stay in view on the right */
   .sheet.empire { left: calc(16px + var(--sal)); transform: none; top: 76px; bottom: auto; width: min(420px, 38vw); max-height: calc(100vh - 200px); }
 }
+/* the planner's one-line why on every card */
+.why-line { margin: 4px 0 0; font: 400 13px/1.4 var(--mono); color: var(--ink); opacity: .85; }
+.why-line b { color: var(--blue); font-weight: 600; }

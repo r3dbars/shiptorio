@@ -270,6 +270,7 @@ export const Move = z.object({
   evidence: z.array(MoveEvidence).optional(), // gauntlet stamps on a merge card
   locked: z.boolean().optional(), // not proven yet: swipe right runs the recommended option, never a merge
   plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
+  because: z.string().optional(), // one plain sentence on why the suggested option is the right call
 });
 export type Move = z.infer<typeof Move>;
 

@@ -201,6 +201,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       // Locked ship cards keep "run the missing check" on top; Spark can't talk a merge past the gauntlet.
       if (pick && !m.locked) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
       if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
+      // The why line only describes the option Spark picked, so a locked card keeps its own reason.
+      if (call.because[m.id] && !m.locked) move = { ...move, because: call.because[m.id] };
       return move;
     });
   }

@@ -2,6 +2,7 @@
 // Right = do it (Spark's pick), left = later, down = never (+ one tap on why), up = details, tap = zoom.
 // Every gesture also has a button and an arrow key.
 
+import { because } from "./because";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
 
@@ -280,6 +281,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                   </div>
                   <div className="ci-title">{m.title}</div>
                   <p className="ci-why">{m.why}</p>
+                  {because(m) && <p className="why-line"><b>Why:</b> {because(m)}</p>}
                   {m.evidence && (
                     <div className="ci-stamps">
                       {m.evidence.map((e) => (
