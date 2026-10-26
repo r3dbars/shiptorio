@@ -974,7 +974,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "place_machine":
           apply({
-            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
+            machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, district: msg.district, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
           });
           break;
         case "remove_machine":
