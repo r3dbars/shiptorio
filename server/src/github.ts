@@ -1,3 +1,4 @@
+import { retry, OutboundError } from "./reliability";
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import type { GitHubIssue } from "./sources/github";
 
@@ -77,6 +78,7 @@ export interface AppCredentials {
 }
 
 export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const request = async () => {
   const res = await fetch(API + path, {
     signal: AbortSignal.timeout(20000),
     ...init,
@@ -89,8 +91,11 @@ export async function gh<T>(path: string, token: string, init: RequestInit = {})
       ...init.headers,
     },
   });
-  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
-  return res.json() as Promise<T>;
+  if (!res.ok) throw new OutboundError(res.status);
+  return res.status === 204 ? undefined as T : res.json() as Promise<T>;
+  };
+  // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
+  return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { attempts: !init.method || ["GET", "PUT", "PATCH", "DELETE"].includes(init.method) ? 3 : 1 });
 }
 
 interface InstallationTokenScope {
