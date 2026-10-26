@@ -18,6 +18,7 @@ export function updateFx(dt: number): void;
 export function buildAssembler(o: BuildOpts): Built; // IDLE · WORKING · BLOCKED
 export function buildSplitter(): Built; // IDLE · SORTING
 export function buildInspector(): Built; // SCANNING · PASS · REJECT · BACKED UP
+export function buildCheck(id: string): Built; // a researched check: the inspector plus its own device; same states
 export function buildSteam(o: BuildOpts): Built; // IDLE · RUNNING · OVERLOAD
 export function buildGeo(o: BuildOpts): Built; // IDLE · INFERENCE · OVERHEAT
 export function buildTurret(): Built; // SCANNING · FIRING

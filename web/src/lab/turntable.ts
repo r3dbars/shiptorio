@@ -3,6 +3,7 @@
 // /lab.html?item=pad&state=LAUNCH&t=1.2&zoom=1&spin=0&freeze=1
 import * as THREE from "three";
 import * as lab from "../map/itemlab";
+import { buildDrone } from "../map/drone";
 import { makeIsland } from "../map/models";
 import { PALETTE } from "../map/palette";
 import { PixelPass } from "../map/pixel";
@@ -30,6 +31,8 @@ const ITEMS: Record<string, () => lab.Built> = {
   gate: () => lab.buildGate(),
   rework: () => lab.buildRework(),
   orbit: () => lab.buildOrbit(),
+  check: () => lab.buildCheck(q.get("check") ?? "leftovers"),
+  drone: () => { const d = buildDrone(); d.g.position.y = 1.5; return d as unknown as lab.Built; },
 };
 
 const canvas = document.getElementById("c") as HTMLCanvasElement;
