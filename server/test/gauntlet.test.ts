@@ -74,6 +74,7 @@ describe("live gauntlet in the Factory", () => {
     let mergedWith: unknown = null, commentTries = 0;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
       if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       calls.push(`${init?.method ?? "GET"} ${url.replace("https://api.github.com", "")}`);

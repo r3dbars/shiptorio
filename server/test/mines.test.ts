@@ -95,7 +95,7 @@ it("Sentry webhook: rejects bad signatures, needs no preview password, queues on
   };
   env.DB = credentialDB(env.DB);
   const body = JSON.stringify(fakeSentry("issue.created"));
-  const send = async (signature: string, id = "req-1") => app.fetch(new Request("https://shiptorio.com/webhooks/sentry", { method: "POST", headers: { "sentry-hook-signature": signature, "sentry-hook-resource": "issue", "request-id": id }, body }), env as never);
+  const send = async (signature: string, id = "req-1") => app.fetch(new Request("https://shiptorio.com/webhooks/sentry", { method: "POST", headers: { "sentry-hook-signature": signature, "sentry-hook-resource": "issue", "request-id": id }, body }), env as never, { waitUntil: (_p: Promise<unknown>) => {} } as never);
   expect((await send("0".repeat(64))).status).toBe(401);
   const good = await sign(env.SENTRY_CLIENT_SECRET, body);
   expect((await send(good)).status).toBe(202);
