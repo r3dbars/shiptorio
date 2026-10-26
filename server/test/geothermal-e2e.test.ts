@@ -1,5 +1,5 @@
 import { credentialEnv } from "./credential-fixture";
-import { authorizedSocket, browserEnv, membershipCache } from "./browser-fixture";
+import { authorizedDB, authorizedSocket, browserEnv, membershipCache } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,7 +54,7 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
       const request = JSON.parse(String(init?.body)), system = String(request.messages[0].content);
       const say = (x: unknown) => json({ choices: [{ message: { content: JSON.stringify(x) } }] });
       if (system.includes("game master") && system.includes("power plant")) { routed++; return say({ harness: "local", why: "One-line docs fix, the free local model can do it." }); }
-      if (system.includes("game master")) { const brief = JSON.parse(request.messages[1].content); return say({ order: (brief.cards ?? []).map((c: { id: string }) => c.id), reason: "Oldest first.", picks: {} }); }
+      if (system.includes("game master")) { const envelope = request.messages.find((m: { role: string }) => m.role === "user").content; const brief = JSON.parse(JSON.parse(envelope.split("\n")[1])); return say({ order: (brief.cards ?? []).map((c: { id: string }) => c.id), reason: "Oldest first.", picks: {} }); }
       plannerCall++;
       return say(plannerCall === 1 ? { files: ["README.md"] } : plannerCall === 2 ? { tool: "read_issue", reason: "Read the report" } : plannerCall === 3 ? { tool: "read_file", path: "README.md", reason: "Find the typo" } : { tool: "assign_job", reason: "Tiny docs fix", plan: "Change 'isntall' to 'install' in README.md.", acceptance: ["README says bun install"], files: ["README.md"] });
     }
@@ -66,9 +66,11 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
   let alarm: number | null = null;
   const storage = { async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); }, async get(k: string) { return structuredClone(data.get(k)); }, async put(k: string, v: unknown) { data.set(k, structuredClone(v)); }, async delete(k: string) { return data.delete(k); }, async list(o: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([k]) => k.startsWith(o.prefix)).slice(0, o.limit)); }, async getAlarm() { return alarm; }, async setAlarm(n: number) { alarm = n; } };
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [] };
-  const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } }) as never);
+  const f = new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test-key", DB: authorizedDB({ prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player" }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) }) }) as never);
   const saved = () => data.get("state") as FactoryState;
-  const choose = async (optionId: string) => f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId: saved().move!.id, optionId }));
+  // Ranking can move another card to the top while auth/storage awaits. Bind each gesture
+  // to the actual offer/approval the fixture displayed, just like the check-in deck.
+  const choose = async (moveId: string, optionId: string) => f.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "choose_move", moveId, optionId }));
   try {
     // The runner checks in with a Claude sign-in and a local model: two plants appear.
     expect(await f.claimRunner("pair", ["claude_code", "local"])).toBeNull();
@@ -76,9 +78,10 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
     const offer = saved().move!;
     expect(offer.options.find(o => o.recommended)?.id).toBe("local");
     expect(offer.options.find(o => o.id === "local")?.label).toContain("your computer");
-    await choose("local");
+    await choose(offer.id, "local");
     await f.alarm();
     const job = (await f.runnerJobs())[0];
+    expect(job?.status, JSON.stringify({ job, thoughts: saved().brain?.thoughts })).toBe("awaiting_approval");
     expect(routed).toBe(1);
     expect(job).toMatchObject({ status: "awaiting_approval", harness: "local", allowedPaths: ["README.md"] });
     expect(job.route).toContain("geothermal");
@@ -86,7 +89,7 @@ test("geothermal end to end: a docs fix built by a local model becomes a PR", as
     expect(saved().move?.plan?.some(line => line.startsWith("Power: geothermal"))).toBe(true);
     expect(saved().brain?.thoughts.some(t => t.decision === "route" && t.by === "spark")).toBe(true);
     expect(await f.claimRunner("pair", ["claude_code", "local"])).toBeNull(); // nothing builds before approval
-    await choose("approve");
+    await choose(job.approvalMoveId!, "approve");
     // A runner without a local model can't take it.
     expect(await f.claimRunner("pair", ["claude_code"])).toBeNull();
     const assigned = (await f.claimRunner("pair", ["claude_code", "local"]))!;
