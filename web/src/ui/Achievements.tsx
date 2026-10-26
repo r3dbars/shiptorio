@@ -5,25 +5,23 @@
 // wins), so it follows the player across browsers. Sim: kept in memory only, so every demo run unlocks them again
 // and a sim never writes fake wins onto a real account.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ACHIEVEMENTS, board, check, emptyEarned, markDay, mergeEarned, parseEarned, type Achievement, type Earned, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { savePref } from "../account";
 import { sound } from "../sound/engine";
 import { SHIP_EVENT, SHIP_TIMING } from "../sound/ship";
 import { Icon, type IconName } from "./icons";
 
-const KEY = "shiptorio:achievements";
+import { achievementStorageKey, shipBaseline, shippedSince, type ShipBaseline } from "./achievementState";
 const TOAST_MS = 4200;
 const AFTER_SHIP_MS = SHIP_TIMING.doneMs + 3200; // let the ship card have its moment first
 const MAX_WAIT_MS = 6000; // ...but back-to-back ships (a permit lane) never starve the toasts
 const MAX_TOASTS = 3; // opening a factory that already shipped a lot: three toasts, then one "and N more"
 
 const TIER_LABEL: Record<Achievement["tier"], string> = { bronze: "Bronze", silver: "Silver", gold: "Gold" };
-const rocketsOf = (s: FactoryState) => Math.max(s.metrics?.rockets ?? 0, s.science.red + s.science.green + s.science.grey + s.science.blue);
-
-function readLocal(): Earned {
+function readLocal(profile: string): Earned {
   try {
-    return parseEarned(localStorage.getItem(KEY));
+    return parseEarned(localStorage.getItem(achievementStorageKey(profile)));
   } catch {
     return emptyEarned();
   }
@@ -35,22 +33,22 @@ export interface Toast {
   more?: number;
 }
 
-/** Folds the factory in and hands back the record plus the toast showing right now. `send` comes back wrapped so a card answered counts as a real move for the day. */
+/** Folds the factory in and hands back the record plus the toast showing right now. Accepted card decisions use progression’s authoritative streak; attempted sends earn nothing. */
 // link: filled in by the caller after progression is set up: its best streak, and where an unlock's XP goes.
 export interface ProgressLink {
   streak: number;
   onUnlock?: (a: Achievement) => void;
 }
 
-export function useAchievements(state: FactoryState | null, live: boolean, quiet: boolean, sendRaw: (m: WebToServer) => void, link?: { current: ProgressLink }) {
-  const [earned, setEarned] = useState<Earned>(() => (live ? readLocal() : emptyEarned()));
+export function useAchievements(state: FactoryState | null, live: boolean, quiet: boolean, sendRaw: (m: WebToServer) => void, link: { current: ProgressLink } | undefined, profile: string) {
+  const [earned, setEarned] = useState<Earned>(() => (live ? readLocal(profile) : emptyEarned()));
   const [toast, setToast] = useState<Toast | null>(null);
   const queue = useRef<Toast[]>([]);
   const quietUntil = useRef(0);
-  const rockets = useRef<number | null>(null);
+  const rockets = useRef<ShipBaseline | null>(null);
   const ref = useRef(earned);
   ref.current = earned;
-  const [synced, setSynced] = useState(!live);
+  const [synced, setSynced] = useState<string | null>(live ? null : profile);
 
   const save = (e: Earned) => {
     ref.current = e;
@@ -58,7 +56,7 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     if (!live) return;
     const raw = JSON.stringify(e);
     try {
-      localStorage.setItem(KEY, raw);
+      localStorage.setItem(achievementStorageKey(profile), raw);
     } catch {
       // the account copy still holds it
     }
@@ -67,22 +65,29 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
 
   // Live: pull the account's copy once and merge, so a new browser doesn't re-toast what you already have.
   useEffect(() => {
+    queue.current = [];
+    setToast(null);
+    rockets.current = null;
+    const local = live ? readLocal(profile) : emptyEarned();
+    ref.current = local;
+    setEarned(local);
+    setSynced(live ? null : profile);
     if (!live) return;
     let done = false;
     fetch("/api/me")
-      .then((r) => (r.ok ? (r.json() as Promise<{ prefs?: { achievements?: string } }>) : Promise.reject()))
+      .then((r) => (r.ok ? (r.json() as Promise<{ login: string; prefs?: { achievements?: string } }>) : Promise.reject()))
       .then((me) => {
-        if (done) return;
+        if (done || profile !== `github:${me.login.toLowerCase()}`) return;
         const merged = mergeEarned(ref.current, parseEarned(me.prefs?.achievements));
         if (JSON.stringify(merged) !== JSON.stringify(ref.current)) save(merged);
+        setSynced(profile);
       })
-      .catch(() => {})
-      .finally(() => !done && setSynced(true));
+      .catch(() => {});
     return () => {
       done = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live]);
+  }, [live, profile]);
 
   // The ship card goes first; toasts wait until it's done.
   useEffect(() => {
@@ -93,11 +98,11 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
 
   // Fold each state in.
   useEffect(() => {
-    if (!state || !synced) return;
+    if (!state || synced !== profile) return;
     let e = ref.current;
     const now = Date.now();
-    const r = rocketsOf(state);
-    if (rockets.current !== null && r > rockets.current) e = markDay(e, now); // shipped today: a real move
+    const r = shipBaseline(state);
+    if (shippedSince(rockets.current, r)) e = markDay(e, now); // shipped today: a real move
     rockets.current = r;
     const { earned: next, fresh } = check(e, state.repo, state, now, link?.current.streak ?? 0);
     if (next !== ref.current) save(next);
@@ -107,7 +112,7 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     if (fresh.length > MAX_TOASTS) shown.push({ key: now + MAX_TOASTS, more: fresh.length - MAX_TOASTS });
     queue.current.push(...shown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, synced, quiet]);
+  }, [state, synced, quiet, profile]);
 
   // One toast at a time, one clock for all of them.
   const shownAt = useRef(0);
@@ -130,21 +135,10 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     return () => clearInterval(tick);
   }, []);
 
-  // A card answered or skipped is a real decision too: it counts for the day's streak.
-  const saveRef = useRef(save);
-  saveRef.current = save;
-  const send = useCallback(
-    (m: WebToServer) => {
-      if (m.type === "choose_move" || m.type === "defer_move" || m.type === "dismiss_move") {
-        const e = markDay(ref.current, Date.now());
-        if (e !== ref.current) saveRef.current(e);
-      }
-      sendRaw(m);
-    },
-    [sendRaw],
-  );
+  // Accepted decisions already advance progression's streak. Sending a gesture does not
+  // prove the server accepted it, so this hook never awards a day for an attempted send.
 
-  return { earned, toast, dismiss: () => { shownAt.current = 0; setToast(null); }, send, count: Object.keys(earned.got).length };
+  return { earned, toast, dismiss: () => { shownAt.current = 0; setToast(null); }, send: sendRaw, count: Object.keys(earned.got).length };
 }
 
 function Badge({ a, got, size = 22 }: { a: Achievement; got: boolean; size?: number }) {

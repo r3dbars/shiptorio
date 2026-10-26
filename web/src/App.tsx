@@ -102,8 +102,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
-  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink);
-  const send = ach.send; // a card answered counts toward the day's streak
+  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink, progressProfile(cfg.kind, login));
+  const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
