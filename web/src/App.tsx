@@ -12,6 +12,7 @@ import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
+import { ShipCelebration } from "./ui/ShipCelebration";
 
 const STATE_LABEL: Record<Item["state"], string> = {
   ore: "ore",
@@ -161,6 +162,7 @@ export function App() {
     <div className="app">
       <main className="floor">
         <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} />
+        <ShipCelebration state={state} />
 
         <section className="card hud-left" aria-label="Factory">
           <div className="ptitle">SHIPTORIO</div>
