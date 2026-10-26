@@ -95,8 +95,8 @@ test('approved users upgrade without preview password; revocation stops establis
 
 test('password fallback remains explicit and does not unlock admin with password alone',async()=>{
   const e={...env(),SIGNUP_GATE_MODE:'password',APP_PASSWORD:'old-preview'};
-  expect((await app.fetch(req('/'),e as never)).status).toBe(401);
-  expect(await (await app.fetch(req('/'),e as never)).text()).toContain('Password');
+  expect((await app.fetch(req('/index.html'),e as never)).status).toBe(401);
+  expect(await (await app.fetch(req('/index.html'),e as never)).text()).toContain('Password');
 });
 
 test('failed runner pairings throttle and surface on admin without calling a factory',async()=>{

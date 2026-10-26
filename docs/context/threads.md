@@ -74,7 +74,11 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
 | Add real user accounts and sign-in | working | D1 `users`/`sessions`/`user_installations`/`user_repos`/`user_prefs` (migration 0004), revocable sessions, repo membership on every factory route, per-repo Sentry/PostHog keys + per-repo Sentry webhook, `requireUser` helper. Password gate stays in front. Next: web install link + prefs sync |
 | Draft Shiptorio pricing options | PR open | Task 22. Three pricing models (BYO key / flat plans with fuel / pay per launch), unit cost from the code (≈$0.12 Spark per launch, ≈$0.40 Cloudflare per active factory), recommends flat plans: Free 20 launches, $19 solo 150, $59 crew 400. `docs/context/pricing.md`, numbers in `shared/src/pricing.ts`. Artifact: https://claude.ai/artifact/LrSxaUpsbMXnq5i9hxc8XH. Landing page gets a hidden `#pricing` block (`?pricing=1`) after the landing thread's PR merges |
+<<<<<<< HEAD
 | Write the Shiptorio docs site | PR #183 | Public docs at shiptorio.com/docs: markdown in `docs/site/`, built by `web/docs-site.ts` (search index, link-check test), `/docs` exempt from the preview password. 14 pages written from the code on main, not the plan. Gaps found while writing are listed in the PR |
+=======
+| Build the Shiptorio landing page | PR (branch claude/project-thread-9fgomx) | Public landing at shiptorio.com `/` (static `web/public/welcome/`, real sim loop video, waitlist `POST /api/waitlist` in KV), app stays gated. See `docs/context/landing.md`. Codex #161 can adopt the waitlist |
+>>>>>>> origin/main
 
 Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.

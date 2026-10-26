@@ -1,3 +1,4 @@
+import { budgetReport } from "./budget";
 import { log } from "./telemetry";
 import { Hono } from "hono";
 import type { Env } from "./index";
@@ -46,6 +47,7 @@ ops.get("/admin/flags", async c => {
   return c.html(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Shiptorio flags</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:16px}td{padding:12px}input,select,button{padding:8px}</style><p><a href="/admin">Diagnostics</a></p><h1>Shiptorio admin</h1><p><a href="/admin/signup">Manage waitlist, allowlist, invite codes, quotas and abuse flags</a></p><h2>Feature flags</h2><p>Admin: ${escape(c.get("admin"))}. Global false overrides every user. KV changes may take 60 seconds to reach all locations. Reload the app after toggling.</p><table><tr><th>Feature</th><th>Global effective</th><th>Override</th></tr>${rows}</table><p>Intro: welcome tour. Research: new purchases and suggestions (existing checks stay active). Permits: grants, suggestions and automatic launches. New features: default-off opt-in for future consumers.</p></html>`);
 
 });
+ops.get("/api/admin/budget", async c => c.json(await budgetReport(c.env)));
 ops.get("/api/admin/flags", async c => {
   const user = c.req.query("user");
   if (user && !/^[a-zA-Z0-9-]{1,39}$/.test(user)) return c.json({ error: "invalid user" }, 400);

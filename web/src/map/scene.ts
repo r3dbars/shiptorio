@@ -5,6 +5,8 @@
 // FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
+import { perf } from "./perf";
+import { FrameGovernor } from "./quality";
 import { lineFrame } from "./framing";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
@@ -27,6 +29,8 @@ import {
   buildTurret,
   buildVerify,
   updateFx,
+  getSeed,
+  setSeed,
   type BuildOpts,
   type Built,
 } from "./itemlab";
@@ -37,6 +41,7 @@ import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type Satellit
 import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
+import { bakeModel, findDynamic, mergeStatic } from "./bake";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
 
@@ -52,7 +57,6 @@ const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
-const TOP_BAR_PX = 64; // the top bar (score chips, mode toggle, icons); map labels stay below it
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -178,6 +182,44 @@ function solarVariant(name = ""): BuildOpts["variant"] {
   if (n.includes("cursor")) return ["CURSOR", 0x8a8f99];
   if (n.includes("grok")) return ["GROK", 0x30343c];
   return ["CLAUDE", 0xd97757];
+}
+
+// The art states each model can play (scene.ts artState/stationArt), for bake.ts to find its moving parts.
+const ART_STATES: Partial<Record<Machine["type"] | StationKind, string[]>> = {
+  assembler: ["IDLE", "WORKING", "BLOCKED"],
+  splitter: ["IDLE", "SORTING"],
+  inspector: ["SCANNING", "PASS", "REJECT", "BACKED UP"],
+  verify: ["IDLE", "VERIFYING", "PASS", "FAIL", "BACKED UP"],
+  review: ["IDLE", "REVIEWING", "APPROVED", "CHANGES", "BACKED UP"],
+  merge: ["WAITING", "APPROVED", "BACKED UP", "REJECTED"],
+  orbit: ["WATCHING", "ALL CLEAR", "ALERT"],
+  launch_pad: ["IDLE", "COUNTDOWN", "LAUNCH", "IDLE"],
+  ore_deposit: ["RICH", "DEPLETED"],
+  steam: ["IDLE", "RUNNING", "OVERLOAD"],
+  solar: ["SUNNY", "CAPPED"],
+  battery: ["CHARGING", "FULL", "DRAINING", "EMPTY"],
+  geothermal: ["IDLE", "INFERENCE", "OVERHEAT"],
+  turret: ["SCANNING", "FIRING"],
+};
+
+// A model with its static parts merged (bake.ts). The probe copy is built from the same random
+// seed, so it matches the real one and nothing after it shifts.
+function bakedItem(key: string, states: string[] | undefined, make: () => Built): Built {
+  const before = getSeed();
+  const built = make();
+  if (!states) return built;
+  const after = getSeed();
+  return bakeModel(key, built, () => {
+    setSeed(before);
+    const copy = make();
+    setSeed(after);
+    return copy;
+  }, states);
+}
+
+// Only touch the DOM when a value changes; style writes invalidate layout even when equal-looking.
+function setStyle(el: HTMLElement, prop: "display" | "transform", v: string) {
+  if (el.style[prop] !== v) el.style[prop] = v;
 }
 
 // Where the label sits above each model, from the Item Lab's item heights.
@@ -320,10 +362,11 @@ export class FactoryScene {
   private last = performance.now();
   private t = 0;
   private launchUntil = -1;
+  private readonly governor = new FrameGovernor(window.matchMedia?.("(pointer: coarse)").matches ?? false);
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
   // Spark, the Foreman, flying to whatever it's touching
-  private readonly drone = buildDrone();
+  private readonly drone = bakeModel("drone", buildDrone(), buildDrone, ["IDLE", "FLYING", "WORKING", "THINKING"]) as ReturnType<typeof buildDrone>;
   private readonly droneTo = new THREE.Vector3(0, 4, 0);
   private droneLabel?: Label;
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
@@ -357,9 +400,12 @@ export class FactoryScene {
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(1);
+    this.renderer.info.autoReset = false; // two renders a frame (scene + pixel pass); perf.ts reads the total
+    perf.watch(this.scene);
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.renderer.shadowMap.autoUpdate = false; // the frame governor (quality.ts) says when
     this.scene.background = new THREE.Color(PALETTE.void);
 
     this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
@@ -407,6 +453,7 @@ export class FactoryScene {
 
   // factor > 1 zooms out
   zoomBy(factor: number) {
+    this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
     this.zoom = Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.zoom * factor));
@@ -414,6 +461,7 @@ export class FactoryScene {
   }
 
   panBy(dx: number, dy: number) {
+    this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
     const k = (this.camera.top - this.camera.bottom) / this.height;
@@ -523,6 +571,7 @@ export class FactoryScene {
 
   // What's under a screen point: the key of a labelled thing (machine, station, rework belt, district, drone).
   keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+    this.governor.poke();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.ray.setFromCamera(ndc, this.camera);
     const targets = [...this.labels].filter((l) => l.key);
@@ -750,6 +799,9 @@ export class FactoryScene {
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
       trimShadows(model.group);
+      // district ticks are pure functions of time, so they can be swept on the real thing
+      // (only same-material merges: the scene recolors the shared roof by district health)
+      mergeStatic(model.group, findDynamic(model.group, (check) => { for (let k = 0; k < 120; k++) (model.update(k * 0.37), check()); }), false);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
@@ -764,6 +816,7 @@ export class FactoryScene {
     const w = x1 - x0, d = z1 - z0;
     const island = makeIsland(w, d);
     trimShadows(island);
+    mergeStatic(island); // nothing on the island moves; waterfalls hang off this.world
     island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     this.world.add(island);
     // waterfalls sit just past the moss cap's bulge and fall a bit past the rock's tip
@@ -774,6 +827,7 @@ export class FactoryScene {
     const spots = [[-1, 0.7], [1.06, 0.9], [-0.9, -0.8], [0.8, -1.1], [0.1, 1.25], [-1.15, -0.1]];
     spots.forEach(([fx, fz], i) => {
       const r = makeFloater(0.6 + ((i * 37) % 5) * 0.15, 31 + i);
+      mergeStatic(r);
       r.position.set((x0 + x1) / 2 + fx * (w / 2 + 3), -2 - ((i * 53) % 7) * 1.1, (z0 + z1) / 2 + fz * (d / 2 + 3));
       this.world.add(r);
       this.rocks.push({ r, y: r.position.y, k: i * 1.3 });
@@ -848,8 +902,12 @@ export class FactoryScene {
       v = this.machines.get(m.id);
       if (!v) {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
-        const built = buildModel(m, power, kind);
-        trimShadows(built.g);
+        const key = [m.type, kind, m.id.startsWith("check-") ? m.id : "", m.harness, m.tier, power?.name].join("|");
+        const built = bakedItem(key, (kind && ART_STATES[kind]) || ART_STATES[m.type], () => {
+          const b = buildModel(m, power, kind);
+          trimShadows(b.g);
+          return b;
+        });
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
         const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
@@ -979,6 +1037,7 @@ export class FactoryScene {
       }
     }
     this.layRework(gauntlet);
+    mergeStatic(this.beltGroup); // belts only scroll their texture; rails and brackets never move
   }
 
   // Every station drops its fails onto one red belt that runs behind the line, back to Spark's splitter.
@@ -999,7 +1058,7 @@ export class FactoryScene {
       this.layBelt(a.x === far ? r : pathOf([[a.x, a.z - 1.2], [a.x, lane]]), 0xff7a70);
     }
     if (!this.rework) {
-      const built = buildRework();
+      const built = bakedItem("rework", ["FLOWING", "CLOGGED"], buildRework);
       built.g.scale.setScalar(0.7);
       this.scene.add(built.g);
       this.rework = { built, label: this.addLabel(built.g, 0.9, "rework") };
@@ -1431,9 +1490,12 @@ export class FactoryScene {
     });
   }
 
+  // Reads every label's size once, then writes every position: interleaving the two forced a
+  // layout per label per frame. Labels that would overlap stack upward instead.
   private placeLabels() {
     const w = this.width, h = this.height;
     let teachingRow = 0;
+    const placed: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const l of this.labels) {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y;
@@ -1445,27 +1507,49 @@ export class FactoryScene {
       if (teaching) y -= (teachingRow++ % 3) * 24;
       const shown = teaching || this.showAll || l.el.classList.contains("hot") || l.el.classList.contains("island") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
-      l.el.style.display = off ? "none" : "flex";
-      // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
-      if (!off) y = Math.max(y, TOP_BAR_PX + l.el.offsetHeight);
-      if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
+      setStyle(l.el, "display", off ? "none" : "flex");
+      if (!off) placed.push({ el: l.el, x, y, w: 0, h: 0 });
     }
+    const tags: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const pe of this.pings) {
       const l = [...this.labels].find((x) => x.key === pe.key);
       if (!l) {
-        pe.el.style.display = "none";
+        setStyle(pe.el, "display", "none");
         continue;
       }
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y * 0.55;
       this.v3.project(this.camera);
       const x = ((this.v3.x + 1) / 2) * w;
-      let y = ((1 - this.v3.y) / 2) * h;
-      pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
-      y = Math.max(y, TOP_BAR_PX + pe.el.offsetHeight / 2);
-      pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      const y = ((1 - this.v3.y) / 2) * h;
+      const off = x < -40 || x > w + 40 || y < -20 || y > h + 20;
+      setStyle(pe.el, "display", off ? "none" : "flex");
+      if (!off) tags.push({ el: pe.el, x, y, w: 0, h: 0 });
+    }
+    // one layout for everything, including where the HUD sits (its chips and the Check in / Build
+    // lens move around on phones, and the notch pushes them down)
+    for (const p of [...placed, ...tags]) (p.w = p.el.offsetWidth), (p.h = p.el.offsetHeight);
+    const hud = [...document.querySelectorAll(".topbar > *, .lens")].map((e) => e.getBoundingClientRect());
+    const canvasTop = this.labelRoot.getBoundingClientRect().top;
+    const below = (x: number, half: number) =>
+      hud.reduce((m, r) => (r.right > x - half && r.left < x + half && r.top < canvasTop + h / 2 ? Math.max(m, r.bottom - canvasTop + 4) : m), 0);
+    // a label that would hide under the HUD stops just below it; then, top to bottom, a label that
+    // overlaps one already placed moves down under it
+    for (const p of placed) p.y = Math.max(p.y, below(p.x, p.w / 2) + p.h);
+    placed.sort((a, b) => a.y - b.y);
+    for (let i = 0; i < placed.length; i++) {
+      const p = placed[i];
+      for (let j = 0; j < i; j++) {
+        const q = placed[j];
+        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 && p.y > q.y - q.h && p.y - p.h < q.y) p.y = q.y + p.h + 2;
+      }
+      setStyle(p.el, "transform", `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`);
+    }
+    for (const t of tags) {
+      const y = Math.max(t.y, below(t.x, t.w / 2) + t.h / 2);
+      setStyle(t.el, "transform", `translate(${Math.round(t.x)}px,${Math.round(y)}px)`);
       // keep the tag on screen: flip it to the dot's left near the right edge
-      pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
+      t.el.classList.toggle("flip", t.x + t.w > w - 8);
     }
   }
 
@@ -1474,6 +1558,8 @@ export class FactoryScene {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
+    if (!this.governor.draw(now, !!(this.camGoal || this.glide || this.launchCam || this.biasGoal))) return;
+    perf.frame(now, this.renderer.info, this.governor.tier);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
@@ -1590,9 +1676,11 @@ export class FactoryScene {
     }
     this.shocks = this.shocks.filter((sh) => t - sh.born <= 0.85);
 
+    this.renderer.shadowMap.needsUpdate = this.governor.shadows();
     this.pass.render(this.renderer, this.scene, this.camera);
     this.placeLabels();
     this.placePops();
+    perf.work(performance.now() - now);
   };
 
   dispose() {
