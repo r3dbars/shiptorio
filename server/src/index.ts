@@ -26,7 +26,7 @@ import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
-import { browserMutationAllowed, securityHeaders } from "./security";
+import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
 
 export { Factory };
@@ -145,7 +145,7 @@ app.use("*", async (c, next) => {
   const denied = signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
   await next();
-  c.header("Cache-Control", "no-store");
+  c.header("Cache-Control", browserCacheControl(c.req.raw, c.res.status));
 });
 
 app.onError((err, c) => {
@@ -566,6 +566,7 @@ app.all("*", async (c) => {
     return new HTMLRewriter().on("script", { element(el) { el.setAttribute("nonce", nonce); } }).transform(response);
   }
   return response;
+
 });
 
 export { app }; // Unwrapped Hono app for route tests.
