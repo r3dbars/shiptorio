@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AutonomyLevel, FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import { css, KIND_COLOR } from "./map/palette";
@@ -42,6 +42,9 @@ const SLOTS = [
   { harness: "codex", name: "ChatGPT" },
 ] as const;
 const UNDO_MS = 5 * 60_000;
+const LOG_MAX = 60;
+// science packs by item kind (shared SCIENCE_FOR)
+const SCIENCE_LABEL = { red: "bugs", green: "features", grey: "cleanup", blue: "tests" } as const; // newest lines kept in the floor log
 
 function fmtLead(ms?: number) {
   if (ms === undefined) return "–";
@@ -70,19 +73,21 @@ function LogRow({ l, send, live }: { l: LogLine; send: (msg: WebToServer) => voi
 
 // Big news from the floor log shows up as a caption for a few seconds.
 function useCaption(log: LogLine[]) {
-  const [caption, setCaption] = useState<{ title: string; sub: string } | null>({ title: "THE FACTORY MUST GROW", sub: "drag to pan · scroll to zoom" });
+  const [caption, setCaption] = useState<{ title: string; sub: string }>({ title: "THE FACTORY MUST GROW", sub: "drag to pan · scroll to zoom" });
+  const [on, setOn] = useState(true); // the text stays while the box fades out
   const last = log[log.length - 1];
   useEffect(() => {
     if (!last || last.level === "info") return;
     const [title, ...rest] = last.text.split(": ");
     setCaption({ title: title.toUpperCase(), sub: rest.join(": ") });
+    setOn(true);
   }, [last]);
   useEffect(() => {
-    if (!caption) return;
-    const t = setTimeout(() => setCaption(null), 2800);
+    if (!on) return;
+    const t = setTimeout(() => setOn(false), 2800);
     return () => clearTimeout(t);
-  }, [caption]);
-  return caption;
+  }, [caption, on]);
+  return { ...caption, on };
 }
 
 // Next free spot for a new assembler, stacked beside the existing ones.
@@ -103,13 +108,6 @@ export function App() {
   const [showLog, setShowLog] = useState(true);
   const [panel, setPanel] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(false);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "l" && !(e.target instanceof HTMLInputElement)) setShowLabels((v) => !v);
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, []);
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -125,9 +123,26 @@ export function App() {
     else if (next.prUrl) window.open(next.prUrl, "_blank", "noreferrer");
   };
   const slot = state ? buildSlot(state) : null;
+  // Spark never codes: a new assembler runs on a subscription you've signed in with
+  const plugged = SLOTS.find((sl) => state?.power.some((p) => p.id === `solar-${sl.harness}` && p.online));
   const build = () => {
-    if (slot) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: "spark" });
+    if (slot && plugged) send({ type: "place_machine", machineType: "assembler", x: slot.x, y: slot.y, harness: plugged.harness });
   };
+
+  // L toggles labels; A and B do what the round buttons say. Ignored while typing.
+  const keys = useRef({ launch, build });
+  keys.current = { launch, build };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "l") setShowLabels((v) => !v);
+      else if (k === "b") keys.current.launch();
+      else if (k === "a") keys.current.build();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
 
   return (
     <div className="app">
@@ -156,11 +171,11 @@ export function App() {
                 <span title="Customer threads closed with a shipped fix">
                   <b>{metrics.customersAnswered}</b> answered
                 </span>
-                <span title="Sentry issues resolved">
-                  <b>{metrics.bitersKilled}</b> biters
+                <span title="Biters are live Sentry errors attacking a district. This counts the ones your fixes killed.">
+                  <b>{metrics.bitersKilled}</b> errors fixed
                 </span>
                 <span title="Median lead time, ore to merged">
-                  <b>{fmtLead(metrics.leadTimeMs)}</b> lead
+                  <b>{fmtLead(metrics.leadTimeMs)}</b> lead time
                 </span>
                 {metrics.checkouts !== undefined && (
                   <span title="Demo shop checkouts completed (Stripe test mode)">
@@ -177,7 +192,15 @@ export function App() {
           )}
           {autonomy ? (
             <div className="hrow" title={autonomy.next ? `${autonomy.next.have}/${autonomy.next.need} ${autonomy.next.label} to unlock ${LEVEL_LABEL[autonomy.next.level]}` : "Top level"}>
-              <span>AUTONOMY · {LEVEL_LABEL[autonomy.level]}</span>
+              <span>
+                AUTONOMY · {LEVEL_LABEL[autonomy.level]}
+                {autonomy.next && (
+                  <i className="next">
+                    {" "}
+                    → {LEVEL_LABEL[autonomy.next.level]} {autonomy.next.have}/{autonomy.next.need}
+                  </i>
+                )}
+              </span>
               <Segs value={autonomy.next ? (autonomy.next.have / autonomy.next.need) * 8 : 8} color="#6fb2ff" />
             </div>
           ) : (
@@ -189,9 +212,9 @@ export function App() {
           {permits.length > 0 && <div className="psub">LAUNCH PERMIT: {permits.join(", ")}</div>}
           <div className="science" aria-label="Science">
             {(["red", "green", "grey", "blue"] as const).map((k) => (
-              <span key={k} className={`sci ${k}`} title={`${k} science`}>
+              <span key={k} className={`sci ${k}`} title={`${SCIENCE_LABEL[k]} shipped (${k} science)`}>
                 <i aria-hidden="true" />
-                {state?.science[k] ?? 0}
+                {state?.science[k] ?? 0} <small>{SCIENCE_LABEL[k]}</small>
               </span>
             ))}
           </div>
@@ -268,7 +291,7 @@ export function App() {
             </button>
             {showLog && (
               <ol>
-                {[...log].reverse().map((l, n) => (
+                {log.slice(-LOG_MAX).reverse().map((l, n) => (
                   <LogRow key={`${l.at}-${n}`} l={l} send={send} live={status === "live"} />
                 ))}
               </ol>
@@ -280,9 +303,9 @@ export function App() {
 
         {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} />}
 
-        <div className={`card caption${caption ? " on" : ""}`} role="status" aria-live="polite">
-          <div className="ptitle">{caption?.title}</div>
-          <div className="psub">{caption?.sub}</div>
+        <div className={`card caption${caption.on ? " on" : ""}`} role="status" aria-live="polite">
+          <div className="ptitle">{caption.title}</div>
+          <div className="psub">{caption.sub}</div>
         </div>
 
         {cfg.kind === "sim" && (
@@ -304,7 +327,14 @@ export function App() {
           <button type="button" className="rbtn amber" onClick={launch} disabled={pad.length === 0} aria-label="Launch the PR on the pad">
             <b>B</b>launch
           </button>
-          <button type="button" className="rbtn" onClick={build} disabled={!slot || cfg.kind === "live"} aria-label="Build a Spark assembler">
+          <button
+            type="button"
+            className="rbtn"
+            onClick={build}
+            disabled={!slot || !plugged || cfg.kind === "live"}
+            aria-label={plugged ? `Build another ${plugged.name} assembler` : "Sign in with Claude or ChatGPT to build"}
+            title={plugged ? `Build another ${plugged.name} assembler (A)` : "Sign in with Claude or ChatGPT first"}
+          >
             <b>A</b>build
           </button>
         </div>
