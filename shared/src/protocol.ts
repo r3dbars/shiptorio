@@ -9,6 +9,7 @@ import {
   Bottleneck,
   Brain,
   District,
+  Experiment,
   FactoryState,
   Foreman,
   Harness,
@@ -46,6 +47,7 @@ export const Patch = z.object({
   sources: z.array(SourceStatus).optional(), // full replacement when present
   stations: z.array(Station).optional(), // full replacement when present
   research: Research.optional(), // full replacement when present
+  experiments: z.array(Experiment).optional(), // full replacement when present
 });
 export type Patch = z.infer<typeof Patch>;
 

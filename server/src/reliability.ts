@@ -10,11 +10,12 @@ export class RetryExhausted extends Error {
 }
 /** Only retry operations whose caller can safely replay them. Never include secrets in errors. */
 export async function retry<T>(operation: string, run: () => Promise<T>, options: {
-  attempts?: number; sleep?: (ms: number) => Promise<void>; random?: () => number;
+  attempts?: number; shouldRetry?: (error: unknown) => boolean; sleep?: (ms: number) => Promise<void>; random?: () => number;
 } = {}): Promise<T> {
   const attempts = options.attempts ?? 3;
   for (let n = 1; ; n++) {
     try { return await run(); } catch (error) {
+      if (options.shouldRetry && !options.shouldRetry(error)) throw error;
       const cause = error instanceof RetryExhausted ? error.cause : error;
       const transient = !(cause instanceof OutboundError) || [408, 429].includes(cause.status) || cause.status >= 500;
       if (!transient || n >= attempts) throw new RetryExhausted(operation, n, error);

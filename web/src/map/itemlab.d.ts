@@ -14,6 +14,8 @@ export interface BuildOpts {
 
 export function setNight(on: boolean): void;
 export function updateFx(dt: number): void;
+export function getSeed(): number;
+export function setSeed(s: number): void;
 
 export function buildAssembler(o: BuildOpts): Built; // IDLE · WORKING · BLOCKED
 export function buildSplitter(): Built; // IDLE · SORTING
@@ -35,3 +37,4 @@ export function buildReview(): Built; // IDLE · REVIEWING · APPROVED · CHANGE
 export function buildGate(): Built; // WAITING · APPROVED · BACKED UP · REJECTED
 export function buildRework(): Built; // FLOWING · CLOGGED
 export function buildOrbit(): Built; // WATCHING · ALL CLEAR · ALERT
+export function buildMeasure(): Built; // MEASURING · LIFT · NO LIFT · HURT · IDLE (the growth loop)

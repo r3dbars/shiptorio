@@ -1,4 +1,5 @@
-import { authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
+import { credentialEnv } from "./credential-fixture";
+import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
@@ -29,9 +30,9 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-  const env = { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
-  const factory = new Factory(ctx as never, env as never);
-  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, env as never), saved: () => data.get("state") as FactoryState };
+  const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
+  const factory = new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never);
+  return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never), saved: () => data.get("state") as FactoryState };
 }
 
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
@@ -52,6 +53,7 @@ describe("Factory lifecycle", () => {
   it("rejects invalid or unauthorized goal messages without saving or broadcasting", async () => {
     const f = fixture();
     f.data.set("state", { ...f.saved(), goal: "Keep the existing goal" });
+    await (f.factory as unknown as { load(): Promise<FactoryState | null> }).load();
     const before = structuredClone(f.saved());
     for (const raw of [
       "not JSON",
@@ -323,6 +325,26 @@ it("offers local runner plans only for real GitHub issues and refuses source-onl
   }
 });
 
+it("enforces a zero job cap and kill switch before admitting runner work", async () => {
+  for (const extraEnv of [{ FACTORY_CONCURRENT_JOBS: "0" }, { SPARK_DISABLED: "1" }]) {
+    const f = fixture([item({ state: "queued", prNumber: undefined })], extraEnv);
+    await expect(f.factory.enqueueRunner({ itemId: "gh-1", harness: "codex", allowedPaths: ["server/src/engine.ts"] })).rejects.toThrow("job budget");
+    expect(await f.factory.runnerJobs()).toEqual([]);
+  }
+});
+
+it("a budget-denied triage logs exactly one honest fallback with the budget reason", async () => {
+  const { testD1 } = await import("./d1-fixture");
+  const db = testD1();
+  await db.prepare("INSERT INTO user_repos(user_id, repo, installation_id) VALUES (1, 'r3dbars/demo', 1)").run();
+  const f = fixture([], { DB: db, META_API_KEY: "test", SPARK_DAILY_CALLS: "0" });
+  const splitter = f.factory as unknown as { load(): Promise<unknown>; sparkTriage(item: { title: string; body: string }, districts: string[]): Promise<unknown> };
+  await splitter.load();
+  expect(await splitter.sparkTriage({ title: "Fix a bug", body: "" }, ["/"])).toMatchObject({ kind: "bug" });
+  expect(f.saved().brain?.fallbacks).toBe(1);
+  expect(f.saved().brain?.thoughts[0].reason).toContain("budget exhausted");
+});
+
 it('watchdog survives restart, offers one scar/card, and alarm always recovers from a broken tick', async () => {
   const f = fixture([item({ state: 'working', prNumber: undefined, updatedAt: Date.now() - 31 * 60000 })]);
   await f.factory.alarm();
@@ -426,6 +448,19 @@ it('does not retry a durable delivery before its persisted backoff deadline', as
   expect(pending.nextAt).toBeGreaterThan(Date.now());
 });
 
+it("GitHub cooldown preserves durable deliveries without exhausting processing retries", async () => {
+  const { RateLimitError } = await import("../src/rate-limit");
+  const f = fixture();
+  const retryAt = Date.now() + 3600000;
+  let calls = 0;
+  (f.factory as unknown as { handleGitHub(): Promise<void> }).handleGitHub = async () => { calls++; throw new RateLimitError(retryAt); };
+  await f.factory.enqueueGitHub("rate-limited", "issues", {});
+  await f.factory.alarm();
+  await f.factory.alarm();
+  expect(calls).toBe(1);
+  expect(f.data.get("delivery:rate-limited")).toMatchObject({ attempts: 0, nextAt: retryAt });
+  expect(f.data.has("failed:delivery:rate-limited")).toBe(false);
+});
 
 for (const outcome of ["pass", "error", "comment"] as const) {
   it(`discards an old-head AI review when the head moves during ${outcome === "comment" ? "comment publication" : outcome === "error" ? "a failed review" : "review"}`, async () => {
@@ -478,3 +513,25 @@ for (const outcome of ["pass", "error", "comment"] as const) {
     } finally { release(); globalThis.fetch = original; }
   });
 }
+
+it("budget and rate-limit waits leave AI review pending without a rework scar", async () => {
+  const { BudgetError } = await import("../src/budget");
+  const { RateLimitError } = await import("../src/rate-limit");
+  const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (url: unknown) => String(url).endsWith("/access_tokens") ? Response.json({ token: "paused-review-token" }) : Response.json([])) as unknown as typeof fetch;
+  try {
+    for (const error of [new BudgetError("Spark daily budget exhausted"), new RateLimitError(Date.now() + 60000)]) {
+      const reviewing = setStage(setStage(item({ state: "inspecting", inspection: freshInspection("head") }), "ci", "passed", "green"), "verify", "passed", "proof");
+      const f = fixture([reviewing], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, META_API_KEY: "test" });
+      const internals = f.factory as unknown as { load(): Promise<unknown>; runGauntlet(): Promise<void>; think(): Promise<unknown> };
+      internals.think = async () => { throw error; };
+      await internals.load();
+      await internals.runGauntlet();
+      expect(f.saved().items[0].state).toBe("inspecting");
+      expect(stageOf(f.saved().items[0], "ai")?.state).toBe("pending");
+      expect(f.saved().items[0].scars ?? []).toEqual([]);
+    }
+  } finally { globalThis.fetch = original; }
+});

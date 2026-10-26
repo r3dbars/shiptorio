@@ -8,7 +8,7 @@ export interface GuidedResult { steps: string[]; actions: string[]; completed: b
 export interface CaseResult { scenario: string; mode: "journey" | "early-close"; seed: number; steps: number; messages: number; decisions: number; shipped: number; states: string[]; tools: string[]; findings: Finding[]; trace: string[]; guided?: GuidedResult }
 
 // Advance the real simulator's timers deterministically, without waiting minutes or calling a service.
-class Clock {
+export class Clock {
   now = 0;
   private next = 0;
   private microtasks: VoidFunction[] = [];

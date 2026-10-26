@@ -6,6 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FactoryState } from "@shiptorio/shared";
+import { COACH, LESSON_COPY } from "../copy";
 
 export type HudPart = "spark" | "score" | "launch" | "build" | "power" | "line" | "autonomy" | "science" | "log" | "scenarios" | "labels" | "checkin";
 
@@ -23,71 +24,61 @@ export interface Lesson {
 export const LESSONS: Lesson[] = [
   {
     id: "island",
-    title: "Your factory",
-    text: "This island is {repo}. One factory, one codebase. Each building is a folder, and it lights up when work lands there.",
+    ...LESSON_COPY.island,
     when: (s) => s.districts.length > 0,
     unlocks: [],
   },
   {
     id: "machines",
-    title: "Machines",
-    text: "Machines do the work. The splitter sorts what comes in, the assembler builds the fix, the inspectors check it, the pad ships it.",
+    ...LESSON_COPY.machines,
     when: (s) => s.machines.some((m) => m.type === "assembler"),
     unlocks: [],
   },
   {
     id: "power",
-    title: "Power",
-    text: "Assemblers run on power, and power is your own Claude or ChatGPT sign-in. More sign-ins, more machines.",
+    ...LESSON_COPY.power,
     when: (s) => s.move?.stage === "resources" || s.power.some((p) => p.kind === "solar"),
     unlocks: ["power"],
   },
   {
     id: "ore",
-    title: "Ore",
-    text: "That's ore: each open issue is one chunk. It rides the belt in, and the line list shows where every chunk is.",
+    ...LESSON_COPY.ore,
     when: (s) => s.items.length > 0,
     unlocks: ["line"],
   },
   {
     id: "inspect",
-    title: "Inspection",
-    text: "Nothing ships unchecked. Every PR runs the gauntlet: CI, proof, AI review. A fail rides the red belt back with the reason, for another try.",
+    ...LESSON_COPY.inspect,
     when: (s) => s.items.some((i) => i.prNumber !== undefined),
     unlocks: [],
   },
   {
     id: "pad",
-    title: "Launch pad",
-    text: "It passed and it's on the pad. Launching means you merge the PR. That's always your call.",
+    ...LESSON_COPY.pad,
     when: (s) => s.items.some((i) => i.state === "on_pad"),
     unlocks: ["launch"],
   },
   {
     id: "rocket",
-    title: "Rocket",
-    text: "Rocket! That was a real merged PR. The score counts what shipping did for people, not how busy the factory looks.",
+    ...LESSON_COPY.rocket,
     when: (s) => (s.metrics?.rockets ?? 0) > 0,
     unlocks: ["score", "science"],
   },
   {
     id: "bottleneck",
-    title: "Bottleneck",
-    text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows. Add builders with Build.",
+    ...LESSON_COPY.bottleneck,
     when: (s) => (s.metrics?.rockets ?? 0) > 0,
     unlocks: ["build", "log", "labels"],
   },
   {
     id: "autonomy",
-    title: "Autonomy",
-    text: "Every suggestion you approve as-is builds trust. Approve enough and the factory earns the right to do the small stuff on its own.",
+    ...LESSON_COPY.autonomy,
     when: (s) => (s.autonomy?.next?.have ?? 0) >= 3 || s.autonomy?.level !== "advisor",
     unlocks: ["autonomy", "scenarios"],
   },
   {
     id: "checkin",
-    title: "Check-in",
-    text: "When a few things wait on you, check in: swipe through them in one go. Right does it, left is later, down is never.",
+    ...LESSON_COPY.checkin,
     when: (s) => (s.deck?.length ?? 0) > 1 || (s.metrics?.rockets ?? 0) >= 2,
     unlocks: ["checkin"],
   },
@@ -156,7 +147,7 @@ export function Coach({ lesson, step, total, repo, onDismiss, onSkip }: { lesson
   return (
     <div className="coach" role="status" aria-live="polite">
       <div className="coach-head">
-        <span className="who">New · {lesson.title}</span>
+        <span className="who">{COACH.kicker(lesson.title)}</span>
         <span className="coach-step">
           {step}/{total}
         </span>
@@ -164,10 +155,10 @@ export function Coach({ lesson, step, total, repo, onDismiss, onSkip }: { lesson
       <p>{lesson.text.replace("{repo}", repo)}</p>
       <div className="coach-btns">
         <button type="button" className="btn rec" onClick={onDismiss}>
-          Got it
+          {COACH.gotIt}
         </button>
         <button type="button" className="linkish coach-skip" onClick={onSkip}>
-          skip the tour
+          {COACH.skip}
         </button>
       </div>
     </div>

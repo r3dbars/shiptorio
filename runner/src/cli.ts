@@ -8,13 +8,18 @@ import { assemblerContext, snapshotApproved, publishApproved } from "./publicati
 
 import { jobWorkspace } from "./workspace";
 import { responseSchemas, type Job } from "./messages";
+import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
 
 const root = resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(import.meta.dir, ".."));
 const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
 const authHome = resolve(root, ".agent-home");
-const harnessPath = (h: Job["harness"]) => Bun.which(h === "codex" ? "codex" : "claude");
-const available = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+const harnessPath = (h: "codex" | "claude_code") => Bun.which(h === "codex" ? "codex" : "claude");
+// Geothermal: a local OpenAI-compatible model (Ollama etc.), offered only when it answers.
+const localFile = Bun.file(resolve(root, "local-model.json"));
+const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
+const localStatus = local ? await detectLocalModel(local) : null;
+const available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
 if (process.argv[2] === "paths") {
   console.log(JSON.stringify({ root, checkout, harnesses: available }));
   process.exit(0);
@@ -27,9 +32,20 @@ async function command(args: string[], cwd: string, env = cleanEnv, timeout = 12
   if (code !== 0) throw new Error(`Command ${args[0].split("/").at(-1)} ${args[1]} failed (${code}): ${(err || out).slice(-2000)}`);
   return out.trim();
 }
+if (process.argv[2] === "geothermal") {
+  // bun run runner geothermal MODEL [URL]: save local-model settings, then check the endpoint answers.
+  const config = localModelConfig({ SHIPTORIO_LOCAL_MODEL: process.argv[3] ?? "", SHIPTORIO_LOCAL_MODEL_URL: process.argv[4] ?? "" });
+  if (!config) throw new Error("Usage: runner geothermal MODEL [URL], e.g. runner geothermal qwen2.5-coder:7b");
+  const status = await detectLocalModel(config);
+  await Bun.write(resolve(root, "local-model.json"), JSON.stringify({ model: config.model, url: config.baseUrl }, null, 2) + "\n");
+  console.log(status.ok ? `Geothermal online: ${config.model} at ${config.baseUrl}. Restart the runner to offer it.` : `Saved, but not ready yet: ${status.reason}`);
+  process.exit(0);
+}
 if (process.argv[2] === "doctor") {
+  if (local) console.log(localStatus?.ok ? `local: ${local.model} at ${local.baseUrl} (geothermal power)` : `local: ${local.model} not ready: ${localStatus?.reason}`);
   await mkdir(authHome, { recursive: true, mode: 0o700 });
   for (const h of available) {
+    if (h === "local") continue;
     const output = await command([harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])], authHome, agentEnvironment(process.env, authHome));
     // Codex writes login status to stderr, so its zero exit status is the proof.
     if (h === "claude_code" && !JSON.parse(output).loggedIn) throw new Error("Claude is not signed in");
@@ -84,15 +100,22 @@ async function execute(job: Job) {
     const boundary = await checkSandbox(jobRoot);
     sandbox = { run: (args, cwd = work, options) => boundary.run(args, cwd, options), close: () => boundary.close() };
     await checked(["git", "checkout", "--detach", job.baseSha]);
-    const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
-    console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
-    const executable = harnessPath(job.harness);
-    if (!executable) throw new Error("Assigned harness is unavailable");
-    agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-    const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
-    if (result.code) throw new Error(`Agent failed (${result.code}); check dedicated subscription sign-in`);
-    const output = result.out;
-    await agentSandbox.close(); agentSandbox = undefined;
+    let output: string;
+    if (job.harness === "local") {
+      // Geothermal: the model only returns text; the runner writes approved files, then the same supervisor runs.
+      console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
+      output = JSON.stringify(await runLocalAssembler(job, work, local!));
+    } else {
+      const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
+      console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
+      const executable = harnessPath(job.harness);
+      if (!executable) throw new Error("Assigned harness is unavailable");
+      agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
+      const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
+      if (result.code) throw new Error(`Agent failed (${result.code}); check dedicated subscription sign-in`);
+      output = result.out;
+      await agentSandbox.close(); agentSandbox = undefined;
+    }
     // Preserve local evidence; never forward raw agent output to the server/browser.
     await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
     if (job.harness === "claude_code" && JSON.parse(output).is_error) throw new Error("Claude reported an agent error");

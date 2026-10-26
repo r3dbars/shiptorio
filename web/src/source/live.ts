@@ -1,3 +1,4 @@
+import { socketDisconnected } from "../telemetry";
 import { ServerToWeb } from "@shiptorio/shared";
 import type { Listener, Source, StatusListener } from ".";
 
@@ -32,8 +33,9 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       if (parsed.success) onMessage(parsed.data);
       else console.warn("bad message from server", parsed.error);
     };
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       if (!current()) return;
+      socketDisconnected(repo, event?.code ?? 1006, event?.wasClean ?? false);
       ws = null;
       clearInterval(ping);
       ping = undefined;

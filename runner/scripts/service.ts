@@ -26,6 +26,8 @@ if (action === "install") {
   await writeFile(resolve(support, ".dev.vars"), config, { mode: 0o600 });
   await chmod(resolve(support, ".dev.vars"), 0o600);
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
+  // Geothermal settings (non-secret) travel with the installed helper.
+  if (await Bun.file(resolve(runnerRoot, "local-model.json")).exists()) await copyFile(resolve(runnerRoot, "local-model.json"), resolve(support, "local-model.json"));
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const args = [runtime, `--env-file=${resolve(support, ".dev.vars")}`, resolve(support, "runner.mjs"), "watch"];
   const path = [...new Set([dirname(runtime), ...[Bun.which("codex"), Bun.which("claude"), Bun.which("node")].filter(Boolean).map(p => dirname(p!)), "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
