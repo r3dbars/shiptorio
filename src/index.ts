@@ -17,7 +17,8 @@ export interface Env {
   DB: D1Database;
   CACHE: KVNamespace;
   REPO_ROOM: DurableObjectNamespace<RepoRoom>;
-  PUBLIC_URL: string;
+  PUBLIC_URL?: string; // optional override; defaults to the request origin
+  DEV_LOGIN?: string; // local only: skip GitHub login on localhost as this user
   ALLOWED_LOGINS: string;
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
@@ -40,9 +41,9 @@ export default {
 
     try {
       if (path === "/webhooks/github" && request.method === "POST") return await handleWebhook(request, env);
-      if (path === "/setup") return setupPage(env);
+      if (path === "/setup") return setupPage(publicUrl(url, env), env);
       if (path === "/setup/callback") return await setupCallback(url, env);
-      if (path === "/auth/login") return login(env);
+      if (path === "/auth/login") return await login(url, env);
       if (path === "/auth/callback") return await authCallback(request, url, env);
       if (path === "/auth/logout") return logout();
 
@@ -232,19 +233,32 @@ async function upsertRepo(env: Env, repo: string, installationId: number, defaul
 
 // ---- login (GitHub App user-to-server OAuth) ----
 
-function login(env: Env): Response {
+function publicUrl(url: URL, env: Env): string {
+  return (env.PUBLIC_URL || url.origin).replace(/\/$/, "");
+}
+
+const isLocal = (url: URL) => url.hostname === "localhost" || url.hostname === "127.0.0.1";
+
+// Only same-site paths, so the login redirect can't be bounced elsewhere.
+const safeNext = (next: string | null | undefined) => (next && /^\/(?![/\\])/.test(next) ? next : "/");
+
+async function login(url: URL, env: Env): Promise<Response> {
+  const next = safeNext(url.searchParams.get("next"));
+  if (env.DEV_LOGIN && isLocal(url)) {
+    return new Response(null, {
+      status: 302,
+      headers: { location: next, "set-cookie": await makeSessionCookie(env.SESSION_SECRET, env.DEV_LOGIN) },
+    });
+  }
   const state = crypto.randomUUID();
   const target = new URL("https://github.com/login/oauth/authorize");
   target.searchParams.set("client_id", env.GITHUB_CLIENT_ID);
-  target.searchParams.set("redirect_uri", `${env.PUBLIC_URL}/auth/callback`);
+  target.searchParams.set("redirect_uri", `${publicUrl(url, env)}/auth/callback`);
   target.searchParams.set("state", state);
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location: target.toString(),
-      "set-cookie": `shiptorio_oauth_state=${state}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`,
-    },
-  });
+  const headers = new Headers({ location: target.toString() });
+  headers.append("set-cookie", `shiptorio_oauth_state=${state}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  headers.append("set-cookie", `shiptorio_next=${encodeURIComponent(next)}; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  return new Response(null, { status: 302, headers });
 }
 
 async function authCallback(request: Request, url: URL, env: Env): Promise<Response> {
@@ -259,7 +273,7 @@ async function authCallback(request: Request, url: URL, env: Env): Promise<Respo
       client_id: env.GITHUB_CLIENT_ID,
       client_secret: env.GITHUB_CLIENT_SECRET,
       code,
-      redirect_uri: `${env.PUBLIC_URL}/auth/callback`,
+      redirect_uri: `${publicUrl(url, env)}/auth/callback`,
     }),
   });
   const { access_token } = (await tokenRes.json()) as { access_token?: string };
@@ -269,9 +283,10 @@ async function authCallback(request: Request, url: URL, env: Env): Promise<Respo
   });
   const { login } = (await userRes.json()) as { login: string };
   if (!isAllowed(env.ALLOWED_LOGINS, login)) return new Response(`${login} isn't on the allow list`, { status: 403 });
+  const next = request.headers.get("cookie")?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
   return new Response(null, {
     status: 302,
-    headers: { location: "/", "set-cookie": await makeSessionCookie(env.SESSION_SECRET, login) },
+    headers: { location: safeNext(next && decodeURIComponent(next)), "set-cookie": await makeSessionCookie(env.SESSION_SECRET, login) },
   });
 }
 
@@ -299,9 +314,9 @@ export function appManifest(publicUrl: string) {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-function setupPage(env: Env): Response {
+function setupPage(base: string, env: Env): Response {
   if (env.GITHUB_APP_ID) return new Response("Shiptorio's GitHub App is already set up.", { status: 404 });
-  const manifest = escapeHtml(JSON.stringify(appManifest(env.PUBLIC_URL)));
+  const manifest = escapeHtml(JSON.stringify(appManifest(base)));
   return new Response(
     `<!doctype html><meta charset="utf-8"><title>Shiptorio setup</title>
 <body style="font-family:system-ui;background:#1B1A18;color:#E6E1D6;padding:40px">

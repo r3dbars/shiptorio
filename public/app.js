@@ -105,6 +105,7 @@ function showOverlay(text, login = false) {
   $("overlay").hidden = false;
   $("overlay-text").textContent = text;
   $("login-btn").hidden = !login;
+  $("login-btn").href = `/auth/login?next=${encodeURIComponent(location.pathname + location.search)}`;
 }
 function hideOverlay() { $("overlay").hidden = true; }
 function setLive(on) {

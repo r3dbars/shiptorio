@@ -3,12 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "node --experimental-strip-types --no-warnings scripts/dev-setup.mjs && wrangler dev",
+    "deploy": "wrangler d1 migrations apply shiptorio --remote && wrangler deploy",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test",
-    "test": "vitest run",
-    "db:migrate:local": "wrangler d1 migrations apply shiptorio --local",
-    "db:migrate:remote": "wrangler d1 migrations apply shiptorio --remote"
+    "test": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261026.1",

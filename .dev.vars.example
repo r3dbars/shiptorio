@@ -1,11 +1,11 @@
-# Copy to .dev.vars for `npm run dev`. /setup prints the GitHub values once the app exists.
+# `npm run dev` copies this to .dev.vars the first time and fills in what it can.
+SESSION_SECRET=
+# On localhost, /auth/login signs you in as this user without GitHub. Ignored anywhere else.
+DEV_LOGIN=
+# Fill these in from /setup once the GitHub App exists, to load real repos locally.
 GITHUB_APP_ID=
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 GITHUB_WEBHOOK_SECRET=
-# Any long random string, e.g. `openssl rand -hex 32`
-SESSION_SECRET=
 # The .pem GitHub gives you, as-is (PKCS#1 or PKCS#8 both work)
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
-...
------END RSA PRIVATE KEY-----"
+GITHUB_APP_PRIVATE_KEY=""

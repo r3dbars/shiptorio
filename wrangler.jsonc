@@ -3,7 +3,7 @@
   "name": "shiptorio",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/webhooks/*", "/setup*"] },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/auth/*", "/webhooks/*", "/setup*"] },
   "durable_objects": {
     "bindings": [{ "name": "REPO_ROOM", "class_name": "RepoRoom" }]
   },
@@ -12,21 +12,19 @@
     {
       "binding": "DB",
       "database_name": "shiptorio",
-      // Replace with the id from `wrangler d1 create shiptorio` before deploying.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "153f63dc-f65f-4c02-a0b1-6c78b7d6aa08",
       "migrations_dir": "migrations"
     }
   ],
   "kv_namespaces": [
-    // Replace with the id from `wrangler kv namespace create shiptorio-cache` before deploying.
-    { "binding": "CACHE", "id": "00000000000000000000000000000000" }
+    { "binding": "CACHE", "id": "c9d7c44e1c304a2b9a285049ee1e3408" }
   ],
   "vars": {
-    "PUBLIC_URL": "http://localhost:8787",
     // Comma-separated GitHub logins allowed to view maps.
     "ALLOWED_LOGINS": "r3dbars"
   }
   // Secrets (set with `wrangler secret put`, or .dev.vars locally). /setup prints all of them:
   //   GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET,
   //   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_SECRET
+  // Optional var PUBLIC_URL overrides the URL used for GitHub callbacks (defaults to the request origin).
 }
