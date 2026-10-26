@@ -18,6 +18,7 @@ import {
   Move,
   PowerSource,
   Science,
+  Station,
   SourceKind,
   SourceStatus,
 } from "./model";
@@ -40,6 +41,7 @@ export const Patch = z.object({
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
   sources: z.array(SourceStatus).optional(), // full replacement when present
+  stations: z.array(Station).optional(), // full replacement when present
 });
 export type Patch = z.infer<typeof Patch>;
 
@@ -88,6 +90,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
+  // A station panel button. stationId is a Station id, or "rework" / a power source id for those panels.
+  z.object({ type: z.literal("station_action"), stationId: z.string(), action: z.string() }),
   z.object({ type: z.literal("connect_source"), kind: SourceKind }),
   z.object({ type: z.literal("disconnect_source"), kind: SourceKind }),
 ]);

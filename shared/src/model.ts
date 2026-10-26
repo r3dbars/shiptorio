@@ -63,6 +63,21 @@ export const CustomerContext = z.object({
 });
 export type CustomerContext = z.infer<typeof CustomerContext>;
 
+// The verification gauntlet (docs/LOOP.md): CI inspector → verify bay → AI review → merge gate → orbit watch.
+// Inspection.stages gate names map onto these: ci → ci, verify → verify, ai → review, human → merge.
+export const StationKind = z.enum(["ci", "verify", "review", "merge", "orbit", "custom"]);
+export type StationKind = z.infer<typeof StationKind>;
+
+// Why a fail rode the rework belt back to Spark. Spark re-plans with it; third strike goes to the player.
+export const ScarTag = z.object({
+  station: StationKind,
+  reason: z.string(), // "crash still repros with an empty cart"
+  evidenceUrl: z.string().optional(), // CI log, repro, review comment
+  strike: z.number().int().min(1), // 1, 2, 3
+  at: z.number().optional(),
+});
+export type ScarTag = z.infer<typeof ScarTag>;
+
 export const Item = z.object({
   id: z.string(),
   kind: ItemKind,
@@ -83,6 +98,7 @@ export const Item = z.object({
   value: z.number().optional(), // Spark's weight for this item; drives the bottleneck math
   ore: OreChunk.optional(),
   inspection: Inspection.optional(),
+  scars: z.array(ScarTag).optional(), // every fail so far, newest last
 });
 export type Item = z.infer<typeof Item>;
 
@@ -177,6 +193,7 @@ export type Actor = z.infer<typeof Actor>;
 
 export const Bottleneck = z.object({
   stage: Stage,
+  stationId: z.string().optional(), // when the jam is at one gauntlet station, it glows on the map
   wip: z.number().int(), // items waiting there
   ageMs: z.number(), // oldest item's wait
   throughputPerHour: z.number(),
@@ -264,6 +281,29 @@ export const Foreman = z.object({
 });
 export type Foreman = z.infer<typeof Foreman>;
 
+// A station action is a Next Move option scoped to one station (docs/LOOP.md "Click any station").
+export const StationAction = z.object({
+  id: z.string(),
+  label: z.string(), // "Build a second verify bay"
+  recommended: z.boolean().default(false), // Spark's pick
+});
+export type StationAction = z.infer<typeof StationAction>;
+
+export const Station = z.object({
+  id: z.string(),
+  kind: StationKind,
+  name: z.string(), // "Verify bay"
+  machineId: z.string().optional(), // the machine on the map that is this station
+  districts: z.array(z.string()).optional(), // districts whose launch permit needs it; absent = all
+  wip: z.number().int(), // items in line
+  oldestWaitMs: z.number().optional(),
+  passRate: z.number().min(0).max(1).optional(), // this week
+  caughtThisWeek: z.number().int(), // bugs it stopped before shipping; only goes up
+  lastLog: z.object({ who: z.string(), text: z.string(), ok: z.boolean() }).optional(),
+  actions: z.array(StationAction).max(3).default([]),
+});
+export type Station = z.infer<typeof Station>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -283,5 +323,6 @@ export const FactoryState = z.object({
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
   sources: z.array(SourceStatus).optional(),
+  stations: z.array(Station).optional(), // the gauntlet, in line order
 });
 export type FactoryState = z.infer<typeof FactoryState>;
