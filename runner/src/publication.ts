@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { CheckSandbox } from "./sandbox";
@@ -14,22 +14,22 @@ for(const path of paths){const target=realpathSync(path);if(!target.startsWith(r
   const result = await sandbox.run([process.execPath, "--no-env-file", "-e", program, JSON.stringify(paths)]);
   if (result.code) throw new Error("Unable to freeze approved files inside the verification sandbox");
   const files = JSON.parse(result.out) as ApprovedFiles;
-  if (Object.keys(files).length !== paths.length || paths.some(path => typeof files[path] !== "string")) throw new Error("Invalid approved file snapshot");
+  if (Object.keys(files).length !== paths.length || paths.some(path => typeof files[path] !== "string") || Object.values(files).reduce((size, value) => size + Buffer.from(value, "base64").length, 0) > 2_000_000) throw new Error("Invalid approved file snapshot");
   return files;
 }
 
 /** Never publish through metadata/config/hooks that an agent or test could modify. */
-export async function publishApproved(job: { repo: string; token: string; baseSha: string; branch: string; allowedPaths: string[] }, files: ApprovedFiles): Promise<string> {
+export async function prepareApprovedCommit(job: { sourceUrl: string; baseSha: string; allowedPaths: string[] }, files: ApprovedFiles, token = ""): Promise<{ sha: string; directory: string; push(branch: string): Promise<void>; close(): Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-publish-"));
   const home = join(root, "home"), work = join(root, "checkout"), hooks = join(root, "empty-hooks");
   await mkdir(home); await mkdir(hooks);
   const git = await verificationGit();
-  const url = `https://github.com/${job.repo}.git`;
+  const url = job.sourceUrl;
   const env = {
     HOME: home, TMPDIR: root, PATH: "/usr/bin:/bin", LANG: "en_US.UTF-8",
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
     GIT_CONFIG_COUNT: "3", GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
-    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${job.token}`).toString("base64")}`,
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
     GIT_CONFIG_KEY_1: "core.hooksPath", GIT_CONFIG_VALUE_1: hooks,
     GIT_CONFIG_KEY_2: "core.fsmonitor", GIT_CONFIG_VALUE_2: "false",
   };
@@ -49,7 +49,6 @@ export async function publishApproved(job: { repo: string; token: string; baseSh
     // Never copy files through a tracked symlink ancestor.
     for (const [path, content] of Object.entries(files)) {
       if (!job.allowedPaths.includes(path) || !/^[\w./@+-]+$/.test(path) || path.split("/").some(part => part === ".." || part.toLowerCase() === ".git") || path.startsWith("/")) throw new Error("Invalid publication path");
-      const { lstat } = await import("node:fs/promises");
       let current = work;
       for (const part of path.split("/").slice(0, -1)) {
         current = join(current, part);
@@ -67,7 +66,16 @@ export async function publishApproved(job: { repo: string; token: string; baseSh
     validateChanges(paths, job.allowedPaths, diff);
     await run(["-c", "user.name=Shiptorio local runner", "-c", "user.email=shiptorio@users.noreply.github.com", "commit", "-m", "Execute Spark-approved issue plan with local subscription agent"], work);
     const sha = await run(["rev-parse", "HEAD"], work);
-    await run(["push", url, `HEAD:refs/heads/${job.branch}`], work);
-    return sha;
-  } finally { env.GIT_CONFIG_VALUE_0 = ""; await rm(root, { recursive: true, force: true }); }
+    let closed = false;
+    const close = async () => { closed = true; env.GIT_CONFIG_VALUE_0 = ""; await rm(root, { recursive: true, force: true }); };
+    return { sha, directory: work, close, async push(branch) {
+      if (closed || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(branch)) throw new Error("Invalid publication branch");
+      await run(["push", url, `HEAD:refs/heads/${branch}`], work);
+    } };
+  } catch (error) { env.GIT_CONFIG_VALUE_0 = ""; await rm(root, { recursive: true, force: true }); throw error; }
+}
+
+export async function publishApproved(job: { repo: string; token: string; baseSha: string; branch: string; allowedPaths: string[] }, files: ApprovedFiles): Promise<string> {
+  const commit = await prepareApprovedCommit({ sourceUrl: `https://github.com/${job.repo}.git`, baseSha: job.baseSha, allowedPaths: job.allowedPaths }, files, job.token);
+  try { await commit.push(job.branch); return commit.sha; } finally { await commit.close(); }
 }

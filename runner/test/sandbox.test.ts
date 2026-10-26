@@ -8,13 +8,14 @@ test.skipIf(process.platform === "darwin")("unsupported verification platforms f
   await expect(checkSandbox(process.cwd())).rejects.toThrow("no configured OS sandbox");
 });
 
-test.skipIf(process.platform !== "darwin")("real OS sandbox blocks malicious tests and descendants from host files, credentials, writes and network", async () => {
+test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX === "1")("real OS sandbox blocks malicious tests and descendants from host files, credentials, writes and network", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-isolation-test-"));
   const work = join(root, "checkout"); await mkdir(work);
   const canary = join(root, "host-secret"), outside = join(root, "outside-write");
   await Bun.write(canary, "fake-host-canary-do-not-read");
   let requests = 0;
   const server = Bun.serve({ port: 0, fetch() { requests++; return new Response("outside"); } });
+  const outsideProcess = Bun.spawn([process.execPath, "-e", "setInterval(()=>{},1000)"], { env: { SHIPTORIO_RUNNER_TOKEN: "fake-sibling-credential" }, stdout: "ignore", stderr: "ignore" });
   const saved = process.env.SHIPTORIO_RUNNER_TOKEN;
   process.env.SHIPTORIO_RUNNER_TOKEN = "fake-parent-credential";
   const sandbox = await checkSandbox(work);
@@ -22,10 +23,17 @@ test.skipIf(process.platform !== "darwin")("real OS sandbox blocks malicious tes
     await Bun.write(join(work, "attack.test.ts"), `
 import {test,expect} from "bun:test";
 import {readFileSync,writeFileSync,symlinkSync,linkSync} from "node:fs";
+import {dlopen,ptr} from "bun:ffi";
 test("host isolation",async()=>{
  expect(process.env.SHIPTORIO_RUNNER_TOKEN).toBeUndefined();
  expect(process.env.GITHUB_TOKEN).toBeUndefined();
  expect(process.env.CODEX_HOME).toBeUndefined();
+ const lib=dlopen("/usr/lib/libSystem.B.dylib",{sysctl:{args:["ptr","u32","ptr","ptr","ptr","u64"],returns:"i32"}});
+ const mib=new Int32Array([1,49,${outsideProcess.pid}]);const size=new BigUint64Array([1048576n]);const data=Buffer.alloc(1048576);
+ const status=lib.symbols.sysctl(ptr(mib),3,ptr(data),ptr(size),null,0);
+ expect(data.includes("fake-sibling-credential")).toBe(false);
+ expect(status).not.toBe(0);
+ expect(()=>process.kill(${outsideProcess.pid},"SIGTERM")).toThrow();
  expect(process.env.HOME).not.toBe(${JSON.stringify(process.env.HOME)});
  expect(()=>readFileSync(${JSON.stringify(canary)},"utf8")).toThrow();
  expect(()=>writeFileSync(${JSON.stringify(outside)},"escaped")).toThrow();
@@ -38,12 +46,14 @@ test("host isolation",async()=>{
  writeFileSync("allowed.txt","inside");
 });`);
     const result = await sandbox.run([process.execPath, "test", "./attack.test.ts"]);
+    if (result.code) throw new Error(`OS probe failed: ${result.err.slice(-4000)}`);
     expect(result.code).toBe(0);
     expect(result.err + result.out).toContain("1 pass");
     expect(result.err + result.out).not.toContain("fake-host-canary-do-not-read");
     expect(await readFile(join(work, "allowed.txt"), "utf8")).toBe("inside");
     expect(await Bun.file(outside).exists()).toBe(false);
     expect(requests).toBe(0);
+    expect(outsideProcess.exitCode).toBeNull();
     const git = await sandbox.run(["git", "init", "--initial-branch=main"]);
     expect(git.code).toBe(0);
     expect((await sandbox.run(["git", "status", "--short"])).code).toBe(0);
@@ -52,6 +62,7 @@ test("host isolation",async()=>{
     await expect(sandbox.run([process.execPath, "run", "test"], work, { install: true })).rejects.toThrow("Only frozen dependency");
   } finally {
     if (saved === undefined) delete process.env.SHIPTORIO_RUNNER_TOKEN; else process.env.SHIPTORIO_RUNNER_TOKEN = saved;
+    outsideProcess.kill();
     server.stop(true); await sandbox.close(); await rm(root, { recursive: true, force: true });
   }
 }, 15000);

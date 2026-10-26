@@ -12,7 +12,7 @@ test("verify evidence rejects empty, import and syntax failures instead of count
   expect(testOutcome({ code: 1, log: "Expected false, received true\n0 pass\n1 fail" }).reproduced).toBe(true);
 });
 
-test.skipIf(process.platform !== "darwin")("real test overlay fails on base and passes on head, while an already-green base is not proof", async () => {
+test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX === "1")("real test overlay fails on base and passes on head, while an already-green base is not proof", async () => {
   const work = await mkdtemp(join(tmpdir(), "shiptorio-verify-"));
   const env = agentEnvironment(process.env);
   const git = async (...args: string[]) => {

@@ -3,7 +3,7 @@ import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, verifyRegression } from "./verify";
-import { checkSandbox, type CheckSandbox } from "./sandbox";
+import { assertVerificationPlatform, checkSandbox, type CheckSandbox } from "./sandbox";
 import { snapshotApproved, publishApproved } from "./publication";
 
 interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
@@ -116,6 +116,7 @@ if (process.argv[2] === "retry") {
   const id = process.argv[3]; if (!/^[a-f0-9-]{36}$/.test(id ?? "")) throw new Error("Expected job UUID");
   console.log(JSON.stringify(await api("finish", await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json())));
 } else {
+  await assertVerificationPlatform();
   const once = process.argv[2] !== "watch";
   do {
     await renewPairing();
