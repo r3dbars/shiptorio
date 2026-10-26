@@ -35,7 +35,9 @@ export async function exportAccount(env: Env, user: User) {
   const factories = [];
   for (const repo of repos) factories.push({ repo: repo.full_name, data: JSON.parse(await factory(env, repo.full_name).exportAccountData()) as AccountFactoryData });
   const prefs = await env.DB.prepare("SELECT key, value, updated_at FROM user_prefs WHERE user_id = ?").bind(user.id).all();
-  return { format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
+  const profile = await env.DB.prepare("SELECT id, login, name, avatar_url, created_at, last_login_at FROM users WHERE id = ?").bind(user.id).first();
+  const installations = (await env.DB.prepare("SELECT installation_id, account_login FROM user_installations WHERE user_id = ?").bind(user.id).all()).results;
+  return { profile, installations, format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
 }
 
 async function purgeKV(env: Env, repos: RepoRow[], login: string, userId: number): Promise<void> {
@@ -96,6 +98,18 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   if (tables.has("credentials")) statements.push(env.DB.prepare("DELETE FROM credentials WHERE lower(updated_by) = ?").bind(user.login.toLowerCase()));
   for (const table of ["sessions", "user_prefs", "user_repos", "user_installations"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE user_id = ?`).bind(user.id));
   statements.push(env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id));
+  const login = user.login.toLowerCase();
+  // Signup, usage and lifecycle ledgers must not outlive the account either.
+  for (const table of ["signup_allowlist", "signup_resources", "github_authorization_revocations"]) if (tables.has(table)) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE login = ?`).bind(login));
+  if (tables.has("signup_waitlist")) statements.push(env.DB.prepare("DELETE FROM signup_waitlist WHERE kind = 'github' AND identity = ?").bind(login));
+  if (tables.has("signup_allowlist")) statements.push(env.DB.prepare("UPDATE signup_allowlist SET approved_by = '[deleted account]' WHERE lower(approved_by) = ?").bind(login));
+  if (tables.has("signup_invites")) statements.push(env.DB.prepare("DELETE FROM signup_invites WHERE lower(created_by) = ? OR lower(redeemed_by) = ?").bind(login, login));
+  const quotaScopes = [`runs:${login}`, `install:${login}`, ...repos.map(r => `webhook:sentry:${r.full_name}`), ...installs.results.map(i => `webhook:github:${i.id}`)];
+  for (const table of ["signup_counters", "signup_abuse"]) if (tables.has(table)) for (const scope of quotaScopes) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE scope = ?`).bind(scope));
+  if (tables.has("spark_usage")) statements.push(env.DB.prepare("DELETE FROM spark_usage WHERE account = ?").bind(`user:${user.id}`));
+  if (tables.has("factory_budget_owners")) statements.push(env.DB.prepare("DELETE FROM factory_budget_owners WHERE user_id = ?").bind(user.id));
+  for (const repo of repos) if (tables.has("factory_budget_owners")) statements.push(env.DB.prepare("DELETE FROM factory_budget_owners WHERE repo = ?").bind(repo.full_name));
+  for (const install of installs.results) if (tables.has("api_limits")) statements.push(env.DB.prepare("DELETE FROM api_limits WHERE scope = ?").bind(`github:installation:${install.id}`));
   const receipt = crypto.randomUUID();
   statements.push(env.DB.prepare("INSERT INTO account_deletion_receipts (id, completed_at, factory_count) VALUES (?, ?, ?)").bind(receipt, now, repos.length));
   await env.DB.batch(statements);
