@@ -7,7 +7,7 @@
 import * as THREE from "three";
 import { lineFrame } from "./framing";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
-import { box, mat, mesh, own, rep, rnd, tex } from "./kit";
+import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
 import {
   buildAssembler,
   buildBattery,
@@ -49,6 +49,7 @@ const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
+const TOP_BAR_PX = 64; // the top bar (score chips, mode toggle, icons); map labels stay below it
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -645,6 +646,7 @@ export class FactoryScene {
       const cx = left + (d.x + d.w / 2) * S;
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
+      trimShadows(model.group);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
@@ -658,6 +660,7 @@ export class FactoryScene {
 
     const w = x1 - x0, d = z1 - z0;
     const island = makeIsland(w, d);
+    trimShadows(island);
     island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     this.world.add(island);
     // waterfalls sit just past the moss cap's bulge and fall a bit past the rock's tip
@@ -693,6 +696,7 @@ export class FactoryScene {
       if (!v) {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
         const built = buildModel(m, power, kind);
+        trimShadows(built.g);
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
         const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
@@ -1289,6 +1293,8 @@ export class FactoryScene {
       const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
       l.el.style.display = off ? "none" : "flex";
+      // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
+      if (!off) y = Math.max(y, TOP_BAR_PX + l.el.offsetHeight);
       if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
     }
     for (const pe of this.pings) {
@@ -1300,8 +1306,10 @@ export class FactoryScene {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y * 0.55;
       this.v3.project(this.camera);
-      const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
+      const x = ((this.v3.x + 1) / 2) * w;
+      let y = ((1 - this.v3.y) / 2) * h;
       pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
+      y = Math.max(y, TOP_BAR_PX + pe.el.offsetHeight / 2);
       pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
       // keep the tag on screen: flip it to the dot's left near the right edge
       pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
