@@ -96,3 +96,24 @@ it("does not replay a stale HTTP password POST with an insecure Origin", async (
   expect(response?.headers.get("location")).toBe("https://shiptorio.com/");
   expect(response?.headers.has("set-cookie")).toBe(false);
 });
+
+it("supports header-stripping Firefox privacy using a signed expiring form proof", async () => {
+  const response = await previewAccess(new Request("https://shiptorio.com/"), env);
+  const csrf = (await response!.text()).match(/name="csrf" value="([^"]+)"/)![1];
+  const cookie = response!.headers.get("set-cookie")!.split(";")[0];
+  expect(response!.headers.get("set-cookie")).toContain("HttpOnly; Secure; SameSite=Strict; Max-Age=600");
+  const post = (headers: Record<string, string>, token = csrf, domain = "shiptorio.com") => previewAccess(new Request(`https://${domain}/access`, {
+    method: "POST", headers, body: new URLSearchParams({ password: env.APP_PASSWORD, csrf: token }),
+  }), env);
+  expect((await post({ cookie }))?.status).toBe(303);
+  expect((await post({ cookie, origin: "null" }))?.status).toBe(303);
+  expect((await post({ cookie, origin: "https://evil.example" }))?.status).toBe(403);
+  expect((await post({ cookie, "sec-fetch-site": "cross-site" }))?.status).toBe(403);
+  expect((await post({ cookie: cookie + "forged" }))?.status).toBe(403);
+  expect((await post({ cookie }, csrf + "forged"))?.status).toBe(403);
+  expect((await post({}))?.status).toBe(403);
+  expect((await post({ cookie }, csrf, "shiptorio.dev"))?.status).toBe(403);
+  const realNow = Date.now;
+  Date.now = () => realNow() + 601_000;
+  try { expect((await post({ cookie }))?.status).toBe(403); } finally { Date.now = realNow; }
+});
