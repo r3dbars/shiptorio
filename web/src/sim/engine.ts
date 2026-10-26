@@ -824,7 +824,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       apply({ autonomy: { ...a, districts: a.districts.map((d) => (d.district === item.district ? { ...d, permit: false, score: 0 } : d)) } });
       const text = `${item.district} lost its launch permit: #${item.prNumber} came back in orbit (Sentry). Its PRs wait for you again until the lane earns trust back.`;
       emit({ type: "autonomy_unlocked", level: a.level, district: item.district, text });
-      log("warn", text, id);
     }
     spark({ tool: "request_rework", text: `Re-planning #${item.prNumber} with the orbit scar: the fix didn't hold in production`, reason }, { itemId: id, target: "splitter-1" });
   };

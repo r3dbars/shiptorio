@@ -53,8 +53,6 @@ function nameOf(m: Machine | undefined, state: FactoryState) {
   return MACHINE_COPY[m.type]?.name ?? m.type.replace("_", " ");
 }
 
-// The PR to name: orbit watch keeps the launched one after rework clears it.
-const prOf = (i: Item) => i.prNumber ?? i.orbit?.prNumber;
 
 // Orbit watch: launches still on their 24h clock, plus the ones that just came back.
 const hoursLeft = (until: number) => Math.max(0, until - Date.now()) / 3600_000;
@@ -229,12 +227,15 @@ export function StationPanel({ id, state, log, send, onClose }: Props) {
           <div className="sp-h">Right now</div>
           {p.now.length ? (
             <ul className="sp-jobs">
-              {p.now.slice(0, 4).map((i) => (
-                <li key={i.id}>
-                  <span className="txt">{prOf(i) ? `#${prOf(i)} ` : ""}{i.title}</span>
-                  <span className={`st${p.status && i.orbit?.state === "regressed" ? " bad" : ""}`}>{p.status ? p.status(i) : STATE_WORD[i.state]}</span>
-                </li>
-              ))}
+              {p.now.slice(0, 4).map((i) => {
+                const pr = p.status ? i.orbit?.prNumber : i.prNumber; // orbit names the launched PR, not the rework one
+                return (
+                  <li key={i.id}>
+                    <span className="txt">{pr ? `#${pr} ` : ""}{i.title}</span>
+                    <span className={`st${p.status && i.orbit?.state === "regressed" ? " bad" : ""}`}>{p.status ? p.status(i) : STATE_WORD[i.state]}</span>
+                  </li>
+                );
+              })}
               {p.now.length > 4 && <li className="more">+{p.now.length - 4} more</li>}
             </ul>
           ) : (
