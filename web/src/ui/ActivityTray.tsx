@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import type { Item, Move, WebToServer } from "@shiptorio/shared";
 import type { LogLine } from "../store";
 import { Icon, type IconName } from "./icons";
-import { ACTIVITY, WORDS } from "../copy";
+import { ACTIVITY, STAGE_LABEL, WORDS } from "../copy";
 
 const UNDO_MS = 5 * 60_000;
 const FEED_MAX = 40;
@@ -76,7 +76,7 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
                 <span className="tdot warn"><Icon name="star" size={14} /></span>
                 <span className="tt">
                   {m.title}
-                  {m.stage && <code>{m.stage}</code>}
+                  {m.stage && <code>{STAGE_LABEL[m.stage]}</code>}
                 </span>
               </button>
               {on && (

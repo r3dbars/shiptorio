@@ -4,7 +4,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
-import { CHECKIN, WORDS } from "../copy";
+import { CHECKIN, STAGE_LABEL, WORDS } from "../copy";
 
 type Gesture = "right" | "left" | "down" | "up";
 type Why = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -272,7 +272,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                 >
                   <div className="ci-kicker">
                     {m.kind && <span className={`ci-tag ${m.kind}`}>{m.kind.toUpperCase()}</span>}
-                    {m.stage && <span className="ci-stage">{m.stage.toUpperCase()}</span>}
+                    {m.stage && <span className="ci-stage">{STAGE_LABEL[m.stage].toUpperCase()}</span>}
                   </div>
                   <div className="ci-title">{m.title}</div>
                   <p className="ci-why">{m.why}</p>

@@ -176,7 +176,7 @@ export const STATS = {
   customers: { label: "customers answered", title: "Customer threads closed with a shipped fix" },
   errors: { label: "biters killed", title: "Live Sentry errors your fixes killed" },
   lead: { label: "issue → ship", title: "Typical time from issue to merged" },
-  science: { red: "bugs", green: "features", grey: "cleanups", blue: "tests" } as const,
+  science: { red: "bug fixes", green: "features", grey: "cleanups", blue: "tests" } as const,
   scienceShipped: (kind: string) => `${kind} shipped`,
 };
 
