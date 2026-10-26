@@ -29,6 +29,11 @@ async function archive(env: RepositoryEnv, row: RepoRecord, reason: string, id?:
 }
 async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: number) {
   if (!repo.id) throw new Error("Lifecycle repository ID required");
+  const collision = await env.DB.prepare("SELECT * FROM repos WHERE full_name = ? AND repo_id IS NOT NULL AND repo_id <> ?").bind(repo.full_name.toLowerCase(), repo.id).first<RepoRecord>();
+  if (collision) {
+    await archive(env, collision, "repository name reused", collision.repo_id!);
+    await byRepoId(env, collision.repo_id!).retainReferencesById(collision.repo_id!);
+  }
   const old = await env.DB.prepare("SELECT * FROM repos WHERE repo_id = ? OR (repo_id IS NULL AND full_name = ?) LIMIT 1").bind(repo.id, repo.full_name.toLowerCase()).first<RepoRecord>();
   const f = old ? await objectFor(env, old, repo.id) : byRepoId(env, repo.id);
   if (old && old.full_name !== repo.full_name.toLowerCase()) {
@@ -36,7 +41,7 @@ async function upsert(env: RepositoryEnv, repo: GitHubRepository, installation: 
     await env.DB.prepare("UPDATE repos SET full_name = ? WHERE full_name = ?").bind(repo.full_name.toLowerCase(), old.full_name).run();
   }
   await env.DB.prepare("INSERT INTO repos (full_name, repo_id, installation_id, default_branch) VALUES (?, ?, ?, ?) ON CONFLICT(full_name) DO UPDATE SET repo_id = excluded.repo_id, installation_id = excluded.installation_id, default_branch = COALESCE(excluded.default_branch, repos.default_branch), archived_at = NULL, archive_reason = NULL").bind(repo.full_name.toLowerCase(), repo.id, installation, repo.default_branch ?? null).run();
-  await f.restoreGitHub(repo.full_name.toLowerCase(), installation);
+  await f.restoreGitHub(repo.full_name.toLowerCase(), installation, repo.id);
   return f;
 }
 

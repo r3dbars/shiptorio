@@ -10,6 +10,7 @@ export async function migrateRepository(env: RepositoryEnv, row: RepoRecord, id:
   const target = byRepoId(env, id);
   const legacy = env.FACTORY.get(env.FACTORY.idFromName(row.full_name.toLowerCase()));
   await target.importLegacy(await legacy.exportLegacy(`repo:${id}`));
+  await target.setRepositoryId(id);
   await legacy.finishLegacy();
   await env.DB.prepare("UPDATE repos SET repo_id = ? WHERE full_name = ? AND repo_id IS NULL").bind(id, row.full_name).run();
   return target;

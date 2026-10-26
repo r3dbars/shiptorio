@@ -741,8 +741,34 @@ export class Factory extends DurableObject<FactoryEnv> {
     for (const ws of this.ctx.getWebSockets("web")) ws.close(1008, "GitHub access changed");
   }
 
-  async restoreGitHub(repo: string, installationId: number): Promise<void> {
+  async setRepositoryId(id: number): Promise<void> { await this.ctx.storage.put("githubRepoId", id); }
+
+  async retainReferencesById(id: number): Promise<void> {
+    const meta = await this.ctx.storage.get<Meta>("meta");
+    if (!meta) return;
+    const key = `repo:${id}`;
+    await this.env.DB.batch([
+      this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(key, meta.repo),
+      this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(key, meta.repo),
+      this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`archived:${key}:installation:${meta.installationId}:repo:${meta.repo}`, `installation:${meta.installationId}:repo:${meta.repo}`),
+    ]);
+    await this.ctx.storage.put("githubDataKey", key);
+  }
+
+  async restoreGitHub(repo: string, installationId: number, repoId?: number): Promise<void> {
     await this.load();
+    if (repoId) await this.setRepositoryId(repoId);
+    const retainedKey = await this.ctx.storage.get<string>("githubDataKey");
+    if (retainedKey) {
+      await this.env.DB.batch([
+        this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
+        this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
+      ]);
+      const archivedScope = `archived:${retainedKey}:installation:${this.meta!.installationId}:repo:${this.meta!.repo}`;
+      if (repo === this.meta!.repo && installationId === this.meta!.installationId) await this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`installation:${installationId}:repo:${repo}`, archivedScope).run();
+      else await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(archivedScope).run();
+      await this.ctx.storage.delete("githubDataKey");
+    }
     // Metadata can be restored without network I/O; initialization/backfill stays in the queue.
     if (this.meta && (this.meta.repo !== repo || this.meta.installationId !== installationId)) {
       await this.ctx.storage.delete("runnerPair");
@@ -1960,16 +1986,21 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.ctx.storage.deleteAlarm();
       if (lifecycle.deleteAt && lifecycle.deleteAt <= Date.now()) {
         const meta = await this.ctx.storage.get<Meta>("meta");
+        const repoId = await this.ctx.storage.get<number>("githubRepoId");
+        const dataKey = await this.ctx.storage.get<string>("githubDataKey") ?? meta?.repo;
+        let ownsName = true;
         if (meta) {
-          const row = await this.env.DB.prepare("SELECT archived_at FROM repos WHERE full_name = ?").bind(meta.repo).first<{ archived_at: number | null }>();
-          if (row && row.archived_at == null) return; // reinstall already committed; its RPC resumes the object
+          const row = await this.env.DB.prepare("SELECT repo_id, archived_at FROM repos WHERE full_name = ?").bind(meta.repo).first<{ repo_id: number | null; archived_at: number | null }>();
+          ownsName = !row || !repoId || row.repo_id === repoId;
+          if (row && ownsName && row.archived_at == null) return; // reinstall RPC resumes the object
         }
         if (meta) await this.env.DB.batch([
-          this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(meta.repo),
-          this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(meta.repo),
-          this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo),
+          this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(dataKey!),
+          this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(dataKey!),
+          ...(ownsName ? [this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo)] : []),
         ]);
-        if (meta) {
+        if (meta && dataKey?.startsWith("repo:")) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`archived:${dataKey}:installation:${meta.installationId}:repo:${meta.repo}`).run();
+        if (meta && ownsName) {
           for (const kind of ["sentry", "posthog"] as const) {
             await this.env.CACHE?.delete(`cred:${kind}:${meta.repo}`);
             if (await linkedRepo(this.env, kind) === meta.repo) {

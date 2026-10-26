@@ -146,6 +146,22 @@ describe("GitHub lifecycle fixture payloads", () => {
     await obj.factory.alarm();
     expect(f.row()).toBeNull(); expect(obj.data.size).toBe(0); expect(obj.alarm()).toBeNull();
   });
+  it("recreating a repository name keeps the old ID archived without leaking credentials or deleting the new factory", async () => {
+    const f = fixture(); await install(f);
+    await f.DB.prepare("INSERT INTO credentials(scope,kind,envelope,updated_at) VALUES ('installation:40:repo:octo-org/demo','sentry','retained-envelope',1)").run();
+    await f.DB.prepare("INSERT INTO move_kind_rules(repo,kind,scope,action_id,created_at) VALUES ('octo-org/demo','verify','all','old-rule',1)").run();
+    await handleLifecycle(f.env, "repository", { ...payload, action: "deleted" });
+    await handleLifecycle(f.env, "installation_repositories", { ...payload, action: "added", repositories_added: [{ ...payload.repository, id: 502 }] });
+    expect(f.row()?.repo_id).toBe(502);
+    expect(f.objects.get("repo:501")!.data.get("state").science.red).toBe(2);
+    expect(f.sqlite.query("SELECT scope FROM credentials").get()).toEqual({ scope: "archived:repo:501:installation:40:repo:octo-org/demo" });
+    expect(f.sqlite.query("SELECT repo FROM move_kind_rules").get()).toEqual({ repo: "repo:501" });
+    f.objects.get("repo:501")!.data.set("githubLifecycle", { reason: "deleted", deleteAt: Date.now() - 1 });
+    await f.objects.get("repo:501")!.factory.alarm();
+    expect(f.row()?.repo_id).toBe(502);
+    expect(f.objects.get("repo:501")!.data.size).toBe(0);
+    expect(f.sqlite.query("SELECT count(*) AS n FROM credentials").get()).toEqual({ n: 0 });
+  });
   it("migrates all name-keyed state once, freezes old work and removes the old private copy", async () => {
     const f = fixture(); const old = f.seed("octo-org/demo", "octo-org/demo");
     old.data.set("runnerJob:1", { id: "1" }); old.data.set("permits", { district: "checkout" });

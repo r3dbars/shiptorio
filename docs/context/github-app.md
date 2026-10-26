@@ -38,6 +38,9 @@ keys atomically (state, jobs, permits, decisions, delivery queue and dedupe stat
 removes the legacy private copy and switches the D1 pointer. Import has a durable
 completion marker; a retry after any RPC interruption preserves the destination.
 The old object retains only a routing tombstone and cannot resume work.
+If a deleted repo name is recreated with a different ID, the old factory and its
+references/credentials stay isolated under the old ID until expiry; its deletion timer
+cannot erase the new repo. Encrypted connector credentials never cross that boundary.
 
 Rename/transfer revokes pairing and fails outstanding plans so an agent cannot publish
 with a task approved under an old repository identity. Re-pair and approve a fresh plan.
