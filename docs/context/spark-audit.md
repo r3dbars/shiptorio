@@ -19,6 +19,8 @@ and verified live earlier today, see decisions.md).
 | Orbit watch: did this new Sentry spike come from the launch? | `spark.ts` `judgeOrbit`, `Factory.orbitCaused` | **Spark** (new), reads the PR's files + the error; unsure = caused | spike rule trips it |
 | Research pick from the scar pile | `spark.ts` `pickResearch`, `Factory.sparkResearch` | **Spark** (new), only techs on the tree | scar-regex pick (`suggestResearch`) |
 | Launch permit card: suggest Allow or Not yet | `spark.ts` `judgePermit`, `Factory.advisePermit` | **Spark** (new) advises; player taps | streak rule suggests Allow |
+| Support triage: kind, district, summary, link to floor work | `spark-support.ts` `triageSupport`, `Factory.supportTriage` | **Spark** (new), links only to real open items | keyword rule (`heuristicSupport`), never links |
+| Customer reply draft (answer, then "it's fixed" after launch) | `spark-support.ts` `draftReply`, `Factory.supportDraft` | **Spark** drafts; only the player's tap sends (support-mine.md) | template reply, marked fallback |
 | Bottleneck detection (which stage is jammed) | `bottleneck.ts` | rule: queue telemetry (WIP × value × age) | n/a |
 | Verify bay | `gauntlet.ts` `verifyFromDiff` | rule: runner proof receipts | n/a |
 | Permit eligibility + revoke | `permits.ts` | rule: 5/10 clean ships to be offered, revoke on any rework | n/a |
