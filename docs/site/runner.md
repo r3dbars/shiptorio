@@ -19,9 +19,20 @@ On the map, each signed-in agent shows up as a **power plant**. Claude Code and 
 - **Claude Code** (`claude`) or **Codex** (`codex`) installed and signed in. Both is better: more power plants.
 - A checkout of the Shiptorio repo (for now, until the installer ships).
 
+## Sign your agents in for the runner
+
+The runner never borrows your normal sign-in. Your agent signs in once more, into the runner's own private folder, so a job can't see the rest of your home directory. For Codex, from the Shiptorio repo:
+
+```sh
+mkdir -p runner/.agent-home
+chmod 700 runner/.agent-home
+env -i PATH="$PATH" HOME="$PWD/runner/.agent-home" CODEX_HOME="$PWD/runner/.agent-home/.codex" codex login
+```
+
+For Claude Code, sign in the same way with `HOME` pointed at `runner/.agent-home`. If your Claude login only lives in the macOS Keychain, the runner stops rather than reach into it. If you use the background service, sign in under `~/Library/Application Support/Shiptorio/.agent-home` instead.
+
 ## Check your agents
 
-From the Shiptorio repo:
 
 ```sh
 bun run runner doctor
@@ -56,7 +67,7 @@ The service runs only for your Mac user, from its own bundled copy in `~/Library
 ## How a job runs
 
 1. A new issue gets a **Plan with Codex** or **Plan with Claude** card.
-2. Spark reads the issue and the files, then proposes a plan and an exact file list. Open **Review plan and files** to see it.
+2. Spark reads the issue and the files, then proposes a plan and an exact file list. Open **See the plan and files** to see it.
 3. Nothing builds until you tap **Approve and build**. **Not now** defers it.
 4. The runner makes a fresh clone pinned to the planned commit, and your agent edits only the approved files.
 5. The runner checks the change: approved paths only, at most 10 files and 500 changed lines, no secret-looking strings. Then it runs typecheck, tests and build inside the sandbox.
@@ -64,9 +75,10 @@ The service runs only for your Mac user, from its own bundled copy in `~/Library
 
 ## What your agent can and can't touch
 
-- It gets only a minimal environment (home, path, locale). Not your shell's secrets.
-- Codex runs with `--sandbox workspace-write`. Claude Code runs with only Read, Edit, Write, Glob and Grep tools.
-- Files like `.env*`, `.git*`, `node_modules`, key files and anything outside the repo are never in scope.
+- Each job gets a fresh private folder with its own clone, deleted when the job ends.
+- The agent gets a minimal environment and its own sign-in folder. Not your shell's secrets, SSH agent or git credentials.
+- Shell tools are off. Codex runs with `--sandbox workspace-write`, Claude Code with only Read, Edit, Write, Glob and Grep.
+- Files like `.env*`, `.git*`, CI config, `node_modules`, key files and anything outside the repo are never in scope.
 - Your subscription sign-in stays on your machine. Shiptorio never sees it.
 - Each job has a 15-minute limit.
 

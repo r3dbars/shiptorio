@@ -2,9 +2,11 @@
 // what it decided and why, and when a fixed rule had to stand in. This sheet is where the in-game
 // credit lives (copy.ts CREDIT, docs/VISION.md principle 8).
 
-import type { Brain } from "@shiptorio/shared";
+import { scorecard, type Brain } from "@shiptorio/shared";
 import { THINKS, WORDS } from "../copy";
 import { Icon } from "./icons";
+
+const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
 
 const ago = (at: number) => {
   const s = Math.max(0, Math.round((Date.now() - at) / 1000));
@@ -15,6 +17,7 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
   const total = (brain?.decisions ?? 0) + (brain?.fallbacks ?? 0);
   const share = total ? Math.round(((brain?.decisions ?? 0) / total) * 100) : 0;
   const simulated = brain?.thoughts.some((t) => t.simulated);
+  const card = scorecard(brain);
   return (
     <section className="card sheet thinks" aria-label={THINKS.title}>
       <div className="sheet-top">
@@ -28,6 +31,12 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
         <div><b>{brain?.decisions ?? 0}</b>{THINKS.decisions}</div>
         <div><b>{share}%</b>{THINKS.byModel}</div>
         <div><b>{brain?.fallbacks ?? 0}</b>{THINKS.fallbacks}</div>
+      </div>
+      <h3>{THINKS.scorecard}</h3>
+      <div className="thinks-stats score">
+        <div><b>{pct(card.planSuccess)}</b>{THINKS.plansShipped}<small>{THINKS.ofTotal(card.shipped, card.plans)}</small></div>
+        <div><b>{pct(card.catchRate)}</b>{THINKS.reviewCatches}<small>{THINKS.ofTotal(card.catches, card.reviews)}</small></div>
+        <div><b>{pct(card.fallbackRate)}</b>{THINKS.ruleShare}</div>
       </div>
       {!brain?.online && !simulated && <p className="empty warn">{THINKS.noPower}</p>}
       <h3>{THINKS.latest(!!simulated)}</h3>
