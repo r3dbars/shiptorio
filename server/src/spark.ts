@@ -1,4 +1,6 @@
+import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
+
 // Muse Spark on Meta Model API (OpenAI-compatible chat completions).
 // Spark runs the floor. Local subscription agents execute its plans.
 
@@ -32,11 +34,12 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   return retry("Spark completion", async () => {
-    const res = await fetch(`${base}/chat/completions`, {
+    const res = await observedFetch("spark", `${base}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(90000),
       headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
       body: JSON.stringify({ model: sparkModel(env), messages: [...(messages.some(m => m.role === "developer") ? [] : [{ role: "developer", content: DATA_POLICY }]), ...messages.map(m => m.role === "user" ? { ...m, content: untrustedData(m.content) } : m.role === "developer" ? { ...m, content: `${m.content}\n${DATA_POLICY}` } : { ...m, content: untrustedData(m.content) })], reasoning_effort: effort }),
+
   });
   if (!res.ok) throw new OutboundError(res.status);
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
