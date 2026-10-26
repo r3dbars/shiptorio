@@ -15,7 +15,7 @@ import {
   type SourceKind,
   type SourceStatus,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { pickFiles, planLocalTask, sparkConfigured, triage, writeFix, type SparkEnv } from "./spark";
@@ -390,7 +390,7 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!job) return null;
     if (!this.meta) throw new Error("Missing repo");
     // Installation tokens go only to the runner supervisor, never to an agent child.
-    return { ...job, token: await installationToken(this.env, this.meta.installationId) };
+    return { ...job, token: await runnerInstallationToken(this.env, this.meta.installationId, this.meta.repo) };
   }
 
   async finishRunner(pairId: string, receipt: RunnerReceipt) {
