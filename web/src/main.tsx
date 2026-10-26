@@ -2,7 +2,10 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { Onboarding, type OnboardStep } from "./ui/Onboarding";
+import { sound } from "./sound/engine";
 import "./styles.css";
+
+sound.install();
 
 // A bare visit starts at onboarding. `?onboard=repo` resumes it after the GitHub login; any
 // `?source=` or `?scenario=` goes straight to the map.

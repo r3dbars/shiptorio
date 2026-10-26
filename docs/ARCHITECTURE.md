@@ -88,8 +88,9 @@ Everything else in "Game design" layers on after v1 works.
    the end of each day's checkpoint.
 
 **UI + feel stack:** Three.js for the map (see docs/ART.md), GSAP for tweens (placement bounce, item flow, launch screen shake),
-Howler.js for sound (original effects made with jsfxr: place thunk, belt hum loop, rework buzz, biter alert,
-rocket launch), a mute toggle. Original art only.
+procedural Web Audio for sound (web/src/sound/: chiptune effects synthesized in code, no audio files;
+belt hum, assembler clank, inspector stamps, verify bay pop/ram, rework rattle, Spark chirps, rocket countdown + launch),
+a mute toggle (M) and volume in the HUD, silent until the first click. Original art only.
 
 ## How the pieces talk
 

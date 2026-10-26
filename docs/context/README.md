@@ -1,8 +1,8 @@
 # Shiptorio context
 
 Everything we know about Shiptorio that isn't code, in one place, so every agent (Claude
-threads, Codex, whoever) works from the same picture. Start with `AGENTS.md` at the repo
-root, then come here.
+threads, Codex, whoever) works from the same picture. **Read [`../VISION.md`](../VISION.md) first** (the
+north star), then `AGENTS.md` at the repo root, then come here.
 
 **Rule:** commit and push often. Lots of agents work on this repo at once. Before you start,
 `git fetch`, look at open PRs and recent commits on `main`. When you learn or decide
@@ -12,6 +12,7 @@ something, add it here and push.
 
 | File | What it is |
 | --- | --- |
+| [../VISION.md](../VISION.md) | **North star**: Justin's goals, principles, non-goals, current focus, and how to decide what's next. Read first |
 | [../PRODUCT.md](../PRODUCT.md) | **Product spec**: Spark as the Foreman agent, core loop, bottleneck engine, tools, trust, score, onboarding, demo scope |
 | [decisions.md](decisions.md) | Decisions made so far and open items (who's blocked on what) |
 | [memory/](memory/) | Snapshot of the Claude project memory (one fact per file). `memory/MEMORY.md` is its index |
