@@ -14,11 +14,11 @@ const fs = require('fs'); const { execSync } = require('child_process');
   const views = String(o.view || 'line').split(','); const warm = +(o.warm ?? 25), frames = +(o.frames || 1), gap = +(o.gap || 1);
   const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
   const vp = o.mobile ? { width: 390, height: 844 } : { width: 1440, height: 860 };
-  const p = await b.newPage({ viewport: vp });
+  const p = await b.newPage({ viewport: vp }); p.setDefaultTimeout(170000);
   const errs = []; p.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); p.on('console', m => { if (m.type() === 'error' || /\[IRON\]/.test(m.text())) errs.push(m.text()); });
   const doc = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>' + fs.readFileSync(html, 'utf8') + '</body></html>';
   await p.setContent(doc, { waitUntil: 'load' });
-  await p.waitForTimeout(1200);
+  await p.waitForFunction(() => window.IRON && IRON.ready, null, { timeout: 150000 });
   await p.evaluate(([warm, px, block]) => {
     document.querySelector('[data-px="' + px + '"]').click();
     IRON.debug.advance(warm);
