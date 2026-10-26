@@ -1,8 +1,9 @@
 import type { Move } from '@shiptorio/shared';
 
-/** Stable across repeated offers; a new approved job or PR head is a new decision. */
+/** Stable across repeated offers; a new approved job or PR head is a new decision. Support cards add their
+ * ticket, so two customers' replies stay two cards (keys without one are unchanged). */
 export function moveKey(move: Move): string {
-  return JSON.stringify([move.itemId ?? '', move.kind ?? move.stage ?? 'unblock', move.options.flatMap(o => o.actions.map(a => [a.tool, a.args.jobId ?? '', a.args.headSha ?? '', a.args.scarCount ?? '']))]);
+  return JSON.stringify([move.itemId ?? '', move.kind ?? move.stage ?? 'unblock', move.options.flatMap(o => o.actions.map(a => [a.tool, a.args.jobId ?? '', a.args.headSha ?? '', a.args.scarCount ?? '', ...(a.args.ticketId ? [a.args.ticketId] : [])]))]);
 }
 export interface DeckRule { kind: string; scope: string; actionId: string }
 export interface DeckDecision { key: string; move: Move; count: number; deferred?: boolean; dismissed?: boolean }

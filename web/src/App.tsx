@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { savePref } from "./account";
-import type { FactoryState, Item, PowerSource } from "@shiptorio/shared";
+import type { FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
@@ -9,6 +9,7 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
+import { SupportPanel, supportReviewTarget } from "./ui/SupportPanel";
 import { whatsNext, type NudgeAction } from "./ui/whatsNext";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
@@ -139,6 +140,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     state?.stations?.some((st) => st.id === id) || id === "rework" || id.includes(":") ? id : state?.districts.some((d) => d.name === id) ? `d:${id}` : `m:${id}`;
   const focusKey = focus && pickKey(focus);
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
+  const [supportReview, setSupportReview] = useState<string | null>(null);
+  const sendCard = (message: WebToServer) => {
+    const ticketId = supportReviewTarget(message, deck);
+    if (ticketId) { setSupportReview(ticketId); setPanel("m:ore-inbox"); setCheckin(false); return; }
+    send(message);
+  };
   useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
@@ -578,7 +585,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             <CheckIn
               deck={deck}
               autonomy={autonomy}
-              send={send}
+              send={sendCard}
               onFocus={setFocus}
               onClose={() => { setCheckin(false); setFocus(null); }}
               onAnswered={progressing ? prog.card : undefined}
@@ -700,7 +707,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
           </section>
         ) : (
-          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} />
+          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} />
         )}
 
         {!checkin && (
@@ -750,7 +757,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
 
-        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} live={cfg.kind === "live"} />}
+        {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} reviewTicket={supportReview} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} live={cfg.kind === "live"} />)}
 
         {progressing && <XpPop pop={prog.pop} />}
 

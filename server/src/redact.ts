@@ -2,6 +2,7 @@
 const SECRET = /(?:authorization|cookie|password|passwd|secret|token|api[-_]?key|private[-_]?key|dsn|email)/i;
 export function redactText(value: string): string {
   return value
+    .replace(/(\/webhooks\/support\/[^/\s?#]+\/[^/\s?#]+\/)[^/\s?#"'<>]+/gi, '$1[REDACTED]')
     .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/g, '[REDACTED]')
     .replace(/\bBearer\s+[^\s,;"']+/gi, 'Bearer [REDACTED]')
     .replace(/\b(?:gh[pousr]_[\w]+|github_pat_[\w]+|sk-[\w-]+|sntrys_[\w]+|eyJ[\w-]+\.[\w-]+\.[\w-]+)\b/g, '[REDACTED]')

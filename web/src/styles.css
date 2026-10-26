@@ -782,6 +782,24 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
   .rs-catch { display: none; }
   .rs-why { max-width: 96px; }
 }
+/* Support well panel (docs/context/support-mine.md) */
+.su-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.su-t { background: var(--chip); border: 1px solid var(--hair); }
+.su-t.open { border-color: #3a4677; }
+.su-row { width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 6px; background: none; border: 0; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; min-height: 34px; }
+.su-row .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-row .st { font: 11px var(--pixel); color: var(--dim); white-space: nowrap; }
+.su-row .st.hot { color: var(--amber); }
+.su-body { display: flex; flex-direction: column; gap: 6px; padding: 0 6px 8px; }
+.su-quote { margin: 0; font-size: 13px; line-height: 1.4; border-left: 3px solid var(--blue); padding-left: 7px; }
+.su-quote small { display: block; margin-top: 2px; color: var(--dim); font-size: 12px; }
+.su-why, .su-link { margin: 0; font-size: 12px; color: var(--dim); }
+.su-link b { color: var(--ink); font-weight: 600; }
+.su-h { font: 12px var(--pixel); letter-spacing: 0.03em; color: var(--dim); text-transform: uppercase; }
+.su-draft { width: 100%; box-sizing: border-box; resize: vertical; font: 14px/1.4 var(--mono, monospace); color: var(--ink); background: #12141a; border: 1px solid var(--hair); padding: 6px 8px; }
+.su-draft:focus { outline: none; border-color: var(--blue); }
+.su-more { display: flex; gap: 6px; flex-wrap: wrap; }
+.su-more .btn { flex: 1; }
 
 /* Achievements (ui/Achievements.tsx): a toast that drops in under the top bar, and a sheet of badges. */
 .ach-badge { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 9px; background: rgba(0, 0, 0, 0.3); color: var(--faint); flex: none; border: 2px solid transparent; }
