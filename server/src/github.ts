@@ -1,3 +1,7 @@
+import { githubCooldown, RateLimitError } from "./rate-limit";
+import { observedFetch } from "./telemetry";
+import { retry, OutboundError, RetryExhausted } from "./reliability";
+
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
@@ -75,23 +79,105 @@ export async function verifyWebhookSignature(secret: string, body: string, heade
 export interface AppCredentials {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
+  DB?: D1Database;
 }
 
-export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(API + path, {
-    signal: AbortSignal.timeout(20000),
-    ...init,
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "user-agent": UA,
-      "x-github-api-version": "2022-11-28",
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-    },
+// In-isolate queues serialize each credential; D1 also spaces requests and preserves cooldowns
+// across isolates/restarts for installation credentials. Keys are hashes, never stored tokens.
+const queues = new Map<string, Promise<unknown>>();
+const queued = new Map<string, number>();
+const contexts = new Map<string, { db: D1Database; scope: string }>();
+const cooldowns = new Map<string, { next: number; failures: number }>();
+const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
+const tokenCache = new Map<string, { token: string; expires: number }>();
+async function credentialKey(token: string) {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+function boundedSet<K, V>(map: Map<K, V>, key: K, value: V) {
+  if (map.size >= 500 && !map.has(key)) map.delete(map.keys().next().value!);
+  map.set(key, value);
+}
+export async function registerGithubCredential(token: string, db: D1Database, scope: string) {
+  boundedSet(contexts, await credentialKey(token), { db, scope });
+}
+async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+  const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
+  if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
+  queued.set(scope, (queued.get(scope) ?? 0) + 1);
+  const previous = queues.get(scope) ?? Promise.resolve();
+  const request = previous.catch(() => {}).then(async () => {
+    let state = cooldowns.get(scope) ?? { next: 0, failures: 0 };
+    if (context) {
+      const row = await context.db.prepare("SELECT next_at, failures FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number; failures: number }>();
+      if (row) state = { next: Math.max(state.next, row.next_at), failures: Math.max(state.failures, row.failures) };
+    }
+    if (state.next > Date.now() + 5000) throw new RateLimitError(state.next);
+    if (context) {
+      const slot = await context.db.prepare(`INSERT INTO api_limits(scope, next_at) VALUES (?, ?)
+        ON CONFLICT(scope) DO UPDATE SET next_at = MAX(next_at, ?) + 1000 RETURNING next_at`)
+        .bind(scope, Date.now() + 1000, Date.now()).first<{ next_at: number }>();
+      state.next = Math.max(state.next, (slot?.next_at ?? Date.now() + 1000) - 1000);
+    }
+    const delay = state.next - Date.now();
+    if (delay > 5000) throw new RateLimitError(state.next);
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+    // Another isolate may have discovered a cooldown while this request waited for its slot.
+    if (context) {
+      const latest = await context.db.prepare("SELECT next_at FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number }>();
+      if (latest && latest.next_at > Date.now() + 5000) throw new RateLimitError(latest.next_at);
+    }
+    const cacheKey = `${key}:${path}`;
+    const cached = (init.method ?? "GET") === "GET" ? etags.get(cacheKey) : undefined;
+    const headers = new Headers({ accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": UA, "x-github-api-version": "2022-11-28" });
+    if (init.body) headers.set("content-type", "application/json");
+    new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+    if (cached && cached.expires > Date.now()) headers.set("if-none-match", cached.etag);
+    const res = await observedFetch("github", API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
+    const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
+    const next = githubCooldown(res, Date.now(), state.failures, secondary);
+    const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
+    boundedSet(cooldowns, scope, { next, failures });
+    if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
+    if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
+    if (res.status === 304 && cached) return structuredClone(cached.value) as T;
+    if (!res.ok) throw new OutboundError(res.status);
+    if (res.status === 204) return undefined as T;
+    const value = await res.json();
+    if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
+    return value as T;
   });
-  if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path} failed (${res.status})`);
-  return res.json() as Promise<T>;
+  queues.set(scope, request);
+  try { return await request; } finally {
+    const left = (queued.get(scope) ?? 1) - 1;
+    if (left) queued.set(scope, left); else queued.delete(scope);
+    if (queues.get(scope) === request) queues.delete(scope);
+  }
+}
+export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+
+  const comment = init.method === "POST" && /\/issues\/\d+\/comments$/.test(path) && typeof init.body === "string";
+  let marker: string | undefined;
+  if (comment) {
+    const payload = JSON.parse(init.body as string) as { body: string };
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.body));
+    marker = `<!-- shiptorio-delivery:${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")} -->`;
+    init = { ...init, body: JSON.stringify({ ...payload, body: `${payload.body}\n\n${marker}` }) };
+  }
+  const request = async () => {
+    if (marker) {
+      for (let page = 1; ; page++) {
+        if (page > 20) throw new OutboundError(409); // do not post if duplicate history cannot be checked within budget
+        const comments = await gh<{ body?: string }[]>(`${path}?per_page=100&page=${page}`, token);
+        const existing = comments.find(c => c.body?.includes(marker!));
+        if (existing) return existing as T;
+        if (comments.length < 100) break;
+      }
+    }
+    return ghRequest<T>(path, token, init);
+  };
+  // GitHub has no general REST idempotency key. POST needs operation-specific recovery.
+  return retry(`GitHub ${init.method ?? "GET"} ${path}`, request, { shouldRetry: error => !(error instanceof RateLimitError), attempts: init.method === "POST" && /\/pulls$|\/git\/refs$/.test(path) ? 1 : 3 });
 }
 
 interface InstallationTokenScope {
@@ -100,11 +186,20 @@ interface InstallationTokenScope {
 }
 
 export async function installationToken(env: AppCredentials, installationId: number, scope?: InstallationTokenScope): Promise<string> {
+  const cacheKey = `${env.GITHUB_APP_ID}:${await credentialKey(env.GITHUB_APP_PRIVATE_KEY)}:${installationId}:${JSON.stringify(scope ?? null)}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expires > Date.now()) {
+    if (env.DB) await registerGithubCredential(cached.token, env.DB, `github:installation:${installationId}`);
+    return cached.token;
+  }
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
   const res = await gh<{ token: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
     method: "POST",
     ...(scope ? { body: JSON.stringify(scope) } : {}),
   });
+  if (env.DB) boundedSet(contexts, await credentialKey(res.token), { db: env.DB, scope: `github:installation:${installationId}` });
+  boundedSet(tokenCache, cacheKey, { token: res.token, expires: Date.now() + 45 * 60000 });
   return res.token;
 }
 
@@ -121,6 +216,7 @@ export async function runnerInstallationToken(env: AppCredentials, installationI
 
 export async function repoInstallationId(env: AppCredentials, fullName: string): Promise<number> {
   const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
+  if (env.DB) await registerGithubCredential(jwt, env.DB, `github:app:${env.GITHUB_APP_ID}`);
   const res = await gh<{ id: number }>(`/repos/${fullName}/installation`, jwt);
   return res.id;
 }
@@ -193,8 +289,9 @@ export async function fileContent(token: string, fullName: string, path: string,
     if (f.encoding !== "base64" || f.content == null) return null;
     const bytes = Uint8Array.from(atob(f.content.replace(/\n/g, "")), (c) => c.charCodeAt(0));
     return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
   }
 }
 
@@ -202,8 +299,9 @@ async function branchSha(token: string, fullName: string, branch: string): Promi
   try {
     const ref = await gh<{ object: { sha: string } }>(`/repos/${fullName}/git/ref/heads/${encodeURIComponent(branch)}`, token);
     return ref.object.sha;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof RetryExhausted && error.cause instanceof OutboundError && error.cause.status === 404) return null;
+    throw error;
   }
 }
 
@@ -242,9 +340,14 @@ export async function commitToBranch(
       body: JSON.stringify({ sha: commit.sha }),
     });
   } else {
-    await gh(`/repos/${fullName}/git/refs`, token, {
-      method: "POST",
-      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    await retry("Create branch", async () => {
+      const recovered = await branchSha(token, fullName, branch);
+      if (recovered === commit.sha) return;
+      if (recovered) throw new OutboundError(409);
+      await gh(`/repos/${fullName}/git/refs`, token, {
+        method: "POST",
+        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+      });
     });
   }
   return commit.sha;
@@ -257,12 +360,14 @@ export async function openPullRequest(
 ): Promise<{ number: number; html_url: string }> {
   // A crash can occur after GitHub accepts the PR but before the Factory saves it.
   // Recover the existing PR on retry rather than opening another one.
-  const owner = fullName.split("/")[0];
-  const existing = await gh<{ number: number; html_url: string }[]>(
-    `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
-  );
-  if (existing[0]) return existing[0];
-  return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  return retry("Open pull request", async () => {
+    const owner = fullName.split("/")[0];
+    const existing = await gh<{ number: number; html_url: string }[]>(
+      `/repos/${fullName}/pulls?state=open&head=${encodeURIComponent(`${owner}:${pr.head}`)}&base=${encodeURIComponent(pr.base)}`, token,
+    );
+    if (existing[0]) return existing[0];
+    return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
+  });
 }
 
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */
@@ -289,7 +394,7 @@ export async function convertManifestCode(code: string): Promise<{
   pem: string;
   webhook_secret: string;
 }> {
-  const res = await fetch(`${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
+  const res = await observedFetch("github", `${API}/app-manifests/${encodeURIComponent(code)}/conversions`, {
     method: "POST",
     headers: { accept: "application/vnd.github+json", "user-agent": UA },
   });

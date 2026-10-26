@@ -5,7 +5,10 @@
 // FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
+import { perf } from "./perf";
+import { FrameGovernor } from "./quality";
 import { lineFrame } from "./framing";
+import { withPlants } from "./plants";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
 import {
@@ -19,6 +22,7 @@ import {
   buildOre,
   buildCheck,
   buildOrbit,
+  buildMeasure,
   buildReview,
   buildRework,
   buildSolar,
@@ -27,13 +31,19 @@ import {
   buildTurret,
   buildVerify,
   updateFx,
+  getSeed,
+  setSeed,
   type BuildOpts,
   type Built,
 } from "./itemlab";
 import { buildDrone, type DroneMode } from "./drone";
-import { islandDepth, makeDistrict, makeFloater, makeIsland, makeWaterfall } from "./models";
+import { islandDepth, makeDistrict, makeFloater, makeGlassLake, makeGoldTrim, makeIsland, makeLantern, makeWaterfall } from "./models";
+
+import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type SatelliteView } from "./empire";
+import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
+import { bakeModel, findDynamic, mergeStatic } from "./bake";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
 
@@ -49,7 +59,6 @@ const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
 const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
-const TOP_BAR_PX = 64; // the top bar (score chips, mode toggle, icons); map labels stay below it
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -66,7 +75,7 @@ export const HARNESS_NAME: Record<Harness, string> = {
   codex: "CODEX",
   cursor: "CURSOR",
   grok: "GROK",
-  local: "LOCAL",
+  local: "LOCAL MODEL",
 };
 
 type Pt = [number, number]; // x, z on the ground
@@ -177,6 +186,44 @@ function solarVariant(name = ""): BuildOpts["variant"] {
   return ["CLAUDE", 0xd97757];
 }
 
+// The art states each model can play (scene.ts artState/stationArt), for bake.ts to find its moving parts.
+const ART_STATES: Partial<Record<Machine["type"] | StationKind, string[]>> = {
+  assembler: ["IDLE", "WORKING", "BLOCKED"],
+  splitter: ["IDLE", "SORTING"],
+  inspector: ["SCANNING", "PASS", "REJECT", "BACKED UP"],
+  verify: ["IDLE", "VERIFYING", "PASS", "FAIL", "BACKED UP"],
+  review: ["IDLE", "REVIEWING", "APPROVED", "CHANGES", "BACKED UP"],
+  merge: ["WAITING", "APPROVED", "BACKED UP", "REJECTED"],
+  orbit: ["WATCHING", "ALL CLEAR", "ALERT"],
+  launch_pad: ["IDLE", "COUNTDOWN", "LAUNCH", "IDLE"],
+  ore_deposit: ["RICH", "DEPLETED"],
+  steam: ["IDLE", "RUNNING", "OVERLOAD"],
+  solar: ["SUNNY", "CAPPED"],
+  battery: ["CHARGING", "FULL", "DRAINING", "EMPTY"],
+  geothermal: ["IDLE", "INFERENCE", "OVERHEAT"],
+  turret: ["SCANNING", "FIRING"],
+};
+
+// A model with its static parts merged (bake.ts). The probe copy is built from the same random
+// seed, so it matches the real one and nothing after it shifts.
+function bakedItem(key: string, states: string[] | undefined, make: () => Built): Built {
+  const before = getSeed();
+  const built = make();
+  if (!states) return built;
+  const after = getSeed();
+  return bakeModel(key, built, () => {
+    setSeed(before);
+    const copy = make();
+    setSeed(after);
+    return copy;
+  }, states);
+}
+
+// Only touch the DOM when a value changes; style writes invalidate layout even when equal-looking.
+function setStyle(el: HTMLElement, prop: "display" | "transform", v: string) {
+  if (el.style[prop] !== v) el.style[prop] = v;
+}
+
 // Where the label sits above each model, from the Item Lab's item heights.
 const LABEL_Y: Partial<Record<Machine["type"], number>> = {
   ore_deposit: 2.6,
@@ -192,7 +239,7 @@ const LABEL_Y: Partial<Record<Machine["type"], number>> = {
 };
 
 // Gauntlet stations are inspector-type machines; the station kind picks the Item Lab model.
-const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4 };
+const STATION_LABEL_Y: Partial<Record<StationKind, number>> = { verify: 2.8, review: 2.8, merge: 3.2, orbit: 3.4, measure: 2.8 };
 const BACKED_UP = 3; // this many waiting at a station and it shows BACKED UP
 const CAUGHT_SLAM_MS = 620; // the verify bay's ram slam in the sound (shiptorio:station), so the CAUGHT! lands on it
 const FOCUS_ZOOM = 0.5; // how close the camera flies in on a picked machine
@@ -231,6 +278,8 @@ function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built 
         return buildGate();
       case "orbit":
         return buildOrbit();
+      case "measure":
+        return buildMeasure();
     }
   switch (m.type) {
     case "ore_deposit":
@@ -263,6 +312,12 @@ function buildModel(m: Machine, power?: PowerSource, kind?: StationKind): Built 
   }
 }
 
+export interface Cosmetics {
+  glassLake?: boolean;
+  lanterns?: number; // how many are lit: your streak
+  goldPad?: boolean;
+}
+
 export class FactoryScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -271,6 +326,9 @@ export class FactoryScene {
   private readonly sun = new THREE.DirectionalLight(0xfff0d2, 0.95 * LEGACY_LIGHT);
   private readonly world = new THREE.Group(); // island + districts, rebuilt when districts change
   private readonly beltGroup = new THREE.Group();
+  private readonly powerGroup = new THREE.Group(); // power lines from each plant to the assemblers it feeds
+  private powerKey = "";
+  private cables: { paint: THREE.MeshPhongMaterial; color: THREE.Color; assembler: string }[] = [];
   private readonly machines = new Map<string, MachineView>();
   private readonly districts = new Map<string, DistrictView>();
   private readonly items = new Map<string, ItemView>();
@@ -284,6 +342,18 @@ export class FactoryScene {
   private readonly launched = new Set<string>();
   private readonly target = new THREE.Vector3();
   private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
+  // progression unlocks on the island (shared/src/progression.ts), rebuilt with the world
+  private cosmetics: Cosmetics = {};
+  private cosmeticsKey = "";
+  private readonly extras = new THREE.Group();
+  private extraTicks: ((t: number) => void)[] = [];
+
+  // the empire: other repos as satellite islands, and the sky rails to them (map/empire.ts)
+  private satSpecs: SatelliteSpec[] = [];
+  private satKey = "";
+  private sats: { view: SatelliteView; label: Label; route: Route; y: number }[] = [];
+  private readonly outer = { x0: -10, x1: 10, z0: -10, z1: 10 }; // pan limits: the main island plus satellites
+  private zoomMax = ZOOM_MAX;
   private worldKey = "";
   private districtCount = 0;
   private lineKey = "";
@@ -299,10 +369,11 @@ export class FactoryScene {
   private last = performance.now();
   private t = 0;
   private launchUntil = -1;
+  private readonly governor = new FrameGovernor(window.matchMedia?.("(pointer: coarse)").matches ?? false);
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
   // Spark, the Foreman, flying to whatever it's touching
-  private readonly drone = buildDrone();
+  private readonly drone = bakeModel("drone", buildDrone(), buildDrone, ["IDLE", "FLYING", "WORKING", "THINKING"]) as ReturnType<typeof buildDrone>;
   private readonly droneTo = new THREE.Vector3(0, 4, 0);
   private droneLabel?: Label;
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
@@ -336,9 +407,12 @@ export class FactoryScene {
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(1);
+    this.renderer.info.autoReset = false; // two renders a frame (scene + pixel pass); perf.ts reads the total
+    perf.watch(this.scene);
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.renderer.shadowMap.autoUpdate = false; // the frame governor (quality.ts) says when
     this.scene.background = new THREE.Color(PALETTE.void);
 
     this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
@@ -351,7 +425,7 @@ export class FactoryScene {
     const small = window.matchMedia?.("(pointer: coarse)").matches || (navigator.hardwareConcurrency ?? 8) <= 4;
     this.sun.shadow.mapSize.set(small ? 512 : 1024, small ? 512 : 1024);
     this.sun.shadow.bias = -0.0015;
-    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g, this.glow);
+    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.powerGroup, this.drone.g, this.glow);
     this.glow.visible = false;
     this.glow.castShadow = this.glow.receiveShadow = false;
     this.droneLabel = this.addLabel(this.drone.g, 1.3, "drone");
@@ -386,13 +460,15 @@ export class FactoryScene {
 
   // factor > 1 zooms out
   zoomBy(factor: number) {
+    this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
-    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
+    this.zoom = Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
   panBy(dx: number, dy: number) {
+    this.governor.poke();
     this.dropLaunchCam();
     this.camGoal = null;
     const k = (this.camera.top - this.camera.bottom) / this.height;
@@ -400,7 +476,7 @@ export class FactoryScene {
     const down = new THREE.Vector3(Math.sin(YAW), 0, Math.cos(YAW));
     this.target.addScaledVector(right, -dx * k);
     this.target.addScaledVector(down, (-dy * k) / Math.sin(TILT));
-    const b = this.bounds;
+    const b = this.outer;
     this.target.x = Math.max(b.x0, Math.min(b.x1, this.target.x));
     this.target.z = Math.max(b.z0, Math.min(b.z1, this.target.z));
   }
@@ -437,7 +513,9 @@ export class FactoryScene {
     this.labelRoot.classList.toggle("far", this.zoom > 1.35); // zoomed out: titles only
   }
 
-  update(state: FactoryState) {
+  update(raw: FactoryState) {
+    // a plant the live server only reported in state.power still gets a building on the map
+    const state = withPlants(raw);
     const first = !this.state;
     this.state = state;
     this.syncMachines(state.machines);
@@ -445,6 +523,7 @@ export class FactoryScene {
     if (key !== this.worldKey) {
       this.worldKey = key;
       this.buildWorld(state);
+      this.buildExtras();
       const center = new THREE.Vector3((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
       if (first) this.target.copy(center);
       else if (state.districts.length !== this.districtCount) this.glide = center;
@@ -454,6 +533,7 @@ export class FactoryScene {
     const lineKey = JSON.stringify(state.machines.map(m => [m.id, m.x, m.y]));
     if (lineKey !== this.lineKey) { this.lineKey = lineKey; this.fitLine(state, first); }
     this.syncBelts(state);
+    this.syncPowerLines(state);
     this.syncDistricts(state);
     this.syncItems(state.items);
     this.synced = true;
@@ -461,7 +541,26 @@ export class FactoryScene {
     this.syncLabels(state);
     this.syncGhosts(state);
     this.syncGauntlet(state);
+    this.syncGrowth(state, first);
     this.syncDrone(state, first);
+  }
+
+  // The growth loop's payoff: when the measure station calls an experiment, the call pops over it.
+  private readonly called = new Set<string>();
+  private syncGrowth(state: FactoryState, first: boolean) {
+    const st = state.stations?.find((x) => x.kind === "measure");
+    const m = st && this.byId(st.machineId);
+    for (const e of state.experiments ?? []) {
+      if (e.state !== "won" && e.state !== "flat" && e.state !== "lost" && e.state !== "inconclusive") continue;
+      if (this.called.has(e.id)) continue;
+      this.called.add(e.id);
+      if (first || !m) continue;
+      const at = this.machinePos(m).setY((STATION_LABEL_Y.measure ?? 2.4) + 0.6);
+      const pct = Math.round((e.lift ?? 0) * 100);
+      if (e.state === "won") this.pop(at, `+${pct}% LIFT`, "lift", e.step.label, 3.2);
+      else if (e.state === "lost") this.pop(at, `${pct}% HURT`, "fail", "roll it back", 3.2);
+      else this.pop(at, e.state === "inconclusive" ? "NO CALL" : "NO LIFT", "flat", e.state === "inconclusive" ? "not enough data" : e.step.label, 3.2);
+    }
   }
 
   // ---------- the Foreman drone ----------
@@ -501,6 +600,7 @@ export class FactoryScene {
 
   // What's under a screen point: the key of a labelled thing (machine, station, rework belt, district, drone).
   keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+    this.governor.poke();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.ray.setFromCamera(ndc, this.camera);
     const targets = [...this.labels].filter((l) => l.key);
@@ -587,6 +687,87 @@ export class FactoryScene {
     this.biasGoal = this.biasFor(!!this.home);
   }
 
+  // ---------- the empire ----------
+
+  // Other repos float nearby as satellite islands. Rebuilt only when the set of islands or their
+  // districts change; label text updates in place.
+  setSatellites(specs: SatelliteSpec[]) {
+    this.satSpecs = specs;
+    const key = JSON.stringify(specs.map((s) => [s.repo, s.districts.map((d) => d.name), Math.min(6, s.rockets), s.hot]));
+    if (key !== this.satKey) {
+      this.satKey = key;
+      this.layoutSatellites();
+    } else for (const sat of this.sats) {
+      const sp = specs.find((x) => x.repo === sat.view.repo);
+      if (sp) this.setLabel(sat.label, sp.title, sp.sub, sp.hot);
+    }
+  }
+
+  private clearSatellites() {
+    for (const sat of this.sats) {
+      this.scene.remove(sat.view.g, sat.route.g);
+      disposeOwnedGeometries(sat.view.g);
+      sat.route.dispose();
+      this.dropLabel(sat.label);
+    }
+    this.sats = [];
+  }
+
+  private layoutSatellites() {
+    this.clearSatellites();
+    const b = this.bounds;
+    const center = new THREE.Vector3((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2);
+    const mainHalf = Math.hypot(b.x1 - b.x0, b.z1 - b.z0) / 2;
+    Object.assign(this.outer, b);
+    this.satSpecs.forEach((spec, i) => {
+      const view = buildSatellite(spec, i);
+      const at = satelliteSpot(i, this.satSpecs.length, center, mainHalf * 0.8, view.half, YAW);
+      view.g.position.copy(at);
+      this.scene.add(view.g);
+      // the rail leaves the main island's edge toward the satellite and lands on its near rim
+      const dir = at.clone().sub(center).setY(0).normalize();
+      const from = center.clone().addScaledVector(dir, mainHalf * 0.62).setY(0.6);
+      const to = at.clone().addScaledVector(dir, -view.half * 0.7).setY(at.y + 0.6);
+      const route = new Route(from, to, spec.hot);
+      this.scene.add(route.g);
+      const label = this.addLabel(view.g, view.labelY, view.key);
+      label.el.classList.add("island");
+      this.setLabel(label, spec.title, spec.sub, spec.hot);
+      this.sats.push({ view, label, route, y: at.y });
+      const r = view.half + 2;
+      Object.assign(this.outer, { x0: Math.min(this.outer.x0, at.x - r), x1: Math.max(this.outer.x1, at.x + r), z0: Math.min(this.outer.z0, at.z - r), z1: Math.max(this.outer.z1, at.z + r) });
+    });
+    this.zoomMax = this.sats.length ? Math.max(ZOOM_MAX, this.empireZoom() * 1.6) : ZOOM_MAX;
+  }
+
+  private empireZoom() {
+    const b = this.outer;
+    const span = (b.x1 - b.x0) * Math.cos(YAW) + (b.z1 - b.z0) * Math.sin(YAW);
+    const tall = ((b.x1 - b.x0) * Math.sin(YAW) + (b.z1 - b.z0) * Math.cos(YAW)) * Math.sin(TILT) + 14; // islands hang below their tops
+    return Math.max(span / (this.baseViewHeight() * (this.width / this.height)), tall / this.baseViewHeight()) * 1.08;
+  }
+
+  // Leave the empire overview: back to the main island's line.
+  backToLine() {
+    this.wideShot = false;
+    if (this.state) this.fitLine(this.state);
+  }
+
+  // Pull all the way back so every island shows: the empire overview.
+  empireView() {
+    this.wideShot = true;
+    this.dropLaunchCam();
+    this.selected = undefined;
+    this.home = null;
+    this.glide = null;
+    const b = this.outer;
+    // the overview sheet sits on the left on wide screens and along the bottom on phones; the islands take the rest
+    const phone = this.width <= 760;
+    const room = phone ? 0.95 : 1.3;
+    this.camGoal = { target: new THREE.Vector3((b.x0 + b.x1) / 2, -2, (b.z0 + b.z1) / 2), zoom: Math.min(this.zoomMax, Math.max(ZOOM_MIN, this.empireZoom() * room)) };
+    this.biasGoal = phone ? { x: 0, y: 0.27 } : { x: 0.17, y: 0 };
+  }
+
   // Pull back over the whole island, eased like focus (the welcome tour's wide shots). scale > 1 sits further out.
   overview(scale = 1) {
     this.wideShot = true;
@@ -647,6 +828,9 @@ export class FactoryScene {
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
       trimShadows(model.group);
+      // district ticks are pure functions of time, so they can be swept on the real thing
+      // (only same-material merges: the scene recolors the shared roof by district health)
+      mergeStatic(model.group, findDynamic(model.group, (check) => { for (let k = 0; k < 120; k++) (model.update(k * 0.37), check()); }), false);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
@@ -661,6 +845,7 @@ export class FactoryScene {
     const w = x1 - x0, d = z1 - z0;
     const island = makeIsland(w, d);
     trimShadows(island);
+    mergeStatic(island); // nothing on the island moves; waterfalls hang off this.world
     island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     this.world.add(island);
     // waterfalls sit just past the moss cap's bulge and fall a bit past the rock's tip
@@ -671,15 +856,66 @@ export class FactoryScene {
     const spots = [[-1, 0.7], [1.06, 0.9], [-0.9, -0.8], [0.8, -1.1], [0.1, 1.25], [-1.15, -0.1]];
     spots.forEach(([fx, fz], i) => {
       const r = makeFloater(0.6 + ((i * 37) % 5) * 0.15, 31 + i);
+      mergeStatic(r);
       r.position.set((x0 + x1) / 2 + fx * (w / 2 + 3), -2 - ((i * 53) % 7) * 1.1, (z0 + z1) / 2 + fz * (d / 2 + 3));
       this.world.add(r);
       this.rocks.push({ r, y: r.position.y, k: i * 1.3 });
     });
 
     Object.assign(this.bounds, { x0, x1, z0, z1 });
+    this.layoutSatellites();
     const half = Math.max(w, d) / 2 + 6;
     Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 120 });
     this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  /** Switch progression cosmetics on or off: the glass lake, streak lanterns, gold pad trim. */
+  setCosmetics(c: Cosmetics | undefined) {
+    const key = JSON.stringify(c ?? {});
+    if (key === this.cosmeticsKey) return;
+    this.cosmeticsKey = key;
+    this.cosmetics = c ?? {};
+    if (this.state) this.buildExtras();
+  }
+
+  private buildExtras() {
+    if (!this.extras.parent) this.scene.add(this.extras);
+    this.extras.clear();
+    this.extraTicks = [];
+    const { x0, x1, z0, z1 } = this.bounds;
+    const w = x1 - x0, d = z1 - z0;
+    const c = this.cosmetics;
+    if (c.glassLake) {
+      // front left of the island, clear of the waterfall at 72% and half sunk past the rim
+      const r = Math.min(2.2, Math.max(1.5, w * 0.08));
+      const lake = makeGlassLake(r, islandDepth(w, d) * 0.3);
+      lake.group.position.set(x0 + w * 0.2, 0, z1 + 0.6 - r * 0.7);
+      this.extras.add(lake.group);
+      this.extraTicks.push(lake.tick);
+    }
+    if (c.lanterns) {
+      // along the front rim, left to right, then up the right side
+      const n = Math.min(14, c.lanterns);
+      const glows: THREE.MeshPhongMaterial[] = [];
+      for (let i = 0; i < n; i++) {
+        const l = makeLantern();
+        const f = (i + 0.5) / 14;
+        const front = f < 0.6;
+        const x = front ? x0 + 1 + (w - 2) * (f / 0.6) : x1 + 0.2;
+        const z = front ? z1 + 0.25 : z1 - 1 - (d - 2) * ((f - 0.6) / 0.4);
+        l.group.position.set(x, 0, z);
+        this.extras.add(l.group);
+        glows.push(l.glow);
+      }
+      this.extraTicks.push((t) => glows.forEach((g, i) => g.emissiveIntensity = 0.85 + Math.sin(t * 3 + i * 1.7) * 0.15));
+    }
+    const pad = this.ofType("launch_pad")[0];
+    if (c.goldPad && pad) {
+      const p = this.machinePos(pad);
+      const trim = makeGoldTrim(2.8);
+      trim.position.set(p.x, 0, p.z);
+      this.extras.add(trim);
+    }
   }
 
   // ---------- machines ----------
@@ -695,8 +931,12 @@ export class FactoryScene {
       v = this.machines.get(m.id);
       if (!v) {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
-        const built = buildModel(m, power, kind);
-        trimShadows(built.g);
+        const key = [m.type, kind, m.id.startsWith("check-") ? m.id : "", m.harness, m.tier, power?.name].join("|");
+        const built = bakedItem(key, (kind && ART_STATES[kind]) || ART_STATES[m.type], () => {
+          const b = buildModel(m, power, kind);
+          trimShadows(b.g);
+          return b;
+        });
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
         const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
@@ -811,7 +1051,7 @@ export class FactoryScene {
     this.beltGroup.clear();
     this.beltTextures = [];
     this.paths.clear();
-    const gauntlet = (state.stations ?? []).filter((st) => st.kind !== "orbit").map((st) => this.byId(st.machineId)).filter((m) => !!m);
+    const gauntlet = (state.stations ?? []).filter((st) => st.kind !== "orbit" && st.kind !== "measure").map((st) => this.byId(st.machineId)).filter((m) => !!m);
     for (const b of state.belts) {
       const from = this.byId(b.from), to = this.byId(b.to);
       if (!from || !to) continue;
@@ -826,6 +1066,51 @@ export class FactoryScene {
       }
     }
     this.layRework(gauntlet);
+    mergeStatic(this.beltGroup); // belts only scroll their texture; rails and brackets never move
+  }
+
+  // Each solar or geothermal plant runs a power line on two poles to every assembler it feeds. The line sags
+  // between the poles and glows in the plant's color while that assembler is building.
+  private syncPowerLines(state: FactoryState) {
+    const links = state.machines
+      .filter((a) => a.type === "assembler" && a.powerId)
+      .map((a) => [a, state.machines.find((p) => p.id === a.powerId && (p.type === "solar" || p.type === "geothermal"))] as const)
+      .filter((l): l is readonly [Machine, Machine] => !!l[1]);
+    const key = JSON.stringify(links.map(([a, p]) => [a.id, a.x, a.y, p.id, p.type, p.x, p.y]));
+    if (key === this.powerKey) return;
+    this.powerKey = key;
+    this.powerGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.powerGroup.clear();
+    this.cables = [];
+    const H = 2.1, SAG = 0.4;
+    for (const [a, p] of links) {
+      const color = p.type === "geothermal" ? HARNESS_COLOR.local : solarVariant(state.power.find((x) => x.id === p.id)?.name)![1];
+      const A = this.machinePos(p), B = this.machinePos(a);
+      const dir = B.clone().sub(A).setY(0);
+      if (dir.length() < 3) continue;
+      dir.normalize();
+      const ends = [A.clone().addScaledVector(dir, 1.45), B.clone().addScaledVector(dir, -1.45)];
+      const yaw = Math.atan2(dir.x, dir.z);
+      for (const e of ends) {
+        box(0.12, H, 0.12, mat(0x3a3f47), e.x, H / 2, e.z, this.powerGroup).castShadow = false;
+        const arm = box(0.56, 0.07, 0.09, mat(0x8a94a3), e.x, H - 0.05, e.z, this.powerGroup);
+        arm.rotation.y = yaw;
+        arm.castShadow = false;
+        box(0.1, 0.14, 0.1, mat(color), e.x, H + 0.06, e.z, this.powerGroup).castShadow = false; // insulator in the plant's color
+      }
+      const paint = own(0x2b2f36);
+      const n = Math.max(4, Math.round(ends[0].distanceTo(ends[1]) / 0.6));
+      const at = (k: number) => ends[0].clone().lerp(ends[1], k).setY(H + 0.12 - SAG * 4 * k * (1 - k));
+      for (let i = 0; i < n; i++) {
+        const p0 = at(i / n), p1 = at((i + 1) / n);
+        const seg = box(0.07, 0.07, p0.distanceTo(p1) + 0.02, paint, (p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2, this.powerGroup);
+        seg.lookAt(p1);
+        seg.castShadow = false;
+      }
+      this.cables.push({ paint, color: new THREE.Color(color), assembler: a.id });
+    }
   }
 
   // Every station drops its fails onto one red belt that runs behind the line, back to Spark's splitter.
@@ -846,7 +1131,7 @@ export class FactoryScene {
       this.layBelt(a.x === far ? r : pathOf([[a.x, a.z - 1.2], [a.x, lane]]), 0xff7a70);
     }
     if (!this.rework) {
-      const built = buildRework();
+      const built = bakedItem("rework", ["FLOWING", "CLOGGED"], buildRework);
       built.g.scale.setScalar(0.7);
       this.scene.add(built.g);
       this.rework = { built, label: this.addLabel(built.g, 0.9, "rework") };
@@ -1075,7 +1360,7 @@ export class FactoryScene {
   private verdict(machineId: string, item: Item) {
     const st = this.stationAt(machineId);
     const m = this.byId(machineId);
-    if (!st || !m || st.kind === "orbit") return;
+    if (!st || !m || st.kind === "orbit" || st.kind === "measure") return;
     const fail = item.state === "rejected";
     this.verdicts.set(machineId, { fail, until: this.t + (fail ? 3 : 1.6) });
     const at = this.machinePos(m).setY((STATION_LABEL_Y[st.kind] ?? 2.4) + 0.6);
@@ -1149,6 +1434,11 @@ export class FactoryScene {
         return failing ? "REJECTED" : backed ? "BACKED UP" : this.t < this.launchUntil ? "APPROVED" : "WAITING";
       case "orbit":
         return st.lastLog && !st.lastLog.ok ? "ALERT" : busy ? "WATCHING" : "ALL CLEAR";
+      case "measure": {
+        // the growth loop: the newest experiment past its launch sets the dial
+        const exp = this.state!.experiments?.find((e) => e.launchedAt);
+        return !exp ? "IDLE" : exp.state === "won" ? "LIFT" : exp.state === "lost" ? "HURT" : exp.state === "flat" || exp.state === "inconclusive" ? "NO LIFT" : "MEASURING";
+      }
       default:
         return failing ? "REJECT" : backed ? "BACKED UP" : "SCANNING";
     }
@@ -1223,7 +1513,11 @@ export class FactoryScene {
         case "inspector": {
           const sta = this.stationAt(m.id);
           if (!sta) this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
-          else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : sta.lastLog?.ok === false ? "caught a comeback" : "all clear");
+          else if (sta.kind === "measure") {
+            const exp = state.experiments?.find((e) => e.launchedAt);
+            const sub = !exp ? "waiting for a growth launch" : exp.state === "measuring" ? `day ${Math.min(exp.windowDays, Math.floor(exp.daysWatched ?? 0) + 1)} of ${exp.windowDays} · ${exp.step.label}` : exp.state === "won" ? `+${Math.round((exp.lift ?? 0) * 100)}% lift · ${exp.step.label}` : exp.state === "lost" ? `hurt · ${exp.step.label}` : exp.state === "inconclusive" ? `not enough data · ${exp.step.label}` : `no lift · ${exp.step.label}`;
+            this.setLabel(v.label, "MEASURE", sub, exp?.state === "measuring");
+          } else if (sta.kind === "orbit") this.setLabel(v.label, "ORBIT WATCH", sta.wip ? `watching ${sta.wip} launch${sta.wip > 1 ? "es" : ""}` : sta.lastLog?.ok === false ? "caught a comeback" : "all clear");
           else {
             const hot = state.bottleneck?.stationId === sta.id;
             this.setLabel(v.label, sta.name.toUpperCase(), `${sta.wip} in line · caught ${sta.caughtThisWeek}`, hot);
@@ -1247,9 +1541,12 @@ export class FactoryScene {
         case "battery":
           this.setLabel(v.label, "BATTERY", `${Math.round((p?.level ?? 1) * 100)}% of plan window`);
           break;
-        case "geothermal":
-          this.setLabel(v.label, "GEOTHERMAL", p?.name ?? "local GPU");
+        case "geothermal": {
+          const plant = power.get(m.id);
+          const busy = state.machines.some((x) => x.powerId === m.id && x.state === "working");
+          this.setLabel(v.label, "GEOTHERMAL", plant && !plant.online ? `${plant.name} · offline` : `${plant?.name ?? "your computer"} · free${busy ? " · running" : ""}`, !!plant && !plant.online);
           break;
+        }
         default:
           this.setLabel(v.label, (m.type as string).toUpperCase(), "");
       }
@@ -1278,9 +1575,12 @@ export class FactoryScene {
     });
   }
 
+  // Reads every label's size once, then writes every position: interleaving the two forced a
+  // layout per label per frame. Labels that would overlap stack upward instead.
   private placeLabels() {
     const w = this.width, h = this.height;
     let teachingRow = 0;
+    const placed: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const l of this.labels) {
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y;
@@ -1290,29 +1590,51 @@ export class FactoryScene {
       const teaching = !!l.key && this.teachingKeys.has(l.key);
       l.el.classList.toggle("teaching", teaching);
       if (teaching) y -= (teachingRow++ % 3) * 24;
-      const shown = teaching || this.showAll || l.el.classList.contains("hot") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
+      const shown = teaching || this.showAll || l.el.classList.contains("hot") || l.el.classList.contains("island") || (!!l.key && (l.key === this.hovered || l.key === this.selected));
       const off = !shown || x < -60 || x > w + 60 || y < -40 || y > h + 40;
-      l.el.style.display = off ? "none" : "flex";
-      // a label near the top edge would hide under the top bar or get cut off, so it stops just below it
-      if (!off) y = Math.max(y, TOP_BAR_PX + l.el.offsetHeight);
-      if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
+      setStyle(l.el, "display", off ? "none" : "flex");
+      if (!off) placed.push({ el: l.el, x, y, w: 0, h: 0 });
     }
+    const tags: { el: HTMLElement; x: number; y: number; w: number; h: number }[] = [];
     for (const pe of this.pings) {
       const l = [...this.labels].find((x) => x.key === pe.key);
       if (!l) {
-        pe.el.style.display = "none";
+        setStyle(pe.el, "display", "none");
         continue;
       }
       l.obj.getWorldPosition(this.v3);
       this.v3.y += l.y * 0.55;
       this.v3.project(this.camera);
       const x = ((this.v3.x + 1) / 2) * w;
-      let y = ((1 - this.v3.y) / 2) * h;
-      pe.el.style.display = x < -40 || x > w + 40 || y < -20 || y > h + 20 ? "none" : "flex";
-      y = Math.max(y, TOP_BAR_PX + pe.el.offsetHeight / 2);
-      pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
+      const y = ((1 - this.v3.y) / 2) * h;
+      const off = x < -40 || x > w + 40 || y < -20 || y > h + 20;
+      setStyle(pe.el, "display", off ? "none" : "flex");
+      if (!off) tags.push({ el: pe.el, x, y, w: 0, h: 0 });
+    }
+    // one layout for everything, including where the HUD sits (its chips and the Check in / Build
+    // lens move around on phones, and the notch pushes them down)
+    for (const p of [...placed, ...tags]) (p.w = p.el.offsetWidth), (p.h = p.el.offsetHeight);
+    const hud = [...document.querySelectorAll(".topbar > *, .lens")].map((e) => e.getBoundingClientRect());
+    const canvasTop = this.labelRoot.getBoundingClientRect().top;
+    const below = (x: number, half: number) =>
+      hud.reduce((m, r) => (r.right > x - half && r.left < x + half && r.top < canvasTop + h / 2 ? Math.max(m, r.bottom - canvasTop + 4) : m), 0);
+    // a label that would hide under the HUD stops just below it; then, top to bottom, a label that
+    // overlaps one already placed moves down under it
+    for (const p of placed) p.y = Math.max(p.y, below(p.x, p.w / 2) + p.h);
+    placed.sort((a, b) => a.y - b.y);
+    for (let i = 0; i < placed.length; i++) {
+      const p = placed[i];
+      for (let j = 0; j < i; j++) {
+        const q = placed[j];
+        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 && p.y > q.y - q.h && p.y - p.h < q.y) p.y = q.y + p.h + 2;
+      }
+      setStyle(p.el, "transform", `translate(${Math.round(p.x)}px,${Math.round(p.y)}px) translate(-50%,-100%)`);
+    }
+    for (const t of tags) {
+      const y = Math.max(t.y, below(t.x, t.w / 2) + t.h / 2);
+      setStyle(t.el, "transform", `translate(${Math.round(t.x)}px,${Math.round(y)}px)`);
       // keep the tag on screen: flip it to the dot's left near the right edge
-      pe.el.classList.toggle("flip", x + pe.el.offsetWidth > w - 8);
+      t.el.classList.toggle("flip", t.x + t.w > w - 8);
     }
   }
 
@@ -1321,6 +1643,8 @@ export class FactoryScene {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
+    if (!this.governor.draw(now, !!(this.camGoal || this.glide || this.launchCam || this.biasGoal))) return;
+    perf.frame(now, this.renderer.info, this.governor.tier);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
@@ -1358,9 +1682,19 @@ export class FactoryScene {
     }
     updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
+    for (const c of this.cables) {
+      const live = this.state?.machines.find((m) => m.id === c.assembler)?.state === "working";
+      const k = live ? (this.reduceMotion ? 0.7 : 0.45 + 0.4 * Math.abs(Math.sin(t * 3.2))) : 0.12;
+      c.paint.emissive.copy(c.color).multiplyScalar(k);
+    }
     for (const w of this.waterfalls) w(dt, t);
+    for (const e of this.extraTicks) e(t);
     for (const d of this.districts.values()) d.update(t);
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+    for (const sat of this.sats) {
+      sat.view.g.position.y = sat.y + (this.reduceMotion ? 0 : Math.sin(t * 0.4 + sat.view.bob) * 0.25);
+      if (!this.reduceMotion) sat.route.update(t);
+    }
     for (const g of this.rising) g.position.y = Math.min(0, g.position.y + dt * 4);
     this.rising = this.rising.filter((g) => g.position.y < 0);
     if (this.biasGoal) {
@@ -1432,12 +1766,15 @@ export class FactoryScene {
     }
     this.shocks = this.shocks.filter((sh) => t - sh.born <= 0.85);
 
+    this.renderer.shadowMap.needsUpdate = this.governor.shadows();
     this.pass.render(this.renderer, this.scene, this.camera);
     this.placeLabels();
     this.placePops();
+    perf.work(performance.now() - now);
   };
 
   dispose() {
+    this.clearSatellites();
     for (const pe of this.pings) pe.el.remove();
     for (const p of this.pops) p.el.remove();
     cancelAnimationFrame(this.raf);

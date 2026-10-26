@@ -9,6 +9,12 @@ import { ghostSpots } from "../map/ghosts";
 import { actionLabel } from "../ui/stationCopy";
 import {
   SCIENCE_FOR,
+  findFunnelDrop,
+  MEASURE_DAYS,
+  updateExperiment,
+  type Experiment,
+  type FunnelStep,
+  type FunnelDay,
   checkStationId,
   insertCheck,
   researchBlocked,
@@ -44,6 +50,7 @@ interface SparkLine {
   tool: string;
   text: string;
   reason?: string;
+  outcome?: string; // the decision log's short outcome, when the floor log line says more
 }
 
 interface Ore {
@@ -61,10 +68,29 @@ interface Ore {
   ask?: string; // Spark asks before building it; this is the card's question
   spark?: SparkLine[]; // what Spark logs when it reads this ore
   comeback?: string; // orbit watch catches it after the first launch: "Sentry fired it again"
+  route?: { to: Harness; why: string }; // the planner's pick of power plant for it, and why (geothermal scenario)
+}
+
+// The growth loop (shared/src/growth.ts): a funnel step drops in PostHog, the planner proposes an experiment,
+// it ships through the gauntlet, and the measure station calls it. `after` is the step's real rate once it ships.
+interface GrowthDrop {
+  at: number;
+  step: FunnelStep;
+  district: string;
+  entered: number; // people/day into the step
+  before: number; // the step's rate the week before
+  dropped: number; // the rate since the drop
+  after: number; // the rate once the experiment ships
+  title: string;
+  hypothesis: string;
+  change: Experiment["change"];
+  why: string; // the card's line: what dropped and who it costs
+  spark: SparkLine[];
 }
 
 interface Scenario {
   ores: Ore[];
+  growth?: GrowthDrop[]; // funnel drops from the PostHog mine, each one an experiment card
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
   unplugged?: boolean; // first run: no subscription yet, so the assembler sits dark until you sign in
@@ -74,6 +100,7 @@ interface Scenario {
   permits?: string[]; // lanes that start with a launch permit
   science?: FactoryState["science"]; // packs already shipped, so the research tree has something to spend
   rockets?: number; // PRs already shipped
+  geothermal?: boolean; // the runner found a local model: a free, capped geothermal plant runs small, low-risk jobs
 }
 
 const REPO_DISTRICTS: District[] = [
@@ -90,6 +117,9 @@ const SHOP_DISTRICTS: District[] = [
   { name: "api", x: 15, y: 0, w: 5, h: 4, files: 26 },
   { name: "docs", x: 22, y: 0, w: 3, h: 2, files: 6 },
 ];
+
+// the demo shop plus its marketing site: the growth loop's district
+const GROWTH_DISTRICTS: District[] = [...SHOP_DISTRICTS.slice(0, 3), { name: "landing", x: 22, y: 0, w: 5, h: 4, files: 18 }, { name: "docs", x: 29, y: 0, w: 3, h: 2, files: 6 }];
 
 export const SCENARIOS = {
   "quiet-morning": {
@@ -215,6 +245,50 @@ export const SCENARIOS = {
       { at: 8, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" },
     ],
   },
+  // The growth loop (docs/context/growth-loop.md): the first loop past code. PostHog shows /cart → /checkout
+  // falling off, the planner proposes a clearer checkout button, it ships through the gauntlet, and the measure
+  // station calls a lift. Then /pricing → /signup slips, the planner tries shorter signup copy, and it's a wash.
+  growth: {
+    districts: GROWTH_DISTRICTS,
+    harness: "claude_code",
+    ores: [{ at: 12, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs" }],
+    growth: [
+      {
+        at: 2,
+        step: { from: "/cart", to: "/checkout", label: "/cart → /checkout" },
+        district: "checkout",
+        entered: 420,
+        before: 0.45,
+        dropped: 0.31,
+        after: 0.37,
+        change: "cta",
+        title: "Experiment: \"Pay $42 now\" button on the cart",
+        hypothesis: "The new cart button just says Continue. Putting the total and \"Pay now\" on it should win back a chunk of the /cart → /checkout drop.",
+        why: "/cart → /checkout fell from 45% to 31% since Thursday. About 59 people a day leave at the cart.",
+        spark: [
+          { tool: "read_posthog", text: "PostHog: /cart → /checkout 31% yesterday vs 45% the week before (−31%)", reason: "Funnel poll" },
+          { tool: "propose_experiment", text: "Proposed a test: put the total and \"Pay now\" on the cart button", reason: "The drop started the day the button copy changed to Continue" },
+        ],
+      },
+      {
+        at: 40,
+        step: { from: "/pricing", to: "/signup", label: "/pricing → /signup" },
+        district: "landing",
+        entered: 300,
+        before: 0.22,
+        dropped: 0.16,
+        after: 0.161,
+        change: "copy",
+        title: "Experiment: shorter signup copy on pricing",
+        hypothesis: "Cutting the pricing page's three paragraphs to one line should get more people to click Sign up.",
+        why: "/pricing → /signup slipped from 22% to 16%. About 18 people a day stop at pricing.",
+        spark: [
+          { tool: "read_posthog", text: "PostHog: /pricing → /signup 16% yesterday vs 22% the week before (−27%)", reason: "Funnel poll" },
+          { tool: "propose_experiment", text: "Proposed a test: one-line pricing copy above the Sign up button", reason: "Scroll depth on /pricing dropped with the step" },
+        ],
+      },
+    ],
+  },
   // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
   checkin: {
     districts: SHOP_DISTRICTS,
@@ -246,6 +320,30 @@ export const SCENARIOS = {
         spark: [{ tool: "triage", text: "Triaged as a bug in web: the one worth fixing first", reason: "it blocks checkout on Safari" }],
       },
       { at: 14, title: "Add dark mode toggle", kind: "feature", district: "web" },
+    ],
+  },
+  // Geothermal power (docs/PRODUCT.md power table): the runner found a local model on your computer, so a free,
+  // capped geothermal plant sits next to the Claude solar plant. The planner routes the small, low-risk docs fix
+  // to it and the bigger bug to Claude. Both ride the whole gauntlet to a rocket.
+  geothermal: {
+    harness: "claude_code",
+    geothermal: true,
+    ores: [
+      {
+        at: 2,
+        title: "Fix typo in README setup steps",
+        kind: "cleanup",
+        district: "docs",
+        route: { to: "local", why: "small docs job, 1 file, low risk, so it runs on free local power" },
+      },
+      {
+        at: 4,
+        title: "Checkout total ignores the coupon after a refresh",
+        kind: "bug",
+        district: "web",
+        users: 42,
+        route: { to: "claude_code", why: "a bug across 4 files with 42 users waiting, too big and risky for the local model" },
+      },
     ],
   },
   // The welcome tour after sign-in (ui/IntroTour.tsx). A demo shop, played fast. Nothing asks: the tour's
@@ -288,6 +386,7 @@ const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at mos
 export type ScenarioName = keyof typeof SCENARIOS;
 
 const SOLAR_NAME: Partial<Record<Harness, string>> = { claude_code: "Claude", codex: "ChatGPT" };
+const GEO_PLANT = "geo-local"; // the runner's local model, same id the live server uses
 
 // The stations in line order, with the panel actions from docs/loop.html. caught seeds "this week".
 interface StationDef {
@@ -306,6 +405,8 @@ const GAUNTLET: StationDef[] = [
   { id: "review-1", kind: "review", name: "AI review", caught: 3, actions: [act("read", "Read the review"), act("overrule", "Overrule it, with a reason"), act("security", "Add a security reviewer", true)] },
   { id: "gate-1", kind: "merge", name: "Merge gate", caught: 0, actions: [act("review", "Review with receipts", true), act("merge", "Merge and launch"), act("permit", "Give docs a launch permit")] },
 ];
+const MEASURE: StationDef = { id: "measure-1", kind: "measure", name: "Measure station", caught: 0, actions: [act("next", "Suggest the next experiment", true), act("rollback", "Roll back the last experiment")] };
+const DAY_TICKS = 2; // the measure station's "day", sim-sized
 const ORBIT: StationDef = { id: "orbit-1", kind: "orbit", name: "Orbit watch", caught: 0, actions: [act("changed", "See what changed"), act("rollback", "Roll back the last launch")] };
 // The rest of the repo's open issues: what "pull in more" brings onto the belt once the scripted ore runs out.
 const BACKLOG: { title: string; kind: Item["kind"]; docs?: boolean }[] = [
@@ -345,13 +446,26 @@ function initialState(sc: Scenario): FactoryState {
     machines.push({ id: plant, type: "solar", x: 3, y: 3, tier: 1, state: "idle" });
     power.push({ id: plant, kind: "solar", name: SOLAR_NAME[harness] ?? harness, level: 0.9, online: true });
   }
+  if (sc.geothermal) {
+    // the local model gets its own assembler under the Claude one, and the plants line up in a row below them
+    const at = (id: string, x: number, y: number) => Object.assign(machines.find((m) => m.id === id)!, { x, y });
+    at("steam-spark", -3, 6);
+    if (harness !== "spark" && !sc.unplugged) at(plant, 3, 6);
+    machines.push(
+      { id: GEO_PLANT, type: "geothermal", x: 0, y: 6, tier: 1, state: "idle" },
+      { id: "assembler-local", type: "assembler", x: 0, y: 3, harness: "local", powerId: GEO_PLANT, tier: 1, state: "idle" },
+    );
+    power.push({ id: GEO_PLANT, kind: "geothermal", name: "Your computer", level: 0.75, online: true });
+  }
   if (sc.ores.some((o) => o.source === "sentry")) machines.push({ id: "ore-sentry", type: "ore_deposit", x: -6, y: -3, tier: 1, state: "idle" });
   if (sc.ores.some((o) => o.source === "inbox")) machines.push({ id: "ore-inbox", type: "ore_deposit", x: -6, y: 3, tier: 1, state: "idle" });
-  if (sc.ores.some((o) => o.source === "posthog")) machines.push({ id: "ore-posthog", type: "ore_deposit", x: -6, y: sc.ores.some((o) => o.source === "inbox") ? 6 : 3, tier: 1, state: "idle" });
+  if (sc.growth) machines.push({ id: "measure-1", type: "inspector", x: 18, y: 3, tier: 1, state: "idle" });
+  if (sc.growth || sc.ores.some((o) => o.source === "posthog")) machines.push({ id: "ore-posthog", type: "ore_deposit", x: -6, y: sc.ores.some((o) => o.source === "inbox") ? 6 : 3, tier: 1, state: "idle" });
   const chain = ["ore-issues", "splitter-1", "assembler-1", ...GAUNTLET.map((g) => g.id), "launch-pad"];
   const belts: Belt[] = chain.slice(1).map((to, i) => ({ id: `belt-${i + 1}`, from: chain[i], to }));
+  if (sc.geothermal) belts.push({ id: "belt-local-in", from: "splitter-1", to: "assembler-local" }, { id: "belt-local-out", from: "assembler-local", to: GAUNTLET[0].id });
   const districts = sc.districts ?? REPO_DISTRICTS;
-  const mines = (["sentry", "posthog"] as const).filter((kind) => sc.ores.some((o) => o.source === kind));
+  const mines = (["sentry", "posthog"] as const).filter((kind) => sc.ores.some((o) => o.source === kind) || (kind === "posthog" && sc.growth));
   // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
   // and the starter factory is built only when the player says yes.
   const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
@@ -380,7 +494,8 @@ function initialState(sc: Scenario): FactoryState {
     brain: { model: "sim", online: true, decisions: 0, fallbacks: 0, thoughts: [] },
     // Mines this scenario's ore comes from show as plugged in, so the map doesn't offer to connect them.
     sources: mines.length ? mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })) : undefined,
-    stations: [...GAUNTLET, ORBIT].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
+    experiments: sc.growth ? [] : undefined,
+    stations: [...GAUNTLET, ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
   };
 }
 
@@ -426,6 +541,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const failAt = new Map<string, StationKind | undefined>(); // item id -> station that catches the scripted failure
   const failCheck = new Map<string, string | undefined>(); // item id -> researched check that would catch it first
   const builtBy = new Map<string, string | undefined>(); // item id -> assembler that built it
+  const routes = new Map<string, NonNullable<Ore["route"]>>(); // item id -> the scripted routing pick
+  const routed = new Map<string, Harness>(); // item id -> the harness (and so the power plant) the planner picked
   const watching = new Map<string, number>(); // launched item id -> tick orbit watch stops
   const comebacks = new Map<string, string>(); // item id -> what orbit watch will catch after its first launch
   const trips = new Map<string, number>(); // launched item id -> tick its comeback lands
@@ -435,7 +552,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   let pr = 140;
   let seq = 0;
 
-  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit" };
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
@@ -452,7 +569,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const decision = THOUGHT_FOR[line.tool];
     if (decision && s.brain) {
       const item = opts.itemId ? s.items.find((i) => i.id === opts.itemId) : undefined;
-      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
+      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.outcome ?? line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
       emit({ type: "patch", patch: { brain: s.brain } });
     }
   };
@@ -482,6 +599,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.autonomy) s.autonomy = p.autonomy;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
     if (p.research) s.research = p.research;
+    if (p.experiments) s.experiments = p.experiments;
     emit({ type: "patch", patch: { ...p, tick: s.tick } });
   };
 
@@ -690,11 +808,25 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     fails.set(item.id, o.failFirst);
     failAt.set(item.id, o.failAt);
     if (o.comeback) comebacks.set(item.id, o.comeback);
+    if (o.route) routes.set(item.id, o.route);
     failCheck.set(item.id, o.failCheck);
     byTitle.set(o.title, item.id);
     if (o.ask) asks.set(item.id, o.ask);
     apply({ items: [item] });
     if (!o.spark) log("info", `Ore: ${o.title}`, item.id);
+  };
+
+  // The planner picks a power plant for each job: small, low-risk work goes to the free geothermal plant,
+  // bigger or riskier work to a subscription. Either way it rides the full gauntlet.
+  const routeItem = (item: Item) => {
+    const route = routes.get(item.id);
+    if (!route || routed.has(item.id)) return;
+    const asm = s.machines.find((m) => m.type === "assembler" && m.harness === route.to && m.powerId);
+    const plant = asm && s.power.find((p) => p.id === asm.powerId);
+    if (!asm || !plant) return;
+    routed.set(item.id, route.to);
+    const where = plant.kind === "geothermal" ? `${plant.name.toLowerCase()} (geothermal)` : `${plant.name} (solar)`;
+    spark({ tool: "route", text: `Routed "${item.title}" to ${where}: ${route.why}`, reason: route.why, outcome: `${item.kind} in /${item.district} → ${where}` }, { itemId: item.id, target: plant.id });
   };
 
   // The stage with the most value waiting, the way bottleneck.ts scores it.
@@ -746,6 +878,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
     if (sc.intro && clock0 !== Infinity) introFeed(now);
     while (script.length && script[0].at + clock0 <= s.tick) arrive(script.shift()!, now);
+    while (growthScript.length && growthScript[0].at + clock0 <= s.tick) funnelDrop(growthScript.shift()!, now);
+    measureTick(now);
 
     for (const item of [...s.items]) {
       const age = s.tick - (since.get(item.id) ?? s.tick);
@@ -756,6 +890,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           if (!machine("splitter")) continue;
           apply({ items: [{ ...next, state: "queued" }] });
           log("info", `Splitter sorted "${item.title}" → ${item.district}`, item.id);
+          routeItem(item);
           if (asks.has(item.id)) {
             held.add(item.id);
             askToBuild(item);
@@ -764,7 +899,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         case "queued": {
           // Spark's pick goes first: nothing else starts while its "fix this first" waits on your Go
           if (held.size || parked.has(item.id)) continue;
-          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId);
+          // the local model only takes what the planner routed to it; routed work waits for its own plant
+          const want = routed.get(item.id);
+          const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId && (want ? m.harness === want : m.harness !== "local"));
           if (!a) continue;
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
@@ -829,7 +966,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     // The demo shop's checkout counter stalls while checkout is crashing.
     const m = s.metrics!;
     const crashing = s.items.some((i) => i.source === "sentry" && i.district === "checkout" && i.state !== "launched");
-    const metrics = m.checkouts !== undefined && !crashing ? { ...m, checkouts: m.checkouts + 3 } : m;
+    const won = s.experiments?.filter((e) => e.state === "won").reduce((k, e) => k * (1 + (e.lift ?? 0)), 1) ?? 1;
+    const metrics = m.checkouts !== undefined && !crashing ? { ...m, checkouts: m.checkouts + Math.round(3 * won) } : m;
     const bottleneck = findBottleneck();
     const changed = JSON.stringify(bottleneck && { ...bottleneck, ageMs: 0 }) !== JSON.stringify(s.bottleneck && { ...s.bottleneck, ageMs: 0 });
     if (changed) s.bottleneck = bottleneck;
@@ -899,9 +1037,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     return [GAUNTLET[0], ...checks, ...GAUNTLET.slice(1)];
   }
   function stationsNow(): Station[] {
-    return [...lineNow(), ORBIT].map((g) => {
+    return [...lineNow(), ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => {
       const v = stat(g.id);
-      const here = g.kind === "orbit" ? s.items.filter((i) => watching.has(i.id)) : s.items.filter((i) => i.machineId === g.id && (i.state === "inspecting" || i.state === "on_pad"));
+      const here = g.kind === "measure" ? s.items.filter((i) => s.experiments?.some((e) => e.itemId === i.id && e.state === "measuring")) : g.kind === "orbit" ? s.items.filter((i) => watching.has(i.id)) : s.items.filter((i) => i.machineId === g.id && (i.state === "inspecting" || i.state === "on_pad"));
       const oldest = Math.max(0, ...here.map((i) => s.tick - (since.get(i.id) ?? s.tick)));
       const runs = v.passed + v.failed;
       return {
@@ -1001,6 +1139,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       emit({ type: "move_resolved", moveId: m!.id, optionId: "launch", actor: alone ? "spark" : "player" });
       pull(m!.id, 0);
     }
+    startMeasuring(item, now);
     watching.set(item.id, s.tick + WATCH_TICKS);
     if (comebacks.has(item.id)) trips.set(item.id, s.tick + COMEBACK_TICKS);
     record(GAUNTLET.find((g) => g.kind === "merge")!, true, `#${item.prNumber} merged and launched.`);
@@ -1019,6 +1158,129 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const launches = (a.launches ?? 0) + 1;
     const automated = (Math.round((a.automated ?? 0) * (a.launches ?? 0)) + (alone ? 1 : 0)) / launches;
     apply({ autonomy: { ...a, launches, automated, next: a.next?.level === "build" ? { ...a.next, have: a.next.have + 1 } : a.next } });
+  };
+
+  // ---------- the growth loop (shared/src/growth.ts) ----------
+
+  const growthScript: GrowthDrop[] = [...(sc.growth ?? [])];
+  const growthOf = new Map<string, GrowthDrop>(); // experiment id -> its script
+  const measuringSince = new Map<string, number>(); // experiment id -> tick it launched
+  const setExp = (e: Experiment) => apply({ experiments: [e, ...(s.experiments ?? []).filter((x) => x.id !== e.id)] });
+  const expOf = (itemId: string) => s.experiments?.find((e) => e.itemId === itemId);
+
+  // The funnel step per day, per person, the shape the PostHog funnel query returns.
+  const funnelRows = (g: GrowthDrop, now: number): FunnelDay[] =>
+    Array.from({ length: 8 }, (_, k) => {
+      const i = 8 - k;
+      return { day: new Date(now - i * 86400000).toISOString().slice(0, 10), entered: g.entered, converted: Math.round(g.entered * (i === 1 ? g.dropped : g.before)) };
+    });
+
+  const funnelDrop = (g: GrowthDrop, now: number) => {
+    const drop = findFunnelDrop(funnelRows(g, now), g.step, now);
+    if (!drop) return;
+    for (const line of g.spark) spark(line, { target: "ore-posthog" });
+    const exp: Experiment = {
+      id: `exp-${++seq}`,
+      step: g.step,
+      title: g.title,
+      hypothesis: g.hypothesis,
+      change: g.change,
+      district: g.district,
+      state: "proposed",
+      // measured against the week at the dropped rate: did the change win people back?
+      baseline: { entered: g.entered * 7, converted: Math.round(g.entered * 7 * g.dropped), days: 7 },
+      windowDays: MEASURE_DAYS,
+      proposedAt: now,
+    };
+    growthOf.set(exp.id, g);
+    setExp(exp);
+    propose(
+      {
+        title: `${g.step.label} fell ${drop.dropPct}%. Run an experiment?`,
+        why: g.why,
+        stage: "intake",
+        kind: "build",
+        focus: "ore-posthog",
+        grows: ["+1 EXPERIMENT", "MEASURED"],
+        plan: [g.hypothesis, "It ships as a normal PR through every station", `After the launch the measure station watches ${g.step.label} for ${MEASURE_DAYS} days and calls it`],
+        options: [
+          { id: "go", label: "Run it", recommended: true, actions: [{ tool: "start_experiment", args: { experiment: exp.id }, reason: `${g.step.label} −${drop.dropPct}%` }] },
+          { id: "skip", label: "Not now", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        const cur = s.experiments!.find((e) => e.id === exp.id)!;
+        if (opt !== "go") {
+          setExp({ ...cur, state: "dropped" });
+          return spark({ tool: "post_log", text: `Parked the ${g.step.label} experiment` });
+        }
+        approvedAsIs();
+        arrive({ at: 0, title: g.title, kind: "feature", district: g.district, source: "posthog", users: drop.lostPerDay }, Date.now());
+        const itemId = byTitle.get(g.title)!;
+        setExp({ ...cur, state: "building", itemId });
+        spark({ tool: "start_job", text: `Sent "${g.title}" to the assembler with the plan`, reason: "you said run it" }, { itemId, target: "assembler-1", approvedBy: "player" });
+      },
+    );
+  };
+
+  function startMeasuring(item: Item, now: number) {
+    const exp = expOf(item.id);
+    if (!exp || exp.state !== "building") return;
+    measuringSince.set(exp.id, s.tick);
+    setExp({ ...exp, state: "measuring", prNumber: item.prNumber, launchedAt: now, daysWatched: 0 });
+    stat("measure-1").lastLog = { who: "Measure", text: `#${item.prNumber} is live. Watching ${exp.step.label} for ${exp.windowDays} days.`, ok: true };
+    log("info", `Measure station: watching ${exp.step.label} after #${item.prNumber}`, item.id);
+  }
+
+  // Every sim "day" the measure station adds that day's people and re-runs the test.
+  function measureTick(now: number) {
+    for (const [id, t0] of measuringSince) {
+      const exp = s.experiments?.find((e) => e.id === id);
+      const g = growthOf.get(id);
+      if (!exp || !g) continue;
+      const days = Math.floor((s.tick - t0) / DAY_TICKS);
+      if (days === (exp.daysWatched ?? 0) || days < 1) continue;
+      // a little day-to-day wobble, the same every replay
+      const entered = g.entered * days;
+      const wobble = 1 + Math.sin(days * 2.3) * 0.015;
+      const after = { entered, converted: Math.round(entered * g.after * wobble), days };
+      const next = updateExperiment(exp, after, days, now);
+      if (next === exp) continue;
+      setExp(next);
+      if (next.state === "measuring") continue;
+      measuringSince.delete(id);
+      const ok = next.state !== "lost";
+      record(MEASURE, ok, next.line!);
+      spark({ tool: "measure_experiment", text: next.line!, reason: `${after.entered} people through ${exp.step.label} since #${exp.prNumber}, two-proportion test p = ${next.p!.toFixed(3)}` }, { itemId: exp.itemId, target: "measure-1" });
+      if (next.state === "won") {
+        log("success", `Experiment won: ${exp.title}. It stays.`, exp.itemId);
+        bumpMetrics({ usersUnblocked: s.metrics!.usersUnblocked + Math.round((next.lift ?? 0) * g.dropped * g.entered) });
+      } else offerRollback(next);
+    }
+  }
+
+  const offerRollback = (exp: Experiment) => {
+    const hurt = exp.state === "lost";
+    propose(
+      {
+        title: hurt ? `${exp.title.replace(/^Experiment: /, "")} made it worse` : `No lift from ${exp.title.replace(/^Experiment: /, "")}`,
+        why: exp.line!,
+        stage: "impact",
+        kind: "review",
+        focus: "measure-1",
+        itemId: exp.itemId,
+        plan: hurt ? ["A revert PR goes through the gauntlet like any other", "The step should come back to where it was"] : ["Keep it: it didn't hurt, and it's simpler", "Or roll it back and try a different idea"],
+        options: [
+          { id: hurt ? "rollback" : "keep", label: hurt ? "Roll it back" : "Keep it, try another idea", recommended: true, actions: [] },
+          { id: hurt ? "keep" : "rollback", label: hurt ? "Keep it anyway" : "Roll it back", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        approvedAsIs();
+        if (opt === "rollback") spark({ tool: "start_job", text: `Rolling back #${exp.prNumber}: a revert PR heads into the gauntlet`, reason: exp.line }, { itemId: exp.itemId, target: "assembler-1", approvedBy: "player" });
+        else spark({ tool: "post_log", text: `Kept #${exp.prNumber}. Next time ${exp.step.label} slips there's a fresh idea to try`, reason: "you kept it" }, { target: "measure-1", approvedBy: "player" });
+      },
+    );
   };
 
   // ---------- research (shared/src/research.ts) ----------

@@ -1,3 +1,5 @@
+import { requireUser } from "../src/authorization";
+import { fixtureUser, authorizedDB, membershipCache } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
 import { fakeGitHub } from "../src/sources/github";
 import { pairToken, readRunnerToken } from "../src/runner-auth";
@@ -6,12 +8,12 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
   constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; }
 } }));
-const { default: app } = await import("../src/index");
+const { testApp: app } = await import("./app-fixture");
 
 it("runner transport authenticates independently without opening the preview or other repos", async () => {
   let claims = 0;
-  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", FACTORY: { idFromName: (repo: string) => repo, get: () => ({ isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
-  const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", expires: Date.now() + 10000 });
+  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", ALLOWED_LOGINS: "test-player", CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }) }) }) }, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
+  const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", user: fixtureUser(), expires: Date.now() + 10000 });
   const send = (repo: string, bearer = token) => app.fetch(new Request(`https://shiptorio.com/api/runner/${repo}/claim`, { method: "POST", headers: { authorization: `Bearer ${bearer}` }, body: JSON.stringify({ harnesses: ["codex"] }) }), env as never);
   expect((await send("r3dbars/shiptorio", "forged")).status).toBe(401);
   expect((await send("r3dbars/other")).status).toBe(401);
@@ -21,10 +23,10 @@ it("runner transport authenticates independently without opening the preview or 
   expect(renewal.status).toBe(200);
   const renewed = await renewal.json() as { token: string };
   expect((await readRunnerToken(env.SESSION_SECRET, renewed.token))?.pairId).toBe("pair-1");
-  const revoked = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "revoked", expires: Date.now() + 10000 });
+  const revoked = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "revoked", user: fixtureUser(), expires: Date.now() + 10000 });
   expect((await app.fetch(new Request("https://shiptorio.com/api/runner/r3dbars/shiptorio/renew", { method: "POST", headers: { authorization: `Bearer ${revoked}` } }), env as never)).status).toBe(401);
   expect((await app.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/pair", { method: "POST" }), env as never)).status).toBe(401);
-  expect((await app.fetch(new Request("https://shiptorio.com/", { headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
+  expect((await app.fetch(new Request("https://shiptorio.com/index.html", { headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
 });
 
 it("authenticates, durably enqueues before 202, and deduplicates completed deliveries", async () => {
@@ -44,7 +46,7 @@ it("authenticates, durably enqueues before 202, and deduplicates completed deliv
           if (!existed) rows.set(id, { state: "pending" });
           return { meta: { changes: existed ? 0 : 1 } };
         },
-        first: async () => rows.get(String(values[0])) ?? null,
+        first: async () => sql.includes("signup_counters") ? { count: 1 } : rows.get(String(values[0])) ?? null,
       };
       return statement;
     } },
@@ -70,15 +72,30 @@ it("authenticates, durably enqueues before 202, and deduplicates completed deliv
 });
 
 it("upgrades remote HTTP before authentication and sets HSTS on HTTPS gate responses", async () => {
-  const env = { APP_PASSWORD: "test-preview", SESSION_SECRET: "test-secret" };
-  const insecure = await app.fetch(new Request("http://shiptorio.com/"), env as never);
+  const env = { SIGNUP_GATE_MODE: "password", APP_PASSWORD: "test-preview", SESSION_SECRET: "test-secret" };
+  const insecure = await app.fetch(new Request("http://shiptorio.com/index.html"), env as never);
   expect(insecure.status).toBe(308);
-  expect(insecure.headers.get("location")).toBe("https://shiptorio.com/");
-  const secure = await app.fetch(new Request("https://shiptorio.com/"), env as never);
+  expect(insecure.headers.get("location")).toBe("https://shiptorio.com/index.html");
+  const secure = await app.fetch(new Request("https://shiptorio.com/index.html"), env as never);
   expect(secure.status).toBe(401);
   expect(secure.headers.get("strict-transport-security")).toBe("max-age=31536000");
-  const local = await app.fetch(new Request("http://localhost/"), env as never);
+  const local = await app.fetch(new Request("http://localhost/index.html"), env as never);
   expect(local.status).toBe(401);
   expect(local.headers.has("location")).toBe(false);
   expect(local.headers.has("strict-transport-security")).toBe(false);
+});
+
+it("runner revoke is a same-origin signed-in web action and invalidates renewal", async () => {
+  const { browserCookies, browserEnv } = await import("./browser-fixture");
+  const { testD1, signedInCookie } = await import("./d1-fixture");
+  let paired = true;
+  const env = { ...browserEnv, CACHE: membershipCache, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), revokeRunner: async () => { paired = false; }, isRunnerPaired: async () => paired }) } };
+  const url = "https://shiptorio.com/api/repos/r3dbars/shiptorio/runner/revoke";
+  const cookie = await signedInCookie(env, "test-player", ["r3dbars/shiptorio"]) + "; " + (await browserCookies()).split("; ")[1];
+  expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://evil.example" } }), env as never)).status).toBe(403);
+  expect(paired).toBe(true);
+  expect((await app.fetch(new Request(url, { method: "POST", headers: { cookie, origin: "https://shiptorio.com" } }), env as never)).status).toBe(200);
+  expect(paired).toBe(false);
+  const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "old", expires: Date.now() + 60000, user: (await requireUser(new Request(url, { headers: { cookie } }), env as never))! });
+  expect((await app.fetch(new Request("https://shiptorio.com/api/runner/r3dbars/shiptorio/renew", { method: "POST", headers: { authorization: `Bearer ${token}` } }), env as never)).status).toBe(401);
 });
