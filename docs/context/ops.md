@@ -116,6 +116,9 @@ propagation to see globals; use the admin API to inspect personal overrides.
 
 ## Rollback (code/assets, not data)
 
+For releases with chunked factory state, preserve `state-storage.ts` in a rollback build.
+An older reader cannot interpret its manifest; see Data backup and recovery below.
+
 Freeze merges/deploys during an incident so the next production Deploy does not
 replace the rollback. Inspect versions first:
 
@@ -228,8 +231,8 @@ D1 restore does not restore KV mine credentials/flags or Factory DO state. KV fl
 can be reapplied through `/admin`; mine secrets must be rotated/reconnected. There
 is no complete DO snapshot/export/restore tooling in this change. Do not reset a
 namespace to recover: it can lose leases, receipts and merge accounting. Preserve
-DO data, reconcile GitHub merge/head state and use the data-durability runbook when
-available before resuming work. This is a D1 recovery procedure, not a whole-factory
+DO data, reconcile GitHub merge/head state and use the data backup and recovery procedure below
+before resuming work. This is a D1 recovery procedure, not a whole-factory
 backup guarantee.
 
 ## Acceptance evidence
@@ -304,6 +307,9 @@ The JSON result prints the temporary directory and measured state size. Port 187
 
 Verified locally on Oct 26, 2026: D1 export/import rows equal, foreign-key check empty, quick check `ok`;
 402,041-byte chunked state preserved after JSON restore into a different store and process restart.
+A pre-migration production D1 export was also restored into an isolated local directory and upgraded
+with migration 0005: 2 repositories and 1 user retained; FK check empty and quick check `ok`.
+The remote preflight found zero orphan repositories. The private backup remains outside git.
 Migration and export unit tests also exercise every persisted version, unknown nested fields, future
 schema rejection, missing chunks, interrupted writes and retry, retention, authorization and headers.
 
