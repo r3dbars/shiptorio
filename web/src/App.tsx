@@ -59,10 +59,9 @@ function LogRow({ l, send, live }: { l: LogLine; send: (msg: WebToServer) => voi
   const canUndo = l.actionId && Date.now() - l.at < UNDO_MS;
   return (
     <li className={`spark ${l.level}`} title={l.reason ? `why: ${l.reason}` : undefined}>
-      <span className="who">SPARK</span>
       {l.tool && <span className="tool">{l.tool}</span>}
       <span className="txt">{l.text}</span>
-      {l.approvedBy === "autonomy" && <span className="auto" title="Spark did this on its own">auto</span>}
+      {l.approvedBy === "autonomy" && <span className="auto" title="Done on its own">auto</span>}
       {canUndo && live && (
         <button type="button" className="undo" onClick={() => send({ type: "undo", actionId: l.actionId! })}>
           undo

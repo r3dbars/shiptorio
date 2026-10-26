@@ -48,7 +48,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen }: Props) {
   return (
     <section className="card nextmove" aria-label="Next move" aria-live="polite">
       <div className="nm-head">
-        <span className="nm-kicker">SPARK · NEXT MOVE</span>
+        <span className="nm-kicker">NEXT MOVE</span>
         {stage && <span className="nm-stage">{STAGE_LABEL[stage].toUpperCase()}</span>}
       </div>
       <div className="nm-title">{move.title}</div>

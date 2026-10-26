@@ -10,9 +10,9 @@ type Why = Extract<WebToServer, { type: "dismiss_move" }>["why"];
 
 const NEVER: { why: Why; label: string; text: string }[] = [
   { why: "once", label: "JUST THIS ONE", text: "Drop it, no rule." },
-  { why: "kind", label: "NOT THIS KIND", text: "Stop dealing cards like this. Spark writes it down as a rule." },
-  { why: "spark", label: "SPARK, DECIDE THESE", text: "Let Spark handle this kind without asking. Counts as trust." },
-  { why: "wrong", label: "WRONG CALL", text: "Spark misread it. It becomes a scar so the next read is better." },
+  { why: "kind", label: "NOT THIS KIND", text: "Stop dealing cards like this. It gets saved as a rule." },
+  { why: "spark", label: "HANDLE THESE FOR ME", text: "Do this kind without asking me. Counts as trust." },
+  { why: "wrong", label: "WRONG CALL", text: "Misread. It becomes a scar so the next read is better." },
 ];
 
 const STAMP: Record<Gesture, string> = { right: "DO IT", left: "LATER", down: "NEVER", up: "DETAILS" };
@@ -105,7 +105,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
     done(top, "down", () => {
       send({ type: "dismiss_move", moveId: top.id, why });
       setTally((t) => ({ ...t, never: t.never + 1, rules: t.rules + (why === "once" ? 0 : 1) }));
-      setToast(why === "once" ? "Gone." : why === "kind" ? "Rule saved. No more cards like it." : why === "spark" ? "Spark decides these now." : "Scar logged.");
+      setToast(why === "once" ? "Gone." : why === "kind" ? "Rule saved. No more cards like it." : why === "spark" ? "Handled without asking from now on." : "Scar logged.");
     });
   };
 
@@ -238,7 +238,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
                   )}
                   {m.locked && <div className="ci-lock">NO MERGE ON SWIPE · NOT PROVEN YET</div>}
                   <div className="ci-pick">
-                    <span className="lbl">SPARK'S PICK · SWIPE RIGHT</span>
+                    <span className="lbl">SUGGESTED · SWIPE RIGHT</span>
                     <span className="do">{pickOf(m).label}</span>
                     {m.options.length > 1 && <span className="alt">or: {m.options.filter((o) => o !== pickOf(m)).map((o) => o.label.toLowerCase()).join(", ")}</span>}
                   </div>
@@ -253,7 +253,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose }: Props) {
         ) : (
           <div className="ci-clear card">
             <div className="ci-title">ALL CLEAR</div>
-            <p className="ci-why">{swiped ? `${swiped} calls. The factory's moving without you now.` : "Nothing needs you right now. Spark will deal a card when something does."}</p>
+            <p className="ci-why">{swiped ? `${swiped} calls. The factory's moving without you now.` : "Nothing needs you right now. A card shows up when something does."}</p>
             {swiped > 0 && (
               <div className="ci-tally">
                 <div>
