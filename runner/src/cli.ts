@@ -6,7 +6,8 @@ import { TEST_PATH, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox } from "./sandbox";
 import { snapshotApproved, publishApproved } from "./publication";
 
-interface Job { id: string; repo: string; harness: "codex" | "claude_code"; baseSha: string; branch: string; allowedPaths: string[]; plan: string; lease: string; token: string; deadline: number; reworkPr?: number; verifyBaseSha?: string; prTestFiles?: string[] }
+import { responseSchemas, type Job } from "./messages";
+
 const root = resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(import.meta.dir, ".."));
 const checkout = resolve(root, "..");
 const cleanEnv = agentEnvironment(process.env);
@@ -39,10 +40,10 @@ if (!["https://shiptorio.com", "https://shiptorio.dev", "http://localhost:8787"]
 const repo = process.env.SHIPTORIO_REPO;
 let pairing = process.env.SHIPTORIO_RUNNER_TOKEN;
 if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !pairing) throw new Error("Run runner:control pair first");
-async function api(action: string, body: unknown): Promise<any> {
+async function api(action: keyof typeof responseSchemas, body: unknown): Promise<any> {
   const r = await fetch(`${base}/api/runner/${repo}/${action}`, { method: "POST", headers: { authorization: `Bearer ${pairing}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error(`Runner ${action} failed (${r.status})`);
-  return r.json();
+  return responseSchemas[action].parse(await r.json());
 }
 async function renewPairing() {
   const claims = JSON.parse(atob(pairing!.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
