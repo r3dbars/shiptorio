@@ -49,6 +49,6 @@
   }
   // Secrets (set with `wrangler secret put`, or .dev.vars locally). /setup prints all of them:
   //   GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET,
-  //   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_SECRET, META_API_KEY
+  //   GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, SESSION_SECRET, META_API_KEY, SHIPTORIO_SENTRY_DSN (Shiptorio itself, not the mine)
   // Optional var PUBLIC_URL overrides the URL used for GitHub callbacks (defaults to the request origin).
 }

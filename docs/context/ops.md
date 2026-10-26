@@ -87,7 +87,7 @@ rotation is not undone safely by a code rollback: verify bindings/secrets afterw
 
 ## Feature flags
 
-Sign in as a GitHub login explicitly listed in `ADMIN_LOGINS`, then open `/admin`
+Sign in as a GitHub login explicitly listed in `ADMIN_LOGINS`, then open `/admin/flags`
 (also behind preview access). `ALLOWED_LOGINS` alone does not grant admin access.
 Global overrides and per-user overrides live only in that environment's KV under
 `flags:v1:global:NAME` and `flags:v1:user:LOGIN:NAME`. Logins normalize to lowercase.
@@ -111,7 +111,7 @@ local test/simulator fixtures without the binding retain defaults.
 Admin `GET /api/admin/flags?user=LOGIN` returns stored overrides and effective flags;
 `POST /api/admin/flags` takes URL-encoded `name`, `value=true|false|inherit`, optional
 `user`, a valid admin session, preview cookie and same-origin Origin. Admin writes
-emit `flag_changed` with actor/scope/value (no credentials). Reload `/admin` after
+emit structured `flag.changed` with actor/scope/value (no credentials). Reload `/admin/flags` after
 propagation to see globals; use the admin API to inspect personal overrides.
 
 ## Rollback (code/assets, not data)
@@ -234,7 +234,7 @@ export over populated tables. Exports can contain private data; encrypt/restrict
 access and never commit them.
 
 D1 restore does not restore KV mine credentials/flags or Factory DO state. KV flags
-can be reapplied through `/admin`; mine secrets must be rotated/reconnected. There
+can be reapplied through `/admin/flags`; mine secrets must be rotated/reconnected. There
 is no complete DO snapshot/export/restore tooling in this change. Do not reset a
 namespace to recover: it can lose leases, receipts and merge accounting. Preserve
 DO data, reconcile GitHub merge/head state and use the data backup and recovery procedure below
@@ -503,3 +503,16 @@ For local Workers verification with recent Wrangler versions, use
 `bunx wrangler dev --local --infer-origin-from-routes false` so localhost is not rewritten to a custom
 domain. Local test DSNs and fake credentials belong only in ignored `.dev.vars`.
 
+
+### Goal 6 verification
+
+Local full check passed with 308 tests, one platform skip, typechecks and web build. In a real local
+Workers runtime, the SDK delivered event `bb7fd4379e684c0c9307f69e4d5034bb` to an isolated local envelope
+receiver with matching request ID `0b781aa8-14d3-45d0-a4df-e362958ceaee`, `user.id=r3dbars`, and the local
+release marker. Browser Playwright checks verified admin refresh/factory selection, simulator rendering,
+the React reload boundary, and real SDK envelopes for React errors, unhandled promise rejection and
+websocket disconnect. Test-only faults were injected by the browser test, not production endpoints.
+
+Production `SHIPTORIO_SENTRY_DSN` was absent when checked. No Sentry ingestion project/key was borrowed
+from a player's mine or the separate inbound-webhook verification. Configure the dedicated secret above,
+then verify the forced event in Sentry before calling production Sentry acceptance complete.

@@ -1632,8 +1632,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    const auth = ws.deserializeAttachment() as { login?: string } | null;
-    await this.load();
+    let auth: { login?: string } | null = null;
+    try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
     return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.socketMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; }
     });
@@ -1654,6 +1654,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
+    const trace = currentTrace();
+    if (trace) { trace.repo = this.meta?.repo; if ("itemId" in msg && typeof msg.itemId === "string") trace.itemId = msg.itemId; }
+    if (this.meta?.repo) Sentry.setTag("repo", this.meta.repo);
+    if (trace?.itemId) Sentry.setTag("itemId", trace.itemId);
     if (msg.type === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
     if (msg.type === "set_autonomy" && msg.permit && !(await flagEnabled(this.env, "permits", auth.login))) return;
     const s = this.state!;
