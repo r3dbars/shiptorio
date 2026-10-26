@@ -39,6 +39,12 @@ where the first fix doesn't really fix the bug, so AI review fails it and the re
 | 10-26 21:01 | App pushed, issues #1 to #5 filed | https://github.com/r3dbars/Testing/issues | |
 | 10-26 21:08 | Shiptorio app installed on Testing | D1 `repos` has `r3dbars/testing` | Install webhook landed |
 | 10-26 21:15 | Runner re-pair blocked | | Needs `server/.dev.vars` on the Mac (F5) |
+| 10-26 21:20 | Runner paired to Testing | | Justin copied `.dev.vars` by hand |
+| 10-26 21:30 | Docs issues #6 to #11 filed | https://github.com/r3dbars/Testing/issues | Fuel for the docs launch permit (5 clean docs ships) |
+| 10-26 21:30 | Autopilot merged | https://github.com/r3dbars/shiptorio/pull/179 | Taps Spark's suggested plan/approve/launch/permit/rework so the run needs no human |
+| 10-26 21:33 | Service install race fixed | https://github.com/r3dbars/shiptorio/pull/186 | F8 |
+| 10-26 21:42 | Owner scripts get real sessions | https://github.com/r3dbars/shiptorio/pull/189 | F9 |
+| 10-26 22:20 | Runner re-paired after #151/#160/#166 | | Waiting on Justin's dedicated Codex sign-in (F10) |
 
 ## Friction log
 
@@ -65,3 +71,17 @@ Format: what hurt, how bad, what we did. Fixed items stay for the record.
   shows a one-time code, `runner pair CODE` trades it for the repo-scoped token). *Open, runner lane.*
 - **F6. Bun isn't on the default shell PATH** on Justin's Mac (`~/.bun/bin`), so the documented
   `bun run ...` commands fail in a fresh shell. Minor; the service bundles its own bun. *Workaround.*
+- **F7. The Mac's agent guard won't start background services or auto-approve jobs.** Remote Control
+  can pair and diagnose, but `runner:service install` and starting the autopilot have to be Justin's paste.
+  Right call for safety; it means every runner change costs the owner a Terminal paste. *By design.*
+- **F8. `runner:service install` raced launchd.** `bootout` returns before the label is released, so
+  reinstalling over a loaded runner failed with `Bootstrap failed: 5`. Fixed in #186 (wait, then retry).
+- **F9. Real sessions (#160) and multi-tenant access (#151) broke every owner script.** Locally signed
+  cookies have no session row, so autopilot got 401 and runner claims got 403. Fixed in #189:
+  `POST /auth/owner-session` trades an HMAC proof of `SESSION_SECRET` for a real, revocable session.
+  Lesson: security PRs need a smoke test of the operator scripts, not only the browser.
+- **F10. Three runner auth changes in one afternoon.** Between pairing (21:20) and the first job, the
+  runner needed a re-pair (#151), a new owner session (#160 → #189), and its own dedicated Codex sign-in
+  (#166). Each one is right on its own, but together they mean a working runner stopped working three times
+  with no in-game signal beyond a 403 in a log file. Real fix: the game's power panel should say
+  "runner can't claim: re-pair / sign in" with the exact command. *Open.*
