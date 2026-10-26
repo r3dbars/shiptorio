@@ -218,7 +218,7 @@ export function App() {
   );
 
   return (
-    <div className="app">
+    <div className={panel ? "app picked" : "app"}>
       <main className="floor">
         <FactoryMap state={state} onPick={setPanel} focus={focusKey ?? panel} showLabels={showLabels} ping={show("line") ? ping : null} />
         <ShipCelebration state={state} />

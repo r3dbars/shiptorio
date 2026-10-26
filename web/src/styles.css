@@ -488,6 +488,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
   .dock { left: auto; right: calc(12px + var(--sar)); transform: none; width: auto; flex-direction: column-reverse; bottom: calc(12px + var(--sab)); }
   /* not enough height for four buttons under the bell: the bell joins the chips on the left */
   .topbar .chips { flex: none; }
+  .app.picked .nextmove { display: none; } /* the station panel takes the right, so the left is free for the map */
 }
 @media (prefers-reduced-motion: reduce) { .tray { animation: none; } }
 
