@@ -335,5 +335,7 @@ and encrypted old-name scopes after rename. Mine storage/AAD now binds the activ
 installation plus immutable GitHub repo ID. Operator overrides and legacy adoption
 require explicit installation/repo ID pins; name-only historical material remains
 unread without identity proof. Same-ID renames retain proven new connections, and
-retention deletes only the original ID's credentials. No live credentials or pins
-were accessed or changed during this follow-up.
+retention deletes only the original ID's credentials. Existing production ownership
+was verified through nonsecret metadata and its immutable pins are preserved in
+production config; provider key values, revocations and permissions are unchanged.
+- 2026-10-26: Black Iron becomes the style for the **whole game** (Justin: logo, gate, sign-in, landing, intro, tutorial, every sheet, docs, map). Rulebook `docs/art/IRON-STYLE.md`, tokens `web/src/iron.css`, Silkscreen + JetBrains Mono self-hosted in `web/public/fonts/` (public past the gate).

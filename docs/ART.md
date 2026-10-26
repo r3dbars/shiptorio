@@ -120,3 +120,6 @@ airship).
 The point of the art is that **the work visibly moves**: every item is a real simulated work item with a number and
 title, every handoff is an animation, and every machine has unmistakable IDLE / WORKING / BLOCKED states (blocked =
 needs a human decision). Live: `/art/black-iron.html`. Source, contract and tooling: `docs/art/black-iron/`.
+
+**Rulebook for every surface (UI, pages, logo, map): [`docs/art/IRON-STYLE.md`](art/IRON-STYLE.md).** Tokens and
+helpers in `web/src/iron.css`, fonts self-hosted in `web/public/fonts/`.
