@@ -27,7 +27,10 @@ async function fixture() {
   ]);
   const objects = new Map<string, { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; alarm: number | null; closed: number }>();
   const env = { DB, SESSION_SECRET: "account-test", DEV_LOGIN: "local", ALLOWED_LOGINS: "alice,bob", CACHE: {
-    get: async (key: string, format?: string) => { const value = kv.get(key) ?? null; return value && format === "json" ? JSON.parse(value) : value; },
+    get: async (key: string | string[], format?: string) => {
+      const read = (key: string) => { const value = kv.get(key) ?? null; return value && format === "json" ? JSON.parse(value) : value; };
+      return Array.isArray(key) ? new Map(key.filter(k => kv.has(k)).map(k => [k, read(k)])) : read(key);
+    },
     put: async (key: string, value: string) => { kv.set(key, value); },
     delete: async (key: string) => { kv.delete(key); },
     list: async ({cursor, prefix}: {cursor?: string; prefix?: string}) => { const keys = [...kv.keys()].filter(key => !prefix || key.startsWith(prefix)).sort(); const offset = Number(cursor ?? 0); return { keys: keys.slice(offset, offset + 2).map(name => ({name})), list_complete: offset + 2 >= keys.length, cursor: String(offset + 2) }; },

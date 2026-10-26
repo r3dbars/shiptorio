@@ -38,14 +38,23 @@ export async function accountRepos(env: Env, user: User): Promise<RepoRow[]> {
   for (const repo of repos) if (await repoAccess(env, user as AccessUser, repo.full_name)) allowed.push(repo);
   return allowed;
 }
+async function kvJSON<T>(env: Env, keys: string[]): Promise<Map<string, T>> {
+  const rows = new Map<string, T>();
+  for (let i = 0; i < keys.length; i += 100) {
+    const batch = await env.CACHE.get<T>(keys.slice(i, i + 100), "json");
+    for (const [key, value] of batch) if (value !== null) rows.set(key, value);
+  }
+  return rows;
+}
 async function retainedActivity(env: Env, user: User, repos: RepoRow[]) {
   const logs: Record<string, unknown>[] = [];
   const names = new Set(repos.map(r => r.full_name.toLowerCase()));
   let cursor: string | undefined;
   do {
     const page = await env.CACHE.list({prefix: "ops:events:all:", cursor});
+    const entries = await kvJSON<Record<string, unknown>>(env, page.keys.map(k => k.name));
     for (const {name} of page.keys) {
-      const entry = await env.CACHE.get<Record<string, unknown>>(name, "json");
+      const entry = entries.get(name);
       if (entry && (entry.userId === user.login || entry.userId === String(user.id) || names.has(String(entry.repo).toLowerCase()))) logs.push(entry);
     }
     cursor = page.list_complete ? undefined : page.cursor;
@@ -75,9 +84,10 @@ async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[],
   let cursor: string | undefined;
   do {
     const page = await env.CACHE.list({ cursor });
+    const operational = await kvJSON<{userId?: string; repo?: string}>(env, page.keys.filter(k => k.name.startsWith("ops:")).map(k => k.name));
     for (const { name } of page.keys) {
       if (name.startsWith("ops:")) {
-        const entry = await env.CACHE.get<{userId?: string; repo?: string}>(name, "json");
+        const entry = operational.get(name);
         if (entry && (entry.userId?.toLowerCase() === login.toLowerCase() || entry.userId === String(userId) || names.has(entry.repo?.toLowerCase() ?? ""))) keys.add(name);
       }
       if ([...names].some(repo => name === `cred:sentry:${repo}` || name === `cred:posthog:${repo}` || name.includes(`:${repo}:`) || name.endsWith(`:${repo}`))
@@ -90,7 +100,8 @@ async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[],
       keys.add(`cred:${kind}`); keys.add(`link:${kind}`);
     }
   }
-  for (const key of keys) await env.CACHE.delete(key);
+  const pending = [...keys];
+  for (let i = 0; i < pending.length; i += 50) await Promise.all(pending.slice(i, i + 50).map(key => env.CACHE.delete(key)));
 }
 
 export async function deleteAccount(env: Env, user: User, confirmations: string[]) {
