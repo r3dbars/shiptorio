@@ -91,6 +91,9 @@ export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserS
 
 const TICK_MS = 2000;
 const MAX_ATTEMPTS = 3;
+const RUNNER_LEASE_MS = 30 * 60 * 1000;
+// Longer than the runner's 30s request timeout, so an in-flight claim is never handed out twice.
+const LOST_CLAIM_MS = 45_000;
 // Local runner planning/publication currently requires a real GitHub issue.
 const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/.test(item.id);
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
@@ -727,8 +730,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
       const running = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
-      if ([...running.values()].some(j => j.status === "running" && j.deadline && j.deadline > Date.now())) return null;
+      const expired = [...running.values()].filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now());
+      for (const old of expired) {
+        // An expired lease would otherwise stay "running" forever and block every new plan.
+        Object.assign(old, { status: "failed", error: "Lease expired; another attempt requires player approval." });
+        await this.accountPut(`runnerJob:${old.id}`, old);
+      }
+      const live = [...running.values()].find(j => j.status === "running" && j.deadline && j.deadline > Date.now());
+      // The runner claims only while idle, so the same pairing claiming again well after the lease was
+      // granted means the claim response was lost (reset or client timeout). Hand the same job back.
+      if (live?.pairId === pairId && live.deadline! - RUNNER_LEASE_MS + LOST_CLAIM_MS < Date.now()) {
+        this.log("info", "The local runner lost its last claim, so Shiptorio handed the same job back.", live.itemId);
+        return live;
+      }
+      if (live) return null;
       await this.load();
+      const stranded = this.state?.items.filter(i => i.state === "working" && expired.some(j => j.itemId === i.id)) ?? [];
+      if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) });
       await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
       const localPower = runnerPower(harnesses);
       if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
@@ -748,7 +766,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return null;
       }
       await this.accountPut("runnerLastJobId", job.id);
-      Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + 30 * 60 * 1000 });
+      Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
