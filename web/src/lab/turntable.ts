@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import * as lab from "../map/itemlab";
 import { buildDrone } from "../map/drone";
-import { makeIsland } from "../map/models";
+import { makeDistrict, makeIsland } from "../map/models";
 import { PALETTE } from "../map/palette";
 import { PixelPass } from "../map/pixel";
 
@@ -32,6 +32,7 @@ const ITEMS: Record<string, () => lab.Built> = {
   rework: () => lab.buildRework(),
   orbit: () => lab.buildOrbit(),
   check: () => lab.buildCheck(q.get("check") ?? "leftovers"),
+  district: () => { const d = makeDistrict(num("w", 5.2), num("d", 3.6), num("n", 6), q.get("name") ?? "web"); return { g: d.group, update: (t: number) => d.update(t) } as unknown as lab.Built; },
   drone: () => { const d = buildDrone(); d.g.position.y = 1.5; return d as unknown as lab.Built; },
 };
 
