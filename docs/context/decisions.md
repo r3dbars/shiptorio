@@ -5,6 +5,21 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Latest live verification, Oct 26: Sentry is now delivering signed issue-created and
+issue-resolved webhooks, not merely configured. Isolated verification issue
+7813706988 appeared as factory ore and disappeared after resolution in Sentry.
+PostHog is connected and its Transcripted traffic-drop signal is flowing. The
+existing GitHub App's Commit statuses read permission is repaired (superseding the
+older pending-permission note below). Detailed evidence and remaining real runner
+acceptance are in `live-source-launch-proof.md`.
+
+PRs #141/#142 are merged with green CI and Deploy runs 40401140082/40401524789.
+Both protected version endpoints matched `a4fc27c5407460577965a47a5d15d7a3feafbaef`.
+Only `shiptorio` was deployed. PR #146 subsequently repaired planner-comment
+revision handling. Issue #125 was completed by a concurrent agent PR and is not
+counted as game-loop evidence; #170 is reserved for the real runner acceptance.
+That acceptance remains incomplete; no approval or verification boundary was bypassed.
+
 Security hardening checkpoint (Oct 26): preserve the existing signed webhook and
 session boundaries, enforce browser mutation origins centrally, and add durable
 per-IP/per-user budgets using the existing Factory binding (no new Cloudflare
