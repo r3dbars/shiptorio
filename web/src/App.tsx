@@ -519,7 +519,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
-            <p className="empty">Your sign-ins power the builders. More sign-ins, more builders. The planner decides what they build.</p>
+            <p className="empty">
+              {plants.some((p) => p.kind === "geothermal")
+                ? "Your sign-ins and your own computer power the builders. The planner decides what each one builds."
+                : "Your sign-ins power the builders. More sign-ins, more builders. The planner decides what they build."}
+            </p>
             {plants.map((p) => {
               const pct = p.online ? Math.round(p.level * 100) : 0;
               return (

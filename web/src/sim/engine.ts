@@ -44,6 +44,7 @@ interface SparkLine {
   tool: string;
   text: string;
   reason?: string;
+  outcome?: string; // the decision log's short outcome, when the floor log line says more
 }
 
 interface Ore {
@@ -472,7 +473,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const decision = THOUGHT_FOR[line.tool];
     if (decision && s.brain) {
       const item = opts.itemId ? s.items.find((i) => i.id === opts.itemId) : undefined;
-      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
+      s.brain = { ...s.brain, decisions: s.brain.decisions + 1, thoughts: [{ id: `t-${++seq}`, at: Date.now(), decision, by: "spark" as const, model: "sim", ms: 600 + (seq % 7) * 180, itemId: opts.itemId, title: item?.title ?? line.text, outcome: line.outcome ?? line.text, reason: line.reason ?? "From the floor state.", simulated: true }, ...s.brain.thoughts].slice(0, 40) };
       emit({ type: "patch", patch: { brain: s.brain } });
     }
   };
@@ -728,7 +729,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (!asm || !plant) return;
     routed.set(item.id, route.to);
     const where = plant.kind === "geothermal" ? `${plant.name.toLowerCase()} (geothermal)` : `${plant.name} (solar)`;
-    spark({ tool: "route", text: `Routed "${item.title}" to ${where}: ${route.why}`, reason: route.why }, { itemId: item.id, target: plant.id });
+    spark({ tool: "route", text: `Routed "${item.title}" to ${where}: ${route.why}`, reason: route.why, outcome: `${item.kind} in /${item.district} → ${where}` }, { itemId: item.id, target: plant.id });
   };
 
   // The stage with the most value waiting, the way bottleneck.ts scores it.
