@@ -93,6 +93,16 @@ export const LESSONS: Lesson[] = [
   },
 ];
 
+// Use the same pick keys as the map, so touch players can see the named stations without hover.
+export function lessonFocus(state: FactoryState | null, lessonId?: string): string[] {
+  if (!state || !lessonId) return [];
+  if (lessonId === "island") return state.districts.map(d => `d:${d.name}`);
+  const machineKey = (id: string) => state.stations?.find(st => st.machineId === id)?.id ?? `m:${id}`;
+  if (lessonId === "inspect") return (state.stations ?? []).filter(st => ["ci", "verify", "review"].includes(st.kind)).map(st => st.id);
+  const types = lessonId === "machines" ? ["splitter", "assembler", "inspector", "launch_pad"] : lessonId === "power" ? ["solar", "battery", "steam"] : lessonId === "ore" ? ["ore_deposit"] : lessonId === "pad" || lessonId === "rocket" ? ["launch_pad"] : [];
+  return state.machines.filter(m => types.includes(m.type)).map(m => machineKey(m.id));
+}
+
 const DWELL_MS = 6000; // a lesson stays up at least this long before the next one can replace it
 
 // on = this run teaches. Off, everything is visible and no lessons fire.

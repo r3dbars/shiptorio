@@ -2,9 +2,16 @@
 // Then the map takes over: Spark scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { Intro } from "./Intro";
 import { IslandBackdrop } from "./IslandBackdrop";
+
+// An older phone without WebGL must still be able to sign in.
+class IslandFallback extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? null : this.props.children; }
+}
 
 export type OnboardStep = "hello" | "intro" | "repo";
 
@@ -80,7 +87,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
   return (
     <div className="onboard">
-      <IslandBackdrop />
+      <IslandFallback><IslandBackdrop /></IslandFallback>
       <section className="card ob-card" aria-label="Welcome to Shiptorio">
         <div className="ob-steps" aria-hidden="true">
           {["SIGN IN", "WELCOME", "PICK A REPO", "BUILD"].map((s, n) => (
