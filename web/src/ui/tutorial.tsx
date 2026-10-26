@@ -7,9 +7,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 
-export type HudPart = "spark" | "score" | "launch" | "build" | "power" | "line" | "autonomy" | "science" | "log" | "scenarios" | "labels";
+export type HudPart = "spark" | "score" | "launch" | "build" | "power" | "line" | "autonomy" | "science" | "log" | "scenarios" | "labels" | "checkin";
 
-const ALL: HudPart[] = ["spark", "score", "launch", "build", "power", "line", "autonomy", "science", "log", "scenarios", "labels"];
+const ALL: HudPart[] = ["spark", "score", "launch", "build", "power", "line", "autonomy", "science", "log", "scenarios", "labels", "checkin"];
 
 export interface Lesson {
   id: string;
@@ -83,6 +83,13 @@ export const LESSONS: Lesson[] = [
     text: "Every suggestion you approve as-is builds trust. Approve enough and the factory earns the right to do the small stuff on its own.",
     when: (s) => (s.autonomy?.next?.have ?? 0) >= 3 || s.autonomy?.level !== "advisor",
     unlocks: ["autonomy", "scenarios"],
+  },
+  {
+    id: "checkin",
+    title: "Check-in",
+    text: "When a few things wait on you, check in: swipe through them in one go. Right does it, left is later, down is never.",
+    when: (s) => (s.deck?.length ?? 0) > 1 || (s.metrics?.rockets ?? 0) >= 2,
+    unlocks: ["checkin"],
   },
 ];
 

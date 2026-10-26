@@ -332,7 +332,7 @@ export function App() {
         ) : (
           <>
             <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={send} onOpen={setPanel} />
-            {deck.length > 1 && (
+            {deck.length > 1 && show("checkin") && (
               <button type="button" className="card ci-open" onClick={() => setCheckin(true)} aria-label={`Check in: ${deck.length} cards waiting on you`}>
                 CHECK-IN · {deck.length}
               </button>

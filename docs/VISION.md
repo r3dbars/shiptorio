@@ -39,7 +39,7 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 8. **Plain words in the UI, no "Spark".** Players don't care what the planner model is called. Recommended options
    just get a "Suggested" tag. No named character. The only credit is one small "powered by Meta Muse Spark" line
    (onboarding/about). Internally (code, docs, contracts) Spark keeps its name.
-9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until Spark introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
+9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until the coach introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
 
 ## Non-goals (for now)
 
