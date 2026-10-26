@@ -117,7 +117,7 @@ export function ConnectSource({ kind, state, send, onClose }: { kind: string; st
     <section className="card sheet" aria-label={SOURCE.connect(copy.name)}>
       <div className="sheet-top">
         <h2>{connected ? SOURCE.connected(copy.name) : SOURCE.connect(copy.name)}</h2>
-        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label="Close">
+        <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
       </div>
