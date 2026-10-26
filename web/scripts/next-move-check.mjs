@@ -61,13 +61,21 @@ async function play(page, label) {
       }
     }
     const at = Date.now();
-    // a card counts once it's on screen and isn't the launch card we just answered
-    const seen = await page
-      .waitForFunction((stale) => {
+    // a card counts once it's on screen and isn't the launch card we just answered. A stray tap can open a
+    // station sheet on phones (it covers the card by design), so close one if it shows up while we wait.
+    let seen = null;
+    while (Date.now() - at < WITHIN_MS) {
+      if (await page.locator(".stationpanel").count()) await page.locator(".sp-close").first().click({ timeout: 300 }).catch(() => {});
+      const ok = await page.evaluate((stale) => {
         const el = document.querySelector('section[aria-label="Next move"]');
         return !!el && el.getBoundingClientRect().height > 0 && el.innerText !== stale;
-      }, launchedCard || null, { timeout: WITHIN_MS })
-      .then(() => Date.now() - at, () => null);
+      }, launchedCard || null);
+      if (ok) {
+        seen = Date.now() - at;
+        break;
+      }
+      await page.waitForTimeout(50);
+    }
     const title = seen !== null ? (await card.first().locator(".nm-title").innerText().catch(() => "")) : "";
     results.push({ rocket: n, ok: seen !== null, ms: seen, card: title });
     console.log(`${label} rocket ${n}: ${seen !== null ? `next move in ${seen}ms: ${title}` : "NO next move within 2s"}`);
