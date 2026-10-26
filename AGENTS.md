@@ -186,6 +186,8 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 - Work on a branch and open a PR. Don't push to `main`.
 - **Commit and push often** (Justin, 2026-10-26). Push WIP to your branch after every meaningful step, and open a
   draft PR early so the work is visible on GitHub. Never sit on unpushed local work.
+- **Run `bun run check` (typecheck + tests + build) before you mark a PR ready.** CI skips draft PRs, so push WIP
+  as a draft freely; it only runs (and only fails) once you mark it ready. Merge `main` in first so you test against it.
 - **Merge your own PR once CI is green** (Justin, 2026-10-26: "auto merge every thing"). Squash merge, then check
   the Deploy run on `main` went green before calling it live. Don't merge drafts that are stale (#3, #4) or a PR
   another agent is still working on. GitHub's repo auto-merge setting is not on yet; Justin can flip it in
