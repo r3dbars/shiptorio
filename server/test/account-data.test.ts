@@ -223,6 +223,7 @@ describe("account data controls", () => {
       expect(html).toContain("DRAFT");
       for (const name of ["GitHub", "Sentry", "PostHog", "Meta"]) expect(html).toContain(name);
     }
+    expect(accountPage("Account", "body")).toContain('name="referrer" content="same-origin"');
     expect(accountPage("<script>", "body")).not.toContain("<title><script>");
     expect(legalPage("privacy")).toContain("/settings");
     expect(settingsPage({id: 1, login: '<img src=x>'}, [], [], [])).not.toContain('<img src=x>');
