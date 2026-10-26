@@ -7,6 +7,15 @@ before you change anything.
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**
 
+**The loop in one page: [`docs/LOOP.md`](docs/LOOP.md)** (visual: `docs/loop.html`). Ore → power → line →
+**verification gauntlet** (CI inspector, verify bay, AI review, merge gate, orbit watch) → rocket; fails ride the
+rework belt back to Spark with a scar tag; every station is clickable.
+
+**Product spec: [`docs/PRODUCT.md`](docs/PRODUCT.md).** How Muse Spark runs the factory as the Foreman
+agent: the core loop, the bottleneck engine and Next Move card, Spark's tools by trust tier, what the
+player decides vs Spark, launch permits, the real metrics behind the score, onboarding, and hackathon
+scope. It wins over PLAN.md / ARCHITECTURE.md on product behavior.
+
 ## What Shiptorio is
 
 Shiptorio turns a codebase into a Factorio-style factory. User feedback is the ore,
@@ -59,7 +68,7 @@ Bun workspaces:
 | `shared/` | zod model (`model.ts`) and the message protocol (`protocol.ts`). The contract between lanes |
 | `server/` | Hono Worker (`src/index.ts`), GitHub App + webhooks (`github.ts`, `auth.ts`), Factory Durable Object (`factory.ts`) with pure rules in `engine.ts`, Spark client (`spark.ts`), repo → districts layout (`map.ts`) |
 | `runner/` | Not started. Local helper on the user's machine: finds `claude`/`codex`/Cursor/Grok CLIs and local model endpoints, runs jobs in git worktrees, pushes branches |
-| `web/` | Vite + React + Three.js. `src/map/` (scene + pixel pass), `src/sim/` (fake factory), `src/source/` (sim or live), `src/store.ts` (applies snapshot/patch) |
+| `web/` | Vite + React + Three.js. `src/map/` (scene, pixel pass, `itemlab.js` = the Item Lab builders copied as-is, `models.ts` = island/district scenery), `src/sim/` (fake factory), `src/source/` (sim or live), `src/store.ts` (applies snapshot/patch) |
 
 The Worker serves `web/dist` as static assets, so build `web/` before `wrangler dev` or deploy.
 
@@ -193,6 +202,10 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 - Palette: stone #c9b48a, cliff slate #3a4268, moss #4f7d3b, steel #8a94a3,
   amber #f2a93b, green #5bd18b, red #ff5e52, blue #6fb2ff, void #1b2448.
   Fonts: Silkscreen (pixel UI), JetBrains Mono (small text).
+- The map draws machines with the Item Lab builders (`web/src/map/itemlab.js`). `scene.ts` maps
+  `FactoryState` onto each model's Item Lab state (assembler WORKING/BLOCKED, inspector PASS/REJECT,
+  launch pad COUNTDOWN/LAUNCH, power plants from `state.power`). New machine fields the map should
+  show (power level, online, tier) need to arrive in `FactoryState`; the web lane does the rest.
 - References (claude.ai links): Pixel Prototype https://claude.ai/artifact/KGfEwhDLxxu8LMjGkcqNrK,
   Item Lab (all 12 items) https://claude.ai/artifact/1LRgfMxAMrZ5gv1r2dkkKy,
   Feedback Factory canvas, Belts artboard https://claude.ai/artifact/HtWP6pHDcYn9TSByR6UJcn.

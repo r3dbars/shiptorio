@@ -10,8 +10,58 @@ export type ItemKind = z.infer<typeof ItemKind>;
 export const OreSource = z.enum(["github_issue", "sentry", "inbox", "lint"]);
 export type OreSource = z.infer<typeof OreSource>;
 
+export const SourceKind = z.enum(["github", "sentry", "email", "stripe", "claude", "chatgpt"]);
+export type SourceKind = z.infer<typeof SourceKind>;
+export const SourceStatus = z.object({
+  kind: SourceKind,
+  state: z.enum(["not_connected", "needs_action", "connected", "error"]),
+  detail: z.string(),
+  lastEventAt: z.number().optional(),
+  eventsToday: z.number().int().nonnegative().default(0),
+  setup: z.object({ steps: z.array(z.string()), actionUrl: z.string().url().optional() }),
+});
+export type SourceStatus = z.infer<typeof SourceStatus>;
+
+export const OreChunk = z.object({
+  fingerprint: z.string(),
+  count: z.number().int().positive(),
+  firstSeen: z.number(),
+  lastSeen: z.number(),
+  severity: z.number().positive(),
+  usersAffected: z.number().int().nonnegative(),
+  reporters: z.array(z.string()),
+  linked: z.array(z.string()),
+  hints: z.array(z.string()),
+  rawRefs: z.array(z.string()),
+  paying: z.boolean().default(false),
+});
+export type OreChunk = z.infer<typeof OreChunk>;
+
+export const QualityTier = z.enum(["normal", "uncommon", "rare", "epic", "legendary"]);
+export const Inspection = z.object({
+  headSha: z.string(),
+  state: z.enum(["pending", "passed", "rework"]),
+  quality: QualityTier.optional(),
+  stages: z.array(z.object({
+    gate: z.enum(["ci", "verify", "ai", "human"]),
+    state: z.enum(["pending", "passed", "rework"]),
+    reason: z.string(),
+  })),
+  humanApproved: z.boolean().default(false),
+});
+export type Inspection = z.infer<typeof Inspection>;
+
 export const ItemState = z.enum(["ore", "queued", "working", "inspecting", "rejected", "passed", "on_pad", "launched"]);
 export type ItemState = z.infer<typeof ItemState>;
+
+// Who an item hurts. Spark fills this in during triage; it's what makes priorities real.
+export const CustomerContext = z.object({
+  usersAffected: z.number().int().default(0), // Sentry users, PostHog sessions on the route
+  reporters: z.array(z.string()).default([]), // email senders, issue authors
+  linked: z.array(z.string()).default([]), // item ids that are the same problem
+  paying: z.boolean().optional(),
+});
+export type CustomerContext = z.infer<typeof CustomerContext>;
 
 export const Item = z.object({
   id: z.string(),
@@ -29,6 +79,10 @@ export const Item = z.object({
   failure: z.string().optional(), // why the inspector rejected it
   attempts: z.number().int().default(0),
   updatedAt: z.number(),
+  customer: CustomerContext.optional(),
+  value: z.number().optional(), // Spark's weight for this item; drives the bottleneck math
+  ore: OreChunk.optional(),
+  inspection: Inspection.optional(),
 });
 export type Item = z.infer<typeof Item>;
 
@@ -110,6 +164,106 @@ export const SCIENCE_FOR: Record<ItemKind, keyof Science> = {
   tests: "blue",
 };
 
+// ---------- the foreman layer (docs/PRODUCT.md) ----------
+
+// The pipeline stages the bottleneck engine scores.
+// "resources": nothing can build because no subscription is plugged in.
+export const Stage = z.enum(["intake", "triage", "build", "inspect", "pad", "release", "impact", "power", "resources"]);
+export type Stage = z.infer<typeof Stage>;
+
+// Who did something. Every Spark action carries its reason so the player can ask "why".
+export const Actor = z.enum(["spark", "player", "system"]);
+export type Actor = z.infer<typeof Actor>;
+
+export const Bottleneck = z.object({
+  stage: Stage,
+  wip: z.number().int(), // items waiting there
+  ageMs: z.number(), // oldest item's wait
+  throughputPerHour: z.number(),
+  valueAtRisk: z.number(), // sum of item value waiting there
+  summary: z.string(), // one line with real numbers: "3 PRs waiting on review for 9h"
+});
+export type Bottleneck = z.infer<typeof Bottleneck>;
+
+// A Spark tool call waiting on the player. Saying yes to the option applies it.
+export const MoveAction = z.object({
+  tool: z.string(), // e.g. "start_job"
+  args: z.record(z.string(), z.unknown()),
+  reason: z.string(),
+});
+export type MoveAction = z.infer<typeof MoveAction>;
+
+export const MoveOption = z.object({
+  id: z.string(),
+  label: z.string(), // button text: "Review #41", "Send to Claude Code"
+  recommended: z.boolean().default(false), // exactly one option is Spark's pick
+  actions: z.array(MoveAction).default([]), // what Spark will do on yes; empty for "skip" or a link out
+});
+export type MoveOption = z.infer<typeof MoveOption>;
+
+// The Next Move card: the one thing holding the factory back, and 1 to 3 ways to act on it.
+export const Move = z.object({
+  id: z.string(),
+  title: z.string(),
+  why: z.string(), // who it hurts
+  options: z.array(MoveOption).min(1).max(3),
+  stage: Stage.optional(),
+  itemId: z.string().optional(),
+  url: z.string().optional(), // e.g. the PR to review
+  createdAt: z.number(),
+});
+export type Move = z.infer<typeof Move>;
+
+export const DistrictTrust = z.object({
+  district: z.string(),
+  score: z.number().min(0).max(1),
+  risk: z.enum(["low", "medium", "high"]),
+  permit: z.boolean(), // Spark may launch PRs here on its own
+});
+export type DistrictTrust = z.infer<typeof DistrictTrust>;
+
+// Autonomy is earned by playing (docs/PRODUCT.md). Spark asks first at "advisor".
+// "launch" is per district: it's DistrictTrust.permit, never a factory-wide level.
+export const AutonomyLevel = z.enum(["advisor", "floor", "build", "lights_out"]);
+export type AutonomyLevel = z.infer<typeof AutonomyLevel>;
+
+export const Autonomy = z.object({
+  level: AutonomyLevel,
+  districts: z.array(DistrictTrust),
+  next: z
+    .object({
+      level: AutonomyLevel,
+      have: z.number().int(), // e.g. 7 floor moves approved as-is
+      need: z.number().int(), // e.g. 10
+      label: z.string(), // "floor moves approved without a change"
+    })
+    .nullable(), // null at the top level
+  ranAlone: z.number().int().default(0), // actions this week Spark took without asking
+});
+export type Autonomy = z.infer<typeof Autonomy>;
+
+// HUD numbers. Every one is a real metric with a game skin.
+export const Metrics = z.object({
+  rockets: z.number().int(), // PRs merged
+  leadTimeMs: z.number().optional(), // ore → merged, median this week
+  bitersKilled: z.number().int(), // Sentry issues resolved after a release
+  escapedDefects: z.number().int(),
+  customersAnswered: z.number().int(),
+  usersUnblocked: z.number().int(),
+  costPerRocket: z.number().optional(), // credits
+  shipScore: z.number(), // users unblocked + 10 × customers answered + rockets − 25 × escaped defects
+  checkouts: z.number().int().optional(), // demo shop "checkout completed" counter (Stripe test mode)
+});
+export type Metrics = z.infer<typeof Metrics>;
+
+// What the Foreman drone is doing on the map right now.
+export const Foreman = z.object({
+  targetId: z.string().optional(), // machine or item id it flies to
+  tool: z.string().optional(), // last Spark tool call, e.g. "triage"
+  thinking: z.boolean().default(false), // a Spark call is in flight
+});
+export type Foreman = z.infer<typeof Foreman>;
+
 export const FactoryState = z.object({
   repo: z.string(),
   baseBranch: z.string(),
@@ -121,5 +275,13 @@ export const FactoryState = z.object({
   science: Science,
   trust: z.number().min(0).max(1),
   tick: z.number().int(),
+  // Foreman layer. Optional so servers and sims that don't send it yet still validate.
+  goal: z.string().optional(),
+  bottleneck: Bottleneck.nullable().optional(),
+  move: Move.nullable().optional(), // the open Next Move card
+  autonomy: Autonomy.optional(),
+  metrics: Metrics.optional(),
+  foreman: Foreman.optional(),
+  sources: z.array(SourceStatus).optional(),
 });
 export type FactoryState = z.infer<typeof FactoryState>;

@@ -1,201 +1,246 @@
-// The factory floor in Three.js: districts from the repo as stone pads on a floating island,
-// the machine line below them, belts between machines, and items riding the line.
-// Placeholder buildings: Justin's art prototype (docs/art-prototype.html) replaces these.
+// The factory floor in Three.js, in the style of docs/art-prototype.html: a floating
+// island with the repo's districts on stone plinths behind the machine line, belts
+// between machines, and items riding the belts as they move through states.
+// Machines are the locked Item Lab models (itemlab.js); each frame the scene turns
+// FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
-import type { FactoryState, Item, Machine } from "@shiptorio/shared";
+import type { FactoryState, Harness, Item, Machine, PowerSource } from "@shiptorio/shared";
+import { box, mat, mesh, own, rep, rnd, tex } from "./kit";
+import {
+  buildAssembler,
+  buildBattery,
+  buildBiter,
+  buildGeo,
+  buildInspector,
+  buildLaunchPad,
+  buildOre,
+  buildSolar,
+  buildSplitter,
+  buildSteam,
+  buildTurret,
+  updateFx,
+  type BuildOpts,
+  type Built,
+} from "./itemlab";
+import { buildDrone, type DroneMode } from "./drone";
+import { makeDistrict, makeIsland, makeWaterfall } from "./models";
 import { KIND_COLOR, PALETTE } from "./palette";
-import { PIXEL, PixelPass } from "./pixel";
+import { pixelSizeFor, PixelPass } from "./pixel";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
 
-const LINE_GAP = 1.6; // world units between machine grid cells
+const CELL = 1.8; // world units per machine grid step (Item Lab models are ~3 units wide)
+const DISTRICT_FRONT = -4; // districts sit behind the line, front edge here
 const YAW = Math.PI / 4; // 45° turn
-const TILT = (30 * Math.PI) / 180; // 30° tilt
+const TILT = Math.PI / 6; // 30° tilt
+const CAM_DIST = 33;
+const ZOOM_MIN = 0.4; // zoom > 1 means zoomed out
+const ZOOM_MAX = 2.6;
+const ITEM_SPEED = 1.6; // world units per second along a belt
+// three r155+ lights are physically based; × π matches the prototype's r128 light levels
+const LEGACY_LIGHT = Math.PI;
+const HUD_RIGHT_PX = 340; // width of the HUD column in styles.css
+const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
 
-const mat = (color: number, emissive = 0) =>
-  new THREE.MeshPhongMaterial({ color, emissive, flatShading: true, shininess: 0, specular: 0x000000 });
+export const HARNESS_COLOR: Record<Harness, number> = {
+  spark: 0x6fb2ff,
+  claude_code: 0xd97757,
+  codex: 0xd6dbe3,
+  cursor: 0x9b8cff,
+  grok: 0xeef1fa,
+  local: 0xff7a2a,
+};
 
-function box(w: number, h: number, d: number, color: number) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
+export const HARNESS_NAME: Record<Harness, string> = {
+  spark: "SPARK",
+  claude_code: "CLAUDE CODE",
+  codex: "CODEX",
+  cursor: "CURSOR",
+  grok: "GROK",
+  local: "LOCAL",
+};
+
+type Pt = [number, number]; // x, z on the ground
+
+interface Path {
+  pts: Pt[];
+  segs: { x1: number; z1: number; x2: number; z2: number; L: number; s0: number }[];
+  len: number;
 }
 
-function cyl(rTop: number, rBottom: number, h: number, color: number, seg = 8) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBottom, h, seg), mat(color));
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
+function pathOf(pts: Pt[]): Path {
+  const segs: Path["segs"] = [];
+  let len = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[i + 1];
+    const L = Math.hypot(x2 - x1, z2 - z1);
+    if (L < 1e-6) continue;
+    segs.push({ x1, z1, x2, z2, L, s0: len });
+    len += L;
+  }
+  return { pts, segs, len };
 }
 
-function placed<T extends THREE.Object3D>(o: T, x: number, y: number, z: number): T {
-  o.position.set(x, y, z);
-  return o;
+function pointAt(p: Path, s: number): Pt {
+  for (const g of p.segs) if (s <= g.s0 + g.L) {
+    const k = (s - g.s0) / g.L;
+    return [g.x1 + (g.x2 - g.x1) * k, g.z1 + (g.z2 - g.z1) * k];
+  }
+  const last = p.pts[p.pts.length - 1];
+  return [last[0], last[1]];
+}
+
+const join = (...paths: (Path | undefined)[]) => pathOf(paths.flatMap((p) => p?.pts ?? []));
+
+interface Label {
+  obj: THREE.Object3D;
+  y: number;
+  el: HTMLDivElement;
+  title: HTMLElement;
+  sub: HTMLElement;
 }
 
 interface MachineView {
-  group: THREE.Group;
-  spin?: THREE.Object3D; // turns while working
-  beacon?: THREE.Mesh;
-  rocket?: THREE.Object3D;
+  built: Built;
+  machine: Machine;
+  label?: Label;
+  art: string; // the Item Lab state the model is showing
 }
 
-function buildMachine(m: Machine): MachineView {
-  const g = new THREE.Group();
-  const v: MachineView = { group: g };
+interface DistrictView {
+  name: string;
+  roof: THREE.MeshPhongMaterial;
+  center: THREE.Vector3;
+  label: Label;
+  files: number;
+}
+
+interface ItemView {
+  mesh: THREE.Mesh;
+  state: Item["state"] | null;
+  path: Path | null;
+  s: number;
+  stopAt: number;
+  rest: THREE.Vector3 | null; // where it settles once off the belt
+}
+
+interface BiterView {
+  biter: Built;
+  district: string;
+  attacking: boolean;
+}
+
+type OreKind = "sentry" | "inbox" | "issues";
+
+function oreKind(m: Machine): OreKind {
+  if (m.id.includes("sentry")) return "sentry";
+  if (m.id.includes("inbox")) return "inbox";
+  return "issues";
+}
+
+// Item Lab variants: [name, color, extra?]
+const ORE_VARIANT: Record<OreKind, BuildOpts["variant"]> = {
+  sentry: ["SENTRY", 0xff5e52],
+  inbox: ["INBOX", 0x6fb2ff],
+  issues: ["ISSUES", 0xf2a93b],
+};
+
+function solarVariant(name = ""): BuildOpts["variant"] {
+  const n = name.toLowerCase();
+  if (n.includes("codex") || n.includes("chatgpt")) return ["CODEX", 0xd6dbe3];
+  if (n.includes("cursor")) return ["CURSOR", 0x8a8f99];
+  if (n.includes("grok")) return ["GROK", 0x30343c];
+  return ["CLAUDE", 0xd97757];
+}
+
+// Where the label sits above each model, from the Item Lab's item heights.
+const LABEL_Y: Partial<Record<Machine["type"], number>> = {
+  ore_deposit: 2.6,
+  splitter: 3.9,
+  assembler: 2.6,
+  inspector: 2.4,
+  launch_pad: 4.6,
+  steam: 4.4,
+  solar: 2.4,
+  battery: 2.3,
+  geothermal: 3.0,
+  turret: 2.4,
+};
+
+function buildModel(m: Machine, power?: PowerSource): Built {
   switch (m.type) {
-    case "ore_deposit": {
-      const crater = cyl(0.7, 0.55, 0.15, PALETTE.dark, 10);
-      crater.position.y = 0.08;
-      g.add(crater);
-      for (let i = 0; i < 5; i++) {
-        const c = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.45, 5), mat(PALETTE.blue, 0x10306a));
-        const a = (i / 5) * Math.PI * 2;
-        c.position.set(Math.cos(a) * 0.35, 0.3, Math.sin(a) * 0.35);
-        c.rotation.z = 0.3 * Math.cos(a);
-        g.add(c);
-      }
-      break;
-    }
-    case "splitter": {
-      for (const [x, z] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) {
-        const leg = box(0.08, 0.5, 0.08, PALETTE.steel);
-        leg.position.set(x, 0.25, z);
-        g.add(leg);
-      }
-      const silo = cyl(0.45, 0.45, 0.8, PALETTE.amber, 10);
-      silo.position.y = 0.9;
-      g.add(silo);
-      const dish = new THREE.Group();
-      const plate = cyl(0.3, 0.05, 0.1, PALETTE.white, 8);
-      plate.rotation.x = 0.6;
-      plate.position.y = 0.1;
-      dish.add(plate);
-      dish.position.y = 1.35;
-      g.add(dish);
-      v.spin = dish;
-      break;
-    }
+    case "ore_deposit":
+      return buildOre({ variant: ORE_VARIANT[oreKind(m)] });
+    case "splitter":
+      return buildSplitter();
     case "assembler": {
-      g.add(placed(box(1.2, 0.2, 1.0, PALETTE.steel), 0, 0.1, 0));
-      const wall = box(1.2, 0.8, 0.12, PALETTE.dark);
-      wall.position.set(0, 0.6, -0.45);
-      g.add(wall);
-      const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.4), mat(PALETTE.green, 0x1a5a33));
-      screen.position.set(0, 0.65, -0.38);
-      g.add(screen);
-      const bench = box(0.6, 0.3, 0.4, PALETTE.cliff);
-      bench.position.set(0, 0.35, 0.1);
-      g.add(bench);
-      const arm = new THREE.Group();
-      const base = cyl(0.1, 0.12, 0.2, PALETTE.amber);
-      base.position.y = 0.1;
-      const boom = box(0.08, 0.08, 0.55, PALETTE.amber);
-      boom.position.set(0, 0.25, 0.25);
-      arm.add(base, boom);
-      arm.position.set(0.4, 0.2, 0.25);
-      g.add(arm);
-      v.spin = arm;
-      const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 4), mat(PALETTE.red, 0x000000));
-      beacon.position.set(-0.5, 1.05, -0.45);
-      g.add(beacon);
-      v.beacon = beacon;
-      break;
+      const h = m.harness ?? "spark";
+      return buildAssembler({ tier: m.tier - 1, variant: [HARNESS_NAME[h], HARNESS_COLOR[h]] });
     }
-    case "inspector": {
-      const tunnel = box(1.0, 0.7, 0.8, PALETTE.white);
-      tunnel.position.y = 0.35;
-      g.add(tunnel);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.07, 6, 12), mat(PALETTE.blue, 0x123a66));
-      ring.position.set(0.52, 0.4, 0);
-      ring.rotation.y = Math.PI / 2;
-      g.add(ring);
-      v.spin = ring;
-      const bin = box(0.4, 0.3, 0.4, PALETTE.red);
-      bin.position.set(0, 0.15, 0.85);
-      g.add(bin);
-      break;
+    case "inspector":
+      return buildInspector();
+    case "launch_pad":
+      return buildLaunchPad();
+    case "steam":
+      return buildSteam({ variant: power?.name.toLowerCase().includes("baseten") ? ["BASETEN", 0x9b8cff] : ["META API", 0x6fb2ff] });
+    case "solar":
+      return buildSolar({ variant: solarVariant(power?.name) });
+    case "battery":
+      return buildBattery();
+    case "turret":
+      return buildTurret();
+    case "geothermal":
+      return buildGeo({ variant: power?.name.includes("3090") ? ["3090 · LLAMA.CPP", 0x2b2f36, 0xf2a93b] : ["MAC · MLX", 0xc9ced6, 0xeef1fa] });
+    default: {
+      const g = new THREE.Group();
+      box(1, 0.8, 1, PALETTE.steel, 0, 0.4, 0, g);
+      return { g, update() {} };
     }
-    case "launch_pad": {
-      g.add(placed(cyl(0.8, 0.9, 0.15, PALETTE.dark, 8), 0, 0.08, 0));
-      const gantry = box(0.15, 1.8, 0.15, PALETTE.red);
-      gantry.position.set(-0.55, 0.9, 0);
-      g.add(gantry);
-      const rocket = new THREE.Group();
-      const body = cyl(0.18, 0.18, 1.0, PALETTE.white);
-      body.position.y = 0.5;
-      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.35, 8), mat(PALETTE.red));
-      nose.position.y = 1.17;
-      rocket.add(body, nose);
-      rocket.position.y = 0.15;
-      g.add(rocket);
-      v.rocket = rocket;
-      break;
-    }
-    case "steam": {
-      for (const x of [-0.35, 0.35]) {
-        const tank = cyl(0.28, 0.28, 0.6, PALETTE.steel, 10);
-        tank.position.set(x, 0.3, 0.2);
-        g.add(tank);
-      }
-      const tower = box(0.3, 1.4, 0.3, PALETTE.cliff);
-      tower.position.set(0, 0.7, -0.35);
-      g.add(tower);
-      const flare = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 5), mat(PALETTE.amber, 0xa05010));
-      flare.position.set(0, 1.55, -0.35);
-      g.add(flare);
-      v.beacon = flare;
-      break;
-    }
-    default:
-      g.add(placed(box(0.8, 0.6, 0.8, PALETTE.steel), 0, 0.3, 0));
   }
-  return v;
-}
-
-function beltTexture() {
-  const c = document.createElement("canvas");
-  c.width = 16;
-  c.height = 4;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#2a2f45";
-  ctx.fillRect(0, 0, 16, 4);
-  ctx.fillStyle = "#4a5270";
-  ctx.fillRect(0, 0, 4, 4);
-  ctx.fillRect(8, 0, 4, 4);
-  const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestFilter;
-  t.wrapS = THREE.RepeatWrapping;
-  return t;
 }
 
 export class FactoryScene {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -200, 200);
+  private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 200);
   private readonly pass = new PixelPass();
+  private readonly sun = new THREE.DirectionalLight(0xfff0d2, 0.95 * LEGACY_LIGHT);
   private readonly world = new THREE.Group(); // island + districts, rebuilt when districts change
+  private readonly beltGroup = new THREE.Group();
   private readonly machines = new Map<string, MachineView>();
-  private readonly belts = new THREE.Group();
-  private readonly items = new Map<string, THREE.Mesh>();
-  private readonly beltTex = beltTexture();
+  private readonly districts = new Map<string, DistrictView>();
+  private readonly items = new Map<string, ItemView>();
+  private readonly biters = new Map<string, BiterView>();
+  private readonly paths = new Map<string, Path>(); // "from>to" and "rework:inspector>assembler"
+  private readonly labels = new Set<Label>();
+  private beltTextures: THREE.Texture[] = [];
+  private waterTextures: THREE.Texture[] = [];
+  private rocks: { r: THREE.Mesh; y: number; k: number }[] = [];
+  private readonly launched = new Set<string>();
   private readonly target = new THREE.Vector3();
-  private readonly launches: { rocket: THREE.Object3D; t: number }[] = [];
-  private districtsKey = "";
-  private lineZ = 0;
-  private lineX = 0;
+  private readonly bounds = { x0: -10, x1: 10, z0: -10, z1: 10 };
+  private worldKey = "";
+  private beltKey = "";
   private zoom = 1;
   private width = 1;
   private height = 1;
   private state: FactoryState | null = null;
-  private launched = new Set<string>();
   private raf = 0;
   private last = performance.now();
+  private t = 0;
+  private launchUntil = -1;
+  private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  private readonly v3 = new THREE.Vector3();
+  // Spark, the Foreman, flying to whatever it's touching
+  private readonly drone = buildDrone();
+  private readonly droneTo = new THREE.Vector3(0, 4, 0);
+  private droneLabel?: Label;
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    private readonly labelRoot: HTMLElement,
+  ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(1);
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -203,194 +248,348 @@ export class FactoryScene {
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
     this.scene.background = new THREE.Color(PALETTE.void);
 
-    this.scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x2a2f45, 1.1));
-    const sun = new THREE.DirectionalLight(0xfff1d6, 1.6);
-    sun.position.set(-20, 40, 25);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40 });
-    this.scene.add(sun, sun.target);
-    this.scene.add(this.world, this.belts);
-    // District labels are drawn to canvases; redraw once the pixel font has loaded.
-    document.fonts?.ready.then(() => {
-      this.districtsKey = "";
-      if (this.state) this.update(this.state);
-    });
+    this.scene.add(new THREE.HemisphereLight(0xd6deff, 0x40344a, 0.6 * LEGACY_LIGHT));
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.bias = -0.0015;
+    this.scene.add(this.sun, this.sun.target, this.world, this.beltGroup, this.drone.g);
+    this.droneLabel = this.addLabel(this.drone.g, 1.3);
+    this.droneLabel.el.classList.add("drone");
     this.loop();
   }
 
   setSize(width: number, height: number) {
-    this.width = width;
-    this.height = height;
-    this.renderer.setSize(width, height, false);
+    this.width = Math.max(1, width);
+    this.height = Math.max(1, height);
+    this.renderer.setSize(this.width, this.height, false);
     this.applyCamera();
   }
 
+  // factor > 1 zooms out
   zoomBy(factor: number) {
-    this.zoom = Math.min(4, Math.max(0.3, this.zoom * factor));
+    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
     this.applyCamera();
   }
 
   panBy(dx: number, dy: number) {
-    // screen pixels → world units on the ground plane
-    const unitsPerPx = (2 * this.viewHeight()) / this.height;
+    const k = (this.camera.top - this.camera.bottom) / this.height;
     const right = new THREE.Vector3(Math.cos(YAW), 0, -Math.sin(YAW));
-    const fwd = new THREE.Vector3(Math.sin(YAW), 0, Math.cos(YAW));
-    this.target.addScaledVector(right, -dx * unitsPerPx);
-    this.target.addScaledVector(fwd, -dy * unitsPerPx / Math.sin(TILT));
-    this.applyCamera();
-  }
-
-  private viewHeight() {
-    return 12 / this.zoom;
+    const down = new THREE.Vector3(Math.sin(YAW), 0, Math.cos(YAW));
+    this.target.addScaledVector(right, -dx * k);
+    this.target.addScaledVector(down, (-dy * k) / Math.sin(TILT));
+    const b = this.bounds;
+    this.target.x = Math.max(b.x0, Math.min(b.x1, this.target.x));
+    this.target.z = Math.max(b.z0, Math.min(b.z1, this.target.z));
   }
 
   private applyCamera() {
-    const h = this.viewHeight();
-    const aspect = this.width / this.height;
-    Object.assign(this.camera, { left: -h * aspect, right: h * aspect, top: h, bottom: -h });
+    const a = this.width / this.height;
+    const vh = (a < 1 ? (24 / a) * 0.62 : 19) * this.zoom;
+    // keep the factory centered in the space the HUD cards on the right leave free
+    const shift = this.width > 760 ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
+    Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
-    const dir = new THREE.Vector3(Math.sin(YAW) * Math.cos(TILT), Math.sin(TILT), Math.cos(YAW) * Math.cos(TILT));
-    this.camera.position.copy(this.target).addScaledVector(dir, 60);
-    this.camera.lookAt(this.target);
-    // Sharper when zoomed out: pixels shrink with zoom, never below 1px.
-    const pixel = Math.max(1, Math.round(PIXEL.size * Math.min(1, this.zoom)));
-    this.pass.setSize(this.width, this.height, pixel);
+    this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
   }
 
   update(state: FactoryState) {
     const first = !this.state;
     this.state = state;
-    const key = JSON.stringify(state.districts);
-    if (key !== this.districtsKey) {
-      this.districtsKey = key;
-      this.buildWorld(state);
-      if (first) {
-        this.target.set(this.lineX, 0, this.lineZ - 3);
-        this.applyCamera();
-      }
-    }
     this.syncMachines(state.machines);
-    this.syncBelts(state);
-    this.syncItems(state.items);
-  }
-
-  private buildWorld(state: FactoryState) {
-    this.world.clear();
-    const ds = state.districts;
-    const maxX = Math.max(10, ...ds.map((d) => d.x + d.w));
-    const maxY = Math.max(4, ...ds.map((d) => d.y + d.h));
-    this.lineX = maxX / 2;
-    this.lineZ = maxY + 5;
-    const minLineX = this.lineX - 8 * LINE_GAP;
-    const maxLineX = this.lineX + 8 * LINE_GAP;
-
-    // the floating island
-    const x0 = Math.min(-2, minLineX - 2), x1 = Math.max(maxX + 2, maxLineX + 2);
-    const z0 = -2, z1 = this.lineZ + 7;
-    const ground = box(x1 - x0, 0.6, z1 - z0, PALETTE.moss);
-    ground.position.set((x0 + x1) / 2, -0.3, (z0 + z1) / 2);
-    const cliff = box(x1 - x0 - 0.4, 3, z1 - z0 - 0.4, PALETTE.cliff);
-    cliff.position.set((x0 + x1) / 2, -2.1, (z0 + z1) / 2);
-    this.world.add(ground, cliff);
-
-    for (const d of ds) {
-      const pad = box(d.w + 0.6, 0.3, d.h + 0.6, PALETTE.stone);
-      pad.position.set(d.x + d.w / 2, 0.15, d.y + d.h / 2);
-      this.world.add(pad);
-      // one little block per ~4 files, so bigger districts read as denser
-      const blocks = Math.min(d.w * d.h, Math.ceil(d.files / 4));
-      for (let i = 0; i < blocks; i++) {
-        const b = box(0.7, 0.3 + ((i * 37) % 5) * 0.12, 0.7, i % 3 ? PALETTE.steel : PALETTE.cliff);
-        b.position.set(d.x + (i % d.w) + 0.5, 0.45, d.y + Math.floor(i / d.w) + 0.5);
-        this.world.add(b);
-      }
-      this.world.add(this.label(d.name === "/" ? "(root)" : d.name, d.x + d.w / 2, d.y - 0.6));
+    const key = JSON.stringify([state.districts, state.machines.map((m) => [m.x, m.y])]);
+    if (key !== this.worldKey) {
+      this.worldKey = key;
+      this.buildWorld(state);
+      if (first) this.target.set((this.bounds.x0 + this.bounds.x1) / 2, 0, (this.bounds.z0 + this.bounds.z1) / 2 + 1);
     }
+    this.syncBelts(state);
+    this.syncDistricts(state);
+    this.syncItems(state.items);
+    this.syncBiters(state.items);
+    this.syncLabels(state);
+    this.syncDrone(state, first);
   }
 
-  private label(text: string, x: number, z: number) {
-    const c = document.createElement("canvas");
-    const ctx = c.getContext("2d")!;
-    ctx.font = "16px Silkscreen, monospace";
-    c.width = Math.ceil(ctx.measureText(text).width) + 12;
-    c.height = 22;
-    ctx.fillStyle = "rgba(27,36,72,0.85)";
-    ctx.fillRect(0, 0, c.width, c.height);
-    ctx.font = "16px Silkscreen, monospace";
-    ctx.fillStyle = "#e8ecf1";
-    ctx.fillText(text, 6, 16);
-    const tex = new THREE.CanvasTexture(c);
-    tex.magFilter = THREE.NearestFilter;
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-    s.scale.set(c.width / 22, 1, 1);
-    s.position.set(x, 1.2, z);
-    s.renderOrder = 10;
-    return s;
+  // ---------- the Foreman drone ----------
+
+  private syncDrone(state: FactoryState, first: boolean) {
+    const f = state.foreman;
+    const at = this.byId(f?.targetId) ?? this.ofType("steam")[0] ?? this.ofType("splitter")[0];
+    const p = at ? this.machinePos(at) : this.target.clone();
+    this.droneTo.set(p.x, at ? (LABEL_Y[at.type] ?? 2) + 1.6 : 4, p.z + (at ? 0.4 : 0));
+    if (first) this.drone.g.position.copy(this.droneTo);
+    if (this.droneLabel) this.setLabel(this.droneLabel, "SPARK", f?.thinking ? "thinking…" : (f?.tool ?? "foreman"));
   }
+
+  private droneMode(): DroneMode {
+    if (this.state?.foreman?.thinking) return "THINKING";
+    if (this.drone.g.position.distanceTo(this.droneTo) > 0.3) return "FLYING";
+    return this.state?.foreman?.targetId ? "WORKING" : "IDLE";
+  }
+
+  // ---------- positions ----------
 
   private machinePos(m: Pick<Machine, "x" | "y">) {
-    return new THREE.Vector3(this.lineX + m.x * LINE_GAP, 0, this.lineZ + m.y * LINE_GAP);
+    return new THREE.Vector3(m.x * CELL, 0, m.y * CELL);
   }
+
+  private byId(id: string | undefined) {
+    return id ? this.state?.machines.find((m) => m.id === id) : undefined;
+  }
+
+  private ofType(t: Machine["type"]) {
+    return this.state?.machines.filter((m) => m.type === t) ?? [];
+  }
+
+  // ---------- world: island, districts, scenery ----------
+
+  private buildWorld(state: FactoryState) {
+    for (const d of this.districts.values()) this.dropLabel(d.label);
+    this.districts.clear();
+    this.world.clear();
+    this.waterTextures = [];
+    this.rocks = [];
+
+    const ms = state.machines.map((m) => this.machinePos(m));
+    let x0 = Math.min(-8, ...ms.map((p) => p.x - 2.5));
+    let x1 = Math.max(8, ...ms.map((p) => p.x + 2.5));
+    let z1 = Math.max(4, ...ms.map((p) => p.z + 2.5));
+    let z0 = Math.min(-3, ...ms.map((p) => p.z - 2.5));
+
+    // districts: the repo's folders, scaled down and centered behind the line
+    const ds = state.districts;
+    const maxX = Math.max(1, ...ds.map((d) => d.x + d.w));
+    const maxY = Math.max(1, ...ds.map((d) => d.y + d.h));
+    const S = Math.min(0.6, Math.max(0.35, 24 / maxX));
+    const left = -(maxX * S) / 2;
+    const back = DISTRICT_FRONT - maxY * S;
+    for (const d of ds) {
+      const w = Math.max(1.4, d.w * S - 0.4);
+      const dep = Math.max(1.4, d.h * S - 0.4);
+      const cx = left + (d.x + d.w / 2) * S;
+      const cz = back + (d.y + d.h / 2) * S;
+      const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name.length);
+      model.group.position.set(cx, 0, cz);
+      this.world.add(model.group);
+      const label = this.addLabel(model.group, model.labelY);
+      this.districts.set(d.name, { name: d.name, roof: model.roof, center: new THREE.Vector3(cx, 0, cz), label, files: d.files });
+      x0 = Math.min(x0, cx - w / 2 - 1.5);
+      x1 = Math.max(x1, cx + w / 2 + 1.5);
+      z0 = Math.min(z0, cz - dep / 2 - 1.5);
+    }
+
+    const w = x1 - x0, d = z1 - z0;
+    const island = makeIsland(w, d);
+    island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    this.world.add(island);
+    this.waterTextures.push(makeWaterfall(this.world, x0 + w * 0.72, z1 + 0.06, 0, 1.4));
+    this.waterTextures.push(makeWaterfall(this.world, x1 + 0.06, z0 + d * 0.4, Math.PI / 2, 1.2));
+    for (let i = 0; i < 9; i++) {
+      const r = mesh(
+        new THREE.DodecahedronGeometry(0.4 + rnd() * 0.9, 0),
+        mat(0x2f3760),
+        x0 - 3 + rnd() * (w + 6),
+        -6 - rnd() * 8,
+        z0 - 3 + rnd() * (d + 6),
+        this.world,
+      );
+      this.rocks.push({ r, y: r.position.y, k: rnd() * 6 });
+    }
+
+    Object.assign(this.bounds, { x0, x1, z0, z1 });
+    const half = Math.max(w, d) / 2 + 6;
+    Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 120 });
+    this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  // ---------- machines ----------
 
   private syncMachines(machines: Machine[]) {
     const seen = new Set<string>();
     for (const m of machines) {
       seen.add(m.id);
       let v = this.machines.get(m.id);
+      const rebuild = v && (v.machine.type !== m.type || v.machine.harness !== m.harness);
+      if (v && rebuild) this.removeMachine(m.id);
+      v = this.machines.get(m.id);
       if (!v) {
-        v = buildMachine(m);
+        const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
+        const built = buildModel(m, power);
+        v = { built, machine: m, label: this.addLabel(built.g, LABEL_Y[m.type] ?? 1.6), art: "IDLE" };
         this.machines.set(m.id, v);
-        this.scene.add(v.group);
+        this.scene.add(built.g);
       }
-      v.group.position.copy(this.machinePos(m));
-      v.group.userData.state = m.state;
+      v.machine = m;
+      v.built.g.position.copy(this.machinePos(m));
     }
-    for (const [id, v] of this.machines) if (!seen.has(id)) (this.scene.remove(v.group), this.machines.delete(id));
+    for (const id of [...this.machines.keys()]) if (!seen.has(id)) this.removeMachine(id);
+  }
+
+  private removeMachine(id: string) {
+    const v = this.machines.get(id);
+    if (!v) return;
+    this.scene.remove(v.built.g);
+    if (v.label) this.dropLabel(v.label);
+    this.machines.delete(id);
+  }
+
+  // ---------- belts ----------
+
+  // An L-shaped route from one machine's side to the next, like the prototype's belts.
+  private route(a: THREE.Vector3, b: THREE.Vector3): Pt[] {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    if (Math.abs(dx) >= Math.abs(dz)) {
+      const sx = Math.sign(dx) || 1;
+      const p0: Pt = [a.x + sx * 1.2, a.z], p3: Pt = [b.x - sx * 1.2, b.z];
+      if (Math.abs(dz) < 0.01) return [p0, p3];
+      const mx = (p0[0] + p3[0]) / 2;
+      return [p0, [mx, a.z], [mx, b.z], p3];
+    }
+    const sz = Math.sign(dz) || 1;
+    const p0: Pt = [a.x, a.z + sz * 1.2], p3: Pt = [b.x, b.z - sz * 1.2];
+    if (Math.abs(dx) < 0.01) return [p0, p3];
+    const mz = (p0[1] + p3[1]) / 2;
+    return [p0, [a.x, mz], [b.x, mz], p3];
+  }
+
+  // Rejected work loops back over the top of the line, on a pink belt.
+  private reworkRoute(insp: THREE.Vector3, asm: THREE.Vector3): Pt[] {
+    const lane = Math.min(insp.z, asm.z) - 2.3;
+    return [
+      [insp.x, insp.z - 1.2],
+      [insp.x, lane],
+      [asm.x, lane],
+      [asm.x, asm.z - 1.2],
+    ];
+  }
+
+  private layBelt(p: Path, tint?: number) {
+    for (const g of p.segs) {
+      const t = rep(tex().belt, (g.L + 0.7) * 1.4, 1);
+      this.beltTextures.push(t);
+      const top = own(tint ?? 0xffffff);
+      top.map = t;
+      const side = mat(0x1d2026);
+      const b = box(g.L + 0.7, 0.18, 0.7, [side, side, top, side, side, side], (g.x1 + g.x2) / 2, tint ? 0.13 : 0.09, (g.z1 + g.z2) / 2, this.beltGroup);
+      b.rotation.y = -Math.atan2(g.z2 - g.z1, g.x2 - g.x1);
+      b.castShadow = false;
+    }
   }
 
   private syncBelts(state: FactoryState) {
-    this.belts.clear();
+    const key = JSON.stringify([state.belts, state.machines.map((m) => [m.id, m.type, m.x, m.y])]);
+    if (key === this.beltKey) return;
+    this.beltKey = key;
+    this.beltGroup.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.geometry.dispose();
+    });
+    this.beltGroup.clear();
+    this.beltTextures = [];
+    this.paths.clear();
     for (const b of state.belts) {
-      const from = state.machines.find((m) => m.id === b.from);
-      const to = state.machines.find((m) => m.id === b.to);
+      const from = this.byId(b.from), to = this.byId(b.to);
       if (!from || !to) continue;
-      const a = this.machinePos(from), c = this.machinePos(to);
-      const len = a.distanceTo(c);
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(len, 0.12, 0.35), mat(0xffffff));
-      (mesh.material as THREE.MeshPhongMaterial).map = this.beltTex;
-      this.beltTex.repeat.set(1, 1);
-      mesh.position.copy(a).add(c).multiplyScalar(0.5).setY(0.08);
-      mesh.rotation.y = -Math.atan2(c.z - a.z, c.x - a.x);
-      mesh.receiveShadow = true;
-      this.belts.add(mesh);
+      const p = pathOf(this.route(this.machinePos(from), this.machinePos(to)));
+      this.paths.set(`${b.from}>${b.to}`, p);
+      this.layBelt(p);
+      // an inspector sends failures back to whichever assembler fed it
+      if (to.type === "inspector" && from.type === "assembler") {
+        const r = pathOf(this.reworkRoute(this.machinePos(to), this.machinePos(from)));
+        this.paths.set(`rework:${to.id}>${from.id}`, r);
+        this.layBelt(r, 0xff9a90);
+      }
     }
   }
 
-  private itemTarget(item: Item, index: number): THREE.Vector3 | null {
-    const s = this.state!;
-    const byType = (t: Machine["type"]) => s.machines.find((m) => m.type === t);
-    const at = (m: Machine | undefined, dx = 0, dz = 0) => (m ? this.machinePos(m).add(new THREE.Vector3(dx, 0, dz)) : null);
-    const jitter = ((index * 7) % 5) * 0.18 - 0.36;
+  private beltBetween(fromType: Machine["type"], to: Machine | undefined): Path | undefined {
+    if (!to) return undefined;
+    const b = this.state?.belts.find((x) => x.to === to.id && this.byId(x.from)?.type === fromType);
+    return b ? this.paths.get(`${b.from}>${b.to}`) : undefined;
+  }
+
+  private beltFrom(from: Machine | undefined, toType: Machine["type"]): Path | undefined {
+    if (!from) return undefined;
+    const b = this.state?.belts.find((x) => x.from === from.id && this.byId(x.to)?.type === toType);
+    return b ? this.paths.get(`${b.from}>${b.to}`) : undefined;
+  }
+
+  // ---------- districts ----------
+
+  private syncDistricts(state: FactoryState) {
+    for (const d of this.districts.values()) {
+      const here = state.items.filter((i) => i.district === d.name && i.state !== "launched");
+      const rework = here.some((i) => i.state === "rejected");
+      const sentry = here.some((i) => i.source === "sentry" && (i.state === "ore" || i.state === "queued"));
+      const busy = here.some((i) => i.state === "working" || i.state === "inspecting" || i.state === "queued");
+      const status = sentry ? "under attack" : rework ? "rework" : busy ? "busy" : "healthy";
+      d.roof.color.setHex(sentry || rework ? 0xd94a3f : busy ? 0xe39a2f : 0x4fae73);
+      this.setLabel(d.label, d.name === "/" ? "(ROOT)" : `/${d.name.toUpperCase()}`, `${d.files} files · ${status}`, sentry || rework);
+    }
+  }
+
+  // ---------- items ----------
+
+  private assemblerFor(item: Item): Machine | undefined {
+    const own = this.byId(item.machineId);
+    if (own?.type === "assembler") return own;
+    const asms = this.ofType("assembler");
+    if (!asms.length) return undefined;
+    let h = 0;
+    for (const c of item.id) h = (h * 31 + c.charCodeAt(0)) | 0;
+    return asms[Math.abs(h) % asms.length];
+  }
+
+  // Decide where an item goes when it enters a new state.
+  private plan(v: ItemView, item: Item, index: number) {
+    const jitter = (((index * 7) % 5) - 2) * 0.22;
+    const ore = this.ofType("ore_deposit")[0];
+    const splitter = this.ofType("splitter")[0];
+    const asm = this.assemblerFor(item);
+    const insp = this.ofType("inspector")[0];
+    const pad = this.ofType("launch_pad")[0];
+    v.path = null;
+    v.rest = null;
+    v.s = 0;
     switch (item.state) {
       case "ore":
-        return at(byType("ore_deposit"), jitter, -jitter)?.setY(0.45) ?? null;
+        if (ore) v.rest = this.machinePos(ore).add(new THREE.Vector3(jitter, 0.75, -jitter * 0.8));
+        break;
       case "queued": {
-        const splitter = byType("splitter"), asm = byType("assembler");
-        if (!splitter || !asm) return at(asm);
-        return this.machinePos(splitter).lerp(this.machinePos(asm), 0.35 + (index % 4) * 0.12).setY(0.25);
+        const into = splitter && asm ? (this.paths.get(`${splitter.id}>${asm.id}`) ?? this.beltFrom(splitter, "assembler")) : undefined;
+        const p = join(this.beltFrom(ore, "splitter"), into);
+        if (p.len) {
+          v.path = p;
+          v.stopAt = Math.max(0, p.len - 0.4 - (index % 4) * 0.45);
+        } else if (asm) v.rest = this.machinePos(asm).add(new THREE.Vector3(-1.4, 0.4, 0));
+        break;
       }
       case "working":
-        return at(s.machines.find((m) => m.id === item.machineId) ?? byType("assembler"), 0, 0.1)?.setY(0.6) ?? null;
-      case "inspecting":
-        return at(byType("inspector"))?.setY(0.4) ?? null;
-      case "rejected":
-        return at(byType("inspector"), jitter * 0.5, 0.85)?.setY(0.4) ?? null;
+        if (asm) v.rest = this.machinePos(asm).add(new THREE.Vector3(0, 1.85, 0));
+        break;
+      case "inspecting": {
+        const p = (asm && insp && this.paths.get(`${asm.id}>${insp.id}`)) || this.beltBetween("assembler", insp);
+        if (p) (v.path = p), (v.stopAt = p.len);
+        if (insp) v.rest = this.machinePos(insp).add(new THREE.Vector3(0, 1.5, 0));
+        break;
+      }
+      case "rejected": {
+        const p = asm && insp ? this.paths.get(`rework:${insp.id}>${asm.id}`) : undefined;
+        if (p) (v.path = p), (v.stopAt = p.len);
+        else if (insp) v.rest = this.machinePos(insp).add(new THREE.Vector3(0, 0.45, -1.4));
+        break;
+      }
       case "passed":
-      case "on_pad":
-        return at(byType("launch_pad"), 0.55 + jitter * 0.4, 0.55)?.setY(0.25) ?? null;
+      case "on_pad": {
+        const p = this.beltBetween("inspector", pad);
+        if (p) (v.path = p), (v.stopAt = p.len);
+        if (pad) {
+          const a = index * 2.1;
+          v.rest = this.machinePos(pad).add(new THREE.Vector3(Math.cos(a) * 1.15, 0.55, Math.sin(a) * 1.15));
+        }
+        break;
+      }
       case "launched":
-        return null;
+        break;
     }
   }
 
@@ -400,60 +599,251 @@ export class FactoryScene {
       if (item.state === "launched") {
         if (!this.launched.has(item.id)) {
           this.launched.add(item.id);
-          const pad = [...this.machines.values()].find((v) => v.rocket);
-          if (pad?.rocket) this.launches.push({ rocket: pad.rocket, t: 0 });
+          this.launchUntil = this.t + LAUNCH_SECONDS;
         }
         return;
       }
       live.add(item.id);
-      let mesh = this.items.get(item.id);
-      if (!mesh) {
-        mesh = box(0.28, 0.28, 0.28, KIND_COLOR[item.kind]);
-        this.items.set(item.id, mesh);
-        this.scene.add(mesh);
-        const start = this.itemTarget(item, i);
-        if (start) mesh.position.copy(start);
+      let v = this.items.get(item.id);
+      if (!v) {
+        const m = box(0.32, 0.32, 0.32, own(KIND_COLOR[item.kind]), 0, -50, 0, this.scene);
+        v = { mesh: m, state: null, path: null, s: 0, stopAt: 0, rest: null };
+        this.items.set(item.id, v);
       }
-      (mesh.material as THREE.MeshPhongMaterial).color.setHex(KIND_COLOR[item.kind]);
-      mesh.userData.target = this.itemTarget(item, i);
+      (v.mesh.material as THREE.MeshPhongMaterial).color.setHex(KIND_COLOR[item.kind]);
+      (v.mesh.material as THREE.MeshPhongMaterial).emissive.setHex(item.state === "passed" || item.state === "on_pad" ? 0x14402a : 0);
+      if (v.state !== item.state) {
+        const fresh = v.state === null;
+        v.state = item.state;
+        this.plan(v, item, i);
+        // a new item appears at the start of its route instead of flying in
+        if (fresh) {
+          if (v.path) {
+            const [x, z] = pointAt(v.path, 0);
+            v.mesh.position.set(x, 0.4, z);
+          } else if (v.rest) v.mesh.position.copy(v.rest);
+        }
+      }
     });
-    for (const [id, mesh] of this.items) if (!live.has(id)) (this.scene.remove(mesh), this.items.delete(id));
+    for (const [id, v] of this.items) if (!live.has(id)) (this.scene.remove(v.mesh), this.items.delete(id));
   }
+
+  // Sentry errors that nobody has picked up yet show up as biters on their district.
+  private syncBiters(items: Item[]) {
+    const want = items.filter((i) => i.source === "sentry" && (i.state === "ore" || i.state === "queued"));
+    const ids = new Set(want.map((i) => i.id));
+    for (const i of want) {
+      if (this.biters.has(i.id)) continue;
+      const biter = buildBiter({ variant: ["MEDIUM · ERROR", 0xff5e52, 1] });
+      biter.g.scale.setScalar(0.8);
+      const d = this.districts.get(i.district);
+      const c = d?.center ?? new THREE.Vector3();
+      biter.g.position.set(c.x + (rnd() - 0.5) * 6, 0, this.bounds.z0 + 0.8);
+      this.scene.add(biter.g);
+      this.biters.set(i.id, { biter, district: i.district, attacking: false });
+    }
+    for (const [id, b] of this.biters) if (!ids.has(id)) (this.scene.remove(b.biter.g), this.biters.delete(id));
+  }
+
+  // ---------- Item Lab states ----------
+
+  // Turn the factory's state into the state each Item Lab model animates.
+  private artState(m: Machine): string {
+    const s = this.state!;
+    const items = s.items;
+    const has = (st: Item["state"]) => items.some((i) => i.state === st);
+    const power = s.power.find((p) => p.id === m.id || p.id === m.powerId);
+    const feeding = s.machines.some((x) => x.powerId === m.id && x.state === "working");
+    switch (m.type) {
+      case "assembler":
+        return m.state === "working" ? "WORKING" : m.state === "blocked" ? "BLOCKED" : "IDLE";
+      case "splitter":
+        return m.state === "working" || has("ore") || has("queued") ? "SORTING" : "IDLE";
+      case "inspector":
+        return has("rejected") ? "REJECT" : has("inspecting") ? "SCANNING" : has("passed") || has("on_pad") ? "PASS" : "SCANNING";
+      case "launch_pad":
+        return this.t < this.launchUntil ? "LAUNCH" : has("on_pad") || has("passed") ? "COUNTDOWN" : "IDLE";
+      case "ore_deposit":
+        return items.some((i) => i.state === "ore") ? "RICH" : "DEPLETED";
+      case "steam":
+        if (power && !power.online) return "OVERLOAD";
+        return feeding || s.machines.some((x) => x.type === "assembler" && x.state === "working") ? "RUNNING" : "IDLE";
+      case "solar":
+        return power && (!power.online || power.level <= 0.05) ? "CAPPED" : "SUNNY";
+      case "battery": {
+        const lvl = power?.level ?? 1;
+        if (lvl <= 0.05) return "EMPTY";
+        if (feeding) return "DRAINING";
+        return lvl >= 0.95 ? "FULL" : "CHARGING";
+      }
+      case "geothermal":
+        return power && !power.online ? "OVERHEAT" : feeding ? "INFERENCE" : "IDLE";
+      case "turret": // tests guarding a district; it fires while Sentry biters are on it
+        return items.some((i) => i.source === "sentry" && i.district === m.district && (i.state === "ore" || i.state === "queued")) ? "FIRING" : "SCANNING";
+      default:
+        return "IDLE";
+    }
+  }
+
+  // ---------- labels ----------
+
+  private addLabel(obj: THREE.Object3D, y: number): Label {
+    const el = document.createElement("div");
+    el.className = "maplabel";
+    const title = document.createElement("b");
+    const sub = document.createElement("i");
+    el.append(title, sub);
+    this.labelRoot.appendChild(el);
+    const l = { obj, y, el, title, sub };
+    this.labels.add(l);
+    return l;
+  }
+
+  private dropLabel(l: Label) {
+    l.el.remove();
+    this.labels.delete(l);
+  }
+
+  private setLabel(l: Label, title: string, sub: string, hot = false) {
+    if (l.title.textContent !== title) l.title.textContent = title;
+    if (l.sub.textContent !== sub) l.sub.textContent = sub;
+    l.el.classList.toggle("hot", hot);
+  }
+
+  private syncLabels(state: FactoryState) {
+    const power = new Map(state.power.map((p) => [p.id, p]));
+    const count = (pred: (i: Item) => boolean) => state.items.filter(pred).length;
+    for (const v of this.machines.values()) {
+      const m = v.machine;
+      if (!v.label) continue;
+      const blocked = m.state === "blocked";
+      const st = m.state === "working" ? " · working" : blocked ? " · blocked" : "";
+      const p = m.powerId ? power.get(m.powerId) : undefined;
+      switch (m.type) {
+        case "ore_deposit": {
+          const kind = oreKind(m);
+          const n = count((i) => i.state === "ore");
+          const name = { sentry: "SENTRY", inbox: "INBOX", issues: "ISSUES" }[kind];
+          this.setLabel(v.label, name, `${n} waiting`, kind === "sentry" && n > 0);
+          break;
+        }
+        case "splitter":
+          this.setLabel(v.label, "SPLITTER", `Spark triage${st}`, blocked);
+          break;
+        case "assembler":
+          if (!m.harness && !m.powerId) this.setLabel(v.label, "ASSEMBLER", "no power · sign in to build", true);
+          else this.setLabel(v.label, HARNESS_NAME[m.harness ?? "spark"], `assembler · ${p?.kind ?? "steam"}${st}`, blocked);
+          break;
+        case "inspector":
+          this.setLabel(v.label, "INSPECTOR", `tests + lint${st}`, blocked);
+          break;
+        case "launch_pad": {
+          const n = count((i) => i.state === "on_pad" || i.state === "passed");
+          this.setLabel(v.label, "LAUNCH PAD", n ? `${n} PR${n > 1 ? "s" : ""} waiting · merge = launch` : "merge = launch");
+          break;
+        }
+        case "steam":
+          this.setLabel(v.label, "STEAM", `${p?.name ?? "Spark"} API · credits`, p ? !p.online : false);
+          break;
+        case "solar":
+          this.setLabel(v.label, "SOLAR", `${p?.name ?? "subscription"} plan`);
+          break;
+        case "turret":
+          this.setLabel(v.label, "TURRET", m.district ? `tests on /${m.district}` : "tests");
+          break;
+        case "battery":
+          this.setLabel(v.label, "BATTERY", `${Math.round((p?.level ?? 1) * 100)}% of plan window`);
+          break;
+        case "geothermal":
+          this.setLabel(v.label, "GEOTHERMAL", p?.name ?? "local GPU");
+          break;
+        default:
+          this.setLabel(v.label, (m.type as string).toUpperCase(), "");
+      }
+    }
+  }
+
+  private placeLabels() {
+    const w = this.width, h = this.height;
+    for (const l of this.labels) {
+      l.obj.getWorldPosition(this.v3);
+      this.v3.y += l.y;
+      this.v3.project(this.camera);
+      const x = ((this.v3.x + 1) / 2) * w, y = ((1 - this.v3.y) / 2) * h;
+      const off = x < -60 || x > w + 60 || y < -40 || y > h + 40;
+      l.el.style.display = off ? "none" : "flex";
+      if (!off) l.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
+    }
+  }
+
+  // ---------- loop ----------
 
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
-    const t = now / 1000;
+    this.t += dt;
+    const t = this.t;
 
-    this.beltTex.offset.x -= dt * 0.8;
     for (const v of this.machines.values()) {
-      const working = v.group.userData.state === "working";
-      if (v.spin) v.spin.rotation.y += dt * (working ? 4 : 0.4);
-      if (v.beacon) (v.beacon.material as THREE.MeshPhongMaterial).emissive.setHex(
-        v.group.userData.state === "blocked" ? (Math.floor(t * 3) % 2 ? 0xff2010 : 0x000000) : v.rocket ? 0 : Math.floor(t * 8) % 2 ? 0xa05010 : 0x804008,
-      );
+      v.art = this.artState(v.machine);
+      v.built.update(t, dt, v.art);
     }
-    for (const mesh of this.items.values()) {
-      const target = mesh.userData.target as THREE.Vector3 | null;
-      if (target) mesh.position.lerp(target, 1 - Math.exp(-dt * 4));
-      mesh.rotation.y += dt;
-    }
-    for (let i = this.launches.length - 1; i >= 0; i--) {
-      const l = this.launches[i];
-      l.t += dt;
-      l.rocket.position.y = 0.15 + (l.t < 0.4 ? 0 : (l.t - 0.4) ** 2 * 6);
-      if (l.t > 3) {
-        l.rocket.position.y = 0.15;
-        this.launches.splice(i, 1);
+    updateFx(dt);
+    for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
+    for (const w of this.waterTextures) w.offset.y += dt * 1.6;
+    for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
+
+    for (const v of this.items.values()) {
+      if (v.path && v.s < v.stopAt) {
+        v.s = Math.min(v.stopAt, v.s + ITEM_SPEED * dt);
+        const [x, z] = pointAt(v.path, v.s);
+        v.mesh.position.set(x, 0.4 + Math.abs(Math.sin(v.s * 3)) * 0.04, z);
+      } else if (v.rest) {
+        v.mesh.position.lerp(v.rest, 1 - Math.exp(-dt * 5));
       }
+      if (v.state === "working") v.mesh.rotation.y += dt * 3;
+      else v.mesh.rotation.y = 0;
     }
+
+    for (const b of this.biters.values()) {
+      const d = this.districts.get(b.district);
+      const p = b.biter.g.position;
+      if (d) {
+        const to = this.v3.set(d.center.x - p.x, 0, d.center.z - p.z);
+        b.attacking = to.length() <= 2.2;
+        if (!b.attacking) p.addScaledVector(to.normalize(), dt * 0.9);
+        b.biter.g.rotation.y = Math.atan2(to.x, to.z);
+      }
+      b.biter.update(t, dt, b.attacking ? "ATTACK" : "WALK");
+    }
+
+    const dp = this.drone.g.position;
+    const toward = this.v3.subVectors(this.droneTo, dp);
+    const step = this.reduceMotion ? toward.length() : Math.min(toward.length(), dt * 7);
+    if (toward.lengthSq() > 1e-4) {
+      dp.addScaledVector(toward.normalize(), step);
+      this.drone.g.rotation.y = Math.atan2(toward.x, toward.z);
+    }
+    this.drone.update(t, dt, this.droneMode());
+
+    const drift = this.reduceMotion ? 0 : 1;
+    const dx = Math.sin(t * 0.07) * 0.8 * drift, dz = Math.cos(t * 0.05) * 0.6 * drift;
+    const off = new THREE.Vector3(CAM_DIST * Math.cos(TILT) * Math.sin(YAW), CAM_DIST * Math.sin(TILT), CAM_DIST * Math.cos(TILT) * Math.cos(YAW));
+    this.camera.position.set(this.target.x + dx + off.x, this.target.y + off.y, this.target.z + dz + off.z);
+    this.camera.lookAt(this.target.x + dx, this.target.y, this.target.z + dz);
+    this.sun.position.set(this.target.x + 14, 26, this.target.z + 8);
+    this.sun.target.position.copy(this.target);
+
     this.pass.render(this.renderer, this.scene, this.camera);
+    this.placeLabels();
   };
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    for (const l of this.labels) l.el.remove();
+    this.labels.clear();
     this.pass.dispose();
     this.renderer.dispose();
   }

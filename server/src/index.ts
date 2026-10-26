@@ -3,6 +3,7 @@ import { authCallback, login, logout, publicUrl, setupCallback, setupPage } from
 import { Factory, type FactoryEnv } from "./factory";
 import { repoInstallationId, verifyWebhookSignature } from "./github";
 import { isAllowed, readSession } from "./session";
+import { previewAccess } from "./access";
 
 export { Factory };
 
@@ -18,6 +19,8 @@ export interface Env extends FactoryEnv {
   GITHUB_CLIENT_ID: string;
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  APP_PASSWORD?: string;
+  BUILD_SHA?: string;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -25,6 +28,13 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const factory = (env: Env, repo: string) => env.FACTORY.get(env.FACTORY.idFromName(repo.toLowerCase()));
 
 const app = new Hono<{ Bindings: Env; Variables: { login: string } }>();
+
+app.use("*", async (c, next) => {
+  const denied = await previewAccess(c.req.raw, c.env);
+  if (denied) return denied;
+  await next();
+  c.header("Cache-Control", "no-store");
+});
 
 app.onError((err, c) => {
   console.error(err);
@@ -44,6 +54,18 @@ app.get("/api/me", async (c) => {
   return c.json({ login, allowed: !!login && isAllowed(c.env.ALLOWED_LOGINS, login) });
 });
 
+app.get("/api/setup/status", (c) => c.json({
+  github: !!(c.env.GITHUB_APP_ID && c.env.GITHUB_APP_PRIVATE_KEY && c.env.GITHUB_WEBHOOK_SECRET && c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET),
+  spark: !!c.env.META_API_KEY,
+  githubAppId: !!c.env.GITHUB_APP_ID,
+  githubPrivateKey: !!c.env.GITHUB_APP_PRIVATE_KEY,
+  githubWebhookSecret: !!c.env.GITHUB_WEBHOOK_SECRET,
+  githubClientId: !!c.env.GITHUB_CLIENT_ID,
+  githubClientSecret: !!c.env.GITHUB_CLIENT_SECRET,
+}));
+
+app.get("/api/version", (c) => c.json({ commit: c.env.BUILD_SHA || "unknown" }));
+
 // ---------- the factory (browser websocket) ----------
 
 app.use("/api/repos/*", async (c, next) => {
@@ -54,6 +76,7 @@ app.use("/api/repos/*", async (c, next) => {
 });
 
 app.get("/api/repos/:owner/:repo/factory", async (c) => {
+  if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   const f = factory(c.env, repo);
@@ -80,7 +103,8 @@ app.post("/webhooks/github", async (c) => {
     return c.json({ error: "bad signature" }, 401);
 
   const event = c.req.header("x-github-event");
-  const p = JSON.parse(body);
+  let p;
+  try { p = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const repo: string | undefined = p.repository?.full_name;
   const installationId: number | undefined = p.installation?.id;
 
@@ -134,7 +158,7 @@ app.post("/webhooks/github", async (c) => {
       const prs: number[] = (suite.pull_requests ?? []).map((pr: { number: number }) => pr.number);
       if (!prs.length) break;
       const ok = ["success", "neutral", "skipped"].includes(suite.conclusion);
-      await factory(env, repo).onCheckSuite(prs, ok, `${suite.app?.name ?? "CI"} ${suite.conclusion}`);
+      await factory(env, repo).onCheckSuite(prs, ok, `${suite.app?.name ?? "CI"} ${suite.conclusion}`, suite.head_sha);
       break;
     }
 

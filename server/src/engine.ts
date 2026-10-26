@@ -16,8 +16,14 @@ export function hasMachine(s: FactoryState, type: Machine["type"]) {
 }
 
 export function pickAssembler(s: FactoryState, item: Item): Machine | undefined {
-  const idle = s.machines.filter((m) => m.type === "assembler" && m.state === "idle" && m.harness === "spark");
-  return idle.find((m) => m.id === item.machineId) ?? idle.find((m) => m.district === item.district) ?? idle[0];
+  const idle = s.machines.filter((m) => m.type === "assembler" && m.state !== "working" && m.harness === "spark"
+    && s.power.some((p) => p.id === m.powerId && p.online && p.level > 0)
+    && s.belts.some((b) => b.to === m.id && (!b.carries || b.carries === item.kind)
+      && s.machines.some((source) => source.id === b.from && source.type === "splitter"))
+    && s.belts.some((b) => b.from === m.id && (!b.carries || b.carries === item.kind)
+      && s.machines.some((target) => target.id === b.to && target.type === "inspector")));
+  if (item.machineId) return idle.find((m) => m.id === item.machineId);
+  return idle.find((m) => m.district === item.district) ?? idle[0];
 }
 
 // One complete line, per the v1 plan: ore → splitter → assembler → inspector → launch pad, on Spark power.

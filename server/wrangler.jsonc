@@ -3,7 +3,8 @@
   "name": "shiptorio",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "../web/dist", "binding": "ASSETS", "run_worker_first": ["/api/*", "/auth/*", "/webhooks/*", "/setup*"] },
+  "assets": { "directory": "../web/dist", "binding": "ASSETS", "run_worker_first": true },
+  "routes": [{ "pattern": "shiptorio.com", "custom_domain": true }, { "pattern": "shiptorio.dev", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "FACTORY", "class_name": "Factory" }]
   },
@@ -20,6 +21,7 @@
     { "binding": "CACHE", "id": "c9d7c44e1c304a2b9a285049ee1e3408" }
   ],
   "vars": {
+    "PUBLIC_URL": "https://shiptorio.com",
     // Comma-separated GitHub logins allowed to view maps.
     "ALLOWED_LOGINS": "r3dbars",
     // Muse Spark on Meta Model API. Key goes in the META_API_KEY secret.
