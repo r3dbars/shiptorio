@@ -1,3 +1,4 @@
+import { authorizedDB, membershipCache } from "./browser-fixture";
 import { authorizedSocket, browserEnv } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
@@ -85,7 +86,7 @@ describe("orbit watch in the Factory", () => {
       async setAlarm(v: number) { alarm = v; },
     };
     const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => fn(), getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-    const f = new Factory(ctx as never, { ...browserEnv, DB: { prepare: () => ({ bind: () => ({ all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
+    const f = new Factory(ctx as never, { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }), all: async () => ({ results: [] }), run: async () => ({ success: true }) }) }) } } as never);
     return { f, data, events, saved: () => data.get("state") as FactoryState, book: () => data.get("permits") as PermitBook };
   };
   const permitted = () => {
@@ -100,6 +101,7 @@ describe("orbit watch in the Factory", () => {
     const x = fixture([item], permitted());
     const signal: Signal = { source: "sentry", externalId: "4501", fingerprint: "sentry:4501", title: "TypeError: total is undefined", body: "", url: "https://sentry.io/issues/4501", usersAffected: 1, occurredAt: now, rawRef: "sentry:event:new", severity: 2, hints: [], action: "upsert" };
     await x.f.ingestSignal(signal);
+    await (x.f as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
     const back = x.saved().items[0];
     expect(back.state).toBe("rejected");
     expect(back.scars?.at(-1)?.station).toBe("orbit");

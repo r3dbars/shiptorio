@@ -1,4 +1,5 @@
 import { runQuota } from './signup';
+import { repoAccess, requireUser, validRepo } from "./authorization";
 import { stuckItem } from "./reliability";
 import { validatePlan, validatePatch } from "./injection-policy";
 // One Factory per repo. It owns the factory state, runs the tick loop on an alarm,
@@ -28,6 +29,8 @@ import {
   type SourceStatus,
   type Thought,
   type ThoughtDecision,
+  summarizeIsland,
+  type IslandSummary,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
@@ -667,7 +670,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       }
       return;
     }
-    if (!repo || !installationId) return;
+    if (!repo || !installationId || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) return;
     if (event === "shiptorio_install" || event === "issues" || event === "issue_comment") {
       if (await this.ctx.storage.get<boolean>("githubDisabled")) return;
       await this.ensure(repo, installationId);
@@ -749,7 +752,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async mineStatus(kind: MineKind): Promise<SourceStatus> {
-    // The connect page needs to know which map to plug the mine into, and keys are per map.
+    // The connect page needs to know which map to plug the mine into.
     const repo = this.meta?.repo ?? this.state?.repo;
     const status = kind === "sentry" ? sentryStatus(await sentryCreds(this.env, repo), this.publicUrl(), repo) : postHogStatus(await postHogCreds(this.env, repo), this.publicUrl(), this.env.FAKE_POSTHOG === "1");
     return repo && status.setup.actionUrl ? { ...status, setup: { ...status.setup, actionUrl: `${status.setup.actionUrl}?repo=${encodeURIComponent(repo)}` } } : status;
@@ -845,6 +848,12 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   // ---------- state ----------
 
+  // The empire overview's line for this repo. Reads stored state only: no tick, no GitHub calls.
+  async summary(): Promise<IslandSummary | null> {
+    const state = await this.load();
+    return state ? summarizeIsland(state) : null;
+  }
+
   private async load(): Promise<FactoryState | null> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
@@ -879,21 +888,23 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private broadcastQueue: Promise<void> = Promise.resolve();
+
   private broadcast(msg: ServerToWeb) {
     const text = JSON.stringify(msg);
+    const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
       for (const ws of this.ctx.getWebSockets("web")) {
         try {
           const auth = ws.deserializeAttachment();
-          if (!browserSocketAllowed(auth,this.env,this.socketEpoch) || !await browserSocketActive(auth,this.env)) { ws.close(1008,"Sign in again"); continue; }
+          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); continue; }
           ws.send(text);
-        } catch { try { ws.close(1008,"Access unavailable"); } catch {} }
+        } catch { try { ws.close(1008, "Sign in again"); } catch {} }
       }
     };
-    const pending = this.broadcastQueue.then(deliver);
-    this.broadcastQueue = pending.catch(()=>{});
-    this.ctx.waitUntil?.(pending);
-    return pending;
+    const delivery = this.broadcastQueue.then(deliver);
+    this.broadcastQueue = delivery.catch(() => {});
+    this.ctx.waitUntil?.(delivery);
+    return delivery;
   }
 
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
@@ -998,6 +1009,8 @@ export class Factory extends DurableObject<FactoryEnv> {
 
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   async ensure(repo: string, installationId: number): Promise<void> {
+    await this.load();
+    if (!validRepo(repo) || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) throw new Error("Repository mismatch");
     if (await this.load()) {
       if (this.meta?.installationId !== installationId) {
         this.meta = { repo, installationId };
@@ -1184,6 +1197,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
     this.gauntletRunning = true;
     const pr = item.prNumber!;
+    const headSha = item.inspection!.headSha;
+    // Any await can let a webhook/reconciliation replace this inspection. Results
+    // belong only to the commit and station that started the run.
+    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection?.headSha === headSha && nextGate(i) === gate);
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const files = await prFiles(token, this.meta.repo, pr);
@@ -1192,12 +1209,12 @@ export class Factory extends DurableObject<FactoryEnv> {
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : "Spark";
       const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
-      const current = () => {
-        const now = this.state!.items.find((i) => i.id === item.id && i.prNumber === pr && nextGate(i) === gate);
+      const currentInLane = () => {
+        const now = current();
         return now && lane && !now.lane ? { ...now, lane } : now;
       };
       if (gate === "checks") {
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         const { item: checked, ran } = runChecks(now, files);
         await this.patch({ items: [checked] });
@@ -1205,7 +1222,7 @@ export class Factory extends DurableObject<FactoryEnv> {
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
@@ -1214,17 +1231,19 @@ export class Factory extends DurableObject<FactoryEnv> {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, Spark reviews).`, item.id);
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.env, { title: item.title, body: item.body ?? "", builder }, diffText(files)),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
-        const now = current();
+        const now = currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
-        await this.patch({ items: [setStage(now, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
+        const afterComment = currentInLane();
+        if (!afterComment) return;
+        await this.patch({ items: [setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
     } catch (e) {
-      const latest = this.state!.items.find(i => i.id === item.id);
-      if (latest && nextGate(latest) === gate) {
+      const latest = current();
+      if (latest) {
         const failed = setStage(latest, gate === "checks" ? "ci" : gate, "rework", `Station request failed: ${String(e)}`);
         await this.patch({ items: [failed] });
         await this.noteRework(failed);
@@ -1578,9 +1597,16 @@ export class Factory extends DurableObject<FactoryEnv> {
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
+    if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const auth = await browserSocketAuth(request, this.env);
-    if (!auth) return new Response("login required", { status: 401 });
+    const user = await requireUser(request, this.env);
+    if (!auth || !user) return new Response("login required", { status: 401 });
+    const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
+    const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
+    await this.load();
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
+    Object.assign(auth, { repo, user });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
@@ -1594,7 +1620,7 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    try { await this.handleBrowserMessage(ws,raw); }
+    try { await this.handleBrowserMessage(ws, raw); }
     finally { await this.broadcastQueue; }
   }
 
@@ -1603,14 +1629,17 @@ export class Factory extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
-    if (!await browserSocketActive(auth,this.env)) { ws.close(1008,'Access revoked'); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
     for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
     }
+    await this.load();
+    const repo = this.meta?.repo ?? this.state?.repo;
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); return; }
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
+    if (value && typeof value === "object" && "repo" in value && (value as { repo: unknown }).repo !== repo) { ws.close(1008, "Repository mismatch"); return; }
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;

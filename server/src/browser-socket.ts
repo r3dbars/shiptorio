@@ -1,10 +1,11 @@
+import type { AccessUser } from "./authorization";
 import { currentUser } from './accounts';
 import { signupMode, signupAllowed, hash } from './signup';
 import { isAllowed, readSessionDetails } from "./session";
 import { ipSubject } from "./rate-limit";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database; SIGNUP_GATE_MODE?: string }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; sessionHash?: string; userId?: number; rateSubject?: string }
+export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; sessionHash?: string; userId?: number; rateSubject?: string; repo?:string; user?:AccessUser }
 
 // Attachments hold no cookie or literal credential. Changing an access control value
 // invalidates established connections when the updated Worker/DO environment loads.
