@@ -1,35 +1,34 @@
 // The factory floor in Three.js, in the style of docs/art-prototype.html: a floating
 // island with the repo's districts on stone plinths behind the machine line, belts
 // between machines, and items riding the belts as they move through states.
-// Everything is drawn through the pixel pass and driven by FactoryState.
+// Machines are the locked Item Lab models (itemlab.js); each frame the scene turns
+// FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
-import type { FactoryState, Harness, Item, Machine } from "@shiptorio/shared";
+import type { FactoryState, Harness, Item, Machine, PowerSource } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex } from "./kit";
 import {
-  makeAssembler,
-  makeBattery,
-  makeBiter,
-  makeDistrict,
-  makeGeo,
-  makeInspector,
-  makeIsland,
-  makeLaunchPad,
-  makeOre,
-  makeSolar,
-  makeSplitter,
-  makeSteam,
-  makeWaterfall,
-  type Model,
-  type OreKind,
-  type PadModel,
-} from "./models";
+  buildAssembler,
+  buildBattery,
+  buildBiter,
+  buildGeo,
+  buildInspector,
+  buildLaunchPad,
+  buildOre,
+  buildSolar,
+  buildSplitter,
+  buildSteam,
+  updateFx,
+  type BuildOpts,
+  type Built,
+} from "./itemlab";
+import { makeDistrict, makeIsland, makeWaterfall } from "./models";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
 
-const CELL = 1.4; // world units per machine grid step
+const CELL = 1.8; // world units per machine grid step (Item Lab models are ~3 units wide)
 const DISTRICT_FRONT = -4; // districts sit behind the line, front edge here
 const YAW = Math.PI / 4; // 45° turn
 const TILT = Math.PI / 6; // 30° tilt
@@ -39,6 +38,8 @@ const ZOOM_MAX = 2.6;
 const ITEM_SPEED = 1.6; // world units per second along a belt
 // three r155+ lights are physically based; × π matches the prototype's r128 light levels
 const LEGACY_LIGHT = Math.PI;
+const HUD_RIGHT_PX = 340; // width of the HUD column in styles.css
+const LAUNCH_SECONDS = 3.4; // the Item Lab rocket clears the frame in this long
 
 export const HARNESS_COLOR: Record<Harness, number> = {
   spark: 0x6fb2ff,
@@ -99,9 +100,10 @@ interface Label {
 }
 
 interface MachineView {
-  model: Model;
+  built: Built;
   machine: Machine;
   label?: Label;
+  art: string; // the Item Lab state the model is showing
 }
 
 interface DistrictView {
@@ -122,9 +124,12 @@ interface ItemView {
 }
 
 interface BiterView {
-  biter: ReturnType<typeof makeBiter>;
+  biter: Built;
   district: string;
+  attacking: boolean;
 }
+
+type OreKind = "sentry" | "inbox" | "issues";
 
 function oreKind(m: Machine): OreKind {
   if (m.id.includes("sentry")) return "sentry";
@@ -132,30 +137,60 @@ function oreKind(m: Machine): OreKind {
   return "issues";
 }
 
-function buildModel(m: Machine): Model {
+// Item Lab variants: [name, color, extra?]
+const ORE_VARIANT: Record<OreKind, BuildOpts["variant"]> = {
+  sentry: ["SENTRY", 0xff5e52],
+  inbox: ["INBOX", 0x6fb2ff],
+  issues: ["ISSUES", 0xf2a93b],
+};
+
+function solarVariant(name = ""): BuildOpts["variant"] {
+  const n = name.toLowerCase();
+  if (n.includes("codex") || n.includes("chatgpt")) return ["CODEX", 0xd6dbe3];
+  if (n.includes("cursor")) return ["CURSOR", 0x8a8f99];
+  if (n.includes("grok")) return ["GROK", 0x30343c];
+  return ["CLAUDE", 0xd97757];
+}
+
+// Where the label sits above each model, from the Item Lab's item heights.
+const LABEL_Y: Partial<Record<Machine["type"], number>> = {
+  ore_deposit: 2.6,
+  splitter: 3.9,
+  assembler: 2.6,
+  inspector: 2.4,
+  launch_pad: 4.6,
+  steam: 4.4,
+  solar: 2.4,
+  battery: 2.3,
+  geothermal: 3.0,
+};
+
+function buildModel(m: Machine, power?: PowerSource): Built {
   switch (m.type) {
     case "ore_deposit":
-      return makeOre(oreKind(m));
+      return buildOre({ variant: ORE_VARIANT[oreKind(m)] });
     case "splitter":
-      return makeSplitter();
-    case "assembler":
-      return makeAssembler(HARNESS_COLOR[m.harness ?? "spark"]);
+      return buildSplitter();
+    case "assembler": {
+      const h = m.harness ?? "spark";
+      return buildAssembler({ tier: m.tier - 1, variant: [HARNESS_NAME[h], HARNESS_COLOR[h]] });
+    }
     case "inspector":
-      return makeInspector();
+      return buildInspector();
     case "launch_pad":
-      return makeLaunchPad();
+      return buildLaunchPad();
     case "steam":
-      return makeSteam();
+      return buildSteam({ variant: power?.name.toLowerCase().includes("baseten") ? ["BASETEN", 0x9b8cff] : ["META API", 0x6fb2ff] });
     case "solar":
-      return makeSolar();
+      return buildSolar({ variant: solarVariant(power?.name) });
     case "battery":
-      return makeBattery();
+      return buildBattery();
     case "geothermal":
-      return makeGeo();
+      return buildGeo({ variant: power?.name.includes("3090") ? ["3090 · LLAMA.CPP", 0x2b2f36, 0xf2a93b] : ["MAC · MLX", 0xc9ced6, 0xeef1fa] });
     default: {
       const g = new THREE.Group();
       box(1, 0.8, 1, PALETTE.steel, 0, 0.4, 0, g);
-      return { group: g, labelY: 1.4 };
+      return { g, update() {} };
     }
   }
 }
@@ -189,6 +224,7 @@ export class FactoryScene {
   private raf = 0;
   private last = performance.now();
   private t = 0;
+  private launchUntil = -1;
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
 
@@ -238,7 +274,9 @@ export class FactoryScene {
   private applyCamera() {
     const a = this.width / this.height;
     const vh = (a < 1 ? (24 / a) * 0.62 : 19) * this.zoom;
-    Object.assign(this.camera, { left: (-vh * a) / 2, right: (vh * a) / 2, top: vh / 2, bottom: -vh / 2 });
+    // keep the factory centered in the space the HUD cards on the right leave free
+    const shift = this.width > 760 ? ((HUD_RIGHT_PX / 2) * vh) / this.height : 0;
+    Object.assign(this.camera, { left: (-vh * a) / 2 + shift, right: (vh * a) / 2 + shift, top: vh / 2, bottom: -vh / 2 });
     this.camera.updateProjectionMatrix();
     this.pass.setSize(this.width, this.height, pixelSizeFor(this.zoom));
   }
@@ -346,13 +384,14 @@ export class FactoryScene {
       if (v && rebuild) this.removeMachine(m.id);
       v = this.machines.get(m.id);
       if (!v) {
-        const model = buildModel(m);
-        v = { model, machine: m, label: this.addLabel(model.group, model.labelY) };
+        const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
+        const built = buildModel(m, power);
+        v = { built, machine: m, label: this.addLabel(built.g, LABEL_Y[m.type] ?? 1.6), art: "IDLE" };
         this.machines.set(m.id, v);
-        this.scene.add(model.group);
+        this.scene.add(built.g);
       }
       v.machine = m;
-      v.model.group.position.copy(this.machinePos(m));
+      v.built.g.position.copy(this.machinePos(m));
     }
     for (const id of [...this.machines.keys()]) if (!seen.has(id)) this.removeMachine(id);
   }
@@ -360,7 +399,7 @@ export class FactoryScene {
   private removeMachine(id: string) {
     const v = this.machines.get(id);
     if (!v) return;
-    this.scene.remove(v.model.group);
+    this.scene.remove(v.built.g);
     if (v.label) this.dropLabel(v.label);
     this.machines.delete(id);
   }
@@ -531,7 +570,7 @@ export class FactoryScene {
       if (item.state === "launched") {
         if (!this.launched.has(item.id)) {
           this.launched.add(item.id);
-          for (const v of this.machines.values()) if (v.machine.type === "launch_pad") (v.model as PadModel).launch();
+          this.launchUntil = this.t + LAUNCH_SECONDS;
         }
         return;
       }
@@ -566,14 +605,53 @@ export class FactoryScene {
     const ids = new Set(want.map((i) => i.id));
     for (const i of want) {
       if (this.biters.has(i.id)) continue;
-      const biter = makeBiter();
+      const biter = buildBiter({ variant: ["MEDIUM · ERROR", 0xff5e52, 1] });
+      biter.g.scale.setScalar(0.8);
       const d = this.districts.get(i.district);
       const c = d?.center ?? new THREE.Vector3();
-      biter.group.position.set(c.x + (rnd() - 0.5) * 6, 0, this.bounds.z0 + 0.8);
-      this.scene.add(biter.group);
-      this.biters.set(i.id, { biter, district: i.district });
+      biter.g.position.set(c.x + (rnd() - 0.5) * 6, 0, this.bounds.z0 + 0.8);
+      this.scene.add(biter.g);
+      this.biters.set(i.id, { biter, district: i.district, attacking: false });
     }
-    for (const [id, b] of this.biters) if (!ids.has(id)) (this.scene.remove(b.biter.group), this.biters.delete(id));
+    for (const [id, b] of this.biters) if (!ids.has(id)) (this.scene.remove(b.biter.g), this.biters.delete(id));
+  }
+
+  // ---------- Item Lab states ----------
+
+  // Turn the factory's state into the state each Item Lab model animates.
+  private artState(m: Machine): string {
+    const s = this.state!;
+    const items = s.items;
+    const has = (st: Item["state"]) => items.some((i) => i.state === st);
+    const power = s.power.find((p) => p.id === m.id || p.id === m.powerId);
+    const feeding = s.machines.some((x) => x.powerId === m.id && x.state === "working");
+    switch (m.type) {
+      case "assembler":
+        return m.state === "working" ? "WORKING" : m.state === "blocked" ? "BLOCKED" : "IDLE";
+      case "splitter":
+        return m.state === "working" || has("ore") || has("queued") ? "SORTING" : "IDLE";
+      case "inspector":
+        return has("rejected") ? "REJECT" : has("inspecting") ? "SCANNING" : has("passed") || has("on_pad") ? "PASS" : "SCANNING";
+      case "launch_pad":
+        return this.t < this.launchUntil ? "LAUNCH" : has("on_pad") || has("passed") ? "COUNTDOWN" : "IDLE";
+      case "ore_deposit":
+        return items.some((i) => i.state === "ore") ? "RICH" : "DEPLETED";
+      case "steam":
+        if (power && !power.online) return "OVERLOAD";
+        return feeding || s.machines.some((x) => x.type === "assembler" && x.state === "working") ? "RUNNING" : "IDLE";
+      case "solar":
+        return power && (!power.online || power.level <= 0.05) ? "CAPPED" : "SUNNY";
+      case "battery": {
+        const lvl = power?.level ?? 1;
+        if (lvl <= 0.05) return "EMPTY";
+        if (feeding) return "DRAINING";
+        return lvl >= 0.95 ? "FULL" : "CHARGING";
+      }
+      case "geothermal":
+        return power && !power.online ? "OVERHEAT" : feeding ? "INFERENCE" : "IDLE";
+      default:
+        return "IDLE";
+    }
   }
 
   // ---------- labels ----------
@@ -640,7 +718,6 @@ export class FactoryScene {
           break;
         case "battery":
           this.setLabel(v.label, "BATTERY", `${Math.round((p?.level ?? 1) * 100)}% of plan window`);
-          (v.model as ReturnType<typeof makeBattery>).level = p?.level ?? 1;
           break;
         case "geothermal":
           this.setLabel(v.label, "GEOTHERMAL", p?.name ?? "local GPU");
@@ -674,7 +751,11 @@ export class FactoryScene {
     this.t += dt;
     const t = this.t;
 
-    for (const v of this.machines.values()) v.model.update?.(t, dt, v.machine.state);
+    for (const v of this.machines.values()) {
+      v.art = this.artState(v.machine);
+      v.built.update(t, dt, v.art);
+    }
+    updateFx(dt);
     for (const b of this.beltTextures) b.offset.x -= dt * 1.3;
     for (const w of this.waterTextures) w.offset.y += dt * 1.6;
     for (const r of this.rocks) r.r.position.y = r.y + Math.sin(t * 0.6 + r.k) * 0.3;
@@ -693,15 +774,14 @@ export class FactoryScene {
 
     for (const b of this.biters.values()) {
       const d = this.districts.get(b.district);
-      const p = b.biter.group.position;
+      const p = b.biter.g.position;
       if (d) {
         const to = this.v3.set(d.center.x - p.x, 0, d.center.z - p.z);
-        const dist = to.length();
-        if (dist > 1.9) p.addScaledVector(to.normalize(), dt * 0.9);
-        b.biter.group.rotation.y = Math.atan2(to.x, to.z);
+        b.attacking = to.length() <= 2.2;
+        if (!b.attacking) p.addScaledVector(to.normalize(), dt * 0.9);
+        b.biter.g.rotation.y = Math.atan2(to.x, to.z);
       }
-      p.y = Math.abs(Math.sin(t * 9 + p.x)) * 0.12;
-      b.biter.wiggle(t);
+      b.biter.update(t, dt, b.attacking ? "ATTACK" : "WALK");
     }
 
     const drift = this.reduceMotion ? 0 : 1;
