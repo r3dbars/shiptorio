@@ -6,6 +6,7 @@ import { validatePlan, validatePatch } from "./injection-policy";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -34,7 +35,7 @@ import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, pic
 import { emptyBrain, recordThought } from "./brain";
 import { issueRevision, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { foldSignal, matchDistrict } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, migrateGauntlet, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
@@ -45,6 +46,8 @@ import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sen
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus } from "./sources/posthog";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, type CredsEnv, type MineKind } from "./sources/creds";
 import { expired, isWatching, regress, revertedPr, startWatch, watchForRevert, watchForSentry, watchForSha } from "./orbit";
+
+import { loadFactoryState, saveFactoryState, stateSize, persistedState } from "./state-storage";
 
 export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserSocketEnv {
   PUBLIC_URL?: string;
@@ -79,6 +82,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     return { ok: true };
   }
 
+  // Dedicated security objects never load repo state, call Spark, or set alarms.
+  async securityLimit(budget: Budget): Promise<LimitResult> {
+    return consumeBudget(this.ctx.storage, budget);
+  }
   private state: FactoryState | null = null;
   private meta: Meta | null = null;
   private socketEpoch: string | null = null;
@@ -631,8 +638,8 @@ export class Factory extends DurableObject<FactoryEnv> {
       } else {
         const added = p.repositories ?? p.repositories_added ?? [];
         await this.env.DB.batch([
-          this.env.DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (?, ?)").bind(installationId, p.installation?.account?.login ?? ""),
-          ...added.map((r) => this.env.DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES (?, ?)").bind(r.full_name.toLowerCase(), installationId)),
+          this.env.DB.prepare("INSERT INTO installations (id, account_login) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login").bind(installationId, p.installation?.account?.login ?? ""),
+          ...added.map((r) => this.env.DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?) ON CONFLICT(full_name) DO UPDATE SET installation_id = excluded.installation_id").bind(r.full_name.toLowerCase(), installationId)),
         ]);
         // Whoever installed it can open those maps right away, without signing in again. Only a
         // Shiptorio account gets rows; anyone else picks the repos up from GitHub when they sign in.
@@ -836,12 +843,16 @@ export class Factory extends DurableObject<FactoryEnv> {
   private async load(): Promise<FactoryState | null> {
     this.socketEpoch = await browserSocketEpoch(this.env);
     if (!this.state) {
-      this.state = (await this.ctx.storage.get<FactoryState>("state")) ?? null;
+      const loaded = await loadFactoryState(this.ctx.storage);
+      if (loaded) {
+        const { schemaVersion: _version, ...wireState } = loaded;
+        this.state = wireState;
+      }
       this.meta = (await this.ctx.storage.get<Meta>("meta")) ?? null;
       // A local agent can outlive this DO instance. Preserve in-flight work; the watchdog
       // asks the player to inspect it rather than dispatching the same task twice.
       if (this.state) {
-        migrateGauntlet(this.state);
+
         this.state.stations = liveStations(this.state);
         this.state.autonomy = autonomyView(await this.permitBook());
         this.state.brain = { ...(this.state.brain ?? emptyBrain(sparkModel(this.env), false)), model: sparkModel(this.env), online: sparkConfigured(this.env) };
@@ -851,7 +862,15 @@ export class Factory extends DurableObject<FactoryEnv> {
   }
 
   private async save() {
-    await this.ctx.storage.put("state", this.state);
+    if (this.state) await saveFactoryState(this.ctx.storage, this.state);
+  }
+
+  /** Owner authorization is enforced by the Worker route, before DO access. */
+  async exportState() {
+    const state = await this.load();
+    if (!state) return null;
+    return { format: "shiptorio-factory", exportedAt: new Date().toISOString(),
+      state: persistedState(structuredClone(state)), storage: stateSize(state) };
   }
 
   private broadcast(msg: ServerToWeb) {
@@ -1570,6 +1589,9 @@ export class Factory extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
     if (typeof raw !== "string" || raw === "ping") return;
     if (raw.length > 16384) return;
+    for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
+      if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
+    }
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
     const parsed = WebToServer.safeParse(value);
