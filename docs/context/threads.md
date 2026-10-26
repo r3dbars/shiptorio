@@ -58,6 +58,7 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 | #100, #103, #117 | Codex: mobile/onboarding papercuts, first-run loop never idles | merged |
 | #104, #123, #126 | Codex: sandboxed local verify, release receipts, orbit replay deadlines | merged |
 | #118, #119 | Codex: live repo picker, disposed factories stop reconnecting | merged |
+| #176 | Support mine: customer emails + Intercom chats → support well, Spark drafts replies, player taps Send (docs/context/support-mine.md) | open |
 | #3, #4 | Old pre-#1 drafts | closed |
 
 ## Codex (outside the Claude project)

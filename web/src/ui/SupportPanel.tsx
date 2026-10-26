@@ -14,7 +14,7 @@ export function supportReviewTarget(message: WebToServer, deck: Move[]): string 
 
 const KIND_TAG: Record<string, [string, string]> = { bug: ["red", "bug"], feature: ["green", "feature"], question: ["blue", "question"], praise: ["green", "thanks"], spam: ["steel", "spam"] };
 const ORDER: Record<SupportTicket["state"], number> = { drafted: 0, new: 1, waiting_fix: 2, answered: 3, closed: 4 };
-const STATE_WORD: Record<SupportTicket["state"], string> = { new: "reading it", drafted: "reply waiting on you", waiting_fix: "waiting on the fix", answered: "answered", closed: "closed" };
+const STATE_WORD: Record<SupportTicket["state"], string> = { new: "reading it", drafted: "reply ready", waiting_fix: "waiting on the fix", answered: "answered", closed: "closed" };
 
 function ago(at: number) {
   const s = Math.max(0, Math.round((Date.now() - at) / 1000));
@@ -22,7 +22,8 @@ function ago(at: number) {
 }
 
 export function SupportPanel({ state, send, onClose, reviewTicket }: { state: FactoryState; send: (m: WebToServer) => void; onClose: () => void; reviewTicket?: string | null }) {
-  const tickets = [...(state.support ?? [])].sort((a, b) => ORDER[a.state] - ORDER[b.state] || b.receivedAt - a.receivedAt);
+  // replies waiting on you first, the customer who's waited longest on top; finished threads newest first
+  const tickets = [...(state.support ?? [])].sort((a, b) => ORDER[a.state] - ORDER[b.state] || (ORDER[a.state] < 2 ? a.receivedAt - b.receivedAt : b.receivedAt - a.receivedAt));
   const waiting = tickets.filter((t) => t.state === "drafted").length;
   const [open, setOpen] = useState<string | null>(reviewTicket ?? tickets[0]?.id ?? null);
   useEffect(() => {
@@ -74,7 +75,7 @@ function Ticket({ t, open, onOpen, state, send }: { t: SupportTicket; open: bool
       <button type="button" className="su-row" onClick={onOpen} aria-expanded={open}>
         <span className={`sp-tag ${color}`}>{tag}</span>
         <span className="txt">
-          <b>{t.name ?? t.from.split("@")[0]}</b> {t.triage?.summary ?? t.subject}
+          <b>{t.name?.split(/\s+/)[0] ?? t.from.split("@")[0]}</b> {t.triage?.summary ?? t.subject}
         </span>
         <span className={`st${t.state === "drafted" ? " hot" : ""}`}>{STATE_WORD[t.state]}</span>
       </button>
