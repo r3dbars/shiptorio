@@ -4,6 +4,13 @@
 > (docs/VISION.md). Numbers live in `shared/src/pricing.ts` (with tests). The landing page shows plan cards
 > only with `?pricing=1`. Readable version: https://claude.ai/artifact/LrSxaUpsbMXnq5i9hxc8XH
 
+## Direction (Justin, 2026-10-26): open source, parked for now
+
+Pricing is parked. Shiptorio will be **open source**: anyone can self-host it and bring their own API keys (Meta
+for Spark, their own Claude / Codex sign-ins) for free. The **hosted** version at shiptorio.com will probably cost
+something, for running Spark and the infra for you. So model A below is the self-host path, and B or C is what the
+hosted version charges. No pricing work until Justin picks it back up.
+
 ## The one fact that shapes everything
 
 **We don't pay for building. We pay for the brain.** Players' Claude Code and Codex sign-ins are the machines
