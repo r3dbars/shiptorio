@@ -177,6 +177,7 @@ The connection and automatic deployment checkpoints above supersede that initial
 
 | When (2026-10-26, UTC) | Decision | Who |
 | --- | --- | --- |
+| 21:11 | **Factory-built PRs launch only in game.** Runner PRs (`shiptorio[bot]`, r3dbars/Testing) are never merged on GitHub directly; they pass the gauntlet and the Launch card, or a launch permit. Agent PRs still auto-merge. | Justin (via live check) |
 | 18:47 | **Push often.** Commit and push WIP after every meaningful step; open draft PRs early. | Justin |
 | 18:44 | **Auto-merge everything.** Every agent (Claude threads and Codex) merges its own PR as soon as CI is green, then confirms the Deploy on `main` is green. Skip stale drafts (#3, #4) and PRs another agent is still on. | Justin |
 | 17:37 | **First sources = GitHub, Sentry, PostHog. Stripe on hold.** Demo impact shows via PostHog, not a Stripe checkout counter. North star now in `docs/VISION.md`; every agent reads it first. | Justin |
