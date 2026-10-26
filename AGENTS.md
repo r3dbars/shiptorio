@@ -14,6 +14,11 @@ so check open PRs and recent `main` commits before you start.**
 **verification gauntlet** (CI inspector, verify bay, AI review, merge gate, orbit watch) → rocket; fails ride the
 rework belt back to Spark with a scar tag; every station is clickable.
 
+**Public docs site: `docs/site/*.md`, served at shiptorio.com/docs** (built by `web/docs-site.ts`, public past the
+preview password). It describes what the code does *today*, not the plan. When you change player-facing behavior
+(gauntlet, permits, research, mines, runner commands), update the matching page in the same PR.
+`web/test/docs-site.test.ts` fails CI on a broken link or anchor.
+
 **Product spec: [`docs/PRODUCT.md`](docs/PRODUCT.md).** How Muse Spark runs the factory as the Foreman
 agent: the core loop, the bottleneck engine and Next Move card, Spark's tools by trust tier, what the
 player decides vs Spark, launch permits, the real metrics behind the score, onboarding, and hackathon

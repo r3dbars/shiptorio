@@ -31,6 +31,7 @@ export function celebrateShip(item: Item, delay = 0) {
   const detail: ShipEvent = { itemId: item.id, title: item.title, prNumber: item.prNumber, streak, firstTry: !item.scars?.length };
   window.dispatchEvent(new CustomEvent<ShipEvent>(SHIP_EVENT, { detail }));
   sound.play("launch", delay);
+  sound.musicResolve(delay);
   sound.play("shipped", delay + SHIP_TIMING.checkMs / 1000);
   sound.streak(streak, delay + SHIP_TIMING.checkMs / 1000 + 0.75);
 }
