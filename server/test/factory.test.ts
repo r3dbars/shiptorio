@@ -70,6 +70,7 @@ describe("Factory lifecycle", () => {
       const assigned = claimed.find(Boolean)!;
       expect(assigned.token).toBe("fake-install-token");
       expect(f.saved().items[0].state).toBe("working");
+      expect(f.saved().move).toBeNull();
       const receipt = { jobId: job.id, lease: assigned.lease!, ok: true, sha: head, summary: "Fixed with regression coverage", checks: ["typecheck", "test", "build"] as const };
       await expect(f.factory.finishRunner(pair, { ...receipt, checks: [] })).rejects.toThrow("check receipts");
       await expect(f.factory.finishRunner(pair, { ...receipt, sha: base, checks: [...receipt.checks] })).rejects.toThrow("head mismatch");

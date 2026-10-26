@@ -5,6 +5,23 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Real Spark-to-Codex acceptance passed on Oct 26: backend PR #61 deployed as
+`b16638cee9a436d5dcfaf6aa74b960734e8535d0` via
+https://github.com/r3dbars/shiptorio/actions/runs/40376838080. Both domains matched.
+For issue #58, Spark chose read_issue → read_file (engine) → read_file (tests) →
+assign_job in the live Cloudflare alarm. Job `0b663810-91db-4f37-9cab-f625e95ee6a8`
+was claimed by local Codex using the existing ChatGPT sign-in. Its supervisor checked
+the two approved files, passed typecheck/tests/build and pushed commit
+`29cf937b43d4e127c348149753489471c411792e`. The installed Shiptorio App opened
+https://github.com/r3dbars/shiptorio/pull/62; GitHub CI passed:
+https://github.com/r3dbars/shiptorio/actions/runs/40377351997. The PR remains open for
+independent verification/review and human merge. This proves a real issue-to-PR path,
+not the complete scars/verify/review gauntlet or browser approval flow. Sentry and
+PostHog remain unconnected. The first post-deploy pairing attempt hit temporary
+Worker/DO version skew; retry after propagation succeeded. The live test also caught
+an evidence-directory offset, corrected to gitignored `runner/.work/`, and a stale
+connect-agent Move, now resolved when the runner accepts work or re-acknowledges it.
+
 Spark/local runner checkpoint: a bounded tool loop runs in the repo Durable Object's
 alarm, with a five-turn planning budget and persisted reasons/results. Operator approval
 fixes the issue, harness and exact paths. The local supervisor uses native Codex/Claude

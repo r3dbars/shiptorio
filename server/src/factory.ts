@@ -43,6 +43,14 @@ export class Factory extends DurableObject<FactoryEnv> {
   private meta: Meta | null = null;
   private running = new Set<string>(); // item ids with a job in flight
 
+  private async clearRunnerMove(): Promise<void> {
+    if (this.state?.move?.stage !== "resources") return;
+    const moveId = this.state.move.id;
+    this.state.move = null;
+    await this.save();
+    this.broadcast({ type: "move_resolved", moveId, actor: "player" });
+  }
+
   async pairRunner(): Promise<string> {
     const pairId = crypto.randomUUID();
     await this.ctx.storage.put("runnerPair", pairId); // Re-pairing revokes the previous token.
@@ -118,6 +126,7 @@ export class Factory extends DurableObject<FactoryEnv> {
       await this.ctx.storage.put(`runnerJob:${job.id}`, job);
       const item = this.state!.items.find(i => i.id === job.itemId)!;
       const machineId = `runner-${job.harness}`;
+      await this.clearRunnerMove();
       await this.patch({ items: [{ ...item, state: "working", machineId, attempts: item.attempts + 1, updatedAt: Date.now() }], machines: [{ id: machineId, type: "assembler", x: 0, y: 6, harness: job.harness, powerId: `power-${job.harness}`, tier: 1, state: "working" }], power: [...this.state!.power.filter(p => p.id !== `power-${job.harness}`), { id: `power-${job.harness}`, kind: "solar", name: job.harness === "codex" ? "Codex subscription" : "Claude subscription", level: 1, online: true }], bottleneck: null });
       this.log("info", `Local ${job.harness} accepted Spark's plan.`, item.id);
       return job;
@@ -133,7 +142,10 @@ export class Factory extends DurableObject<FactoryEnv> {
     await this.load();
     const job = await this.ctx.storage.get<RunnerJob>(`runnerJob:${receipt.jobId}`);
     if (!job || !this.meta || !this.state) throw new Error("Unknown job");
-    if (job.status === "completed" && job.pairId === pairId && job.lease === receipt.lease) return { prUrl: job.prUrl }; // lost acknowledgment
+    if (job.status === "completed" && job.pairId === pairId && job.lease === receipt.lease) {
+      await this.clearRunnerMove();
+      return { prUrl: job.prUrl }; // lost acknowledgment
+    }
     if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
     const item = this.state.items.find(i => i.id === job.itemId)!;
     if (!receipt.ok) {
