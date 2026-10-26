@@ -24,6 +24,7 @@ import {
   Station,
   SourceKind,
   SourceStatus,
+  SupportTicket,
 } from "./model";
 
 // ---------- server → web ----------
@@ -47,6 +48,7 @@ export const Patch = z.object({
   sources: z.array(SourceStatus).optional(), // full replacement when present
   stations: z.array(Station).optional(), // full replacement when present
   research: Research.optional(), // full replacement when present
+  support: z.array(SupportTicket).optional(), // full replacement when present
   experiments: z.array(Experiment).optional(), // full replacement when present
 });
 export type Patch = z.infer<typeof Patch>;
@@ -110,6 +112,11 @@ export const WebToServer = z.discriminatedUnion("type", [
   // Spend science packs on a tech in the research tree. Its station joins the gauntlet right after CI.
   z.object({ type: z.literal("research"), tech: z.string().max(40) }),
   z.object({ type: z.literal("disconnect_source"), kind: SourceKind }),
+  // Support mine. Send names the exact draft the player saw (its hash); a changed draft needs a new tap.
+  z.object({ type: z.literal("send_reply"), ticketId: z.string().max(80), draftHash: z.string().max(80) }),
+  z.object({ type: z.literal("edit_reply"), ticketId: z.string().max(80), text: z.string().min(1).max(4000) }),
+  z.object({ type: z.literal("file_issue"), ticketId: z.string().max(80) }),
+  z.object({ type: z.literal("close_ticket"), ticketId: z.string().max(80) }),
 ]);
 export type WebToServer = z.infer<typeof WebToServer>;
 

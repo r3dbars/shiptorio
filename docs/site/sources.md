@@ -13,7 +13,7 @@ Every source of work is a **mine** on the map. More mines, more ore, a bigger fa
 | GitHub issues | Crystals at the mine | GitHub App webhooks | Live |
 | Sentry errors | Biters on the folder the stack trace points at | Sentry webhook | Live |
 | PostHog | Drops and error spikes per route | Shiptorio polls PostHog | Live |
-| Support inbox | Envelopes at the well | Email forwarding | Coming soon |
+| Support inbox | Envelopes at the support well | Email forwarding or Intercom | Live |
 
 ## How heavy is a chunk of ore?
 
@@ -68,7 +68,23 @@ Route ids like `/order/8812` are folded to `/order/:id`. If PostHog errors or ra
 
 ## Support inbox
 
-> **Coming soon** Customer email as ore (forward your support inbox, Spark links a complaint to the matching Sentry error and drafts a reply you send). You'll see the well on the map already. It isn't connected to anything yet.
+Customer emails and Intercom chats come up as ore at the **support well**. Spark sorts each one (bug, feature, question, praise or spam), links it to the work it's about when that's clearly the same problem, and drafts a reply.
+
+**You send every reply.** Nothing reaches a customer without your tap on that exact draft, at every autonomy level and with every permit. Edit the draft and the old tap no longer counts.
+
+To connect it, tap the support well (it shows up after your first rocket) or open `/connect/support?repo=owner/name`:
+
+- **Email:** forward your support address to the inbound URL shown on that page, once. Postmark inbound or any JSON `{from, subject, text}` works.
+- **Intercom:** add an app webhook for `conversation.user.created` and `conversation.user.replied`, then paste the client secret, access token and admin id.
+
+What happens next:
+
+- Linked work weighs more. The customer joins that item's reporters, so the deck favors fixes people are asking about.
+- A bug nobody's tracking gets a card to file it as a GitHub issue. Names, emails and phone numbers are left out.
+- When the linked fix launches, Spark drafts an "it's fixed" reply and waits for your tap. Sending it counts a customer answered.
+- No mail sender set up? A tapped reply goes to the outbox with a Copy button, so you can paste it yourself. It never pretends it was emailed.
+
+See it in the sandbox: [?source=sim&scenario=support](/?source=sim&scenario=support).
 
 ## Where keys go
 

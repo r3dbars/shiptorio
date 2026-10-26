@@ -14,12 +14,15 @@ interface Props {
   stations?: Station[];
   send: (msg: WebToServer) => void;
   onOpen?: (stationId: string) => void; // open the bottleneck station's panel
+  onPower?: () => void; // live local-agent setup opens Power, never a server connector action
   // No card open: the "what's next" pick (ui/whatsNext.ts), so the game never goes quiet after a rocket.
   nudge?: Nudge | null;
   onNudge?: (action: NudgeAction) => void;
 }
 
-export function NextMove({ move, bottleneck, stations, send, onOpen, nudge, onNudge }: Props) {
+const plugsInAgent = (o: Move["options"][number]) => o.actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+
+export function NextMove({ move, bottleneck, stations, send, onOpen, onPower, nudge, onNudge }: Props) {
   if (!move && nudge && onNudge) {
     return (
       <section className="card nextmove idle" aria-label="Next move" aria-live="polite" data-nudge={nudge.id}>
@@ -91,7 +94,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen, nudge, onNu
             type="button"
             className={o.recommended ? "btn rec" : "btn"}
             title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined}
-            onClick={() => send({ type: "choose_move", moveId: move.id, optionId: o.id })}
+            onClick={() => (onPower && plugsInAgent(o) ? onPower() : send({ type: "choose_move", moveId: move.id, optionId: o.id }))}
           >
             {o.label}
             {o.recommended && <span className="sugg">{WORDS.suggested}</span>}

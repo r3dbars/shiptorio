@@ -19,6 +19,8 @@ and verified live earlier today, see decisions.md).
 | Orbit watch: did this new Sentry spike come from the launch? | `spark.ts` `judgeOrbit`, `Factory.orbitCaused` | **Spark** (new), reads the PR's files + the error; unsure = caused | spike rule trips it |
 | Research pick from the scar pile | `spark.ts` `pickResearch`, `Factory.sparkResearch` | **Spark** (new), only techs on the tree | scar-regex pick (`suggestResearch`) |
 | Launch permit card: suggest Allow or Not yet | `spark.ts` `judgePermit`, `Factory.advisePermit` | **Spark** (new) advises; player taps | streak rule suggests Allow |
+| Support triage: kind, district, summary, link to floor work | `spark-support.ts` `triageSupport`, `Factory.supportTriage` | **Spark** (new), links only to real open items | keyword rule (`heuristicSupport`), never links |
+| Customer reply draft (answer, then "it's fixed" after launch) | `spark-support.ts` `draftReply`, `Factory.supportDraft` | **Spark** drafts; only the player's tap sends (support-mine.md) | template reply, marked fallback |
 | Bottleneck detection (which stage is jammed) | `bottleneck.ts` | rule: queue telemetry (WIP × value × age) | n/a |
 | Verify bay | `gauntlet.ts` `verifyFromDiff` | rule: runner proof receipts | n/a |
 | Permit eligibility + revoke | `permits.ts` | rule: 5/10 clean ships to be offered, revoke on any rework | n/a |
@@ -62,6 +64,12 @@ permission stay deterministic so the automation earned by playing is provable.
    (distinct Spark-planned jobs that merged, via `scoreShip` in the launch transaction), review catch
    rate (Spark verdicts that sent the PR back), and fallback share. Shared math: `scorecard()` in
    `shared/src/model.ts`.
+
+9. Live Testing run (2026-10-26 22:25) showed triage and rank falling back on "schema validation failed"
+   and malformed JSON → triage prompt now states its JSON shape, read-only judge replies drop unknown keys
+   instead of rejecting them (planner and fix replies stay strict), off-list kinds/districts fall back
+   per field, `parseJsonReply` repairs trailing commas and smart quotes, and `sparkJson` asks once more
+   with the rejection reason before the fixed rule decides.
 
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.

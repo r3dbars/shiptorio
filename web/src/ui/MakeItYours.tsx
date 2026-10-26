@@ -5,7 +5,9 @@
 import { useState } from "react";
 import type { FactoryState, Harness, WebToServer } from "@shiptorio/shared";
 import { Icon } from "./icons";
-import { MACHINE_NAME as NAME, SOURCE, WORDS, YOURS } from "../copy";
+import { LEVEL_LABEL, MACHINE_NAME as NAME, SOURCE, WORDS, YOURS } from "../copy";
+
+const LEVELS = ["advisor", "floor", "build", "lights_out"] as const;
 
 const AGENTS: readonly { harness: Harness; name: string }[] = YOURS.agents;
 
@@ -27,6 +29,8 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
   const turrets = new Set(state.machines.filter((m) => m.type === "turret").map((m) => m.district));
   const folders = state.districts.filter((d) => !turrets.has(d.name)).slice(0, 4);
   const permits = state.autonomy?.districts.filter((d) => d.permit) ?? [];
+  const level = state.autonomy?.level ?? "advisor";
+  const below = LEVELS.slice(0, LEVELS.indexOf(level));
   const m = state.machines.find((x) => x.id === moving);
   const nudge = (dx: number, dy: number) => m && send({ type: "move_machine", id: m.id, x: m.x + dx, y: m.y + dy });
 
@@ -63,6 +67,22 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
           </span>
         </div>
       ))}
+
+      {below.length > 0 && (
+        <>
+          <h3>{YOURS.level}</h3>
+          <p className="empty">{YOURS.levelNow(LEVEL_LABEL[level])}</p>
+          <div className="lrow">
+            <span className="seg" role="group" aria-label={YOURS.level}>
+              {below.map((l) => (
+                <button key={l} type="button" onClick={() => send({ type: "set_autonomy", level: l })}>
+                  {YOURS.levelDown(LEVEL_LABEL[l])}
+                </button>
+              ))}
+            </span>
+          </div>
+        </>
+      )}
 
       {permits.length > 0 && (
         <>
@@ -131,7 +151,7 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
 }
 
 // An empty mine on the map, tapped: what connecting it adds, and how.
-const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog };
+const SOURCE_COPY: Record<string, { name: string; adds: string }> = { sentry: SOURCE.sentry, posthog: SOURCE.posthog, email: SOURCE.email };
 
 export function ConnectSource({ kind, state, send, onClose }: { kind: string; state: FactoryState; send: (m: WebToServer) => void; onClose: () => void }) {
   const copy = SOURCE_COPY[kind] ?? { name: kind, adds: "" };
