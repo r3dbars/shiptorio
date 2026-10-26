@@ -49,7 +49,7 @@ test("connection page rotates, reports use and revokes without decrypting or exp
   const { sentryCreds, markUsed } = await import("../src/sources/creds");
   const DB = testD1(), secret = "connect-session", password = "connect-preview";
   await DB.prepare("INSERT INTO repos (full_name, installation_id) VALUES (?, ?)").bind("example/shop", 1).run();
-  const env = { DB, CRED_MASTER_KEY: btoa("a".repeat(32)), SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "stranger", CACHE: { ...membershipCache, delete: async () => {} } as unknown as KVNamespace, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), ensure: async () => {}, connectMine: async () => {}, disconnectMine: async () => {} }) } };
+  const env = { DB, CRED_MASTER_KEY: btoa("a".repeat(32)), SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: "owner", CACHE: { ...membershipCache, delete: async () => {} } as unknown as KVNamespace, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), ensure: async () => {}, connectMine: async () => {}, disconnectMine: async () => {} }) } };
   const cookie = [await signedInCookie(env, "owner", ["example/shop"]), (await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")].join("; ");
   const url = "https://shiptorio.com/connect/sentry?repo=example/shop";
   const send = (data?: Record<string, string>, origin = "https://shiptorio.com") => app.fetch(new Request(url, { method: data ? "POST" : "GET", headers: { cookie, origin }, ...(data ? { body: new URLSearchParams(data) } : {}) }), env as never);
