@@ -995,6 +995,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       trust: Math.min(1, s.trust + 0.05),
     });
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
+    // any card still asking about this PR is answered now; a stale "Launch #N" would strand the player (#105)
+    for (const m of [s.move, ...pending].filter((x) => x?.itemId === item.id)) {
+      onChoose.delete(m!.id);
+      emit({ type: "move_resolved", moveId: m!.id, optionId: "launch", actor: alone ? "spark" : "player" });
+      pull(m!.id, 0);
+    }
     watching.set(item.id, s.tick + WATCH_TICKS);
     if (comebacks.has(item.id)) trips.set(item.id, s.tick + COMEBACK_TICKS);
     record(GAUNTLET.find((g) => g.kind === "merge")!, true, `#${item.prNumber} merged and launched.`);

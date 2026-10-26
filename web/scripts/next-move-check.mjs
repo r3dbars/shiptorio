@@ -22,7 +22,9 @@ async function play(page, label) {
   for (let n = 1; n <= ROCKETS; n++) {
     const t0 = Date.now();
     // keep the factory moving the way a player would: take the suggested option until a PR is on the pad
-    while (!(await launch.isEnabled())) {
+    let viaCard = false; // a "Launch #N" card launches the same way the dock button does
+    let launchedCard = ""; // that card's text: it must be replaced, not just still on screen
+    while (!viaCard && !(await launch.isEnabled())) {
       if (Date.now() - t0 > GIVE_UP_MS) {
         await page.screenshot({ path: `${out}/${label}-stuck-${n}.png` });
         results.push({ rocket: n, ok: false, why: "no PR reached the pad in 90s" });
@@ -34,7 +36,12 @@ async function play(page, label) {
       if (!nudge.startsWith("station:") && (await sugg.count()) && (await sugg.isVisible())) {
         const text = (await sugg.innerText()).toLowerCase();
         // the "launch it" nudge clicks the same thing as the dock button; anything that opens a sheet we close again
-        if (!text.includes("launch")) {
+        if (text.includes("launch")) {
+          launchedCard = await card.first().innerText().catch(() => "");
+          await sugg.click().catch(() => {});
+          viaCard = true;
+          break;
+        } else {
           await sugg.click().catch(() => {});
           await page.keyboard.press("Escape");
           await page.locator('.sheet button[aria-label="Close"], .sp-close').first().click({ timeout: 300 }).catch(() => {});
@@ -42,10 +49,18 @@ async function play(page, label) {
       }
       await page.waitForTimeout(400);
     }
-    await page.keyboard.press("Escape"); // close any panel the player left open
-    await launch.click();
+    if (!viaCard) {
+      await page.keyboard.press("Escape"); // close any panel the player left open
+      await launch.click();
+    }
     const at = Date.now();
-    const seen = await card.first().waitFor({ state: "visible", timeout: WITHIN_MS }).then(() => Date.now() - at, () => null);
+    // a card counts once it's on screen and isn't the launch card we just answered
+    const seen = await page
+      .waitForFunction((stale) => {
+        const el = document.querySelector('section[aria-label="Next move"]');
+        return !!el && el.getBoundingClientRect().height > 0 && el.innerText !== stale;
+      }, launchedCard || null, { timeout: WITHIN_MS })
+      .then(() => Date.now() - at, () => null);
     const title = seen !== null ? (await card.first().locator(".nm-title").innerText().catch(() => "")) : "";
     results.push({ rocket: n, ok: seen !== null, ms: seen, card: title });
     console.log(`${label} rocket ${n}: ${seen !== null ? `next move in ${seen}ms: ${title}` : "NO next move within 2s"}`);
