@@ -5,6 +5,7 @@
 // FactoryState into the Item Lab state each model animates (WORKING, SORTING, LAUNCH...).
 
 import * as THREE from "three";
+import { perf } from "./perf";
 import { lineFrame } from "./framing";
 import type { FactoryState, Harness, Item, Machine, PowerSource, Station, StationKind } from "@shiptorio/shared";
 import { box, mat, mesh, own, rep, rnd, tex, trimShadows } from "./kit";
@@ -27,6 +28,8 @@ import {
   buildTurret,
   buildVerify,
   updateFx,
+  getSeed,
+  setSeed,
   type BuildOpts,
   type Built,
 } from "./itemlab";
@@ -37,6 +40,7 @@ import { buildSatellite, Route, satelliteSpot, type SatelliteSpec, type Satellit
 import { disposeOwnedGeometries } from "./disposal";
 import { KIND_COLOR, PALETTE } from "./palette";
 import { pixelSizeFor, PixelPass } from "./pixel";
+import { bakeModel, findDynamic, mergeStatic } from "./bake";
 
 THREE.ColorManagement.enabled = false; // palette hexes render exactly as written
 
@@ -178,6 +182,39 @@ function solarVariant(name = ""): BuildOpts["variant"] {
   if (n.includes("cursor")) return ["CURSOR", 0x8a8f99];
   if (n.includes("grok")) return ["GROK", 0x30343c];
   return ["CLAUDE", 0xd97757];
+}
+
+// The art states each model can play (scene.ts artState/stationArt), for bake.ts to find its moving parts.
+const ART_STATES: Partial<Record<Machine["type"] | StationKind, string[]>> = {
+  assembler: ["IDLE", "WORKING", "BLOCKED"],
+  splitter: ["IDLE", "SORTING"],
+  inspector: ["SCANNING", "PASS", "REJECT", "BACKED UP"],
+  verify: ["IDLE", "VERIFYING", "PASS", "FAIL", "BACKED UP"],
+  review: ["IDLE", "REVIEWING", "APPROVED", "CHANGES", "BACKED UP"],
+  merge: ["WAITING", "APPROVED", "BACKED UP", "REJECTED"],
+  orbit: ["WATCHING", "ALL CLEAR", "ALERT"],
+  launch_pad: ["IDLE", "COUNTDOWN", "LAUNCH", "IDLE"],
+  ore_deposit: ["RICH", "DEPLETED"],
+  steam: ["IDLE", "RUNNING", "OVERLOAD"],
+  solar: ["SUNNY", "CAPPED"],
+  battery: ["CHARGING", "FULL", "DRAINING", "EMPTY"],
+  geothermal: ["IDLE", "INFERENCE", "OVERHEAT"],
+  turret: ["SCANNING", "FIRING"],
+};
+
+// A model with its static parts merged (bake.ts). The probe copy is built from the same random
+// seed, so it matches the real one and nothing after it shifts.
+function bakedItem(key: string, states: string[] | undefined, make: () => Built): Built {
+  const before = getSeed();
+  const built = make();
+  if (!states) return built;
+  const after = getSeed();
+  return bakeModel(key, built, () => {
+    setSeed(before);
+    const copy = make();
+    setSeed(after);
+    return copy;
+  }, states);
 }
 
 // Where the label sits above each model, from the Item Lab's item heights.
@@ -323,7 +360,7 @@ export class FactoryScene {
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private readonly v3 = new THREE.Vector3();
   // Spark, the Foreman, flying to whatever it's touching
-  private readonly drone = buildDrone();
+  private readonly drone = bakeModel("drone", buildDrone(), buildDrone, ["IDLE", "FLYING", "WORKING", "THINKING"]) as ReturnType<typeof buildDrone>;
   private readonly droneTo = new THREE.Vector3(0, 4, 0);
   private droneLabel?: Label;
   // the gauntlet: the busiest station glows, and the rework belt runs back to Spark
@@ -357,6 +394,8 @@ export class FactoryScene {
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(1);
+    this.renderer.info.autoReset = false; // two renders a frame (scene + pixel pass); perf.ts reads the total
+    perf.watch(this.scene);
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
@@ -750,6 +789,9 @@ export class FactoryScene {
       const cz = back + (d.y + d.h / 2) * S;
       const model = makeDistrict(w, dep, Math.ceil(d.files / 3), d.name);
       trimShadows(model.group);
+      // district ticks are pure functions of time, so they can be swept on the real thing
+      // (only same-material merges: the scene recolors the shared roof by district health)
+      mergeStatic(model.group, findDynamic(model.group, (check) => { for (let k = 0; k < 120; k++) (model.update(k * 0.37), check()); }), false);
       const isNew = ds.indexOf(d) >= this.districtCount; // districtCount is still the old count here
       model.group.position.set(cx, isNew ? -2.5 : 0, cz);
       if (isNew) this.rising.push(model.group);
@@ -764,6 +806,7 @@ export class FactoryScene {
     const w = x1 - x0, d = z1 - z0;
     const island = makeIsland(w, d);
     trimShadows(island);
+    mergeStatic(island); // nothing on the island moves; waterfalls hang off this.world
     island.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     this.world.add(island);
     // waterfalls sit just past the moss cap's bulge and fall a bit past the rock's tip
@@ -774,6 +817,7 @@ export class FactoryScene {
     const spots = [[-1, 0.7], [1.06, 0.9], [-0.9, -0.8], [0.8, -1.1], [0.1, 1.25], [-1.15, -0.1]];
     spots.forEach(([fx, fz], i) => {
       const r = makeFloater(0.6 + ((i * 37) % 5) * 0.15, 31 + i);
+      mergeStatic(r);
       r.position.set((x0 + x1) / 2 + fx * (w / 2 + 3), -2 - ((i * 53) % 7) * 1.1, (z0 + z1) / 2 + fz * (d / 2 + 3));
       this.world.add(r);
       this.rocks.push({ r, y: r.position.y, k: i * 1.3 });
@@ -848,8 +892,12 @@ export class FactoryScene {
       v = this.machines.get(m.id);
       if (!v) {
         const power = this.state?.power.find((p) => p.id === m.powerId || (m.type !== "assembler" && p.id === m.id));
-        const built = buildModel(m, power, kind);
-        trimShadows(built.g);
+        const key = [m.type, kind, m.id.startsWith("check-") ? m.id : "", m.harness, m.tier, power?.name].join("|");
+        const built = bakedItem(key, (kind && ART_STATES[kind]) || ART_STATES[m.type], () => {
+          const b = buildModel(m, power, kind);
+          trimShadows(b.g);
+          return b;
+        });
         const y = (kind && STATION_LABEL_Y[kind]) ?? LABEL_Y[m.type] ?? 1.6;
         const pick = kind ? this.stationAt(m.id)!.id : `m:${m.id}`;
         v = { built, machine: m, kind, label: this.addLabel(built.g, y, pick), art: "IDLE" };
@@ -979,6 +1027,7 @@ export class FactoryScene {
       }
     }
     this.layRework(gauntlet);
+    mergeStatic(this.beltGroup); // belts only scroll their texture; rails and brackets never move
   }
 
   // Every station drops its fails onto one red belt that runs behind the line, back to Spark's splitter.
@@ -999,7 +1048,7 @@ export class FactoryScene {
       this.layBelt(a.x === far ? r : pathOf([[a.x, a.z - 1.2], [a.x, lane]]), 0xff7a70);
     }
     if (!this.rework) {
-      const built = buildRework();
+      const built = bakedItem("rework", ["FLOWING", "CLOGGED"], buildRework);
       built.g.scale.setScalar(0.7);
       this.scene.add(built.g);
       this.rework = { built, label: this.addLabel(built.g, 0.9, "rework") };
@@ -1474,6 +1523,7 @@ export class FactoryScene {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now();
+    perf.frame(now, this.renderer.info);
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
@@ -1593,6 +1643,7 @@ export class FactoryScene {
     this.pass.render(this.renderer, this.scene, this.camera);
     this.placeLabels();
     this.placePops();
+    perf.work(performance.now() - now);
   };
 
   dispose() {
