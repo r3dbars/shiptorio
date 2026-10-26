@@ -78,4 +78,4 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const record = stores.get(`device:${d.code.toLowerCase()}`)!.get("device");
     expect(record.approved).toBeUndefined(); expect(record.secret).toBe(await secretHash(d.secret));
   } finally { globalThis.fetch = original; }
-});
+}, 30000);

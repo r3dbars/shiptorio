@@ -1,5 +1,6 @@
 import { RunnerConnection } from "./ui/RunnerConnection";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+
 import { savePref } from "./account";
 import type { FactoryState, Item, PowerSource } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
@@ -9,14 +10,12 @@ import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
 import { useFactory, type LogLine } from "./store";
 import { NextMove } from "./ui/NextMove";
-import { CheckIn } from "./ui/CheckIn";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
 import { Icon } from "./ui/icons";
 import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
-import { HowItThinks } from "./ui/HowItThinks";
 import { ConnectSource, MakeItYours } from "./ui/MakeItYours";
 import { useFactorySound } from "./sound/useFactorySound";
 import { sound } from "./sound/engine";
@@ -87,6 +86,14 @@ function buildSlot(state: FactoryState) {
 }
 
 // config: the welcome tour runs the App on its own sim (ui/Onboarding.tsx). onIntroDone: where the tour's last button goes.
+// Sheets nobody needs on the first screen load on their own; they're fetched once the browser is idle.
+const loadCheckIn = () => import("./ui/CheckIn");
+const loadHowItThinks = () => import("./ui/HowItThinks");
+const CheckIn = lazy(() => loadCheckIn().then((m) => ({ default: m.CheckIn })));
+const HowItThinks = lazy(() => loadHowItThinks().then((m) => ({ default: m.HowItThinks })));
+const whenIdle = (f: () => void) => ("requestIdleCallback" in window ? requestIdleCallback(f, { timeout: 4000 }) : setTimeout(f, 2500));
+whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
+
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send } = useFactory(cfg);
@@ -464,7 +471,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "yours" && state ? (
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "thinks" ? (
-          <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+          <Suspense fallback={null}>
+            <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+          </Suspense>
         ) : sheet === "empire" ? (
           <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />
         ) : sheet === "research" && state ? (
@@ -472,15 +481,17 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
         ) : checkin ? (
-          <CheckIn
-            deck={deck}
-            autonomy={autonomy}
-            send={send}
-            onFocus={setFocus}
-            onClose={() => { setCheckin(false); setFocus(null); }}
-            onAnswered={progressing ? prog.card : undefined}
-            end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
-          />
+          <Suspense fallback={null}>
+            <CheckIn
+              deck={deck}
+              autonomy={autonomy}
+              send={send}
+              onFocus={setFocus}
+              onClose={() => { setCheckin(false); setFocus(null); }}
+              onAnswered={progressing ? prog.card : undefined}
+              end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+            />
+          </Suspense>
         ) : sheet === "line" ? (
           <section className="card sheet" aria-label={LINE.title}>
             <div className="sheet-top">

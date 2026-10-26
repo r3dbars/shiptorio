@@ -1,7 +1,8 @@
+import { localBudget } from "./local-budget";
 // Quick check that Muse Spark answers: `META_API_KEY=... bun run spark:check` from the repo root.
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickResearch, sparkChat, triage } from "../src/spark";
 
-const env = { META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: process.env.SPARK_MODEL, SPARK_BASE_URL: process.env.SPARK_BASE_URL };
+const env = { ...localBudget(), SPARK_DISABLED: process.env.SPARK_DISABLED, SPARK_DAILY_CALLS: process.env.SPARK_DAILY_CALLS, SPARK_DAILY_TOKENS: process.env.SPARK_DAILY_TOKENS, META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: process.env.SPARK_MODEL, SPARK_BASE_URL: process.env.SPARK_BASE_URL };
 if (!env.META_API_KEY) {
   console.error("set META_API_KEY first");
   process.exit(1);

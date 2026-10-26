@@ -4,12 +4,14 @@ import { retry, OutboundError } from "./reliability";
 // Muse Spark on Meta Model API (OpenAI-compatible chat completions).
 // Spark runs the floor. Local subscription agents execute its plans.
 
+import { BudgetError, budgetLimits, reserveSpark, settleSpark, type BudgetEnv } from "./budget";
 import { z } from "zod";
 import { DATA_POLICY, untrustedData, pathAllowed, validatePlan } from "./injection-policy";
 import type { ItemKind } from "@shiptorio/shared";
 import type { FileChange } from "./github";
 
-export interface SparkEnv {
+export interface SparkEnv extends BudgetEnv {
+  budgetAccount?: () => Promise<string>;
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
@@ -32,21 +34,29 @@ export const sparkModel = (env: SparkEnv): string => env.SPARK_MODEL || "muse-sp
 
 export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: Effort = "low"): Promise<string> {
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
+  if (env.SPARK_DISABLED === "1") throw new BudgetError("Spark budget: global kill switch is on");
+  const output = budgetLimits(env).output;
+  const requestMessages = [...(messages.some(m => m.role === "developer") ? [] : [{ role: "developer", content: DATA_POLICY }]), ...messages.map(m => m.role === "user" ? { ...m, content: untrustedData(m.content) } : m.role === "developer" ? { ...m, content: `${m.content}\n${DATA_POLICY}` } : { ...m, content: untrustedData(m.content) })];
+  // UTF-8 bytes overestimate input tokens, including framing overhead. Reserve BEFORE fetch.
+  const reservedTokens = new TextEncoder().encode(JSON.stringify(requestMessages)).length + requestMessages.length * 32 + output;
+  if (!env.DB || !env.budgetAccount) throw new BudgetError("Budget ledger/account unavailable; Spark paused");
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   return retry("Spark completion", async () => {
+    // A provider retry is another billable call: reserve every attempt independently.
+    const reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens);
     const res = await observedFetch("spark", `${base}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(90000),
       headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: sparkModel(env), messages: [...(messages.some(m => m.role === "developer") ? [] : [{ role: "developer", content: DATA_POLICY }]), ...messages.map(m => m.role === "user" ? { ...m, content: untrustedData(m.content) } : m.role === "developer" ? { ...m, content: `${m.content}\n${DATA_POLICY}` } : { ...m, content: untrustedData(m.content) })], reasoning_effort: effort }),
-
-  });
-  if (!res.ok) throw new OutboundError(res.status);
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  const text = data.choices?.[0]?.message?.content;
-  if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Spark returned no content");
-  return text;
-  });
+      body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output }),
+    });
+    if (!res.ok) throw new OutboundError(res.status);
+    const data = (await res.json()) as { usage?: { total_tokens?: number }; choices?: { message?: { content?: string } }[] };
+    await settleSpark(env, reservation, data.usage?.total_tokens);
+    const text = data.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Spark returned no content");
+    return text;
+  }, { shouldRetry: error => !(error instanceof BudgetError) && !(error instanceof OutboundError && error.status === 429) });
 }
 
 // Pulls the first JSON object out of a reply, tolerating ```json fences and chatter around it.
