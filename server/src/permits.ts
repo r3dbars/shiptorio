@@ -66,8 +66,10 @@ export function recordRework(book: PermitBook, lane: string): { book: PermitBook
   return { book: { ...book, lanes: { ...book.lanes, [lane]: { ...r, streak: 0, reworks: r.reworks + 1, permit: false, offeredAt: undefined } } }, revoked };
 }
 
+// Turned off by hand, the card waits ASK_AGAIN more clean ships before it asks again (same as a snooze).
 export function setPermit(book: PermitBook, lane: string, permit: boolean): PermitBook {
-  return { ...book, lanes: { ...book.lanes, [lane]: { ...record(book, lane), permit, offeredAt: undefined } } };
+  const r = record(book, lane);
+  return { ...book, lanes: { ...book.lanes, [lane]: { ...r, permit, offeredAt: permit ? undefined : r.streak } } };
 }
 
 export function snooze(book: PermitBook, lane: string): PermitBook {

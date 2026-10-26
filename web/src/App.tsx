@@ -750,7 +750,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
 
-        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} />}
+        {panel && state && <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} live={cfg.kind === "live"} />}
 
         {progressing && <XpPop pop={prog.pop} />}
 
