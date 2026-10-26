@@ -1,0 +1,16 @@
+import { resolve } from "node:path";
+import { SCENARIOS, type ScenarioName } from "../../web/src/sim/engine";
+import { markdown, runSuite } from "./system";
+const args = process.argv.slice(2);
+const option = (key: string) => args.includes(key) ? args[args.indexOf(key) + 1] : undefined;
+const scenario = option("--scenario");
+if (scenario && !(scenario in SCENARIOS)) throw new Error("Unknown scenario");
+const seed = Number(option("--seed") ?? 71);
+if (!Number.isSafeInteger(seed)) throw new Error("Seed must be an integer");
+const results = runSuite(seed, scenario ? [scenario as ScenarioName] : undefined);
+const out = resolve(option("--out") ?? "playtest-results");
+await Bun.write(resolve(out, "results.json"), JSON.stringify({ seed, results }, null, 2));
+await Bun.write(resolve(out, "findings.md"), markdown(results));
+const findings = results.flatMap(r => r.findings);
+console.log(JSON.stringify({ cases: results.length, decisions: results.reduce((n, r) => n + r.decisions, 0), findings: findings.map(f => ({ id: f.id, severity: f.severity, title: f.title })), out }, null, 2));
+if (args.includes("--check") && findings.some(f => f.severity === "P1")) process.exit(1);

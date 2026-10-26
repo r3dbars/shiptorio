@@ -930,19 +930,29 @@ const beltTex = tex().belt;
     const mx = -0.3, mz = -0.25;
     for (const [x, z] of [[-0.18, -0.18], [0.18, -0.18], [-0.18, 0.18], [0.18, 0.18]]) box(0.06, 2.0, 0.06, 0xeef1fa, mx + x, 1.14, mz + z, g);
     for (let y = 0.5; y < 2.1; y += 0.5) { box(0.4, 0.05, 0.05, 0xd94a3f, mx, y, mz + 0.18, g); box(0.05, 0.05, 0.4, 0xd94a3f, mx + 0.18, y, mz, g); }
+    for (let y = 0.25; y < 1.9; y += 0.5) for (const face of [0, 1]) {
+      const br = group(g, mx + (face ? 0.18 : 0), y + 0.25, mz + (face ? 0 : 0.18)); br.rotation.y = face ? Math.PI / 2 : 0;
+      for (const d of [-1, 1]) box(0.025, 0.6, 0.025, 0xeef1fa, 0, 0, 0, br).rotation.z = d * 0.62;
+    }
+    // equipment shelter at the mast foot with a waveguide running up
+    box(0.45, 0.32, 0.36, 0xd8d2c4, mx - 0.5, 0.3, mz - 0.4, g);
+    box(0.5, 0.04, 0.4, 0x6b7280, mx - 0.5, 0.48, mz - 0.4, g);
+    box(0.04, 1.9, 0.04, 0x3a3f47, mx - 0.22, 1.1, mz - 0.22, g);
     box(0.5, 0.06, 0.5, 0x3a3f47, mx, 2.16, mz, g);
     const dishG = group(g, mx, 2.2, mz);
     cyl(0.06, 0.08, 0.3, 0x8a94a3, 6, 0, 0.15, 0, dishG);
     const dish = group(dishG, 0, 0.42, 0.05); dish.rotation.x = -0.9;
     cone(0.5, 0.2, 0xeef1fa, 14, 0, 0, 0, dish).rotation.x = Math.PI;
     cyl(0.02, 0.02, 0.4, 0x2b2f36, 4, 0, 0.18, 0, dish);
+    for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2; const st = box(0.015, 0.42, 0.015, 0x8a94a3, Math.cos(a) * 0.17, 0.2, Math.sin(a) * 0.17, dish); st.rotation.set(Math.sin(a) * 0.42, 0, -Math.cos(a) * 0.42); }
     const feed = box(0.07, 0.07, 0.07, own(0x2a1010), 0, 0.38, 0, dish);
     const alarm = beacon(g, mx + 0.18, 2.2, mz - 0.18);
     // the satellite on its orbit
     const orbit = group(g, 0, 2.9, 0);
     const sat = group(orbit, 1.25, 0, 0);
     box(0.2, 0.2, 0.26, 0xd4a83a, 0, 0, 0, sat);
-    for (const z of [-0.34, 0.34]) box(0.24, 0.02, 0.36, 0x2f6fe0, 0, 0, z, sat);
+    for (const z of [-0.34, 0.34]) { box(0.24, 0.02, 0.36, 0x2f6fe0, 0, 0, z, sat); for (const zz of [-0.06, 0.06]) box(0.25, 0.022, 0.012, 0x1b3f8a, 0, 0, z + zz, sat); box(0.03, 0.03, 0.12, 0x8a94a3, 0, 0, z * 0.5, sat); }
+    cone(0.08, 0.05, 0xeef1fa, 8, 0, 0.14, 0.14, sat).rotation.x = -0.6;
     cyl(0.02, 0.02, 0.2, 0x8a94a3, 4, 0, -0.18, 0, sat);
     const satLamp = box(0.06, 0.06, 0.06, own(0x173a26), 0, 0.13, 0, sat);
     // console with a Sentry sparkline
@@ -987,6 +997,18 @@ const beltTex = tex().belt;
     const scanRing = mesh(new THREE.TorusGeometry(0.66, 0.03, 4, 24), basic(0x6fb2ff), cx, 1, cz, g);
     scanRing.rotation.x = -Math.PI / 2; scanRing.castShadow = false;
     const bug = makeBiterBody(0xff5e52, g); bug.b.scale.setScalar(0.42);
+    // the containment ram: a hydraulic cylinder on the chamber's flank that slams the lid when the bug survives
+    const rx0 = cx - 1.05;
+    box(0.3, 1.5, 0.3, 0x4a505a, rx0, 0.89, cz, g);
+    hazard(g, 0.3, 1.66, cz + 0.16, 3);
+    cyl(0.1, 0.1, 0.5, 0x2b2f36, 10, rx0, 2.0, cz, g);
+    const ram = group(g, rx0, 2.25, cz);
+    cyl(0.05, 0.05, 0.5, 0xd5d8de, 8, 0, -0.05, 0, ram);
+    box(1.1, 0.08, 0.2, 0xff5e52, 0.55, 0.2, 0, ram);
+    box(0.36, 0.1, 0.36, 0x2b2f36, 1.05, 0.12, 0, ram);
+    // coolant lines feeding the chamber, and a vent valve
+    for (const a of [2.0, 2.5]) cyl(0.03, 0.03, 0.9, 0x6fb2ff, 6, cx + Math.cos(a) * 0.95, 0.5, cz + Math.sin(a) * 0.95, g);
+    box(0.08, 0.08, 0.3, 0x3a3f47, cx + 0.2, 1.88, cz - 0.6, g);
     // sandbox monitor showing the app under test
     box(0.08, 0.7, 0.08, 0x3a3f47, 0.95, 0.5, -0.95, g);
     box(0.9, 0.6, 0.06, 0x2b2f36, 0.95, 1.1, -0.9, g);
@@ -996,9 +1018,23 @@ const beltTex = tex().belt;
     const pile = queuePile(g, 0.75, 0.14, 0.55), caught = tally(g, -1.1, 0.14, 0.95);
     const stack = stackLight(g, 0.35, 0.14, -1.05);
     const alarm = beacon(g, cx + 0.55, 1.83, cz);
-    let prevK = 0;
+    let prevK = 0, failT = -1, prevPh = 0;
     return { g, update(t, dt, s) {
       const busy = s !== 'IDLE', fail = s === 'FAIL', k = (t * 0.3) % 1;
+      // FAIL: the ram lifts, then slams the lid at 0.62s (where the sound's slam lands) and every 1.6s after
+      let h = 0, slam = false;
+      if (fail) {
+        failT = failT < 0 ? 0 : failT + dt;
+        if (failT < 0.62) h = failT > 0.54 ? (0.62 - failT) / 0.08 : Math.min(1, failT / 0.4);
+        else {
+          const ph = (failT - 0.62) % 1.6;
+          slam = failT - dt < 0.62 || ph < prevPh;
+          prevPh = ph;
+          h = ph < 0.25 ? 0 : ph < 1.0 ? (ph - 0.25) / 0.75 : ph < 1.52 ? 1 : (1.6 - ph) / 0.08;
+        }
+      } else { failT = -1; prevPh = 0; }
+      ram.position.y = 2.25 + h * 0.4;
+      if (slam) for (let i = 0; i < 18; i++) spawn(g, cx + R() * 1.2, 2.05, cz + R() * 1.2, R() * 2.5, 0.6 + Math.random(), R() * 2.5, i % 2 ? 0xc9ced6 : 0xff5e52, 0.6, 0.06, 5);
       const killed = s === 'PASS' && k > 0.6;
       const a = t * (fail ? 2.2 : 1.2), rr = fail ? 0.42 + Math.max(0, Math.sin(t * 6)) * 0.08 : 0.32;
       bug.b.position.set(cx + Math.cos(a) * rr, 0.39, cz + Math.sin(a) * rr); bug.b.rotation.y = -a;
@@ -1048,6 +1084,9 @@ const beltTex = tex().belt;
     [[-0.2, -0.02], [-0.12, -0.1], [-0.04, -0.06], [0.04, 0.02], [0.12, 0.1], [0.2, 0.17]].forEach(([x, y]) => box(0.07, 0.07, 0.02, okM, x - 0.17, y, 0.05, sign));
     for (let i = -2; i <= 2; i++) { box(0.06, 0.06, 0.02, noM, 0.2 + i * 0.05, i * 0.05, 0.05, sign); box(0.06, 0.06, 0.02, noM, 0.2 + i * 0.05, -i * 0.05, 0.05, sign); }
     const car = group(g, 0, 2.0, -0.5);
+    // a drag chain carries the eye's cables along the gantry, folding as the car travels
+    const chainA = box(1, 0.06, 0.1, 0x16120a, 0, 2.24, -0.42, g), chainB = box(1, 0.06, 0.1, 0x2b2f36, 0, 2.3, -0.42, g);
+    for (const x of [-1.3, 1.3]) box(0.16, 0.16, 0.16, 0x3a3f47, x, 2.28, -0.5, g); // gantry motor housings
     box(0.3, 0.2, 0.26, 0xf2a93b, 0, 0, 0, car);
     box(0.08, 0.08, 0.55, 0x3a3f47, 0, -0.1, 0.3, car);
     const eye = group(car, 0, -0.32, 0.62); eye.rotation.x = 0.9;
@@ -1063,6 +1102,8 @@ const beltTex = tex().belt;
       const busy = s !== 'IDLE', ok = s === 'APPROVED', no = s === 'CHANGES';
       const ex = busy ? Math.sin(t * 0.9) * 0.9 : 0;
       car.position.x = ex; beam.position.x = ex; beam.visible = busy;
+      const half = (ex + 1.3) / 2; chainA.scale.x = Math.max(0.05, ex + 1.3); chainA.position.x = -1.3 + half;
+      chainB.scale.x = Math.max(0.05, (ex + 1.3) * 0.5); chainB.position.x = -1.3 + half * 0.5;
       beam.material.color.setHex(ok ? 0x5bd18b : no ? 0xff5e52 : V);
       eye.rotation.x = busy ? 0.9 : 0.9 + Math.max(0, Math.sin(t * 0.8)) * 0.5;
       irisM.emissive.setHex(!busy ? (Math.sin(t * 0.8) > 0.7 ? 0x2a1a4a : 0x140c26) : ok ? 0x5bd18b : no ? 0xff5e52 : Math.sin(t * 5) > 0 ? V : 0x6a4ab0);
@@ -1095,6 +1136,9 @@ const beltTex = tex().belt;
     box(0.08, 0.5, 0.08, 0x6b7280, bx, 0.39, 1.0, g);
     const boom = group(g, bx, 0.8, -0.22);
     for (let i = 0; i < 7; i++) box(0.08, 0.08, 0.18, i % 2 ? 0xeef1fa : 0xff5e52, 0, 0, 0.12 + i * 0.18, boom);
+    box(0.16, 0.2, 0.22, 0x2b2f36, 0, 0, -0.16, boom); // counterweight behind the pivot
+    const boomLights = [0.5, 0.9, 1.3].map((z) => box(0.05, 0.05, 0.05, own(0x3a0c08), 0, 0.06, z, boom));
+    cyl(0.1, 0.1, 0.34, 0x4a505a, 10, bx, 0.8, -0.22, g).rotation.z = Math.PI / 2; // motor drum on the pivot
     // booth with a "needs you" sign
     box(0.9, 0.9, 0.7, 0xd8d2c4, -0.65, 0.59, -0.8, g);
     box(1.0, 0.08, 0.8, 0xff5e52, -0.65, 1.08, -0.8, g);
@@ -1149,7 +1193,9 @@ const beltTex = tex().belt;
         const q = Math.max(0, (k - 0.25) / 0.45);
         c.position.set(home - Math.min(q, 1) * 1.0, 0.38 + (q > 0.6 ? -(q - 0.6) * 0.6 : 0), 0.3 + Math.min(q, 1) * 0.7);
       }
+      const moving = Math.abs(-open * 1.3 - boom.rotation.x) > 0.02;
       boom.rotation.x += (-open * 1.3 - boom.rotation.x) * Math.min(1, dt * 8);
+      boomLights.forEach((m, i) => m.material.emissive.setHex(moving && Math.sin(t * 14 + i) > 0 ? 0xff5e52 : s === 'WAITING' && i === 2 ? 0x5a1010 : 0));
       armG.rotation.x = -press * 1.4;
       const needs = s === 'WAITING' || s === 'BACKED UP';
       signM.emissive.setHex(needs ? (Math.sin(t * (s === 'BACKED UP' ? 10 : 4)) > 0 ? 0xf2a93b : 0x3e2e12) : s === 'APPROVED' ? 0x5bd18b : 0xff5e52);
@@ -1168,6 +1214,9 @@ const beltTex = tex().belt;
     const L = 2.4, r = 0.5, P = 2 * L + 2 * Math.PI * r;
     const t1 = beltSurface(L, 0.5, g, 0, 0.2, -r), t2 = beltSurface(L, 0.5, g, 0, 0.2, r);
     for (const x of [-L / 2, L / 2]) { cyl(0.76, 0.76, 0.08, 0x2b2f36, 16, x, 0.2, 0, g); cyl(0.3, 0.3, 0.1, 0x4a505a, 12, x, 0.22, 0, g); }
+    const hubs = [-L / 2, L / 2].map((x) => { const h = group(g, x, 0.28, 0); for (let i = 0; i < 3; i++) box(0.56, 0.03, 0.06, 0x8a94a3, 0, 0, 0, h).rotation.y = i * Math.PI / 3; return h; });
+    box(0.36, 0.26, 0.3, 0x4a505a, L / 2 + 0.55, 0.25, -0.75, g); // drive motor with its cooling fins
+    for (let i = 0; i < 4; i++) box(0.3, 0.02, 0.32, 0x6b7280, L / 2 + 0.55, 0.16 + i * 0.06, -0.75, g);
     for (const z of [-r - 0.28, r + 0.28]) box(L, 0.12, 0.05, 0xd94a3f, 0, 0.27, z, g);
     const at = (s) => {
       const d = ((s % 1) + 1) % 1 * P;
@@ -1191,7 +1240,8 @@ const beltTex = tex().belt;
     box(0.08, 0.3, 0.08, 0x3a3f47, 1.4, 0.2, -1.0, g);
     return { g, update(t, dt, s) {
       const run = s === 'FLOWING';
-      if (run) { t1.offset.x += dt * 1.1; t2.offset.x -= dt * 1.1; sign.rotation.z -= dt * 2; }
+      if (run) { t1.offset.x += dt * 1.1; t2.offset.x -= dt * 1.1; sign.rotation.z -= dt * 2; hubs.forEach((h) => (h.rotation.y += dt * 2.2)); }
+      else hubs.forEach((h) => (h.rotation.y = Math.sin(t * 30) * 0.02)); // clogged: the drive strains
       items.forEach((it, i) => {
         if (run) it.s = (it.s + dt * 0.07) % 1;
         const [x, z] = at(run ? it.s : 0.02 + i * 0.022);

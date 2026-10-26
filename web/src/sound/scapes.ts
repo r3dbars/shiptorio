@@ -111,6 +111,7 @@ export const SCAPES: Record<ScapeKind, Scape> = {
         s.noise({ dur: 0.35, vol: 0.06, hp: 2500, at: t + 0.4, out });
       }
       if (i % every === 6) s.noise({ dur: 0.12, vol: 0.12, lp: 500, at: t, rate: 0.5, out });
+      if (i % 8 === 0) s.tone({ f: 58, to: 52, dur: 0.3, type: "sine", vol: 0.05, at: t, out }); // the coolant pump throbbing
     },
   },
   // AI review: terminal chatter, little thinking bleeps
@@ -133,6 +134,7 @@ export const SCAPES: Record<ScapeKind, Scape> = {
     start: (s, out) => bed(s, out, { osc: [["sine", 196, 0.02], ["sine", 294, 0.015], ["sine", 392.5, 0.01]], wobble: [0.2, 0.5] }),
     step: (s, out, i) => {
       if (i % 20 === 0) [0, 0.25, 0.5].forEach((d, n) => s.tone({ f: 1200, dur: 0.15, type: "sine", vol: 0.06 / (n + 1), at: s.now + d, out }));
+      if (i % 20 === 10) s.tone({ f: 180, to: 240, dur: 0.5, type: "sawtooth", vol: 0.012, at: s.now, attack: 0.15, out }); // the dish's slew motor
     },
   },
   // Assembler: exhaust fan whoosh, servo whine, rhythmic press and clank, the weld arc buzzing. Idle machines just tick over.
