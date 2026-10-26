@@ -15,6 +15,7 @@ import { Icon, type IconName } from "./icons";
 const KEY = "shiptorio:achievements";
 const TOAST_MS = 4200;
 const AFTER_SHIP_MS = SHIP_TIMING.doneMs + 3200; // let the ship card have its moment first
+const MAX_WAIT_MS = 6000; // ...but back-to-back ships (a permit lane) never starve the toasts
 const MAX_TOASTS = 3; // opening a factory that already shipped a lot: three toasts, then one "and N more"
 
 const TIER_LABEL: Record<Achievement["tier"], string> = { bronze: "Bronze", silver: "Silver", gold: "Gold" };
@@ -29,7 +30,7 @@ function readLocal(): Earned {
 }
 
 export interface Toast {
-  key: number;
+  key: number; // also when it was queued
   a?: Achievement;
   more?: number;
 }
@@ -101,20 +102,26 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, synced, quiet, streak]);
 
-  // One toast at a time.
+  // One toast at a time, one clock for all of them.
+  const shownAt = useRef(0);
   useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), TOAST_MS);
-      return () => clearTimeout(t);
-    }
     const tick = setInterval(() => {
-      if (!queue.current.length || Date.now() < quietUntil.current) return;
-      const next = queue.current.shift()!;
-      setToast(next);
-      if (next.a) sound.play("achievement");
-    }, 400);
+      const now = Date.now();
+      if (shownAt.current) {
+        if (now - shownAt.current < TOAST_MS) return;
+        shownAt.current = 0;
+        setToast(null);
+        return; // a beat between toasts
+      }
+      const head = queue.current[0];
+      if (!head || (now < quietUntil.current && now - head.key < MAX_WAIT_MS)) return;
+      queue.current.shift();
+      shownAt.current = now;
+      setToast(head);
+      if (head.a) sound.play("achievement");
+    }, 250);
     return () => clearInterval(tick);
-  }, [toast]);
+  }, []);
 
   // A card answered or skipped is a real decision too: it counts for the day's streak.
   const saveRef = useRef(save);
@@ -130,7 +137,7 @@ export function useAchievements(state: FactoryState | null, live: boolean, quiet
     [sendRaw],
   );
 
-  return { earned, toast, dismiss: () => setToast(null), send, count: Object.keys(earned.got).length };
+  return { earned, toast, dismiss: () => { shownAt.current = 0; setToast(null); }, send, count: Object.keys(earned.got).length };
 }
 
 function Badge({ a, got, size = 22 }: { a: Achievement; got: boolean; size?: number }) {
@@ -196,7 +203,7 @@ export function AchievementsSheet({ earned, state, streak = 0, onClose }: { earn
             <span className="rs-body">
               <span className="rs-name">
                 {a.name}
-                <em className={`ach-tier ${a.tier}`}>{TIER_LABEL[a.tier]}</em>
+                <span className={`ach-tier ${a.tier}`}>{TIER_LABEL[a.tier]}</span>
               </span>
               <span className="rs-what">{a.what}</span>
               {!got && a.need > 1 && (

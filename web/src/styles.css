@@ -756,7 +756,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--blue); outline-
 .ach-badge.got.gold { color: var(--amber); border-color: rgba(227, 163, 63, 0.6); background: rgba(227, 163, 63, 0.14); box-shadow: 0 0 14px rgba(227, 163, 63, 0.25); }
 .ach-toast-wrap { position: absolute; top: calc(70px + var(--sat)); left: 0; right: 0; display: flex; justify-content: center; pointer-events: none; z-index: 45; padding: 0 12px; }
 .ach-toast {
-  pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 12px; text-align: left; color: var(--ink);
+  pointer-events: auto; cursor: pointer; display: flex; flex-direction: row; align-items: center; gap: 12px; text-align: left; color: var(--ink);
   width: min(420px, 100%); padding: 10px 14px; border-radius: 14px; border: 1px solid var(--amber); font: inherit;
   box-shadow: 0 0 0 2px rgba(227, 163, 63, 0.18), 0 10px 30px rgba(0, 0, 0, 0.45);
   animation: ach-drop 0.45s cubic-bezier(0.2, 1.5, 0.4, 1) both, ach-out 0.35s ease-in 3.85s both;
