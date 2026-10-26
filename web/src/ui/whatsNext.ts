@@ -4,6 +4,7 @@
 
 import { sciencePacks, techById, techStatus, TECHS, type FactoryState } from "@shiptorio/shared";
 import { ghostSpots } from "../map/ghosts";
+import { lc } from "../sim/engine";
 
 export type NudgeAction =
   | { do: "launch"; itemId: string } // fly the PR on the pad (sim) or open it to merge (live)
@@ -71,9 +72,9 @@ export function whatsNext(state: FactoryState, ctx: NudgeContext = {}): Nudge {
     return {
       id: `station:${stuck.id}`,
       kicker: `Bottleneck · ${stuck.name}`,
-      title: `Clear the ${stuck.name.toLowerCase()}`,
+      title: `Clear the ${lc(stuck.name)}`,
       why: state.bottleneck.summary,
-      cta: { label: `Open the ${stuck.name.toLowerCase()}`, action: { do: "station", id: stuck.id } },
+      cta: { label: `Open the ${lc(stuck.name)}`, action: { do: "station", id: stuck.id } },
     };
   }
 
@@ -117,7 +118,7 @@ export function whatsNext(state: FactoryState, ctx: NudgeContext = {}): Nudge {
       title: `${dir(close.district)} is close to a launch permit`,
       why: `${Math.round(close.score * 100)}% trust. Clean ships here earn a permit, and then its PRs launch without you.`,
       grows: "+1 PERMIT",
-      cta: { label: `Open the ${gate.name.toLowerCase()}`, action: { do: "station", id: gate.id } },
+      cta: { label: `Open the ${lc(gate.name)}`, action: { do: "station", id: gate.id } },
     };
   }
 
