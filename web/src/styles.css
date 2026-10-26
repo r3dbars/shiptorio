@@ -941,6 +941,9 @@ input, select, textarea { font-size: max(16px, 1em); } /* iOS zooms the page int
   .ob-card { width: min(440px, 56vw); gap: 8px; padding: 12px 16px; }
   .ob-title { font-size: 26px; }
 }
+/* first repo: the install button is the whole step (new-user-path.md) */
+.ob-install { display: flex; flex-direction: column; gap: 8px; }
+.ob-install .btn { flex: none; }
 /* the planner's one-line why on every card */
 .why-line { margin: 4px 0 0; font: 400 13px/1.4 var(--mono); color: var(--ink); opacity: .85; }
 .why-line b { color: var(--blue); font-weight: 600; }
