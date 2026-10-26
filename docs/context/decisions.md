@@ -5,6 +5,14 @@ of each section. If you decide something, add it here in the same PR.
 
 ## Decisions
 
+Spark/local runner checkpoint: a bounded tool loop runs in the repo Durable Object's
+alarm, with a five-turn planning budget and persisted reasons/results. Operator approval
+fixes the issue, harness and exact paths. The local supervisor uses native Codex/Claude
+subscription authentication in fresh clones, checks scope and local validation, pushes
+only a job branch and asks the Worker to open the PR. Pairing is repo-scoped, revocable
+and expires in eight hours. See `docs/RUNNER.md`. Real acceptance target is issue #58;
+this implementation checkpoint does not itself claim the live agent run has passed.
+
 GitHub connection verified (Oct 26): PR #35 merged after green CI and deployed through
 https://github.com/r3dbars/shiptorio/actions/runs/40374006337. Both password-protected
 domains reported commit `d60b7499b971aac477d165df598969845c2352fd`. All 55 tests,

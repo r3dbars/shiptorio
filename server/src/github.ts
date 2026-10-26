@@ -76,7 +76,7 @@ export interface AppCredentials {
   GITHUB_APP_PRIVATE_KEY: string;
 }
 
-async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
+export async function gh<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(API + path, {
     signal: AbortSignal.timeout(20000),
     ...init,
