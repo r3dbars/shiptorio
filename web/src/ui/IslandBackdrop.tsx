@@ -9,7 +9,7 @@ export function IslandBackdrop() {
   const cfg = useMemo(() => ({ kind: "sim" as const, repo: "you/demo-shop", scenario: "heal" as const }), []);
   const { state } = useFactory(cfg);
   return (
-    <div className="ob-backdrop" aria-hidden="true">
+    <div className="ob-backdrop" aria-hidden="true" inert>
       <FactoryMap state={state} />
     </div>
   );

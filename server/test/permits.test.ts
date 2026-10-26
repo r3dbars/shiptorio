@@ -41,6 +41,16 @@ describe("permit rules", () => {
     expect(permitReady(shipClean(book, 2))).toBeUndefined();
     expect(permitReady(shipClean(book, 3))?.lane).toBe("docs");
   });
+  it("turning a permit off by hand stops auto-launch and waits 3 clean ships before asking again", () => {
+    let book = setPermit(shipClean(emptyBook(), 5), "docs", true);
+    const ready = { ...passed(), state: "on_pad" as const };
+    expect(mayAutoLaunch(book, ready)).toBe(true);
+    book = setPermit(book, "docs", false);
+    expect(mayAutoLaunch(book, ready)).toBe(false);
+    expect(permitReady(book)).toBeUndefined();
+    expect(permitReady(shipClean(book, 2))).toBeUndefined();
+    expect(permitReady(shipClean(book, 3))?.lane).toBe("docs");
+  });
   it("code folders need a longer streak", () => {
     const web = (book: PermitBook, n: number) => { for (let i = 0; i < n; i++) book = recordShip(book, passed({ lane: "web" }), false); return book; };
     expect(permitReady(web(emptyBook(), 9))).toBeUndefined();

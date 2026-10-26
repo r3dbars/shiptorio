@@ -47,7 +47,7 @@ One slip and the lane starts over. A permit is revoked, and the streak resets, t
 
 The log says "docs lost its launch permit: ... Its PRs wait for you again until the lane earns trust back."
 
-> **Coming soon** A button to turn a permit off by hand. Until then, a permit only goes away on its own when a PR in that lane slips.
+You can also turn a permit off by hand. Open **Make it yours**: every folder with a permit is listed under **Launch permits** with a **Turn off** button. Its PRs wait for you at the merge gate again, and the permit card won't ask about that folder until it ships clean three more times.
 
 ## Automated %
 
