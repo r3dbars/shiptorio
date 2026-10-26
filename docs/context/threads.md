@@ -16,6 +16,7 @@ is the only copy agents outside it (Codex) can see.
 | Commit all Shiptorio context to repo | done | This folder (`docs/context/`), PRs #6 and #9 |
 | Design Shiptorio's verification loop one-pager | working | `docs/LOOP.md` + `docs/loop.html` (live: https://claude.ai/artifact/3thVDxNxToYkyKTTqoFnbr). The verification gauntlet (CI inspector → verify bay → AI review → launch pad → orbit watch), rework belt with scar tags, promote-a-check, research stations, click-to-act station panel. PRODUCT.md updated (stages, tools, contract, web). |
 | Add sound to Shiptorio | working | Procedural chiptune sound in `web/src/sound/` (no audio files): belt hum, assembler clank, inspector stamps, verify bay pop/ram, rework rattle, Spark chirps, rocket countdown + launch, UI clicks. Driven by FactoryState diffs so sim and live both work. Mute (M) + volume in the HUD, silent until first click |
+| Make Shiptorio mobile friendly | working | PR #53: phone layout (slim top bar, Next Move docked, Power/Pad/Line/Log in a pull-up sheet, station panels as bottom sheets), pinch zoom + drag pan + tap-to-pick on the map, safe areas, smaller shadow map on phones. Fixes playtest #43 |
 
 ## PRs at a glance
 
