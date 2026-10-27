@@ -1152,7 +1152,8 @@ export default function install(IRON) {
       if (free(t, 11.8, 6.0, 0.35, 0.3)) K.tube([[10.6, y + 0.07, 6.5], [11.2, y + 0.08, 6.1], [12.2, y + 0.08, 5.8], [13.0, y + 0.07, 6.6]], 0.06, M.hose, S, 20, 5);
       // right end: coal pile + shovel, drums, the rocket-parts depot
       if (free(t, 16.4, -1.6, 1.4, 1)) { for (let i = 0; i < 46; i++) { const a = rnd() * Math.PI * 2, r = rnd() * 1.5; K.rock(0.14 + rnd() * 0.2, M.coal, 16.4 + Math.cos(a) * r, y + (1.5 - r) * 0.35 + rnd() * 0.15, -1.6 + Math.sin(a) * r * 0.8, S); } const sv = K.box(0.05, 0.05, 1.1, M.wood, 15.6, y + 0.4, -0.7, S); sv.rotation.set(0.9, 0.4, 0); }
-      [[17.7, 0.9], [17.9, 1.7], [17.2, 1.4]].forEach(([x, z], i) => place(t, x, z, 0.32, 0.9, (px, py, pz) => drum(px, py, pz, i % 2 ? 0x7a2a1a : 0x2a4a3a)));
+      // (x stays under 18.1: a geothermal plant feeding a builder runs its conduit along this edge at x 18.3)
+      [[17.7, 0.9], [17.75, 1.7], [17.2, 1.4]].forEach(([x, z], i) => place(t, x, z, 0.32, 0.9, (px, py, pz) => drum(px, py, pz, i % 2 ? 0x7a2a1a : 0x2a4a3a)));
       place(t, 16.1, 6.75, 0.5, 0.6, (px, py, pz) => drum(px, py, pz, 0x7a2a1a, 0.9));
       if (free(t, 16.4, 3.6, 1.0, 1)) {
         const depot = K.group(S, 16.4, y, 3.4);
