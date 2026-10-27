@@ -92,7 +92,7 @@ describe("AI review as a tool loop", () => {
   it("redacts complete prefetched context before observations and cached search reads", async () => {
     const source = `${"x".repeat(9900)}\n${syntheticPem}`;
     const sent = spark([
-      { tool: "search_code", query: "SYNTHETICKEY", reason: "Check source" },
+      { tool: "search_code", query: "PRIVATE", reason: "Check source" },
       { verdict: "pass", reason: "No blocking problem", findings: [] },
     ]);
     await reviewWithTools(sparkTestEnv(), { title: "x", body: "", builder: "Codex" }, "+ordinary", box({ paths: ["src/config.ts"] }), [{ path: "src/config.ts", content: source }]);
