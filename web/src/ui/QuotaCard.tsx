@@ -36,7 +36,7 @@ export function QuotaCard({ repo, onBudget }: { repo?: string; onBudget: () => v
       if (fetching) return;
       fetching = true;
       try {
-        const response = await fetch(`/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/limits`, { cache: "no-store", signal: controller.signal });
+        const response = await fetch(`/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/limits`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) });
         if (!response.ok) throw new Error("Factory limits unavailable.");
         const value = await response.json() as Limits;
         if (active) { setData(value); setError(""); }

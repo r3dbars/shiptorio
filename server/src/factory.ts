@@ -630,7 +630,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async planningRetries() {
     const rows = await this.ctx.storage.list<PlanningRetry>({ prefix: "planningRetry:" });
-    return [...rows.entries()].flatMap(([key, retry]) => planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []);
+    return this.redactor.value([...rows.entries()].flatMap(([key, retry]) => planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []));
   }
 
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
@@ -649,7 +649,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (stored) await this.accountPut(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active plan or build");
+      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active runner job; finish its plan or build first");
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
       const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
       if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
@@ -659,7 +659,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (quota.used >= quota.limit) throw new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
       const usage = await this.usage();
       if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) throw new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
-
 
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };

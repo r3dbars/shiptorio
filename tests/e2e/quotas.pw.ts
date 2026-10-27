@@ -3,6 +3,7 @@ test('quota warning → cap → raise link → automatic recovery and retry cool
   const repo = `fixture/${info.project.name}`;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.request.post(`/__test/${repo}/seed?ore=0`);
   const session = await (await page.request.post('/__test/session')).json();
   await context.addCookies(session.cookie.split('; ').map((entry: string) => {

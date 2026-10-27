@@ -23,6 +23,7 @@ export async function budgetAccount(db: D1Database, repo: string): Promise<strin
 export async function accountBudgetLimits(env: BudgetEnv, account: string) {
   const caps = budgetLimits(env);
   if (!account.startsWith("user:")) return caps;
+  if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
   const row = await env.DB!.prepare(`SELECT a.spark_calls_daily, a.spark_tokens_daily FROM users u
     LEFT JOIN signup_allowlist a ON lower(a.login) = lower(u.login) WHERE u.id = ?`)
     .bind(Number(account.slice(5))).first<{ spark_calls_daily: number | null; spark_tokens_daily: number | null }>();

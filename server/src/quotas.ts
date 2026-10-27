@@ -24,7 +24,7 @@ export async function quotaStatus(env: Env, repo: string, viewer: User) {
     quota('runs', 'Build runs / day', runs.used, runs.limit, daily, raiseUrl),
     quota('spark-calls', 'Spark calls / day', spark.calls, spark.limits.calls, daily, sparkRaiseUrl),
     quota('spark-tokens', 'Spark tokens / day', spark.tokens, spark.limits.tokens, daily, sparkRaiseUrl),
-    ...(account === `user:${viewer.id}` ? [quota('spark-spend', 'Spark dollars / day', spend.estimatedUsd, spend.dailyBudgetUsd, daily, account === `user:${viewer.id}` ? "#planner-budget" : null)] : []),
+    ...(account === `user:${viewer.id}` ? [quota('spark-spend', 'Spark dollars / day', spend.estimatedUsd, spend.dailyBudgetUsd, daily, "#planner-budget")] : []),
     quota('factories', 'Connected factories', resources.results.find(r => r.kind === 'factory')?.used ?? 0, caps?.factories ?? 3, null, raiseUrl),
     quota('repos', 'Connected repos', resources.results.find(r => r.kind === 'repo')?.used ?? 0, caps?.repos ?? 3, null, raiseUrl),
   ] };
