@@ -2,6 +2,18 @@ import type { Job } from "./messages";
 import type { Pairing } from "./pairing";
 
 export type Subscription = Exclude<Job["harness"], "local">;
+/** Refresh with a day in hand, rather than relying on being awake in the final hour. */
+export const RENEW_BEFORE_MS = 24 * 3600_000;
+export const renewalDue = (pair: Pick<Pairing, "expires">, now = Date.now()) => pair.expires <= now + RENEW_BEFORE_MS;
+/** The heartbeat runs independently of a long local build, including grant renewal. */
+export async function maintainConnection(pair: Pairing, options: {
+  now?: () => number;
+  renew(pair: Pairing): Promise<void>;
+  heartbeat(pair: Pairing): Promise<unknown>;
+}) {
+  if (renewalDue(pair, options.now?.() ?? Date.now())) await options.renew(pair);
+  await options.heartbeat(pair);
+}
 export function authExpired(output: string): boolean {
   // Positive provider evidence only: configd/Seatbelt/network errors are not sign-in errors.
   return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);

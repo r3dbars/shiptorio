@@ -1,0 +1,56 @@
+import { expect, test } from "bun:test";
+import { maintainConnection, renewalDue } from "../src/health";
+import { Backoff } from "../src/recovery";
+import { pairToken, readRunnerToken, runnerGrantExpiry } from "../../server/src/runner-auth";
+
+test("twelve hours asleep and ten minutes offline keep the same valid grant and reconnect", async () => {
+  const start = 1700000000000;
+  let now = start;
+  const expires = runnerGrantExpiry(undefined, start);
+  const pair = { repo: "fixture/repo", expires, token: await pairToken("fixture-secret", { repo: "fixture/repo", pairId: "fixture-pair", expires }) };
+  const original = { ...pair };
+  let renewals = 0, connected = 0, failures = 0;
+  const backoff = new Backoff(() => 1);
+  now += 12 * 3600_000;
+  const onlineAt = now + 10 * 60_000;
+  const step = () => maintainConnection(pair, {
+    now: () => now,
+    renew: async () => { renewals++; throw Error("The valid seven-day grant should not need renewal yet"); },
+    heartbeat: async p => {
+      if (now < onlineAt) throw new TypeError("Network unavailable");
+      expect(await readRunnerToken("fixture-secret", p.token, now)).not.toBeNull();
+      connected++;
+    },
+  });
+  while (now <= onlineAt + 60_000 && !connected) {
+    if (backoff.ready(now)) {
+      try { await step(); backoff.reset(); }
+      catch { failures++; backoff.fail(now); }
+    }
+    now += 1000;
+  }
+  expect(failures).toBeGreaterThan(1);
+  expect(connected).toBe(1);
+  expect(renewals).toBe(0);
+  expect(pair).toEqual(original);
+});
+
+test("heartbeat renews early during an active build and never extends the approving session", async () => {
+  const now = 1700000000000, sessionEnd = now + 6 * 3600_000;
+  expect(runnerGrantExpiry({ expiresAt: sessionEnd } as any, now)).toBe(sessionEnd);
+  const pair = { repo: "fixture/repo", token: "old", expires: now + 23 * 3600_000 };
+  const order: string[] = [];
+  await maintainConnection(pair, { now: () => now,
+    renew: async p => { order.push("renew"); p.token = "renewed"; p.expires = runnerGrantExpiry(undefined, now); },
+    heartbeat: async p => { order.push("heartbeat"); expect(p.token).toBe("renewed"); },
+  });
+  expect(order).toEqual(["renew", "heartbeat"]);
+  expect(renewalDue(pair, now)).toBe(false);
+});
+
+test("backoff resumes after a backwards wall-clock correction", () => {
+  const retry = new Backoff(() => 1);
+  retry.fail(100000);
+  expect(retry.ready(100500)).toBe(false);
+  expect(retry.ready(500)).toBe(true);
+});

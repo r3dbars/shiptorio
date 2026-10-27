@@ -39,7 +39,7 @@ import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, rev
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
-import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
+import { pairToken, readRunnerToken, runnerGrantExpiry, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { installationToken } from "./github";
 import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
@@ -482,7 +482,7 @@ app.post("/api/runner-device/join", async c => {
   if (!await resourceQuota(c.env, record.user.login, "repo", record.repo) || !await resourceQuota(c.env, record.user.login, "factory", record.repo)) return c.json({ error: "repository/factory quota reached" }, 429);
   const f = await factory(c.env, record.repo);
   await f.ensure(record.repo, installation);
-  const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+  const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(record.user);
   const token = await pairToken(c.env.SESSION_SECRET, { repo: record.repo, pairId, expires, user: record.user });
   await f.activateRunner(pairId);
   return c.json({ repo: record.repo, token, expires });
@@ -506,7 +506,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
     if (!await admit(c.env, `pair:${user.id}`, 5, 600000, "repeated browser pairing requests")) return c.json({ error: "pairing throttled" }, 429);
     const f = await factory(c.env, repo);
     await f.ensure(repo, installation);
-    const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+    const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(user);
     const token = await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user });
     if (!await device(c.env, code).approveDevice({ repo, token, expires })) return c.html(runnerPage("Code expired or already used", "<p>Run shiptorio-runner pair for a new code.</p>"), 409, headers);
     await f.activateRunner(pairId);
@@ -638,7 +638,7 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
-    const expires = Date.now() + 8 * 60 * 60 * 1000;
+    const expires = runnerGrantExpiry((await resolveUser(c.req.raw, c.env))!);
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
   }
   if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
@@ -680,7 +680,7 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
   const identity = c.get("runner");
   if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
-  const expires = Date.now() + 8 * 60 * 60 * 1000;
+  const expires = runnerGrantExpiry(identity.user);
   return c.json({ token: await pairToken(c.env.SESSION_SECRET, { ...identity, expires }), expires });
 });
 

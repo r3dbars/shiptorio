@@ -13,7 +13,7 @@ import { loadConnections, persistRenewal } from "./grant-store";
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { AuthFailures, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
@@ -165,7 +165,7 @@ async function api(pair: Pairing, action: keyof typeof responseSchemas, body: un
 
 }
 async function renewPairing(pair: Pairing) {
-  if (pair.expires > Date.now() + 60 * 60 * 1000) return;
+  if (!renewalDue(pair)) return;
   const renewed = await api(pair, "renew", {});
   await persistRenewal(root, pair, renewed);
 }
@@ -341,7 +341,7 @@ if (action === "retry") {
       for (const pair of await connections()) {
         const retry = heartbeatBackoffs.get(pair.repo) ?? new Backoff(); heartbeatBackoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
-        try { await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }); retry.reset(); }
+        try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); retry.reset(); }
         catch (error) { retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
       }
     }

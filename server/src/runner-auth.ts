@@ -2,6 +2,11 @@
 const enc = new TextEncoder();
 const encode = (s: string) => btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 export interface RunnerIdentity { repo: string; pairId: string; expires: number; user?: import("./authorization").AccessUser }
+// Long enough for sleep and travel, still bounded by the approving browser session.
+export const RUNNER_GRANT_TTL = 7 * 86400_000;
+export function runnerGrantExpiry(user: RunnerIdentity["user"], now = Date.now()): number {
+  return Math.min(now + RUNNER_GRANT_TTL, user?.expiresAt ?? now + RUNNER_GRANT_TTL);
+}
 async function signature(secret: string, text: string) {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return encode(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)))));
