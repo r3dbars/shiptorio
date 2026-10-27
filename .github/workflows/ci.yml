@@ -98,7 +98,7 @@ jobs:
         run: |
           args=("--project=$BROWSER_PROJECT")
           if [ -n "$BROWSER_GREP" ]; then args+=(--grep "$BROWSER_GREP"); fi
-          if [ "$UPDATE_BASELINES" = true ]; then args+=(--update-snapshots); fi
+          if [ "$UPDATE_BASELINES" = true ]; then args+=(--update-snapshots=all); fi
           bun run test:e2e "${args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
