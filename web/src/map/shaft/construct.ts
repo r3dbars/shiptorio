@@ -78,18 +78,29 @@ function palette() {
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 
 // Reduced motion fades a machine's own materials in through a transparent twin of each. Twins are made once per
-// material and kept, with the original's shader patches (firstRun.ts), so a fade never compiles a fresh program
-// mid-build: on a slow GPU that's a long main-thread stall right when the player's build starts.
-const TWINS = new WeakMap<THREE.Material, THREE.Material>();
+// material and kept until the original is disposed, with the original's shader patches (firstRun.ts), so a fade never
+// compiles a fresh program mid-build: on a slow GPU that's a long main-thread stall right when the player's build starts.
+// Each fade refreshes its twin from the original, which may have changed since (power.js tints them as they run).
+const TWINS = new WeakMap<THREE.Material, { m: THREE.Material; ver: number }>();
 export function fadeTwin(orig: THREE.Material): THREE.Material {
-  let m = TWINS.get(orig);
-  if (!m) {
-    m = orig.clone();
-    m.transparent = true;
-    m.onBeforeCompile = orig.onBeforeCompile;
-    m.customProgramCacheKey = orig.customProgramCacheKey;
-    TWINS.set(orig, m);
+  let t = TWINS.get(orig);
+  if (!t) {
+    t = { m: orig.clone(), ver: orig.version };
+    TWINS.set(orig, t);
+    const drop = () => {
+      orig.removeEventListener("dispose", drop);
+      TWINS.get(orig)?.m.dispose();
+      TWINS.delete(orig);
+    };
+    orig.addEventListener("dispose", drop);
+  } else {
+    t.m.copy(orig);
+    if (t.ver !== orig.version) (t.ver = orig.version), (t.m.needsUpdate = true); // a shader input changed
   }
+  const m = t.m;
+  m.transparent = true;
+  m.onBeforeCompile = orig.onBeforeCompile;
+  m.customProgramCacheKey = orig.customProgramCacheKey;
   return m;
 }
 

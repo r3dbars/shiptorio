@@ -164,6 +164,64 @@ test("reduced motion fades the real parts in over a second, then gives the mater
   expect(mesh.material).toBe(mat);
 });
 
+test("a fade twin lasts until its original is disposed, then a new one is made", () => {
+  const { holder } = machine();
+  const own = new THREE.MeshPhongMaterial({ color: 0x334455 });
+  const mesh = holder.children[0].children[0] as THREE.Mesh;
+  mesh.material = own;
+  const first = construct(holder, { reduced: true });
+  first.update(0.3);
+  const twin = mesh.material as THREE.Material;
+  first.cancel();
+  expect(mesh.material).toBe(own);
+  let disposed = 0;
+  twin.addEventListener("dispose", () => disposed++);
+  // reused while the original lives (no fresh program mid-build)
+  const again = construct(holder, { reduced: true });
+  again.update(0.3);
+  expect(mesh.material).toBe(twin);
+  again.cancel();
+  own.dispose();
+  expect(disposed).toBe(1);
+  const later = construct(holder, { reduced: true });
+  later.update(0.3);
+  expect(mesh.material).not.toBe(twin);
+  expect(mesh.material).not.toBe(own);
+  later.cancel();
+});
+
+test("a reused fade twin shows the original as it is now, and the original comes back untouched", async () => {
+  const { holder } = machine();
+  const own = new THREE.MeshPhongMaterial({ color: 0x334455 });
+  const mesh = holder.children[0].children[0] as THREE.Mesh;
+  mesh.material = own;
+  const warm = construct(holder, { reduced: true });
+  warm.update(0.3);
+  const twin = mesh.material as THREE.MeshPhongMaterial;
+  warm.cancel();
+  // power.js tints running machines between builds
+  own.color.set(0xff0000);
+  own.emissive.set(0x00ff00);
+  own.opacity = 0.9;
+  const map = new THREE.Texture();
+  own.map = map;
+  own.needsUpdate = true;
+  const before = { color: own.color.getHex(), emissive: own.emissive.getHex(), opacity: own.opacity, transparent: own.transparent, version: own.version };
+  const run = construct(holder, { reduced: true });
+  run.update(0.3);
+  const m = mesh.material as THREE.MeshPhongMaterial;
+  expect(m).toBe(twin);
+  expect(m.color.getHex()).toBe(0xff0000);
+  expect(m.emissive.getHex()).toBe(0x00ff00);
+  expect(m.map).toBe(map);
+  expect(m.transparent).toBe(true);
+  expect(m.onBeforeCompile).toBe(own.onBeforeCompile);
+  expect(play(run, 2)).toBe(true);
+  await run.done;
+  expect(mesh.material).toBe(own);
+  expect({ color: own.color.getHex(), emissive: own.emissive.getHex(), opacity: own.opacity, transparent: own.transparent, version: own.version }).toEqual(before);
+});
+
 test("a merged lump is cut back into its parts for the build, then put back", async () => {
   // what K.bake / bake.ts leave: many boxes in one non-indexed mesh
   const parts: THREE.BufferGeometry[] = [];

@@ -406,42 +406,35 @@ export class ShaftScene {
   // build makes (sparks, arcs, flash) stays in the scene, hidden, so those programs are never dropped between builds.
   private warmPending = false;
   private warm(stage: ShaftStage, holders: THREE.Object3D[]) {
+    if (!holders.length) return; // nothing left to build
     const r = this.renderer;
     const reduced = this.reduceMotion;
-    const extras = [...constructWarmups(), ...burstWarmups()];
-    for (const o of extras) (o.frustumCulled = false), stage.root.add(o);
-    const runs = holders.flatMap((h) => {
-      const c = construct(h, { reduced });
-      c.update(reduced ? 0.5 : 1.5); // the scaffold up, the first parts dropping
-      const b = burst(h, { first: true, reduced });
-      b.update(0.3);
-      return [c, b];
-    });
-    const unculled = (): THREE.Object3D[] => {
-      const out: THREE.Object3D[] = [];
-      for (const h of holders)
-        h.traverse((o) => {
-          if (o.frustumCulled) (o.frustumCulled = false), out.push(o);
-        });
-      return out;
-    };
-    // three looks, each drawn with its shadows: early in a build, late in it (every part landed), and as it stands
+    const extras: THREE.Object3D[] = [];
+    const runs: { update(dt: number): unknown; cancel(): void }[] = [];
+    // three looks, each drawn with its shadows: early in a build, late in it (every part landed), and as it stands.
+    // (precompile shows the holders and turns their culling off around this, so the off-screen ones compile too)
     const look = () => {
-      const culled = unculled();
       r.shadowMap.needsUpdate = true;
       stage.render(r);
-      for (const o of culled) o.frustumCulled = true;
     };
     try {
+      for (const o of [...constructWarmups(), ...burstWarmups()]) (o.frustumCulled = false), stage.root.add(o), extras.push(o);
+      for (const h of holders) {
+        const c = construct(h, { reduced });
+        runs.push(c);
+        c.update(reduced ? 0.5 : 1.5); // the scaffold up, the first parts dropping
+        const b = burst(h, { first: true, reduced });
+        runs.push(b);
+        b.update(0.3);
+      }
       look();
       if (!reduced) for (const run of runs) run.update(2);
       look();
-      for (const run of runs.reverse()) run.cancel();
-      runs.length = 0;
+      while (runs.length) runs.pop()!.cancel();
       look();
       for (const p of r.info.programs ?? []) p.getUniforms(); // finish linking now, not on first use
     } finally {
-      for (const run of runs) run.cancel();
+      while (runs.length) runs.pop()!.cancel();
       for (const o of extras) o.visible = false;
       r.shadowMap.needsUpdate = true; // the real shadows, without the hidden machines
     }
