@@ -1,4 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 import type { FactoryState } from "@shiptorio/shared";
 import { GameDriver } from "../src/map/shaft/driver";
 import type { Iron, IronItem } from "../src/map/shaft/core";
@@ -10,7 +11,7 @@ import type { Timelapse } from "../src/map/shaft/ShaftScene";
 let Scene: typeof import("../src/map/shaft/ShaftScene").ShaftScene;
 beforeAll(async () => {
   const result = await Bun.build({
-    entrypoints: [new URL("../src/map/shaft/ShaftScene.ts", import.meta.url).pathname], target: "bun", write: false,
+    entrypoints: [fileURLToPath(new URL("../src/map/shaft/ShaftScene.ts", import.meta.url))], target: "bun", write: false,
     plugins: [{ name: "scene-test-art-glob", setup(build) {
       build.onLoad({ filter: /ShaftScene\.ts$/ }, async ({ path }) => ({
         contents: (await Bun.file(path).text()).replace('import.meta.glob("./modules/*.js")', "({})"), loader: "ts",
