@@ -8,6 +8,14 @@
 | #260 | merged after CI + Stranger passed | Preserve the password gate script nonce on fast and wrapped paths while retaining the other global CSP restrictions. |
 | #256 | full E2E suite | Signup → App install → repo → signed issue/retry → Spark plan → browser approval → runner PR → stale/current CI → verify + AI review → visible Launch → merge/rocket. Every PR to main runs the suite, including drafts and docs-only changes, and retains screenshots, timing/state and browser trace. GitHub, Spark and runner build results are fixtures; no real bot PR merges. Local 16-step run passed in 60.9s. Fixture runner heartbeats keep slow CI render time from simulating an unplugged machine. |
 
+## Codex: pre-hackathon security pass (2026-10-26)
+
+- Auditing all server routes, factory isolation, GitHub/Sentry authentication,
+  Spark's untrusted-input boundary and secret logging from updated main.
+- First separate fix: [#267](https://github.com/r3dbars/shiptorio/pull/267), current
+  repository checks before empire summaries. Regression demonstrated the old
+  leak; full local check passes. Further findings and PRs are in progress.
+- Summary: [security.md](security.md). No manual deployment or resource changes.
 
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
