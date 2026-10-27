@@ -1,0 +1,95 @@
+{
+  "mimeType": "audio/mp4;codecs=mp4a.40.2",
+  "states": [
+    {
+      "seconds": 0.9558999999910593,
+      "intensity": 0,
+      "tension": 0,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "idle",
+      "loadedStems": [],
+      "bar": 0,
+      "arrangement": {
+        "rhythm": false,
+        "bass": false,
+        "counter": false,
+        "theme": false
+      },
+      "activeVoices": 4,
+      "scheduledNotes": 4,
+      "decodedBytes": 0,
+      "low": false,
+      "attached": true
+    },
+    {
+      "seconds": 8.08159999999404,
+      "intensity": 0.25135952083403973,
+      "tension": 0,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "working",
+      "loadedStems": [],
+      "bar": 3,
+      "arrangement": {
+        "rhythm": true,
+        "bass": false,
+        "counter": false,
+        "theme": false
+      },
+      "activeVoices": 8,
+      "scheduledNotes": 15,
+      "decodedBytes": 0,
+      "low": false,
+      "attached": true
+    },
+    {
+      "seconds": 20.925599999994038,
+      "intensity": 0.39647675476440813,
+      "tension": 0,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "launch",
+      "loadedStems": [],
+      "bar": 8,
+      "arrangement": {
+        "rhythm": true,
+        "bass": true,
+        "counter": false,
+        "theme": false
+      },
+      "activeVoices": 12,
+      "scheduledNotes": 47,
+      "decodedBytes": 0,
+      "low": false,
+      "attached": true
+    },
+    {
+      "seconds": 52.126299999997016,
+      "intensity": 0.03732596948157211,
+      "tension": 0,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "idle",
+      "loadedStems": [],
+      "bar": 20,
+      "arrangement": {
+        "rhythm": false,
+        "bass": false,
+        "counter": false,
+        "theme": false
+      },
+      "activeVoices": 15,
+      "scheduledNotes": 216,
+      "decodedBytes": 0,
+      "low": false,
+      "attached": true
+    }
+  ],
+  "bytes": 579115,
+  "seconds": 65
+}

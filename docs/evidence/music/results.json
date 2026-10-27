@@ -1,0 +1,134 @@
+{
+  "desktop": {
+    "url": "http://127.0.0.1:5173/?source=sim&scenario=quiet-morning&intro=0&tour=0&autolaunch=1&music=2",
+    "title": "Shiptorio",
+    "musicRequests": [
+      "http://127.0.0.1:5173/src/sound/foundryPlayer.ts?t=1793063695711",
+      "http://127.0.0.1:5173/src/sound/foundryScore.ts?t=1793063695709"
+    ],
+    "playing": {
+      "intensity": 0.3065745566988611,
+      "tension": 0.07876124999999999,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "working",
+      "loadedStems": [],
+      "bar": 1,
+      "arrangement": {
+        "rhythm": true,
+        "bass": true,
+        "counter": false,
+        "theme": false
+      },
+      "activeVoices": 12,
+      "scheduledNotes": 35,
+      "decodedBytes": 0,
+      "low": false,
+      "attached": true,
+      "settings": {
+        "music": true,
+        "muted": false,
+        "volume": 0.5,
+        "musicVolume": 0.8
+      }
+    },
+    "persisted": {
+      "music": true,
+      "muted": false,
+      "volume": 0.5,
+      "musicVolume": 0.37
+    },
+    "offStopsScheduling": true,
+    "muteSuspends": true,
+    "errors": []
+  },
+  "phone": {
+    "url": "http://127.0.0.1:5173/?source=sim&scenario=quiet-morning&intro=0&tour=0&autolaunch=1&music=2",
+    "title": "Shiptorio",
+    "musicRequests": [
+      "http://127.0.0.1:5173/src/sound/foundryPlayer.ts?t=1793063695711",
+      "http://127.0.0.1:5173/src/sound/foundryScore.ts?t=1793063695709"
+    ],
+    "playing": {
+      "intensity": 0.3215932021133888,
+      "tension": 0,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "working",
+      "loadedStems": [],
+      "bar": 1,
+      "arrangement": {
+        "rhythm": true,
+        "bass": true,
+        "counter": false,
+        "theme": false
+      },
+      "activeVoices": 12,
+      "scheduledNotes": 27,
+      "decodedBytes": 0,
+      "low": false,
+      "attached": true,
+      "settings": {
+        "music": true,
+        "muted": false,
+        "volume": 0.5,
+        "musicVolume": 0.8
+      }
+    },
+    "persisted": {
+      "music": true,
+      "muted": false,
+      "volume": 0.5,
+      "musicVolume": 0.37
+    },
+    "offStopsScheduling": true,
+    "muteSuspends": true,
+    "errors": []
+  },
+  "audition": {
+    "bytes": 3130436,
+    "sampleRate": 24000,
+    "seconds": 65.21741666666667,
+    "peak": 0.4860992431640625,
+    "rms": 0.09564069133677051
+  },
+  "phoneMusicProfile": {
+    "cpuThrottle": 4,
+    "musicSelfTimePercent": 0.02146973827485733,
+    "seconds": 12.398847,
+    "decodedPCMBytes": 0,
+    "state": {
+      "intensity": 0.9383024180447064,
+      "tension": 1,
+      "layers": {},
+      "chord": [],
+      "version": 2,
+      "state": "blocked",
+      "loadedStems": [],
+      "bar": 4,
+      "arrangement": {
+        "rhythm": true,
+        "bass": true,
+        "counter": true,
+        "theme": true
+      },
+      "activeVoices": 6,
+      "scheduledNotes": 100,
+      "decodedBytes": 0,
+      "low": true,
+      "attached": true
+    }
+  },
+  "scheduler": {
+    "states": [
+      "blocked",
+      "idle",
+      "working",
+      "launch",
+      "working"
+    ],
+    "hiddenHandlerSuspends": true
+  }
+}

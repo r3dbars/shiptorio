@@ -36,7 +36,7 @@ import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
-import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
@@ -49,7 +49,7 @@ const codePath = (district: string) => (district === "/" ? "/" : `/${district}`)
 const SLOTS = POWER.slots;
 
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
-// "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
+// "let me make the factory mine". Everyone starts on the map; the toggle switches any time.
 type World = "checkin" | "build";
 type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
 const WORLD_KEY = "shiptorio:world";
@@ -130,8 +130,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   if (state) powerJobs.current = notePowerJobs(powerJobs.current, state);
   const plants = state ? powerLedger(state, powerJobs.current) : [];
   const [panel, setPanel] = useState<string | null>(null);
-  // the first run asks which world to start in; everyone else lands in Build, the full map
-  const [world, setWorldState] = useState<World | null>(() => (intro ? "build" : tour.on ? null : (readWorld() ?? "build")));
+  // Everyone lands in Build, the full map. The first run used to ask Check in or Build before the player had
+  // seen a machine, and both led to the same starter-factory card (new-player walkthrough, 2026-10-27).
+  const [world, setWorldState] = useState<World>(() => (intro ? "build" : (readWorld() ?? "build")));
   const setWorld = (w: World) => {
     setWorldState(w);
     try {
@@ -205,7 +206,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
       // this visit only
     }
   };
-  const fork = world === null && !!state && state.districts.length > 0 && !tour.lesson;
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const items = state?.items ?? [];
@@ -244,8 +244,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     }
     return out;
   }, [state, ping, narrow]);
-  const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
-  const blocked = state?.machines.filter((m) => m.state === "blocked") ?? [];
+  // Each thing waiting on you counts once: a PR on the pad that already has its own card isn't counted twice.
+  const carded = new Set(deck.map((m) => m.itemId).filter(Boolean));
+  const waiting = deck.length + pad.filter((i) => i.state === "on_pad" && !carded.has(i.id)).length;
+  // A machine stopped for want of power is already the "plug in power" card, so it isn't a second ask.
+  const unpowered = [...deck, state?.move].some((m) => m?.stage === "resources" || m?.stage === "power");
+  const blocked = unpowered ? [] : state?.machines.filter((m) => m.state === "blocked") ?? [];
 
   // The floor card's one row of numbers, in the mockup's order: mined, on line, shipped, rework, needs you.
   const F = HUD.floor;
@@ -305,7 +309,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   };
   // No card open: always offer a next move, so the factory never goes quiet after a rocket (#105).
   // The first-run coach does its own teaching, so it waits until the coach is done.
-  const whatNext = state && !state.move && !tour.lesson && !fork ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
+  const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
   const onNudge = (a: NudgeAction) => {
     if (a.do === "launch") {
       const item = state?.items.find((i) => i.id === a.itemId);
@@ -318,7 +322,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     else setSheet(a.sheet);
   };
   // the needs tray is up when nothing bigger holds the middle of the screen (the chain of sheets below)
-  const trayUp = !fork && !(brief.show && progressing && !checkin && !sheet) && !source && !sheet && !checkin;
+  const trayUp = !(brief.show && progressing && !checkin && !sheet) && !source && !sheet && !checkin;
   const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
   // Keyboard players: whatever opens (a sheet, a station panel, the tray, the deck) takes focus,
@@ -533,30 +537,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </section>
         )}
 
-        {fork && state ? (
-          <section className="card nextmove firstread" aria-label={FORK.label}>
-            <div className="nm-head">
-              <span className="nm-kicker">{FORK.kicker(state.repo)}</span>
-            </div>
-            <h2>
-              {state.bottleneck?.summary
-                ? FORK.bottleneck(state.bottleneck.summary)
-                : FORK.scanned(state.districts.length)}
-            </h2>
-            {cfg.kind === "live" && <RunnerConnection repo={cfg.repo} />}
-            <div className="opts">
-              <button type="button" className="btn rec" onClick={() => { setWorld("checkin"); if (deck.length > 1) setCheckin(true); }}>
-                {FORK.checkin}
-                <small>{FORK.checkinSub}</small>
-              </button>
-              <button type="button" className="btn" onClick={() => setWorld("build")}>
-                {FORK.factory}
-                <small>{FORK.factorySub}</small>
-              </button>
-            </div>
-            <p className="empty">{FORK.switch}</p>
-          </section>
-        ) : brief.show && progressing && !checkin && !sheet ? (
+        {brief.show && progressing && !checkin && !sheet ? (
           <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
         ) : sheet === "progress" ? (
           <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
@@ -720,7 +701,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         )}
 
-        {show("log") && !fork && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
+        {show("log") && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
 
         {!checkin && (
         <nav className="ctrl" aria-label={HUD.dock.label} ref={hv.refs.ctrl as Ref<HTMLElement>}>

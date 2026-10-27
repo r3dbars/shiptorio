@@ -7,5 +7,8 @@ export function planningFailure(previous: PlanningRetry | undefined, reason: str
   return { day: utcDay(now), failures, reason, retryAt: failures >= MAX_PLANNING_FAILURES ? midnight : Math.min(midnight, now + 60000 * 2 ** (failures - 1)) };
 }
 export function planningHold(retry: PlanningRetry | undefined, now = Date.now()) {
-  return retry?.day === utcDay(now) && retry.retryAt > now ? retry : null;
+  if (!retry || retry.day !== utcDay(now)) return null;
+  // The per-issue daily cap also holds if an old cooldown timestamp has already elapsed.
+  if (retry.failures >= MAX_PLANNING_FAILURES) return { ...retry, retryAt: (Math.floor(now / 86400000) + 1) * 86400000 };
+  return retry.retryAt > now ? retry : null;
 }
