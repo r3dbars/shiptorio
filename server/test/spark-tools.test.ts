@@ -89,6 +89,14 @@ describe("read tools", () => {
 });
 
 describe("AI review as a tool loop", () => {
+  it("sanitizes raw issue fields and diff as well as review observations", async () => {
+    const sent = spark([{ verdict: "pass", reason: "No blocking problem", findings: [] }]);
+    await reviewWithTools(sparkTestEnv(), { title: syntheticPem, body: `${"x".repeat(3950)} ${syntheticPem}`, builder: "Codex" }, `+ordinary\n${syntheticPem}`, box());
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+    expect(sent[0]).toContain("[REDACTED]");
+  });
+
   it("redacts complete prefetched context before observations and cached search reads", async () => {
     const source = `${"x".repeat(9900)}\n${syntheticPem}`;
     const sent = spark([
@@ -138,6 +146,13 @@ describe("planner tools", () => {
   it("redacts the complete initial issue before its observation cap", async () => {
     const sent = spark([{ tool: "read_file", path: "README.md", reason: "Read" }, { tool: "assign_job", reason: "Fix", plan: "Update the README.", acceptance: ["README is accurate"], files: ["README.md"] }]);
     await planLocalTask(sparkTestEnv(), { title: "x", body: `${"x".repeat(7850)} ${syntheticPem}`, district: "/" }, ["README.md"], box(), async () => {});
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+  });
+
+  it("sanitizes parallel rework and feedback fields before their shorter caps", async () => {
+    const sent = spark([{ tool: "read_file", path: "README.md", reason: "Read" }, { tool: "assign_job", reason: "Fix", plan: "Update the README.", acceptance: ["README is accurate"], files: ["README.md"] }]);
+    await planLocalTask(sparkTestEnv(), { title: syntheticPem, body: "Ordinary issue", district: "/", failure: `${"x".repeat(1450)} ${syntheticPem}`, scars: [{ station: "review", reason: `${"x".repeat(250)} ${syntheticPem}`, strike: 1 }], playerFeedback: syntheticPem }, ["README.md"], box(), async () => {});
     expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
     expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
   });

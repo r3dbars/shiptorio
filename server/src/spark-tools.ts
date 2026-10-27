@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { pathAllowed, validatePlan } from "./injection-policy";
-import { redactText } from "./redact";
+import { redact, redactText } from "./redact";
 import { SparkError, sparkJson, type SparkEnv, type Task } from "./spark";
 
 export interface Toolbox {
@@ -154,6 +154,8 @@ export interface PlanOptions {
  * player will approve the scope) files Spark itself found and read. Everything it sees is untrusted evidence.
  */
 export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: string[], source: Toolbox | ((path: string) => Promise<string | null>), record: (step: SparkStep) => Promise<void>, opts: PlanOptions = {}): Promise<{ plan: string; files: string[]; heeded: string[] }> {
+  // Parallel task fields (rework, title, player feedback) must obey the same boundary as observations.
+  task = redact(task);
   if (!allowedPaths.length || !allowedPaths.every(pathAllowed)) throw new SparkError("Unsafe planning paths");
   const box: Toolbox = typeof source === "function" ? { paths: allowedPaths, read: source } : source;
   // Approved paths may name a new doc that isn't in the tree yet; reading it says so.
@@ -247,6 +249,8 @@ export const REVIEW_TURNS = 6;
  * `context` is files already pulled for it (docs that name code); they start as observations.
  */
 export async function reviewWithTools(env: SparkEnv, task: { title: string; body: string; builder: string }, diff: string, box: Toolbox, context: { path: string; content: string }[] = [], record: (step: SparkStep) => Promise<void> = async () => {}): Promise<ToolVerdict> {
+  task = redact(task);
+  diff = redactText(diff);
   const tools: ReadTool[] = availableTools(box).filter(t => t !== "read_pr");
   const observations: Observation[] = context.map(c => ({ tool: "read_file", args: c.path, result: redactText(c.content).slice(0, FILE_CHARS) }));
   const cache = new Map<string, string | null>(context.map(c => [c.path, redactText(c.content)]));
