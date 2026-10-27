@@ -161,3 +161,10 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
 | Stranger E2E: preview gate CSP | in progress | Browser console assertion caught the outer security middleware replacing the preview gate nonce policy, blocking the gate animation script. Carry the server-generated gate nonce into the global script rule on both fast and wrapped paths, retaining all other global restrictions; application-page policies remain unchanged. Separate fix for the first-day signup checkpoint. |
 
+## Codex: BYOK self-hosting (2026-10-26)
+
+- Branch `codex/selfhost`: `bun run selfhost` creates dedicated D1/KV through Wrangler, migrates, uploads Meta/GitHub/preview/session/encryption secrets, bootstraps the GitHub App setup page, deploys and prints the workers.dev URL. Uses an ignored owner config and resumable non-secret progress; never inherits production domains, IDs, users or mines.
+- Public Black Iron docs: `docs/site/self-host.md`; docs index and maintainer setup guide link to it.
+- CI `selfhost` job uses a fresh clone with no Cloudflare credentials, builds assets/runner, applies local D1 migrations and runs real `wrangler deploy --dry-run`. Focused tests cover isolated config, forbidden Worker names, resume and failures.
+- Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
+- Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys. PR and CI status follow below.
