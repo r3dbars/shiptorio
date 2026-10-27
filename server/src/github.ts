@@ -187,11 +187,14 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
       if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
       if (res.status === 304 && cached && cached.expires > Date.now()) return structuredClone(cached.value) as T;
       // Never serve stale data on errors, including revoked access disguised as 404.
-      if (cacheKey) await readCache.delete(cacheKey, owner?.env);
-      if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
-      if (res.status === 204) return undefined as T;
+      if (!res.ok || res.status === 204) {
+        if (cacheKey && cached) await readCache.delete(cacheKey, owner?.env);
+        if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
+        return undefined as T;
+      }
       const value = await res.json();
       if (cacheKey && res.status === 200 && res.headers.has("etag") && !/\bno-store\b/i.test(res.headers.get("cache-control") ?? "") && res.headers.get("vary") !== "*") await readCache.put(cacheKey, res.headers.get("etag")!, value, owner?.env);
+      else if (cacheKey && cached) await readCache.delete(cacheKey, owner?.env);
       return value as T;
     } finally {
       // Keep the API outcome if release storage is unavailable; the lease expires.

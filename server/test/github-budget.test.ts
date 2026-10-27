@@ -67,15 +67,15 @@ it("fails closed for corrupt/encryption-rotated/missing KV and oversized UTF-8 b
 it("requires a matching authorized body for 304 and never substitutes stale data on 404", async () => {
   const token = crypto.randomUUID();
   let conditional: string | null = null, status = 200;
-  globalThis.fetch = (async (_url, init) => {
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
     conditional = new Headers(init?.headers).get("if-none-match");
     return status === 200 ? Response.json({ body: "private" }, { headers: { etag: '"one"' } }) : new Response(null, { status });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   const initial = await gh<{ body: string }>("/repos/a/b/issues/1", token);
   initial.body = "mutated";
   status = 304;
   expect(await gh("/repos/a/b/issues/1", token)).toEqual({ body: "private" });
-  expect(conditional).toBe('"one"');
+  expect(conditional as string | null).toBe('"one"');
   await expect(gh("/repos/a/b/issues/1", crypto.randomUUID())).rejects.toMatchObject({ cause: { status: 304 } });
   expect(conditional).toBeNull();
   status = 404;
@@ -88,28 +88,33 @@ it("requires a matching authorized body for 304 and never substitutes stale data
 it("does not cache writes, no-store, range or alternative representations", async () => {
   const token = crypto.randomUUID();
   const conditionals: (string | null)[] = [];
-  globalThis.fetch = (async (_url, init) => {
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
     conditionals.push(new Headers(init?.headers).get("if-none-match"));
     return Response.json({ ok: true }, { headers: { etag: '"one"' } });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   await gh("/repos/a/b", token);
-  for (const init of [{ method: "PATCH", body: "{}" }, { headers: { accept: "application/vnd.github.raw+json" } }, { headers: { range: "bytes=0-10" } }, { headers: { "cache-control": "no-store" } }]) await gh("/repos/a/b", token, init);
+  for (const init of [{ method: "PATCH", body: "{}" }, { headers: { accept: "application/vnd.github.raw+json" } }, { headers: { range: "bytes=0-10" } }, { headers: { "cache-control": "no-store" } }] as RequestInit[]) await gh("/repos/a/b", token, init);
   expect(conditionals).toEqual([null, null, null, null, null]);
 });
 
-it("uses KV for real installation reads and retains the validated credential despite header overrides", async () => {
-  const env = { ...cacheEnv(), GITHUB_APP_ID: crypto.randomUUID(), GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }).privateKey };
+it("uses KV for installation reads, pins authorization and denies cached bodies after suspension", async () => {
+  const { db, sqlite } = budgetDb();
+  sqlite.exec("ALTER TABLE installations ADD COLUMN token_version INTEGER DEFAULT 0; ALTER TABLE installations ADD COLUMN status TEXT DEFAULT 'active'; INSERT INTO installations(id, account_login) VALUES(9021, 'owner'); CREATE TABLE repos(full_name TEXT, archived_at INTEGER, installation_id INTEGER); INSERT INTO repos VALUES('a/b', NULL, 9021)");
+  const env = { DB: db, ...cacheEnv(), GITHUB_APP_ID: crypto.randomUUID(), GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }).privateKey };
   const token = crypto.randomUUID();
   let authorization: string | null = null;
-  globalThis.fetch = (async (url, init) => {
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
     if (String(url).endsWith("/access_tokens")) return Response.json({ token, expires_at: new Date(Date.now() + 3600000).toISOString() });
     authorization = new Headers(init?.headers).get("authorization");
     return Response.json({ body: "private" }, { headers: { etag: '"one"' } });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   await installationToken(env, 9021);
   await gh("/repos/a/b", token, { headers: { authorization: "Bearer other" } });
-  expect(authorization).toBe(`Bearer ${token}`);
+  expect(authorization as string | null).toBe(`Bearer ${token}`);
   expect([...env.values.keys()].filter(key => key.startsWith("ghread:v1:"))).toHaveLength(1);
+  sqlite.exec("UPDATE installations SET status = 'suspended' WHERE id = 9021");
+  globalThis.fetch = (async () => { throw new Error("must not fetch with a suspended installation"); }) as unknown as typeof fetch;
+  await expect(gh("/repos/a/b", token)).rejects.toThrow("suspended");
 });
 
 it("caps shared installation leases at two, isolates installations, recovers crashes and fences late release", async () => {
@@ -138,7 +143,7 @@ it("serializes replacement credentials, bounds queue pressure, and forwards Retr
   let finish!: () => void, started!: () => void;
   const entered = new Promise<void>(resolve => { started = resolve; });
   let calls = 0;
-  globalThis.fetch = (async () => { calls++; started(); await new Promise<void>(resolve => { finish = resolve; }); return new Response(null, { status: 429, headers: { "retry-after": "180" } }); }) as typeof fetch;
+  globalThis.fetch = (async () => { calls++; started(); await new Promise<void>(resolve => { finish = resolve; }); return new Response(null, { status: 429, headers: { "retry-after": "180" } }); }) as unknown as typeof fetch;
   const first = gh("/repos/a/b", tokens[0]);
   await entered;
   const rest = Array.from({ length: 8 }, (_, index) => gh("/repos/a/b", tokens[index % 2]));
@@ -151,7 +156,7 @@ it("serializes replacement credentials, bounds queue pressure, and forwards Retr
   expect(calls).toBe(1);
   expect(results.every(result => result.status === "rejected" && result.reason instanceof RateLimitError)).toBe(true);
   expect(results.filter(result => result.status === "rejected" && result.reason.retryAt > Date.now() + 170000)).toHaveLength(8);
-  globalThis.fetch = (async () => new Response(null, { status: 429, headers: { "retry-after": "120" } })) as typeof fetch;
+  globalThis.fetch = (async () => new Response(null, { status: 429, headers: { "retry-after": "120" } })) as unknown as typeof fetch;
   await expect(openPullRequest(crypto.randomUUID(), "a/b", { title: "test", body: "test", base: "main", head: "fix" })).rejects.toBeInstanceOf(RateLimitError);
 });
 
@@ -162,4 +167,119 @@ it("secondary backoff increases while primary and HTTP-date deadlines are never 
   expect(githubCooldown(secondary, now, 2, true)).toBe(now + 240000);
   expect(githubCooldown(new Response(null, { status: 429, headers: { "retry-after": new Date(now + 180000).toUTCString() } }), now, 0, false)).toBe(now + 180000);
   expect(githubCooldown(new Response(null, { status: 403, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String((now + 600000) / 1000), "retry-after": "900" } }), now, 0, false)).toBe(now + 900000);
+});
+
+it("keeps actual request deadlines inside leases, aborts hung requests and releases slots", async () => {
+  const { db, sqlite } = budgetDb();
+  const scope = `github:installation:deadline-${crypto.randomUUID()}`;
+  const token = crypto.randomUUID();
+  await registerGithubCredential(token, db, scope);
+  let abort!: () => void;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+    expect(ms).toBeLessThanOrEqual(20000);
+    const held = sqlite.query("SELECT next_at FROM api_limits WHERE scope = ?").get(`${scope}:inflight:0`) as { next_at: number };
+    expect(Date.now() + ms).toBeLessThan(held.next_at);
+    const controller = new AbortController();
+    abort = () => controller.abort(new DOMException("request timed out", "TimeoutError"));
+    return controller.signal;
+  });
+  let queries = 0;
+  const originalPrepare = db.prepare.bind(db);
+  const prepare = spyOn(db, "prepare").mockImplementation((sql: string) => { queries++; return originalPrepare(sql); });
+  // Use a non-retryable abort reason so this test observes one slot lifecycle.
+  const { OutboundError } = await import("../src/reliability");
+  let signal: AbortSignal | undefined;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    signal = init?.signal ?? undefined;
+    entered();
+    return new Promise<Response>((_resolve, reject) => signal!.addEventListener("abort", () => reject(new OutboundError(400)), { once: true }));
+  }) as unknown as typeof fetch;
+  try {
+    const request = gh("/repos/a/b", token);
+    const result = request.catch(error => error);
+    await started;
+    abort();
+    expect(await result).toMatchObject({ cause: { status: 400 } });
+    expect(signal!.aborted).toBe(true);
+    expect(sqlite.query("SELECT next_at FROM api_limits WHERE scope = ?").get(`${scope}:inflight:0`)).toEqual({ next_at: 0 });
+    // Four pre-fetch statements + compare-release on this network-abort path.
+    expect(queries).toBe(5);
+  } finally { timeout.mockRestore(); prepare.mockRestore(); }
+});
+
+it("rejects an already-expired acquired slot without starting an HTTP request", async () => {
+  const { db } = budgetDb();
+  const token = crypto.randomUUID(), scope = `github:installation:slow-db-${crypto.randomUUID()}`;
+  await registerGithubCredential(token, db, scope);
+  const now = Date.now();
+  const clock = spyOn(Date, "now").mockReturnValue(now);
+  const originalPrepare = db.prepare.bind(db);
+  const prepare = spyOn(db, "prepare").mockImplementation(sql => {
+    const statement = originalPrepare(sql);
+    if (!sql.includes("RETURNING next_at") || !sql.includes("excluded.failures")) return statement;
+    const originalBind = statement.bind.bind(statement);
+    statement.bind = (...values: unknown[]) => {
+      const bound = originalBind(...values), originalFirst = bound.first.bind(bound);
+      bound.first = (async () => { const row = await originalFirst(); clock.mockReturnValue(now + 31000); return row; }) as typeof bound.first;
+      return bound;
+    };
+    return statement;
+  });
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; return Response.json({}); }) as unknown as typeof fetch;
+  try {
+    await expect(gh("/repos/a/b", token)).rejects.toBeInstanceOf(RateLimitError);
+    expect(calls).toBe(0);
+  } finally { clock.mockRestore(); prepare.mockRestore(); }
+});
+
+it("enforces two shared slots across independent Worker modules and credentials", async () => {
+  const load = () => import(`../src/github.ts?budget-isolate=${crypto.randomUUID()}`) as Promise<typeof import("../src/github")>;
+  const [a, b, c] = await Promise.all([load(), load(), load()]);
+  const { db } = budgetDb(), scope = `github:installation:shared-${crypto.randomUUID()}`;
+  const tokens = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  await a.registerGithubCredential(tokens[0], db, scope);
+  await b.registerGithubCredential(tokens[1], db, scope);
+  await c.registerGithubCredential(tokens[2], db, scope);
+  let active = 0, maximum = 0;
+  const releases: (() => void)[] = [];
+  const starts: (() => void)[] = [];
+  globalThis.fetch = (async () => {
+    active++; maximum = Math.max(active, maximum);
+    starts.shift()?.();
+    await new Promise<void>(resolve => releases.push(resolve));
+    active--;
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  let first!: Promise<unknown>, second!: Promise<unknown>;
+  try {
+    const enteredA = new Promise<void>(resolve => starts.push(resolve));
+    first = a.gh("/repos/a/b", tokens[0]);
+    await enteredA;
+    const enteredB = new Promise<void>(resolve => starts.push(resolve));
+    second = b.gh("/repos/a/b", tokens[1]);
+    await enteredB;
+    await expect(c.gh("/repos/a/b", tokens[2])).rejects.toBeInstanceOf(RateLimitError);
+    expect(maximum).toBe(2);
+    expect(active).toBe(2);
+  } finally {
+    releases.forEach(release => release());
+    await Promise.allSettled([first, second]);
+  }
+}, 10000);
+
+it("adds exactly two D1 statements on an uncontended successful installation request", async () => {
+  const { db } = budgetDb(), token = crypto.randomUUID();
+  await registerGithubCredential(token, db, `github:installation:queries-${crypto.randomUUID()}`);
+  const originalPrepare = db.prepare.bind(db);
+  const statements: string[] = [];
+  const prepare = spyOn(db, "prepare").mockImplementation(sql => { statements.push(sql); return originalPrepare(sql); });
+  globalThis.fetch = (async () => Response.json({ ok: true })) as unknown as typeof fetch;
+  try {
+    expect(await gh("/repos/a/b", token)).toEqual({ ok: true });
+    expect(statements).toHaveLength(6);
+    expect(statements.filter(sql => sql.includes("excluded.failures") || sql.includes("AND failures = ?"))).toHaveLength(2);
+  } finally { prepare.mockRestore(); }
 });

@@ -26,7 +26,7 @@ test("first-factory initialization coalesces, retries failure, and cannot resurr
     delete: async (key: string) => data.delete(key), list: async (o?: { prefix?: string }) => new Map([...data].filter(([key]) => !o?.prefix || key.startsWith(o.prefix))),
     getAlarm: async () => null, setAlarm: async () => {}, deleteAlarm: async () => {},
   };
-  const DB = { prepare: (sql: string) => { const statement = { bind: (..._values: unknown[]) => statement, all: async () => ({ results: [] }), run: async () => ({}), first: async () => sql.includes("token_version") ? { token_version: 0, status: "active" } : null }; return statement; } };
+  const DB = { prepare: (sql: string) => { const statement = { bind: (..._values: unknown[]) => statement, all: async () => ({ results: [] }), run: async () => ({}), first: async () => sql.includes("token_version") ? { token_version: 0, status: "active" } : sql.includes("excluded.failures") ? { next_at: Date.now() + 30000 } : null }; return statement; } };
   const env = credentialEnv({ SESSION_SECRET: "test-session", APP_PASSWORD: "test-preview", ALLOWED_LOGINS: "example", GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB });
   const make = () => new Factory({ storage, blockConcurrencyWhile: (fn: () => unknown) => fn(), getWebSockets: () => [] } as never, env as never);
   try {

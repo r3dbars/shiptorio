@@ -36,7 +36,8 @@ export class GitHubReadCache {
 
   async put(key: string, etag: string, value: unknown, env?: CacheEnv): Promise<void> {
     const entry = { etag, value: structuredClone(value), expires: Date.now() + TTL };
-    if (!this.remember(key, entry) || !env?.CACHE || !env.CRED_MASTER_KEY) return;
+    if (!this.remember(key, entry)) { await this.delete(key, env); return; }
+    if (!env?.CACHE || !env.CRED_MASTER_KEY) return;
     try {
       await env.CACHE.put(key, JSON.stringify(await encryptCredential(env, key, entry)), { expirationTtl: TTL / 1000 });
     } catch { /* Cache availability must not change an authorized API result. */ }
