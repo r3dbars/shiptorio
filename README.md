@@ -2,6 +2,8 @@
 
 **The factory must grow.**
 
+AI review eval: caught 10/10 seeded bad fixes (100%); 0/5 good fixes flagged; 0 rules fallbacks, 0 unavailable. [Results and limits](docs/EVAL.md).
+
 Your codebase is a Factorio-style map. Feedback is the ore: Sentry errors, user emails, GitHub issues and
 PostHog traffic. The machines are agents you place and wire together. What ships is real pull requests.
 
