@@ -245,6 +245,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               <span>{ONBOARD.signIn}</span>
             </button>
 
+            <TesterLinks />
             <Journey />
 
             <div className="ob-foot">
@@ -373,4 +374,19 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
       </nav>
     </div>
   );
+}
+
+// The server independently checks TEST_USERS and PUBLIC_URL; production never requests this list.
+function TesterLinks() {
+  const [personas, setPersonas] = useState<string[]>([]);
+  useEffect(() => {
+    if (!["localhost", "127.0.0.1", "[::1]", "shiptorio.dev"].includes(location.hostname)) return;
+    let active = true;
+    fetch("/test/users?format=json").then(r => r.ok ? r.json() : null).then(data => {
+      if (active && Array.isArray(data?.personas)) setPersonas(data.personas.filter((p: unknown): p is string => typeof p === "string" && /^test-(newbie|guest|midgame|broke|blocked)$/.test(p)));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  if (!personas.length) return null;
+  return <aside aria-label="Test accounts"><small>Sign in as tester</small><ul>{personas.map(p => <li key={p}><a href={`/test/login?as=${p}`}>{p}</a></li>)}</ul></aside>;
 }
