@@ -1,5 +1,9 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Locked dedicated Keychain restart (Codex, 2026-10-27)
+
+- Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
+
 
 ## Steam & iron sound picks (Claude, 2026-10-27)
 
