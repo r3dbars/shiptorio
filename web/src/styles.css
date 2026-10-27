@@ -139,6 +139,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 .sp-tag.steel { color: var(--steel); }
 .sp-state { font-size: 12px; }
 .sp-what { margin: 0; font-size: 13px; line-height: 1.5; }
+.sp-eta { font-family: var(--pixel, monospace); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--amber, #ffb020); }
 .sp-stats { margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .sp-stats div { background: var(--iron-soot); border: 2px solid var(--iron-line); padding: 6px 8px; }
 .sp-stats dt { font: 400 10px/1.2 var(--pixel); letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; }

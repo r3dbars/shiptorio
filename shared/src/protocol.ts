@@ -1,8 +1,8 @@
 // Every message on the wire. Both lanes build against this file; change it in a PR both see.
 
 import { z } from "zod";
-import { GoalId, Goals } from "./goals";
 import { HoldingBack } from "./signals";
+import { GoalId, Goals } from "./goals";
 import {
   Actor,
   Autonomy,

@@ -11,6 +11,7 @@ import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
 import { GEO_COPY, MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
 import { HARNESS_NAME, PANEL, STATE_WORD, WORDS } from "../copy";
 import { Icon } from "./icons";
+import { etaLine } from "./eta";
 import { planFromState } from "../map/shaft/plan";
 import { lineOrder, parkedIn, quietWord, workOnLine, WORDS as WAIT } from "../map/shaft/waiting";
 
@@ -242,7 +243,7 @@ export function itemPanel(key: string, state: FactoryState) {
     [C.folder, item.district === "/" ? "/" : `/${item.district}`],
     [C.tries, String(item.attempts)],
   ];
-  return { item, title: `${item.prNumber ? `#${item.prNumber} ` : ""}${item.title}`, note, stats, choices };
+  return { item, title: `${item.prNumber ? `#${item.prNumber} ` : ""}${item.title}`, eta: etaLine(item), note, stats, choices };
 }
 
 function CartPanel({ id, state, log, send, onClose }: Pick<Props, "id" | "state" | "log" | "send" | "onClose">) {
@@ -263,6 +264,7 @@ function CartPanel({ id, state, log, send, onClose }: Pick<Props, "id" | "state"
         <span className="ptitle small">{p.title}</span>
         <span className={`sp-tag ${item.priority === "park" ? "steel" : item.priority === "rush" ? "red" : "amber"}`}>{tag}</span>
       </div>
+      {p.eta && <p className="sp-what sp-eta">{p.eta}</p>}
       <p className="sp-what">{p.note}</p>
       <dl className="sp-stats">
         {p.stats.map(([k, v]) => (

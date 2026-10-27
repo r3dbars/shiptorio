@@ -2,8 +2,8 @@
 // everyone else only reads it or asks for changes through protocol messages.
 
 import { z } from "zod";
-import { Goals } from "./goals";
 import { HoldingBack } from "./signals";
+import { Goals } from "./goals";
 
 // Science colors double as the kind of work an item is.
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);

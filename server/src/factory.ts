@@ -91,6 +91,7 @@ import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, 
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
+import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, legacyCredentialOwner, type CredsEnv, type MineKind } from "./sources/creds";
@@ -133,6 +134,13 @@ interface Meta {
   repo: string;
   installationId: number;
 }
+
+/** deckBook.yes is keyed "kind|scope"; the goals collector wants Continues by kind. */
+const rollUpYes = (yes?: Record<string, number>) => {
+  const out: Record<string, number> = {};
+  for (const [key, n] of Object.entries(yes ?? {})) out[key.split("|")[0]] = (out[key.split("|")[0]] ?? 0) + n;
+  return out;
+};
 
 class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
@@ -383,6 +391,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
         storage: { get: key => this.ctx.storage.get(key) },
         githubToken: () => token ??= installationToken(this.env, meta.installationId),
+        publicUrl: this.publicUrl(), yes: rollUpYes(this.deckBook?.yes),
         posthogCreds: async () => await this.ctx.storage.get<boolean>("posthogLinked") ? postHogCreds(this.env, this.credentialScope(), this.redactor) : {},
       }, await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
       for (const e of errors) this.log("warn", `Couldn't read ${e.source} signals: ${e.error.slice(0, 200)}`);
@@ -441,7 +450,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const action = option.actions[0];
     if (action?.tool === "connect_source" && (action.args.kind === "sentry" || action.args.kind === "posthog")) await this.connectMine(action.args.kind);
     else if (action?.tool === "inspect_bottleneck") this.log("info", card.why);
-    else if (action?.tool === "ask_goal") await this.offerGoalMove(true); // set_a_goal / revisit_goal: deal the goal card now
+    else if (action?.tool === "ask_goal") { await this.publishGauntletMove(null); await this.offerGoalMove(true); }
     await this.recordApproval(card.kind ?? "unblock", moveScope(card, this.state!));
     await this.tapBrainCard(card.id.slice(7), "continue");
     return true;
@@ -1449,7 +1458,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!(await this.load()) || !(await this.ctx.storage.get<boolean>("sentryLinked"))) return;
     if (!(await sentryCreds(this.env, this.credentialScope(), this.redactor)).clientSecret) return;
     await markUsed(this.env, "sentry", this.credentialScope()!);
-    for (const signal of normalizeSentry(this.redactor.value(payload), resource)) await this.ingestSignal(signal);
+    const signals = normalizeSentry(this.redactor.value(payload), resource);
+    // The brain's Sentry collector reads spikes off this hourly log. Assignments and resolves aren't errors.
+    if (resource !== "issue" || payload.action === "created" || payload.action === "unresolved") {
+      let pulses = (await this.ctx.storage.get<SentryPulse[]>(SENTRY_PULSES_KEY)) ?? [];
+      for (const signal of signals) if (signal.action === "upsert") pulses = recordSentryPulse(pulses, signal.externalId, signal.occurredAt, Date.now());
+      await this.accountPut(SENTRY_PULSES_KEY, pulses);
+    }
+    for (const signal of signals) await this.ingestSignal(signal);
   }
 
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
