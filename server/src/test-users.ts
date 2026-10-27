@@ -41,9 +41,10 @@ export function testUserRoutes(app: Hono<any>): void {
   app.use("*", async (c, next) => {
     const env = c.env as TestUsersEnv, url = new URL(c.req.url);
     const testPath = url.pathname === "/test/users" || url.pathname === "/test/login";
+    const resetPath = url.pathname === "/test/reset";
     // Production pays no extra cookie-HMAC cost. The shared account/access policy still
     // rejects reserved negative IDs, including old sockets and runner credentials.
-    if (env.TEST_USERS !== "on" && !testPath) return next();
+    if (env.TEST_USERS !== "on" && !testPath && !resetPath) return next();
     const session = await readSessionDetails(env.SESSION_SECRET, c.req.header("cookie") ?? null);
     const negative = (session?.ref?.uid ?? 0) < 0;
     // Optional UI discovery must stay quiet on ordinary local/staging builds. It reveals no
@@ -52,8 +53,8 @@ export function testUserRoutes(app: Hono<any>): void {
       c.header("Cache-Control", "no-store");
       return c.json({ personas: [] });
     }
-    if ((testPath || negative) && !testUsersEnabled(env, url)) return c.json({ error: "Test accounts are disabled here" }, 404);
-    if (testPath || negative) {
+    if ((testPath || resetPath || negative) && !testUsersEnabled(env, url)) return c.json({ error: "Test accounts are disabled here" }, 404);
+    if (testPath || resetPath || negative) {
       const transport = secureTransport(c.req.raw);
       if (transport) return transport;
       const gated = await previewAccess(c.req.raw, env);
@@ -77,12 +78,19 @@ export function testUserRoutes(app: Hono<any>): void {
       }
       return c.redirect(p === "test-guest" ? "/?source=sim&scenario=first-run&repo=you/demo-shop" : "/?source=live&onboard=repo", 303);
     }
-    if (!negative) return next();
+    if (!negative) return resetPath ? c.json({ error: "Test session required" }, 403) : next();
     c.header("Cache-Control", "no-store");
     c.header("X-Content-Type-Options", "nosniff");
     const user = await currentUser(env, c.req.header("cookie") ?? null);
     const p = user?.login as TestPersona;
     if (!user || !TEST_PERSONAS.includes(p) || user.id !== personaId(p)) return c.json({ error: "Invalid test identity" }, 403);
+    if (resetPath && !(env as TestUsersEnv & { [ISOLATED_TEST_CONTEXT]?: boolean })[ISOLATED_TEST_CONTEXT]) {
+      if (c.req.method !== "POST" || c.req.header("origin") !== url.origin || url.search) return c.json({ error: "Invalid fixture reset" }, 403);
+      if (local(url) || !env.TEST_FACTORY || (env.TEST_FACTORY_KEY?.length ?? 0) < 32) return c.json({ error: "Isolated reset service unavailable" }, 503);
+      const response = await env.TEST_FACTORY.fetch(await delegateTestRequest(c.req.raw, user, env.TEST_FACTORY_KEY!));
+      if (response.ok) await env.DB.batch([env.DB.prepare("DELETE FROM user_progress WHERE user_id=?").bind(user.id), env.DB.prepare("DELETE FROM user_prefs WHERE user_id=?").bind(user.id)]);
+      return response;
+    }
     // Set only by the private fixture entrypoint after verifying a scoped delegation.
     if ((env as TestUsersEnv & { [ISOLATED_TEST_CONTEXT]?: boolean })[ISOLATED_TEST_CONTEXT]) return next();
     if (url.pathname === "/api/flags" && !["GET", "HEAD"].includes(c.req.method)) return c.json({ error: "Test account operation is not permitted" }, 403);

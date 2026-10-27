@@ -59,6 +59,11 @@ try {
     }
     const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
+    if (!local && width === 390) {
+      const reset = await page.evaluate(async () => { const r = await fetch("/test/reset", { method: "POST" }); return { ok: r.ok, status: r.status }; });
+      if (!reset.ok) throw new Error(`Isolated staging reset unavailable: HTTP ${reset.status}`);
+      await page.goto(`${url.origin}/test/login?as=${persona}`);
+    }
     admitted = true;
     if (fixture) { console.log("Seeding isolated persona"); await fixture.seed(); console.log("Persona seeded"); }
     await capture("signed-in");
@@ -86,7 +91,9 @@ try {
         await repo.first().click(); await capture("open-repo");
         await page.keyboard.press("Escape");
       }
-      else if (fixture && await visible(install)) {
+      else if (await visible(install)) {
+        const installUrl = new URL(await install.first().getAttribute("href"), url.origin);
+        if (installUrl.origin !== url.origin || installUrl.pathname !== "/test/install") throw new Error("Refusing non-fixture install target");
         const next = context.waitForEvent("page"); await install.first().click(); const tab = await next;
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
         await repo.first().waitFor({ state: "visible", timeout: 60000 });

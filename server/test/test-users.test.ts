@@ -99,3 +99,14 @@ test("local factory needs a keyed capability service and never routes a differen
   expect((await f.app.request("http://localhost:8787/api/repos/r3dbars/shiptorio/factory", { headers: { cookie } }, env)).status).toBe(403);
   expect(handshakes).toBe(1); expect(f.calls()).toBe(1);
 });
+test("explicit reset is production-disabled and bound to the signed tester and same origin", async () => {
+  const f = fixture(); await seedTestUser(f.env,"test-midgame");
+  const cookie=(await createSession(f.env,{id:personaId("test-midgame"),login:"test-midgame"},"test")).split(";")[0]+"; "+await preview();
+  const key="k".repeat(64); let calls=0;
+  const env={...f.env,PUBLIC_URL:"https://shiptorio.dev",TEST_FACTORY_KEY:key,TEST_FACTORY:{fetch:async(request:Request)=>{calls++;expect(request.headers.has("cookie")).toBe(false);return Response.json({reset:"test-midgame"});}}};
+  expect((await f.app.request("https://shiptorio.com/test/reset",{method:"POST",headers:{cookie,origin:"https://shiptorio.com"}},env)).status).toBe(404);
+  for(const [query,origin] of [["?as=test-newbie","https://shiptorio.dev"],["","https://evil.test"]])expect((await f.app.request("https://shiptorio.dev/test/reset"+query,{method:"POST",headers:{cookie,origin}},env)).status).toBe(403);
+  expect(calls).toBe(0);
+  expect((await f.app.request("https://shiptorio.dev/test/reset",{method:"POST",headers:{cookie,origin:"https://shiptorio.dev"}},env)).status).toBe(200);
+  expect(calls).toBe(1);
+});

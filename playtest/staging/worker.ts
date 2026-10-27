@@ -7,7 +7,15 @@ import { ISOLATED_TEST_CONTEXT, verifyTestDelegation } from "../../server/src/te
 import { personaId, personaRepo } from "../../server/src/test-users-policy";
 import { fixtureOnlyFetch } from "./runtime";
 import type { FixtureEnv } from "./env";
-export { Factory } from "../bot/worker";
+import { Factory as SeededFactory } from "../bot/worker";
+export class Factory extends SeededFactory {
+  async resetFixture(receipt: string) {
+    await this.eraseAccountData();
+    await this.ctx.storage.put("fixtureReset", receipt);
+    this.ctx.abort("Fixture reset completed");
+  }
+  async confirmFixtureReset(receipt: string) { return await this.ctx.storage.get("fixtureReset") === receipt; }
+}
 export { FixtureProvider } from "./provider";
 
 globalThis.fetch = fixtureOnlyFetch;
@@ -16,6 +24,29 @@ export default {
     if (env.FIXTURE_INSTANCE !== "shiptorio-fixture" || env.TEST_USERS !== "on" || env.PUBLIC_URL !== "https://shiptorio.dev") return new Response("Fixture disabled", { status: 503 });
     const persona = await verifyTestDelegation(request, env.TEST_FACTORY_KEY ?? "");
     if (!persona || persona === "test-guest") return new Response("Private fixture authorization required", { status: 403 });
+    if (new URL(request.url).pathname === "/test/reset") {
+      const repo = personaRepo(persona), id = personaId(persona), installation = 9000 + Math.abs(id);
+      const provider = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(persona));
+      const stopped = await provider.fetch(new Request("http://fixture.internal/reset", { method: "POST", headers: { "x-test-persona": persona } }));
+      if (!stopped.ok) return new Response("Fixture reset failed", { status: 503 });
+      const factory = env.FACTORY.get(env.FACTORY.idFromName(`repo:${990000 + Math.abs(id)}`)) as unknown as Factory;
+      const receipt = crypto.randomUUID();
+      try { await factory.resetFixture(receipt); } catch { /* abort evicts all cached state */ }
+      if (!await factory.confirmFixtureReset(receipt)) return new Response("Fixture wipe was not confirmed", { status: 503 });
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM user_repos WHERE user_id=? AND repo=?").bind(id, repo),
+        env.DB.prepare("DELETE FROM user_installations WHERE user_id=? AND installation_id=?").bind(id, installation),
+        env.DB.prepare("DELETE FROM repos WHERE full_name=? AND installation_id=?").bind(repo, installation),
+        env.DB.prepare("DELETE FROM installations WHERE id=?").bind(installation),
+        env.DB.prepare("DELETE FROM pull_requests WHERE repo=?").bind(repo),
+        env.DB.prepare("DELETE FROM user_progress WHERE user_id=?").bind(id),
+        env.DB.prepare("DELETE FROM user_prefs WHERE user_id=?").bind(id),
+        env.DB.prepare("DELETE FROM spark_factory_calls WHERE repo=?").bind(repo),
+        env.DB.prepare("DELETE FROM factory_budget_owners WHERE repo=?").bind(repo),
+        env.DB.prepare("DELETE FROM spark_usage WHERE account=?").bind(`github:user:${id}`),
+      ]);
+      return Response.json({ reset: persona });
+    }
     await seedTestUser(env, persona);
     let session = await env.CACHE.get(`fixture-session:${persona}`);
     if (!session || !(await currentUser(env, session))) {
