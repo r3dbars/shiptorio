@@ -1,5 +1,13 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Claude private Keychain persistence (Codex, 2026-10-26)
+
+- Live Testing #2 acceptance found a gap after #274: the isolated HOME had no `Library/Preferences` or default Keychain. Claude saved account metadata, but a new status process had no credential; neither a fake provider nor a signed-out native startup test proved persistence.
+- `codex/claude-private-keychain` initializes a separate encrypted Keychain plus private preferences under `.agent-home`, with a random 0600 password beside the home (outside the sandbox). The trusted runner unlocks it before Claude auth checks; settings lock it on sleep and after 30 minutes. Reinstall reuses the store. Never points at or copies the personal login Keychain.
+- Real macOS test: create a non-secret credential through the isolated default store, read it in a second process and inside the agent sandbox, lock/unlock/restart, verify the personal default is unchanged, and verify the agent cannot read the unlock password. Focused subscription/native tests and runner typecheck pass; full Linux CI gates merge to avoid duplicate heavy local runs.
+- Runner bundle reinstall is required; PR includes the paste. Testing #2 still needs actual Claude sign-in and a real PR receipt. Justin authorized the allowance 21 → 22 for one attempt only; no build attempt has been submitted by this chat yet.
+
+
 ## Stranger E2E: latest status (2026-10-26)
 
 | PR | State | Result |
