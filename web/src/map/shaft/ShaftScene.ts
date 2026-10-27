@@ -480,7 +480,8 @@ export class ShaftScene {
 
   private setView(view: ShaftView, id: string | null, snap = false) {
     this.view = { view, id };
-    if (this.stage) {
+    // the first run's camera is the director's: the game's own asks (a panel's focus, the welcome's wide shot) wait
+    if (this.stage && !this.director?.locked) {
       if (view === "free") this.stage.view = "free";
       else this.stage.setView(view, id);
       if (snap || this.reduceMotion) this.stage.snap();
