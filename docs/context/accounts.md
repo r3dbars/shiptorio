@@ -89,3 +89,25 @@ stops new work; usage history is retained. Dollar limits apply to factories bill
 to that user. The repo/global kill switch stops new Spark calls and runner handout;
 it does not interrupt a local process that already received a job or erase its
 receipt. Resume is explicit. All merges still require the normal Launch/permit path.
+## Play first, sign in later (web client)
+
+A bare visit to `/` never asks for a sign-in. `web/src/main.tsx` plays the welcome tour once, then:
+
+- `/api/me` has a `login` → the repo picker (`ui/Onboarding.tsx`, step `repo`), as before.
+- no `login` (signed out, or a future `{ guest: true }`) → the demo shop: `?source=sim&scenario=first-run&repo=you/demo-shop`.
+  It's the client-side sim, so it costs the server nothing (no Spark, no GitHub, no runner).
+
+In the sandbox (`sandbox` in `App.tsx`: the sim with a real server behind it, `serverUp()` in `account.ts`):
+
+- The floor card carries a **Demo shop · Use your repo ›** chip, always.
+- After the first rocket, the Suggested card (`whatsNext`, `{ do: "signin" }`) holds "That was a demo shop. Run your
+  own repo next" for two rockets, then steps aside.
+- Both go to `signInUrl()` = `/auth/login?next=/?onboard=repo&source=live`, the same GitHub OAuth as always.
+
+`?onboard=hello` still shows the old sign-in card.
+
+Guests (server side: PR #355): the bare visit's `/api/me` call is what creates the guest cookie, and a guest gets
+no `login`, so the client treats it like signed out. In the sandbox the progress profile is `guest`
+(`progressProfile(..., sandbox)`), which syncs through `GET/PUT /api/me/progress` like a signed-in profile; if
+there's no guest session the pull fails and nothing is pushed. `savePref` also sends on a bare visit and in the
+demo shop. `/auth/callback` moves the guest save onto the account (account progress wins).

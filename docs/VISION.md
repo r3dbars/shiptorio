@@ -178,3 +178,8 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-27 11:17: Round 1 gameplay picks in (abandoned-foundry start, repairs by tapping the broken thing, Later
   left / Continue right on every card, big red hold-to-launch button). A/B rounds are how gameplay gets refined from
   now on. See "Gameplay picks" and `docs/GAMEPLAY.md`.
+- 2026-10-27 20:06: **Build as you go.** The dimmed tour look becomes how the game starts: camera parked, nothing
+  exists until you build it, and eight builds (repo tunnel, AI boiler, builder, first issue, planner, build, checks,
+  launch pad) rise in 5 to 8 animated seconds each, burst online with electricity and stamp themselves done while a
+  real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract:
+  `web/src/buildout/CONTRACT.md`; plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.

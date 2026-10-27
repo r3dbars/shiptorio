@@ -26,8 +26,13 @@ interface Show {
 
 // quiet: the rocket and the sound still go, but no card (the welcome tour's later, automatic rockets)
 // high: the card sits up top, clear of a card at the bottom (the welcome tour)
-export function ShipCelebration({ state, quiet = false, high = false }: { state: FactoryState | null; quiet?: boolean; high?: boolean }) {
+// onBusy: told when the celebration starts and ends, so nothing else talks over it
+export function ShipCelebration({ state, quiet = false, high = false, onBusy }: { state: FactoryState | null; quiet?: boolean; high?: boolean; onBusy?: (busy: boolean) => void }) {
   const [show, setShow] = useState<Show | null>(null);
+  const busy = !!show;
+  const onBusyRef = useRef(onBusy);
+  onBusyRef.current = onBusy;
+  useEffect(() => onBusyRef.current?.(busy), [busy]);
   const quietRef = useRef(quiet);
   quietRef.current = quiet;
   const score = state?.metrics?.shipScore ?? 0;

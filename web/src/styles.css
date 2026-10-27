@@ -807,7 +807,11 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .tour-segs i { width: 14px; height: 14px; background: #1a1410; border: 2px solid #000; box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 0 1px var(--iron-line); }
 .tour-segs i.done { background: var(--iron-ok); box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.45), inset -2px -2px 0 rgba(0, 0, 0, 0.25), 0 0 0 1px #2f7a46; }
 .tour-segs i.now { background: var(--iron-amber); box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.5), inset -2px -2px 0 rgba(0, 0, 0, 0.2), 0 0 0 1px var(--iron-amber); animation: iron-ping 1s infinite; }
-.tour-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse at 50% 38%, transparent 45%, rgba(11, 8, 6, 0.55) 100%); }
+/* The tour keeps the factory in the dark: one pool of light where the beat is, the rest found by playing
+   (Justin's playtest, 2026-10-27). No machine names or crate tags either, only the beat's own marker. */
+/* one flat shade plus the pool, painted over the canvas (a CSS filter on the WebGL canvas costs a full extra pass) */
+.tour-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 62% 48% at 50% 34%, transparent 30%, rgba(8, 6, 5, 0.72) 72%, rgba(5, 4, 3, 0.94) 100%), rgba(6, 4, 3, 0.36); }
+:root[data-tour] .maplabels .maplabel, :root[data-tour] .maplabels .tag, :root[data-tour] .maplabels .shaftfloors { display: none !important; }
 .ship-cel.high { place-items: start center; padding-top: calc(84px + var(--sat)); }
 /* the beat's highlight on the map: a pinging amber marker inside caution brackets, its tag on a caution-striped plate */
 :root[data-tour] .mapping i { border-radius: 0; width: 18px; height: 18px; margin: 2px; background: currentColor; border: 2px solid #000; animation: iron-ping 1s infinite; }
@@ -892,6 +896,8 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .seg button + button { border-left: 2px solid #000; }
 .seg button:hover:not(:disabled) { background: #3a2e26; }
 .seg button[aria-pressed="true"] { background: var(--iron-amber); color: var(--iron-on-amber); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.25); }
+.seg.goals { display: flex; flex-wrap: wrap; flex: 1; }
+.seg.goals button { flex: 1 1 30%; border-bottom: 2px solid #000; margin-bottom: -2px; }
 .seg button:disabled { color: var(--iron-dim); background: #140e0a; cursor: default; }
 .pickm { flex: 1; min-width: 0; background: var(--iron-soot); color: var(--iron-ink); border: 2px solid var(--iron-line); border-radius: 0; padding: 8px 10px; font: 400 14px var(--iron-mono); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.5); }
 .pickm:hover { border-color: var(--iron-line-hi); }
@@ -1329,7 +1335,11 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .acard .atop span { color: var(--dim); font-weight: 400; }
 .acard .att { font: 700 13px/1.3 var(--mono); color: var(--iron-ink); }
 .acard .aw { font-size: 11px; line-height: 1.35; color: var(--dim); }
-.acard .abc { font-size: 11px; line-height: 1.35; color: var(--iron-aether); }
+.acard button.awhy { border-color: transparent; order: -1; } /* sits between Later and Details */
+.acard .aacts .alater { order: -2; }
+.acard button.awhy[aria-expanded="true"] { color: var(--iron-aether); }
+.acard .awhy-line { margin: 0; font-size: 12px; line-height: 1.35; color: var(--iron-ink); }
+.acard .awhy-line b { color: var(--iron-aether); }
 .acard .amore { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; font-size: 12px; max-height: min(40vh, 320px); overflow-y: auto; }
 .acard .amore p { margin: 0; }
 .acard .amore a { color: var(--iron-aether); }
@@ -1377,3 +1387,9 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 
 /* The default screen is the map, one card and two counters: the shaft's floor buttons come out with the Menu. */
 .app:not(.tools-out) .maplabels.shaft .shaftfloors { display: none; }
+
+/* Play first, sign in later: the sandbox's floor-card chip says it's a demo and is the way to your own repo. */
+.play-chip { text-decoration: none; color: var(--iron-amber); padding: 4px 10px !important; }
+.play-chip > span { display: flex; align-items: baseline; gap: 8px; font: 700 12px/1.2 var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; }
+.play-chip small { color: var(--ink); }
+.play-chip:hover small, .play-chip:focus-visible small { color: var(--iron-amber); }

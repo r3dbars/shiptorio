@@ -4,7 +4,7 @@ import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
-import { savePref, setAccountReadOnly } from "./account";
+import { SANDBOX_REPO, savePref, serverUp, setAccountReadOnly, signInUrl, whoAmI, isGuestPlay } from "./account";
 import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
@@ -37,10 +37,14 @@ import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
-import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
-import { attentionOn } from "./flags";
+import { attentionOn, buildoutOn } from "./flags";
+import { Buildout, useFreeLook } from "./ui/Buildout";
+import { BuildStamp } from "./ui/BuildStamp";
+import { installBuildSound } from "./sound/build";
+import { LOOK, stepFrom } from "./buildout/journey";
 import { useComeback } from "./ui/Comeback";
 import { etas } from "./ui/eta";
 
@@ -128,6 +132,25 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
+  // Build as you go (?buildout=1): nothing exists until you build it, one card guides each build, and the
+  // counters and free camera wait until "Look around" after the first rocket (ui/Buildout.tsx).
+  const buildout = !intro && buildoutOn();
+  const [free, lookAround] = useFreeLook();
+  // "Look around" frees it only once every build is done, so a fresh factory starts in the dark again
+  const guided = buildout && !(free && !!state && stepFrom(state).id === LOOK);
+  useEffect(() => (buildout ? installBuildSound() : undefined), [buildout]);
+  // Play first, sign in later: the sim on a real server is the demo shop new players start in, and signing
+  // in with GitHub is the unlock that brings their own repo (the floor card's chip, then a card after a rocket).
+  const [server, setServer] = useState(false);
+  // only a signed-out guest in the demo shop syncs progress to the guest session; a signed-in player's sim
+  // play, and every other scenario, stays in this browser so it never lands on the real account
+  const [guest, setGuest] = useState(false);
+  const demoShop = cfg.kind === "sim" && !intro && cfg.repo === SANDBOX_REPO;
+  useEffect(() => {
+    if (cfg.kind === "sim" && !intro) void serverUp().then(setServer);
+    if (demoShop) void serverUp().then((up) => (up ? whoAmI() : null)).then((me) => setGuest(isGuestPlay(cfg.repo, me)));
+  }, [cfg.kind, intro, demoShop]);
+  const sandbox = server && cfg.kind === "sim" && !intro;
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
   // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
   const lastTap = useRef(0);
@@ -138,7 +161,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
   const hv = useHeightVars();
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
-  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
+  // One thing talks at a time: a rocket's celebration, then a lesson, then a badge, then the card (bug hunt, 2026-10-27).
+  const [celebrating, setCelebrating] = useState(false);
+  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0", celebrating || !!ach.toast);
   const { show } = tour;
   // Coming back after hours away: a few seconds of what really shipped meanwhile, then the launch waiting on you.
   const [reduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
@@ -178,12 +203,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
-  const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login);
+  const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login, guest);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on && viewReady, !!viewing);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
   const nudge = useBottleneckNudge(deck, progressing, calm);
-  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson }; // achievements pay XP into progression; toasts wait out the tour coach card
+  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson || celebrating }; // achievements pay XP into progression; toasts wait out the tour coach card and a rocket
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
     if (progressing && state) prog.open(deck.length);
@@ -335,7 +360,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   };
   // No card open: always offer a next move, so the factory never goes quiet after a rocket (#105).
   // The first-run coach does its own teaching, so it waits until the coach is done.
-  const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
+  const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live", sandbox }) : null;
   const onNudge = (a: NudgeAction) => {
     if (a.do === "launch") {
       const item = state?.items.find((i) => i.id === a.itemId);
@@ -345,6 +370,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     else if (a.do === "research") setSheet("research");
     else if (a.do === "connect") setSource(a.source);
     else if (a.do === "place") build();
+    else if (a.do === "signin") location.href = signInUrl();
     else setSheet(a.sheet);
   };
   // the needs tray is up when nothing bigger holds the middle of the screen (the chain of sheets below)
@@ -476,27 +502,35 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
-          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding ? pings : undefined}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding && !guided ? pings : undefined}
           cosmetics={cosmeticsOf(prog.p, progressing)}
 
           satellites={intro ? undefined : satellites}
           empire={!intro && sheet === "empire"}
           summary={factorySummary(state)}
           lapse={intro ? null : back.lapse}
+          still={intro || guided}
         />
         <SoundCaptions />
-        <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
-        {intro && <div className="tour-vignette" aria-hidden="true" />}
+        <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} onBusy={setCelebrating} />
+        {(intro || guided) && <div className="tour-vignette" aria-hidden="true" />}
+        {guided && state && <Buildout state={state} live={cfg.kind === "live"} repo={cfg.kind === "live" ? cfg.repo : undefined} free={free} send={send} onLookAround={lookAround} />}
+        {guided && <BuildStamp />}
         {intro && tourly.top}
         {intro && tourly.card}
-        {!intro && (<>
+        {!intro && !guided && (<>
 
         <div className="hudtop" ref={hv.refs.top as Ref<HTMLDivElement>}>
           <FloorCard
             counts={counts}
             repo={state?.repo}
             showKey={false}
-            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" ? (<>
+            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
+              {sandbox && (
+                <a className="chip play-chip" href={signInUrl()} aria-label={PLAY.chipLabel} title={PLAY.chipLabel}>
+                  <span>{PLAY.chip}<small>{PLAY.chipCta}</small></span>
+                </a>
+              )}
               <SparkSpendChip expanded={sheet === "thinks"} repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
               {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
@@ -707,7 +741,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                   </span>
                   {opt && state?.move ? (
                     <button type="button" className="btn rec" style={{ flex: "none" }} onClick={() => send({ type: "choose_move", moveId: state.move!.id, optionId: opt.id })}>
-                      {POWER.signIn}
+                      {cfg.kind === "sim" ? POWER.useDemo : POWER.signIn}
                     </button>
                   ) : (
                     <span className="pill" title={POWER.pairTitle}>
@@ -729,7 +763,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             )}
           </section>
-        ) : back.holding ? null : (
+        ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
           <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
             {calm ? (
               <AttentionTray

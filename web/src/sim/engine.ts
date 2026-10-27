@@ -5,6 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
+import { STARTER_ISSUE, type StepId } from "../buildout/journey";
 import { ghostSpots } from "../map/ghosts";
 import { actionLabel } from "../ui/stationCopy";
 import { mineUnlocked } from "../ui/whatsNext";
@@ -32,11 +33,13 @@ import {
   type District,
   type FactoryState,
   type Harness,
+  type HoldingBack,
   type Item,
   type ItemKind,
   type Machine,
   type Metrics,
   type Move,
+  type MoveKind,
   type OreSource,
   type Patch,
   type PowerSource,
@@ -46,6 +49,12 @@ import {
   type StationKind,
   type ThoughtDecision,
   type WebToServer,
+  GOALS,
+  goalMove,
+  goalsFromPick,
+  goalText,
+  inferGoals,
+  type Goals,
 } from "@shiptorio/shared";
 import type { Listener, Source, StatusListener } from "../source";
 import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
@@ -94,8 +103,24 @@ interface GrowthDrop {
   spark: SparkLine[];
 }
 
+// The bottleneck brain (docs/BRAIN.md): one diagnosis at a time, each a Continue/Later card. Mirrors the eval
+// cases in server/scripts/brain-eval/cases.ts, so ?source=sim&scenario=brain plays what the eval grades.
+interface BrainBeat {
+  area: "ship" | "speed" | "quality" | "users" | "feedback" | "focus";
+  reads: SparkLine[]; // the signals the brain reads before naming it
+  title: string; // the bottleneck, plain words
+  why: string; // who it hurts, with the number
+  card: string; // the unlock's headline
+  because: string; // under 20 words, cites the number
+  kind: MoveKind;
+  cleared: string; // what the floor log says once the unlock worked
+}
+// The demo shop's README, as the goal guess reads it: a live store whose customers hit checkout bugs.
+const SIM_README = "# Demo shop\nA small online store. Customers report checkout errors and crashes on Safari; we fix bugs fast and keep it stable. Support: email us.";
+
 interface Scenario {
   ores: Ore[];
+  brain?: { beats: BrainBeat[]; quiet: string }; // the bottleneck brain deals these in order, then goes quiet
   growth?: GrowthDrop[]; // funnel drops from the PostHog mine, each one an experiment card
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
@@ -103,6 +128,7 @@ interface Scenario {
   checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
   onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
   intro?: boolean; // the welcome tour (ui/IntroTour.tsx): fast and quiet, and the tour cues each beat
+  buildout?: boolean; // build as you go (?buildout=1): empty rock, every piece built by the player, one guided issue
   permits?: string[]; // lanes that start with a launch permit
   science?: FactoryState["science"]; // packs already shipped, so the research tree has something to spend
   rockets?: number; // PRs already shipped
@@ -110,6 +136,19 @@ interface Scenario {
   geothermal?: boolean; // the runner found a local model: a free, capped geothermal plant runs small, low-risk jobs
   overnight?: Shipped[]; // PRs that shipped before you opened the app, with when (the comeback time-lapse replays them)
   waiting?: Omit<Shipped, "hoursAgo">; // a PR that passed every check overnight and waits on the pad for your launch
+  pileups?: BrainStep[]; // the bottleneck brain's picks, one at a time (docs/BRAIN.md): the map piles each one up
+}
+
+// One bottleneck the brain names (FactoryState.holdingBack) and the one unlock card it deals. It gets worse while it
+// waits; Continue works it off and it clears; Later parks it. Then the next one, round and round.
+interface BrainStep {
+  area: HoldingBack["area"];
+  signal: string;
+  title: string;
+  why: string;
+  unlock: string;
+  because: string;
+  kind: Move["kind"];
 }
 
 // A PR that already shipped when the scenario opens: real launch times, so "while you were away" can count them.
@@ -161,6 +200,31 @@ export const SCENARIOS = {
       { at: 11, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
       { at: 16, title: "Remove dead map cache code", kind: "cleanup", district: "server" },
     ],
+  },
+  // The bottleneck brain, beat by beat: red CI, a crash spike, an unanswered inbox, a feature nobody found,
+  // then nothing worth a card. Continue clears each one; Later moves on without nagging.
+  brain: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    // One late ore, once the brain has dealt its cards: an earlier one's launch card would jump the brain's.
+    ores: [{ at: 45, title: "Clarify the shipping FAQ", kind: "cleanup", district: "docs" }],
+    brain: {
+      quiet: "Everything's under the bar: CI 6 min, 8 quiet errors, inbox clear. Staying quiet.",
+      beats: [
+        { area: "speed", kind: "unblock", title: "Main has been red for 5 hours", why: "4 PRs can't merge until checkout.test.ts passes again.",
+          card: "Get main green again", because: "Nothing ships while main is red; 4 PRs wait on it.", cleared: "Main is green. 4 PRs moving again.",
+          reads: [{ tool: "read_signal", text: "CI: main red 5 h, run #4812 failed in checkout.test.ts", reason: "Heaviest signal" }, { tool: "read_signal", text: "Sentry: 8 open errors, flat", reason: "Is production burning too?" }] },
+        { area: "quality", kind: "unblock", title: "A new crash hit 331 users overnight", why: "TypeError: cart.total is undefined, 2,180 events since last night.",
+          card: "Chase down the checkout crash", because: "331 people hit it overnight; nothing else is close.", cleared: "Crash gone: 0 events in the last hour.",
+          reads: [{ tool: "read_signal", text: "Sentry: cart.total is undefined, 331 users, first seen 14 h ago", reason: "New spike" }] },
+        { area: "feedback", kind: "reply", title: "23 people wrote in, no reply", why: "Oldest has waited 4 days; 9 are about CSV export.",
+          card: "Answer the people who wrote in", because: "23 customers waiting, oldest 4 days.", cleared: "Inbox answered. Oldest wait now 2 h.",
+          reads: [{ tool: "read_signal", text: "Inbox: 23 unanswered, oldest 96 h", reason: "Customers waiting" }, { tool: "read_signal", text: "PostHog: 420 a day, steady", reason: "Is usage the bigger problem?" }] },
+        { area: "users", kind: "input", title: "Saved cards: 3 of 420 used it", why: "It shipped 14 days ago and almost nobody has found it.",
+          card: "Tell people about saved cards", because: "3 of 420 people found it in two weeks.", cleared: "62 people used saved cards today.",
+          reads: [{ tool: "read_signal", text: "PostHog: saved_card_used 3 users in 14 days", reason: "Shipped but unused" }] },
+      ],
+    },
   },
   // A busy morning: issues land faster than one builder can take them, so work waits on it and a card offers a
   // second builder (docs/GAMEPLAY-PICKS.md r5-second).
@@ -356,6 +420,24 @@ export const SCENARIOS = {
     ],
   },
   // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
+  // The bottleneck brain (docs/BRAIN.md): the factory runs, and the one thing holding you back shows up where it lives in
+  // the shaft, piling up until you act on its card. ?source=sim&scenario=bottleneck
+  bottleneck: {
+    ores: [
+      // every source the brain reads is plugged in, so each pile lands on a live mine
+      { at: 2, title: "TypeError: cart.total is undefined", kind: "bug", district: "web", source: "sentry", users: 230 },
+      { at: 9, title: "Email: dark mode, please", kind: "feature", district: "web", source: "inbox", reporter: "sam@example.com" },
+      { at: 16, title: "Pricing page: nobody clicks Start", kind: "feature", district: "web", source: "posthog" },
+      { at: 24, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
+    ],
+    pileups: [
+      { area: "quality", signal: "sentry:errors_piling:repo", title: "Errors are piling up", why: "14 checkout errors hit 230 users this week, none triaged.", unlock: "Triage the 14 new errors", because: "14 errors, 230 users, none triaged yet.", kind: "verify" },
+      { area: "speed", signal: "ci:ci_slow:repo", title: "CI is clogging the line", why: "CI went from 6 to 14 min, and every PR waits on it.", unlock: "Cache installs in CI", because: "Runs take 14 min, up from 6 last week.", kind: "automate" },
+      { area: "feedback", signal: "feedback:feedback_unanswered:repo", title: "People wrote in, nobody answered", why: "11 people wrote this week and 9 got no reply.", unlock: "Reply to the 9 waiting", because: "9 of 11 messages this week have no reply.", kind: "reply" },
+      { area: "users", signal: "posthog:usage_flat:repo", title: "Nobody is using what ships", why: "You shipped 6 PRs this week; daily users stayed at 3.", unlock: "Ask 5 users what they need", because: "6 PRs shipped, daily users flat at 3.", kind: "input" },
+      { area: "ship", signal: "repo:prs_stale:repo", title: "PRs are going stale", why: "4 PRs have waited 3+ days to merge.", unlock: "Review the oldest PR", because: "4 PRs waiting, the oldest for 3 days.", kind: "review" },
+    ],
+  },
   checkin: {
     districts: SHOP_DISTRICTS,
     harness: "claude_code",
@@ -430,6 +512,16 @@ export const SCENARIOS = {
     intro: true,
     ores: [],
   },
+  // Build as you go (docs/GAMEPLAY-PICKS.md, web/src/buildout/CONTRACT.md). Nothing exists until the player builds it
+  // with station_action("buildout", step), and one guided issue rides the line as it goes up: plan, wait for
+  // Continue, build, CI, wait for the pad, wait for the hold. The coach card does the asking, so no moves
+  // until the first rocket; after that it's the normal demo shop.
+  buildout: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    buildout: true,
+    ores: [],
+  },
 } satisfies Record<string, Scenario>;
 
 // The tour's ore, round and round: mostly docs, so a docs permit visibly drains the pile.
@@ -459,6 +551,16 @@ const INTRO_SENTRY: Omit<Ore, "at">[] = [
 const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at most this many
 
 export type ScenarioName = keyof typeof SCENARIOS;
+
+// Build as you go (web/src/buildout/CONTRACT.md): the steps the sim builds, in journey order. Building one builds
+// anything missing before it, so a skipped beat never strands the line. The coach card (ui/Buildout.tsx) sends
+// connect_source github for the tunnel, station_action("buildout", step) for boiler, builder, issue and planner (the
+// plan's Continue), and launch_pr for the hold. "checks" builds itself when the guided PR opens, the launch pad when
+// it passes CI. station_action("buildout", "all") skips ahead to the whole starter line.
+type BuildoutStep = Exclude<StepId, "build">;
+const BUILDOUT_ORDER: BuildoutStep[] = ["tunnel", "boiler", "builder", "issue", "planner", "checks", "launch"];
+const BUILDOUT_ISSUE = { number: 1, title: STARTER_ISSUE.title, kind: "cleanup", district: "docs" } as const;
+const BUILDOUT_PLAN = ["Read the README and package scripts", 'Add a "Run it locally" section: install, env, dev server', "Check the commands run on a clean clone"];
 
 const SOLAR_NAME: Partial<Record<Harness, string>> = { claude_code: "Claude", codex: "ChatGPT" };
 const GEO_PLANT = "geo-local"; // the runner's local model, same id the live server uses
@@ -544,7 +646,7 @@ function initialState(sc: Scenario): FactoryState {
   // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
   // and the starter factory is built only when the player says yes.
   const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
-  return {
+  const state: FactoryState = {
     repo: sc.districts ? "sim/demo-shop" : "sim/shiptorio",
     baseBranch: "main",
     districts: sc.onboard ? [] : districts,
@@ -574,6 +676,9 @@ function initialState(sc: Scenario): FactoryState {
     // A brand-new factory has caught nothing yet, so its first second doesn't hand out "Caught it".
     stations: [...GAUNTLET, ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: sc.onboard ? 0 : g.caught, actions: g.actions })),
   };
+  // Build as you go starts on nothing at all: no rock, no power, no stations. Every piece is the player's build.
+  if (sc.buildout) Object.assign(state, { districts: [], machines: [], belts: [], power: [], stations: [], autonomy: { ...state.autonomy!, next: { ...state.autonomy!.next!, have: 0 } } });
+  return state;
 }
 
 // How many ticks an item spends in each step.
@@ -592,7 +697,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const s = initialState(sc);
   if (repo) s.repo = repo;
   // Ore ticks count from here. Onboarding holds the ore until the starter factory stands.
-  let clock0 = sc.onboard ? Infinity : 0;
+  let clock0 = sc.onboard || sc.buildout ? Infinity : 0;
+  // the build-out's first run: from empty rock to the first rocket. clock0 starts at that launch.
+  const guided = () => !!sc.buildout && clock0 === Infinity;
   let closed = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
   const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
@@ -639,7 +746,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   if (sc.waiting) (s.items.push(shippedItem(sc.waiting, opened - 20 * 60_000, "on_pad")), since.set(`pr-${sc.waiting.pr}`, 0));
   pr = Math.max(pr, ...s.items.map((i) => i.prNumber ?? 0));
 
-  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { read_feedback: "support", draft_customer_reply: "support", triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth" };
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { read_feedback: "support", draft_customer_reply: "support", triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth", diagnose: "diagnose" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
@@ -695,9 +802,12 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
+    if (p.holdingBack !== undefined) s.holdingBack = p.holdingBack;
     if (p.research) s.research = p.research;
     if (p.support) s.support = p.support;
     if (p.experiments) s.experiments = p.experiments;
+    if (p.goals) s.goals = p.goals;
+    if (p.goal !== undefined) s.goal = p.goal;
     emit({ type: "patch", patch: { ...p, tick: s.tick } });
   };
 
@@ -714,7 +824,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "deck", deck: s.deck });
   };
   const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void): string => {
-    if (sc.intro) return ""; // the tour's own cards do the asking
+    if (sc.intro || guided()) return ""; // the tour's (or the build-out coach's) own cards do the asking
     const m: Move = { ...move, id: `move-${++seq}`, createdAt: Date.now() };
     onChoose.set(m.id, then);
     if (s.move) pending.push(m);
@@ -752,8 +862,18 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     pull(moveId, s.deck && s.deck.length > 1 ? 0 : 600);
     if (optionId) then(optionId);
   };
-  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in).
+  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in),
+  // unless the card parks itself on Later (the brain's unlock cards): then it leaves the deck.
+  const onLater = new Map<string, () => void>();
   const defer = (moveId: string) => {
+    const park = onLater.get(moveId);
+    if (park) {
+      onLater.delete(moveId);
+      onChoose.delete(moveId);
+      emit({ type: "move_resolved", moveId, optionId: "later", actor: "player" });
+      pull(moveId, 0);
+      return park();
+    }
     const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
     if (!m) return;
     pull(moveId, 0);
@@ -806,7 +926,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         focus: asm?.id,
         itemId: item.id,
         options: [
-          { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: item.id, machineId: asm?.id }, reason: "highest value on the floor" }] },
+          { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: item.id, machineId: asm?.id }, reason: "It's the most useful thing waiting." }] },
           { id: "skip", label: "Not now", recommended: false, actions: [] },
         ],
       },
@@ -827,15 +947,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const users = item.customer?.usersAffected;
     propose(
       {
-        title: "Bottleneck: launch pad",
-        why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : `PR #${item.prNumber} passed the gauntlet: ${item.title}`,
+        title: `Launch #${item.prNumber}: ${item.title}`, // same card the live gauntlet deals (server/src/gauntlet.ts)
+        why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : "Tested, proven and reviewed. Hold to launch it.",
         stage: "pad",
         kind: "ship",
         focus: "gate-1",
         evidence: lineNow().filter((g) => g.kind !== "merge").map((g) => ({ station: g.name, ok: true })),
         itemId: item.id,
         options: [
-          { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "green and on the pad" }] },
+          { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "Every check passed, so it's safe to ship." }] },
           { id: "later", label: "Later", recommended: false, actions: [] },
         ],
       },
@@ -856,7 +976,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         focus: "ore-inbox",
         itemId: item.id,
         options: [
-          { id: "send", label: "Send", recommended: true, actions: [{ tool: "send_customer_reply", args: { to }, reason: "the fix shipped" }] },
+          { id: "send", label: "Send", recommended: true, actions: [{ tool: "send_customer_reply", args: { to }, reason: "The fix is live, so they'll want to know." }] },
           { id: "skip", label: "Don't send", recommended: false, actions: [] },
         ],
       },
@@ -1023,7 +1143,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           apply({ items: [{ ...next, state: "queued" }] });
           log("info", `Splitter sorted "${item.title}" → ${item.district}`, item.id);
           routeItem(item);
-          if (asks.has(item.id)) {
+          if (guided() && item.id === byTitle.get(BUILDOUT_ISSUE.title) && !built.has("planner")) {
+            held.add(item.id);
+            spark({ tool: "plan", text: `Plan for #${BUILDOUT_ISSUE.number}: ${BUILDOUT_PLAN.length} steps. Waiting on your Continue`, reason: BUILDOUT_PLAN.join("; ") }, { itemId: item.id, target: "splitter-1" });
+          } else if (asks.has(item.id)) {
             held.add(item.id);
             askToBuild(item);
           }
@@ -1046,6 +1169,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         case "working": {
           const prNumber = item.prNumber ?? ++pr;
           builtBy.set(item.id, item.machineId);
+          if (sc.buildout) buildStep("checks"); // the CI station rises when the first PR opens
           apply({
             items: [{ ...next, state: "inspecting", machineId: GAUNTLET[0].id, prNumber, prUrl: `https://github.com/${s.repo}/pull/${prNumber}` }],
             machines: setMachine(item.machineId, "idle"),
@@ -1079,8 +1203,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             apply({ items: [{ ...next, machineId: nextSt.id }] });
             log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${lc(nextSt.name)}`, item.id);
           } else {
+            if (sc.buildout) buildStep("launch"); // the merge gate and pad rise for the first PR that clears the line
             apply({ items: [{ ...next, state: "on_pad", machineId: "gate-1", failure: undefined }] });
-            stat("gate-1").lastLog = { who: "Gate", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
+            stat("gate-1").lastLog = { who: "Gate", text: `#${item.prNumber} is ready. ${line.some((g) => g.kind === "verify") ? "CI green, verified, review approved." : "CI green."}`, ok: true };
             log("success", `PR #${item.prNumber} cleared the gauntlet. Waiting at the merge gate.`, item.id);
             if (!autoLaunch) askToLaunch(next);
           }
@@ -1173,10 +1298,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const checks = researchedChecks(s)
       .filter((id) => s.machines.some((m) => m.id === checkStationId(id)))
       .map((id): StationDef => ({ id: checkStationId(id), kind: "custom", name: techById(id)!.name, caught: 0, actions: [] }));
-    return [GAUNTLET[0], ...checks, ...GAUNTLET.slice(1)];
+    const all = [GAUNTLET[0], ...checks, ...GAUNTLET.slice(1)];
+    // build-out: only the stations the player has built are on the line
+    return sc.buildout ? all.filter((g) => s.machines.some((m) => m.id === g.id)) : all;
   }
   function stationsNow(): Station[] {
-    return [...lineNow(), ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => {
+    const orbit = !sc.buildout || s.machines.some((m) => m.id === ORBIT.id) ? [ORBIT] : [];
+    return [...lineNow(), ...orbit, ...(sc.growth ? [MEASURE] : [])].map((g) => {
       const v = stat(g.id);
       const here = g.kind === "measure" ? s.items.filter((i) => s.experiments?.some((e) => e.itemId === i.id && e.state === "measuring")) : g.kind === "orbit" ? s.items.filter((i) => watching.has(i.id)) : s.items.filter((i) => i.machineId === g.id && (i.state === "inspecting" || i.state === "on_pad"));
       const oldest = Math.max(0, ...here.map((i) => s.tick - (since.get(i.id) ?? s.tick)));
@@ -1189,7 +1317,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         wip: here.length,
         oldestWaitMs: here.length ? oldest * TICK_MS : undefined,
         passRate: runs ? v.passed / runs : undefined,
-        caughtThisWeek: g.caught + (v.caught ?? 0),
+        caughtThisWeek: (sc.buildout ? 0 : g.caught) + (v.caught ?? 0),
         lastLog: v.lastLog,
         actions: g.actions,
       };
@@ -1236,6 +1364,68 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     }
   };
 
+  // ---------- build as you go (?buildout=1) ----------
+
+  // What each build puts on the floor, taken from the full starter line so ids and spots match every other scenario.
+  const full = initialState({ ...sc, buildout: false });
+  const piece = (id: string) => full.machines.find((m) => m.id === id)!;
+  const BUILDS: Record<BuildoutStep, { machines: string[]; belts: [string, string][]; line: string }> = {
+    tunnel: { machines: ["ore-issues"], belts: [], line: "GitHub tunnel open. Work comes up from your repo here" },
+    boiler: { machines: ["steam-spark", `solar-${sc.harness ?? "claude_code"}`], belts: [], line: "Boiler lit. Your AI is the power" },
+    builder: { machines: ["assembler-1"], belts: [], line: "Builder online. It writes the code, using your AI" },
+    // the planner desk rises as the ore reaches it, so the plan is on the card before Continue
+    issue: { machines: ["splitter-1"], belts: [["ore-issues", "splitter-1"], ["splitter-1", "assembler-1"]], line: `Issue #${BUILDOUT_ISSUE.number} is on the cart: ${BUILDOUT_ISSUE.title}` },
+    planner: { machines: [], belts: [], line: `Plan approved. Building #${BUILDOUT_ISSUE.number} now` },
+    checks: { machines: ["ci-1"], belts: [["assembler-1", "ci-1"]], line: "Checks online. Every change passes them before it ships" },
+    launch: { machines: ["gate-1", "launch-pad"], belts: [["ci-1", "gate-1"], ["gate-1", "launch-pad"]], line: "Launch pad ready. Hold to launch" },
+  };
+  const built = new Set<BuildoutStep>();
+  const buildStep = (step: BuildoutStep) => {
+    if (built.has(step)) return;
+    // anything before it goes up first, so the order always holds
+    for (const before of BUILDOUT_ORDER.slice(0, BUILDOUT_ORDER.indexOf(step))) buildStep(before);
+    built.add(step);
+    const b = BUILDS[step];
+    const machines = b.machines.filter((id) => !s.machines.some((m) => m.id === id)).map(piece);
+    const belts = b.belts.filter(([from, to]) => !s.belts.some((x) => x.from === from && x.to === to)).map(([from, to]): Belt => ({ id: `belt-${from}-${to}`, from, to }));
+    if (step === "tunnel") {
+      // the repo is plugged in: its folders rise, and the github source reads connected (journey.ts tunnel.done)
+      s.sources = [...(s.sources ?? []).filter((x) => x.kind !== "github"), { kind: "github", state: "connected", detail: `${s.repo} (sim)`, eventsToday: 0, setup: { steps: [] } }];
+      apply({ districts: full.districts });
+      emit({ type: "patch", patch: { sources: s.sources } });
+    }
+    if (step === "boiler") {
+      s.power = full.power;
+      emit({ type: "patch", patch: { power: s.power } });
+    }
+    apply({ machines, belts });
+    if (step === "issue") {
+      arrive({ at: 0, ...BUILDOUT_ISSUE }, Date.now());
+      const id = byTitle.get(BUILDOUT_ISSUE.title)!;
+      const it = s.items.find((i) => i.id === id)!;
+      apply({ items: [{ ...it, url: `https://github.com/${s.repo}/issues/${BUILDOUT_ISSUE.number}`, body: BUILDOUT_PLAN.map((p, n) => `${n + 1}. ${p}`).join("\n") }] });
+    }
+    if (step === "planner") {
+      // the plan's Continue: the guided issue goes to the builder
+      // (a Continue that beats the ore to the desk counts too: the ore case won't hold it)
+      const id = byTitle.get(BUILDOUT_ISSUE.title);
+      if (id) held.delete(id);
+      spark({ tool: "start_job", text: b.line, reason: "you said continue" }, { itemId: id, target: "assembler-1", approvedBy: "player" });
+      approvedAsIs();
+      return;
+    }
+    log("success", b.line);
+  };
+  const buildout = (action: string) => {
+    if ((BUILDOUT_ORDER as string[]).includes(action)) return buildStep(action as BuildoutStep);
+    if (action === "all") {
+      // skip ahead (the repo swap, a dev shortcut): the whole starter line, plugged in, and the guided run ends
+      BUILDOUT_ORDER.forEach(buildStep);
+      apply({ machines: full.machines.filter((m) => !s.machines.some((x) => x.id === m.id)), belts: full.belts.filter((b) => !s.belts.some((x) => x.from === b.from && x.to === b.to)) });
+      if (guided()) clock0 = s.tick;
+    }
+  };
+
   // A comeback in orbit: scar it, send it back for a fresh PR, take the lane's launch permit away.
   const comeBack = (id: string) => {
     trips.delete(id);
@@ -1273,6 +1463,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
     if (s.brain?.score?.open.includes(item.id)) score((sc) => ({ ...sc, shipped: sc.shipped + 1, open: sc.open.filter((x) => x !== item.id) }));
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
+    if (guided()) {
+      clock0 = s.tick; // the first run is done: free look, counters, and the planner deals cards from here
+      log("success", "Your factory shipped its first PR. Look around");
+    }
     // any card still asking about this PR is answered now; a stale "Launch #N" would strand the player (#105)
     for (const m of [s.move, ...pending].filter((x) => x?.itemId === item.id)) {
       onChoose.delete(m!.id);
@@ -1293,12 +1487,89 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
     if (item.source === "sentry") log("success", `Biters cleared: Sentry is quiet on /${item.district}`, item.id);
     for (const to of item.customer?.reporters ?? []) askToReply(item, to);
+    offerGoal();
     // the automated share counts rockets that launched on a permit
     const a = s.autonomy!;
     const launches = (a.launches ?? 0) + 1;
     const automated = (Math.round((a.automated ?? 0) * (a.launches ?? 0)) + (alone ? 1 : 0)) / launches;
     apply({ autonomy: { ...a, launches, automated, next: a.next?.level === "build" ? { ...a.next, have: a.next.have + 1 } : a.next } });
   };
+
+  // ---------- player goals (shared/src/goals.ts) ----------
+
+  // Earned after the first rocket: one card with the factory's guess, the same card the live server deals.
+  let goalAsked = false;
+  const setGoals = (goals: Goals) => {
+    apply({ goals, goal: goalText(goals) });
+    log("success", `Goal set: ${goals.picks.map((id) => GOALS[id].label).join(", ")}. The factory hunts for what blocks it.`);
+  };
+  const offerGoal = () => {
+    if (goalAsked || sc.intro || s.goals?.by === "player") return;
+    const guesses = inferGoals({ readme: SIM_README, sources: (s.sources ?? []).filter((x) => x.state === "connected").map((x) => x.kind) });
+    const move = goalMove(s, s.goals, guesses, Date.now());
+    if (!move) return;
+    goalAsked = true;
+    apply({ goals: { picks: guesses.slice(0, 3).map((g) => g.id), by: "inferred", at: Date.now(), why: guesses[0].why } });
+    const { id: _id, createdAt: _at, ...card } = move;
+    propose(card, (optionId) => {
+      const goals = goalsFromPick(move.options.find((o) => o.id === optionId)?.actions[0]?.args.picks, Date.now(), s.metrics?.rockets);
+      if (goals) setGoals(goals);
+    });
+  };
+  // ---------- the bottleneck brain (docs/BRAIN.md) ----------
+
+  // One pick at a time: it gets heavier while it waits (the pile on the map grows), Continue works it off until it
+  // clears, Later parks it. Then the brain names the next one.
+  const brainSteps = sc.pileups ?? [];
+  let brainAt = 0;
+  const holding = (h: HoldingBack | null) => apply({ holdingBack: h });
+  const brainNext = (ms: number) => brainSteps.length && later(ms, () => brainPick(brainSteps[brainAt++ % brainSteps.length]));
+  const brainPick = (b: BrainStep) => {
+    let h: HoldingBack = { id: b.signal, area: b.area, title: b.title, why: b.why, signalIds: [b.signal], confidence: 0.8, by: "spark", decidedAt: Date.now(), severity: 0.45 };
+    let working = false;
+    holding(h);
+    spark({ tool: "diagnose", text: `${b.title}. ${b.why}`, reason: "the heaviest fresh signal, against your goal" });
+    const worse = () => later(3000, () => {
+      if (working || s.holdingBack?.id !== h.id) return;
+      if (h.severity < 1) holding((h = { ...h, severity: Math.min(1, h.severity + 0.07) }));
+      worse();
+    });
+    worse();
+    const ease = () => later(1200, () => {
+      const severity = h.severity - 0.15;
+      if (severity < 0.35) {
+        holding(null);
+        log("info", `Cleared: ${b.title.toLowerCase()}`);
+        brainNext(4000);
+      } else {
+        holding((h = { ...h, severity }));
+        ease();
+      }
+    });
+    propose(
+      {
+        title: b.unlock,
+        why: b.why,
+        because: b.because,
+        kind: b.kind,
+        attention: "suggest",
+        options: [
+          { id: "continue", label: "Continue", recommended: true, actions: [] },
+          { id: "later", label: "Later", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt === "continue") {
+          working = true;
+          ease();
+        } else {
+          holding(null);
+          brainNext(4000);
+        }
+      },
+    );
+  };
+  brainNext(3000);
 
   // ---------- the growth loop (shared/src/growth.ts) ----------
 
@@ -1514,6 +1785,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // taking the job on, logged with undo, the way a real station action would be queued.
   const stationAction = (stationId: string, action: string) => {
     if (sc.intro && stationId === "intro") return introCue(action);
+    if (sc.buildout && stationId === "buildout") return buildout(action);
     const def = [...lineNow(), ORBIT].find((g) => g.id === stationId);
     const machine = s.machines.find((m) => m.id === stationId);
     const label = def?.actions.find((a) => a.id === action)?.label ?? actionLabel(action) ?? action;
@@ -1564,14 +1836,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: "Plug in power to start building",
-        why: "The repo's read and the first fix is lined up, but nothing can build yet. Your own subscriptions power the assemblers.",
+        // The demo shop can't really sign in to anything, so it says so: on your own repo this is your real subscription.
+        why: "The repo's read and the first fix is lined up, but nothing can build yet. On your own repo, your Claude or ChatGPT subscription powers the builders. Here in the demo, just pick one.",
         stage: "resources",
         kind: "input",
         focus: "assembler-1",
         grows: ["+1 POWER PLANT", "ASSEMBLERS ON"],
         options: [
-          { id: "claude_code", label: "Sign in with Claude", recommended: true, actions: [] },
-          { id: "codex", label: "Sign in with ChatGPT", recommended: false, actions: [] },
+          { id: "claude_code", label: "Use Claude (demo)", recommended: true, actions: [] },
+          { id: "codex", label: "Use ChatGPT (demo)", recommended: false, actions: [] },
         ],
       },
       (opt) => plugIn(opt === "codex" ? "codex" : "claude_code"),
@@ -1581,6 +1854,39 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // ---------- the check-in deck ----------
 
   // A morning's worth of Next Moves, dealt at once. Mostly loop-growers: checks, sources, autonomy.
+  // ---------- the bottleneck brain (docs/BRAIN.md) ----------
+
+  // Reads the signals, names the one bottleneck, deals one Continue/Later card. Continue runs the unlock and
+  // the next diagnosis waits until it clears; Later parks it and the brain moves on, never re-raising it.
+  const brainBeats = [...(sc.brain?.beats ?? [])];
+  const nextDiagnosis = () => {
+    const beat = brainBeats.shift();
+    if (!beat) {
+      spark({ tool: "diagnose", text: "Nothing worth a card right now", outcome: "Quiet: nothing worth a card", reason: sc.brain!.quiet });
+      return;
+    }
+    beat.reads.forEach((r, n) => later(TICK_MS * n, () => spark(r)));
+    later(TICK_MS * beat.reads.length, () => {
+      spark({ tool: "diagnose", text: `Bottleneck: ${beat.title}`, outcome: `${beat.area}: ${beat.title} → ${beat.card}`, reason: beat.because });
+      const park = () => {
+        log("info", `Parked "${beat.card}" for a day. It comes back only if it gets worse.`);
+        later(TICK_MS * 2, nextDiagnosis);
+      };
+      const id = propose({ title: beat.card, why: beat.why, because: beat.because, kind: beat.kind, attention: "suggest",
+        options: [{ id: "continue", label: "Continue", recommended: true, actions: [] }, { id: "later", label: "Later", recommended: false, actions: [] }] },
+      (choice) => {
+        onLater.delete(id);
+        if (choice !== "continue") return park();
+        log("info", `On it: ${beat.card}`);
+        later(TICK_MS * 4, () => {
+          log("success", `Unlocked: ${beat.cleared}`);
+          later(TICK_MS * 2, nextDiagnosis);
+        });
+      });
+      onLater.set(id, park);
+    });
+  };
+
   const dealCheckIn = () => {
     const yes = (text: string, tool: string, target: string, extra?: () => void) => () => {
       spark({ tool, text, reason: "you swiped right" }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${text.toLowerCase()}`) });
@@ -1697,7 +2003,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         why: `A splitter, one assembler, an inspector and a launch pad, with belts. First job: "${first.title}".`,
         stage: "build",
         options: [
-          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "smallest line that can ship a PR" }] },
+          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "The smallest setup that can ship something." }] },
           { id: "later", label: "Not yet", recommended: false, actions: [] },
         ],
       },
@@ -1720,6 +2026,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   };
 
   function connectMine(kind: string) {
+          if (sc.buildout && kind === "github") return buildStep("tunnel");
           // sim: the empty mine fills in where the map showed it, and feeds the splitter
           if (kind !== "sentry" && kind !== "posthog" && kind !== "email") return;
           const id = kind === "email" ? "ore-inbox" : `ore-${kind}`;
@@ -1742,11 +2049,14 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const onPad = s.items.find((i) => i.state === "on_pad");
   if (onPad) askToLaunch(onPad);
   if (sc.checkin) later(TICK_MS, dealCheckIn);
+  if (sc.brain) later(TICK_MS * 3, nextDiagnosis);
+  // a player who already has rockets but no goal gets the goal card soon after they come back, like the live tick
+  if ((sc.rockets ?? 0) > 0) later(TICK_MS * 4, offerGoal);
   if (sc.onboard) later(TICK_MS, scan);
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, tickMs);
 
-  return {
+  const src: Source = {
     send(msg: WebToServer) {
       if (closed) return;
       switch (msg.type) {
@@ -1798,6 +2108,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           s.goal = msg.text;
           apply({ goal: msg.text });
           break;
+        case "set_goals": {
+          const goals = goalsFromPick(msg.picks, Date.now(), s.metrics?.rockets);
+          if (!goals) break;
+          for (const m of [s.move, ...pending].filter((x) => x?.kind === "automate" && x.grows?.includes("+1 GOAL"))) { onChoose.delete(m!.id); pull(m!.id, 0); }
+          setGoals(goals);
+          break;
+        }
         case "place_machine":
           apply({
             machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, district: msg.district, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
@@ -1850,4 +2167,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       onStatus("offline");
     },
   };
+  // build-out e2e and screenshots (tests/e2e/buildout.pw.ts): drive the demo shop without the coach card
+  if (sc.buildout && typeof window !== "undefined") (window as unknown as { __shipSim?: Source }).__shipSim = src;
+  return src;
 }
