@@ -41,7 +41,8 @@ execFileSync("npx", ["wrangler", "deploy", "--dry-run", "--outdir", bundle], { c
 
 const { workerOptions } = wrangler.unstable_getMiniflareWorkerOptions(join(server, "wrangler.jsonc"));
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
-let mf, browser, context;
+let mf, browser, context, heartbeatTimer, heartbeatPending;
+const runnerErrors = [];
 try {
 const spark = sparkStub();
 const stub = githubStub({ origin, webhookSecret: WEBHOOK_SECRET, worker: (url, init) => mf.dispatchFetch(url, init) });
@@ -146,8 +147,17 @@ async function api(path, body, token) {
   return response.json();
 }
 async function clickMove(name) {
-  // Use the visible Next Move; the tray and check-in deck are alternate views of the same card.
-  await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: 45000 });
+  const card = await until(`decision option ${name}`, () => factoryState.deck?.find(m => m.options.some(o => name.test(o.label))));
+  if (factoryState.move?.id === card.id) {
+    await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: 45000 });
+    return;
+  }
+  await page.getByRole("button", { name: /^Activity, / }).click();
+  const tray = page.getByRole("complementary", { name: "Activity", exact: true });
+  const visibleCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: card.title }) });
+  await visibleCard.getByRole("button", { name: card.title }).click();
+  await visibleCard.getByRole("button", { name }).click();
+  await page.keyboard.press("Escape");
 }
 let runnerToken, job;
 const t0 = Date.now();
@@ -235,13 +245,20 @@ try {
     const paired = await api("/api/runner-device/poll", { code: device.code, secret: device.secret });
     runnerToken = paired.token;
     assert.ok(runnerToken, "Device approval must deliver a runner token");
+    // A real idle runner keeps advertising presence while the player reads the plan.
+    // Slow software-rendered CI must not accidentally simulate an unplugged runner.
+    heartbeatTimer = setInterval(() => {
+      if (heartbeatPending) return;
+      heartbeatPending = api(`/api/runner/${stub.state.repo}/heartbeat`, { harnesses: ["codex"] }, runnerToken)
+        .catch(error => runnerErrors.push(String(error))).finally(() => { heartbeatPending = null; });
+    }, 10000);
     assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null);
     // Return to the floor after the onboarding Power sheet.
     await page.keyboard.press("Escape");
   });
   await step("Spark proposes a plan; no build before approval", async () => {
     await clickMove(/Plan with Codex/i);
-    await until("Spark plan approval", () => factoryState.move?.options?.some(o => o.id === "approve"));
+    await until("Spark plan approval", () => factoryState.deck?.some(m => m.options?.some(o => o.id === "approve")));
     assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null);
     assert.equal(stub.state.pulls.length, 0);
     await clickMove(/Approve and build with Codex/i);
@@ -304,6 +321,7 @@ try {
     assert.deepEqual(stub.state.unexpected, []);
     assert.deepEqual(spark.unexpected, []);
     assert.deepEqual(apiErrors, []);
+    assert.deepEqual(runnerErrors, []);
     assert.deepEqual(consoleErrors, []);
     for (const kind of ["triage", "scope", "plan", "review"]) assert.ok(spark.calls.includes(kind), kind);
   });
@@ -321,12 +339,14 @@ try {
   console.log(JSON.stringify({ db: report.db, page: report.page }, null, 1));
 }
 
-Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, apiErrors, repoPolls, expectedAnonymousErrors, githubCalls: stub.state.calls, sparkCalls: spark.calls, unexpected: stub.state.unexpected, sparkUnexpected: spark.unexpected, factoryState, out });
+Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, apiErrors, repoPolls, expectedAnonymousErrors, runnerErrors, githubCalls: stub.state.calls, sparkCalls: spark.calls, unexpected: stub.state.unexpected, sparkUnexpected: spark.unexpected, factoryState, out });
 writeFileSync(join(out, "timings.json"), JSON.stringify(report, null, 2));
 for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.name.padEnd(52)} ${(s.ms / 1000).toFixed(1)}s${s.error ? `  ${s.error}` : ""}`);
 console.log(`total ${(report.totalMs / 1000).toFixed(1)}s · screenshots and timings.json in ${out}`);
 process.exitCode = failed ? 1 : 0;
 } finally {
+  clearInterval(heartbeatTimer);
+  await heartbeatPending;
   if (context) await context.tracing.stop({ path: join(out, "trace.zip") }).catch(() => {});
   await browser?.close();
   await mf?.dispose();
