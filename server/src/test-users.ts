@@ -71,10 +71,14 @@ export function testUserRoutes(app: Hono<any>): void {
     const p = user?.login as TestPersona;
     if (!user || !TEST_PERSONAS.includes(p) || user.id !== personaId(p)) return c.json({ error: "Invalid test identity" }, 403);
     const repo = personaRepo(p);
-    if (url.pathname === "/api/repos") return c.json({ repos: p === "test-newbie" ? [] : [{ full_name: repo, fullName: repo, default_branch: "main", installation_id: 9000 + Math.abs(user.id), blurb: "Isolated GitHub fixture" }] });
+    if (url.pathname === "/api/repos") {
+      const owned = await env.DB.prepare("SELECT installation_id FROM user_repos WHERE user_id=? AND repo=?").bind(user.id, repo).first<{ installation_id: number }>();
+      return c.json({ repos: owned ? [{ full_name: repo, fullName: repo, default_branch: "main", installation_id: owned.installation_id, blurb: "Isolated GitHub fixture" }] : [] });
+    }
     const match = url.pathname.match(/^\/api\/repos\/([^/]+\/[^/]+)(?:\/|$)/);
-    if (match) {
-      if (match[1] !== repo || /\/runner(?:\/|$)/.test(url.pathname)) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
+    const sourceRead = ["/api/setup/status", "/api/sources"].includes(url.pathname) && c.req.method === "GET";
+    if (match || sourceRead) {
+      if ((match?.[1] ?? url.searchParams.get("repo")) !== repo || /\/runner(?:\/|$)/.test(url.pathname)) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
       // The local fixture service re-enters this same real Worker after installing the outbound
       // GitHub/Spark stubs. A flag alone cannot open this route: the service AND private hop key
       // are required. Remote staging always goes through its separate isolated service.

@@ -1,0 +1,74 @@
+// A player, not an admin: navigation and visible buttons only. Fixture setup is separate.
+import { chromium } from "@playwright/test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { resolve, join } from "node:path";
+import { localFactory } from "./local.mjs";
+const args = process.argv.slice(2).filter(x => x !== "--");
+const option = (key, fallback) => { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; };
+const persona = option("--persona", "test-newbie");
+if (!/^test-(newbie|guest|midgame|broke|blocked)$/.test(persona)) throw new Error("Unknown persona");
+const url = new URL(option("--url", "http://localhost:8809"));
+if (!(url.origin === "https://shiptorio.dev" || ["localhost", "127.0.0.1"].includes(url.hostname))) throw new Error("Bot refuses production and unknown hosts");
+const out = resolve(option("--out", `playtest/out/${new Date().toISOString().replace(/[:.]/g, "-")}-${persona}`));
+await mkdir(out, { recursive: true });
+const local = ["localhost", "127.0.0.1"].includes(url.hostname);
+const steps = [], failures = [];
+let fixture, browser;
+try {
+  if (local) fixture = await localFactory(persona, url.origin);
+  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"] });
+  for (const width of [390, 1280]) {
+    const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 } });
+    if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
+    const page = await context.newPage();
+    page.on("pageerror", error => failures.push(`JS: ${error.message}`));
+    page.on("console", msg => { if (msg.type() === "error") failures.push(`Console: ${msg.text()}`); });
+    page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
+    let lastChange = Date.now(), previous = "", number = 0;
+    const capture = async label => {
+      const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
+      await page.screenshot({ path: join(out, file) }); steps.push({ width, label, file, url: page.url() });
+    };
+    const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
+    if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
+    if (fixture) await fixture.seed();
+    await capture("signed-in");
+    const deadline = Date.now() + Number(option("--duration", "90")) * 1000;
+    while (Date.now() < deadline) {
+      const text = await page.locator("body").innerText();
+      const fingerprint = createHash("sha256").update(text).digest("hex");
+      if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
+      const visible = async locator => (await locator.count()) && await locator.first().isVisible();
+      const launch = page.locator("button.alaunch");
+      const go = page.locator(".acard button.ago");
+      const later = page.locator(".acard button.alater");
+      const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
+      const repo = page.getByRole("button", { name: new RegExp(`test-fixture/${persona}`) });
+      const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
+      if (await visible(launch)) {
+        await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
+      } else if (await visible(play)) { await play.first().click(); await capture("play"); }
+      else if (await visible(repo)) { await repo.first().click(); await capture("open-repo"); }
+      else if (fixture && await visible(install)) {
+        const next = context.waitForEvent("page"); await install.first().click(); const tab = await next;
+        await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
+      } else if (await visible(go)) { await go.first().click(); await capture("continue"); }
+      else if (await visible(later)) { await later.first().click(); await capture("later"); }
+      else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
+      await page.waitForTimeout(1000);
+    }
+    await capture("final"); await context.close();
+  }
+  if (fixture?.stub.state.unexpected.length) failures.push(...fixture.stub.state.unexpected.map(p => `Unexpected provider request: ${p}`));
+} catch (error) { failures.push(String(error)); }
+finally {
+  await browser?.close(); await fixture?.dispose();
+  const unique = [...new Set(failures)];
+  const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
+  const report = { persona, origin: url.origin, fixture: local, steps, failures: unique, fingerprint, passed: !unique.length };
+  await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
+  await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
+  console.log(JSON.stringify({ report: join(out, "report.md"), failures: unique.length, fingerprint }));
+  if (unique.length) process.exitCode = 1;
+}
