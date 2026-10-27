@@ -21,6 +21,8 @@ export interface EvalCase {
   /** An acceptable unlock mentions one of these moves. Playbook ids (BrainUnlock.play) join this once unlocks.ts lands. */
   unlock?: RegExp;
   plays?: string[];
+  /** The PR that adds a kind this case uses to SIGNAL_KINDS. Until it lands the case is skipped, not failed. */
+  needs?: string;
   why: string; // why that's the answer, for whoever argues with the grade
 }
 
@@ -254,7 +256,7 @@ export const CASES: EvalCase[] = [
     id: "same-complaint", title: "14 people asked for the same missing CSV export",
     signals: humBut(sig("feedback", "same_complaint", 0.6, "14 people asked for CSV export this month.", ["14 messages tagged 'csv export'", "3 say they'll churn without it"])),
     expect: { area: "feedback", signal: "feedback:same_complaint:repo" }, alsoOk: ["users"], unlock: /CSV|export|build|fix|asked/i,
-    why: "When fourteen people ask for the same thing, that's the roadmap.",
+    why: "When fourteen people ask for the same thing, that's the roadmap. (No collector emits same_complaint yet; the case is ahead of #382.)",
   },
   {
     id: "issues-untriaged", title: "31 new issues with no labels or owner",
@@ -312,6 +314,38 @@ export const CASES: EvalCase[] = [
     signals: humBut(sig("taps", "later_streak", 0.67, "You set aside the last 4 tests cards.", ["4 Laters in a row on 'add tests' cards", "0 test cards accepted this week"])),
     expect: { area: "focus", signal: "taps:later_streak:repo" }, unlock: /stop|tune|suggest|deck|tests/i,
     why: "The deck keeps offering what the player keeps declining; ask, don't repeat.",
+  },
+  {
+    id: "sentry-missing", title: "Sentry isn't connected; nothing else is wrong",
+    signals: humBut(sig("sentry", "sentry_missing", 0.25, "Sentry isn't connected, so 0 errors are reaching the factory. Crashes only show up when someone complains.", ["Connect Sentry"]), sig("sentry", "errors_piling", 0, "No Sentry.", ["Not connected"])),
+    expect: { area: "quality", signal: "sentry:sentry_missing:repo" }, alsoOk: [null], unlock: /sentry|connect|errors/i, needs: "#383",
+    why: "A one-tap connect is worth offering when nothing else needs the player. Quiet is defensible too.",
+  },
+  {
+    id: "sentry-missing-vs-work", title: "Sentry isn't connected, but 6 PRs have been stuck for a week",
+    signals: humBut(
+      sig("sentry", "sentry_missing", 0.25, "Sentry isn't connected, so 0 errors are reaching the factory.", ["Connect Sentry"]),
+      sig("sentry", "errors_piling", 0, "No Sentry.", ["Not connected"]),
+      sig("repo", "prs_stale", 0.55, "6 PRs older than a week; 2 have merge conflicts.", ["Oldest PR 9 days", "2 merges this week (was 8)"])),
+    expect: { area: "ship", signal: "repo:prs_stale:repo" }, unlock: /rebase|conflict|close|merge|stale|land/i, needs: "#383",
+    why: "A missing source never outranks real work that's stuck.",
+  },
+  // From the feedback collector (#382): its real shapes.
+  {
+    id: "unanswered-beats-thin", title: "2 people waiting 8 days for a reply, and few people writing in",
+    signals: humBut(
+      sig("feedback", "feedback_unanswered", 0.7, "2 people waiting on a reply, the oldest for 8d.", ["#3 · waiting 8d"], { metric: { value: 2, unit: "people" } }),
+      sig("feedback", "feedback_thin", 0.36, "1 person outside the team spoke up in 14 days.", ["1 new outside issue in 14 days"], { metric: { value: 1, baseline: 2, unit: "people" } })),
+    expect: { area: "feedback", signal: "feedback:feedback_unanswered:repo" }, unlock: /repl|answer|respond|waiting/i,
+    why: "The few who did write in are waiting. Answer them before asking for more.",
+  },
+  {
+    id: "jam-beats-quiet-inbox", title: "Nobody wrote in for 14 days, but the line is jammed",
+    signals: humBut(
+      sig("feedback", "feedback_thin", 0.44, "Nobody outside the team spoke up in 14 days.", ["No new outside issues in 14 days"]),
+      sig("factory", "queue_jam", 0.6, "3 items waiting at AI review; oldest 6 h.", ["3 items at AI review", "Oldest wait 6 h"], { scope: "review" })),
+    expect: { area: "ship", signal: "factory:queue_jam:review" }, alsoOk: ["feedback"], unlock: /review|jam|clear|line|inspect/i,
+    why: "A jam on the line beats a quiet inbox: unstick what's already built first.",
   },
   // Repo flow, read through the real collector.
   ...repoCases(now => hum.map(s => s(now))),

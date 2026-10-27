@@ -5,7 +5,7 @@
 // does, minus the DO: same memory, same throttle, same rule fallback, same model call.
 
 import { Database } from "bun:sqlite";
-import { signalWeight, type BottleneckArea } from "@shiptorio/shared";
+import { SIGNAL_KINDS, signalWeight, type BottleneckArea } from "@shiptorio/shared";
 import { emptyMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory, type DiagnoseBrief, type ModelDiagnosis } from "../../src/diagnose";
 import { measuredCost, NANO_USD, type TokenUsage } from "../../src/spend";
 import type { SparkEnv } from "../../src/spark";
@@ -209,13 +209,16 @@ export function summarize(mode: string, model: string, cases: CaseResult[]): Rep
   };
 }
 
+/** A case is ready once every kind it uses is in the contract; until then it waits on `needs`. */
+export const ready = (c: EvalCase): boolean => c.signals(T0).every(s => SIGNAL_KINDS[s.source].includes(s.kind));
+
 /** Runs every case (or the ones named) through one mode. `think` undefined = the rule fallback alone. */
 export async function evaluate(opts: { mode: string; model: string; think?: Think; only?: string[] }): Promise<Report> {
   const results: CaseResult[] = [];
   let meter = zero();
   const restore = meterFetch(() => meter);
   try {
-    for (const c of CASES.filter(c => !opts.only?.length || opts.only.includes(c.id))) {
+    for (const c of CASES.filter(c => (!opts.only?.length || opts.only.includes(c.id)) && ready(c))) {
       meter = zero();
       results.push(await runCase(c, opts.think, meter));
     }
@@ -232,7 +235,8 @@ const pad = (s: string, n: number) => s.padEnd(n).slice(0, n);
 
 export function render(r: Report): string {
   const s = r.summary;
-  const lines = [`Bottleneck brain eval: ${r.mode} (${r.model}), ${s.cases} cases`, "", `${pad("case", 24)} ${pad("expected", 9)} ${pad("got", 9)} ${pad("grade", 6)} ${pad("nag", 10)} card`];
+  const waiting = CASES.filter(c => !ready(c)).map(c => `${c.id} (${c.needs ?? "?"})`);
+  const lines = [`Bottleneck brain eval: ${r.mode} (${r.model}), ${s.cases} cases${waiting.length ? `; waiting on new kinds: ${waiting.join(", ")}` : ""}`, "", `${pad("case", 24)} ${pad("expected", 9)} ${pad("got", 9)} ${pad("grade", 6)} ${pad("nag", 10)} card`];
   for (const c of r.cases) {
     const grade = c.exact ? "HIT" : c.hit ? "ok" : "MISS";
     const nag = [c.nags.quietCard && "card", c.nags.flip && "flip", c.nags.renag && "renag", c.nags.heartbeatCard && "beat"].filter(Boolean).join(",") || "-";
