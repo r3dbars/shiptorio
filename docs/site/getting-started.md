@@ -48,7 +48,7 @@ Your live map lives at `https://shiptorio.com/?source=live&repo=owner/name`.
 - **Mines** on the left produce ore: issues, Sentry errors, PostHog drops.
 - **The line** runs ore through Spark's planner, your assemblers, then the gauntlet stations.
 - **The launch pad** holds PRs that passed. A merge launches the rocket.
-- **The Next Move card** at the bottom always says what's holding the factory back and the one thing to do about it.
+- **The Needs you card** at the bottom always shows the one thing waiting on you: Later on the left, Continue on the right. To launch a PR, hold its big red button until the ring fills. See [Needs you and check-in](/docs/check-in).
 
 Tap any station on the map to see what it does, what's waiting there and what it caught this week.
 

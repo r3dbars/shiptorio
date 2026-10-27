@@ -1355,6 +1355,8 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 }
 .acard button.alaunch.down .cap::after { transform: translateY(4px); box-shadow: 0 1px 0 #4a0904, 0 2px 0 #000; }
 .acard button.alaunch .lbl { color: #ff8a73; font-size: 9px; }
+.acard button.alaunch.armed .cap { background: #ffd27a; }
+.acard button.alaunch:focus-visible { outline-offset: -4px; }
 /* More cards waiting: their edges peek out behind this one instead of a counter. */
 .acard.peek { margin-bottom: 6px; box-shadow: var(--iron-plate-shadow), 0 9px 0 -5px #2e2119, 0 11px 0 -5px #000; }
 .acard.peek2 { margin-bottom: 12px; box-shadow: var(--iron-plate-shadow), 0 9px 0 -5px #2e2119, 0 11px 0 -5px #000, 0 17px 0 -10px #221812, 0 19px 0 -10px #000; }

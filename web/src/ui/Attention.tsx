@@ -10,9 +10,9 @@ import { attentionOf, ATTENTION_RANK, continueOption, type Attention, type Move,
 import { ATTENTION, NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { because } from "./because";
 import { sound } from "../sound/engine";
+import { CONFIRM_MS, HoldGesture } from "./holdLaunch";
 
 const SWIPE_PX = 80;
-const HOLD_MS = 800;
 const LATER_ASK_MS = 4000;
 type Why = (typeof ATTENTION.why)[number]["why"];
 
@@ -146,7 +146,7 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) 
         </div>
         </div>
         {isLaunch(shown) ? (
-          <HoldLaunch label={continueOption(shown).label} onLaunch={() => go(shown)} />
+          <HoldLaunch key={shown.id} card={shown.id} label={continueOption(shown).label} onLaunch={(id) => { if (id === shown.id) go(shown); }} />
         ) : (
           <button type="button" className="ago atab" onClick={() => go(shown)}>
             {ATTENTION.go}
@@ -183,49 +183,73 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) 
   );
 }
 
-/** The big red launch button: press and hold until the ring fills. Letting go early cancels. */
-function HoldLaunch({ label, onLaunch }: { label: string; onLaunch: () => void }) {
+/** The big red launch button: hold one primary press until the ring fills (holdLaunch.ts has the rules). */
+function HoldLaunch({ card, label, onLaunch }: { card: string; label: string; onLaunch: (card: string) => void }) {
   const [p, setP] = useState(0);
-  const held = useRef<{ t0: number; raf: number } | null>(null);
-  const stop = (done: boolean) => {
-    if (!held.current) return;
-    cancelAnimationFrame(held.current.raf);
-    held.current = null;
-    setP(0);
-    if (done) {
-      sound.play("launch");
-      navigator.vibrate?.(60);
-      onLaunch();
-    } else sound.play("click");
-  };
-  const start = () => {
-    if (held.current) return;
-    sound.play("arm");
-    const tick = () => {
-      if (!held.current) return;
-      const f = Math.min(1, (performance.now() - held.current.t0) / HOLD_MS);
-      setP(f);
-      if (f >= 1) stop(true);
-      else held.current.raf = requestAnimationFrame(tick);
+  const [armed, setArmed] = useState(false);
+  const launch = useRef(onLaunch);
+  launch.current = onLaunch;
+  const gesture = useRef<HoldGesture | null>(null);
+  if (!gesture.current)
+    gesture.current = new HoldGesture(
+      {
+        progress: setP,
+        arm: () => sound.play("arm"),
+        cancel: () => sound.play("click"),
+        confirm: (c) => { setArmed(c !== null); if (c) setTimeout(() => setArmed(false), CONFIRM_MS); },
+        launch: (c) => {
+          sound.play("launch");
+          navigator.vibrate?.(60);
+          launch.current(c);
+        },
+      },
+      { now: () => performance.now(), raf: (cb) => requestAnimationFrame(cb), caf: (id) => cancelAnimationFrame(id) },
+    );
+  const g = gesture.current;
+  useEffect(() => g.retarget(card), [g, card]);
+  useEffect(() => {
+    const leave = () => g.cancel();
+    const hidden = () => { if (document.visibilityState !== "visible") g.cancel(); };
+    window.addEventListener("blur", leave);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("blur", leave);
+      document.removeEventListener("visibilitychange", hidden);
+      g.dispose();
     };
-    held.current = { t0: performance.now(), raf: requestAnimationFrame(tick) };
-  };
-  useEffect(() => () => { if (held.current) cancelAnimationFrame(held.current.raf); }, []);
+  }, [g]);
+  const isKey = (e: React.KeyboardEvent) => e.key === " " || e.key === "Enter";
   return (
     <button
       type="button"
-      className={`alaunch${p > 0 ? " down" : ""}`}
+      className={`alaunch${p > 0 ? " down" : ""}${armed ? " armed" : ""}`}
       style={{ "--p": p } as React.CSSProperties}
-      aria-label={`${ATTENTION.holdLaunch}: ${label}`}
-      onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); start(); }}
-      onPointerUp={() => stop(false)}
-      onPointerCancel={() => stop(false)}
-      onKeyDown={(e) => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); start(); } }}
-      onKeyUp={(e) => { if (e.key === " " || e.key === "Enter") stop(false); }}
+      aria-label={`${armed ? ATTENTION.confirmLaunch : ATTENTION.holdLaunch}: ${label}`}
+      onPointerDown={(e) => {
+        if (!e.isPrimary || e.button !== 0) return;
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        g.press(card);
+      }}
+      onPointerUp={() => g.release()}
+      onPointerCancel={() => g.cancel()}
+      onLostPointerCapture={() => g.cancel()}
+      onBlur={() => g.cancel()}
+      onKeyDown={(e) => {
+        if (!isKey(e)) return;
+        e.preventDefault();
+        if (!e.repeat) g.press(card);
+      }}
+      onKeyUp={(e) => {
+        if (!isKey(e)) return;
+        e.preventDefault();
+        g.release();
+      }}
+      // Pointer clicks carry a click count; a bare activation (screen reader, switch) does not.
+      onClick={(e) => { if (e.detail === 0) g.assistive(card); }}
       onContextMenu={(e) => e.preventDefault()}
     >
       <span className="cap" />
-      <span className="lbl">{ATTENTION.hold}</span>
+      <span className="lbl">{armed ? ATTENTION.again : ATTENTION.hold}</span>
     </button>
   );
 }

@@ -1009,6 +1009,8 @@ export const ATTENTION = {
   go: "Go →",
   hold: "Hold",
   holdLaunch: "Hold to launch",
+  confirmLaunch: "Activate again to launch",
+  again: "Again",
   moreWaiting: (n: number) => `${n} more waiting`,
   pushTitle: (approve: number, steer: number) => [steer && `${steer} to steer`, approve && `${approve} to approve`].filter(Boolean).join(", ") + " in Shiptorio",
 };

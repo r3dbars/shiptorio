@@ -149,6 +149,20 @@ async function api(path, body, token) {
 }
 async function clickMove(name) {
   const card = await until(`decision option ${name}`, () => factoryState.deck?.find(m => m.options.some(o => name.test(o.label))));
+  // The Needs you card (on by default) shows one card: Later the others until ours is up. Continue is the tab
+  // on its right edge, other options sit under Details.
+  if (await page.locator(".acard").count()) {
+    const acard = page.locator(".acard").filter({ hasText: card.title });
+    for (let i = 0; i < 20 && !await acard.count(); i++) {
+      const later = page.locator(".acard").filter({ hasNotText: card.title }).locator(".alater");
+      if (await later.count()) await later.first().click({ timeout: UI_TIMEOUT });
+      await page.waitForTimeout(1000);
+    }
+    const go = acard.getByRole("button", { name });
+    if (!await go.count()) await acard.locator(".atog").click({ timeout: UI_TIMEOUT });
+    await go.first().click({ timeout: UI_TIMEOUT });
+    return;
+  }
   if (factoryState.move?.id === card.id) {
     await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: UI_TIMEOUT });
     return;
@@ -303,22 +317,34 @@ try {
     assert.equal(item().inspection.humanApproved, false);
     assert.equal(stub.state.merges.length, 0);
   });
-  await step("Launch card merges only after the player's click", async () => {
+  await step("Launch card merges only after the player holds the red button", async () => {
     await until("Launch card over socket", () => factoryState.deck?.some(m => m.title.startsWith("Launch #7")));
     const card = factoryState.deck.find(m => m.title.startsWith("Launch #7"));
     assert.equal(card.evidence.length, 3);
     assert.ok(card.evidence.every(stamp => stamp.ok));
-    if (!await page.getByRole("button", { name: /^Activity, / }).isVisible()) await page.getByRole("button", { name: /^Menu/ }).click();
-    await page.getByRole("button", { name: /^Activity, / }).click();
-    const tray = page.getByRole("complementary", { name: "Activity", exact: true });
-    const launchCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: /^Launch #7:/ }) });
-    await launchCard.getByRole("button", { name: /^Launch #7:/ }).click();
-    await launchCard.getByRole("button", { name: /^Launch #7(?!:)/ }).click();
+    // The Needs you card: launching is the big red button, held down until the ring fills.
+    const launchCard = page.locator(".acard").filter({ hasText: card.title });
+    for (let i = 0; i < 20 && !await launchCard.count(); i++) {
+      const later = page.locator(".acard").filter({ hasNotText: card.title }).locator(".alater");
+      if (await later.count()) await later.first().click({ timeout: UI_TIMEOUT });
+      await page.waitForTimeout(1000);
+    }
+    const red = launchCard.getByRole("button", { name: /^Hold to launch: / });
+    const box = await red.boundingBox({ timeout: UI_TIMEOUT });
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    assert.equal(stub.state.merges.length, 0, "nothing merged before the press");
+    await page.mouse.down(); await page.waitForTimeout(250); await page.mouse.up(); // a tap is not consent
+    await page.waitForTimeout(1500);
+    assert.equal(stub.state.merges.length, 0, "a short tap must not launch");
+    // Hold until the ring fills. It fills per rendered frame, so a slow CI browser takes longer than 800 ms.
+    await page.mouse.down();
+    await until("rocket launched while held", () => item()?.state === "launched" || stub.state.merges.length > 0);
+    await page.mouse.up();
     await until("rocket launched", () => item()?.state === "launched");
-    assert.equal(stub.state.merges.length, 1);
-    assert.equal(stub.state.merges[0].sha, stub.state.headSha);
-    assert.equal(item().inspection.humanApproved, true);
-    assert.equal(item().inspection.stages.find(s => s.gate === "human").state, "passed");
+    assert.equal(stub.state.merges.length, 1, "one merge after the hold");
+    assert.equal(stub.state.merges[0].sha, stub.state.headSha, "merged the approved head");
+    assert.equal(item().inspection.humanApproved, true, "human approval recorded");
+    assert.equal(item().inspection.stages.find(s => s.gate === "human").state, "passed", "human gate passed");
     report.finalItem = item();
   });
   await step("no silent provider fallback or browser errors", async () => {
