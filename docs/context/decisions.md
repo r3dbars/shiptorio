@@ -1,5 +1,12 @@
 # Decisions and open items
 
+- 2026-10-27: The 12-card cap reserves at most one existing eligible runner decision
+  when passive source alerts would hide it. Awaiting plan consent takes precedence
+  over a new planning proposal; only a passive unblock/Look later slot can be replaced.
+  Score order and Spark ordering remain intact, as do suppression, explicit escalation
+  and launch proof. This is visibility only, never approval or synthetic work.
+
+
 - 2026-10-26: Runner plan approval binds the validated selected card to its durable
   job, not the transient top card. Concurrent deck refreshes cannot silently drop
   a tap or remove an unrelated card; the lock rechecks job/card/repo binding and

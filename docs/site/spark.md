@@ -53,3 +53,15 @@ Open **How it thinks** from the settings menu, from **See how the planner thinks
 It shows how many decisions Spark made, the share made by the model versus fixed rules, and the latest calls: Sorted, Picked files, Planned, Reviewed, Chose your next card, Judged a comeback, Picked a check, Weighed a permit. Each one with how long Spark took.
 
 If Spark is offline, it says so: "The planner has no power right now, so fixed rules are standing in."
+
+## Daily budgets and build allowances
+
+The owner sees a small spend chip on the factory floor. Open it to see today's calls, input/output tokens and estimated dollars in **How it thinks**. The default thinking budget is **$5 per factory per UTC day**; the budget owner can change it there, including setting it to $0 to pause paid thinking.
+
+At 80%, a warning card appears. Paid calls pause before the next request could exceed the budget. A call reserves an upper-bound estimate first, then settles from Meta's reported usage. Failed requests or missing usage keep their reservation and appear as unmeasured calls. The numbers are estimates, not a provider invoice. Existing PR checks and human merges can continue while paid thinking is paused.
+
+The **Factory limits** card also shows build runs, Spark calls/tokens, connected repositories/factories and concurrent jobs. Daily allowances reset at **00:00 UTC**, with the reset shown in your local time. Resource caps and job slots have no daily reset: a slot frees when its plan/build is finished or declined.
+
+The default account limits are 20 build runs, 200 Spark calls and 500,000 Spark tokens per UTC day. **A build run is charged when the local worker is dispatched, once per job.** Preparing a plan, a failed plan and declining a plan do not consume a build run; the Spark calls used to prepare it still count toward thinking usage. After failed planning, the issue waits one minute, then two minutes, then until UTC midnight after three failures.
+
+An operator can use **Raise limit** to edit account allowances in `/admin/signup`; raising a limit takes effect on the next attempt. Other players should ask their operator. Earlier usage remains recorded. A ready plan waiting for approval occupies a job slot, so review or decline it before starting another plan. `/admin` shows the per-factory daily spend table for the operator.

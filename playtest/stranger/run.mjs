@@ -181,7 +181,8 @@ try {
   await step("front door: preview password", async () => {
     await page.goto(origin + "/");
     // The front door is intentionally public; the private-entry link leads to the password gate.
-    if (await page.getByRole("link", { name: "Enter the factory", exact: true }).count()) await page.getByRole("link", { name: "Enter the factory", exact: true }).click();
+    const entry = page.getByRole("link", { name: /^(Sign in|Enter the factory)$/i });
+    if (await entry.count()) await entry.first().click();
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Enter the factory" }).click();
     await page.waitForURL((u) => u.pathname === "/" && !u.search.includes("check"));

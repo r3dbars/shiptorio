@@ -13,7 +13,7 @@ export const harnessLabel = (h: Harness | string | undefined): string =>
   h === "codex" ? "Codex" : h === "claude_code" ? "Claude" : h === "local" ? "your computer" : "the planner";
 /** Runner presence → the plants it powers. One solar per signed-in subscription, geothermal for a local model. */
 export const runnerPower = (harnesses: Harness[]): PowerSource[] =>
-  harnesses.map(h => h === "local" ? localPower() : { id: `solar-${h}`, kind: "solar" as const, name: h === "codex" ? "ChatGPT" : "Claude", level: 1, online: true });
+  harnesses.map(h => h === "local" ? localPower() : { id: `solar-${h}`, kind: "solar" as const, name: h === "codex" ? "Codex" : "Claude Code", level: 1, online: true });
 
 const DOCS = /(^|\/)docs\/|\.(md|mdx|txt|rst)$/i;
 const RISKY = [

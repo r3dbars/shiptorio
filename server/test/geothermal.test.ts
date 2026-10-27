@@ -33,7 +33,7 @@ test("rule route picks the cheapest allowed plant; the guard vetoes the planner"
 });
 
 test("runner presence becomes plants: solar per subscription, geothermal for a local model", () => {
-  expect(runnerPower(["claude_code", "local"])).toEqual([{ id: "solar-claude_code", kind: "solar", name: "Claude", level: 1, online: true }, localPower()]);
+  expect(runnerPower(["claude_code", "local"])).toEqual([{ id: "solar-claude_code", kind: "solar", name: "Claude Code", level: 1, online: true }, localPower()]);
   expect(localPower()).toMatchObject({ id: "geo-local", kind: "geothermal", name: "Your computer" });
 });
 

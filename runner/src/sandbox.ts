@@ -46,7 +46,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
     PATH: [dirname(git), bin, dirname(runtime), ...(nodeRuntime ? [dirname(nodeRuntime)] : []), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
     LANG: "en_US.UTF-8", TERM: "dumb", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1",
     BUN_INSTALL_CACHE_DIR: join(privateRoot, ".bun-cache"),
-    ...(agent ? { CODEX_HOME: join(home, ".codex") } : {}),
+    ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDE_CODE_TMPDIR: temp } : {}),
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
   };
   const profile = (install: boolean) => `(version 1)
@@ -56,6 +56,9 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
 (allow process-info* (target self))
 (allow process-exec)
 (allow process-fork)
+; Claude's Intl/regex initialization spins if ICU cannot read the OS timezone database.
+; System data only: do not grant access to the rest of /private/var/db.
+${agent ? '(allow file-read* (subpath "/private/var/db/timezone/tz"))' : ""}
 (allow signal (target same-sandbox))
 ; Hardware/OS queries only, never process arguments or environments.
 (allow sysctl-read (sysctl-name-regex #"^hw\\.")
@@ -83,7 +86,7 @@ ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSRes
       if (location !== directory && !location.startsWith(directory + "/")) throw new Error("Verification cwd escapes the assigned checkout");
       // Only the dependency installer may use the network-enabled profile, never scripts.
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
-      const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdout: "pipe", stderr: "pipe", detached: true });
+      const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
       let timedOut = false;
       const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);
