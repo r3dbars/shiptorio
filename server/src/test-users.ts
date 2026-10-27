@@ -1,6 +1,6 @@
 // Opt-in test accounts. Never grants authority over a real repository.
 import type { Hono } from "hono";
-import { createSession, currentUser, endSession, saveReach, upsertUser } from "./accounts";
+import { createSession, currentUser, endSession, readPrefs, saveReach, upsertUser } from "./accounts";
 import { readSessionDetails } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { emptyProgress } from "@shiptorio/shared";
@@ -68,10 +68,22 @@ export function testUserRoutes(app: Hono<any>): void {
       return c.redirect(p === "test-guest" ? "/?source=sim&scenario=first-run" : "/?source=live&onboard=repo", 303);
     }
     if (!negative) return next();
+    c.header("Cache-Control", "no-store");
+    c.header("X-Content-Type-Options", "nosniff");
     const user = await currentUser(env, c.req.header("cookie") ?? null);
     const p = user?.login as TestPersona;
     if (!user || !TEST_PERSONAS.includes(p) || user.id !== personaId(p)) return c.json({ error: "Invalid test identity" }, 403);
     if (url.pathname === "/api/flags" && !["GET", "HEAD"].includes(c.req.method)) return c.json({ error: "Test account operation is not permitted" }, 403);
+    if (url.pathname === "/api/me") return c.json({ login: user.login, allowed: true, admin: false, guest: false, prefs: await readPrefs(env, user), installUrl: "/test/install" });
+    if (url.pathname === "/test/install") {
+      c.header("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+      if (!["GET", "POST"].includes(c.req.method) || c.req.method === "POST" && c.req.header("origin") !== url.origin) return c.json({ error: "Invalid test install request" }, 403);
+      if (!env.TEST_FACTORY) return c.json({ error: "Isolated GitHub fixture is unavailable; no real installation was created" }, 503);
+      if (local(url) && (env.TEST_FACTORY_KEY?.length ?? 0) >= 32) {
+        return env.TEST_FACTORY.fetch(`http://test-fixture.invalid/install${url.search}`, { method: c.req.method, headers: { "x-shiptorio-test-hop": env.TEST_FACTORY_KEY! } });
+      }
+      return env.TEST_FACTORY.fetch(c.req.raw);
+    }
     const repo = personaRepo(p);
     if (url.pathname === "/api/repos") {
       const owned = await env.DB.prepare("SELECT installation_id FROM user_repos WHERE user_id=? AND repo=?").bind(user.id, repo).first<{ installation_id: number }>();
@@ -98,7 +110,7 @@ export function testUserRoutes(app: Hono<any>): void {
       }
       return c.json({ error: "Isolated test factory is unavailable; no real provider request was made" }, 503);
     }
-    if (/^\/(?:connect|admin|setup|github)(?:\/|$)/.test(url.pathname) || /^\/api\/(?:runner|account|setup|sources|empire)/.test(url.pathname) || url.pathname === "/auth/owner-session") return c.json({ error: "Test account operation is not permitted" }, 403);
+    if (/^\/(?:connect|admin|setup|github)(?:\/|$)/.test(url.pathname) || /^\/api\/(?:runner|account|setup|sources|empire)/.test(url.pathname) || ["/auth/owner-session", "/auth/login"].includes(url.pathname)) return c.json({ error: "Test account operation is not permitted" }, 403);
     // Test accounts may use ordinary persisted preferences/progress and the built client only.
     if (url.pathname.startsWith("/api/") && !/^\/api\/(?:me(?:\/|$)|version$|health$|flags$|telemetry\/config$)/.test(url.pathname)) return c.json({ error: "Test account operation is not permitted" }, 403);
     return next();

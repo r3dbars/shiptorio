@@ -29,7 +29,24 @@ export async function localFactory(persona, origin) {
     META_API_KEY: "stub-meta-key", SPARK_DAILY_TOKENS: "5000000" };
   mf = new Miniflare(convertV4MiniflareOptions({ port: Number(new URL(origin).port), workers: [{ compatibilityDate, compatibilityFlags, kvNamespaces, d1Databases, durableObjects, assets,
     name: "shiptorio", rootPath: bundle, modules: true, scriptPath: join(bundle, "worker.js"), bindings,
-    serviceBindings: { TEST_FACTORY: async request => new Response(null, { status: request.url === "http://test-fixture.invalid/ready" && request.method === "POST" && request.headers.get("x-shiptorio-test-hop") === key ? 204 : 403 }) },
+    serviceBindings: { TEST_FACTORY: async request => {
+      const url = new URL(request.url);
+      if (url.origin !== "http://test-fixture.invalid" || request.headers.get("x-shiptorio-test-hop") !== key) return new Response(null, { status: 403 });
+      if (url.pathname === "/ready" && request.method === "POST") return new Response(null, { status: 204 });
+      if (url.pathname !== "/install") return new Response(null, { status: 404 });
+      let response;
+      const confirming = url.searchParams.get("confirm") === "1";
+      if (confirming && request.method !== "POST" || !confirming && request.method !== "GET") return new Response(null, { status: 405 });
+      await stub.browser({ request: () => ({ url: () => `https://github.com/apps/shiptorio-stub/installations/${confirming ? "confirm" : "new"}` }),
+        fulfill: async options => {
+          const headers = new Headers(options.headers);
+          if (options.contentType) headers.set("content-type", options.contentType);
+          if (headers.has("location")) headers.set("location", `${origin}/?source=live&onboard=repo`);
+          const body = options.body?.replaceAll('/apps/shiptorio-stub/installations/confirm', '/test/install?confirm=1');
+          response = new Response(body ?? null, { status: options.status ?? 200, headers });
+        } });
+      return response;
+    } },
     outboundService: request => new URL(request.url).host === "api.meta.ai" ? spark.outbound(request) : stub.outbound(request),
   }] }));
   await mf.ready;
