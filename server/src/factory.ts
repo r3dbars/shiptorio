@@ -1,3 +1,4 @@
+import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
 import { factorySpend } from "./spend";
@@ -288,7 +289,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
       if (jobId && !jobs.some(j => j.id === jobId && j.status === "awaiting_approval")) return false;
       if (move.stage === "pad" && item && item.state !== "on_pad" && item.state !== "rejected") return false;
-      if (move.stage === "resources" && s.bottleneck?.stage !== "resources") return false;
+      if (move.stage === "resources" && !move.id.startsWith("runner-auth:") && s.bottleneck?.stage !== "resources") return false;
       return true;
     });
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
@@ -557,9 +558,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (record) { record.ready = true; await this.accountPut("device", record); }
     });
   }
-  async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
+  async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][], authRequired?: AuthHarness[]) {
     if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
-    await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
+    await this.accountPut("runnerPresence", { harnesses, authRequired, seenAt: Date.now() });
+    if (authRequired !== undefined && await this.load()) {
+      await this.decisionData();
+      const ids = authRequired.map(h => `runner-auth:${h}`);
+      this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("runner-auth:") || ids.includes(m.id));
+      for (const h of authRequired) if (!this.openMoves.some(m => m.id === `runner-auth:${h}`)) this.openMoves.push(runnerAuthMove(h));
+      await this.refreshDecisions();
+    }
   }
   async pollDevice(secret: string) {
     return this.ctx.blockConcurrencyWhile(async () => {
@@ -757,7 +765,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const live = [...running.values()].find(j => j.status === "running" && j.deadline && j.deadline > Date.now());
       // The runner claims only while idle, so the same pairing claiming again well after the lease was
       // granted means the claim response was lost (reset or client timeout). Hand the same job back.
-      if (live?.pairId === pairId && live.deadline! - RUNNER_LEASE_MS + LOST_CLAIM_MS < Date.now()) {
+      if (live?.pairId === pairId && harnesses.includes(live.harness) && live.deadline! - RUNNER_LEASE_MS + LOST_CLAIM_MS < Date.now()) {
         this.log("info", "The local runner lost its last claim, so Shiptorio handed the same job back.", live.itemId);
         return live;
       }

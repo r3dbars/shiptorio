@@ -76,6 +76,9 @@ export async function prepareApprovedCommit(job: { sourceUrl: string; baseSha: s
     await run(["add", "--", ...paths], work);
     const diff = await run(["diff", "--cached", "--no-ext-diff", "--no-textconv"], work);
     validateChanges(paths, job.allowedPaths, diff);
+    // Stable metadata makes a lost push acknowledgment safe to retry: identical patch => identical SHA.
+    const timestamp = await run(["show", "-s", "--format=%cI", job.baseSha], work);
+    Object.assign(env, { GIT_AUTHOR_DATE: timestamp, GIT_COMMITTER_DATE: timestamp });
     await run(["-c", "user.name=Shiptorio local runner", "-c", "user.email=shiptorio@users.noreply.github.com", "commit", "-m", "Execute Spark-approved issue plan with local subscription agent"], work);
     const sha = await run(["rev-parse", "HEAD"], work);
     let closed = false;
