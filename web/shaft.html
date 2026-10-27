@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>The Shaft (dev harness)</title>
+    <!-- dev only: the vertical Black Iron factory on the auto driver (src/map/shaft/harness.ts). Styles are the mockup's. -->
+    <style>
+@font-face { font-family: 'Silkscreen'; font-weight: 400; src: url('/fonts/silkscreen-400.woff2') format('woff2'); }
+@font-face { font-family: 'Silkscreen'; font-weight: 700; src: url('/fonts/silkscreen-700.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; src: url('/fonts/jetbrains-mono.woff2') format('woff2'); }
+/* One-screen game view. The factory fills the screen; HUD top-left, machine status chips float over
+   each machine, the event ticker bottom-left, view + sim controls bottom-right.
+   Single dark look on purpose (it's a game screen), every color set explicitly. */
+:root {
+  --bg: #0b0806;
+  --panel: rgba(14, 10, 8, 0.9);
+  --line: #5a4434;
+  --ink: #f4ead8;
+  --dim: #b8a48a;
+  --amber: #ffb020;
+  --ok: #46e07a;
+  --bad: #ff4a32;
+  --idle: #8fa2c8;
+  --focus: #6fb2ff;
+  --pixel: 'Silkscreen', 'Courier New', monospace;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); overflow: hidden; }
+body { font: 12px/1.45 var(--mono); -webkit-tap-highlight-color: transparent; }
+#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; cursor: grab; }
+#stage:active { cursor: grabbing; }
+.card { background: var(--panel); border: 2px solid var(--line); outline: 2px solid #000; }
+.eyebrow { font: 400 9px/1.2 var(--pixel); letter-spacing: 0.14em; color: var(--dim); }
+.tbtn { font: 400 10px/1 var(--pixel); letter-spacing: 0.06em; color: var(--ink); background: rgba(20, 14, 10, 0.94); border: 2px solid var(--line); min-height: 30px; padding: 0 9px; cursor: pointer; white-space: nowrap; }
+.tbtn:hover { border-color: var(--dim); }
+.tbtn[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: #120c02; }
+.tbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+#hud { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; z-index: 6; max-width: calc(100% - 20px); }
+#hud h1 { font: 700 18px/1 var(--pixel); letter-spacing: 0.08em; margin: 0; }
+#counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+#counts span { font: 400 9px var(--pixel); letter-spacing: 0.08em; color: var(--dim); }
+#counts b { font: 700 13px var(--mono); color: var(--ink); margin-left: 4px; }
+#counts .ship b { color: var(--ok); } #counts .rw b { color: var(--bad); } #counts .need b { color: var(--amber); }
+
+@keyframes ping { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(255, 176, 32, 0); } }
+#key { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font: 400 8px/1 var(--pixel); letter-spacing: 0.08em; color: var(--dim); }
+#key span { display: inline-flex; align-items: center; gap: 4px; }
+#key i { width: 9px; height: 9px; display: inline-block; border: 1px solid #000; }
+#key .k-issue { background: linear-gradient(90deg, #ff4a3a 33%, #ffb040 33% 66%, #5aa8ff 66%); } #key .k-cards { background: #ffd890; }
+#key .k-pr { background: #ffa63a; } #key .k-pass { background: #46ff8a; } #key .k-rej { background: #ff3a2a; }
+
+/* needs-you tray: one row per blocked machine, always reachable (desktop: top center, phone: above the controls) */
+#needs { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 8; display: flex; flex-direction: column; gap: 4px; width: min(560px, calc(100% - 20px)); }
+.nrow { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; background: rgba(30, 20, 4, 0.96); border: 2px solid var(--amber); outline: 2px solid #000; animation: ping 1s infinite; }
+.nrow .ic { font: 700 13px var(--pixel); color: var(--amber); flex: none; }
+.nrow .tx { flex: 1; min-width: 0; font-size: 11px; line-height: 1.3; color: #fff1d0; cursor: pointer; }
+.nrow .tx b { font: 700 9px var(--pixel); letter-spacing: 0.08em; color: var(--amber); display: block; }
+.nrow button { font: 700 10px/1 var(--pixel); letter-spacing: 0.06em; padding: 9px 10px; border: 2px solid #000; background: var(--amber); color: #140c02; cursor: pointer; flex: none; }
+.nrow button:focus-visible, .nrow .tx:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* machine pills sit on the deck in FRONT of each machine (never on top of it) */
+#chips, #tags { position: fixed; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
+.chip { position: absolute; left: 0; top: 0; pointer-events: auto; max-width: 240px; padding: 4px 7px 5px; display: flex; flex-direction: column; gap: 2px; background: rgba(14, 10, 8, 0.9); border: 2px solid var(--line); outline: 2px solid #000; cursor: pointer; }
+.chip .nm { display: flex; align-items: center; gap: 6px; font: 700 9px/1.1 var(--pixel); letter-spacing: 0.08em; white-space: nowrap; }
+.chip .dot { width: 8px; height: 8px; flex: none; background: var(--idle); }
+.chip .st { font: 700 9px/1 var(--pixel); letter-spacing: 0.06em; color: var(--idle); margin-left: 2px; }
+.chip .short { display: none; }
+.chip .row2 { display: flex; align-items: center; gap: 6px; }
+.chip .det { font-size: 10px; color: var(--dim); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px; }
+.chip .bk { font: 400 8px/1 var(--pixel); letter-spacing: 0.06em; padding: 3px 4px; border: 1px solid var(--line); background: transparent; color: var(--dim); cursor: pointer; flex: none; margin-left: auto; }
+.chip .bk:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.chip[data-s="WORKING"] { border-color: #2f7a46; } .chip[data-s="WORKING"] .dot { background: var(--ok); animation: blink 0.9s infinite; } .chip[data-s="WORKING"] .st { color: var(--ok); }
+.chip[data-s="BLOCKED"] { border-color: var(--amber); background: rgba(40, 26, 4, 0.95); animation: ping 1s infinite; } .chip[data-s="BLOCKED"] .dot { background: var(--bad); animation: blink 0.4s infinite; } .chip[data-s="BLOCKED"] .st { color: var(--amber); }
+.chip[data-s="BLOCKED"] .bk { display: none; }
+@keyframes blink { 50% { opacity: 0.25; } }
+.tag { position: absolute; left: 0; top: 0; font: 700 9px/1 var(--pixel); letter-spacing: 0.04em; padding: 3px 4px; background: rgba(10, 7, 5, 0.85); border: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+.tag.k-pass { border-color: #2f9a56; color: #9affc0; } .tag.k-reject { border-color: #a0261a; color: #ffb0a0; } .tag.held { border-color: var(--amber); color: var(--amber); }
+.tag.fol { border-color: var(--focus); color: #cfe6ff; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; font: 700 13px var(--pixel); letter-spacing: 0.12em; color: var(--dim); z-index: 9; background: var(--bg); }
+
+#ticker { position: fixed; left: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: 330px; max-width: calc(100% - 20px); padding: 7px 10px; display: flex; flex-direction: column; gap: 3px; z-index: 5; }
+#ticker div { font-size: 10.5px; line-height: 1.35; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ticker .k-in { color: #e8d8b8; } #ticker .k-good { color: #8ff0b0; } #ticker .k-bad { color: #ff9a88; } #ticker .k-warn { color: var(--amber); } #ticker .k-ship { color: #b8ffcf; font-weight: 600; }
+
+#ctrl { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 5px; padding: 6px; z-index: 5; align-items: flex-end; }
+#ctrl .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; }
+#ctrl .eyebrow { margin: 0 2px 0 6px; }
+#followBar { position: fixed; left: 50%; transform: translateX(-50%); top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 6; padding: 6px 10px; font-size: 11px; max-width: min(620px, calc(100% - 20px)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#followBar b { font: 700 10px var(--pixel); letter-spacing: 0.06em; color: #cfe6ff; margin-right: 6px; }
+
+@media (max-width: 760px) {
+  #hud { padding: 6px 8px; gap: 4px; } #hud h1 { font-size: 13px; } #hud .eyebrow, #key { display: none; }
+  #counts { gap: 2px 8px; } #counts b { font-size: 11px; }
+  #ticker { width: auto; right: max(10px, env(safe-area-inset-right, 0px)); padding: 5px 8px; }
+  #ticker div:nth-child(n+2) { display: none; }
+  #ctrl { left: max(6px, env(safe-area-inset-left, 0px)); right: max(6px, env(safe-area-inset-right, 0px)); align-items: stretch; }
+  #ctrl .row { justify-content: center; }
+  #ctrl .tbtn { min-height: 30px; padding: 0 6px; font-size: 9px; }
+  #ctrl .eyebrow { display: none; }
+  #needs { top: auto; }
+  #followBar { transform: none; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); max-width: none; font-size: 10px; }
+  .chip { padding: 3px 5px 4px; }
+  .chip .long, .chip .row2 { display: none; } .chip .short { display: inline; }
+}
+@media (prefers-reduced-motion: reduce) { .nrow, .chip, .chip .dot { animation: none !important; } }
+
+#ctrl .row .tbtn { min-height: 26px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" aria-label="The shaft: work mined underground climbs through planning, building and checks to the launch pad"></canvas>
+    <div id="tags"></div>
+    <div id="chips"></div>
+    <div id="loading">BUILDING THE SHAFT…</div>
+    <div id="ctrl" class="card">
+      <div class="row"><span class="eyebrow">VIEW</span>
+        <button class="tbtn" data-view="stack">ALL</button><button class="tbtn" data-view="launch">LAUNCH</button><button class="tbtn" data-view="checks">CHECKS</button><button class="tbtn" data-view="build">BUILD</button><button class="tbtn" data-view="mine">MINE</button><button class="tbtn" data-view="line">LINE</button><button class="tbtn" data-view="follow">FOLLOW</button>
+      </div>
+    </div>
+    <script type="module" src="/src/map/shaft/harness.ts"></script>
+  </body>
+</html>
