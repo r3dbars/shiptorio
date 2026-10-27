@@ -19,3 +19,15 @@ explicit Launch. Do not implement the issue outside that runner path.
   offered for this run. No credentials are included in this receipt.
 - Plan approval and Launch are still pending. Setup or a passing doctor does not
   establish a successful real build, PR, merge, deployment or rocket.
+
+## Fresh plan prepared
+
+- The actual browser selected "Plan with Codex" for #170, starting job
+  555799a7-3ae2-49a4-8e35-c85e668c2253. Spark selected the intended two files and
+  produced the in-game "Build #170" approval card at base
+  4e8a15b47887e14c8c22af8f19b564f382da2815.
+- The plan explicitly requires tests that fail on base and pass on head, followed
+  by typecheck, tests and build. The approval card is expanded for Justin to
+  inspect and tap; no agent approval or manual implementation substitutes for it.
+- Independent current-main reproduction returned `assignedResolved: upsert`,
+  confirming the defect remains real before the runner build.
