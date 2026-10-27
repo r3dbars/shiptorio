@@ -82,7 +82,8 @@ export function feedbackSignals({ threads, now, repo, shipped = 0, complete = tr
       ...base, id: signalId("feedback", "feedback_thin"), kind: "feedback_thin",
       title: `${who} outside the team spoke up in ${days} days${shipped ? `, across ${plural(shipped, "shipped PR")}` : ""}.`,
       severity: round(severity),
-      metric: { value: voices, baseline: MIN_INFLOW, unit: "people" },
+      // The unlock clears once value climbs above the baseline, i.e. MIN_INFLOW voices.
+      metric: { value: voices, baseline: MIN_INFLOW - 1, unit: "people" },
       evidence: recent.length
         ? recent.slice(0, MAX_EVIDENCE).map(t => ({ label: t.ref, url: t.url }))
         : [{ label: `No new outside issues in ${days} days`, url: issuesUrl }],

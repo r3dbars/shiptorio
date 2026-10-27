@@ -94,6 +94,7 @@ describe("feedback signals", () => {
   it("asks for more feedback when too few people spoke up, louder when shipping a lot", () => {
     const [quiet] = signals([thread("a", 20 * DAY, { lastTeamAt: now - 19 * DAY })]);
     expect(quiet.id).toBe("feedback:feedback_thin:repo");
+    expect(quiet.metric).toEqual({ value: 0, baseline: 2, unit: "people" });
     expect(quiet.title).toBe("Nobody outside the team spoke up in 14 days.");
     expect(quiet.evidence).toEqual([{ label: "No new outside issues in 14 days", url: "https://github.com/acme/app/issues" }]);
     expect(BrainSignal.parse(quiet)).toEqual(quiet);
