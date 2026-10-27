@@ -276,12 +276,12 @@ try {
   await step("Spark proposes a plan; no build before approval", async () => {
     await clickMove(/Plan with Codex/i);
     await until("Spark plan approval", () => factoryState.deck?.some(m => m.options?.some(o => o.id === "approve")));
-    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null);
-    assert.equal(stub.state.pulls.length, 0);
+    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null, "no runner job before the plan is approved");
+    assert.equal(stub.state.pulls.length, 0, "no PR before approval");
     await clickMove(/Approve and build with Codex/i);
     job = await until("approved runner job", async () => (await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job);
-    assert.equal(job.itemId, "gh-1");
-    assert.equal(job.baseSha, stub.state.baseSha);
+    assert.equal(job.itemId, "gh-1", `approved job is for gh-1, got ${job.itemId}`);
+    assert.equal(job.baseSha, stub.state.baseSha, "job built on the base sha");
     assert.deepEqual(job.allowedPaths, ["src/cart.ts", "test/cart.test.ts"]);
     assert.ok(job.steps.some(s => s.tool === "read_issue"));
     assert.ok(job.steps.some(s => s.tool === "read_file"));
