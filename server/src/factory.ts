@@ -479,6 +479,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       search: query => codeSearch(token, repo, query),
       ...(issue ? { comments: () => issueComments(token, repo, issue) } : {}),
       ...(pr ? { pr: pr.diff, ci: () => ciReport(token, repo, pr.headSha, item.failure) } : {}),
+      issue: () => JSON.stringify({ title: item.title, body: item.body ?? "", district: item.district, failure: item.failure, scars: item.scars }),
       factory: () => factoryBrief(this.state!, item, permits, feedback),
       signals: () => signalsBrief(this.state!, item),
     };
