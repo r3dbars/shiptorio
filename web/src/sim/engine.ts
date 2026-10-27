@@ -136,7 +136,7 @@ interface Scenario {
   geothermal?: boolean; // the runner found a local model: a free, capped geothermal plant runs small, low-risk jobs
   overnight?: Shipped[]; // PRs that shipped before you opened the app, with when (the comeback time-lapse replays them)
   waiting?: Omit<Shipped, "hoursAgo">; // a PR that passed every check overnight and waits on the pad for your launch
-  brain?: BrainStep[]; // the bottleneck brain's picks, one at a time (docs/BRAIN.md): the map piles each one up
+  pileups?: BrainStep[]; // the bottleneck brain's picks, one at a time (docs/BRAIN.md): the map piles each one up
 }
 
 // One bottleneck the brain names (FactoryState.holdingBack) and the one unlock card it deals. It gets worse while it
@@ -421,8 +421,8 @@ export const SCENARIOS = {
   },
   // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
   // The bottleneck brain (docs/BRAIN.md): the factory runs, and the one thing holding you back shows up where it lives in
-  // the shaft, piling up until you act on its card.
-  brain: {
+  // the shaft, piling up until you act on its card. ?source=sim&scenario=bottleneck
+  bottleneck: {
     ores: [
       // every source the brain reads is plugged in, so each pile lands on a live mine
       { at: 2, title: "TypeError: cart.total is undefined", kind: "bug", district: "web", source: "sentry", users: 230 },
@@ -430,7 +430,7 @@ export const SCENARIOS = {
       { at: 16, title: "Pricing page: nobody clicks Start", kind: "feature", district: "web", source: "posthog" },
       { at: 24, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
     ],
-    brain: [
+    pileups: [
       { area: "quality", signal: "sentry:errors_piling:repo", title: "Errors are piling up", why: "14 checkout errors hit 230 users this week, none triaged.", unlock: "Triage the 14 new errors", because: "14 errors, 230 users, none triaged yet.", kind: "verify" },
       { area: "speed", signal: "ci:ci_slow:repo", title: "CI is clogging the line", why: "CI went from 6 to 14 min, and every PR waits on it.", unlock: "Cache installs in CI", because: "Runs take 14 min, up from 6 last week.", kind: "automate" },
       { area: "feedback", signal: "feedback:feedback_unanswered:repo", title: "People wrote in, nobody answered", why: "11 people wrote this week and 9 got no reply.", unlock: "Reply to the 9 waiting", because: "9 of 11 messages this week have no reply.", kind: "reply" },
@@ -1520,7 +1520,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
 
   // One pick at a time: it gets heavier while it waits (the pile on the map grows), Continue works it off until it
   // clears, Later parks it. Then the brain names the next one.
-  const brainSteps = sc.brain ?? [];
+  const brainSteps = sc.pileups ?? [];
   let brainAt = 0;
   const holding = (h: HoldingBack | null) => apply({ holdingBack: h });
   const brainNext = (ms: number) => brainSteps.length && later(ms, () => brainPick(brainSteps[brainAt++ % brainSteps.length]));
