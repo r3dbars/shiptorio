@@ -25,15 +25,26 @@ Real builder PR: [Testing #12](https://github.com/r3dbars/Testing/pull/12).
   that exact head. PR #12 remains open and blocked; no bot PR was merged directly.
 - Shiptorio #285 independently adds same-head source evidence to docs AI review. An
   alternative local patch was saved rather than opening a duplicate production fix.
-- A live Durable Object timeout currently prevents loading the factory reliably; #294
-  owns the focused recovery. This acceptance run has not bypassed its gauntlet or Launch.
+- Shiptorio #294 recovered the claim-lock timeout; its deploy and live smoke passed.
+  Follow-ups #305/#306 own handshake delay and expected planning-denial resets.
+- The next blocker reproduced in a focused deck regression: old alerts fill all 12
+  slots, hiding fresh launch and scar-driven rework cards. #307 already fixes this
+  exact case; its CI and Stranger passed. This run keeps the actual merge decision
+  server-owned. The separate Activity pad shortcut opens GitHub in live mode.
+- Before the competing autopilot was paused, real Spark/local Codex completed issue #7
+  as [Testing #13](https://github.com/r3dbars/Testing/pull/13), head
+  `8ef6f5be972e34fa8c1fdd4eb7938ce99f2b7866`. Its three-line docs-only diff matches
+  the issue; CI, verify and AI review passed. It remains unmerged pending the actual
+  server-issued Launch card. Clicking the legacy pad shortcut did not merge it.
 
 ## Quotas and isolation
 
 Justin approved raising the daily build cap from 21 to 25, retaining the separate $5 Spark
 budget. Before mutation, the quota guard found a newer stored cap of 200 and preserved it.
-No quota change was made by this run. The older Testing autopilot process was paused to
+No quota change was made by this run. The competing Testing autopilot process was paused to
 prevent competing jobs; restore it after safely finishing the controlled acceptance run.
+The original paused PID 87503 exited; its replacement PID 56132 was verified as
+Testing-only and paused. No Shiptorio #170 runner or pairing was changed.
 
 ## Remaining proof
 
