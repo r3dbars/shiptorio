@@ -4,7 +4,7 @@ import { gzipSync } from "node:zlib";
 
 // Cold startup through the first shaft frame (including its dynamically loaded art).
 // Updated from the measured optimized build; do not silently raise this on regressions.
-const BASELINE_GZIP_BYTES = 709_465; // Bun gzip bytes requested through the first shaft frame
+const BASELINE_GZIP_BYTES = 710_820; // Bun gzip bytes requested through the first shaft frame
 const LIMIT = Math.ceil(BASELINE_GZIP_BYTES * 1.10);
 const DIST = resolve(import.meta.dir, "../web/dist");
 type Chunk = { file: string; imports?: string[]; dynamicImports?: string[] };

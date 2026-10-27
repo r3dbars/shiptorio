@@ -34,9 +34,27 @@ function artPages(): Plugin {
   };
 }
 
+// The default map needs these assets before it can draw. Start their transfers with
+// the HTML instead of waiting for React -> FactoryMap -> ShaftScene -> art imports.
+function shaftPreloads(): Plugin {
+  return {
+    name: "shiptorio-shaft-preloads",
+    transformIndexHtml: {
+      order: "post",
+      handler(_html, context) {
+        if (!context.bundle) return;
+        return Object.values(context.bundle)
+          .filter((entry) => entry.type === "chunk" && Object.keys(entry.modules).some((id) =>
+            /\/web\/src\/map\/shaft\/(ShaftScene\.ts|modules\/[^/]+\.js)$/.test(id)))
+          .map((entry) => ({ tag: "link", attrs: { rel: "modulepreload", href: `/${entry.fileName}`, crossorigin: "" }, injectTo: "head" as const }));
+      },
+    },
+  };
+}
+
 // `bun run dev:web` serves the UI on :5173 and proxies the API + websockets to `wrangler dev` on :8787.
 export default defineConfig({
-  plugins: [react(), artPages(), docsSite()],
+  plugins: [react(), artPages(), docsSite(), shaftPreloads()],
   build: {
     manifest: true,
     rollupOptions: {
