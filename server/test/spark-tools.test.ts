@@ -1,8 +1,10 @@
 import { sparkTestEnv } from "./budget-fixture";
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { compact, planLocalTask, reviewWithTools, runReadTool, type Toolbox } from "../src/spark-tools";
 import { factoryBrief, signalsBrief, issueComments, ciReport } from "../src/spark-context";
 import type { FactoryState, Item } from "@shiptorio/shared";
+const originalFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = originalFetch; });
 
 // The r3dbars/Testing shop, as the two live review misses saw it (Testing #12 and #13).
 const repo: Record<string, string> = {
