@@ -14,6 +14,7 @@ const out = resolve(option("--out", `playtest/out/${new Date().toISOString().rep
 await mkdir(out, { recursive: true });
 const local = ["localhost", "127.0.0.1"].includes(url.hostname);
 const steps = [], failures = [];
+let observedLaunch = false;
 let fixture, browser, lastPage;
 try {
   if (local) fixture = await localFactory(persona, url.origin);
@@ -24,6 +25,17 @@ try {
     const page = await context.newPage();
     lastPage = page;
     page.setDefaultTimeout(60000);
+    const seenItems = new Map();
+    page.on("websocket", socket => socket.on("framereceived", frame => {
+      try {
+        const event = JSON.parse(String(frame.payload));
+        const items = event.type === "snapshot" ? event.state?.items : event.type === "patch" ? event.patch?.items : [];
+        for (const item of items ?? []) {
+          if (item.state === "launched" && seenItems.has(item.id) && seenItems.get(item.id) !== "launched") observedLaunch = true;
+          seenItems.set(item.id, item.state);
+        }
+      } catch { /* Non-JSON heartbeat frames have no game state. */ }
+    }));
     let admitted = false;
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
     page.on("console", msg => { if (msg.type() === "error" && (admitted || !/401/.test(msg.text()))) failures.push(`Console: ${msg.text()}`); });
@@ -48,10 +60,10 @@ try {
     admitted = true;
     if (fixture) { console.log("Seeding isolated persona"); await fixture.seed(); console.log("Persona seeded"); }
     await capture("signed-in");
-    const deadline = Date.now() + Number(option("--duration", "90")) * 1000;
+    const deadline = Date.now() + Number(option("--duration", "180")) * 1000;
     while (Date.now() < deadline) {
       const text = await page.locator("body").innerText();
-      if (fixture?.stub.state.merges.length && new URL(page.url()).searchParams.has("repo")) { await capture("fixture-launch-complete"); break; }
+      if (observedLaunch && new URL(page.url()).searchParams.has("repo")) { await capture("launch-confirmed-over-socket"); break; }
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
@@ -85,6 +97,7 @@ try {
   if (fixture?.stub.state.unexpected.length) failures.push(...fixture.stub.state.unexpected.map(p => `Unexpected provider request: ${p}`));
   if (fixture?.runnerErrors.length) failures.push(...fixture.runnerErrors);
   if (fixture && persona === "test-newbie" && fixture.stub.state.merges.length === 0) failures.push("Fixture loop did not reach a player-approved Launch");
+  if (persona === "test-newbie" && !observedLaunch) failures.push("No new launched state arrived from the real factory socket");
 } catch (error) {
   failures.push(String(error));
   if (lastPage && !lastPage.isClosed()) {
@@ -96,7 +109,7 @@ finally {
   const unique = [...new Set(failures)];
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
   const report = { persona, origin: url.origin, fixture: local, fixturePRs: fixture?.stub.state.pulls.length ?? null,
-    fixtureMerges: fixture?.stub.state.merges.length ?? null, receiptAttached: fixture?.stub.state.pulls.some(pr => pr.body?.includes("shiptorio-proof:")) ?? false,
+    fixtureMerges: fixture?.stub.state.merges.length ?? null, observedLaunch, receiptAttached: fixture?.stub.state.pulls.some(pr => pr.body?.includes("shiptorio-proof:")) ?? false,
     steps, failures: unique, fingerprint, passed: !unique.length };
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
