@@ -363,7 +363,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (this.brainBusy || now - this.brainKickedAt < 30_000 || !this.meta) return;
     this.brainBusy = true; this.brainKickedAt = now;
     const run = async () => {
-      if (!await flagEnabled(this.env, "brain")) return;
+      if (!await flagEnabled(this.env, "brain")) {
+        if (this.state?.holdingBack) { this.state.holdingBack = null; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack: null } }); }
+        return;
+      }
       const s = this.state!, meta = this.meta!;
       let token: Promise<string> | undefined;
       const { cache, errors } = await collect({
@@ -386,6 +389,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
       });
       await this.accountPut("brainMemory", result.memory);
+      const main = result.memory.current && cache.signals.find(x => x.id === result.memory.current!.bottleneck.signalIds[0]);
+      const holdingBack = result.memory.current ? { ...result.memory.current.bottleneck, severity: main ? Math.min(1, signalWeight(main, now)) : 0 } : null;
+      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) { s.holdingBack = holdingBack; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack } }); }
       for (const c of result.cleared) this.log("info", `Unblocked: ${c.title}.`);
       if (result.decided) {
         const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];

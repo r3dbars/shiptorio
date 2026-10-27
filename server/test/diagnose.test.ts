@@ -125,6 +125,14 @@ describe("rule fallback", () => {
     expect(r.unlock).toMatchObject({ play: "ci_cache_installs", bottleneckId: ci.id });
   });
 
+  it("stays quiet on faint signals the model would have weighed", async () => {
+    const creep = sig("ci", "ci_slow", 0.28);
+    expect(ruleDiagnosis([creep], emptyMemory(), T)).toBeNull();
+    const out = await runDiagnose({ ...base, signals: [creep], memory: emptyMemory(), now: T });
+    expect(out.diagnosis.bottleneck).toBeNull();
+    expect(out.memory.current).toBeUndefined();
+  });
+
   it("keeps the current card on a near-tie so the deck doesn't flip", () => {
     const close = sig("feedback", "feedback_unanswered", 0.66);
     const cur = ruleDiagnosis([close], emptyMemory(), T)!;
