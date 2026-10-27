@@ -20,6 +20,29 @@ for merge and CI status; the summary below describes the final behavior.
 | Medium | Inspection read only the first 100 PR files, allowing unsafe files beyond that page to escape review. | [#271](https://github.com/r3dbars/shiptorio/pull/271): check a second page and fail closed above the supported 100-file limit. `inspection-pagination.test.ts` covers a hidden workflow file, exactly 100 files and upstream failure. |
 | Medium | Automatic launch could reuse a docs permit after the current PR changed to another lane. | [#273](https://github.com/r3dbars/shiptorio/pull/273): clear/recompute lane on new heads and recheck files, permit and stable head immediately before automatic merge. `merge-freshness.test.ts` covers changed lane, a head change during file retrieval and a valid docs launch. |
 
+### Verified production deployment (2026-10-27 UTC / 2026-10-26 CT)
+
+All four fixes (#267, #270, #271 and #273) were merged after green checks and
+verified in production at commit
+[`06b355a82f54b1f91af483a4ce6a46c362e5cfd8`](https://github.com/r3dbars/shiptorio/commit/06b355a82f54b1f91af483a4ce6a46c362e5cfd8).
+Git ancestry confirmed that this commit contains every fix.
+
+- [Deploy run 40434908855](https://github.com/r3dbars/shiptorio/actions/runs/40434908855)
+  succeeded, including its **Deploy** and **Live smoke** steps.
+- An independent request to `https://shiptorio.com/api/version` returned that exact
+  commit; `/api/health` returned `ok: true`, with D1, KV and Durable Object checks
+  all `ok`.
+- Earlier deploys stopped before Cloudflare mutation because Linux runner tests
+  lacked their sandbox dependency. [#278](https://github.com/r3dbars/shiptorio/pull/278)
+  corrected fixture availability handling; [#282](https://github.com/r3dbars/shiptorio/pull/282)
+  installed the verification backend in Deploy and unblocked the successful run.
+- The combined security fixes also passed `bun run check` at `35f147b`: 723 tests
+  passed, two skipped, zero failures; typechecks and builds passed.
+
+This records the observed rollout, not a claim that production will remain on
+this commit. Deployment and health verification do not replace the audit limits
+below or constitute live exploitation testing.
+
 ### Requested boundaries checked
 
 - **Routes and ownership:** public auth/waitlist/legal/static routes have deliberate
