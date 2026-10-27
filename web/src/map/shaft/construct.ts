@@ -80,16 +80,32 @@ const BOX = new THREE.BoxGeometry(1, 1, 1);
 // Reduced motion fades a machine's own materials in through a transparent twin of each. Twins are made once per
 // material and kept, with the original's shader patches (firstRun.ts), so a fade never compiles a fresh program
 // mid-build: on a slow GPU that's a long main-thread stall right when the player's build starts.
-const TWINS = new WeakMap<THREE.Material, THREE.Material>();
+const TWINS = new WeakMap<THREE.Material, { material: THREE.Material; version: number }>();
 export function fadeTwin(orig: THREE.Material): THREE.Material {
-  let m = TWINS.get(orig);
-  if (!m) {
-    m = orig.clone();
-    m.transparent = true;
-    m.onBeforeCompile = orig.onBeforeCompile;
-    m.customProgramCacheKey = orig.customProgramCacheKey;
-    TWINS.set(orig, m);
+  let entry = TWINS.get(orig);
+  if (!entry) {
+    const material = orig.clone();
+    entry = { material, version: orig.version };
+    TWINS.set(orig, entry);
+    // Twins leave the scene after a fade, so scene traversal cannot dispose them.
+    const dispose = () => {
+      material.dispose();
+      TWINS.delete(orig);
+      orig.removeEventListener("dispose", dispose);
+    };
+    orig.addEventListener("dispose", dispose);
+  } else {
+    // Machines update their appearance between the warm-up and the real build.
+    entry.material.copy(orig);
+    if (entry.version !== orig.version) {
+      entry.material.needsUpdate = true;
+      entry.version = orig.version;
+    }
   }
+  const m = entry.material;
+  m.transparent = true;
+  m.onBeforeCompile = orig.onBeforeCompile;
+  m.customProgramCacheKey = orig.customProgramCacheKey;
   return m;
 }
 

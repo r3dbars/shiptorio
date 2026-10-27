@@ -197,8 +197,6 @@ test("an empty group still finishes", async () => {
   expect(play(run, CONSTRUCT_SECONDS + 0.1)).toBe(true);
   await run.done;
 });
-// Proposal only: append to web/test/construct.test.ts after extracting runtime.
-// Uses its existing machine() helper; exercises public construct lifecycle.
 test("a warmed fade twin follows its original's disposal without retaining the old program owner", () => {
   const { holder } = machine();
   const mesh = holder.children[0].children[0] as THREE.Mesh;

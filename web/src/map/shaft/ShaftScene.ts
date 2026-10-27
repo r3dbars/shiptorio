@@ -410,13 +410,7 @@ export class ShaftScene {
     const reduced = this.reduceMotion;
     const extras = [...constructWarmups(), ...burstWarmups()];
     for (const o of extras) (o.frustumCulled = false), stage.root.add(o);
-    const runs = holders.flatMap((h) => {
-      const c = construct(h, { reduced });
-      c.update(reduced ? 0.5 : 1.5); // the scaffold up, the first parts dropping
-      const b = burst(h, { first: true, reduced });
-      b.update(0.3);
-      return [c, b];
-    });
+    const runs: (ReturnType<typeof construct> | ReturnType<typeof burst>)[] = [];
     const unculled = (): THREE.Object3D[] => {
       const out: THREE.Object3D[] = [];
       for (const h of holders)
@@ -429,10 +423,18 @@ export class ShaftScene {
     const look = () => {
       const culled = unculled();
       r.shadowMap.needsUpdate = true;
-      stage.render(r);
-      for (const o of culled) o.frustumCulled = true;
+      try { stage.render(r); }
+      finally { for (const o of culled) o.frustumCulled = true; }
     };
     try {
+      for (const h of holders) {
+        const c = construct(h, { reduced });
+        runs.push(c);
+        c.update(reduced ? 0.5 : 1.5); // register cleanup before any update can fail
+        const b = burst(h, { first: true, reduced });
+        runs.push(b);
+        b.update(0.3);
+      }
       look();
       if (!reduced) for (const run of runs) run.update(2);
       look();

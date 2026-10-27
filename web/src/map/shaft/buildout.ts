@@ -291,6 +291,7 @@ export class Buildout {
    *  and revealing one mid-build never stalls the frame (and the player's hold) on a compile. */
   precompile(draw: (holders: THREE.Object3D[]) => void) {
     const holders = [...this.hiddenStations].map((id) => this.I!.stations[id].holder);
+    if (!holders.length) return; // returning factories need no construction warm-up
     const culled: THREE.Object3D[] = [];
     for (const h of holders) {
       h.visible = true;
