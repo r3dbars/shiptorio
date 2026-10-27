@@ -15,7 +15,7 @@ export function sparkStub() {
       else reply = { tool: "assign_job", reason: "Fix the calculation with regression coverage.", plan: "Apply the SAVE10 discount to the checkout total and add a regression test.", acceptance: ["SAVE10 reduces a 100 subtotal to 90.", "Regression fails on base and passes on head."], files: ["src/cart.ts", "test/cart.test.ts"], heeded: [] };
     }
     else if (prompt.includes("hostile reviewer")) { kind = "review"; reply = { verdict: "pass", reason: "Discount calculation and regression agree.", findings: [] }; }
-    else if (prompt.includes('"files"')) { kind = "scope"; reply = { files: ["src/cart.ts", "test/cart.test.ts"] }; }
+    else if (prompt.includes("Pick the files you need")) { kind = "scope"; reply = { files: ["src/cart.ts", "test/cart.test.ts"] }; }
     else if (prompt.includes("routing one approved coding job")) { kind = "power"; reply = { harness: "codex", why: "Use the connected subscription." }; }
     else if (prompt.includes('"order"')) { kind = "deck"; const brief = JSON.parse(JSON.parse(messages.at(-1).content.split("\n").slice(1, -1).join("\n")));
       reply = { order: brief.cards.map(c => c.id), reason: "Keep the available player decisions." }; }

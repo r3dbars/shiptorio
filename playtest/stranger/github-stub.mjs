@@ -104,8 +104,10 @@ export function githubStub({ origin, webhookSecret, worker }) {
     await webhook("issues", payload, "stranger-issue-1"); // delivery retries must not duplicate ore
   }
   async function completeChecks(conclusion = "success", sha = state.headSha) {
-    state.checks = conclusion;
-    await webhook("check_suite", { action: "completed", installation: installationInfo(), repository: repository(), check_suite: { head_sha: sha, conclusion, pull_requests: [{ number: 7 }] } });
+    if (sha === state.headSha) state.checks = conclusion;
+    const delivery = `stub-check-${crypto.randomUUID()}`;
+    await webhook("check_suite", { action: "completed", installation: installationInfo(), repository: repository(), check_suite: { head_sha: sha, conclusion, pull_requests: [{ number: 7 }] } }, delivery);
+    return delivery;
   }
 
   // GitHub tells the App about the install with a signed webhook, like the real one.

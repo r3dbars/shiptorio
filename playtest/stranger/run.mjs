@@ -103,7 +103,26 @@ const socketMessages = [];
 let sawFactoryWork = false;
 let factoryState = {};
 page.on("websocket", socket => {
-  socket.on("framereceived", frame => { try { const value = JSON.parse(String(frame.payload)); if (value.type === "snapshot") factoryState = value.state; if (value.type === "patch") { const { items, ...rest } = value.patch; Object.assign(factoryState, rest); if (items) { const byId = new Map((factoryState.items ?? []).map(i => [i.id, i])); for (const item of items) byId.set(item.id, item); factoryState.items = [...byId.values()]; } } if (value.state?.items?.length || value.patch?.items?.length) sawFactoryWork = true; socketMessages.push({ type: value.type, text: value.text, itemCount: value.state?.items?.length ?? value.patch?.items?.length, move: value.state?.move?.title ?? value.move?.title }); } catch {} });
+  socket.on("framereceived", frame => {
+    try {
+      const value = JSON.parse(String(frame.payload));
+      if (value.type === "snapshot") factoryState = value.state;
+      if (value.type === "move") factoryState.move = value.move;
+      if (value.type === "move_resolved" && factoryState.move?.id === value.moveId) factoryState.move = null;
+      if (value.type === "deck") factoryState.deck = value.deck;
+      if (value.type === "patch") {
+        const { items, ...rest } = value.patch;
+        Object.assign(factoryState, rest);
+        if (items) {
+          const byId = new Map((factoryState.items ?? []).map(i => [i.id, i]));
+          for (const item of items) byId.set(item.id, item);
+          factoryState.items = [...byId.values()];
+        }
+      }
+      if (factoryState.items?.length) sawFactoryWork = true;
+      socketMessages.push({ type: value.type, text: value.text, itemCount: factoryState.items?.length, move: factoryState.move?.title });
+    } catch (error) { consoleErrors.push(`Invalid factory frame: ${error}`); }
+  });
   socket.on("close", () => socketMessages.push({ type: "socket-closed" }));
 });
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
@@ -200,6 +219,7 @@ try {
   });
   await step("signed issue arrives once, even on delivery retry", async () => {
     await stub.issueArrives();
+    await until("signed issue delivery processed", async () => (await db.prepare("SELECT state FROM webhook_deliveries WHERE delivery_id = ?").bind("stranger-issue-1").first())?.state === "done");
     await until("issue ore over live socket", () => item());
     assert.equal(factoryState.items.filter(i => i.id === "gh-1").length, 1);
   });
@@ -208,8 +228,6 @@ try {
     const pairing = await context.newPage();
     await pairing.goto(device.verificationUri);
     await pairing.getByLabel("Repository (owner/name)").fill(stub.state.repo);
-    console.log("Pairing form", await pairing.getByLabel("Repository (owner/name)").evaluate(el => ({ value: el.value, valid: el.validity.valid, validationMessage: el.validationMessage, referrer: document.referrerPolicy })));
-    await pairing.screenshot({ path: join(out, "pairing-form.png") });
     const [approval] = await Promise.all([pairing.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/runner/pair", { timeout: 10000 }), pairing.getByRole("button", { name: "Connect this repo" }).click()]);
     assert.equal(approval.ok(), true, `Pair approval: ${approval.status()} ${await approval.text()} request=${JSON.stringify({ origin: await approval.request().headerValue("origin") })}`);
     await pairing.getByText("Machine approved", { exact: true }).waitFor();
@@ -246,6 +264,12 @@ try {
     assert.match(stub.state.pulls[0].body, /Closes #1/);
     assert.match(stub.state.pulls[0].body, new RegExp(`shiptorio-proof:${stub.state.headSha}`));
     await until("PR at CI inspector", () => item()?.state === "inspecting");
+    assert.equal(item().inspection.stages.find(s => s.gate === "ci").state, "pending");
+    assert.equal(stub.state.merges.length, 0);
+  });
+  await step("stale green CI cannot advance the current PR", async () => {
+    const delivery = await stub.completeChecks("success", stub.state.baseSha);
+    await until("stale CI delivery processed", async () => (await db.prepare("SELECT state FROM webhook_deliveries WHERE delivery_id = ?").bind(delivery).first())?.state === "done");
     assert.equal(item().inspection.stages.find(s => s.gate === "ci").state, "pending");
     assert.equal(stub.state.merges.length, 0);
   });

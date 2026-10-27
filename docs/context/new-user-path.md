@@ -2,7 +2,7 @@
 
 What a brand-new GitHub account goes through, step by step, timed, with every snag and who owns it.
 Re-run it any time: `bun run stranger` (or `node playtest/stranger/run.mjs` after `bun run build`).
-CI runs it as the **Stranger path** workflow whenever the files on the path change.
+CI runs the **Stranger E2E** workflow on every PR to `main`, including drafts and docs-only changes.
 
 ## How the dry run works
 
@@ -14,7 +14,7 @@ fresh account (`fresh-stranger`, no Shiptorio row, no installation) that owns on
 to github.com (authorize, install the App) are answered by the stub too, and the install sends the real
 signed `installation` webhook. No secrets, no network, nothing on shiptorio.com is touched.
 
-`ALLOWED_LOGINS` is `*` in the run: the sign-up gate itself is Codex goal 12 (PR #161).
+`ALLOWED_LOGINS` contains only `fresh-stranger`: no wildcard or signup bypass.
 
 ## Timings (scripted, 2026-10-26)
 
@@ -44,7 +44,7 @@ A human adds reading time: the full welcome tour is 8 beats, GitHub's install pa
 | 6 | Power says "pair the runner" with a tooltip for `bunx shiptorio-runner pair`, which doesn't exist. A stranger has no way to install the runner. | Open: PR #166 adds `RunnerConnection` (install.sh + browser pairing code) to this exact sheet. Not duplicated here. | Codex (goal 11, #166) |
 | 7 | The preview password is the real front door, and a login outside `ALLOWED_LOGINS` gets a bare-text 403 "x isn't on the allow list". | Open: PR #161 (waitlist, invites, `/waitlist` page). | Codex (goal 12, #161) |
 | 8 | The live map shows the whole HUD at once on a first visit (tour lessons only run in the sim's `first-run`), which breaks VISION's progressive disclosure for exactly the player who needs it. | Open, next for the web lane: run the `tutorial.tsx` lessons on a player's first live visit. | Claude (web) |
-| 9 | Runner install → first plan → PR → gauntlet → Launch → first rocket is not in this run: it needs a real Mac runner, a Spark key and GitHub. | Open: proven by the Testing-repo run (task 1). The stub can grow a fake runner later. | Task 1 thread |
+| 9 | Runner → plan → PR → gauntlet → Launch → rocket was outside the run. | Covered by the full fixture E2E extension below. Real installer/CLI execution and external providers still need the live acceptance run. | Codex |
 
 ## What changed in code (this PR)
 
@@ -78,3 +78,32 @@ After the runner-onboarding merge, the first repo intentionally opens Power with
 agent card, and additionally requires real issue data received over the live socket;
 a URL-only empty Power sheet cannot satisfy it. All eight current-main steps passed
 in 26.0 seconds. Linux CI must run this updated acceptance path before merge.
+
+
+## Full E2E extension (2026-10-26)
+
+The existing eight-step browser journey now continues through signed issue delivery (including a retry),
+device-code runner pairing approved in the browser, Spark's real planning tool loop with fixture responses,
+player plan approval, runner claim and finish HTTP routes, PR publication, stale CI rejection, current-head
+CI, regression-proof verification, Spark AI review, a visible Launch card and the player's click to merge.
+The live socket must report `launched` with the human gate passed. No direct merge RPC or state seeding
+stands in for the browser's plan approval and Launch actions.
+
+External boundaries are explicit: `github-stub.mjs` serves GitHub OAuth/install/API/webhooks and git results;
+`spark-stub.mjs` serves deterministic Meta completion JSON; the fixture runner supplies branch/head/diff
+and a base-fails/head-passes receipt. This tests production lease, scope, proof-binding, PR publication
+and gauntlet integration. It does **not** execute Codex/Claude, install the runner on a real machine,
+validate actual model output, or merge any real GitHub PR. The build receipt is a fixture, not physical
+runner proof. Every factory decision still goes through production Spark code.
+
+Run `bun run stranger`; use `STRANGER_OUT=/tmp/stranger-e2e` to keep evidence in a known directory.
+Chromium must be installed (`bun x playwright install chromium`). `STRANGER_PORT` changes the default
+8799, `CHROMIUM_PATH` selects a browser, and `PLAYWRIGHT_MODULE` remains an optional module override.
+CI uses the locked Playwright version, a fresh local database and no repository secrets. Every step
+saves a screenshot; `timings.json` includes the final factory state and provider call summaries;
+`trace.zip` contains the browser trace. CI uploads evidence even when the journey fails. Failure
+screenshots and the database/socket/API diagnostics identify the first broken boundary.
+
+The first added browser pairing step reproduced a real bug: `no-referrer` makes Chromium send opaque
+`Origin: null` for the approval form. PR #252 narrows the pairing-page policy to `same-origin`, while
+retaining exact-origin CSRF checks. Tests exercise the real form without an injected Origin header.
