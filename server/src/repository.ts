@@ -1,3 +1,4 @@
+import { rememberInstallationOwner } from "./installation-owner";
 import type { Factory } from "./factory";
 import { appJwt, gh, installationToken, type AppCredentials } from "./github";
 
@@ -23,8 +24,9 @@ export async function repositoryFactory(env: RepositoryEnv, name: string): Promi
     // Existing installs predate lifecycle metadata. Discover drift on first use.
     const info = await env.DB.prepare("SELECT permissions, status, account_login, account_type FROM installations WHERE id = ?").bind(row.installation_id).first<{ permissions: string | null; status: string; account_login: string; account_type: string }>();
     if (info && !info.permissions && info.status === "active" && !row.archived_at) {
-      const installation = await gh<{ permissions: Record<string, string>; account: { login: string; type: string } }>(`/app/installations/${row.installation_id}`, await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY));
+      const installation = await gh<{ permissions: Record<string, string>; account: { id?: number; login: string; type: string } }>(`/app/installations/${row.installation_id}`, await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY));
       await env.DB.prepare("UPDATE installations SET permissions = ?, account_type = ? WHERE id = ?").bind(JSON.stringify(installation.permissions), installation.account.type, row.installation_id).run();
+      await rememberInstallationOwner(env.DB, row.installation_id, installation.account);
       const { permissionStatus } = await import("./github-lifecycle");
       await f.restoreGitHub(row.full_name, row.installation_id);
       await f.setGitHubPermissions(permissionStatus(row.installation_id, installation.permissions, installation.account.login, installation.account.type));
