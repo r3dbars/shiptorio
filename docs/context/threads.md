@@ -352,6 +352,15 @@ renewing from the independent heartbeat; preserving revocation and saved work.
 
 ## Codex merge helper
 
+- 2026-10-27 23:13 UTC: ready Claude heads inspected after root #438 deployed. #433 exact `dbf5df18300712090f452a1e126a902aaff77ea0` had no manual browser/load run; dispatched [40600771254](https://github.com/r3dbars/shiptorio/actions/runs/40600771254) once. Queued; not ready proof. One manual PR at a time. #427 remains under root hold for buildout acceptance coverage/rendering; no duplicate dispatch, no merges or retargets, no factory changes.
+
+Historical check-only dispatch receipt (heads below are superseded; queued was never counted as green):
+- 2026-10-27 19:50 UTC: check-only batch helper; no merges or retargets. Ready Claude PRs had green check/selfhost and Stranger on the heads below, but browser/load were skipped. Dispatched each missing manual CI once; queued is not ready-to-release proof:
+  - #357, `89268d9ae8c8524acb46c0f9480ce776b844b502`: [CI 40572747521](https://github.com/r3dbars/shiptorio/actions/runs/40572747521), queued.
+  - #359, `38f60297ed4f2fe769dba24238b636f9ba436843`: [CI 40572751171](https://github.com/r3dbars/shiptorio/actions/runs/40572751171), queued.
+  - #363, `92e4e5232bfb995befe8e24a5083e385193c62ab`: [CI 40572754927](https://github.com/r3dbars/shiptorio/actions/runs/40572754927), queued.
+- Root owns final combined release checks and Deploy. Factory PRs untouched; password gate unchanged.
+
 - 2026-10-27: #342 head `1dbb4fc376a2cfe4673b66b770f31d689465ae71` passed required check/selfhost/Stranger and full manual browser/load [40564032048](https://github.com/r3dbars/shiptorio/actions/runs/40564032048). Squash merged as `7304199df5ed6259e7a8fff8d5402f21dfe67ab5`; [Deploy 40565415889](https://github.com/r3dbars/shiptorio/actions/runs/40565415889) green; live version matched and private factory returned 401 anonymously.
 - 2026-10-27: #346 was already merged. Updated its branch from main through merge commit `db5614982220d4eafeff107cf82e022b6c6f4501` (identical tree to deployed main at dispatch). Manual browser/load [40565878063](https://github.com/r3dbars/shiptorio/actions/runs/40565878063) passed all jobs. [Deploy 40566612966](https://github.com/r3dbars/shiptorio/actions/runs/40566612966) passed at verified descendant `1bdeeb4`; no second PR merge attempted.
 - 2026-10-27: #345 is already merged; updating the historical branch from main `1bdeeb4` returned a merge conflict. Owner notified in the PR; no code was edited. Its integrated code was covered by the green full manual run for #346.
