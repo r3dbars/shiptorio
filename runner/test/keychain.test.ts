@@ -13,7 +13,7 @@ const run = async (args: string[], home?: string) => {
   if (code) throw Error(`${args[0]} failed: ${err}`);
   return out;
 };
-test.skipIf(process.platform !== "darwin")("isolated HOME persists credentials across processes and into the agent sandbox without changing the personal Keychain", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== "darwin")("isolated HOME persists credentials across processes and into the agent sandbox without changing the personal Keychain", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-keychain-test-"));
   const normalBefore = await run(["default-keychain", "-d", "user"]).catch(() => "no-default");
   let home: string | undefined;

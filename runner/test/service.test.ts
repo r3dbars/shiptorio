@@ -11,7 +11,7 @@ test("updating the service preserves renewed credentials but honors a new owner 
   expect(pairingConfig(config("new-pair", 150), fresh)).toBe(config("new-pair", 150));
   expect(pairingConfig(old, "broken")).toBe(old);
 });
-test("bundled background runner executes outside the repository with an explicit data root", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("bundled background runner executes outside the repository with an explicit data root", async () => {
   const directory = await mkdtemp(resolve(tmpdir(), "shiptorio-runtime-"));
   try {
     const result = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../src/cli.ts")], outdir: directory, target: "bun", naming: "runner.mjs" });

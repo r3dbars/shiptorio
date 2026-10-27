@@ -16,8 +16,11 @@ import {
   type Experiment,
   type FunnelStep,
   type FunnelWindow,
+  canSetPriority,
   checkStationId,
   insertCheck,
+  lineOrder,
+  withPriority,
   researchBlocked,
   researchedChecks,
   suggestResearch,
@@ -584,7 +587,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const fails = new Map<string, string | undefined>(); // item id -> scripted inspector failure
   const asks = new Map<string, string>(); // item id -> the question Spark asks before building it
   const held = new Set<string>(); // queued items waiting on the player's yes
-  const parked = new Set<string>(); // items the player said "not now" to
   const offeredMines = new Set<string>(); // empty mines the planner already suggested
   let quietUntil = 0; // tick the planner may ask again after a "not now"
   let backlogAt = 0; // next open issue to pull from the backlog
@@ -798,7 +800,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       (opt) => {
         held.delete(item.id);
         if (opt !== "go") {
-          parked.add(item.id);
+          const cur = s.items.find((i) => i.id === item.id);
+          if (cur) apply({ items: [withPriority(cur, "park")] }); // the cart's callout offers Unpark
           return spark({ tool: "post_log", text: `Parked "${item.title}". Ask again when you're ready.` });
         }
         spark({ tool: "start_job", text: `Sent "${item.title}" to ${asm?.id ?? "the assembler"} with the plan`, reason: "you said go" }, { itemId: item.id, target: asm?.id, approvedBy: "player" });
@@ -996,7 +999,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     while (growthScript.length && growthScript[0].at + clock0 <= s.tick) funnelDrop(growthScript.shift()!, now);
     measureTick(now);
 
-    for (const item of [...s.items]) {
+    // rushed work moves first; parked work sits where it is until Unpark (shared/src/priority.ts)
+    for (const item of lineOrder(s.items)) {
       const age = s.tick - (since.get(item.id) ?? s.tick);
       if (age < (DWELL[item.state] ?? Infinity)) continue;
       const next = { ...item, updatedAt: now };
@@ -1013,7 +1017,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           break;
         case "queued": {
           // Spark's pick goes first: nothing else starts while its "fix this first" waits on your Go
-          if (held.size || parked.has(item.id)) continue;
+          if (held.size || item.priority === "park") continue;
           // the local model only takes what the planner routed to it; routed work waits for its own plant
           const want = routed.get(item.id);
           const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId && (want ? m.harness === want : m.harness !== "local"));
@@ -1102,7 +1106,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     }
     // The line is caught up: the planner always deals the next real decision, so the game never goes quiet (#105).
     // First an empty mine to connect, then more open issues to pull in. "Not now" waits a while before asking again.
-    const caughtUp = s.items.length > 0 && s.items.every((i) => i.state === "launched" || parked.has(i.id));
+    const caughtUp = s.items.length > 0 && s.items.every((i) => i.state === "launched" || i.priority === "park");
     if (!sc.intro && clock0 !== Infinity && !script.length && caughtUp && !s.move && !pending.length && s.tick >= quietUntil) {
       // Mines unlock slowly (one per 3 rockets), so a new player isn't asked for two integrations after one win.
       const kind = mineUnlocked(s) ? ghostSpots(s)[0]?.kind : undefined;
@@ -1704,6 +1708,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         case "choose_move":
           resolve(msg.moveId, msg.optionId, "player");
           break;
+        case "set_priority": {
+          // a cart's callout (shared/src/priority.ts), the same rules the live factory uses
+          const item = s.items.find((i) => i.id === msg.itemId);
+          if (!item || !canSetPriority(item, msg.priority)) break;
+          if (msg.priority === "park") held.delete(item.id); // set aside: the rest of the line stops waiting on it
+          apply({ items: [{ ...withPriority(item, msg.priority), updatedAt: Date.now() }] });
+          log("info", msg.priority === "rush" ? `Rushed "${item.title}" to the front of the line` : msg.priority === "park" ? `Parked "${item.title}"` : `Unparked "${item.title}"`, item.id);
+          break;
+        }
         case "defer_move":
           defer(msg.moveId);
           break;
