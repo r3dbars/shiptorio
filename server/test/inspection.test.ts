@@ -1,12 +1,12 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { inspectPullRequest, openIssues, openPullRequest } from "../src/github";
 
-async function inspection(checks: unknown[], statuses: unknown[] = [], eventSha = "current", options: { required?: { context: string; app_id?: number }[]; rules?: unknown[]; policyStatus?: number; latestHead?: string; latestBase?: string; base?: string; expectedBase?: string } = {}) {
+async function inspection(checks: unknown[], statuses: unknown[] = [], eventSha = "current", options: { required?: { context: string; app_id?: number }[]; rules?: unknown[]; policyStatus?: number; rulesStatus?: number; latestHead?: string; latestBase?: string; base?: string; expectedBase?: string } = {}) {
   let reads = 0;
   const fetcher = spyOn(globalThis, "fetch").mockImplementation((async (url: RequestInfo | URL) => {
     const path = String(url);
     if (path.includes("/protection/required_status_checks")) return options.policyStatus ? new Response("unavailable", { status: options.policyStatus }) : Response.json({ checks: options.required ?? [{ context: "test", app_id: 15368 }] });
-    if (path.includes("/rules/branches/")) return Response.json(options.rules ?? []);
+    if (path.includes("/rules/branches/")) return options.rulesStatus ? new Response("unavailable", { status: options.rulesStatus }) : Response.json(options.rules ?? []);
     const value = path.includes("check-runs") ? { total_count: checks.length, check_runs: checks.map(c => ({ head_sha: "current", app: { id: 15368 }, ...c as object })) }
       : path.endsWith("/status?per_page=100") ? { total_count: statuses.length, statuses }
       : { state: "open", merged: false, head: { sha: ++reads > 1 ? options.latestHead ?? "current" : "current" }, base: { ref: reads > 1 ? options.latestBase ?? options.base ?? "main" : options.base ?? "main", sha: "base" } };
@@ -47,6 +47,29 @@ describe("current-commit inspection", () => {
   it("requires all reported checks and legacy statuses to succeed", async () => {
     expect((await inspection([{ name: "test", status: "completed", conclusion: "success" }])).state).toBe("passed");
     expect((await inspection([{ name: "test", status: "completed", conclusion: "success" }], [{ context: "deploy", state: "pending" }])).state).toBe("pending");
+  });
+  it("requires configured classic checks from the configured app, not same-name impostors or statuses", async () => {
+    const good = { name: "test", status: "completed", conclusion: "success" };
+    expect((await inspection([good], [], "current", { required: [{ context: "missing", app_id: 15368 }] })).state).toBe("pending");
+    expect((await inspection([{ ...good, app: { id: 99 } }])).state).toBe("pending");
+    expect((await inspection([], [{ context: "test", state: "success" }])).state).toBe("pending");
+    expect((await inspection([good])).state).toBe("passed");
+  });
+  it("holds a rerun with the old success and a new pending check on the same head", async () => {
+    expect((await inspection([{ name: "test", status: "completed", conclusion: "success" }, { name: "test", status: "in_progress", conclusion: null }])).state).toBe("pending");
+  });
+  it("enforces ruleset checks alongside classic checks", async () => {
+    const test = { name: "test", status: "completed", conclusion: "success" };
+    const rules = [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "security", integration_id: 42 }] } }];
+    expect((await inspection([test], [], "current", { rules })).state).toBe("pending");
+    expect((await inspection([test, { ...test, name: "security", app: { id: 42 } }], [], "current", { rules })).state).toBe("passed");
+  });
+  it("holds for missing/inaccessible policy even when rulesets are empty and arbitrary checks are green", async () => {
+    const checks = [{ name: "test", status: "completed", conclusion: "success" }];
+    for (const policyStatus of [403, 404]) expect((await inspection(checks, [], "current", { policyStatus })).summary).toContain("policy unavailable");
+    expect((await inspection(checks, [], "current", { required: [] })).state).toBe("pending");
+    expect((await inspection(checks, [], "current", { rulesStatus: 403 })).state).toBe("pending");
+    expect((await inspection(checks, [], "current", { rules: [{ type: "required_status_checks" }] })).state).toBe("pending");
   });
   it("rejects a force push during refresh, changed base, and evidence for another head", async () => {
     const checks = [{ name: "test", status: "completed", conclusion: "success" }];

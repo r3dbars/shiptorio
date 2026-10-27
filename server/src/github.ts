@@ -479,8 +479,35 @@ export async function inspectPullRequest(token: string, repo: string, number: nu
     gh<{ total_count: number; check_runs: { name: string; head_sha?: string; app?: { id: number }; status: string; conclusion: string | null; output?: { summary?: string | null } }[] }>(`/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=100&filter=latest`, token),
     gh<{ total_count: number; statuses: { state: string; context: string; description: string }[] }>(`/repos/${repo}/commits/${pr.head.sha}/status?per_page=100`, token),
   ]);
-  if (!pr.base?.ref || !pr.base.sha) return pending("Missing PR base metadata");
-
+  if (!pr.base?.ref || !pr.base.sha) return pending("Required CI policy unavailable: missing PR base metadata");
+  {
+    type Required = { context: string; app_id?: number | null };
+    type Rule = { type: string; parameters?: { required_status_checks?: { context: string; integration_id?: number | null }[] } };
+    const basePath = `/repos/${repo}/branches/${encodeURIComponent(pr.base.ref)}`;
+    const [protection, rules] = await Promise.all([
+      gh<{ checks?: Required[]; contexts?: string[] }>(`${basePath}/protection/required_status_checks`, token).catch(error => {
+        const cause = error instanceof RetryExhausted ? error.cause : error;
+        if (cause instanceof RateLimitError) throw cause;
+        return null;
+      }),
+      gh<Rule[]>(`/repos/${repo}/rules/branches/${encodeURIComponent(pr.base.ref)}?per_page=100`, token).catch(error => {
+        const cause = error instanceof RetryExhausted ? error.cause : error;
+        if (cause instanceof RateLimitError) throw cause;
+        return null;
+      }),
+    ]);
+    if (!protection) return pending("Required CI policy unavailable: cannot read classic branch protection");
+    if (!Array.isArray(rules) || rules.length >= 100 || rules.some(rule => rule.type === "required_status_checks" && !Array.isArray(rule.parameters?.required_status_checks))) return pending("Required check rules are incomplete");
+    const required: Required[] = [...(protection.checks ?? []), ...(protection.contexts ?? []).map(context => ({ context })),
+      ...rules.filter(r => r.type === "required_status_checks").flatMap(r => (r.parameters?.required_status_checks ?? []).map(c => ({ context: c.context, app_id: c.integration_id })))];
+    if (!required.length) return pending("Required CI policy unavailable: no expected checks configured");
+    for (const need of required) {
+      const pinned = need.app_id != null && need.app_id !== -1;
+      const matched = checks.check_runs.some(c => c.name === need.context && c.head_sha === pr.head.sha && (!pinned || c.app?.id === need.app_id) && c.status === "completed" && !["neutral", "skipped"].includes(c.conclusion ?? "")) ||
+        !pinned && statuses.statuses.some(s => s.context === need.context && ["success", "failure", "error"].includes(s.state));
+      if (!matched) return pending(`Waiting for required check: ${need.context}`);
+    }
+  }
   const latest = await gh<Pr>(path, token);
   if (latest.head.sha !== pr.head.sha || latest.base?.ref !== pr.base?.ref || latest.base?.sha !== pr.base?.sha) return pending("PR changed while its checks were being read", true);
   if (pr.state && (pr.state !== "open" || pr.merged)) return pending("PR is no longer open");

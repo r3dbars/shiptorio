@@ -1936,7 +1936,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (result.stale) continue;
       if (result.state === "pending") {
         if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed" || item.inspection?.headSha !== result.headSha) {
-          await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha), updatedAt: Date.now() }] });
+          await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha, undefined, result.summary), updatedAt: Date.now() }] });
         }
         continue;
       }
@@ -2067,7 +2067,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const evidence = await inspectPullRequest(token, this.meta.repo, pr, headSha, this.state.baseBranch);
-      if (evidence.stale || evidence.state !== "passed") return;
+      if (evidence.stale || evidence.state !== "passed") {
+        const now = current();
+        if (now && !evidence.stale) {
+          const held = { ...now, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(evidence.headSha, undefined, evidence.summary), updatedAt: Date.now() };
+          await this.patch({ items: [held] });
+          this.log("warn", evidence.summary, item.id);
+        }
+        return;
+      }
       const files = await prFiles(token, this.meta.repo, pr);
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
@@ -2237,7 +2245,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
         if (checks.state !== "passed") {
-          const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
+          const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head, undefined, checks.summary), updatedAt: Date.now() };
           await this.patch({ items: [current] });
           if (checks.state === "failed") await this.noteRework(current);
           throw new Error("Current checks have not passed. The PR is back at CI.");

@@ -50,12 +50,12 @@ export function migrateGauntlet(s: FactoryState): boolean {
   return true;
 }
 
-export const freshInspection = (headSha: string, ci?: { passed: boolean; reason: string }): Inspection => ({
+export const freshInspection = (headSha: string, ci?: { passed: boolean; reason: string }, pendingReason = "Waiting for current-head CI"): Inspection => ({
   headSha,
   state: "pending",
   humanApproved: false,
   stages: [
-    { gate: "ci", state: ci ? (ci.passed ? "passed" : "rework") : "pending", reason: ci?.reason ?? "Waiting for current-head CI" },
+    { gate: "ci", state: ci ? (ci.passed ? "passed" : "rework") : "pending", reason: ci?.reason ?? pendingReason },
     { gate: "verify", state: "pending", reason: "Proof required" },
     { gate: "ai", state: "pending", reason: "Independent review required" },
     { gate: "human", state: "pending", reason: "Your call at the merge gate" },

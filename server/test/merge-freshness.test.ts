@@ -12,7 +12,7 @@ mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(pu
 const { Factory } = await import("../src/factory");
 const head = "a".repeat(40);
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
-type Mode = "passed" | "pending" | "failed" | "unavailable";
+type Mode = "passed" | "pending" | "failed" | "unavailable" | "policy_unavailable";
 async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; files: (names: string[], changeHead?: boolean) => void; merges: () => number; launch: () => Promise<void>; autoLaunch: () => Promise<void>; duringFiles: (fn: () => Promise<void>) => void; station: () => Promise<void>; putItem: (item: Item) => Promise<void> }) => Promise<void>) {
   let mode: Mode = "passed", current = head, merges = 0;
   let names = ["docs/README.md"], changeDuringFiles = false;
@@ -20,6 +20,7 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
+      if (mode === "policy_unavailable" && url.includes("/protection/required_status_checks")) return new Response("missing permission", { status: 403 });
       const policy = gauntletPolicy(url); if (policy) return policy;
     if (url.endsWith("/access_tokens")) return Response.json({ token: "fake-token" });
     if (url.endsWith("/pulls/99")) return Response.json({ base: { ref: "main", sha: "base" }, head: { sha: current }, merged: false });
@@ -169,5 +170,15 @@ it("a persisted passed flag without every station receipt cannot offer Launch", 
     await f.factory.alarm();
     expect(f.saved().deck?.some(move => move.itemId === item.id && move.options.some(option => option.id === "launch"))).toBe(false);
     expect(f.merges()).toBe(0);
+  });
+});
+
+it("unreadable required policy holds Launch and preserves a clear CI station reason", async () => {
+  await fixture(async f => {
+    f.mode("policy_unavailable");
+    await f.launch();
+    expect(f.merges()).toBe(0);
+    expect(f.saved().items[0].state).toBe("inspecting");
+    expect(f.saved().items[0].inspection?.stages.find(stage => stage.gate === "ci")?.reason).toContain("policy unavailable");
   });
 });
