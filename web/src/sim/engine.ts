@@ -182,7 +182,7 @@ export const SCENARIOS = {
   brain: {
     districts: SHOP_DISTRICTS,
     harness: "claude_code",
-    ores: [{ at: 3, title: "Clarify the shipping FAQ", kind: "cleanup", district: "docs" }],
+    ores: [], // the cards are the show; ore would deal launch cards that jump the brain's
     brain: {
       quiet: "Everything's under the bar: CI 6 min, 8 quiet errors, inbox clear. Staying quiet.",
       beats: [
@@ -778,8 +778,18 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     pull(moveId, s.deck && s.deck.length > 1 ? 0 : 600);
     if (optionId) then(optionId);
   };
-  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in).
+  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in),
+  // unless the card parks itself on Later (the brain's unlock cards): then it leaves the deck.
+  const onLater = new Map<string, () => void>();
   const defer = (moveId: string) => {
+    const park = onLater.get(moveId);
+    if (park) {
+      onLater.delete(moveId);
+      onChoose.delete(moveId);
+      emit({ type: "move_resolved", moveId, optionId: "later", actor: "player" });
+      pull(moveId, 0);
+      return park();
+    }
     const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
     if (!m) return;
     pull(moveId, 0);
@@ -1582,19 +1592,22 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     beat.reads.forEach((r, n) => later(TICK_MS * n, () => spark(r)));
     later(TICK_MS * beat.reads.length, () => {
       spark({ tool: "diagnose", text: `Bottleneck: ${beat.title}`, outcome: `${beat.area}: ${beat.title} → ${beat.card}`, reason: beat.because });
-      propose({ title: beat.card, why: beat.why, because: beat.because, kind: beat.kind, attention: "suggest",
+      const park = () => {
+        log("info", `Parked "${beat.card}" for a day. It comes back only if it gets worse.`);
+        later(TICK_MS * 2, nextDiagnosis);
+      };
+      const id = propose({ title: beat.card, why: beat.why, because: beat.because, kind: beat.kind, attention: "suggest",
         options: [{ id: "continue", label: "Continue", recommended: true, actions: [] }, { id: "later", label: "Later", recommended: false, actions: [] }] },
       (choice) => {
-        if (choice !== "continue") {
-          log("info", `Parked "${beat.card}" for a day. It comes back only if it gets worse.`);
-          return later(TICK_MS * 2, nextDiagnosis);
-        }
+        onLater.delete(id);
+        if (choice !== "continue") return park();
         log("info", `On it: ${beat.card}`);
         later(TICK_MS * 4, () => {
           log("success", `Unlocked: ${beat.cleared}`);
           later(TICK_MS * 2, nextDiagnosis);
         });
       });
+      onLater.set(id, park);
     });
   };
 
