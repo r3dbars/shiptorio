@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('no-login judge replay: three mines → plan → rework gauntlet → permit → rockets → Floor', async ({ page }, info) => {
+  await page.clock.install();
   const errors: string[] = [], privateRequests: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -38,12 +39,16 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   expect(captionBox!.y + captionBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   // On phones the factory stays in view: the caption never takes more than about half the screen.
   if (info.project.name !== 'desktop') expect(captionBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height * 0.5);
+  // Evidence capture can take longer than the next story beat on software GL.
+  // Pause browser time at this beat so screenshot latency cannot advance the sim.
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await info.attach('judge-permit', { body: await page.screenshot(), contentType: 'image/png' });
   await page.screenshot({ path: `/tmp/shiptorio-judge-${info.project.name}.png` });
   if (info.project.name !== 'desktop') {
     await page.getByRole('button', { name: 'Grant docs permit' }).click();
     await expect(page.getByRole('button', { name: 'Permit granted' })).toBeDisabled();
   }
+  await page.clock.resume();
   await expect(story).toHaveAttribute('data-beat', '5');
   await expect(page.getByTestId('judge-item-github_issue')).toHaveAttribute('data-state', 'launched');
   await expect(page.getByTestId('judge-item-sentry')).toHaveAttribute('data-state', 'on_pad');

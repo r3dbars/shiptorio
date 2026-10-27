@@ -3,6 +3,9 @@ import { test, expect } from '@playwright/test';
 import { assertWire } from '../contract/assert-wire';
 
 test('intro → sign in → repo → approve → PR → gauntlet → launch → rocket', async ({ page }, info) => {
+  // Freeze Date only: the foundry's shift clock is visible in card baselines,
+  // while timers and the actual journey must continue normally.
+  await page.clock.setFixedTime(new Date('2026-10-27T12:00:00Z'));
   const repo = `fixture/${info.project.name}`;
   let signedIn = false;
   const errors: string[] = [], wireErrors: string[] = [], messages: any[] = [];
