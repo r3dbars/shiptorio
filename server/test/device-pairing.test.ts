@@ -55,7 +55,9 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     await env.DB.prepare("UPDATE repos SET repo_id = CASE full_name WHEN 'you/repo' THEN 101 ELSE 102 END").run();
     await env.DB.prepare("UPDATE installations SET permissions = ? WHERE id = 1").bind(JSON.stringify({ metadata: "read", contents: "write", issues: "write", pull_requests: "write", checks: "read" })).run();
     const page = await request(path, { headers: { cookie: cookies } });
-    expect(page.status).toBe(200); expect(await page.text()).toContain(d.code);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("referrer-policy")).toBe("same-origin");
+    expect(await page.text()).toContain(d.code);
     const approve = (repo = "you/repo", origin = "https://shiptorio.com") => request(path, { method: "POST", headers: { cookie: cookies, origin }, body: new URLSearchParams({ repo }) });
     expect((await approve("you/repo", "https://evil.test")).status).toBe(403);
     expect((await approve("stranger/private")).status).toBe(403);
