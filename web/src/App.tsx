@@ -795,6 +795,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             onLaunch={launchItem}
             onCheckin={show("checkin") ? () => { setTray(false); setCheckin(true); } : undefined}
             onClose={() => setTray(false)}
+            historyOnly={calm}
             header={
               <>
                 {cfg.kind === "sim" ? ACTIVITY.sim(cfg.scenario) : `${cfg.repo} · ${state?.baseBranch ?? "main"}`}

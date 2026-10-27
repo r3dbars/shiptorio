@@ -384,7 +384,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
             <span className="k"><Icon name="back" size={16} /></span>{calm ? ATTENTION.later : CHECKIN.buttons.later}
           </button>
           <button type="button" className="ci-act more" disabled={!!fly} onClick={() => act("up")}>
-            <span className="k"><Icon name="info" size={16} /></span>{CHECKIN.buttons.details}
+            <span className="k"><Icon name="info" size={16} /></span>{calm ? ATTENTION.details : CHECKIN.buttons.details}
           </button>
           <button type="button" className="ci-act do" disabled={!!fly} onClick={() => act("right")}>
             <span className="k"><Icon name="check" size={16} /></span>{calm ? ATTENTION.continue : CHECKIN.buttons.doIt}
