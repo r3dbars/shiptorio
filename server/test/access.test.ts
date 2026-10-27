@@ -153,3 +153,26 @@ describe("docs caching", () => {
   expect((await previewAccess(new Request("https://shiptorio.com/auth/login", { method: "POST" }), env))?.status).toBe(401);
   expect((await previewAccess(new Request("https://shiptorio.com/auth/login/extra"), env))?.status).toBe(401);
 });
+
+it("self-host bootstrap requires the owner's preview cookie and closes once the App exists", async () => {
+  const { selfhostSetupAccess } = await import("../src/access");
+  const { makeSessionCookie } = await import("../src/session");
+  const enabled = { ...env, SELFHOST_SETUP: "1" };
+  const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).replace("shiptorio_session=", "shiptorio_access=");
+  const request = (path = "/setup", cookie = preview.split(";")[0], method = "GET", protocol = "https") => new Request(`${protocol}://owner.workers.dev${path}`, { method, headers: { cookie } });
+  for (const path of ["/setup", "/setup/callback?code=one-time"]) {
+    expect(await selfhostSetupAccess(request(path), enabled)).toBe(true);
+    expect(await selfhostSetupAccess(request(path), env)).toBe(false);
+    expect(await selfhostSetupAccess(request(path), { ...enabled, GITHUB_APP_ID: "123" })).toBe(false);
+    expect(await selfhostSetupAccess(request(path), { ...enabled, SIGNUP_GATE_MODE: "waitlist" })).toBe(false);
+    expect(await selfhostSetupAccess(request(path, ""), enabled)).toBe(false);
+    expect(await selfhostSetupAccess(request(path, "shiptorio_access=forged"), enabled)).toBe(false);
+    expect(await selfhostSetupAccess(request(path), { ...enabled, APP_PASSWORD: "changed" })).toBe(false);
+    expect(await selfhostSetupAccess(request(path), { ...enabled, SESSION_SECRET: "" })).toBe(false);
+  }
+  expect(await selfhostSetupAccess(request("/api/repos"), enabled)).toBe(false);
+  expect(await selfhostSetupAccess(request("/setup", undefined, "POST"), enabled)).toBe(false);
+  expect(await selfhostSetupAccess(request("/setup", undefined, "GET", "http"), enabled)).toBe(false);
+  const githubCookie = await makeSessionCookie(env.SESSION_SECRET, "alice");
+  expect(await selfhostSetupAccess(request("/setup", githubCookie.split(";")[0]), enabled)).toBe(false);
+});

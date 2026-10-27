@@ -51,7 +51,7 @@ During setup the wizard prints a URL like `https://shiptorio-selfhost.your-subdo
 4. Return to the terminal. Paste the Client ID, Client Secret, webhook secret and App ID when asked; give the wizard the PEM file path for the private key. The wizard supplies the correct Wrangler config. **Do not run the callback page's generic `wrangler secret put` commands**, which target whichever config your current directory selects.
 5. Install your new App on **only the repositories you choose**. See [GitHub App permissions](/docs/github-app).
 
-The five uploaded secrets are `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_PRIVATE_KEY` and `GITHUB_APP_ID`. The App ID is uploaded last so an interrupted setup can still use the setup page. After successful upload, `/setup` closes itself.
+The five uploaded secrets are `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_APP_PRIVATE_KEY` and `GITHUB_APP_ID`. The App ID is uploaded last so an interrupted setup can still use the setup page. During this first install, the generated config explicitly enables setup for a browser that has unlocked the owner's preview password; a GitHub login cannot exist yet. After successful upload, `/setup` closes itself and the wizard disables that bootstrap setting. Ordinary installations retain their GitHub-login requirement.
 
 For an existing App, match these settings to the workers.dev origin printed by the wizard:
 

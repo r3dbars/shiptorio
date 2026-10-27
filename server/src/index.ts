@@ -25,7 +25,7 @@ import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./gith
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
 import { isAllowed } from "./session";
-import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
 import { joinWaitlist } from "./waitlist";
 import { judgePage, landingPage, publicFile } from "./landing";
 
@@ -62,6 +62,7 @@ export interface Env extends FactoryEnv, SignupEnv {
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
   APP_PASSWORD?: string;
+  SELFHOST_SETUP?: string; // opt-in owner-password bootstrap; disabled once GITHUB_APP_ID is set
   BUILD_SHA?: string;
   GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
   ADMIN_LOGINS?: string;
@@ -210,7 +211,7 @@ app.use("*", async (c, next) => {
   if (path === "/setup" || path === "/setup/callback") {
     if (c.env.GITHUB_APP_ID) return c.notFound();
     const user = await resolveUser(c.req.raw, c.env);
-    if (!user) return c.json({ error: "login required" }, 401);
+    if (!user && !await selfhostSetupAccess(c.req.raw, c.env)) return c.json({ error: "login required" }, 401);
   }
   if (scoped) {
     const user = await resolveUser(c.req.raw, c.env);

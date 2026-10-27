@@ -92,3 +92,8 @@ test("GitHub App ID stays unset until the other credentials have uploaded", asyn
   await configureSecrets(state, io, true);
   expect(calls.map(c => c.args[2])).toEqual(["GITHUB_WEBHOOK_SECRET", "GITHUB_APP_ID"]);
 });
+
+test("the wizard opts into password bootstrap only until the GitHub App ID is uploaded", () => {
+  expect(configuration(fresh()).vars.SELFHOST_SETUP).toBe("1");
+  expect(configuration({ ...fresh(), secrets: ["GITHUB_APP_ID"] }).vars.SELFHOST_SETUP).toBe("0");
+});

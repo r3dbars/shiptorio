@@ -34,6 +34,7 @@ export function configuration(s: State) {
     d1_databases: s.databaseId ? [{ binding: "DB", database_name: s.name, database_id: s.databaseId, migrations_dir: "migrations" }] : [],
     kv_namespaces: s.namespaceId ? [{ binding: "CACHE", id: s.namespaceId }] : [],
     vars: { PUBLIC_URL: urlFor(s), ALLOWED_LOGINS: s.login, ADMIN_LOGINS: s.login,
+      SELFHOST_SETUP: s.secrets.includes("GITHUB_APP_ID") ? "0" : "1",
       SPARK_BASE_URL: "https://api.meta.ai/v1", SPARK_MODEL: "muse-spark-1.3" },
   };
 }
@@ -157,8 +158,9 @@ export async function main(args: string[]) {
       await ask("Press Enter when your GitHub App credentials are ready");
     }
     await configureSecrets(s, io, true);
+    await save(s);
     await wrangler(["deploy"]);
-    console.log(`\nShiptorio deployed: ${urlFor(s)}\nSign in: ${urlFor(s)}/auth/login\nInstall your GitHub App on selected repos, then connect your local runner: ${urlFor(s)}/docs/runner\nKeep the preview password and back up Worker secrets in your password manager. Re-run bun run selfhost to update this deployment.`);
+    console.log(`\nShiptorio deployed: ${urlFor(s)}\nSign in: ${urlFor(s)}/auth/login\nInstall your GitHub App on selected repos, then connect your local runner: ${urlFor(s)}/docs/runner\nKeep your preview password and API credentials in your password manager; preserve this Worker to retain its generated encryption key. Re-run bun run selfhost to update this deployment.`);
   }
 }
 if (import.meta.main) main(process.argv.slice(2)).catch(error => { console.error(error instanceof Error ? error.message : "Self-host setup failed."); process.exitCode = 1; });
