@@ -9,7 +9,7 @@ test('quota warning → cap → raise link → automatic recovery and retry cool
     const i = entry.indexOf('='); return { name: entry.slice(0, i), value: entry.slice(i + 1), url: String(info.project.use.baseURL) };
   }));
   let used = 16, retry = false;
-  const resetsAt = Date.now() + 3600000;
+  const resetsAt = (Math.floor(Date.now() / 86400000) + 1) * 86400000;
   await page.route(`**/api/repos/${repo}/limits`, route => route.fulfill({ json: {
     disabled: false, quotas: [{ id: 'runs', label: 'Build runs / day', used, limit: 20, resetsAt, raiseUrl: '/admin/signup?login=fixture', status: used >= 20 ? 'stopped' : used >= 16 ? 'warning' : 'ok' }],
     retries: retry ? [{ itemId: 'gh-42', failures: 3, reason: 'Planner unavailable', retryAt: resetsAt }] : [],

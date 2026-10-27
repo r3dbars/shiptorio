@@ -97,6 +97,7 @@ test("approved ready jobs wait for capacity and dispatch charges exactly once, i
   await env.DB.prepare("UPDATE signup_allowlist SET runs_daily=0").run();
   expect(await f.claimRunner('pair', ['codex'])).toBeNull();
   expect((await f.runnerJobs())[0].status).toBe('ready');
+  expect(await env.DB.prepare("SELECT hits FROM signup_abuse WHERE scope='runs:owner'").first()).toBeNull();
   await env.DB.prepare("UPDATE signup_allowlist SET runs_daily=20").run();
   // No installation credential in this fixture: dispatch persists the lease, then token delivery fails.
   // Recover that lost claim after the response timeout; it must reuse the run, never debit again.

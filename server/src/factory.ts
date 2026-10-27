@@ -825,7 +825,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       // Charge only a validated plan actually dispatched to the runner. Lost-claim recovery above never charges twice.
       const account = job.runAccount ?? await this.runAccount();
-      if (!account || !await runQuota(this.env as never, account)) return null;
+      if (!account) return null;
+      const quota = await runQuotaStatus(this.env, account);
+      if (quota.used >= quota.limit || !await runQuota(this.env as never, account)) return null;
       await this.accountPut("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);
