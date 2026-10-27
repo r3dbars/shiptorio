@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { nativePrerequisite } from "./native-prerequisite";
 
 const linux = { platform: "linux", ci: false, nested: false, bwrap: true, git: true };
@@ -18,16 +22,21 @@ test("native prerequisites report absent local tools and never turn missing CI c
 });
 
 test("native fixture imports explicitly report local omissions and fail CI before tests can skip", async () => {
-  for (const ci of [false, true]) {
-    const child = Bun.spawn([process.execPath, "-e", `
+  const directory = await mkdtemp(join(tmpdir(), "shiptorio native fixture é 雪 "));
+  try {
+    const helper = join(directory, "native-prerequisite.ts");
+    await copyFile(new URL("./native-prerequisite.ts", import.meta.url), helper);
+    for (const ci of [false, true]) {
+      const child = Bun.spawn([process.execPath, "-e", `
       Object.defineProperty(process, 'platform', { value: 'linux' });
       Bun.which = () => null;
       ${ci ? "process.env.CI = 'true'" : "delete process.env.CI"};
       process.env.SHIPTORIO_CHECK_SANDBOX = '1';
-      await import(${JSON.stringify(new URL("./native-prerequisite.ts", import.meta.url).href)});
+      await import(${JSON.stringify(pathToFileURL(helper).href)});
     `], { stdout: "pipe", stderr: "pipe" });
-    const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-    expect(code === 0).toBe(!ci);
-    expect(stderr).toContain(ci ? "Mandatory real Linux boundary coverage" : "LOCAL PREREQUISITE SKIP");
-  }
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      expect(code === 0).toBe(!ci);
+      expect(stderr).toContain(ci ? "Mandatory real Linux boundary coverage" : "LOCAL PREREQUISITE SKIP");
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
