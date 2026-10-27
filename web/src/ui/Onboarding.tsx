@@ -98,17 +98,6 @@ function GitHubMark() {
   );
 }
 
-// The shift clock's readout: the real time, so punching in feels like punching in.
-function useClock() {
-  const fmt = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  const [now, setNow] = useState(fmt);
-  useEffect(() => {
-    const t = setInterval(() => setNow(fmt()), 10000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
-}
-
 const JOURNEY_ICONS: IconName[] = ["ore", "cog", "check", "rocket"];
 
 function Journey() {
@@ -116,7 +105,7 @@ function Journey() {
     <ol className="ob-journey" aria-label={ONBOARD.journeyLabel}>
       {ONBOARD.journey.map((j, n) => (
         <li key={j.k} className={`ob-stop s${n}`}>
-          <Icon name={JOURNEY_ICONS[n]} size={16} />
+          <Icon name={JOURNEY_ICONS[n]} size={28} />
           <b>{j.k}</b>
           <span>{j.d}</span>
         </li>
@@ -133,7 +122,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const [typed, setTyped] = useState("");
   const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [reposFailed, setReposFailed] = useState(false);
-  const [punched, setPunched] = useState(false); // the card is in the clock: sign-in is on its way
+  const [punched, setPunched] = useState(false); // the lever is down: sign-in is on its way
   const [chosen, setChosen] = useState<string | null>(null);
   const [find, setFind] = useState("");
   const timers = useRef<number[]>([]);
@@ -142,7 +131,6 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
     if (reducedMotion()) return fn();
     timers.current.push(window.setTimeout(fn, ms));
   };
-  const now = useClock();
 
   // Live: who is signed in and which repositories the existing App installation can see.
   useEffect(() => {
@@ -178,7 +166,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
     return () => { clearInterval(timer); window.removeEventListener("focus", loadRepos); document.removeEventListener("visibilitychange", back); };
   }, [waiting]);
 
-  // Punch the card first (a beat of animation), then go: GitHub when live, the repo step in the sim.
+  // Pull the lever first (a beat of animation), then go: GitHub when live, the repo step in the sim.
   const signIn = () => {
     if (punched) return;
     setPunched(true);
@@ -214,25 +202,12 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
         {step === "hello" && (
           <>
-            <p className="iron-eyebrow ob-eyebrow">{ONBOARD.eyebrow}</p>
             <BrandWordmark />
             <p className="ob-tagline">{ONBOARD.tagline}</p>
-            <Coach>{ONBOARD.hello}</Coach>
+            <p className="ob-lede">{ONBOARD.hello}</p>
 
-            <div className={`ob-clock${punched ? " punched" : ""}`} aria-hidden="true">
-              <div className="ob-readout">
-                <small>{punched ? ONBOARD.clockedIn : ONBOARD.clockLabel}</small>
-                <b>{now}</b>
-              </div>
-              <div className="ob-slot">
-                <div className="ob-punchcard">
-                  <span className="ob-pc-top">{ONBOARD.card}</span>
-                  <span className="ob-pc-holes">{Array.from({ length: 16 }, (_, n) => <i key={n} className={[1, 4, 6, 9, 11, 14].includes(n) ? "x" : undefined} />)}</span>
-                  <span className="ob-pc-name">{ONBOARD.cardName}</span>
-                  <span className="ob-pc-stamp">{ONBOARD.clockedIn}</span>
-                </div>
-              </div>
-            </div>
+            {/* the four stations are the whole idea, so they're the biggest thing on the plate (Justin's playtest) */}
+            <Journey />
 
             <button
               type="button"
@@ -244,8 +219,6 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               <GitHubMark />
               <span>{ONBOARD.signIn}</span>
             </button>
-
-            <Journey />
 
             <div className="ob-foot">
               <button hidden={!introEnabled} type="button" className="ob-replay" onClick={() => setStep("intro")}>

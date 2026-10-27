@@ -34,6 +34,7 @@ interface Props {
   empire?: boolean; // pulled back over every island (the empire overview)
   summary?: string; // the floor in one sentence, for screen readers (ui/FactoryText.tsx has the full text view)
   lapse?: Timelapse | null; // coming back: replay what shipped while you were away; null ends it
+  still?: boolean; // the camera is the tour's: no drag, zoom or hover labels (a tap still picks)
 }
 
 const NO_PINGS: Ping[] = [];
@@ -42,13 +43,15 @@ const NO_PINGS: Ping[] = [];
 const playLapse = (scene: MapScene, lapse: Timelapse) => (scene.timelapse ? scene.timelapse(lapse) : lapse.onStart([]));
 const NO_SATS: SatelliteSpec[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary, lapse = null }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary, lapse = null, still = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
   const [crash, setCrash] = useState<{ e: unknown } | null>(null);
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
+  const stillRef = useRef(still);
+  stillRef.current = still;
   // the latest props, for a map that arrives late (the shaft loads its art first)
   const propsRef = useRef({ showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire, lapse });
   propsRef.current = { showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire, lapse };
@@ -99,19 +102,19 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     // pointer gestures (gesture.ts): drag pans, pinch zooms, a tap picks, a phone drag settles on a floor
     const { down, move, up } = mapGesture({
       capture: (id) => canvas.setPointerCapture(id),
-      panBy: (dx, dy) => scene.panBy(dx, dy),
-      zoomBy: (f) => scene.zoomBy(f),
+      panBy: (dx, dy) => stillRef.current || scene.panBy(dx, dy),
+      zoomBy: (f) => stillRef.current || scene.zoomBy(f),
       // no button down: hovering shows that thing's label
-      hover: (x, y) => (canvas.style.cursor = scene.hover(x, y, canvas.getBoundingClientRect()) ? "pointer" : ""),
+      hover: (x, y) => (canvas.style.cursor = !stillRef.current && scene.hover(x, y, canvas.getBoundingClientRect()) ? "pointer" : ""),
       pick: (x, y) => {
         const id = scene.pick(x, y, canvas.getBoundingClientRect());
         if (id) pickRef.current?.(id);
       },
-      settle: () => scene.settle?.(),
+      settle: () => stillRef.current || scene.settle?.(),
     });
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      scene.zoomBy(Math.exp(e.deltaY * 0.001)); // scroll down zooms out
+      if (!stillRef.current) scene.zoomBy(Math.exp(e.deltaY * 0.001)); // scroll down zooms out
     };
     canvas.addEventListener("pointerdown", down);
     canvas.addEventListener("pointermove", move);
@@ -122,6 +125,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     canvas.addEventListener("wheel", wheel, { passive: false });
     // Keyboard: with the map focused, arrows pan, + and - zoom. The labels on it tab like buttons.
     const keys = (e: KeyboardEvent) => {
+      if (stillRef.current) return;
       const pan = ({ ArrowLeft: [60, 0], ArrowRight: [-60, 0], ArrowUp: [0, 60], ArrowDown: [0, -60] } as Record<string, number[]>)[e.key];
       if (pan) scene.panBy(pan[0], pan[1]);
       else if (e.key === "+" || e.key === "=") scene.zoomBy(0.85);
@@ -134,7 +138,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     // While the keyboard is on the map, every label shows, so Tab can walk them.
     const labels = labelsRef.current!;
     const onMap = (el: EventTarget | null) => el instanceof Node && (el === canvas || labels.contains(el));
-    const focusIn = () => scene.setShowAllLabels(true);
+    const focusIn = () => stillRef.current || scene.setShowAllLabels(true);
     const focusOut = (e: Event) => {
       if (!onMap((e as FocusEvent).relatedTarget)) scene.setShowAllLabels(labelsOnRef.current);
     };
