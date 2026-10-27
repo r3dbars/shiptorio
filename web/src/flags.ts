@@ -1,7 +1,7 @@
 // HTTP feature configuration stays outside the factory websocket contract.
 export let introEnabled = true;
 /** docs/ATTENTION.md: the calm Needs you tray. Server flag "attention", or ?attention=1 / ?attention=0 to try it. */
-export let attentionEnabled = false;
+export let attentionEnabled = true;
 const attentionParam = () => new URLSearchParams(location.search).get("attention");
 export const attentionOn = () => { const p = attentionParam(); return p === null ? attentionEnabled : p !== "0"; };
 export async function loadFeatureFlags(): Promise<void> {

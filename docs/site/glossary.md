@@ -30,7 +30,7 @@ order: 3
 | **Launch permit** | A lane's right to merge clean PRs on its own. See [Launch permits](/docs/permits) |
 | **Automated %** | Rockets launched on a permit, over all rockets |
 | **Bottleneck** | The stage with the most value waiting the longest |
-| **Next Move card** | The one thing holding the factory back, and what to do about it |
-| **Check-in** | A deck of up to 12 cards you swipe through. See [Next move and check-in](/docs/check-in) |
+| **Needs you card** | The one card waiting on you at the bottom of the map: Later on the left, Continue on the right, hold the red button to launch |
+| **Check-in** | A deck of up to 12 cards you swipe through. See [Needs you and check-in](/docs/check-in) |
 | **Escaped defect** | A launched PR that came back: a Sentry comeback, a revert, or red on main |
 | **Ship Score** | Users unblocked + 10 × customers answered + rockets, minus 25 × escaped defects |
