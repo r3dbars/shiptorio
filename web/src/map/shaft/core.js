@@ -845,9 +845,11 @@ export function createIron(opts) {
     // halos pulse; items held by a blocked station blink amber
     I.items.forEach((it) => {
       const held = it.owner && I.stations[it.owner] && I.stations[it.owner].blocked;
-      const h = it.parts.halo; const base = held ? 0.3 + Math.sin(t * 10) * 0.12 : 0.3 + Math.sin(t * 3 + it.num) * 0.05;
-      h.material.opacity = base; h.scale.setScalar(held ? 1.5 + Math.sin(t * 10) * 0.12 : 1.4);
-      if (held) h.material.color.setHex(Math.sin(t * 10) > 0 ? 0xffb020 : 0xff3020);
+      // reduced motion (I.calm): halos hold still, and a held item stays solid amber instead of blinking
+      const w = I.calm ? 0 : 1;
+      const h = it.parts.halo; const base = held ? 0.3 + Math.sin(t * 10) * 0.12 * w : 0.3 + Math.sin(t * 3 + it.num) * 0.05 * w;
+      h.material.opacity = base; h.scale.setScalar(held ? 1.5 + Math.sin(t * 10) * 0.12 * w : 1.4);
+      if (held) h.material.color.setHex(I.calm || Math.sin(t * 10) > 0 ? 0xffb020 : 0xff3020);
       else h.material.color.setHex(it.parts.glow);
     });
     for (let i = flashes.length - 1; i >= 0; i--) { const f = flashes[i]; f.t += dt; const k = f.t / 0.7; f.r.scale.setScalar(1 + k * 3); f.r.material.opacity = 0.9 * (1 - k); if (k >= 1) { f.r.parent && f.r.parent.remove(f.r); f.r.material.dispose(); flashes.splice(i, 1); } }
