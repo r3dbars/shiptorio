@@ -845,15 +845,27 @@ const wrapped = Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app
 // HTTPS redirect, the per-IP sign-in budget, the gate itself, then the same security headers.
 export async function accessFastPath(request: Request, env: Env): Promise<Response | null> {
   if (new URL(request.url).pathname !== "/access" || signupMode(env) !== "password") return null;
-  let response = secureTransport(request);
-  const budget = response ? null : requestBudget(request, "/access");
-  if (budget) {
-    const result = await rateLimit(env, ipSubject(request), budget);
-    if (!result.allowed) response = Response.json({ error: "too many requests" }, { status: 429, headers: { "Retry-After": String(result.retryAfter) } });
+  let response: Response | null;
+  try {
+    response = secureTransport(request);
+    const budget = response ? null : requestBudget(request, "/access");
+    if (budget) {
+      const result = await rateLimit(env, ipSubject(request), budget);
+      if (!result.allowed) response = Response.json({ error: "too many requests" }, { status: 429, headers: { "Retry-After": String(result.retryAfter) } });
+    }
+    response ??= await previewAccess(request, env);
+  } catch {
+    // A failed limiter or form read must never fall through and retry sign-in without its budget.
+    // Keep this error path small too; provider/internal error text may contain credentials.
+    const requestId = crypto.randomUUID();
+    response = Response.json({ error: "Sign-in temporarily unavailable. Please try again." }, {
+      status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "5", "X-Request-ID": requestId },
+    });
+    console.error(JSON.stringify({ level: "error", event: "access.unavailable", requestId, status: 503, ts: new Date().toISOString() }));
   }
-  response ??= await previewAccess(request, env);
   if (!response) return null; // local dev login: the full app handles it
   response = new Response(response.body, response);
+  response.headers.set("Cache-Control", "no-store");
   for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN))) response.headers.set(key, value);
   console.log(JSON.stringify({ level: "info", event: "http.request", method: request.method, path: "/access", status: response.status, ts: new Date().toISOString() }));
   return response;
