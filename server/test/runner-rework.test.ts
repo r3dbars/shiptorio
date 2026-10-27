@@ -1,3 +1,4 @@
+import { gauntletPolicy } from "./gauntlet-fixture";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
@@ -37,6 +38,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   const plans: string[] = [], comparisons: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input), json = (x: unknown) => Response.json(x);
+    const policy = gauntletPolicy(url); if (policy) return policy;
     if (/\/comments\?per_page=100&page=/.test(url)) return json([]);
     if (url.endsWith("/access_tokens")) return json({ token: "test-install-token" });
     if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
@@ -51,7 +53,7 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
       return json({ number: 99, html_url: "https://github.com/r3dbars/demo/pull/99", state: "open", merged: false, body: patchedBody || "Original PR", head: { sha: head, ref: branch }, base: { sha: base, ref: "main" } });
     }
     if (url.includes("/compare/")) { comparisons.push(url); return json({ status: "ahead", ahead_by: 1, files: [{ filename: scopeViolation ? "server/.dev.vars" : "server/src/engine.ts", status: "modified", changes: 2, patch: "-old\n+fixed" }] }); }
-    if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+    if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
     if (url.includes("/status?")) return json({ total_count: 0, statuses: [] });
     if (url.includes("/issues/1/comments?")) return json([]);
     if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix credential guard", body: "Guard the paths", state: "open", html_url: "https://github.com/r3dbars/demo/issues/1" });

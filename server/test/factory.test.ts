@@ -1,3 +1,4 @@
+import { gauntletPolicy } from "./gauntlet-fixture";
 import { budgetDb } from "./budget-fixture";
 import { BudgetError } from "../src/budget";
 import { credentialEnv } from "./credential-fixture";
@@ -339,6 +340,7 @@ describe("Factory lifecycle", () => {
     let onFeedbackRead: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
+      const policy = gauntletPolicy(url); if (policy) return policy;
       if (/\/comments\?per_page=100&page=/.test(url) && !url.includes("/issues/1/comments?")) return Response.json([]);
       if (url.endsWith("/comments")) return Response.json({ id: 1 });
       const json = (value: unknown) => Response.json(value);
@@ -356,12 +358,12 @@ describe("Factory lifecycle", () => {
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }] });
-      if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged });
+      if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, merged });
       if (url.includes("/pulls/99/files?")) return json([{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }]);
       if (url.includes("/issues/1/comments?")) { const hook = onFeedbackRead; onFeedbackRead = undefined; await hook?.(); return json([]); }
       if (url.endsWith("/issues/1/comments") && init?.method === "POST") return json({ id: 200 });
       if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix checkout", body: merged ? "Issue was closed by merge" : "Canonical request", state: merged ? "closed" : "open", html_url: "https://github.com/r3dbars/demo/issues/1", user: { login: "reporter" } });
-      if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+      if (url.includes("/check-runs?")) return json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return json({ total_count: 0, statuses: [] });
       if (url.includes("/pulls?")) return json([]);
       if (url.endsWith("/pulls") && init?.method === "POST") { opened++; return json({ number: 99, html_url: "https://github.com/r3dbars/demo/pull/99" }); }
@@ -675,13 +677,14 @@ it('reconciliation repairs missed merge, close, moved head and check-run events 
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: unknown) => {
     const url = String(input);
+      const policy = gauntletPolicy(url); if (policy) return policy;
     if (url.includes('/pulls?state=all')) return Response.json(publicationRecovery ? [{ number: 1, html_url: 'https://github.com/r3dbars/demo/pull/1', state: 'closed', merged_at: '2026-10-26', head: { ref: 'shiptorio/runner-old', sha: 'old' } }] : []);
     if (url.endsWith('/access_tokens')) return Response.json({ token: 'test' });
-    if (url.includes('/check-runs?')) return Response.json({ total_count: 1, check_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }] });
+    if (url.includes('/check-runs?')) return Response.json({ total_count: 1, check_runs: [{ name: 'CI', app: { id: 15368 }, head_sha: new URL(url).pathname.split('/').at(-2), status: 'completed', conclusion: 'success' }] });
     if (url.includes('/status?')) return Response.json({ total_count: 0, statuses: [] });
     if (url.includes('/files?')) return Response.json([{ filename: 'server/src/engine.ts' }]);
     const n = Number(url.split('/').at(-1));
-    return Response.json({ state: n < 3 ? 'closed' : 'open', merged: n === 1, head: { sha: n === 3 ? 'new' : 'old' }, merge_commit_sha: 'merged' });
+    return Response.json({ state: n < 3 ? 'closed' : 'open', merged: n === 1, base: { ref: 'main', sha: 'base' }, head: { sha: n === 3 ? 'new' : 'old' }, merge_commit_sha: 'merged' });
   }) as typeof fetch;
   try {
     await (f.factory as unknown as { load: () => Promise<boolean> }).load();
@@ -748,8 +751,12 @@ for (const outcome of ["pass", "error", "comment"] as const) {
     const original = globalThis.fetch;
     globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
       const url = String(input);
+      const policy = gauntletPolicy(url); if (policy) return policy;
       if (url.includes("/comments?")) return Response.json([]);
       if (url.endsWith("/access_tokens")) return Response.json({ token: "test" });
+      if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, base: { ref: "main", sha: "base" }, head: { sha: f.saved().items[0].inspection!.headSha } });
+      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: f.saved().items[0].inspection!.headSha, status: "completed", conclusion: "success" }] });
+      if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       if (url.includes("/files?")) return Response.json([{ filename: "server/src/cart.ts", status: "modified", patch: "-old\n+fixed" }]);
       if (url.endsWith("/issues/42/comments")) {
         comments.push(JSON.parse(String(init?.body)).body);
@@ -791,7 +798,14 @@ it("budget and rate-limit waits leave AI review pending without a rework scar", 
   const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
   const original = globalThis.fetch;
-  globalThis.fetch = (async (url: unknown) => String(url).endsWith("/access_tokens") ? Response.json({ token: "paused-review-token" }) : Response.json([])) as unknown as typeof fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input), policy = gauntletPolicy(url); if (policy) return policy;
+    if (url.endsWith("/access_tokens")) return Response.json({ token: "paused-review-token" });
+    if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, head: { sha: "head" }, base: { ref: "main", sha: "base" } });
+    if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: "head", status: "completed", conclusion: "success" }] });
+    if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
+    return Response.json([]);
+  }) as unknown as typeof fetch;
   try {
     for (const error of [new BudgetError("Spark daily budget exhausted"), new RateLimitError(Date.now() + 60000)]) {
       const reviewing = setStage(setStage(item({ state: "inspecting", inspection: freshInspection("head") }), "ci", "passed", "green"), "verify", "passed", "proof");
