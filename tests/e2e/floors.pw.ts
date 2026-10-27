@@ -24,19 +24,13 @@ const events = (page: Page): Promise<Ev[]> => page.evaluate(() => (window as any
 const floors = async (page: Page) => (await events(page)).filter(e => e.kind === 'floor');
 const built = async (page: Page, id: string, phase = 'done') => (await events(page)).some(e => e.kind === 'build' && e.id === id && e.phase === phase);
 
-async function hold(page: Page, info: TestInfo, button: ReturnType<Page['locator']>, until: () => Promise<boolean>) {
-  const box = await button.boundingBox();
-  expect(box, 'hold button has a box').not.toBeNull();
-  const point = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
-  const touch = info.project.name === 'desktop' ? null : await page.context().newCDPSession(page);
-  try {
-    if (touch) await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, id: 0 }] });
-    else { await page.mouse.move(point.x, point.y); await page.mouse.down(); }
-    await expect.poll(until, { timeout: 6_000 }).toBe(true);
-  } finally {
-    if (touch) { await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await touch.detach(); }
-    else await page.mouse.up();
-  }
+// Hold from the keyboard (Space on the focused button): the same consent path as a pointer hold (holdLaunch.ts),
+// and it doesn't depend on pointer capture under software WebGL.
+async function hold(page: Page, button: ReturnType<Page['locator']>, until: () => Promise<boolean>) {
+  await button.focus();
+  await page.keyboard.down('Space');
+  try { await expect.poll(until, { timeout: 20_000 }).toBe(true); } // software WebGL can run a few frames a second
+  finally { await page.keyboard.up('Space'); }
 }
 
 function shooter(page: Page, info: TestInfo) {
@@ -76,7 +70,7 @@ test.describe('floors grow with the build-as-you-go run', () => {
         await expect(action.first(), `${id} has an action`).toBeVisible();
         const kind = await action.first().getAttribute('data-buildout-action');
         const moved = async () => (await built(page, id, 'start')) || (await root.getAttribute('data-step')) !== id;
-        if (kind === 'hold') await hold(page, info, action.first(), moved);
+        if (kind === 'hold' || (await action.first().getAttribute('class'))?.includes('bo-hold')) await hold(page, action.first(), moved);
         else await action.first().click();
       }
       await expect.poll(() => built(page, id), { timeout: 90_000, message: `${id} finishes` }).toBe(true);
@@ -112,7 +106,7 @@ test.describe('floors grow with the build-as-you-go run', () => {
   test('a returning factory shows all its floors at once', async ({ page }) => {
     await watch(page);
     await page.request.post('/__test/access');
-    await page.goto('/?buildout=1&artpass=1&source=sim');
+    await page.goto('/?buildout=1&artpass=1&source=sim&scenario=research'); // six rockets shipped already
     await expect(page.locator('canvas').first()).toBeVisible();
     await expect.poll(async () => (await floors(page)).find(e => e.phase === 'stand')?.floors, { timeout: 30_000 }).toEqual(['mine', 'build', 'checks', 'launch']);
     await page.waitForTimeout(3_000);
