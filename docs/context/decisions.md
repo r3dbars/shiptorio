@@ -380,3 +380,19 @@ production config; provider key values, revocations and permissions are unchange
 - New Claude UI PRs #227 and draft #229 arrived after the backlog cleared; their
   active owner retains merge/deploy responsibility. They are not part of the
   release above. Preview/staging on shiptorio.dev was not changed or certified.
+
+
+### Codex supervised exact edits (2026-10-27)
+
+- Disposable probes isolated Codex CLI 0.162.1 file-tool failures to nested macOS
+  Seatbelt execution: plain inner workspace-write succeeded without the outer
+  boundary; named exact-path permissions, streaming events and canonical binary
+  paths did not repair nested edits. No production sandbox was relaxed.
+- Codex now retains the outer OS boundary and inner read-only mode, returning a
+  bounded schema-constrained edit proposal. After all agent children stop, the
+  credential-free verification sandbox applies unique exact replacements only
+  within the approved path list. Explicit new files must be absent; dirty trees,
+  malformed output, tool attempts, links and ambiguous matches fail closed.
+- Existing diff scope/secret checks, frozen files, sandboxed checks, regression
+  proof and fresh trusted publication still run afterward. This implementation
+  does not establish issue #170 acceptance or a real PR launch.

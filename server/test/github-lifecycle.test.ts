@@ -178,7 +178,12 @@ describe("GitHub lifecycle fixture payloads", () => {
 const { testApp: app } = await import("./app-fixture");
 it("empire summaries resolve the repository ID before calling the factory", async () => {
   const f = fixture(); await install(f);
+  const { membershipCache } = await import("./browser-fixture");
+  f.env.CACHE = membershipCache;
   const cookie = await signedInCookie(f.env, "test-player", ["octo-org/demo"]);
+  // The lifecycle fixture installs as 40; sign-in helper defaults to 1.
+  await f.env.DB.prepare("UPDATE user_repos SET installation_id = 40 WHERE repo = 'octo-org/demo'").run();
+  await f.env.DB.prepare("UPDATE user_installations SET installation_id = 40 WHERE installation_id = 1").run();
   const preview = (await makeSessionCookie(`${f.env.SESSION_SECRET}:${f.env.APP_PASSWORD}`, "preview")).split(";")[0]!.replace("shiptorio_session=", "shiptorio_access=");
   const response = await app.fetch(new Request("https://shiptorio.com/api/empire", { headers: { cookie: `${cookie}; ${preview}` } }), f.env);
   expect(response.status).toBe(200);

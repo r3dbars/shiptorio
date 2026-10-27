@@ -28,6 +28,7 @@ test("host isolation",async()=>{
  expect(process.env.SHIPTORIO_RUNNER_TOKEN).toBeUndefined();
  expect(process.env.GITHUB_TOKEN).toBeUndefined();
  expect(process.env.CODEX_HOME).toBeUndefined();
+ expect(process.env.CLAUDE_CONFIG_DIR).toBeUndefined();
  const lib=dlopen("/usr/lib/libSystem.B.dylib",{sysctl:{args:["ptr","u32","ptr","ptr","ptr","u64"],returns:"i32"}});
  const mib=new Int32Array([1,49,${outsideProcess.pid}]);const size=new BigUint64Array([1048576n]);const data=Buffer.alloc(1048576);
  const status=lib.symbols.sysctl(ptr(mib),3,ptr(data),ptr(size),null,0);

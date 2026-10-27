@@ -8,6 +8,21 @@
 | #260 | merged after CI + Stranger passed | Preserve the password gate script nonce on fast and wrapped paths while retaining the other global CSP restrictions. |
 | #256 | full E2E suite | Signup → App install → repo → signed issue/retry → Spark plan → browser approval → runner PR → stale/current CI → verify + AI review → visible Launch → merge/rocket. Every PR to main runs the suite, including drafts and docs-only changes, and retains screenshots, timing/state and browser trace. GitHub, Spark and runner build results are fixtures; no real bot PR merges. Local 16-step run passed in 60.9s. Fixture runner heartbeats keep slow CI render time from simulating an unplugged machine. |
 
+## Codex: pre-hackathon security pass (2026-10-26)
+
+- Completed the server route, factory isolation, GitHub/Sentry signature,
+  Spark tool/secret and logging audit at baseline `44942fd` (63 source files),
+  plus the subsequently added runner-health display helper.
+- Four findings, each with a small fix PR and regression: [#267](https://github.com/r3dbars/shiptorio/pull/267)
+  reauthorizes empire summaries; [#270](https://github.com/r3dbars/shiptorio/pull/270)
+  separates read and writer authority; [#271](https://github.com/r3dbars/shiptorio/pull/271)
+  rejects incomplete PR-file inspection; [#273](https://github.com/r3dbars/shiptorio/pull/273)
+  binds automatic permits to current files and head. PR links retain CI/merge evidence.
+- Full local checks passed on each fix. No additional confirmed webhook,
+  Spark secret-tool or log-secret vulnerability; no production exploitation or
+  live model red-team claim. Details and limitations: [security.md](security.md).
+- No manual deployment, Cloudflare resource or web source changes. Merges use
+  green CI; existing deployment automation remains responsible for rollout.
 
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
@@ -110,6 +125,16 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - Implemented: per-repository capped reconnect backoff, private lease-bound recovery journal, automatic completion receipt retry, explicit subscription sign-in cards, and doctor auth/sandbox/pairing probes. Builds still require player approval; expired/revoked leases never resume automatically. No deployment requested.
 - Focused macOS validation: 54 tests passed, including real sandbox/publication tests and card lifecycle through Factory reload; HTTP polling smoke also passed with dropped requests and an expired fake sign-in. Added immutable patch recovery, automatic receipt replay even when claim is empty, and cached-auth failure latching. Local full validation after rebase: `bun run test:fast` passed (671 tests, 2 platform skips; 24 playtest cases / 306 decisions / no findings), plus `bun run build`. Includes real macOS sandbox/publication probes and a doctor subprocess test. PR checks and merge result are on the linked PR. Merge gate: CI and stranger-path checks green on the exact head; native GitHub auto-merge is disabled, so the chat performs that gate.
 
+## Game music (Codex, PR #263)
+
+Original composed foundry theme in `web/src/sound/foundryScore.ts`, opt-in via `?music=2`.
+Built at Justin's request as a scoped web-lane exception: 16-bar low strings/harmonium
+motif, celesta climb, piston/metal groove, blocked brass and three-bar launch fanfare.
+Lazy procedural instruments avoid stems/download/decode budgets; CC0 music inventory.
+Separate persisted music volume, bar-boundary hysteresis/equal-power arrangement changes,
+quality=2 voice reduction, and state/voice diagnostics. Existing music remains default.
+Justin approved squash merge after green CI and deployment verification; the new music stays behind `?music=2`. Audition and browser evidence are linked from the PR.
+
 ## Codex (outside the Claude project)
 
 Only what Codex has pushed is visible here, not its live session. Codex commits show as "J B" or "Redbars". As of ~17:20 UTC:
@@ -179,12 +204,44 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
 - Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
 
-## Game music (Codex, PR #263)
+## Quota recovery (Codex, 2026-10-26; PR #269)
 
-Original composed foundry theme in `web/src/sound/foundryScore.ts`, opt-in via `?music=2`.
-Built at Justin's request as a scoped web-lane exception: 16-bar low strings/harmonium
-motif, celesta climb, piston/metal groove, blocked brass and three-bar launch fanfare.
-Lazy procedural instruments avoid stems/download/decode budgets; CC0 music inventory.
-Separate persisted music volume, bar-boundary hysteresis/equal-power arrangement changes,
-quality=2 voice reduction, and state/voice diagnostics. Existing music remains default.
-PR is for review; no merge/deploy. Audition and browser evidence linked from the PR.
+- Day 1 loop reliability: [PR #269](https://github.com/r3dbars/shiptorio/pull/269), `codex/quota-recovery`.
+- Black Iron live card warns at 80% and at exhaustion, naming the allowance, used/limit,
+  local reset time and 00:00 UTC. `/admin/signup?login=…` selects the correct run owner or
+  stable Spark payer for quota increases. Resource caps have no timed reset; job slots
+  free on completion. Dollar totals remain private to the stable payer, who can open
+  the existing thinking-budget editor. Global Spark pause and refresh failures stay visible.
+- Card refreshes every 15s, on focus/visibility, and after budget edits. Requests time out
+  so a hung refresh can recover. Raising run/call/token caps takes effect on the next
+  attempt, with no restart. Migration `0013_quota_controls.sql` adds nullable per-account
+  Spark call/token overrides; blank inherits Worker defaults, zero pauses that allowance.
+- Local planning only checks run capacity; actual dispatch charges it. Lost claim responses
+  reuse the lease without another charge. Failed, declined or stale plans spend no run.
+  Quota-paused ready jobs remain ready and poll without abuse-counter writes.
+- Failed planning persists a per-issue UTC-day ledger: 1m, 2m, then until midnight after
+  three failures. Restarting the factory or changing the issue does not bypass it. Early
+  plan cards disappear; the alarm wakes at cooldown expiry. A new plan still requires
+  the player's approval. The optional hosted assembler also charges after successful
+  scoping, when writing starts, and uses the same cooldown after scoping failures.
+- Rebases include #259 runner resilience, #262 approval binding and #265's separate
+  per-autopilot-session attempt cap. Narrow `web/` edits implement Justin's requested
+  card; shared websocket contracts and the simulator remain unchanged.
+- Validation: all workspace/test typechecks; full fast suite (697 passed, 2 platform
+  skips); 26 playtest cases / 332 decisions, no findings; production build. SQL-backed
+  enforcement/reset/admin/access tests plus real Factory failure/restart/dispatch tests.
+  Playwright card warning → stop → admin link → recovery → retry cooldown passes on
+  desktop (1440×900) and iPhone 14 (390×664), with no page or console errors. Existing
+  spend-panel save/stop/resume also passes on both. Browser plugin unavailable; used
+  project Playwright. Browser quota states are mocked; backend enforcement uses SQLite.
+- No manual deploy or Cloudflare resource changes. Production recovery remains untested;
+  migration 0013 must run through the existing deployment workflow. No historical run
+  counters were reset or refunded.
+## Claude runner login and two subscription plants (Codex, 2026-10-26)
+
+- Checkpoint: Oct 29 local runner / Oct 30 power routing. Branch `codex/claude-runner-power`, [PR #274](https://github.com/r3dbars/shiptorio/pull/274); based on current main including #235 and runner recovery #259.
+- Claude subscription login explicitly uses its canonical private `.agent-home/.claude` via `CLAUDE_CONFIG_DIR`, shared by login, status, doctor and sandbox execution. Claude temp files are isolated too; the macOS agent profile can read only the system timezone database needed to avoid an ICU/Intl startup spin; no personal agent homes or inherited API keys are exposed. A successful login wakes the expired-auth guard even when credentials live only in Keychain.
+- Recheck sign-ins before each assignment. Use Spark's preferred subscription when free, otherwise another signed-in subscription runs the unchanged approved plan/scope. Retain the one-build supervisor and original provider on recovery; never downgrade a subscription assignment to geothermal.
+- Heartbeats publish separate Codex / Claude Code plants before the first job, update logout/offline state, and clear stale/revoked plants. Power sheet shows availability rather than an invented remaining subscription quota. Crosses into `web/` only for this requested Power sheet behavior; no shared schema change.
+- **Justin must reinstall the runner bundle after merge** (standalone installer or legacy `runner:service install`). Existing running helpers do not update with the website. Sign into Claude using the installed runner's real data root; macOS Keychain identity depends on that path. The PR includes the reinstall paste.
+- Validation: full fast suite passes after rebase (723 tests, 2 platform skips), workspace/test typechecks, build, 26 playtests / 332 decisions / no findings; Power sheet browser checks pass on desktop/iPhone 14/Pixel 7. CLI login → stored status → real sandbox uses a provider fixture; native Claude 2.1.310 separately reaches its expected signed-out error in the macOS sandbox with zero tokens. Provider dispatch, unchanged recovery leases and independent auth guards are covered. Justin's dedicated browser sign-in and a real Claude-produced PR remain acceptance steps. CI gates merge; repository auto-merge is disabled, so this chat merges the verified head after green checks.

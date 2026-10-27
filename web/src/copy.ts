@@ -204,8 +204,8 @@ export const POWER = {
   pair: "pair the runner",
   pairTitle: "Run ~/.local/bin/shiptorio-runner pair on your machine to plug it in",
   slots: [
-    { harness: "claude_code", name: "Claude" },
-    { harness: "codex", name: "ChatGPT" },
+    { harness: "claude_code", name: "Claude Code" },
+    { harness: "codex", name: "Codex" },
   ] as const,
 };
 
@@ -446,7 +446,7 @@ export const POWER_COPY: PanelCopy = {
   zone: "Power · AI compute",
   name: "Power plants",
   tag: ["green", "your sign-ins"],
-  what: "Your Claude and ChatGPT sign-ins are power plants, and the meter is your real usage left this week. Every check spends power, so more checks cost more. Heavy checks go where mistakes are expensive; docs stay cheap. A model on your own computer is geothermal: free, but small and capped. The planner runs on its own steam plant.",
+  what: "Your Claude and ChatGPT sign-ins are power plants. Each subscription plant shows whether its agent is signed in and ready; your plan’s usage limits still apply. Every check spends power, so more checks cost more. Heavy checks go where mistakes are expensive; docs stay cheap. A model on your own computer is geothermal: free, but small and capped. The planner runs on its own steam plant.",
   actions: [
     { id: "sign-in", label: "Sign in with another plan", recommended: false },
     { id: "hold", label: "Hold low-value work", recommended: false },

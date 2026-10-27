@@ -1,7 +1,9 @@
+import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
+import { CODEX_EDIT_SCHEMA, codexEditPrompt, parseCodexEdits, applyCodexEdits } from "./codex-edits";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
@@ -13,12 +15,6 @@ import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type S
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
-const credentialVersion = async () => {
-  const versions = await Promise.all([".codex/auth.json", ".claude/.credentials.json", ".claude.json"].map(async file => {
-    try { const info = await lstat(resolve(authHome, file)); return `${file}:${info.mtimeMs}:${info.size}`; } catch { return `${file}:missing`; }
-  }));
-  return versions.join("|");
-};
 class SignInExpired extends Error {}
 import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
@@ -26,11 +22,13 @@ import { redactText } from "../../server/src/redact";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
-const authHome = resolve(root, ".agent-home");
+const authHome = await prepareAgentHome(root);
 const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
 const localStatus = local ? await detectLocalModel(local) : null;
+const installedSubscriptions = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+const busySubscriptions = new Set<"codex" | "claude_code">();
 let available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
 
 if (process.argv[2] === "paths") {
@@ -58,17 +56,16 @@ if (process.argv[2] === "geothermal") {
 }
 async function signedInHarness(h: Job["harness"]) {
   if (h === "local") return localStatus?.ok === true;
-  try {
-
-    const output = await command([harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])], authHome, agentEnvironment(process.env, authHome), 10000);
-    return h === "codex" || JSON.parse(output).loggedIn === true;
-  } catch { return false; }
+  const executable = harnessPath(h);
+  return executable ? subscriptionSignedIn(h, executable, authHome) : false;
 }
 async function loginHarness(h: Job["harness"]) {
   if (h === "local") throw new Error("Local models do not need subscription login");
   console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
-  const child = Bun.spawn([harnessPath(h)!, ...(h === "codex" ? ["login"] : ["auth", "login"])], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+  const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
+  // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
+  if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
 if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{4,5}$/.test(base)) throw new Error("Unsupported Shiptorio origin");
@@ -82,7 +79,7 @@ if (process.argv[2] === "doctor") {
       try {
         boundary = await checkSandbox(dir, h ? { home: authHome, executable: harnessPath(h)! } : undefined);
         // Exercise CLI startup, managed preferences and HTTPS inside the agent boundary (#235), without inference.
-        const probe = h ? [harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
+        const probe = h ? [harnessPath(h)!, ...subscriptionArgs(h)] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
         const result = await boundary.run(probe, dir, { timeout: 30000 });
         if (result.code && !(h && authExpired(result.err + result.out))) { console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
         if (h) {
@@ -202,17 +199,20 @@ async function execute(job: Job, pair: Pairing) {
         console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
         output = JSON.stringify(await runLocalAssembler(job, work, local!));
       } else {
-        const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
+        const context = await assemblerContext(sandbox, job.allowedPaths);
+        const prompt = job.harness === "codex" ? codexEditPrompt(job, context) : assemblerPrompt(job, context);
+        const schema = job.harness === "codex" ? resolve(jobRoot, "codex-edit-schema.json") : undefined;
+        if (schema) await Bun.write(schema, JSON.stringify(CODEX_EDIT_SCHEMA), { mode: 0o600 });
         console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
         const executable = harnessPath(job.harness);
         if (!executable) throw new Error("Assigned harness is unavailable");
         agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now())) });
+        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt, schema)], work, { timeout: Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now())) });
         if (result.code) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
           if (authExpired(result.err + "\n" + result.out)) {
-            blocked.add(job.harness); authFailures.reject(job.harness, await credentialVersion());
+            blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome));
             throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
           }
           if (result.timedOut || agentOffline(result.err + "\n" + result.out)) throw new TypeError("Agent connection interrupted or timed out; saved build will resume");
@@ -220,11 +220,12 @@ async function execute(job: Job, pair: Pairing) {
         }
         output = result.out;
         await agentSandbox.close(); agentSandbox = undefined;
+        if (job.harness === "codex") await applyCodexEdits(sandbox, parseCodexEdits(output, job.allowedPaths), job.allowedPaths);
       }
       // Preserve local evidence; never forward raw agent output to the server/browser.
       await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
       if (job.harness === "claude_code" && JSON.parse(output).is_error) {
-        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await credentialVersion()); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
+        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome)); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
         if (agentOffline(output)) throw new TypeError("Agent connection interrupted; saved build will resume");
         throw new Error("Claude reported an agent error");
       }
@@ -306,7 +307,7 @@ if (action === "retry") {
   const refreshAuth = async () => {
     const next: Job["harness"][] = [];
     for (const h of available) {
-      if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await credentialVersion())) { next.push(h); if (h !== "local") blocked.delete(h); }
+      if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await subscriptionCredentialVersion(h, authHome))) { next.push(h); if (h !== "local") blocked.delete(h); }
       else if (h !== "local") blocked.add(h);
     }
     return next;
@@ -336,8 +337,14 @@ if (action === "retry") {
         try {
           await renewPairing(pair);
           await replayReceipts(root, pair.repo, receipt => api(pair, "finish", receipt));
-          const { job } = await api(pair, "claim", { harnesses: ready });
-          if (job) await execute(job, pair); else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
+          ready = await refreshAuth();
+          const free = await freeSubscriptions(installedSubscriptions, async h => ready.includes(h), busySubscriptions);
+          const { job } = await api(pair, "claim", { harnesses: [...free, ...(ready.includes("local") ? ["local"] : [])] });
+          if (job) {
+            if (job.harness !== "local") busySubscriptions.add(job.harness);
+            try { await execute(job, pair); }
+            finally { if (job.harness !== "local") busySubscriptions.delete(job.harness); }
+          } else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
           retry.reset();
         } catch (error) {
           const delay = retry.fail();
