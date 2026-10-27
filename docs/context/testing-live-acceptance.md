@@ -1,6 +1,6 @@
 # Testing real-loop acceptance — 2026-10-26
 
-Status: **in progress; no launch or merge claimed**.
+Status: **in progress; real PRs opened, no launch or merge claimed**.
 
 Target: [r3dbars/Testing #5](https://github.com/r3dbars/Testing/issues/5), README setup instructions.
 Real builder PR: [Testing #12](https://github.com/r3dbars/Testing/pull/12).
@@ -29,7 +29,8 @@ Real builder PR: [Testing #12](https://github.com/r3dbars/Testing/pull/12).
   Follow-ups #305/#306 own handshake delay and expected planning-denial resets.
 - The next blocker reproduced in a focused deck regression: old alerts fill all 12
   slots, hiding fresh launch and scar-driven rework cards. #307 already fixes this
-  exact case; its CI and Stranger passed. This run keeps the actual merge decision
+  exact case; its exact-head CI and Stranger passed, and it merged as
+  `bc212af8a5c851517b904906ddab6c2cce3831ce`. This run keeps the actual merge decision
   server-owned. The separate Activity pad shortcut opens GitHub in live mode.
 - Before the competing autopilot was paused, real Spark/local Codex completed issue #7
   as [Testing #13](https://github.com/r3dbars/Testing/pull/13), head
@@ -45,6 +46,25 @@ No quota change was made by this run. The competing Testing autopilot process wa
 prevent competing jobs; restore it after safely finishing the controlled acceptance run.
 The original paused PID 87503 exited; its replacement PID 56132 was verified as
 Testing-only and paused. No Shiptorio #170 runner or pairing was changed.
+
+## Deployment handoff
+
+GitHub Actions refused to start Deploy run 40439788803 because of an account payment /
+spending-limit block (no job steps or Cloudflare mutation). The verified #307 commit is
+not live. Production independently returned `be3a81bc177932dcfc4b831a8b9d58cbdfafab77`.
+
+A local deployment requires Justin's explicit approval under AGENTS.md. Approval was
+requested; no deployment has been attempted. A detached exact-commit checkout at
+`/Users/redbars/shiptorio-verified-launch-deploy` has a successful build and Wrangler
+dry run. There are no migration or Wrangler configuration changes between the live
+commit and this candidate. Captured active rollback version:
+`dde742b6-0698-436c-9666-2343f9aff5fd` (100% traffic). Re-read it before any authorized
+deployment in case another owner advances production. Preserve all deployed vars and
+secrets; run the existing live smoke on the exact commit after deployment.
+
+Testing autopilot PID 56132 remains paused to keep this controlled run isolated. The
+paired local runner is online. Resume that verified Testing-only process after safely
+finishing or abandoning this acceptance run. No Shiptorio #170 process was modified.
 
 ## Remaining proof
 
