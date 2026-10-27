@@ -1,9 +1,10 @@
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
+import { assembleCodex } from "./codex-assembler";
+import { probeAssemblerEdit } from "./edit-probe";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
-import { CODEX_EDIT_SCHEMA, codexEditPrompt, parseCodexEdits, applyCodexEdits } from "./codex-edits";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
@@ -70,8 +71,22 @@ async function loginHarness(h: Job["harness"]) {
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
 if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{4,5}$/.test(base)) throw new Error("Unsupported Shiptorio origin");
 if (process.argv[2] === "doctor") {
+  const args = process.argv.slice(3);
+  if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
+  const realEdit = args.length > 0;
+  if (realEdit) console.log("Real edit probe: one small Codex subscription request in a disposable repository; no factory job is claimed.");
   await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
+    editHarness: realEdit ? "codex" : undefined,
+    edit: async () => {
+      try {
+        await probeAssemblerEdit(async context => {
+          const result = await assembleCodex({ root: context.root, work: context.work, home: authHome, executable: harnessPath("codex")!, timeout: 120000,
+            job: { plan: context.plan, allowedPaths: context.allowedPaths }, files: context.files, verification: context.verification });
+          if (result.code || result.timedOut) throw new Error(`Codex edit probe failed (${result.code}): ${redactText(result.err.slice(-2000))}`);
+        });
+      } catch (error) { console.error(redactText(error instanceof Error ? error.message : "Real edit probe failed")); throw error; }
+    },
     pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
       const dir = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-"));
@@ -94,6 +109,7 @@ if (process.argv[2] === "doctor") {
       } finally { await boundary?.close(); await rm(dir, { recursive: true, force: true }); }
     } });
   for (const check of checks) console.log(`${check.ok ? "PASS" : "FAIL"} ${check.check}: ${check.detail}`);
+  if (!realEdit) console.log("SKIP edit:codex: Not checked. Run shiptorio-runner doctor --edit codex for one real subscription edit.");
   process.exit(checks.every(c => c.ok) ? 0 : 1);
 }
 if (["setup", "login"].includes(process.argv[2])) {
@@ -200,14 +216,16 @@ async function execute(job: Job, pair: Pairing) {
         output = JSON.stringify(await runLocalAssembler(job, work, local!));
       } else {
         const context = await assemblerContext(sandbox, job.allowedPaths);
-        const prompt = job.harness === "codex" ? codexEditPrompt(job, context) : assemblerPrompt(job, context);
-        const schema = job.harness === "codex" ? resolve(jobRoot, "codex-edit-schema.json") : undefined;
-        if (schema) await Bun.write(schema, JSON.stringify(CODEX_EDIT_SCHEMA), { mode: 0o600 });
         console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
         const executable = harnessPath(job.harness);
         if (!executable) throw new Error("Assigned harness is unavailable");
-        agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt, schema)], work, { timeout: Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now())) });
+        const timeout = Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now()));
+        let result;
+        if (job.harness === "codex") result = await assembleCodex({ root: jobRoot, work, home: authHome, executable, timeout, job, files: context, verification: sandbox });
+        else {
+          agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
+          result = await agentSandbox.run([executable, ...harnessArgs(job.harness, assemblerPrompt(job, context))], work, { timeout });
+        }
         if (result.code) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
@@ -219,8 +237,7 @@ async function execute(job: Job, pair: Pairing) {
           throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
         }
         output = result.out;
-        await agentSandbox.close(); agentSandbox = undefined;
-        if (job.harness === "codex") await applyCodexEdits(sandbox, parseCodexEdits(output, job.allowedPaths), job.allowedPaths);
+        await agentSandbox?.close(); agentSandbox = undefined;
       }
       // Preserve local evidence; never forward raw agent output to the server/browser.
       await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });

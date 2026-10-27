@@ -16,6 +16,8 @@ export async function diagnose(options: {
   auth(h: Job["harness"]): Promise<boolean>;
   sandbox(h?: Subscription): Promise<void>;
   pairing(pair: Pairing): Promise<void>;
+  editHarness?: Subscription;
+  edit?(h: Subscription): Promise<void>;
 }): Promise<Diagnostic[]> {
   const results: Diagnostic[] = [];
   const check = async (name: string, run: () => Promise<void>, remedy: string) => {
@@ -35,6 +37,13 @@ export async function diagnose(options: {
     if (pair.expires <= Date.now()) throw Error();
     await options.pairing(pair);
   }, "Pairing expired/revoked or server unreachable. Check the network, then run shiptorio-runner pair if needed.");
+  if (options.editHarness) {
+    const h = options.editHarness;
+    await check(`edit:${h}`, async () => {
+      if (!options.harnesses.includes(h) || !results.find(r => r.check === `auth:${h}`)?.ok || !options.edit) throw Error("Agent not ready");
+      await options.edit(h);
+    }, `Real file-edit probe failed. Check the local error; sign in with ${loginCommand(h)} if needed. A successful login/startup does not prove the assembler can edit files.`);
+  }
   return results;
 }
 
