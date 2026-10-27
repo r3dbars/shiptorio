@@ -1,3 +1,4 @@
+import { reserveFactorySpend, settleFactorySpend, type TokenUsage } from "./spend";
 import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
 
@@ -12,6 +13,7 @@ import type { FileChange } from "./github";
 
 export interface SparkEnv extends BudgetEnv {
   budgetAccount?: () => Promise<string>;
+  budgetRepo?: string;
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
@@ -43,7 +45,13 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   return retry("Spark completion", async () => {
     // A provider retry is another billable call: reserve every attempt independently.
-    const reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens);
+    const spendId = env.budgetRepo ? await reserveFactorySpend(env.DB!, env.budgetRepo, reservedTokens - output, output, sparkModel(env)) : null;
+    let reservation;
+    try { reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens); }
+    catch (error) {
+      if (spendId) await env.DB!.prepare("DELETE FROM spark_factory_calls WHERE id = ?").bind(spendId).run();
+      throw error;
+    }
     const res = await observedFetch("spark", `${base}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(90000),
@@ -51,8 +59,11 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
       body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output }),
     });
     if (!res.ok) throw new OutboundError(res.status);
-    const data = (await res.json()) as { usage?: { total_tokens?: number }; choices?: { message?: { content?: string } }[] };
-    await settleSpark(env, reservation, data.usage?.total_tokens);
+    const data = (await res.json()) as { usage?: TokenUsage; choices?: { message?: { content?: string } }[] };
+    try {
+      if (spendId) await settleFactorySpend(env.DB!, spendId, data.usage);
+      await settleSpark(env, reservation, data.usage?.total_tokens);
+    } catch { throw new BudgetError("Spark accounting unavailable; paid calls paused with reservation retained"); }
     const text = data.choices?.[0]?.message?.content;
     if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Spark returned no content");
     return text;
@@ -412,14 +423,21 @@ export interface Task {
   scars?: { station: string; reason: string; strike: number; evidenceUrl?: string }[];
 }
 
+// A docs issue often needs a file that doesn't exist yet (CHANGELOG.md, docs/SHIPPING.md). Spark may propose up
+// to two new Markdown files at the repo root or directly in docs/; everything else must already be in the list.
+const NEW_DOC = /^(?:docs\/)?[\w.-]+\.md$/i;
+export const newDocAllowed = (path: string) => NEW_DOC.test(path) && pathAllowed(path);
+
 export async function pickFiles(env: SparkEnv, task: Task, paths: string[]): Promise<string[]> {
   const out = await sparkJson(env, filesReply,
-    "You are a coding agent planning a small, focused change. Pick the files you need to read and probably edit. At most 4.",
+    "You are a coding agent planning a small, focused change. Pick the files you need to read and probably edit. At most 4. Pick from the repo files; if the task needs a new Markdown doc, you may name up to 2 new .md paths at the repo root or in docs/.",
     `Task: ${task.title}\n\n${task.body.slice(0, 4000)}\nLatest failure: ${task.failure ?? "none"}\nScars: ${JSON.stringify(task.scars?.slice(-5) ?? [])}\n\nRepo files:\n${paths.slice(0, 600).join("\n")}\n\nJSON shape: {"files": ["path", ...]}`,
     "medium",
   );
-  // A pick outside the candidate list is dropped, not fatal: only listed, allowed paths survive.
-  const files = [...new Set(out.files.filter(f => paths.includes(f) && pathAllowed(f)))];
+  // A pick outside the candidate list is dropped, not fatal: only listed, allowed paths survive, plus up to two new docs.
+  const listed = out.files.filter(f => paths.includes(f) && pathAllowed(f));
+  const created = out.files.filter(f => !paths.includes(f) && newDocAllowed(f)).slice(0, 2);
+  const files = [...new Set([...listed, ...created])];
   if (!files.length) throw new SparkError(`Unapproved file selection (${out.files.slice(0, 4).join(", ").slice(0, 200)})`);
   return files;
 }

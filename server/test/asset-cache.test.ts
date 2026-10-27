@@ -13,9 +13,13 @@ test("authorized hashed assets keep immutable caching after middleware; pages, e
     expect(response.headers.get("cache-control")).toBe(expected);
   }
   const before = assets;
-  const gate = await app.fetch(new Request("https://shiptorio.com/assets/index-abcdefgh.js"), env as never);
+  const publicAsset = await app.fetch(new Request("https://shiptorio.com/assets/index-abcdefgh.js"), env as never);
+  expect(publicAsset.status).toBe(200);
+  expect(publicAsset.headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
+  expect(assets).toBe(before + 1);
+  const gate = await app.fetch(new Request("https://shiptorio.com/assets/unversioned.js"), env as never);
   expect(gate.headers.get("cache-control")).toBe("no-store");
-  expect(assets).toBe(before);
+  expect(assets).toBe(before + 1);
 });
 test("the committed font loading markup works without CSP-blocked inline handlers", () => {
   const html = readFileSync(new URL("../../web/index.html", import.meta.url), "utf8");

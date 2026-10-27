@@ -1,6 +1,6 @@
 import { isPublicDocs } from "./access";
 // One response policy for assets, API errors, redirects and the preview gate.
-export function securityHeaders(request: Request, artNonce?: string, turnstile = false, sentryDsn?: string): Record<string, string> {
+export function securityHeaders(request: Request, artNonce?: string, turnstile = false, sentryDsn?: string, gatePolicy?: string): Record<string, string> {
 
   const url = new URL(request.url);
   const local = ["localhost", "127.0.0.1"].includes(url.hostname);
@@ -12,9 +12,11 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
     }
   } catch { /* An invalid monitoring DSN must not broaden the browser policy. */ }
   const socket = `${url.protocol === "https:" ? "wss:" : "ws:"}//${url.host}`;
+  // Only a server-generated preview-gate nonce may replace the default script rule.
+  const gateScript = gatePolicy?.match(/(?:^|;\s*)script-src ('nonce-[a-f0-9]{32}')(?=;|$)/)?.[1];
   const csp = [
     "default-src 'none'",
-    `script-src 'self'${turnstile ? " https://challenges.cloudflare.com" : ""}${artNonce ? ` 'nonce-${artNonce}' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js` : ""}`,
+    gateScript ? `script-src ${gateScript}` : `script-src 'self'${turnstile ? " https://challenges.cloudflare.com" : ""}${artNonce ? ` 'nonce-${artNonce}' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js` : ""}`,
     "script-src-attr 'none'",
     // React positions map labels with style attributes; forms also use inline CSS.
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -34,7 +36,9 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
     "Content-Security-Policy": csp,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    // Chromium turns form Origin opaque under no-referrer. Pairing needs its exact
+    // same-origin POST header; same-origin still hides the device code off-site.
+    "Referrer-Policy": url.pathname === "/runner/pair" ? "same-origin" : "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     ...(url.protocol === "https:" ? { "Strict-Transport-Security": "max-age=31536000" } : {}),
   };

@@ -1,3 +1,4 @@
+import { budgetDb } from "./budget-fixture";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
@@ -30,7 +31,8 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
   };
   let exclusive: Promise<unknown> = Promise.resolve();
   const ctx = { storage, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [authorizedSocket((raw: string) => events.push(JSON.parse(raw)))] };
-  const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
+  const spendDb = budgetDb().db;
+  const env = { ...browserEnv, CACHE: membershipCache, DB: { prepare: (sql: string) => sql.includes("spark_factory_") ? spendDb.prepare(sql) : ({ bind: () => ({ first: async () => ({ user_id: 1, calls: 1, tokens: 100, next_at: Date.now(), failures: 0 }), run: async () => ({ success: true }), all: async () => ({ results: [] }) }) }) }, ...extraEnv };
   const factory = new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never);
   return { factory, data, events, alarm: () => alarm, reload: () => new Factory(ctx as never, credentialEnv({ ...env, DB: authorizedDB(env.DB), CACHE: membershipCache }) as never), saved: () => data.get("state") as FactoryState };
 

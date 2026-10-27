@@ -86,3 +86,19 @@ it('keeps business requests working when diagnostic persistence fails', async ()
     expect(warn).toHaveBeenCalledTimes(1);
   } finally { warn.mockRestore(); info.mockRestore(); }
 });
+
+it('console-only entries skip KV, so runner polls do not spend the write quota', async () => {
+  const info = spyOn(console, 'info').mockImplementation(() => {});
+  const pending: Promise<unknown>[] = [];
+  const puts: string[] = [];
+  try {
+    const env = { CACHE: { put: async (key: string) => { puts.push(key); }, delete: async () => {} } };
+    inTrace({ requestId: 'poll' }, env as never, p => pending.push(p), () => {
+      log('info', 'http.request', { path: '/api/runner/a/b/heartbeat' }, { persist: false });
+      log('info', 'http.request', { path: '/api/repos/a/b/factory' });
+    });
+    await Promise.all(pending);
+    expect(info).toHaveBeenCalledTimes(2);
+    expect(puts).toHaveLength(1);
+  } finally { info.mockRestore(); }
+});

@@ -31,6 +31,28 @@ is the only copy agents outside it (Codex) can see.
 | Grow the factory across many repos | PR open | The empire, behind `?empire=1` (remembered; `?empire=0` off). Every other repo you connect floats as a satellite island beyond the main one, tied by a sky rail with crates (`web/src/map/empire.ts`: real island, districts and launch pad, flattened to ~25 draw calls, no shadows). Island chip in the top bar opens the overview: camera pulls back over every island, sheet rolls up shipped, weighted Automated %, waiting on you, and the most stuck island; tap an island to sail there (`web/src/ui/Empire.tsx`). `IslandSummary` + `rollup` in `shared/src/empire.ts`; `GET /api/empire` asks each repo's Factory `summary()` (player's own repos via `reposFor`). Sim shows shiptorio, testing, transcripted |
 | Always show a next move after rockets | PR open | #105 follow-up. `web/src/ui/whatsNext.ts`: when no Next Move card is open, one clear move is always picked from state (launch, check in, stuck station, research, connect a mine, near permit, place a builder, the line, grow) and shown in the Next Move slot, live and sim. Sim planner keeps dealing moves after scripted ore runs out (connect a mine, then "pull 3 more open issues"). Check: `node web/scripts/next-move-check.mjs` (10 rockets, card within 2s each) |
 
+## Codex: public judge replay (2026-10-26)
+
+- Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
+  90-second, explicitly labeled simulation; query parameters cannot select a live repo.
+- Story: Sentry checkout crash + linked inbox report + GitHub docs issue → foreman plan → subscription
+  assembler → CI / verify rejection + scar / rework / independent review → docs permit card → automatic
+  docs rocket → human checkout merge rocket → approved reply → earned Advisor-to-Floor unlock.
+  The permit can be clicked or the simulated player grants it around 65 seconds. Replay resets the run.
+- UI uses `iron.css`, copy in `copy.ts`. No files under `web/src/map/` change: only the public
+  `FactoryMap` props, `useFactory` protocol, and existing sound/ship events drive the presentation.
+  This request explicitly authorizes the otherwise frontend-owned judge surface and sim fixture.
+- Server explicitly serves the app shell for `/judge` and `/judge/`, plus public content-hashed build
+  JS/CSS and already-public fonts/brand files. APIs, factory websockets, source maps, setup and private
+  app routes keep their existing gates. Judge boot skips telemetry/flags and makes no API calls.
+- Verification: `SHIPTORIO_TEST_PORT=8809 bun run test:e2e tests/e2e/judge.pw.ts` runs the full paced story
+  at desktop, iPhone and Pixel sizes, including passive playback, interactive permit, scar, three green
+  receipts, two actual ship events, 112 simulated users unblocked, Floor and replay reset. The optional
+  test port avoids collisions with other agents; default remains 8799. Gate tests: `server/test/judge.test.ts`.
+- PR: [#254](https://github.com/r3dbars/shiptorio/pull/254), branch `codex/judge-mode`.
+  Local `bun run test:fast`: 662 passed, 2 platform skips; 26 playtest cases / 332 decisions, no findings.
+  These are simulated outcomes, not proof of live AI/provider execution.
+
 ## PRs at a glance
 
 Rule since 18:44 UTC: every agent merges its own PR once CI is green, then checks the Deploy run (AGENTS.md).
@@ -86,3 +108,44 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.
 
+
+## Deploy smoke + automatic rollback (Codex, 2026-10-26)
+
+- Day 1 deploy reliability checkpoint, extending merged #173: one local/CI smoke
+  script checks access form 200, wrong password 401, GitHub redirect, exact build
+  SHA, landing/private gates and HTTPS. Explicit GET /access is now 200; GET
+  /auth/login can start OAuth before preview access (private routes stay gated).
+- Deploy saves the active Worker version before mutation, rolls back on deploy or
+  smoke failure, verifies recovery, and leaves a red job with error annotations
+  and a summary. Manual branch deploys share the production concurrency lock.
+- Implementation [#250](https://github.com/r3dbars/shiptorio/pull/250) merged after CI
+  and stranger-path checks passed. Local validation: 656 tests passed, 2 platform
+  skips; workspace + test typechecks, build, 24 playtest cases (306 decisions) passed.
+- Healthy production [Deploy 40428675804](https://github.com/r3dbars/shiptorio/actions/runs/40428675804)
+  passed every smoke at `dc2843715157e0835c52019db00cccb16537718d`.
+- **Live rollback proved**, 2026-10-26 7:52 PM CT: temporary branch
+  `codex/deploy-smoke-drill`, commit `bd4bd76d4ebc6814a64d748311c8fe5a2a73e175`,
+  deliberately returned 503 for Cloudflare GET /access. [Deploy 40428959075](https://github.com/r3dbars/shiptorio/actions/runs/40428959075)
+  deployed bad Worker version `8ab17ba2-93fa-45fb-8749-b72db215a017`, failed smoke
+  with “GET /access: expected 200, got 503”, then automatically ran Wrangler rollback
+  to captured version `e06a9ca5-cda0-4097-912a-112034233b87` at 100% traffic.
+  Cloudflare's active-version check and all restored-site smoke probes passed at
+  `dc28437`; the job remained **failed**, with an error annotation and summary.
+  Failure detected 00:52:28Z; restored smoke passed 00:52:32Z (about four seconds).
+  The fault branch was never merged and was deleted after the drill.
+- See scripts/smoke/README.md for local use and repeating the drill. No data/schema
+  rollback is claimed; cancellation/timeout cannot guarantee automatic recovery.
+
+| Stranger E2E: browser runner pairing | in progress | Full browser journey exposed Chromium submitting the device approval form with opaque Origin under no-referrer, rejected by the same-origin guard. Pairing page now uses same-origin referrer policy; foreign and missing origins remain rejected. Day 4 runner checkpoint. |
+
+## Spark spend and factory budgets (Codex, 2026-10-26; PR #255)
+
+- Checkpoint: Friday cost/power guardrails. `codex/spark-spend` adds migration `0012_spark_spend.sql` (checked against #150's gapless-number guard).
+- D1 records each factory's UTC day, calls, measured input/output/cache tokens and estimated USD. Default daily budget: **$5 per factory**; the stable payer can change it in whole cents, including $0 to pause.
+- Before each Meta attempt, reserve UTF-8 input upper bound plus capped output at Spark 1.3 standard rates. Concurrent reservations are atomic. Reported usage settles once; missing usage/errors keep a conservative reservation and show as unmeasured. Existing account call/token limits remain in force. Unknown model prices fail closed.
+- Owner HUD chip → How it thinks: usage, 80% warning card, daily budget form, 100% stop explanation/reset at 00:00 UTC. Admin `/admin` has a Black Iron spend table. Early stop is possible when the remaining budget cannot cover the next reservation. No additional model call is spent explaining a stop.
+- Explicitly crosses into `web/` for the requested owner UI; adds a REST endpoint rather than changing the shared websocket contract. Simulator remains independent.
+- Pricing source, checked 2026-10-26: https://dev.meta.ai/docs/pricing-rate-limits — $1.25/M input, $0.15/M cached input, $4.25/M output. These are estimates, not invoices. No historical backfill: old account totals cannot recover per-factory token splits.
+- Validation: full fast suite passes (662 passed, 2 skipped), all workspace/test typechecks, build, and 24 playtest cases / 306 decisions. Playwright budget flow passes on desktop, iPhone 14 and Pixel 7; admin table refresh renders without console errors in a local authenticated SQLite fixture. No paid API request was made for validation.
+- Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
+| Stranger E2E: preview gate CSP | in progress | Browser console assertion caught the outer security middleware replacing the preview gate nonce policy, blocking the gate animation script. Carry the server-generated gate nonce into the global script rule on both fast and wrapped paths, retaining all other global restrictions; application-page policies remain unchanged. Separate fix for the first-day signup checkpoint. |

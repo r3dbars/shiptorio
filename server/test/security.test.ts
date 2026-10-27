@@ -141,12 +141,12 @@ describe("browser origin and response policy", () => {
     expect(securityHeaders(request("/art/prototype.html"), "testnonce")["Content-Security-Policy"]).toContain("'nonce-testnonce'");
   });
 
-  it("caches hashed assets for a year only once access is granted; pages, gates and misses stay no-store", async () => {
+  it("caches public hashed judge assets; pages, gates and misses stay no-store", async () => {
     const env = { ...baseEnv(), ASSETS: { fetch: async (r: Request) => new URL(r.url).pathname === "/assets/gone.js" ? new Response("", { status: 404 }) : new Response("x") } };
     const cookie = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
     const get = (path: string, withCookie = true) => app.fetch(request(path, withCookie ? { headers: { cookie } } : {}), env as never);
     expect((await get("/assets/app-abc12345.js")).headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
-    expect((await get("/assets/app-abc12345.js", false)).headers.get("cache-control")).toBe("no-store");
+    expect((await get("/assets/app-abc12345.js", false)).headers.get("cache-control")).toBe("private, max-age=31536000, immutable");
     expect((await get("/assets/gone.js")).headers.get("cache-control")).toBe("no-store");
     expect((await get("/")).headers.get("cache-control")).toBe("no-store");
   });
@@ -218,4 +218,25 @@ describe("durable per-IP and per-user rate limits", () => {
       }
     }
   });
+});
+
+
+it("wrapped and fast-path preview gates retain the nonce policy for their only inline script", async () => {
+  const { accessFastPath } = await import("../src/index");
+  const responses = [
+    await app.fetch(request("/runner/pair"), baseEnv() as never),
+    await accessFastPath(request("/access"), baseEnv() as never),
+  ];
+  for (const response of responses) {
+    expect(response).not.toBeNull();
+    const html = await response!.text();
+    const nonce = html.match(/<script nonce="([^"]+)"/)?.[1];
+    expect(nonce).toBeTruthy();
+    const policy = response!.headers.get("content-security-policy")!;
+    expect(policy).toContain(`script-src 'nonce-${nonce}'`);
+    expect(policy).toContain("default-src 'none'");
+    expect(policy).toContain("form-action 'self'");
+    expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(response!.headers.get("x-content-type-options")).toBe("nosniff");
+  }
 });
