@@ -7,7 +7,7 @@ import type { FactoryState } from "@shiptorio/shared";
 
 import type { Ping } from "../scene";
 import type { Iron, IronItem, IronStation } from "./core";
-import { chipAnchor, isPhone } from "./frame";
+import { chipAnchor, cover, isLandscapePhone, isPhone } from "./frame";
 import { LEDGE_Z, MINES, TIERS } from "./layout";
 import { clickable, mineKey, type ShaftPlan } from "./plan";
 import type { ShaftStage, ShaftView } from "./stage";
@@ -15,7 +15,11 @@ import type { ShaftStage, ShaftView } from "./stage";
 export interface HudHost {
   pick(key: string): void; // a chip or ping was clicked: open that thing's panel
   goTo(view: ShaftView): void; // a floor button was pressed
+  reframe?(): void; // the plates covering the map changed size: aim the camera again (frame.ts cover)
 }
+
+// the game's fixed plates over the map (App.tsx): the floor card and icons, the needs tray, the ticker, the controls
+const PLATES = [".hudtop", ".needs-slot", ".ticker", ".ctrl"];
 
 const STATE_WORD: Record<string, string> = { IDLE: "IDLE", WORKING: "WORKING", BLOCKED: "NEEDS YOU" };
 const SHORT: Record<string, string> = {
@@ -68,11 +72,14 @@ export class ShaftHud {
   private idleText = new Map<string, string>();
   private mineWaiting = new Map<string, number>();
   private reworkCount = 0;
+  private measuredAt = 0;
 
   constructor(
     private readonly root: HTMLElement,
     private readonly host: HudHost,
   ) {
+    // a dev StrictMode remount can build the next hud before the last one is disposed, so count them on the root
+    root.dataset.shaftHuds = String(Number(root.dataset.shaftHuds ?? 0) + 1);
     root.classList.add("shaft");
     // the elevator panel: one button per floor, the whole shaft, and follow-the-work
     this.floors = document.createElement("nav");
@@ -208,6 +215,9 @@ export class ShaftHud {
     if (!w) return;
     const { I, stage } = w;
     const phone = isPhone(W);
+    this.measureCover(W, H);
+    // a chip or ping under a plate can't be read or tapped, so it waits until the camera brings it out
+    const top = cover.top + 4, bottom = H - cover.bottom - 4;
     type Placed = { c: Chip; x: number; y: number; w: number; h: number; rank: number };
     const placed: Placed[] = [];
     for (const c of this.chips) {
@@ -227,7 +237,7 @@ export class ShaftHud {
       c.el.classList.toggle("teaching", teaching);
       c.el.classList.toggle("sel", !!c.key && c.key === this.selected);
       const [x, y] = stage.project(...c.at());
-      const off = !shown || x < -120 || x > W + 120 || y < -40 || y > H + 40;
+      const off = !shown || x < -120 || x > W + 120 || y < top || y > bottom;
       if (off) {
         if (c.el.style.display !== "none") c.el.style.display = "none";
         continue;
@@ -289,7 +299,7 @@ export class ShaftHud {
         continue;
       }
       const [x, y] = stage.project(...at);
-      const off = x < -40 || x > W + 40 || y < -20 || y > H + 20;
+      const off = x < -40 || x > W + 40 || y < top + 12 || y > bottom;
       pe.el.style.display = off ? "none" : "flex";
       if (off) continue;
       pe.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px)`;
@@ -297,12 +307,46 @@ export class ShaftHud {
     }
   }
 
+  /**
+   * Every quarter second: how much of the map's top and bottom the game's plates hide. A band counts when the plates
+   * in it span most of the width together (a phone's stacked plates, a landscape phone's ticker plus controls), not
+   * for a desktop's corner cards. On a change the camera reframes so the floor sits in what's left.
+   */
+  private measureCover(W: number, H: number) {
+    const now = performance.now();
+    if (now - this.measuredAt < 250) return;
+    this.measuredAt = now;
+    const box = this.root.getBoundingClientRect();
+    const bands = { top: { px: 0, span: 0 }, bottom: { px: 0, span: 0 } };
+    const els: Element[] = PLATES.map((q) => document.querySelector(q)).filter((e): e is Element => !!e);
+    if (isPhone(W) && !isLandscapePhone(W, H)) els.push(this.floors);
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const t = r.top - box.top, b = r.bottom - box.top;
+      const span = Math.min(r.right, box.right) - Math.max(r.left, box.left);
+      if (span <= 0 || b <= 0 || t >= H) continue;
+      if (t < H * 0.4) (bands.top.px = Math.max(bands.top.px, b)), (bands.top.span += span);
+      else if (b > H * 0.6) (bands.bottom.px = Math.max(bands.bottom.px, H - t)), (bands.bottom.span += span);
+    }
+    const q = (n: number) => Math.round(n / 4) * 4;
+    const topPx = bands.top.span > W * 0.55 ? q(bands.top.px) : 0;
+    const bottomPx = bands.bottom.span > W * 0.55 ? q(bands.bottom.px) : 0;
+    if (topPx === cover.top && bottomPx === cover.bottom) return;
+    cover.top = topPx;
+    cover.bottom = bottomPx;
+    this.host.reframe?.();
+  }
+
   dispose() {
     this.clear();
     for (const pe of this.pings) pe.el.remove();
     this.pings = [];
     this.floors.remove();
-    this.root.classList.remove("shaft");
+    cover.top = cover.bottom = 0;
+    const left = Number(this.root.dataset.shaftHuds ?? 1) - 1;
+    this.root.dataset.shaftHuds = String(left);
+    if (left <= 0) this.root.classList.remove("shaft");
   }
 
   private makeChip(key: string, long: string, short: string, at: () => [number, number, number], always: boolean): Chip {
