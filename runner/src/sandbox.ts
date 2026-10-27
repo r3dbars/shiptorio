@@ -56,9 +56,9 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
 (allow process-info* (target self))
 (allow process-exec)
 (allow process-fork)
-; Claude's Intl/regex initialization spins if ICU cannot read the OS timezone database.
-; System data only: do not grant access to the rest of /private/var/db.
-${agent ? '(allow file-read* (subpath "/private/var/db/timezone/tz"))' : ""}
+; Bun Date/Intl and agent initialization require the public OS timezone database.
+; Read-only system zoneinfo only: never grant the rest of /private/var/db.
+(allow file-read* (subpath "/private/var/db/timezone/tz"))
 (allow signal (target same-sandbox))
 ; Hardware/OS queries only, never process arguments or environments.
 (allow sysctl-read (sysctl-name-regex #"^hw\\.")
