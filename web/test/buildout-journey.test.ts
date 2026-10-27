@@ -108,3 +108,9 @@ test("the repo line replaces the demo line only where one is written", () => {
   const planner = STEPS.find((s) => s.id === "planner")!;
   expect(lineFor(planner, true)).toBe(planner.line);
 });
+
+test("gate and pad resolve from the layout even when the plan names them differently", () => {
+  const L = makeLayout({ ...defaultPlan(), gate: { id: "merge-gate" }, pad: { id: "launch-pad" } });
+  expect(resolve(STEPS.find((s) => s.id === "launch")!.reveals, L).stations).toEqual(["merge-gate", "launch-pad"]);
+  expect(cameraFor(STEPS.find((s) => s.id === "launch")!, L)).toEqual(["launch-pad"]);
+});

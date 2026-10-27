@@ -191,7 +191,7 @@ export interface Resolved {
 }
 
 /** Turn pieces into the layout's own ids (CONTRACT.md: positions come from layout.js, never hard-coded). */
-export function resolve(pieces: Piece[], L: Pick<Layout, "stations" | "paths" | "assemblers">): Resolved {
+export function resolve(pieces: Piece[], L: Pick<Layout, "stations" | "paths" | "assemblers" | "planner" | "gate" | "pad">): Resolved {
   const out: Resolved = { mines: [], stations: [], paths: [] };
   const has = (name: string) => L.paths.some((p) => p.name === name);
   for (const p of pieces) {
@@ -211,7 +211,8 @@ export function resolve(pieces: Piece[], L: Pick<Layout, "stations" | "paths" | 
         for (const name of [`spur-${asm.id}`, `tube-${asm.id}`]) if (has(name)) out.paths.push(name);
       }
     } else {
-      const st = L.stations.find((s) => s.id === p.station || s.type === p.station);
+      // gate, pad and planner come straight off the layout (their ids follow the plan); ci is found by type
+      const st = p.station === "gate" ? L.gate : p.station === "pad" ? L.pad : p.station === "planner" ? L.planner : L.stations.find((s) => s.type === p.station);
       if (st) out.stations.push(st.id);
     }
   }
@@ -219,7 +220,7 @@ export function resolve(pieces: Piece[], L: Pick<Layout, "stations" | "paths" | 
 }
 
 /** Where the camera parks for a step, as director.ts takes it: station ids and "mine:<id>", framed together. */
-export function cameraFor(step: Step, L: Pick<Layout, "stations" | "paths" | "assemblers">): string[] {
+export function cameraFor(step: Step, L: Pick<Layout, "stations" | "paths" | "assemblers" | "planner" | "gate" | "pad">): string[] {
   const r = resolve([step.camera], L);
   return [...r.mines.map((m) => `mine:${m}`), ...r.stations];
 }
