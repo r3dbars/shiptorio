@@ -3,7 +3,7 @@ import { observedFetch } from "./telemetry";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
 
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
-import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
+import { isOwnPlanComment, normalizeGitHub, TRUST_LABEL, trustedAuthor, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
 
 const API = "https://api.github.com";
@@ -322,12 +322,14 @@ export async function freshIssueInput(token: string, repo: string, number: numbe
   for (let page = 1; page <= 5; page++) {
     const comments = await gh<NonNullable<GitHubPayload["comment"]>[]>(`/repos/${repo}/issues/${number}/comments?per_page=100&page=${page}`, token);
     if (!Array.isArray(comments)) throw new Error("GitHub issue feedback unavailable");
-    for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
+    for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && trustedAuthor(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
     if (comments.length < 100) {
       const again = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
       const stamp = (value: GitHubIssue) => JSON.stringify([value.number, value.state, !!value.pull_request, value.title, value.body ?? "", value.labels ?? [], value.updated_at]);
       if (stamp(issue) !== stamp(again)) throw new Error("Issue changed while reading feedback");
-      return normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+      const signal = normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+      if (!signal) throw new Error(`Issue author isn't a collaborator; add the "${TRUST_LABEL}" label to plan it`);
+      return signal;
     }
   }
   throw new Error("Issue feedback exceeds the bounded planning window; narrow the issue before planning");
