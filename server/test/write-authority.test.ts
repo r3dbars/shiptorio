@@ -25,7 +25,7 @@ async function fixture() {
     FACTORY: { idFromName: (name: string) => name, get: (name: string) => {
       if (name.startsWith("security:")) return { securityLimit: async () => ({ allowed: true, retryAfter: 0 }) };
       calls++;
-      return { runnerJobs: async () => [], ensure: async () => {}, pairRunner: async () => "pair", revokeRunner: async () => {}, isRunnerPaired: async () => true };
+      return { runnerJobs: async () => [], ensure: async () => {}, pairRunner: async () => "pair", recordRunnerGrant: async () => {}, revokeRunner: async () => {}, isRunnerPaired: async () => true };
     } },
   };
   const cookie = `${await signedInCookie(env, "reader", ["owner/repo"], 42)}; ${(await makeSessionCookie(`${secret}:${password}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=")}`;

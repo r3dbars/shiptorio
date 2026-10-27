@@ -2,6 +2,11 @@
 const enc = new TextEncoder();
 const encode = (s: string) => btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 export interface RunnerIdentity { repo: string; pairId: string; expires: number; user?: import("./authorization").AccessUser }
+// Long enough for sleep and travel, still bounded by the approving browser session.
+export const RUNNER_GRANT_TTL = 7 * 86400_000;
+export function runnerGrantExpiry(user: RunnerIdentity["user"], now = Date.now()): number {
+  return Math.min(now + RUNNER_GRANT_TTL, user?.expiresAt ?? now + RUNNER_GRANT_TTL);
+}
 async function signature(secret: string, text: string) {
   const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return encode(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)))));
@@ -11,7 +16,7 @@ export async function pairToken(secret: string, identity: RunnerIdentity): Promi
   const body = encode(JSON.stringify({ ...identity, purpose: "runner" }));
   return `${body}.${await signature(secret, body)}`;
 }
-export async function readRunnerToken(secret: string, token: string, now = Date.now()): Promise<RunnerIdentity | null> {
+async function verifiedRunnerToken(secret: string, token: string): Promise<RunnerIdentity | null> {
   if (!secret || token.length > 2048) return null;
   try {
     const [body, given, extra] = token.split(".");
@@ -22,8 +27,18 @@ export async function readRunnerToken(secret: string, token: string, now = Date.
     for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
     if (diff) return null;
     const data = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
-    if (data.purpose !== "runner" || typeof data.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(data.repo) || typeof data.pairId !== "string" || !Number.isFinite(data.expires) || data.expires <= now) return null;
+    if (data.purpose !== "runner" || typeof data.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(data.repo) || typeof data.pairId !== "string" || !Number.isFinite(data.expires)) return null;
     if (data.user !== undefined && (!data.user || typeof data.user.login !== "string" || !Number.isFinite(data.user.expiresAt))) return null;
     return { repo: data.repo, pairId: data.pairId, expires: data.expires, ...(data.user ? { user: data.user } : {}) };
   } catch { return null; }
+}
+
+export async function readRunnerToken(secret: string, token: string, now = Date.now()): Promise<RunnerIdentity | null> {
+  const identity = await verifiedRunnerToken(secret, token);
+  return identity && identity.expires > now ? identity : null;
+}
+/** Diagnostic only: this never authorizes a request or renews an expired grant. */
+export async function expiredRunnerGrant(secret: string, token: string, now = Date.now()): Promise<RunnerIdentity | null> {
+  const identity = await verifiedRunnerToken(secret, token);
+  return identity && identity.expires <= now ? identity : null;
 }

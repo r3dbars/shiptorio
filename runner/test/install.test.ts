@@ -12,7 +12,7 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform === 
   const bytes = await Bun.file(join(fixture, "runner.mjs")).arrayBuffer();
   let corrupt = false, starts = 0;
   const claims = new Set<string>(), beats = new Set<string>();
-  const tokens = new Map<string, string>();
+  const tokens = new Map<string, string[]>();
   const code = "ABCD-1234-ABCD", secret = "x".repeat(72);
   const server = Bun.serve({ port: 0, async fetch(req) {
     const url = new URL(req.url);
@@ -22,12 +22,18 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform === 
     if (url.pathname.endsWith("/poll")) {
       const request = await req.json() as { code: string; secret: string }; expect(request).toEqual({ code, secret });
       const repo = starts === 1 ? "you/first" : "you/second", expires = Date.now() + 8 * 3600000;
-      const token = `${btoa(JSON.stringify({ purpose: "runner", repo, pairId: repo, expires })).replace(/=/g, "")}.signature`; tokens.set(repo, token);
+      const token = `${btoa(JSON.stringify({ purpose: "runner", repo, pairId: repo, expires })).replace(/=/g, "")}.signature`; tokens.set(repo, [...(tokens.get(repo) ?? []), token]);
       return Response.json({ status: "approved", repo, token, expires });
     }
-    const match = url.pathname.match(/^\/api\/runner\/(you\/\w+)\/(claim|heartbeat)$/);
+    const match = url.pathname.match(/^\/api\/runner\/(you\/\w+)\/(claim|heartbeat|renew)$/);
     if (match) {
-      expect(req.headers.get("authorization")).toBe(`Bearer ${tokens.get(match[1])}`);
+      expect(tokens.get(match[1])?.map(token => `Bearer ${token}`)).toContain(req.headers.get("authorization") ?? "");
+      if (match[2] === "renew") {
+        const expires = Date.now() + 7 * 86400000;
+        const token = `${btoa(JSON.stringify({purpose:"runner",repo:match[1],pairId:match[1],expires})).replace(/=/g, "")}.signature`;
+        tokens.set(match[1], [...(tokens.get(match[1]) ?? []), token]);
+        return Response.json({token, expires});
+      }
       (match[2] === "claim" ? claims : beats).add(match[1]);
       return Response.json(match[2] === "claim" ? { job: null } : { ok: true });
     }

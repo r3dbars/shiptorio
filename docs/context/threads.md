@@ -339,3 +339,9 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+# Runner overnight recovery
+
+Codex: eight-hour grant expiry plus final-hour, job-loop-only renewal explains the
+reproducible sleep gap left after #340's persistence fix. Extending bounded grants and
+renewing from the independent heartbeat; preserving revocation and saved work.
+

@@ -228,7 +228,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -695,19 +695,41 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const lastId = await this.ctx.storage.get<string>("runnerLastJobId");
     const last = jobs.find(job => job.id === lastId);
     const paired = !!await this.ctx.storage.get("runnerPair");
-    return { paired, online: paired && !!presence && Date.now() - presence.seenAt < 20000,
+    const expires = await this.ctx.storage.get<number>("runnerGrantExpiry");
+    const repair = await this.ctx.storage.get<{code: string; at: number}>("runnerRepair") ??
+      (paired && expires && expires <= Date.now() ? {code: "runner_grant_expired", at: expires} : null);
+    return { needsRepair: !!repair, repairCommand: repair ? "shiptorio-runner pair" : null, repairReason: repair?.code ?? null,
+      paired, online: paired && !repair && !!presence && Date.now() - presence.seenAt < 20000,
       seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
       lastJob: last ? { id: last.id, status: last.status } : null };
   }
-  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); }
+  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); await this.ctx.storage.delete("runnerRepair"); await this.ctx.storage.delete("runnerGrantExpiry"); }
   async pairRunner(): Promise<string> {
     await this.assertAccountActive(this.meta?.repo);
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const pairId = crypto.randomUUID();
     await this.accountPut("runnerPair", pairId); // Re-pairing revokes the previous token.
+    await this.ctx.storage.delete("runnerRepair");
+    await this.ctx.storage.delete("runnerGrantExpiry");
     return pairId;
   }
+  async recordRunnerGrant(pairId: string, expires: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.isRunnerPaired(pairId)) await this.accountPut("runnerGrantExpiry", Math.max(expires, await this.ctx.storage.get<number>("runnerGrantExpiry") ?? 0));
+    });
+  }
+  async rejectRunnerGrant(pairId: string, code: "runner_grant_expired" | "runner_access_revoked", expires?: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const knownExpiry = await this.ctx.storage.get<number>("runnerGrantExpiry");
+      if (code === "runner_grant_expired" && knownExpiry && expires && expires < knownExpiry) return;
+      if (await this.isRunnerPaired(pairId)) {
+        await this.accountPut("runnerRepair", { code, at: Date.now() });
+        await this.ctx.storage.delete("runnerPresence");
+      }
+    });
+  }
   async revokeRunner(): Promise<void> {
+    await this.accountPut("runnerRepair", { code: "runner_pair_revoked", at: Date.now() });
     await this.ctx.storage.delete("runnerPair");
     await this.ctx.storage.delete("runnerPresence");
     await this.load();

@@ -12,7 +12,7 @@ const { testApp: app } = await import("./app-fixture");
 
 it("runner transport authenticates independently without opening the preview or other repos", async () => {
   let claims = 0;
-  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", ALLOWED_LOGINS: "test-player", CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ repo_id: 501, permissions: "{}", token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }) }) }) }, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), isRunnerPaired: async (pair: string) => pair === "pair-1", claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
+  const env = { SESSION_SECRET: "test-session-secret", APP_PASSWORD: "preview-password", ALLOWED_LOGINS: "test-player", CACHE: membershipCache, DB: { prepare: () => ({ bind: () => ({ first: async () => ({ repo_id: 501, permissions: "{}", token_version: 0, status: "active", installation_id: 1, id: 1, login: "test-player", enabled:1, runs_daily:20, count:1 }) }) }) }, FACTORY: { idFromName: (repo: string) => repo, get: () => ({ securityLimit: async () => ({ allowed: true, retryAfter: 0 }), isRunnerPaired: async (pair: string) => pair === "pair-1", recordRunnerGrant: async (pair: string) => { expect(pair).toBe("pair-1"); }, claimRunner: async (pair: string) => { expect(pair).toBe("pair-1"); claims++; return null; } }) } };
 
   const token = await pairToken(env.SESSION_SECRET, { repo: "r3dbars/shiptorio", pairId: "pair-1", user: fixtureUser(), expires: Date.now() + 10000 });
 

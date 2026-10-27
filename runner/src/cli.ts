@@ -10,14 +10,15 @@ import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
 import { runnerHome, loadPairings, pairMachine, joinMachine, type Pairing } from "./pairing";
-import { loadConnections, persistRenewal } from "./grant-store";
+import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-store";
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { AuthFailures, RunnerGrantRejected, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
+const rejectedGrants = new Map<string, string>();
 class SignInExpired extends Error {}
 import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
@@ -158,15 +159,16 @@ if (action === "uninstall") {
   process.exit(0);
 }
 async function api(pair: Pairing, action: keyof typeof responseSchemas, body: unknown): Promise<any> {
+  if (connectionStopped(pair)) throw new RunnerGrantRejected(pair.rejected?.code ?? "runner_pair_revoked", 401);
   const r = await fetch(`${base}/api/runner/${pair.repo}/${action}`, { method: "POST", headers: { authorization: `Bearer ${pair.token}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
-  if (!r.ok) { const error = new Error(`Runner ${pair.repo} ${action} failed (${r.status})`); Object.assign(error, { status: r.status }); throw error; }
+  if (!r.ok) throw await runnerResponseError(r, pair.repo, action);
   const text = await r.text();
   if (text.length > 128000) throw new Error("Runner response exceeds size limit");
   return responseSchemas[action].parse(JSON.parse(text));
 
 }
 async function renewPairing(pair: Pairing) {
-  if (pair.expires > Date.now() + 60 * 60 * 1000) return;
+  if (!renewalDue(pair)) return;
   const renewed = await api(pair, "renew", {});
   await persistRenewal(root, pair, renewed);
 }
@@ -288,6 +290,7 @@ async function execute(job: Job, pair: Pairing) {
     // Publication/installation can fail offline. Keep the workspace and rerun all checks on recovery.
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     let sha: string;
+    if (connectionStopped(pair)) { preserve = true; throw new RunnerGrantRejected(pair.rejected?.code ?? "runner_pair_revoked", 401); }
     try { sha = await publishApproved(job, frozen); } catch (error) { preserve = true; throw error; }
     summary = `Changed files: ${paths.join(", ")} (approved: ${job.allowedPaths.join(", ")}). Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
@@ -304,6 +307,14 @@ async function execute(job: Job, pair: Pairing) {
     throw error;
   } finally { await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 
+}
+function connectionStopped(pair: Pairing) { return !!pair.rejected || rejectedGrants.get(pair.repo) === pair.token; }
+async function stopRejectedConnection(pair: Pairing, error: unknown): Promise<boolean> {
+  if (!(error instanceof RunnerGrantRejected)) return false;
+  rejectedGrants.set(pair.repo, pair.token);
+  await persistGrantRejection(root, pair, error.code).catch(() => console.error(`${pair.repo}: could not save re-pairing status; this process will keep the rejected grant stopped.`));
+  console.error(`${pair.repo}: connection stopped (${error.code}). Run shiptorio-runner pair. Saved builds and receipts are preserved.`);
+  return true;
 }
 async function connections() {
   return loadConnections(root, { SHIPTORIO_REPO: process.env.SHIPTORIO_REPO, SHIPTORIO_RUNNER_TOKEN: process.env.SHIPTORIO_RUNNER_TOKEN });
@@ -333,17 +344,22 @@ if (action === "retry") {
     return next;
   };
   let ready = await refreshAuth();
-  for (const pair of pairs) await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
+  for (const pair of pairs) {
+    if (connectionStopped(pair)) { console.error(`${pair.repo}: connection needs re-pairing. Run shiptorio-runner pair.`); continue; }
+    try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); }
+    catch (error) { await stopRejectedConnection(pair, error); }
+  }
   const heartbeat = setInterval(async () => {
     if (heartbeatBusy) return;
     heartbeatBusy = true;
     try {
       ready = await refreshAuth();
       for (const pair of await connections()) {
+        if (connectionStopped(pair)) continue;
         const retry = heartbeatBackoffs.get(pair.repo) ?? new Backoff(); heartbeatBackoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
-        try { await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }); retry.reset(); }
-        catch (error) { retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
+        try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); retry.reset(); }
+        catch (error) { if (await stopRejectedConnection(pair, error)) continue; retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
       }
     }
     catch (error) { console.error(error instanceof Error ? error.message : "Heartbeat failed"); }
@@ -352,6 +368,7 @@ if (action === "retry") {
   try {
     do {
       for (const pair of await connections()) {
+        if (connectionStopped(pair)) continue;
         const retry = backoffs.get(pair.repo) ?? new Backoff(); backoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
         try {
@@ -367,16 +384,15 @@ if (action === "retry") {
           } else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
           retry.reset();
         } catch (error) {
+          if (await stopRejectedConnection(pair, error)) continue;
           const delay = retry.fail();
           console.error(`${error instanceof Error ? error.message : "Runner request failed"}. Retrying in ${Math.ceil(delay / 1000)}s.`);
           if (error instanceof SignInExpired) {
             ready = ready.filter(h => !blocked.has(h as Subscription));
             await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
           }
-          if ((error as { status?: number }).status === 401) {
-            // Keep the pairing so doctor can diagnose it; never erase recovery evidence.
-            console.error(`${pair.repo}: pairing expired or revoked. Run shiptorio-runner pair to reconnect.`);
-          }
+          // Generic 401s may come from an upstream proxy: retain the grant and retry with backoff.
+
         }
       }
       if (!once) await Bun.sleep(5000);

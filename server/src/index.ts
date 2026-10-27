@@ -43,7 +43,7 @@ import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, rev
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
-import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
+import { pairToken, readRunnerToken, expiredRunnerGrant, runnerGrantExpiry, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { installationToken } from "./github";
 import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
@@ -166,12 +166,20 @@ app.use("*", async (c, next) => {
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
-      return c.json({error:'runner authentication required'},401);
+      const expired = match && c.req.method === "POST" ? await expiredRunnerGrant(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "") : null;
+      if (expired && expired.repo === `${match![1]}/${match![2]}`.toLowerCase()) await (await factory(c.env, expired.repo)).rejectRunnerGrant(expired.pairId, "runner_grant_expired", expired.expires);
+      return c.json({error:'runner authentication required', code: expired ? 'runner_grant_expired' : 'runner_grant_invalid'},401);
     }
-    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo, "write")) return c.json({error:'repository access denied'},403);
+    let allowed: boolean;
+    try { allowed = !!identity.user && await signupAllowed(c.env, identity.user.login) && !!await repoAccess(c.env, identity.user, identity.repo, "write", true); }
+    catch { c.header("Retry-After", "60"); return c.json({error: "Repository access check temporarily unavailable"}, 503); }
+    if (!allowed) {
+      // Denied repository access must not invoke or mutate that repository's Durable Object.
+      return c.json({error:'repository access denied', code:'runner_access_revoked'},403);
+    }
     if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
-      return c.json({error:'runner pairing revoked'},401);
+      return c.json({error:'runner pairing revoked', code:'runner_pair_revoked'},401);
     }
 
     c.set("runner", identity);
@@ -508,9 +516,10 @@ app.post("/api/runner-device/join", async c => {
   if (!await resourceQuota(c.env, record.user.login, "repo", record.repo) || !await resourceQuota(c.env, record.user.login, "factory", record.repo)) return c.json({ error: "repository/factory quota reached" }, 429);
   const f = await factory(c.env, record.repo);
   await f.ensure(record.repo, installation);
-  const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+  const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(record.user);
   const token = await pairToken(c.env.SESSION_SECRET, { repo: record.repo, pairId, expires, user: record.user });
   await f.activateRunner(pairId);
+  await f.recordRunnerGrant(pairId, expires);
   return c.json({ repo: record.repo, token, expires });
 });
 app.on(["GET", "POST"], "/runner/pair", async c => {
@@ -532,10 +541,11 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
     if (!await admit(c.env, `pair:${user.id}`, 5, 600000, "repeated browser pairing requests")) return c.json({ error: "pairing throttled" }, 429);
     const f = await factory(c.env, repo);
     await f.ensure(repo, installation);
-    const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+    const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(user);
     const token = await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user });
     if (!await device(c.env, code).approveDevice({ repo, token, expires })) return c.html(runnerPage("Code expired or already used", "<p>Run shiptorio-runner pair for a new code.</p>"), 409, headers);
     await f.activateRunner(pairId);
+    await f.recordRunnerGrant(pairId, expires);
     await device(c.env, code).readyDevice();
     return c.html(runnerPage("Machine approved", `<p>Your terminal will confirm connection to <b>${htmlEscape(repo)}</b>. Return there to finish pairing, then <a href="/?source=live&repo=${encodeURIComponent(repo)}">open your factory</a>. The planner asks you to approve a plan before any code runs.</p>`), 200, headers);
   }
@@ -664,7 +674,8 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
-    const expires = Date.now() + 8 * 60 * 60 * 1000;
+    const expires = runnerGrantExpiry((await resolveUser(c.req.raw, c.env))!);
+    await f.recordRunnerGrant(pairId, expires);
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
   }
   if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
@@ -698,15 +709,16 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
-  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
+  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
   if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
   await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
   const identity = c.get("runner");
-  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
-  const expires = Date.now() + 8 * 60 * 60 * 1000;
+  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
+  const expires = runnerGrantExpiry(identity.user);
+  await (await factory(c.env, identity.repo)).recordRunnerGrant(identity.pairId, expires);
   return c.json({ token: await pairToken(c.env.SESSION_SECRET, { ...identity, expires }), expires });
 });
 
