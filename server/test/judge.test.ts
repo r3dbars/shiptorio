@@ -7,7 +7,7 @@ describe("public judge surface", () => {
   it("opens the replay and hashed build JS/CSS without a preview or GitHub cookie, in either signup mode", async () => {
     for (const mode of ["password", "waitlist"]) for (const method of ["GET", "HEAD"]) {
       for (const path of ["/judge", "/judge/", "/judge?source=live&repo=private/repo", "/assets/index-Abc12345.js", "/assets/index-Abc12345.css"]) {
-        expect(await publicRoute(at(path, method), { ...env, SIGNUP_GATE_MODE: mode })).toBe("file");
+        expect(await publicRoute(at(path, method), { ...env, SIGNUP_GATE_MODE: mode })).toBe(path.startsWith("/judge") ? "judge" : "file");
       }
     }
   });

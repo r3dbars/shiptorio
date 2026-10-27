@@ -126,3 +126,22 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Pricing source, checked 2026-10-26: https://dev.meta.ai/docs/pricing-rate-limits — $1.25/M input, $0.15/M cached input, $4.25/M output. These are estimates, not invoices. No historical backfill: old account totals cannot recover per-factory token splits.
 - Validation: full fast suite passes (662 passed, 2 skipped), all workspace/test typechecks, build, and 24 playtest cases / 306 decisions. Playwright budget flow passes on desktop, iPhone 14 and Pixel 7; admin table refresh renders without console errors in a local authenticated SQLite fixture. No paid API request was made for validation.
 - Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
+## Codex: public judge replay (2026-10-26)
+
+- Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
+  90-second, explicitly labeled simulation; query parameters cannot select a live repo.
+- Story: Sentry checkout crash + linked inbox report + GitHub docs issue → foreman plan → subscription
+  assembler → CI / verify rejection + scar / rework / independent review → docs permit card → automatic
+  docs rocket → human checkout merge rocket → approved reply → earned Advisor-to-Floor unlock.
+  The permit can be clicked or the simulated player grants it around 65 seconds. Replay resets the run.
+- UI uses `iron.css`, copy in `copy.ts`. No files under `web/src/map/` change: only the public
+  `FactoryMap` props, `useFactory` protocol, and existing sound/ship events drive the presentation.
+  This request explicitly authorizes the otherwise frontend-owned judge surface and sim fixture.
+- Server explicitly serves the app shell for `/judge` and `/judge/`, plus public content-hashed build
+  JS/CSS and already-public fonts/brand files. APIs, factory websockets, source maps, setup and private
+  app routes keep their existing gates. Judge boot skips telemetry/flags and makes no API calls.
+- Verification: `SHIPTORIO_TEST_PORT=8809 bun run test:e2e tests/e2e/judge.pw.ts` runs the full paced story
+  at desktop, iPhone and Pixel sizes, including passive playback, interactive permit, scar, three green
+  receipts, two actual ship events, 112 simulated users unblocked, Floor and replay reset. The optional
+  test port avoids collisions with other agents; default remains 8799. Gate tests: `server/test/judge.test.ts`.
+- Branch: `codex/judge-mode`. These are simulated outcomes, not proof of live AI/provider execution.

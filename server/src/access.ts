@@ -69,11 +69,12 @@ const PUBLIC_FILE = /^\/(?:welcome\/[\w.-]*|fonts\/[\w.-]+|brand\/[\w.-]+|robots
 // public; no API, websocket, source map, arbitrary asset or private app route is opened.
 export const isJudgePage = (path: string) => path === "/judge" || path === "/judge/";
 export const isJudgeAsset = (path: string) => /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.(?:js|css)$/.test(path);
-export type PublicRoute = "landing" | "file" | "waitlist";
+export type PublicRoute = "landing" | "file" | "waitlist" | "judge";
 export async function publicRoute(request: Request, env: AccessEnv): Promise<PublicRoute | null> {
   const url = new URL(request.url);
   const read = request.method === "GET" || request.method === "HEAD";
-  if (read && (isJudgePage(url.pathname) || isJudgeAsset(url.pathname))) return "file";
+  if (read && isJudgePage(url.pathname)) return "judge";
+  if (read && isJudgeAsset(url.pathname)) return "file";
   if (read && PUBLIC_FILE.test(url.pathname)) return "file";
   if (url.pathname === "/api/waitlist" && request.method === "POST") return "waitlist";
   if (!read || url.pathname !== "/" || (env.DEV_LOGIN && isLocal(url))) return null;
