@@ -47,6 +47,12 @@ import {
   type StationKind,
   type ThoughtDecision,
   type WebToServer,
+  GOALS,
+  goalMove,
+  goalsFromPick,
+  goalText,
+  inferGoals,
+  type Goals,
 } from "@shiptorio/shared";
 import type { Listener, Source, StatusListener } from "../source";
 import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
@@ -107,6 +113,8 @@ interface BrainBeat {
   kind: MoveKind;
   cleared: string; // what the floor log says once the unlock worked
 }
+// The demo shop's README, as the goal guess reads it: a live store whose customers hit checkout bugs.
+const SIM_README = "# Demo shop\nA small online store. Customers report checkout errors and crashes on Safari; we fix bugs fast and keep it stable. Support: email us.";
 
 interface Scenario {
   ores: Ore[];
@@ -201,6 +209,18 @@ export const SCENARIOS = {
           reads: [{ tool: "read_signal", text: "PostHog: saved_card_used 3 users in 14 days", reason: "Shipped but unused" }] },
       ],
     },
+  },
+  // A busy morning: issues land faster than one builder can take them, so work waits on it and a card offers a
+  // second builder (docs/GAMEPLAY-PICKS.md r5-second).
+  pileup: {
+    ores: [
+      { at: 2, title: "Coupon field rejects lowercase codes", kind: "bug", district: "web" },
+      { at: 3, title: "Order emails show the wrong currency", kind: "bug", district: "server" },
+      { at: 4, title: "Add a loading state to the cart drawer", kind: "feature", district: "web" },
+      { at: 5, title: "Missing tests for refund webhooks", kind: "tests", district: "server" },
+      { at: 6, title: "Remove the old promo banner", kind: "cleanup", district: "web" },
+      { at: 7, title: "Search ignores product tags", kind: "bug", district: "server" },
+    ],
   },
   "rework-loop": {
     ores: [
@@ -725,6 +745,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.research) s.research = p.research;
     if (p.support) s.support = p.support;
     if (p.experiments) s.experiments = p.experiments;
+    if (p.goals) s.goals = p.goals;
+    if (p.goal !== undefined) s.goal = p.goal;
     emit({ type: "patch", patch: { ...p, tick: s.tick } });
   };
 
@@ -1071,7 +1093,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           // the local model only takes what the planner routed to it; routed work waits for its own plant
           const want = routed.get(item.id);
           const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId && (want ? m.harness === want : m.harness !== "local"));
-          if (!a) continue;
+          if (!a) {
+            if (!want) offerBuilder(item.id);
+            continue;
+          }
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
           planned(item.id);
@@ -1327,11 +1352,34 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
     if (item.source === "sentry") log("success", `Biters cleared: Sentry is quiet on /${item.district}`, item.id);
     for (const to of item.customer?.reporters ?? []) askToReply(item, to);
+    offerGoal();
     // the automated share counts rockets that launched on a permit
     const a = s.autonomy!;
     const launches = (a.launches ?? 0) + 1;
     const automated = (Math.round((a.automated ?? 0) * (a.launches ?? 0)) + (alone ? 1 : 0)) / launches;
     apply({ autonomy: { ...a, launches, automated, next: a.next?.level === "build" ? { ...a.next, have: a.next.have + 1 } : a.next } });
+  };
+
+  // ---------- player goals (shared/src/goals.ts) ----------
+
+  // Earned after the first rocket: one card with the factory's guess, the same card the live server deals.
+  let goalAsked = false;
+  const setGoals = (goals: Goals) => {
+    apply({ goals, goal: goalText(goals) });
+    log("success", `Goal set: ${goals.picks.map((id) => GOALS[id].label).join(", ")}. The factory hunts for what blocks it.`);
+  };
+  const offerGoal = () => {
+    if (goalAsked || sc.intro || s.goals?.by === "player") return;
+    const guesses = inferGoals({ readme: SIM_README, sources: (s.sources ?? []).filter((x) => x.state === "connected").map((x) => x.kind) });
+    const move = goalMove(s, s.goals, guesses, Date.now());
+    if (!move) return;
+    goalAsked = true;
+    apply({ goals: { picks: guesses.slice(0, 3).map((g) => g.id), by: "inferred", at: Date.now(), why: guesses[0].why } });
+    const { id: _id, createdAt: _at, ...card } = move;
+    propose(card, (optionId) => {
+      const goals = goalsFromPick(move.options.find((o) => o.id === optionId)?.actions[0]?.args.picks, Date.now(), s.metrics?.rockets);
+      if (goals) setGoals(goals);
+    });
   };
 
   // ---------- the growth loop (shared/src/growth.ts) ----------
@@ -1459,6 +1507,42 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       },
     );
   };
+
+  // ---------- a second builder (Justin's pick r5-second A) ----------
+
+  // Work piling up at the one builder is the first time the factory grows sideways: once 3 PRs have waited on it,
+  // a card asks. Continue bolts a second assembler in next to the first, on the same plant.
+  const waitedOnBuilder = new Set<string>();
+  let builderOffered = false;
+  function offerBuilder(itemId: string) {
+    const builders = s.machines.filter((m) => m.type === "assembler" && m.powerId && m.harness !== "local");
+    if (builderOffered || builders.length !== 1) return;
+    waitedOnBuilder.add(itemId);
+    if (waitedOnBuilder.size < 3) return;
+    builderOffered = true;
+    const first = builders[0];
+    propose(
+      {
+        title: "Add a second builder?",
+        attention: "suggest", // an idea: nothing is parked on it, so it never pings
+        why: `${waitedOnBuilder.size} PRs waited on the builder today. A second one next to it takes the next job while the first is busy.`,
+        stage: "build",
+        kind: "build",
+        focus: first.id,
+        grows: ["+1 ASSEMBLER"],
+        options: [
+          { id: "add", label: "Add a second builder", recommended: true, actions: [{ tool: "place_machine", args: { type: "assembler" }, reason: "work keeps waiting on one builder" }] },
+          { id: "later", label: "Not yet", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt !== "add") return;
+        const id = `${first.id}-2`;
+        apply({ machines: [{ ...first, id, y: first.y + 2, state: "idle" }] });
+        spark({ tool: "place_machine", text: "Second builder bolted in next to the first", reason: "you said yes" }, { target: id, approvedBy: "player" });
+      },
+    );
+  }
 
   // ---------- research (shared/src/research.ts) ----------
 
@@ -1774,6 +1858,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   if (onPad) askToLaunch(onPad);
   if (sc.checkin) later(TICK_MS, dealCheckIn);
   if (sc.brain) later(TICK_MS * 3, nextDiagnosis);
+  // a player who already has rockets but no goal gets the goal card soon after they come back, like the live tick
+  if ((sc.rockets ?? 0) > 0) later(TICK_MS * 4, offerGoal);
   if (sc.onboard) later(TICK_MS, scan);
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, tickMs);
@@ -1830,6 +1916,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           s.goal = msg.text;
           apply({ goal: msg.text });
           break;
+        case "set_goals": {
+          const goals = goalsFromPick(msg.picks, Date.now(), s.metrics?.rockets);
+          if (!goals) break;
+          for (const m of [s.move, ...pending].filter((x) => x?.kind === "automate" && x.grows?.includes("+1 GOAL"))) { onChoose.delete(m!.id); pull(m!.id, 0); }
+          setGoals(goals);
+          break;
+        }
         case "place_machine":
           apply({
             machines: [{ id: `${msg.machineType}-${s.tick}`, type: msg.machineType, x: msg.x, y: msg.y, district: msg.district, harness: msg.harness, powerId: msg.harness ? `solar-${msg.harness}` : undefined, tier: 1, state: "idle" }],
