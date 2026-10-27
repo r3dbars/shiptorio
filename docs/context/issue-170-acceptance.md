@@ -117,5 +117,16 @@ explicit Launch. Do not implement the issue outside that runner path.
   Zod-generated schema, returned edits without changing the tracked fixture, then
   `parseCodexEdits` and `applyCodexEdits` applied answer1 → answer2 in the separate
   verification sandbox. No #170 implementation was written outside the game.
-- Independent bounded security review found no material blocker. #272 still
-  needs full check, current-head CI, merge and deployment before the real retry.
+- Independent bounded security review found no material blocker. #272 passed
+  the full check and current-head CI, and merged at 436bc65.
+- Deploy exposed missing Linux sandbox setup in its test job. #278 guarded one
+  unavailable fixture; #282 fixed the shared cause by installing the same bwrap
+  and AppArmor boundary required by CI before Deploy tests. Deploy40434908855
+  passed at 06b355a, including tests, deployment and live smoke.
+- The approval race fix (#262) and bounded runner-card reservation (#276) are
+  also deployed in that verified descendant.
+- Fresh job72953e55-b71c-4a05-963f-28f1feb66086 is awaiting approval for
+  the same two-file Sentry fix. The game reports the owner build quota exhausted
+  at 21/21; coordinating recovery with the owner-quota lane. No issue #170 PR
+  or Launch exists yet. The watcher subsequently reported heartbeat500 and the
+  reloaded game stalled loading: this is under live diagnosis, not acceptance.
