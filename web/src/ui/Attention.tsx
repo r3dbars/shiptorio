@@ -10,7 +10,7 @@ import { attentionOf, ATTENTION_RANK, continueOption, type Attention, type Move,
 import { ATTENTION, NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { because } from "./because";
 import { sound } from "../sound/engine";
-import { CONFIRM_MS, HoldGesture } from "./holdLaunch";
+import { HoldGesture, type HoldClock } from "./holdLaunch";
 
 const SWIPE_PX = 80;
 const LATER_ASK_MS = 4000;
@@ -183,10 +183,19 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) 
   );
 }
 
-/** The big red launch button: hold one primary press until the ring fills (holdLaunch.ts has the rules). */
-function HoldLaunch({ card, label, onLaunch }: { card: string; label: string; onLaunch: (card: string) => void }) {
+const realClock: HoldClock = {
+  now: () => performance.now(),
+  raf: (cb) => requestAnimationFrame(cb),
+  caf: (id) => cancelAnimationFrame(id),
+  after: (ms, cb) => window.setTimeout(cb, ms),
+  clear: (id) => window.clearTimeout(id),
+};
+
+/** The big red launch button: hold one primary press until the ring fills (holdLaunch.ts has the rules).
+ *  Finishing the hold only sends the launch: the rocket sound and "Rocket launching" caption wait for the server. */
+export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card: string; label: string; onLaunch: (card: string) => void; clock?: HoldClock }) {
   const [p, setP] = useState(0);
-  const [armed, setArmed] = useState(false);
+  const [armed, setArmed] = useState(false); // mirrors the controller's confirm window, which owns its own expiry
   const launch = useRef(onLaunch);
   launch.current = onLaunch;
   const gesture = useRef<HoldGesture | null>(null);
@@ -196,14 +205,14 @@ function HoldLaunch({ card, label, onLaunch }: { card: string; label: string; on
         progress: setP,
         arm: () => sound.play("arm"),
         cancel: () => sound.play("click"),
-        confirm: (c) => { setArmed(c !== null); if (c) setTimeout(() => setArmed(false), CONFIRM_MS); },
+        confirm: (c) => setArmed(c !== null),
         launch: (c) => {
-          sound.play("launch");
+          sound.play("click");
           navigator.vibrate?.(60);
           launch.current(c);
         },
       },
-      { now: () => performance.now(), raf: (cb) => requestAnimationFrame(cb), caf: (id) => cancelAnimationFrame(id) },
+      clock,
     );
   const g = gesture.current;
   useEffect(() => g.retarget(card), [g, card]);

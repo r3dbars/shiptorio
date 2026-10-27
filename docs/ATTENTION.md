@@ -6,6 +6,9 @@
 > Card layout from the gameplay picks (docs/GAMEPLAY.md): Later left, Continue as a tab on the right edge, more cards peek
 > out behind, and a Launch card is a big red button held for 800 ms (`web/src/ui/holdLaunch.ts`: primary press only;
 > blur, hidden tab, lost capture or a card change cancels; screen readers activate twice within 5 s).
+> Finishing the hold only *sends* the launch (a click and a short buzz). The rocket sound and the "Rocket launching"
+> caption come from the server's launched state, so a launch the server refuses (head moved, CI went red) never
+> sounds or reads as launched.
 
 ## The problem
 

@@ -2,19 +2,24 @@
 // for the full time on the same card. Anything else (early release, focus or tab leaving, losing the
 // pointer, the card changing underneath) cancels. Screen readers activate buttons with a bare click, so
 // that path asks twice: the first activation arms, a second one on the same card within a few seconds launches.
+// This controller owns every timer, the confirm window's expiry included, so what the button shows can only
+// follow the events below. A launch here means the request was sent; the rocket sound and its caption come
+// from the server's launched state (sound/useFactorySound.ts), never from the button.
 
 export interface HoldClock {
   now(): number;
   raf(cb: () => void): number;
   caf(id: number): void;
+  after(ms: number, cb: () => void): number; // setTimeout
+  clear(id: number): void; // clearTimeout
 }
 
 export interface HoldEvents {
   progress(p: number): void;
-  launch(card: string): void;
+  launch(card: string): void; // the player consented: send the launch
   arm(): void; // a press started
   cancel(): void; // a press ended without launching
-  confirm(card: string | null): void; // assistive path: armed for this card, or disarmed
+  confirm(card: string | null): void; // assistive path: armed for this card, or disarmed (also on expiry)
 }
 
 export const HOLD_MS = 800;
@@ -30,7 +35,7 @@ export class HoldGesture {
   private last = 0;
   private frame = 0;
   private lastPress = -Infinity;
-  private armed: { card: string; until: number } | null = null;
+  private armed: { card: string; until: number; timer: number } | null = null;
 
   constructor(private readonly ev: HoldEvents, private readonly clock: HoldClock, private readonly ms = HOLD_MS) {}
 
@@ -69,22 +74,25 @@ export class HoldGesture {
   assistive(card: string) {
     const now = this.clock.now();
     if (this.card !== null || now - this.lastPress < CLICK_AFTER_PRESS_MS) return;
-    if (this.armed && this.armed.card === card && now <= this.armed.until) {
+    if (this.armed && this.armed.card === card && now < this.armed.until) {
       this.disarm();
       this.ev.launch(card);
       return;
     }
-    this.armed = { card, until: now + CONFIRM_MS };
+    this.disarm();
+    this.armed = { card, until: now + CONFIRM_MS, timer: this.clock.after(CONFIRM_MS, () => this.disarm()) };
     this.ev.confirm(card);
   }
 
   dispose() {
     if (this.card !== null) this.stop();
+    if (this.armed) this.clock.clear(this.armed.timer);
     this.armed = null;
   }
 
   private disarm() {
     if (!this.armed) return;
+    this.clock.clear(this.armed.timer);
     this.armed = null;
     this.ev.confirm(null);
   }
