@@ -77,6 +77,36 @@ function palette() {
 }
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 
+// Reduced motion fades a machine's own materials in through a transparent twin of each. Twins are made once per
+// material and kept, with the original's shader patches (firstRun.ts), so a fade never compiles a fresh program
+// mid-build: on a slow GPU that's a long main-thread stall right when the player's build starts.
+const TWINS = new WeakMap<THREE.Material, THREE.Material>();
+export function fadeTwin(orig: THREE.Material): THREE.Material {
+  let m = TWINS.get(orig);
+  if (!m) {
+    m = orig.clone();
+    m.transparent = true;
+    m.onBeforeCompile = orig.onBeforeCompile;
+    m.customProgramCacheKey = orig.customProgramCacheKey;
+    TWINS.set(orig, m);
+  }
+  return m;
+}
+
+/** One of each thing a construct draws (scaffold, rivet sparks), for the scene to compile at load (ShaftScene.warm). */
+export function constructWarmups(): THREE.Object3D[] {
+  const P = palette();
+  const out: THREE.Object3D[] = [P.iron, P.wood, P.brass, P.hot].map((m) => {
+    const mesh = new THREE.Mesh(BOX, m);
+    mesh.castShadow = true;
+    return mesh;
+  });
+  const fx = new THREE.InstancedMesh(BOX, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }), 1);
+  fx.setColorAt(0, new THREE.Color(0xffffff));
+  out.push(fx);
+  return out;
+}
+
 interface Piece {
   obj: THREE.Object3D;
   wrap: THREE.Group;
@@ -462,9 +492,7 @@ export function construct(target: THREE.Object3D, opts: ConstructOpts = {}): Con
         const orig = mesh.material;
         let c = clones.get(orig);
         if (!c) {
-          const m = orig.clone();
-          m.transparent = true;
-          c = { m, op: orig.opacity };
+          c = { m: fadeTwin(orig), op: orig.opacity };
           clones.set(orig, c);
         }
         fades.push({ mesh, orig });
@@ -635,8 +663,7 @@ export function construct(target: THREE.Object3D, opts: ConstructOpts = {}): Con
       L.mesh.visible = L.vis;
     }
     lumps.length = 0;
-    for (const [, c] of clones) c.m.dispose();
-    clones.clear();
+    clones.clear(); // the twins stay (fadeTwin): disposing one would drop its compiled program
     if (sc) {
       sc.g.removeFromParent();
       sc = null;
