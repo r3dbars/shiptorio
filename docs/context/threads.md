@@ -201,6 +201,11 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
 - Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
 
+## Factory-triggered Spark spend proof (Codex, 2026-10-26)
+
+- [Live proof](spark-spend-live-proof.md): recovered the exhausted 20/day allowance to 21 without resetting usage, after quota fix #269 deployed. Requested Plan #10 through the testing factory's real websocket action; Spark completed a plan awaiting approval.
+- Five real Worker Meta calls, 2,795 input / 2,231 output tokens (369 cached input), $0.0125696 estimated; zero unmeasured calls. Admin and owner endpoint match; real browser admin row, HUD chip and How it thinks panel verified. Build run usage stayed 20/21 throughout planning. Public [Spark docs](../site/spark.md) now describe spend and quota recovery.
+
 ## Quota recovery (Codex, 2026-10-26; PR #269)
 
 - Day 1 loop reliability: [PR #269](https://github.com/r3dbars/shiptorio/pull/269), `codex/quota-recovery`.

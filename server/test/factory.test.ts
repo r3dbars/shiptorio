@@ -137,6 +137,7 @@ describe("Factory lifecycle", () => {
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }] });
       if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged });
+      if (url.includes("/pulls/99/files?")) return json([{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }]);
       if (url.includes("/issues/1/comments?")) { const hook = onFeedbackRead; onFeedbackRead = undefined; await hook?.(); return json([]); }
       if (url.endsWith("/issues/1/comments") && init?.method === "POST") return json({ id: 200 });
       if (url.endsWith("/issues/1")) return json({ number: 1, title: "Fix checkout", body: merged ? "Issue was closed by merge" : "Canonical request", state: merged ? "closed" : "open", html_url: "https://github.com/r3dbars/demo/issues/1", user: { login: "reporter" } });
