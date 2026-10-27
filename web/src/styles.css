@@ -808,8 +808,8 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .tour-segs i.now { background: var(--iron-amber); box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.5), inset -2px -2px 0 rgba(0, 0, 0, 0.2), 0 0 0 1px var(--iron-amber); animation: iron-ping 1s infinite; }
 /* The tour keeps the factory in the dark: one pool of light where the beat is, the rest found by playing
    (Justin's playtest, 2026-10-27). No machine names or crate tags either, only the beat's own marker. */
-.tour-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 62% 48% at 50% 34%, transparent 30%, rgba(8, 6, 5, 0.72) 72%, rgba(5, 4, 3, 0.94) 100%); }
-:root[data-tour] .floor canvas { filter: brightness(0.62) saturate(0.85); }
+/* one flat shade plus the pool, painted over the canvas (a CSS filter on the WebGL canvas costs a full extra pass) */
+.tour-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 62% 48% at 50% 34%, transparent 30%, rgba(8, 6, 5, 0.72) 72%, rgba(5, 4, 3, 0.94) 100%), rgba(6, 4, 3, 0.36); }
 :root[data-tour] .maplabels .maplabel, :root[data-tour] .maplabels .tag, :root[data-tour] .maplabels .shaftfloors { display: none !important; }
 .ship-cel.high { place-items: start center; padding-top: calc(84px + var(--sat)); }
 /* the beat's highlight on the map: a pinging amber marker inside caution brackets, its tag on a caution-striped plate */
