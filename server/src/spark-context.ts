@@ -6,8 +6,9 @@ import type { FactoryState, Item } from "@shiptorio/shared";
 import { gh } from "./github";
 import type { PermitBook } from "./permits";
 import type { Toolbox } from "./spark-tools";
+import { redactText } from "./redact";
 
-const line = (s: string | undefined, n = 200) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+const line = (s: string | undefined, n = 200) => redactText(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
 /** read_factory: the gauntlet, this district's history, permits, autonomy and the player's past calls. */
 export function factoryBrief(s: FactoryState, item: Item | undefined, permits: PermitBook | undefined, playerFeedback: string): string {
