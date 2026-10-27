@@ -10,7 +10,10 @@ agent, or to Codex and Claude Code running on your own machine with your own sub
 
 ## Built during the Meta AI Developer Hackathon
 
-Everything in this repository was written between Oct 26 and Nov 4, 2026, during the event.
+Building opened at 11:24 AM CT on Oct 26, 2026. Three commits landed just before that, and we're
+listing them plainly: the initial commit with a README (9:33 AM CT), a Phase 1 scaffold of the Worker,
+GitHub App and map (e2472b7, about 4,500 lines, 11:14 AM CT), and a wiring commit (31d4bb3, 11:18 AM CT).
+Everything from c7257d2 (11:27 AM CT) onward was built during the event.
 Nothing was carried over from an earlier project.
 
 See [PLAN.md](PLAN.md) for the build plan and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the game design.

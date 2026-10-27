@@ -445,6 +445,15 @@ describe("Factory lifecycle", () => {
     expect(f.saved().machines.find((m) => m.id === "assembler-1")?.state).toBe("blocked");
     expect(f.saved().tick).toBe(1);
   });
+  it("un-sticks the hosted assembler once a local agent plugs in, even with nothing left in the queue", async () => {
+    const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })]);
+    await f.factory.alarm();
+    expect(f.saved().machines.find((m) => m.id === "assembler-1")?.state).toBe("blocked");
+    f.data.set("state", { ...f.saved(), items: [] });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    await f.reload().alarm();
+    expect(f.saved().machines.find((m) => m.id === "assembler-1")?.state).toBe("idle");
+  });
   it("accepts build commands but ignores malformed messages and removal of active machinery", async () => {
     const f = fixture();
     await f.factory.webSocketMessage(authorizedSocket(), "not JSON");
