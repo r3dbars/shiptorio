@@ -46,3 +46,30 @@ test("CLI rejects an origin override before requests or stored credentials leave
     }
   } finally { server.stop(true); await rm(root, { recursive: true, force: true }); }
 }, 30000);
+
+test("fresh CLI pairing pins a custom origin and subsequent pairing retains it without an override", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "shiptorio-origin-pair-"));
+  let requests = 0;
+  const server = Bun.serve({ port: 0, fetch(req) {
+    expect(new URL(req.url).pathname).toBe("/api/runner-device/join");
+    requests++;
+    return Response.json({ repo: "you/repo", token: "synthetic-pairing", expires: Date.now() + 3600000 });
+  } });
+  const origin = `http://localhost:${server.port}`;
+  try {
+    for (const override of [origin, undefined]) {
+      const child = Bun.spawn([process.execPath, "--no-env-file", "--config=/dev/null", join(import.meta.dir, "../src/cli.ts"), "pair", "--join", "a".repeat(48)], {
+        env: { HOME: root, PATH: "/usr/bin:/bin", SHIPTORIO_RUNNER_ROOT: root, ...(override ? { SHIPTORIO_URL: override } : {}) },
+        stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      });
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
+      expect(stderr).toBe("");
+      expect(code).toBe(0);
+      expect((await Bun.file(join(root, "server-url")).text()).trim()).toBe(origin);
+    }
+    expect(requests).toBe(2);
+  } finally { server.stop(true); await rm(root, { recursive: true, force: true }); }
+}, 30000);
