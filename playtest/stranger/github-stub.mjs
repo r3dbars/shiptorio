@@ -12,6 +12,14 @@ export function githubStub({ origin, webhookSecret, worker }) {
     repoId: 4242999, // stable numeric identity supplied by actual GitHub repository responses/webhooks
     installation: null, // set when the stranger clicks Install on the fake GitHub page
     calls: [],
+    unexpected: [],
+    comments: [],
+    pulls: [],
+    branches: {},
+    checks: "pending",
+    merges: [],
+    baseSha: "a".repeat(40),
+    headSha: "b".repeat(40),
   };
   const installationInfo = () => ({ id: state.installation, account: { id: state.user.id, login: state.user.login, type: "User" }, permissions: { contents: "write", pull_requests: "write", issues: "write", checks: "read", statuses: "read", metadata: "read" } });
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -27,7 +35,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
     state.calls.push(`${request.method} ${url.host}${url.pathname}`);
     const p = url.pathname;
     if (url.host === "github.com" && p === "/login/oauth/access_token") return json({ access_token: "gho_stub_user_token", token_type: "bearer" });
-    if (url.host !== "api.github.com") return new Response("blocked by the stranger stub", { status: 599 });
+    if (url.host !== "api.github.com") { state.unexpected.push(`${request.method} ${url}`); return new Response("blocked by the stranger stub", { status: 599 }); }
     if (p === "/user") return json(state.user);
     if (p === "/user/installations") return json({ total_count: state.installation ? 1 : 0, installations: state.installation ? [{ id: state.installation, account: { login: state.user.login } }] : [] });
     if (p === `/user/installations/${state.installation}/repositories`) return json({ total_count: 1, repositories: [{ id: state.repoId, full_name: state.repo, default_branch: "main" }] });
@@ -43,13 +51,63 @@ export function githubStub({ origin, webhookSecret, worker }) {
     if (p === `/repos/${state.repo}/installation`) return state.installation ? json({ id: state.installation }) : json({ message: "Not Found" }, 404);
     if (p === `/repos/${state.repo}`) return json({ id: state.repoId, full_name: state.repo, default_branch: "main" });
     if (p.startsWith(`/repos/${state.repo}/git/trees/`)) return json({ sha: "stubtree", tree, truncated: false });
-    if (p.startsWith(`/repos/${state.repo}/git/ref/heads/`)) return json({ object: { sha: "stubsha" } });
+    if (p.startsWith(`/repos/${state.repo}/git/ref/heads/`)) {
+      const branch = p.split("/git/ref/heads/")[1];
+      return json({ object: { sha: branch === "main" ? state.baseSha : state.branches[branch] ?? state.baseSha } });
+    }
+    if (p.startsWith(`/repos/${state.repo}/contents/`)) return json({ encoding: "base64", content: Buffer.from("export const total = (subtotal) => subtotal;\n").toString("base64") });
+    if (p.startsWith(`/repos/${state.repo}/compare/`)) return json({ status: "ahead", ahead_by: 1, files: diffFiles() });
+    if (p === `/repos/${state.repo}/pulls` && request.method === "POST") {
+      const input = await request.json();
+      if (!state.branches[input.head] || input.base !== "main") return json({ message: "Missing branch" }, 422);
+      const pr = { ...input, number: 7, html_url: `https://github.com/${state.repo}/pull/7`, state: "open", merged: false,
+        user: { login: "shiptorio[bot]" }, head: { ref: input.head, sha: state.branches[input.head] }, base: { ref: "main", sha: state.baseSha } };
+      state.pulls.push(pr); return json(pr, 201);
+    }
+    if (p === `/repos/${state.repo}/pulls/7`) return state.pulls[0] ? json(state.pulls[0]) : json({}, 404);
+    if (p === `/repos/${state.repo}/pulls/7/files`) return json(diffFiles());
+    if (p === `/repos/${state.repo}/pulls/7/merge` && request.method === "PUT") {
+      const input = await request.json(), pr = state.pulls[0];
+      if (!pr || pr.merged || input.sha !== pr.head.sha || input.merge_method !== "squash" || state.checks !== "success") return json({ message: "Merge refused" }, 409);
+      state.merges.push(input); pr.merged = true; pr.state = "closed"; pr.merge_commit_sha = "c".repeat(40);
+      return json({ merged: true, sha: pr.merge_commit_sha });
+    }
+    if (p.includes("/commits/") && p.endsWith("/check-runs")) return json({ total_count: 1, check_runs: [{ name: "CI", status: state.checks === "pending" ? "in_progress" : "completed", conclusion: state.checks === "pending" ? null : state.checks }] });
+    if (p.includes("/commits/") && p.endsWith("/status")) return json({ total_count: 0, statuses: [] });
     if (p === `/repos/${state.repo}/issues`) return json(url.searchParams.get("page") === "1" || !url.searchParams.get("page") ? issues : []);
     const one = p.match(new RegExp(`^/repos/${state.repo}/issues/(\\d+)$`));
     if (one) return json(issues.find((i) => i.number === Number(one[1])) ?? {}, 200);
-    if (/\/issues\/\d+\/(comments|reactions)$/.test(p)) return request.method === "POST" ? json({ id: 1 }, 201) : json([]);
+    if (/\/issues\/\d+\/(comments|reactions)$/.test(p)) {
+      if (request.method === "POST") { state.comments.push(await request.json()); return json({ id: state.comments.length }, 201); }
+      return json([]);
+    }
     if (/\/pulls$/.test(p) || /\/check-runs$/.test(p) || /\/status$/.test(p)) return json([]);
+    state.unexpected.push(`${request.method} ${url}`);
     return json({ message: "Not Found (stub)" }, 404);
+  }
+
+  const diffFiles = () => [
+    { filename: "src/cart.ts", status: "modified", changes: 2, patch: "@@ -1 +1 @@\n-export const total = (n) => n;\n+export const total = (n) => n * 0.9;" },
+    { filename: "test/cart.test.ts", status: "modified", changes: 1, patch: "@@ -1,0 +1 @@\n+expect(total(100)).toBe(90);" },
+  ];
+
+  async function webhook(event, payload, delivery = `stub-${event}-${crypto.randomUUID()}`) {
+    const body = JSON.stringify(payload);
+    const sig = "sha256=" + createHmac("sha256", webhookSecret).update(body).digest("hex");
+    const res = await worker(`${origin}/webhooks/github`, { method: "POST", headers: { "content-type": "application/json", "x-github-event": event, "x-github-delivery": delivery, "x-hub-signature-256": sig }, body });
+    if (!res.ok) throw new Error(`${event} webhook rejected: ${res.status} ${await res.text()}`);
+  }
+  const repository = () => ({ id: state.repoId, full_name: state.repo, default_branch: "main" });
+  async function issueArrives() {
+    const payload = { action: "opened", installation: installationInfo(), repository: repository(), issue: issues[0], sender: issues[0].user };
+    await webhook("issues", payload, "stranger-issue-1");
+    await webhook("issues", payload, "stranger-issue-1"); // delivery retries must not duplicate ore
+  }
+  async function completeChecks(conclusion = "success", sha = state.headSha) {
+    if (sha === state.headSha) state.checks = conclusion;
+    const delivery = `stub-check-${crypto.randomUUID()}`;
+    await webhook("check_suite", { action: "completed", installation: installationInfo(), repository: repository(), check_suite: { head_sha: sha, conclusion, pull_requests: [{ number: 7 }] } }, delivery);
+    return delivery;
   }
 
   // GitHub tells the App about the install with a signed webhook, like the real one.
@@ -101,5 +159,5 @@ export function githubStub({ origin, webhookSecret, worker }) {
     return route.fulfill({ status: 404, body: "stub github: " + url.pathname });
   }
 
-  return { state, outbound, browser };
+  return { state, outbound, browser, issueArrives, completeChecks };
 }

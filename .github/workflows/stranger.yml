@@ -1,32 +1,15 @@
-name: Stranger path
-permissions:
-  contents: read
-# A brand-new GitHub account walks signup → install the App → pick a repo → live factory → Power, on the
-# real Worker (Miniflare) with a pretend GitHub. Only runs when the path it covers changes, to save
-# Actions minutes. Friction log: docs/context/new-user-path.md.
-concurrency:
-  group: stranger-${{ github.ref }}
-  cancel-in-progress: true
+name: Stranger E2E
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "web/src/main.tsx"
-      - "web/src/ui/Onboarding.tsx"
-      - "web/src/ui/NextMove.tsx"
-      - "web/src/ui/IntroTour.tsx"
-      - "server/src/index.ts"
-      - "server/src/auth.ts"
-      - "server/src/accounts.ts"
-      - "server/src/access.ts"
-      - "server/src/session.ts"
-      - "server/migrations/**"
-      - "playtest/stranger/**"
-      - ".github/workflows/stranger.yml"
+    branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: stranger-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   stranger:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,9 +17,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
       - run: bun install --frozen-lockfile
-      - run: bun run build
       # runner-images configures this signed Ubuntu mirrorlist with Azure first. Its package
       # downloads can stall without failing over; retain the official archive/security entries.
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/configure-apt-sources.sh
@@ -48,18 +30,16 @@ jobs:
           sudo sed -Ei '\|^https?://azure[.]archive[.]ubuntu[.]com/ubuntu/([[:space:]].*)?$|d' "$mirrors"
           ! grep -q 'azure.archive.ubuntu.com' "$mirrors"
           cat "$mirrors"
-      - name: Playwright + Chromium
+      - run: bun x playwright install chromium
+      - name: Check browser libraries
         run: |
-          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-audit --no-fund playwright@1.63.0
-          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
-      - name: Walk the stranger path
-        run: node playtest/stranger/run.mjs
+          node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
+      - run: bun run stranger
         env:
-          PLAYWRIGHT_MODULE: ${{ runner.temp }}/pw/node_modules/playwright/index.js
           STRANGER_OUT: ${{ runner.temp }}/stranger
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: stranger-path
-          path: ${{ runner.temp }}/stranger
+          name: stranger-evidence
+          path: ${{ runner.temp }}/stranger/
           retention-days: 7
