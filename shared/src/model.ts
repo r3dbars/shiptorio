@@ -2,6 +2,7 @@
 // everyone else only reads it or asks for changes through protocol messages.
 
 import { z } from "zod";
+import { HoldingBack } from "./signals";
 
 // Science colors double as the kind of work an item is.
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
@@ -502,6 +503,7 @@ export const FactoryState = z.object({
   // Foreman layer. Optional so servers and sims that don't send it yet still validate.
   goal: z.string().optional(),
   bottleneck: Bottleneck.nullable().optional(),
+  holdingBack: HoldingBack.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
   move: Move.nullable().optional(), // the open Next Move card
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),

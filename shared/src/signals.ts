@@ -182,3 +182,7 @@ export interface SignalCollector<Ctx = unknown> {
   everyMs: number;
   read(ctx: Ctx, now: number): Promise<BrainSignal[]>;
 }
+
+/** What the map and HUD read: the brain's current bottleneck plus its main signal's weight (0..1). Null = quiet. */
+export const HoldingBack = BrainBottleneck.extend({ severity: z.number().min(0).max(1) });
+export type HoldingBack = z.infer<typeof HoldingBack>;
