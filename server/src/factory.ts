@@ -11,7 +11,7 @@ import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
-import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
+import { capture, currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
 import { redact, redactText } from "./redact";
 import { Redactor } from "./redact";
 
@@ -831,7 +831,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
     const trace = await this.ctx.storage.get<Trace>(`trace:${job.itemId}`);
-    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
+    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId, job: job.id }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
   }
 
   private async planRunnerJob(job: RunnerJob): Promise<void> {
@@ -1786,7 +1786,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
     text = this.redactor.text(text);
     log(level === "success" ? "info" : level, "factory.event", { message: text, itemId, repo: this.meta?.repo });
-    if (level === "error") Sentry.captureException(new Error(text), { tags: { itemId, repo: this.meta?.repo } });
+    if (level === "error") capture(new Error(text), { itemId, repo: this.meta?.repo });
     this.broadcast({ type: "log", level, text, at: Date.now(), itemId });
   }
 

@@ -1,10 +1,11 @@
+import { diagnosticError } from "./errors";
 import { identityAccountId } from "./account-identity";
 import { factoryDeleted } from "./account-lifecycle";
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as Sentry from '@sentry/cloudflare';
-import { redact, Redactor } from './redact';
+import { Redactor } from './redact';
 
-export interface Trace { requestId: string; userId?: string; repo?: string; itemId?: string }
+export interface Trace { requestId: string; userId?: string; repo?: string; itemId?: string; factory?: string; route?: string; job?: string }
 export interface TelemetryEnv { SHIPTORIO_SENTRY_DSN?: string; BUILD_SHA?: string; CACHE?: KVNamespace; DB?: D1Database }
 export type LogGroup = 'events' | 'errors' | 'spark' | 'webhooks';
 export interface LogEntry extends Trace { level: 'info' | 'warn' | 'error'; ts: string; event: string; durationMs?: number; [key: string]: unknown }
@@ -17,13 +18,14 @@ export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['
     Sentry.setTag('requestId', trace.requestId);
     if (trace.repo) Sentry.setTag('repo', trace.repo);
     if (trace.itemId) Sentry.setTag('itemId', trace.itemId);
+    for (const [key, value] of Object.entries(telemetryTags({ ...trace }))) Sentry.setTag(key, value);
     Sentry.setUser(trace.userId ? { id: trace.userId } : null);
     return run();
   }));
 }
 export function log(level: LogEntry['level'], event: string, fields: Record<string, unknown> = {}, { persist = true } = {}): LogEntry {
   const ctx = context.getStore();
-  const entry = (ctx?.redactor ?? new Redactor()).value(redact({ ...fields, ...ctx?.trace, requestId: ctx?.trace.requestId ?? crypto.randomUUID(), level, ts: new Date().toISOString(), event })) as LogEntry;
+  const entry = (ctx?.redactor ?? new Redactor()).diagnostic({ ...fields, ...ctx?.trace, requestId: ctx?.trace.requestId ?? crypto.randomUUID(), level, ts: new Date().toISOString(), event }) as LogEntry;
   console[level](JSON.stringify(entry));
   // One immutable key per event avoids cross-isolate lost updates. Seven-day retention.
   if (persist && ctx?.env.CACHE) {
@@ -53,9 +55,24 @@ export function log(level: LogEntry['level'], event: string, fields: Record<stri
   }
   return entry;
 }
+/** Canonical context tags, retaining repo/itemId for existing dashboards. */
+export function telemetryTags(fields: Record<string, unknown> = {}): Record<string, string> {
+  const trace = currentTrace();
+  const tags = { factory: fields.factory ?? fields.repo ?? trace?.factory ?? trace?.repo,
+    route: fields.route ?? fields.path ?? trace?.route, job: fields.job ?? fields.jobId ?? trace?.job };
+  return Object.fromEntries(Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+}
+export function capture(error: unknown, fields: Record<string, unknown> = {}): string {
+  // Scrub while the request context is available, before the SDK queues work.
+  // beforeSend also scrubs the final SDK payload.
+  const redactor = currentRedactor() ?? new Redactor();
+  const trace = currentTrace();
+  const tags = { ...telemetryTags(fields), repo: fields.repo ?? trace?.repo, itemId: fields.itemId ?? trace?.itemId };
+  return Sentry.captureException(diagnosticError(error, value => redactor.diagnostic(value)), { tags: Object.fromEntries(Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) });
+}
 export function report(error: unknown, event = 'exception', fields: Record<string, unknown> = {}): string {
   log('error', event, { ...fields, error });
-  return Sentry.captureException(error);
+  return capture(error, fields);
 }
 export function sentryOptions(env: TelemetryEnv): Sentry.CloudflareOptions {
   let entries: [string, unknown][] | undefined;
@@ -69,7 +86,7 @@ export function sentryOptions(env: TelemetryEnv): Sentry.CloudflareOptions {
       entries = current;
       redactor = new Redactor(Object.fromEntries(current));
     }
-    return redactor!.value(redact(value));
+    return redactor!.diagnostic(value);
   };
   return {
     dsn: env.SHIPTORIO_SENTRY_DSN, enabled: !!env.SHIPTORIO_SENTRY_DSN,
@@ -99,7 +116,7 @@ export async function observedFetch(service: 'spark' | 'github', url: string, in
     const response = await fetch(url, { ...init, headers });
     // 304 is a conditional-request cache hit, not a failure.
     const failed = !response.ok && response.status !== 304;
-    if (failed) Sentry.captureException(new Error(`${service} request failed (${response.status})`));
+    if (failed) capture(new Error(`${service} request failed (${response.status})`));
     log(failed ? 'error' : 'info', `${service}.call`, { status: response.status, durationMs: Date.now() - start, method: init.method ?? 'GET' });
     return response;
   } catch (error) {
