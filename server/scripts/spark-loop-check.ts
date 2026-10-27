@@ -6,6 +6,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { gameMaster, judgePermit, pickFiles, planLocalTask, triage, type SparkStep } from "../src/spark";
 import { diffText, referencedFiles, reviewDiff, type ReviewVerdict } from "../src/gauntlet";
+import { catchesShippingMismatch, shippingContext } from "./spark-loop-proof";
 
 const env = { ...localBudget(), META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: process.env.SPARK_MODEL, SPARK_BASE_URL: process.env.SPARK_BASE_URL };
 if (!env.META_API_KEY) { console.error("set META_API_KEY first"); process.exit(1); }
@@ -56,8 +57,8 @@ await step("review catches broken example", async () => review({ ...issue, build
   v => [v.verdict === "rework", `${v.verdict}: ${v.reason}`]);
 await step("review passes a working example", async () => review({ ...issue, builder: "Codex" }, goodDiff, await context(goodDiff)),
   v => [v.verdict === "pass", `${v.verdict}: ${v.reason}`]);
-await step("review flags doc vs code (#13)", async () => review({ title: "Docs: write down the shipping rule", body: "Record the free-shipping rule in docs/SHIPPING.md.", builder: "Codex" }, shippingDiff, []),
-  v => [v.verdict === "rework" || /more than|strictly|>=?|over \$?50|5000|exactly \$?50/i.test(`${v.reason} ${v.findings.join(" ")}`), `${v.verdict}: ${v.reason}`]);
+await step("review flags doc vs code (#13)", async () => review({ title: "Docs: write down the shipping rule", body: "Record the free-shipping rule in docs/SHIPPING.md.", builder: "Codex" }, shippingDiff, await shippingContext(read)),
+  v => [catchesShippingMismatch(v), `${v.verdict}: ${v.reason}`]);
 const rework: SparkStep[] = [];
 await step("rework re-plan", () => plan(env, { ...issue, failure: "AI review: the README example passes --coupon, but src/index.ts reads the coupon from process.argv[2].", scars: [{ station: "review", reason: "README example `--coupon SAVE10` doesn't work against src/index.ts", strike: 1 }] }, ["README.md", "src/index.ts"], read, async s => { rework.push(s); }),
   a => [/argv|positional|--coupon/i.test(a.plan), `${rework.map(s => s.tool).join(" → ")} | ${a.plan.split("\n")[0].slice(0, 160)}`]);
