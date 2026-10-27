@@ -98,6 +98,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   if (isPublicDocs(url.pathname) && ["GET", "HEAD"].includes(request.method)) return null;
   // The deployed commit SHA is public so the Deploy workflow can prove the new build is live.
   if (url.pathname === "/api/version" && request.method === "GET") return null;
+  // Starting GitHub OAuth reveals no private data; callback/session checks still apply.
+  if (url.pathname === "/auth/login" && request.method === "GET") return null;
   if (env.DEV_LOGIN && isLocal(url)) return null;
   if (!env.APP_PASSWORD || !env.SESSION_SECRET) return new Response("Private preview is being configured.", { status: 503, headers: { "cache-control": "no-store" } });
   const secret = `${env.SESSION_SECRET}:${env.APP_PASSWORD}`;
@@ -137,5 +139,6 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
   }
   if (url.pathname.startsWith("/api/")) return new Response("Preview password required", { status: 401, headers: { "cache-control": "no-store" } });
   // The landing page links to /access?next=/, so the form sends players straight on to next.
-  return gate(request, secret, "", url.pathname === "/access" ? next : url.pathname + url.search);
+  return gate(request, secret, "", url.pathname === "/access" ? next : url.pathname + url.search,
+    url.pathname === "/access" && request.method === "GET" ? 200 : 401);
 }

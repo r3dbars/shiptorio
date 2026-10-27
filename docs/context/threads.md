@@ -86,3 +86,15 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.
 
+
+## Deploy smoke + automatic rollback (Codex, 2026-10-26)
+
+- Day 1 deploy reliability checkpoint, extending merged #173: one local/CI smoke
+  script checks access form 200, wrong password 401, GitHub redirect, exact build
+  SHA, landing/private gates and HTTPS. Explicit GET /access is now 200; GET
+  /auth/login can start OAuth before preview access (private routes stay gated).
+- Deploy saves the active Worker version before mutation, rolls back on deploy or
+  smoke failure, verifies recovery, and leaves a red job with error annotations
+  and a summary. Manual branch deploys share the production concurrency lock.
+- Local regression probes pass. Live deliberately broken branch rollback drill
+  is pending; see scripts/smoke/README.md. No data/schema rollback is claimed.
