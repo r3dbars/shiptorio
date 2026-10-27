@@ -154,7 +154,7 @@ describe("account data controls", () => {
   });
   it("exports and purges both repo and global operational log copies, preserving other users", async () => {
     const {env, user, kv} = await fixture();
-    kv.set("ops:events:all:alice", JSON.stringify({userId: "alice", repo: "org/shared", event: "saved"}));
+    kv.set("ops:events:all:alice", JSON.stringify({userId: "11", repo: "org/shared", event: "saved"}));
     kv.set("ops:events:repo:alice/app:copy", JSON.stringify({repo: "alice/app", event: "saved"}));
     kv.set("ops:events:all:bob", JSON.stringify({userId: "bob", repo: "bob/app", event: "keep"}));
     const archive = await exportAccount(env, user);
