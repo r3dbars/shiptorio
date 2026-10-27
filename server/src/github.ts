@@ -1,9 +1,10 @@
 import { githubCooldown, RateLimitError } from "./rate-limit";
 import { observedFetch } from "./telemetry";
+import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./sources/credential-crypto";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
 
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
-import { isOwnPlanComment, normalizeGitHub, type GitHubIssue, type GitHubPayload } from "./sources/github";
+import { isOwnPlanComment, normalizeGitHub, TRUST_LABEL, trustedAuthor, type GitHubIssue, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources/types";
 
 const API = "https://api.github.com";
@@ -76,10 +77,11 @@ export async function verifyWebhookSignature(secret: string, body: string, heade
   return diff === 0;
 }
 
-export interface AppCredentials {
+export interface AppCredentials extends KeyEnv {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
   DB?: D1Database;
+  CACHE?: KVNamespace;
 }
 
 export class GitHubError extends OutboundError {
@@ -93,9 +95,11 @@ async function tokenFingerprint(token: string) {
   return [...hash].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 const pendingTokens = new Map<string, Promise<string>>();
+const distrusted = new Set<number>();
 const tokenKey = (env: AppCredentials, id: number, scope?: InstallationTokenScope) => JSON.stringify([env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, id, scope]);
 export function purgeInstallationTokens(id: number) {
   for (const [key, value] of tokenCache) if (value.installationId === id) tokenCache.delete(key);
+  distrusted.add(id); // the shared KV copy may be the token GitHub just refused
   // Keep ownership until expiry so outstanding callers can refresh or fail closed.
 }
 async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
@@ -243,6 +247,8 @@ export async function installationToken(env: AppCredentials, installationId: num
   const pendingKey = key + version;
   if (pendingTokens.has(pendingKey)) return pendingTokens.get(pendingKey)!;
   const pending = (async () => {
+    const shared = distrusted.has(installationId) ? null : await sharedToken(env, key, version);
+    if (shared) { await adoptToken(env, key, { ...shared, installationId, version, env, scope }); return shared.token; }
     const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
     if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
     const res = await gh<{ token: string; expires_at?: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
@@ -250,16 +256,44 @@ export async function installationToken(env: AppCredentials, installationId: num
     });
     if (await tokenVersion(env, installationId) !== version) throw new Error("GitHub installation changed while issuing token");
     const entry = { token: res.token, expiresAt: Date.parse(res.expires_at ?? "") || Date.now(), installationId, version, env, scope };
-    boundedSet(tokenCache, key, entry);
-    if (env.DB) await registerGithubCredential(res.token, env.DB, `github:installation:${installationId}`);
-    for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
-    const { token: _, ...metadata } = entry;
-    tokenOwners.set(await tokenFingerprint(res.token), metadata);
+    await adoptToken(env, key, entry);
+    await shareToken(env, key, entry);
+    distrusted.delete(installationId);
     return res.token;
   })();
   pendingTokens.set(pendingKey, pending);
   try { return await pending; } finally { pendingTokens.delete(pendingKey); }
 
+}
+
+async function adoptToken(env: AppCredentials, key: string, entry: TokenEntry) {
+  boundedSet(tokenCache, key, entry);
+  if (env.DB) await registerGithubCredential(entry.token, env.DB, `github:installation:${entry.installationId}`);
+  for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
+  const { token: _, ...metadata } = entry;
+  tokenOwners.set(await tokenFingerprint(entry.token), metadata);
+}
+// Every isolate used to mint its own installation token, which drained the App's 5,000/hr bucket.
+// Isolates now share one, encrypted in KV under the token version, until 5 minutes before expiry.
+const SHARED_MARGIN = 5 * 60 * 1000;
+const sharedKey = async (key: string, version: number) => `ghtoken:v1:${await tokenFingerprint(key)}:${version}`;
+async function sharedToken(env: AppCredentials, key: string, version: number): Promise<{ token: string; expiresAt: number } | null> {
+  if (!env.CACHE || !env.CRED_MASTER_KEY) return null;
+  try {
+    const name = await sharedKey(key, version);
+    const envelope = await env.CACHE.get<Envelope>(name, "json");
+    if (!envelope) return null;
+    const value = await decryptCredential<{ token: string; expiresAt: number }>(env, name, envelope);
+    return value.expiresAt > Date.now() + SHARED_MARGIN ? value : null;
+  } catch { return null; }
+}
+async function shareToken(env: AppCredentials, key: string, entry: TokenEntry) {
+  const ttl = Math.floor((entry.expiresAt - Date.now() - SHARED_MARGIN) / 1000);
+  if (!env.CACHE || !env.CRED_MASTER_KEY || ttl < 60) return;
+  try {
+    const name = await sharedKey(key, entry.version);
+    await env.CACHE.put(name, JSON.stringify(await encryptCredential(env, name, { token: entry.token, expiresAt: entry.expiresAt })), { expirationTtl: ttl });
+  } catch { /* the in-isolate cache still holds it */ }
 }
 
 // Publishing credentials stay inside one repository and cannot create PRs.
@@ -322,12 +356,14 @@ export async function freshIssueInput(token: string, repo: string, number: numbe
   for (let page = 1; page <= 5; page++) {
     const comments = await gh<NonNullable<GitHubPayload["comment"]>[]>(`/repos/${repo}/issues/${number}/comments?per_page=100&page=${page}`, token);
     if (!Array.isArray(comments)) throw new Error("GitHub issue feedback unavailable");
-    for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
+    for (const comment of comments) if (comment.body.trim() && !isOwnPlanComment(comment) && trustedAuthor(comment) && (!latest || at(comment) > at(latest) || at(comment) === at(latest) && comment.id > latest.id)) latest = comment;
     if (comments.length < 100) {
       const again = await gh<GitHubIssue>(`/repos/${repo}/issues/${number}`, token);
       const stamp = (value: GitHubIssue) => JSON.stringify([value.number, value.state, !!value.pull_request, value.title, value.body ?? "", value.labels ?? [], value.updated_at]);
       if (stamp(issue) !== stamp(again)) throw new Error("Issue changed while reading feedback");
-      return normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+      const signal = normalizeGitHub({ repository: { full_name: repo }, issue, comment: latest })[0];
+      if (!signal) throw new Error(`Issue author isn't a collaborator; add the "${TRUST_LABEL}" label to plan it`);
+      return signal;
     }
   }
   throw new Error("Issue feedback exceeds the bounded planning window; narrow the issue before planning");

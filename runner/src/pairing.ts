@@ -40,3 +40,13 @@ export async function pairMachine(base: string, root = runnerHome()) {
   }
   throw new Error("Pairing code expired or already used. Run shiptorio-runner pair again.");
 }
+/** One-paste setup: trade the single-use join code from the install command for this repo's credential. No browser step. */
+export async function joinMachine(base: string, join: string, root = runnerHome()) {
+  if (!/^[a-f0-9]{48}$/.test(join)) throw new Error("That setup command looks cut off. Copy a fresh one from Power in your factory.");
+  const response = await fetch(`${base}/api/runner-device/join`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ join }), signal: AbortSignal.timeout(30000) });
+  if (response.status === 410) throw new Error("That setup command expired or was already used. Copy a fresh one from Power in your factory.");
+  if (!response.ok) throw new Error(`Could not connect this computer (${response.status}). Copy a fresh setup command from Power.`);
+  const pairing = await response.json() as Pairing;
+  await savePairing(pairing, root);
+  console.log(`Connected to ${pairing.repo}. Your agent sign-ins stay on this computer.`);
+}

@@ -9,7 +9,7 @@ async function cookie(login?: string) {
   return preview + (login ? '; ' + await signedInCookie(env, login) : '');
 }
 const env = {
-  SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'r3dbars,other', BUILD_SHA: 'abc123',
+  SESSION_SECRET: secret, APP_PASSWORD: password, ALLOWED_LOGINS: 'r3dbars,other', ADMIN_LOGINS: 'r3dbars', BUILD_SHA: 'abc123',
   CACHE: { list: async () => ({ keys: [] }), put: async () => {} },
   DB: testD1(),
   FACTORY: { idFromName: (repo: string) => repo, get: () => ({ debugSnapshot: async () => ({ repo: 'owner/repo', tick: 7 }) }) },
@@ -41,4 +41,14 @@ it('returns runtime telemetry identity and release using the signed session', as
   const data = await response.json() as any;
   expect(data.userId).toBe('r3dbars'); expect(data.release).toBe('abc123');
   expect(data.requestId).toBe(response.headers.get('X-Request-ID')); expect(data.requestId).not.toBe('forged');
+});
+
+it('uses the configured owner in waitlist mode and never inherits maintainer or wildcard diagnostics', async () => {
+  const ownerEnv = {...env, DB: testD1(), SIGNUP_GATE_MODE: 'waitlist', ALLOWED_LOGINS: 'alice,r3dbars', ADMIN_LOGINS: 'alice'};
+  for (const [login, status] of [['alice', 200], ['r3dbars', 403]] as const) {
+    const headers = {cookie: await signedInCookie(ownerEnv, login)};
+    expect((await app.fetch(new Request('https://shiptorio.com/admin/data', {headers}), ownerEnv)).status).toBe(status);
+  }
+  const headers = {cookie: await signedInCookie(ownerEnv, 'r3dbars')};
+  for (const admins of [undefined, '', '*']) expect((await app.fetch(new Request('https://shiptorio.com/admin/data', {headers}), {...ownerEnv, ADMIN_LOGINS: admins})).status).toBe(403);
 });

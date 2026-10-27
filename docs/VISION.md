@@ -54,6 +54,13 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    line where you can watch every item travel, in the Black Iron look (`docs/black-iron.html`), matched closely.
    If a player can't tell what a part does by looking at it, it isn't done.
 
+11. **Simple out of the box; complexity unlocks over months of play, never up front (Justin, 2026-10-27).** Day one
+    does one job very clearly: sign in, pick a repo, plug in your AI, and your first issue becomes a shipped PR,
+    in the fewest steps and words possible. Two numbers on screen (waiting on you, shipped), one queue of cards,
+    trust as the only progress bar. Research, mines, tools, permits and higher autonomy each show up the first time
+    your own factory needs them, spread over weeks and months. Ladder: the "Unlock ladder" in the new-player
+    walkthrough (https://claude.ai/artifact/NRKF9TmVW3tDMH2jUJEBV1).
+
 ## Non-goals (for now)
 
 - Spark as a coder or hosted build farm. Building runs on the player's own subscriptions.
@@ -131,10 +138,15 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
 - 2026-10-27: The map goes vertical (principle 10). Work is mined underground, cascades down, rides up through
   refining and the checks, becomes a PR and launches from the top. The visual style is critical and must make
-  plain what each part does. Being built in `web/src/map/shaft/` behind `?world=shaft`.
+  plain what each part does. Lives in `web/src/map/shaft/`.
+- 2026-10-27: "This new artwork and vertical system needs to be the way this app works." The shaft is the map
+  for everyone (game, judge mode, tour, landing loop); the island stays behind `?world=iron` for one release.
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
   pipeline config, and the gauntlet can be added to but never bypassed. Spec: `docs/BUILD-MODE.md`.
+- 2026-10-27: Simple out of the box, complexity over months (principle 11). Justin approved the walkthrough cuts:
+  no XP or levels (trust is the only progress bar), two counters (waiting on you, shipped), Next Move and the
+  check-in deck become one queue, research / mines / tools hidden until needed, no first-run Check in / Build fork.
 - 2026-10-27: Plan locked through Nov 4: prove the loop with real clean ships on Testing + one real autonomy
   level-up, nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1, park build
   mode / pricing / empire / new mines. Codex on reliability prompts only. See "Current focus through Nov 4".

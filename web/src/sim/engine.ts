@@ -7,6 +7,7 @@
 
 import { ghostSpots } from "../map/ghosts";
 import { actionLabel } from "../ui/stationCopy";
+import { mineUnlocked } from "../ui/whatsNext";
 import {
   SCIENCE_FOR,
   findFunnelDrop,
@@ -1073,7 +1074,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     // First an empty mine to connect, then more open issues to pull in. "Not now" waits a while before asking again.
     const caughtUp = s.items.length > 0 && s.items.every((i) => i.state === "launched" || parked.has(i.id));
     if (!sc.intro && clock0 !== Infinity && !script.length && caughtUp && !s.move && !pending.length && s.tick >= quietUntil) {
-      const kind = ghostSpots(s)[0]?.kind;
+      // Mines unlock slowly (one per 3 rockets), so a new player isn't asked for two integrations after one win.
+      const kind = mineUnlocked(s) ? ghostSpots(s)[0]?.kind : undefined;
       if (kind && !offeredMines.has(kind)) {
         offeredMines.add(kind);
         const label = kind === "sentry" ? "Sentry" : "PostHog";

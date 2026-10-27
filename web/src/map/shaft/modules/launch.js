@@ -23,8 +23,10 @@
 // MEASURE: the growth loop's experiment gauge. A brass gauge board (HURT · FLAT · LIFT dial, BEFORE / AFTER
 // tubes, lift % and day nixies) over a balance scale that tips toward the side that converts more.
 //
-// Driver hooks (optional; without them both stations run off 'ship' events like the mockup's dice):
-//   IRON.driver.orbit(st)   -> { watching: n, progress: 0..1 (oldest watch), hoursLeft? } | null
+// What they show, first that answers: an optional driver hook, else the game driver's FactoryState
+// (driver.state: items[].orbit, stations[] of kind 'orbit', experiments[]), else (auto driver) a play run off
+// 'ship' events like the mockup's dice, with a comeback now and then.
+//   IRON.driver.orbit(st)   -> { watching: n, progress: 0..1 (oldest watch), hoursLeft?, alert?: '#12 came back' } | null
 //   IRON.driver.measure(st) -> { state: 'measuring'|'won'|'flat'|'lost', lift: 0.16, day: 3, days: 7 } | null
 // =====================================================================
 
@@ -267,7 +269,40 @@ export default function install(IRON) {
         o.material = A.atlas;
       });
     }
-    return { band, rivetRing, gear, gauge, hazardStripe, nixieRow, setRow, plate, strut, lampSet, segSet, dotSet, palettize };
+    // then fold each anchor's atlas parts (the machine itself, and every K.dyn mover) into ONE mesh, before the
+    // shaft's tiny-part shadow cull can split them into a shadow and a no-shadow mesh
+    function fold(root) {
+      root.updateMatrixWorld(true);
+      const lists = new Map();
+      const walk = (o, anchor) => {
+        for (const c of o.children) {
+          if (c.userData.dyn || c.userData.noBake) { walk(c, c); continue; }
+          if (c.isMesh && c.constructor === T.Mesh && c.material === A.atlas && c.visible && !c.children.length) { if (!lists.has(anchor)) lists.set(anchor, []); lists.get(anchor).push(c); }
+          walk(c, anchor);
+        }
+      };
+      walk(root, root);
+      const inv = new T.Matrix4(), rel = new T.Matrix4();
+      lists.forEach((list, anchor) => {
+        if (list.length < 2) return;
+        inv.copy(anchor.matrixWorld).invert();
+        let n = 0;
+        const geos = list.map((m) => {
+          rel.multiplyMatrices(inv, m.matrixWorld);
+          const gg = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); gg.applyMatrix4(rel);
+          if (rel.determinant() < 0) { const a = gg.attributes.position.array, b = gg.attributes.normal.array, u = gg.attributes.uv.array; for (let v = 0; v + 2 < gg.attributes.position.count; v += 3) { for (let k = 0; k < 3; k++) { const i1 = (v + 1) * 3 + k, i2 = (v + 2) * 3 + k; [a[i1], a[i2]] = [a[i2], a[i1]]; [b[i1], b[i2]] = [b[i2], b[i1]]; } for (let k = 0; k < 2; k++) { const i1 = (v + 1) * 2 + k, i2 = (v + 2) * 2 + k; [u[i1], u[i2]] = [u[i2], u[i1]]; } } }
+          n += gg.attributes.position.count; return gg;
+        });
+        const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2); let off = 0;
+        geos.forEach((gg) => { pos.set(gg.attributes.position.array, off * 3); nor.set(gg.attributes.normal.array, off * 3); uv.set(gg.attributes.uv.array, off * 2); off += gg.attributes.position.count; gg.dispose(); });
+        const geo = new T.BufferGeometry();
+        geo.setAttribute('position', new T.BufferAttribute(pos, 3)); geo.setAttribute('normal', new T.BufferAttribute(nor, 3)); geo.setAttribute('uv', new T.BufferAttribute(uv, 2));
+        const out = new T.Mesh(geo, A.atlas); out.castShadow = list.some((m) => m.castShadow); out.receiveShadow = true; out.name = 'atlas';
+        anchor.add(out);
+        list.forEach((m) => m.parent.remove(m));
+      });
+    }
+    return { band, rivetRing, gear, gauge, hazardStripe, nixieRow, setRow, plate, strut, lampSet, segSet, dotSet, palettize, fold };
   }
 
   // =====================================================================
@@ -277,7 +312,7 @@ export default function install(IRON) {
     const T = K.THREE;
     const dyn = K.dyn;
     const { C, MT, stone, deck, deckTop, pm } = art(K);
-    const { band, rivetRing, gear, gauge, hazardStripe, nixieRow, setRow, lampSet, segSet, dotSet, palettize } = tools(K);
+    const { band, rivetRing, gear, gauge, hazardStripe, nixieRow, setRow, lampSet, segSet, dotSet, palettize, fold } = tools(K);
     const ease = (k) => k * k * (3 - 2 * k);
     // clustered small puffs (reads as smoke, not honeycomb tiles)
     function puff(x, y, z, vx, vy, vz, col, life, size, n, spread, grav) {
@@ -640,15 +675,20 @@ export default function install(IRON) {
 
     // ---------- LIFTOFF FX: shockwave, bright trail, lingering smoke column ----------
     const shock = dyn(K.torus(1, 0.08, K.glow(0xffd8a0, 0.9, true), 4, 32, 0, 0.55, 0, g)); shock.rotation.x = Math.PI / 2; shock.visible = false; shock.castShadow = false;
+    // vapour ring where the rocket punches out over the top of the factory
+    const VAPOR_Y = 9.5;
+    const vapor = dyn(K.torus(1, 0.12, K.glow(0xd8d2c8, 0.7, true), 4, 32, 0, VAPOR_Y, 0, g)); vapor.rotation.x = Math.PI / 2; vapor.visible = false; vapor.castShadow = false;
+    let vaporT = -1, docked = true, clampWeld = false;
     const trailM = K.glow(0xffc070, 0, true), trailCoreM = K.glow(0xfff4d8, 0, true);
     const trail = dyn(K.cyl(0.2, 0.32, 1, trailM, 10, 0, 0, 0, g)); trail.castShadow = false; trail.visible = false;
     const trailCore = dyn(K.cyl(0.07, 0.1, 1, trailCoreM, 8, 0, 0, 0, g)); trailCore.castShadow = false; trailCore.visible = false;
     const colM = K.mat(0x9a9286, { op: 0, depthWrite: false });
     const column = dyn(K.cyl(0.5, 0.9, 1, colM, 12, 0, 0, 0, g)); column.castShadow = false; column.receiveShadow = false; column.visible = false;
-    let trailTop = 0, trailA = 0, colA = 0, colTop = 0, heat = 0;
+    let trailTop = 0, trailA = 0, colA = 0, colTop = 0, heat = 0, trailBot = 1;
 
     palettize(g);
     K.bake(S);
+    fold(g);
 
     // =====================================================================
     // STATE MACHINES
@@ -695,7 +735,7 @@ export default function install(IRON) {
     let tPuff = 0, tZap = 0;
     applyCrane(0);
     // read-only peek for screenshot scripts (window.SHAFT.I.stations.pad.holder -> this group)
-    g.userData.peek = () => ({ phase, pT, reset: resetPhase, crane: craneMode, fly: flyer ? flyer.rk.position.y : null, loaded: !!(cur && cur.item) });
+    g.userData.peek = () => ({ phase, pT, reset: resetPhase, rT, crane: craneMode, fly: flyer ? flyer.rk.position.y : null, loaded: !!(cur && cur.item) });
 
     // an item that vanished from the world (the real issue closed): let go of it, carry on
     const lost = (it) => !it || it.gone;
@@ -915,22 +955,40 @@ export default function install(IRON) {
       // ------------------------------------------------ TRAIL + SMOKE COLUMN + HEAT
       if (flyer) {
         const top = Math.min(FLY_TOP, flyer.rk.position.y - 0.4); trailTop = top;
+        if (flyer.flyT < 0.1) { colTop = 0; trailBot = 1; }
         trailA = Math.min(1, trailA + dt * 3); colA = Math.min(1, colA + dt * 0.8); colTop = Math.max(colTop, Math.min(top, 16));
         heat = Math.min(1, heat + dt * 2);
-      } else { trailA = Math.max(0, trailA - dt * 0.45); colA = Math.max(0, colA - dt * 0.12); heat = Math.max(0, heat - dt * 0.14); }
+        // the burn lifts off the pad behind the rocket, so the fresh one rises out of a clear silo
+        trailBot = flyer.flyT > 1.8 ? 1 + 8 * Math.pow(flyer.flyT - 1.8, 1.2) : 1;
+      } else { trailA = Math.max(0, trailA - dt * 0.45); colA = Math.max(0, colA - dt * 0.12); heat = Math.max(0, heat - dt * 0.14); trailBot += dt * 6; }
       if (phase === 'ignite') heat = Math.min(1, heat + dt * 1.5);
-      const tBase = 1.0;
+      const tBase = Math.min(trailBot, FLY_TOP);
       trail.visible = trailCore.visible = trailA > 0.01 && trailTop > tBase + 0.5;
       if (trail.visible) {
         const h = trailTop - tBase; trail.scale.set(1 + (1 - trailA) * 0.8, h, 1 + (1 - trailA) * 0.8); trail.position.set(0, tBase + h / 2, 0); trailCore.scale.set(1, h, 1); trailCore.position.copy(trail.position);
         trailM.opacity = 0.45 * trailA * (0.85 + Math.random() * 0.15); trailCoreM.opacity = 0.75 * trailA * trailA;
       }
-      column.visible = colA > 0.01 && colTop > 1.5;
-      if (column.visible) { const h = colTop; column.scale.set(1 + (1 - colA) * 1.8, h, 1 + (1 - colA) * 1.8); column.position.set(Math.sin(t * 0.3) * 0.2 * (1 - colA), h / 2 + 0.4, 0); colM.opacity = 0.32 * colA; }
+      const cBot = Math.max(0.4, tBase - 2.5);
+      column.visible = colA > 0.01 && colTop > cBot + 1.1;
+      if (column.visible) { const h = colTop - cBot; column.scale.set(1 + (1 - colA) * 1.8, h, 1 + (1 - colA) * 1.8); column.position.set(Math.sin(t * 0.3) * 0.2 * (1 - colA), cBot + h / 2, 0); colM.opacity = 0.32 * colA; }
       heatM.opacity = heat * (0.5 + Math.sin(t * 11) * 0.08 + Math.random() * 0.06);
 
       // ------------------------------------------------ PARTICLES
       if (shockT >= 0) { shockT += dt; shock.visible = true; const k = shockT / 0.8; shock.scale.setScalar(0.6 + k * 4); shock.material.opacity = 0.9 * (1 - k); if (k >= 1) { shockT = -1; shock.visible = false; } }
+      // punching out over the roof: a vapour ring + a collar of steam at that height
+      if (flyer && vaporT < 0 && flyer.rk.position.y > VAPOR_Y && flyer.rk.position.y - dt * 30 < VAPOR_Y + 3) {
+        vaporT = 0;
+        for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2; K.spawn(g, Math.cos(a) * 0.7, VAPOR_Y, Math.sin(a) * 0.7, Math.cos(a) * 3.2, -0.2 + K.R() * 0.4, Math.sin(a) * 3.2, i % 4 ? 0xe8e2d8 : 0xffd8a0, 1.1, 0.12, -0.04); }
+      }
+      if (vaporT >= 0) { vaporT += dt; const k = vaporT / 1.1; vapor.visible = k < 1; vapor.scale.setScalar(0.7 + ease(Math.min(1, k)) * 3.8); vapor.material.opacity = 0.7 * (1 - k) * (1 - k); if (k >= 1 && !flyer) vaporT = -1; }
+      // the fresh rocket gets bolted down: weld sparks at the clamps as they bite, then the arm docks with a hiss
+      if (resetPhase === 'clamp' && !clampWeld && clampOpen < 0.35) { clampWeld = true; clamps.forEach((c) => { for (let i = 0; i < 7; i++) K.spawn(g, c.tip[0], c.tip[1] - 0.2, c.tip[2], K.R() * 1.6, 0.8 + Math.random() * 1.4, K.R() * 1.6, Math.random() < 0.5 ? 0xffd25a : 0xfff4d0, 0.45, 0.045, 6, true); }); }
+      if (resetPhase === 'drop') { clampWeld = false; docked = false; }
+      if (!docked && !resetPhase && armAway < 0.08) {
+        docked = true; armP.updateMatrixWorld(); hoses[0].hp.getWorldPosition(tmp); g.worldToLocal(tmp);
+        for (let i = 0; i < 8; i++) K.spawn(g, tmp.x + 0.1, tmp.y - 0.95, tmp.z, K.R() * 1.2, 0.5 + Math.random(), K.R() * 1.2, Math.random() < 0.6 ? 0xffd25a : 0xfff4d0, 0.4, 0.04, 6, true);
+        puff(tmp.x, tmp.y - 1.0, tmp.z, 0.3, 0.8, 0.3, 0xe8e2d6, 1.0, 0.09, 3, 0.12);
+      }
       tPuff -= dt;
       if (tPuff <= 0) {
         tPuff = 0.05;
@@ -946,15 +1004,15 @@ export default function install(IRON) {
           const dense = phase === 'ignite' || (flyer && flyer.flyT < 1.6) ? 3 : 1;
           for (let i = 0; i < dense; i++) {
             const s = Math.random() < 0.5 ? 1 : -1, sp = 2.4 + Math.random() * 2.6;
-            puff(s * 1.6 * C45, 0.65, -s * 1.6 * C45, s * sp * C45, 0.5 + Math.random() * 0.9, -s * sp * C45, Math.random() < 0.25 ? 0xffa040 : (Math.random() < 0.5 ? 0x9a9284 : 0x6e665c), 2.0, 0.13, 3, 0.3, -0.07);
+            puff(s * 1.6 * C45, 0.65, -s * 1.6 * C45, s * sp * C45, 0.5 + Math.random() * 0.9, -s * sp * C45, Math.random() < 0.25 ? 0xffa040 : (Math.random() < 0.5 ? 0x9a9284 : 0x6e665c), 2.0, 0.16, 2, 0.3, -0.07);
           }
           if (Math.random() < 0.5) K.spawn(g, K.R() * 0.6, 0.6, K.R() * 0.6, K.R() * 2, 0.3, K.R() * 2, 0xffd27a, 0.5, 0.06, 1, true);
         }
         // lingering exhaust column along the flight path
         if (flyer && flyer.flyT < 4.5) {
           const y = flyer.rk.position.y - 0.7;
-          puff(0, y, 0, 0, -0.3, 0, Math.random() < 0.3 ? 0xffb050 : 0xa49c8e, 3.2, 0.14, 2, 0.3, -0.03);
-          if (y < 14) puff(K.R() * 0.6, y, K.R() * 0.6, K.R() * 0.4, 0.05, K.R() * 0.4, 0x8a8276, 4.5, 0.16, 1, 0.4, -0.02);
+          puff(0, y, 0, 0, -0.3, 0, Math.random() < 0.3 ? 0xffb050 : 0xa49c8e, 2.6, 0.15, 2, 0.3, -0.03);
+          if (y < 14) puff(K.R() * 0.6, y, K.R() * 0.6, K.R() * 0.4, 0.05, K.R() * 0.4, 0x8a8276, 3.4, 0.17, 1, 0.4, -0.02);
         }
         // embers + heat shimmer from the trench after the burn
         if (heat > 0.15 && Math.random() < heat) { const s = Math.random() < 0.5 ? 1 : -1, u = 1.3 + Math.random() * 1.3; K.spawn(g, s * u * C45 + K.R() * 0.3, 0.5, -s * u * C45 + K.R() * 0.3, K.R() * 0.2, 0.5 + Math.random() * 0.6, K.R() * 0.2, Math.random() < 0.6 ? 0xff8a2a : 0xffd27a, 1.2, 0.04, -0.05, true); }
@@ -1007,7 +1065,7 @@ export default function install(IRON) {
     const T = K.THREE;
     const dyn = K.dyn;
     const { C, MT, deckTop } = art(K);
-    const { band, rivetRing, gear, hazardStripe, nixieRow, setRow, plate, strut, lampSet, palettize } = tools(K);
+    const { band, rivetRing, gear, hazardStripe, nixieRow, setRow, plate, strut, lampSet, palettize, fold } = tools(K);
     const g = K.group();
     const S = K.group(g);
     const V = new T.Vector3(), V2 = new T.Vector3();
@@ -1173,17 +1231,47 @@ export default function install(IRON) {
     // ---------- STATUS + CAUTION ----------
     const lamp = K.statusLamp(g, 1.95, TOP, 1.2, 1.0);
     const caution = K.caution(g, -1.5, TOP, 1.42, 0.75);
-    palettize(g);
+    palettize(g); fold(g);
 
     // =====================================================================
-    // THE WATCH
+    // THE WATCH. What's real wins: the driver's orbit() hook, else the factory state's own watches
+    // (items[].orbit). The auto driver plays a watch out for each launch it ships, and now and then
+    // one comes back.
     // =====================================================================
     const auto = () => IRON.driver === IRON.AUTO;
-    const WATCH_S = 36;          // 24 h squeezed into this many seconds on the auto driver
-    const watches = [];          // { num, t0 } oldest first
+    const WATCH_S = 36;          // auto: 24 h squeezed into this many seconds
+    const ALERT_S = 9;           // auto: a comeback sounds the alarm this long (then it's back on the rework belt)
+    const FRESH_MS = 10 * 60e3;  // real: a comeback this recent still sounds it
+    const watches = [];          // auto: { num, t0 } oldest first
     const fresh = [];
-    let clock = 0, clearT = -1, newT = -1;
+    let clock = 0, clearT = -1, newT = -1, alertT = -1, alertNum = 0, prevN = -1;
     IRON.on('ship', (d) => fresh.push(d && d.item ? d.item.num : 0));
+    // the factory's own record, when the game's driver carries one (rescanned only when a new state arrives)
+    let rFs = null, rScan = null;
+    function realWatch() {
+      const d = IRON.driver;
+      const fs = d && d !== IRON.AUTO && d.state && typeof d.state === 'object' && Array.isArray(d.state.items) ? d.state : null;
+      if (!fs) return undefined;
+      if (fs !== rFs) {
+        rFs = fs;
+        let n = 0, soon = null, bad = null;
+        for (const r of fs.items) {
+          const o = r && r.orbit; if (!o) continue;
+          if (o.state === 'watching') { n++; if (!soon || o.until < soon.until) soon = o; }
+          else if (o.state === 'regressed' && o.at && (!bad || o.at > bad.at)) bad = { at: o.at, num: o.prNumber || r.prNumber || 0 };
+        }
+        const rec = Array.isArray(fs.stations) ? fs.stations.find((s) => s && s.kind === 'orbit') : null;
+        if (!n && rec && rec.wip > 0) n = rec.wip;
+        rScan = { n, soon, bad };
+      }
+      const now = Date.now(), { n, soon, bad } = rScan;
+      return {
+        watching: n,
+        progress: soon ? (now - soon.since) / Math.max(1, soon.until - soon.since) : 0,
+        hoursLeft: soon ? Math.max(0, (soon.until - now) / 3.6e6) : undefined,
+        alert: bad && now - bad.at < FRESH_MS ? (bad.num ? '#' + bad.num + ' came back' : 'a launch came back') : null,
+      };
+    }
     let az = Math.PI / 4 + 0.25, el = 0.72, taz = Math.PI / 4 + 0.37, tel = 0.58, padAz = null;
     const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
     let tPuff = 0, drumU = 0;
@@ -1192,27 +1280,49 @@ export default function install(IRON) {
       const blk = M.blocked;
       const live = blk ? 0 : dt;
       clock += live;
-      while (fresh.length) { watches.push({ num: fresh.shift(), t0: clock }); newT = 0; }
-      for (let i = watches.length - 1; i >= 0; i--) if (clock - watches[i].t0 >= WATCH_S) { watches.splice(i, 1); clearT = 0; }
-      const ext = IRON.driver.orbit ? IRON.driver.orbit(IRON.stations[M.id]) : undefined;
-      const n = ext ? (ext.watching || 0) : ext === null ? 0 : watches.length;
-      const prog = ext ? Math.max(0, Math.min(1, ext.progress || 0)) : n ? (clock - watches[0].t0) / WATCH_S : 0;
-      const hoursLeft = ext && ext.hoursLeft !== undefined ? Math.ceil(ext.hoursLeft) : Math.ceil(24 * (1 - prog));
+      // ---- what's in orbit
+      const hook = typeof IRON.driver.orbit === 'function' ? IRON.driver.orbit(IRON.stations[M.id]) : undefined;
+      const ext = hook !== undefined ? hook : realWatch();
+      const sim = ext === undefined;
+      while (fresh.length) { const num = fresh.shift(); if (sim) watches.push({ num, t0: clock }); }
+      if (!sim) watches.length = 0;
+      for (let i = watches.length - 1; i >= 0; i--) {
+        if (clock - watches[i].t0 < WATCH_S) continue;
+        const w = watches.splice(i, 1)[0];
+        if (auto() && (!IRON.policy || IRON.policy.events) && alertT < 0 && Math.random() < 0.15) { alertT = 0; alertNum = w.num; }   // it came back
+      }
+      if (alertT >= 0) { alertT += live; if (alertT > ALERT_S) alertT = -1; }
+      let n, prog, hoursLeft, alertText;
+      if (!sim) {
+        n = ext ? Math.max(0, ext.watching | 0) : 0;
+        prog = ext ? Math.max(0, Math.min(1, ext.progress || 0)) : 0;
+        hoursLeft = ext && ext.hoursLeft != null ? Math.ceil(ext.hoursLeft) : Math.ceil(24 * (1 - prog));
+        alertText = ext && ext.alert ? (typeof ext.alert === 'string' ? ext.alert : 'a launch came back') : null;
+      } else {
+        n = watches.length;
+        prog = n ? Math.min(1, (clock - watches[0].t0) / WATCH_S) : 0;
+        hoursLeft = Math.ceil(24 * (1 - prog));
+        alertText = alertT >= 0 ? (alertNum ? '#' + alertNum + ' came back' : 'a launch came back') : null;
+      }
+      if (prevN >= 0 && n > prevN) newT = 0;
+      if (prevN >= 0 && n < prevN && !alertText) clearT = 0;
+      prevN = n;
       if (clearT >= 0) clearT += dt; if (clearT > 2.5) clearT = -1;
       if (newT >= 0) newT += dt; if (newT > 1.5) newT = -1;
       const watching = n > 0;
+      const alarm = blk || !!alertText;   // a comeback wears the stopped look: red strobes, wash, beacon, the pen scribbling
 
       // ---- aim: the rocket in the air, else a slow sweep where the watched launches went, parked when idle
       if (padAz === null && shared.pad) { shared.pad.getWorldPosition(V); g.worldToLocal(V); padAz = Math.atan2(V.x - MX, V.z - MZ); }
       const pa = padAz === null ? -0.6 : padAz;
       let wantAz, wantEl;
-      if (blk) { wantAz = pa + Math.sin(t * 2.3) * 1.1 + Math.sin(t * 7.1) * 0.08; wantEl = 0.35 + Math.sin(t * 3.1) * 0.15; }
+      if (alarm) { wantAz = pa + Math.sin(t * 2.3) * 1.1 + Math.sin(t * 7.1) * 0.08; wantEl = 0.35 + Math.sin(t * 3.1) * 0.15; }
       else if (shared.rocket && shared.rocket.visible) {
         shared.rocket.getWorldPosition(V); g.worldToLocal(V); V.x -= MX; V.y -= PIVY; V.z -= MZ;
         wantAz = Math.atan2(V.x, V.z); wantEl = Math.atan2(V.y, Math.hypot(V.x, V.z));
       } else if (watching) { wantAz = pa + 0.5 + Math.sin(clock * 0.21) * 0.7; wantEl = 0.95 + Math.sin(clock * 0.37) * 0.2; }
       else { wantAz = Math.PI / 4 + 0.25 + Math.sin(t * 0.05) * 0.08; wantEl = 0.72; }
-      const k1 = Math.min(1, dt * (blk ? 6 : 2.2));
+      const k1 = Math.min(1, dt * (alarm ? 6 : 2.2));
       az += wrap(wantAz - az) * k1; el += (wantEl - el) * k1;
       azG.rotation.y = az; elG.rotation.x = -el;
       const k2 = Math.min(1, dt * 1.1);
@@ -1221,58 +1331,59 @@ export default function install(IRON) {
 
       // ---- pings while tracking
       pingT -= dt;
-      if (!blk && watching && pingT <= 0) { pingT = shared.rocket ? 0.45 : 1.3; const p = pings[pingI++ % pings.length]; p.k = 0; }
+      if (!alarm && watching && pingT <= 0) { pingT = shared.rocket ? 0.45 : 1.3; const p = pings[pingI++ % pings.length]; p.k = 0; }
       pings.forEach((p) => {
         if (p.k < 0) { p.r.visible = false; return; }
         p.k += dt / 1.1; if (p.k >= 1) { p.k = -1; p.r.visible = false; return; }
-        p.r.visible = true; p.r.position.z = 0.6 + p.k * 2.4; p.r.scale.setScalar(0.6 + p.k * 1.6); p.m.opacity = 0.7 * (1 - p.k);
+        p.r.visible = true; p.r.position.z = 0.5 + p.k * 1.5; p.r.scale.setScalar(0.9 + p.k * 0.8); p.m.opacity = 0.6 * (1 - p.k) * (1 - p.k);
       });
-      feedM.color.setHex(blk ? (Math.sin(t * 10) > 0 ? 0xff3020 : 0x400808) : watching ? (Math.sin(t * 5) > 0 ? 0x9afff0 : 0x3aa890) : 0x1e4a40);
-      lensM.color.setHex(blk ? 0x6a1a10 : watching ? 0x5ae0c8 : 0x2a5a50);
+      feedM.color.setHex(alarm ? (Math.sin(t * 10) > 0 ? 0xff3020 : 0x400808) : watching ? (Math.sin(t * 5) > 0 ? 0x9afff0 : 0x3aa890) : 0x1e4a40);
+      lensM.color.setHex(alarm ? 0x6a1a10 : watching ? 0x5ae0c8 : 0x2a5a50);
 
-      // ---- the drum and its pen
-      drumU += live * (watching ? 0.05 : blk ? 0.0 : 0.01) + (blk ? dt * 0.12 : 0);
-      paperTex.offset.set(drumU % 1, blk ? 0 : 0.5);
-      paperM.emissive.setHex(blk ? (Math.sin(t * 8) > 0 ? 0x3a0804 : 0) : watching ? 0x14100a : 0);
-      pen.rotation.z = blk ? Math.sin(t * 37) * 0.18 + Math.sin(t * 23) * 0.1 : watching ? Math.sin(t * 3.1) * 0.02 + Math.sin(t * 7.3) * 0.01 : 0;
-      nibM.emissive.setHex(blk ? 0xff2010 : watching ? 0x401008 : 0x200000);
+      // ---- the drum and its pen (the red half of the paper is the comeback's trace)
+      drumU += live * (watching && !alarm ? 0.05 : alarm ? 0.0 : 0.01) + (alarm ? dt * 0.12 : 0);
+      paperTex.offset.set(drumU % 1, alarm ? 0 : 0.5);
+      paperM.emissive.setHex(alarm ? (Math.sin(t * 8) > 0 ? 0x3a0804 : 0) : watching ? 0x14100a : 0);
+      pen.rotation.z = alarm ? Math.sin(t * 37) * 0.18 + Math.sin(t * 23) * 0.1 : watching ? Math.sin(t * 3.1) * 0.02 + Math.sin(t * 7.3) * 0.01 : 0;
+      nibM.emissive.setHex(alarm ? 0xff2010 : watching ? 0x401008 : 0x200000);
 
       // ---- dial, nixies, rim lamps, orrery
-      const clr = clearT >= 0;
+      const clr = clearT >= 0 && !alarm;
       hand.rotation.z = -prog * Math.PI * 2;
-      dialFaceM.emissive.setHex(blk ? (Math.sin(t * 6) > 0 ? 0x9a1008 : 0x3a0402) : clr ? 0x1a4a20 : watching ? 0x2a1c08 : 0);
+      dialFaceM.emissive.setHex(alarm ? (Math.sin(t * 6) > 0 ? 0x9a1008 : 0x3a0402) : clr ? 0x1a4a20 : watching ? 0x2a1c08 : 0);
       const blink = Math.sin(t * 8) > 0;
-      if (blk) setRow(watchRow, blink ? 'Err' : '   ', 1, 0xff8060);
+      if (alarm) setRow(watchRow, blink ? 'Err' : '   ', 1, 0xff8060);
       else if (clr) setRow(watchRow, 'CLr', blink ? 1 : 0.7, 0xc0ffd0);
       else if (watching) setRow(watchRow, String(Math.max(0, Math.min(99, hoursLeft))).padStart(2, '0') + 'h', newT >= 0 ? (blink ? 1 : 0.5) : 0.9);
       else setRow(watchRow, '---', 0.25);
       const litN = Math.ceil((1 - prog) * 8);
       for (let i = 0; i < 8; i++) {
         let c = 0x2a1a08;
-        if (blk) c = Math.sin(t * 12 + (i % 2) * Math.PI) > 0 ? 0xff2010 : 0x3a0a04;
+        if (alarm) c = Math.sin(t * 12 + (i % 2) * Math.PI) > 0 ? 0xff2010 : 0x3a0a04;
         else if (clr) c = blink ? 0x46ff8a : 0x1a5a2a;
         else if (watching) c = i < litN ? (i === litN - 1 && Math.sin(t * 4) > 0 ? 0xffd070 : 0xffa030) : 0x3a2410;
         rimLamps.set(i, c);
       }
-      orb.rotation.y += dt * (blk ? 0 : 0.6);
-      orbBeads.count = Math.min(5, n);
-      beadM.color.setHex(blk ? (blink ? 0xff3020 : 0x601008) : newT >= 0 && blink ? 0xffffff : 0x46ff8a);
+      orb.rotation.y += dt * (blk ? 0 : alertText ? 2.4 : 0.6);
+      orbBeads.count = Math.min(5, n + (alertText ? 1 : 0));   // the one that came back stays on the ring, red, while it sounds
+      beadM.color.setHex(alarm ? (blink ? 0xff3020 : 0x601008) : newT >= 0 && blink ? 0xffffff : 0x46ff8a);
 
       // ---- alarm
-      beaconSpin.rotation.y += dt * (blk ? 11 : 0);
-      beaconM.emissive.setHex(blk ? (Math.sin(t * 9) > -0.2 ? 0xff2010 : 0x300808) : 0);
-      beaconDomeM.opacity = blk ? 0.6 : 0.12;
-      wash.visible = blk;
-      if (blk) washM.opacity = (Math.sin(t * 9) > 0 ? 1 : 0.35) * 0.22;
+      beaconSpin.rotation.y += dt * (alarm ? 11 : 0);
+      beaconM.emissive.setHex(alarm ? (Math.sin(t * 9) > -0.2 ? 0xff2010 : 0x300808) : 0);
+      beaconDomeM.opacity = alarm ? 0.6 : 0.12;
+      wash.visible = alarm;
+      if (alarm) washM.opacity = (Math.sin(t * 9) > 0 ? 1 : 0.35) * 0.22;
       tPuff -= dt;
       if (tPuff <= 0) {
         tPuff = 0.06;
-        if (blk) puff(ventLocal.x, ventLocal.y, ventLocal.z, 0.2, 1.8, 0.2, 0xf0ece4, 1.4, 0.1, 2, 0.1);
+        if (alarm) puff(ventLocal.x, ventLocal.y, ventLocal.z, 0.2, 1.8, 0.2, 0xf0ece4, 1.4, 0.1, 2, 0.1);
         else if (clr && Math.random() < 0.5) K.spawn(g, DPX + K.R() * 0.3, TOP + DY + 0.8, DPZ + K.R() * 0.3, K.R() * 1.4, 1 + Math.random(), K.R() * 1.4, Math.random() < 0.6 ? 0x46ff8a : 0xffd27a, 0.9, 0.05, 2, true);
       }
 
-      // ---- state
-      if (watching) M.setState('WORKING', 'watching ' + n + ' launch' + (n > 1 ? 'es' : '') + ' · ' + Math.max(0, hoursLeft) + 'h left');
+      // ---- state (a comeback reads as BLOCKED: the lamp, the caution post and the shaft's aura all call for you)
+      if (alertText) M.setState('BLOCKED', alertText + ' · reworking');
+      else if (watching) M.setState('WORKING', 'watching ' + n + ' launch' + (n > 1 ? 'es' : '') + ' · ' + Math.max(0, hoursLeft) + 'h left');
       else M.setState('IDLE', clr ? 'all clear · nothing in orbit' : 'nothing in orbit');
       lamp.set(M.stateShown, t);
       caution.update(t, dt, M.stateShown);
@@ -1286,7 +1397,7 @@ export default function install(IRON) {
     const T = K.THREE;
     const dyn = K.dyn;
     const { C, MT, deckPlate } = art(K);
-    const { band, gear, hazardStripe, nixieRow, setRow, plate, strut, lampSet, palettize } = tools(K);
+    const { band, gear, hazardStripe, nixieRow, setRow, plate, strut, lampSet, palettize, fold } = tools(K);
     const g = K.group();
     const S = K.group(g);
     const TOP = 0.4;
@@ -1393,7 +1504,7 @@ export default function install(IRON) {
     // ---------- STATUS + CAUTION ----------
     const lamp = K.statusLamp(g, 1.72, TOP, -0.55, 1.0);
     const caution = K.caution(g, -0.6, TOP, 1.72, 0.75);
-    palettize(g);
+    palettize(g); fold(g);
 
     // =====================================================================
     // THE EXPERIMENT (the auto driver plays one out after a launch; the game's driver says what's real)
@@ -1408,14 +1519,28 @@ export default function install(IRON) {
     }
     if (auto()) startSim(2.4);
     IRON.on('ship', () => { if (auto() && (!sim || (sim.state !== 'measuring' && sim.t > SHOW_S)) && Math.random() < 0.6) startSim(0); });
+    // the factory's own record: the newest experiment that has launched (rescanned only when a new state arrives)
+    let rFs = null, rEx = null;
+    function realMeasure() {
+      const d = IRON.driver;
+      const fs = d && d !== IRON.AUTO && d.state && typeof d.state === 'object' && Array.isArray(d.state.items) ? d.state : null;
+      if (!fs) return undefined;
+      if (fs !== rFs) {
+        rFs = fs;
+        const ex = (Array.isArray(fs.experiments) ? fs.experiments : []).find((x) => x && x.launchedAt && /^(measuring|won|flat|lost|inconclusive)$/.test(x.state));
+        rEx = ex ? { state: ex.state === 'inconclusive' ? 'flat' : ex.state, lift: ex.lift || 0, day: Math.max(1, Math.ceil(ex.daysWatched || 0)), days: ex.windowDays || DAYS } : null;
+      }
+      return rEx;
+    }
     let needleA = 0, tilt = 0, shownLift = 0, celebrate = -1, prevState = null, tPuff = 0, hunt = 0;
 
     return { g, update(t, dt) {
       const blk = M.blocked;
       const live = blk ? 0 : dt;
-      // what's being measured
+      // what's being measured: the driver's measure() hook, else the factory state, else the auto driver's play
       let e = null;
-      const ext = IRON.driver.measure ? IRON.driver.measure(IRON.stations[M.id]) : undefined;
+      const hook = typeof IRON.driver.measure === 'function' ? IRON.driver.measure(IRON.stations[M.id]) : undefined;
+      const ext = hook !== undefined ? hook : realMeasure();
       if (ext !== undefined) e = ext ? { state: ext.state, lift: ext.lift || 0, day: ext.day || 0, days: ext.days || DAYS } : null;
       else if (sim) {
         sim.t += live;
@@ -1429,7 +1554,7 @@ export default function install(IRON) {
       const state = e ? e.state : 'idle';
       const measuring = state === 'measuring';
       const verdict = state === 'won' || state === 'flat' || state === 'lost';
-      if (state !== prevState) { if (verdict) celebrate = 0; prevState = state; }
+      if (state !== prevState) { if (verdict && prevState !== null) celebrate = 0; prevState = state; }   // no party for a verdict that was already in when the map opened
       const on = measuring || verdict;
 
       // the needle: hunting while it measures, decisive on a verdict, pinned at HURT and trembling when it needs you

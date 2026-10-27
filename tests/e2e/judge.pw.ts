@@ -64,3 +64,16 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   // Beat 0 lasts under two seconds, so a slow runner may already be on beat 1: either means the story restarted.
   await expect(story).toHaveAttribute('data-beat', /^[01]$/);
 });
+
+test('judge replay plays in the vertical shaft map', async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/judge?world=shaft&repo=private/repo');
+  await expect(page).toHaveURL(/\/judge\?source=sim&world=shaft$/);
+  await page.getByRole('button', { name: 'Play the 90-second story' }).click();
+  const story = page.getByRole('region', { name: 'Judge story', exact: true });
+  await expect(page.getByTestId('judge-item-sentry')).toHaveAttribute('data-scars', '1', { timeout: 60_000 });
+  await expect(story).toHaveAttribute('data-beat', '4', { timeout: 60_000 });
+  await page.screenshot({ path: `/tmp/shiptorio-judge-shaft-${info.project.name}.png` });
+  expect(errors).toEqual([]);
+});

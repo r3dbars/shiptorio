@@ -167,7 +167,6 @@ export function AchievementToast({ toast, onOpen, onDismiss }: { toast: Toast | 
               <span className="ach-tname">{toast.a.name}</span>
               <span className="ach-twhat">{toast.a.what}</span>
             </span>
-            <span className="ach-xp">{ACHIEVE.xp(toast.a.xp)}</span>
           </>
         ) : (
           <span className="ach-tbody">
@@ -221,7 +220,7 @@ export function AchievementsSheet({ earned, state, streak = 0, onClose }: { earn
                 </span>
               )}
             </span>
-            <span className="ach-side">{got ? fmtDay(got.at) : a.need > 1 ? `${have}/${a.need}` : ACHIEVE.xp(a.xp)}</span>
+            <span className="ach-side">{got ? fmtDay(got.at) : a.need > 1 ? `${have}/${a.need}` : ""}</span>
           </div>
         ))}
       </div>

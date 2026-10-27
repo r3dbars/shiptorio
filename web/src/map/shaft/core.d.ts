@@ -86,6 +86,7 @@ export interface Driver {
   judge?(st: IronStation, item: IronItem): Verdict | null;
   decision?(st: IronStation): string | null;
   admit?(st: IronStation, item: IronItem): boolean;
+  hurry?(st: IronStation, item: IronItem): number; // how much faster a machine works on this item (default: its boost)
   power?(st: IronStation): { level: number; online: boolean };
   step?(dt: number, t: number): void;
 }

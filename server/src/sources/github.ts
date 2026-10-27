@@ -12,7 +12,8 @@ export interface GitHubSourceEnv {
 export interface GitHubIssue {
   number: number; title: string; body?: string | null; html_url: string;
   state?: string; updated_at?: string; created_at?: string;
-  user?: { login: string }; labels?: { name: string }[];
+  user?: { login: string; type?: string }; labels?: { name: string }[];
+  author_association?: string;
   pull_request?: unknown;
   reactions?: { total_count?: number };
 }
@@ -20,9 +21,9 @@ export interface GitHubRepository { id?: number; full_name: string; default_bran
 export interface GitHubPayload {
   action?: string;
   repository?: GitHubRepository;
-  installation?: { id: number; account?: { login: string; type?: string }; permissions?: Record<string, string> };
+  installation?: { id: number; account?: { id?: number; login: string; type?: string }; permissions?: Record<string, string> };
   issue?: GitHubIssue;
-  comment?: { id: number; body: string; created_at?: string; updated_at?: string; user?: { login: string; type?: string }; performed_via_github_app?: { id: number } | null };
+  comment?: { id: number; body: string; created_at?: string; updated_at?: string; user?: { login: string; type?: string }; author_association?: string; performed_via_github_app?: { id: number } | null };
   repositories?: GitHubRepository[];
   repositories_added?: GitHubRepository[];
   repositories_removed?: GitHubRepository[];
@@ -36,11 +37,29 @@ export function isOwnPlanComment(comment: GitHubPayload["comment"]): boolean {
     && /^🧠 \*\*Shiptorio planned this(?: rework)?\*\* with Meta Muse Spark \(/.test(comment.body);
 }
 
+// On a public repo anyone can open an issue or comment. Only people with a hand on the repo feed the
+// factory: their text reaches Spark and, once planned, an agent on the player's own machine.
+const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+/** Adding this label (triage access or more) lets a stranger's issue into the mine. */
+export const TRUST_LABEL = "shiptorio";
+const isShiptorioBot = (user?: { login: string; type?: string }) => user?.login.toLowerCase() === "shiptorio[bot]" && user.type === "Bot";
+
+/** GitHub sends author_association on every webhook and REST issue/comment; only its absence (our own fixtures) passes unchecked. */
+export function trustedAuthor(entry: { author_association?: string; user?: { login: string; type?: string } }): boolean {
+  return entry.author_association === undefined || TRUSTED_ASSOCIATIONS.has(entry.author_association) || isShiptorioBot(entry.user);
+}
+export function trustedIssue(issue: GitHubIssue): boolean {
+  return trustedAuthor(issue) || !!issue.labels?.some((label) => label.name.toLowerCase() === TRUST_LABEL);
+}
+
 export function normalizeGitHub(payload: unknown): Signal[] {
   const p = payload as GitHubPayload;
   const issue = p?.issue;
   if (!issue || issue.pull_request || !Number.isInteger(issue.number) || !p.repository?.full_name) return [];
   if (isOwnPlanComment(p.comment)) return [];
+  const closing = p.action === "closed" || issue.state === "closed";
+  // Closing only removes ore, so it always passes; anything that adds or changes ore needs a trusted author.
+  if (!closing && (!trustedIssue(issue) || (p.comment && !trustedAuthor(p.comment)))) return [];
   const body = issue.body ?? "";
   const labels = issue.labels?.map((l) => l.name) ?? [];
   // These are inspectable evidence hints, not priority or cross-source linking decisions.
@@ -56,7 +75,7 @@ export function normalizeGitHub(payload: unknown): Signal[] {
     occurredAt: timestamp,
     rawRef: p.comment ? `github:comment:${p.comment.id}` : `${issue.html_url}@${issue.updated_at ?? issue.created_at ?? p.action ?? "backfill"}`,
     severity: 1, hints,
-    action: p.action === "closed" || issue.state === "closed" ? "close" : "upsert",
+    action: closing ? "close" : "upsert",
   }];
 }
 

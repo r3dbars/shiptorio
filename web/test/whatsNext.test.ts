@@ -70,20 +70,28 @@ describe("whatsNext", () => {
     expect(n.grows).toBe("+1 CHECK");
   });
 
-  test("after a rocket, an empty mine asks to be connected", () => {
-    const n = whatsNext(factory());
+  test("after three rockets, an empty mine asks to be connected", () => {
+    const n = whatsNext(factory({ metrics: { rockets: 3, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 3 } }));
     expect(n.cta.action).toEqual({ do: "connect", source: "sentry" });
     expect(n.grows).toBe("+1 SOURCE");
   });
 
   test("support is the next mine once error and traffic mines are connected", () => {
     const sources = mined.sources.filter(s => s.kind !== "email");
-    expect(whatsNext(factory({ sources })).cta.action).toEqual({ do: "connect", source: "email" });
+    const metrics = { rockets: 9, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 9 };
+    expect(whatsNext(factory({ sources, metrics })).cta.action).toEqual({ do: "connect", source: "email" });
   });
 
   test("no mine nudge before the first rocket", () => {
     const n = whatsNext(factory({ metrics: { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 } }));
     expect(n.cta.action.do).not.toBe("connect");
+  });
+
+  test("mines unlock one at a time: the next waits three more rockets", () => {
+    const one = { sources: [{ kind: "sentry" as const, state: "connected" as const, detail: "", eventsToday: 0, setup: { steps: [] } }] };
+    const at = (rockets: number) => whatsNext(factory({ ...one, metrics: { rockets, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: rockets } }));
+    expect(at(5).cta.action.do).not.toBe("connect");
+    expect(at(6).cta.action).toEqual({ do: "connect", source: "posthog" });
   });
 
   test("a lane near its permit points at the merge gate", () => {

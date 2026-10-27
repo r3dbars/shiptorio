@@ -101,7 +101,9 @@ export function introDone(state: FactoryState, at: number): boolean {
 export function introNextReady(state: FactoryState | null, at: number, done: boolean): boolean {
   if (!state) return false;
   return at === 0 ? state.districts.length >= 4
-    : at === 1 ? state.items.some(i => i.state === "working" || i.state === "inspecting")
+    // the intro feed stops after a handful of items, so once they've all reached the pad nothing is working again:
+    // anything built counts too, or Next would wait forever
+    : at === 1 ? state.items.some(i => i.state === "working" || i.state === "inspecting" || i.state === "on_pad" || i.state === "launched")
     : at === 2 ? state.items.filter(i => i.state === "on_pad").length >= 2
     : BEATS[at]?.act ? done : true;
 }

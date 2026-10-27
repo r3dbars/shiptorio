@@ -64,7 +64,7 @@ export const STATE_WORD: Record<Item["state"], string> = {
 // ---------- the map ----------
 
 export const MAP = {
-  captionTitle: "The factory must grow",
+  captionTitle: "A little play. A lot shipped.",
   captionSub: "drag to pan · pinch or scroll to zoom",
   /** The ping on the thing that needs you, by where the work is stuck. */
   ping: {
@@ -89,6 +89,8 @@ export const MAP = {
 const SCORE_FORMULA = "users helped + 10 × customers answered + rockets − 25 × bugs that got out";
 
 export const HUD = {
+  menuLabel: "Menu: tools, views and activity",
+  menuTitle: "Menu (tools, views, activity)",
   shipped: "shipped",
   shippedTitle: "PRs shipped",
   automated: "automated",
@@ -139,7 +141,7 @@ export const HUD = {
     shipped: "SHIPPED",
     rework: "REWORK",
     reworkTitle: "Sent back by a check, riding the rework belt",
-    needs: "NEEDS YOU",
+    needs: "WAITING ON YOU",
     needsTitle: "Cards and machines waiting on you",
     score: "SCORE",
     keyLabel: "What the items are",
@@ -570,6 +572,12 @@ export const RUNNER = {
   lastSeen: (when: string) => `Last seen ${when}`,
   lastJob: (what: string, id: string) => `Last job: ${what} · ${id}`,
   runThis: "Run this on your computer, then compare the pairing code in your browser:",
+  pasteThis: "Paste this into a terminal on your computer. That's the whole setup:",
+  waiting: "Waiting for your computer…",
+  signIn: "Connected. Sign in to Claude Code or Codex in that terminal to finish.",
+  copy: "Copy",
+  copied: "Copied",
+  joinNote: "macOS · Linux · Windows via WSL2. Works once, for 10 minutes. Keep the terminal open. The planner asks before any build starts.",
   platforms: "macOS · Linux · Windows via WSL2. Keep the terminal open. The planner asks before any build starts.",
   more: "Add a repo, troubleshoot or uninstall",
   addRepo: ["Already installed? Run ", " to add this repo. One runner serves all paired repos."] as const,
@@ -686,14 +694,14 @@ export const SHIP = {
 
 /** The coach card's one-liners, in the order a new player meets them. {repo} is filled in. */
 export const LESSON_COPY: Record<string, { title: string; text: string }> = {
-  island: { title: "Your factory", text: "This island is {repo}. One factory, one codebase. Each building is a folder, and it lights up when work lands there." },
+  island: { title: "Your factory", text: "This shaft is {repo}. One factory, one codebase. Work is mined at the bottom, built and checked on the way up, and launches from the top." },
   machines: { title: "Machines", text: "Machines do the work. The splitter sorts what comes in, the assembler builds the fix, the checks test it, the pad ships it." },
   power: { title: "Power", text: "Assemblers run on power, and power is your own Claude or ChatGPT sign-in. More sign-ins, more machines." },
   ore: { title: "Ore", text: "That's ore: each open issue is one chunk. It rides the belt in, and the Line list shows where every chunk is." },
   inspect: { title: "Checks", text: "Nothing ships unchecked. Every PR runs the gauntlet: CI, proof, AI review. A fail rides the red belt back with the reason, for another try." },
   pad: { title: "Launch pad", text: "It passed and it's on the pad. Launching means you merge the PR. That's always your call." },
   rocket: { title: "Rocket", text: "Rocket! That was a real merged PR. The score counts what shipping did for people, not how busy the factory looks." },
-  bottleneck: { title: "Bottleneck", text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows. Tap Place to add another builder." },
+  bottleneck: { title: "Bottleneck", text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows." },
   autonomy: { title: "Autonomy", text: "Every suggestion you take as-is builds trust. Earn enough and the factory gets to do the small stuff on its own." },
   checkin: { title: "Check-in", text: "When a few things wait on you, check in: swipe through them in one go. Right does it, left is later, down is never." },
 };
@@ -719,7 +727,7 @@ export const BEAT_COPY: BeatCopy[] = [
   {
     kick: "Welcome",
     title: "Welcome *aboard*.",
-    body: "This floating island is a codebase. Every building is a folder. This sandbox runs a demo shop with sample changes; your repo comes next.",
+    body: "This factory is a codebase. Issues are mined at the bottom, built and checked on the way up, and launched from the top. This sandbox runs a demo shop with sample changes; your repo comes next.",
   },
   {
     kick: "AI builds now",
@@ -792,7 +800,7 @@ export const ONBOARD = {
   label: "Welcome to Shiptorio",
   steps: ["WELCOME", "SIGN IN", "PICK A REPO", "PLAY"],
   brand: "SHIPTORIO",
-  tagline: "The factory must grow.",
+  tagline: "A little play. A lot shipped.",
   hello: "Let's build your factory. Your factory is one codebase. We start small: one machine, one fix, one rocket, and each piece shows up when you need it.",
   signIn: "SIGN IN WITH GITHUB",
   replay: "Watch the intro again",
@@ -879,8 +887,8 @@ export const EMPIRE = {
 const daysAgo = (n: number) => plural(n, "day");
 
 export const PROGRESS = {
-  chipLabel: (level: number, streak: number) => `Level ${level}, ${streak}-day streak. Open progress`,
-  chipTitle: (title: string, have: number, need: number, next: number) => `${title} · ${have}/${need} XP to level ${next}`,
+  chipLabel: (streak: number) => `${streak}-day streak. Open progress`,
+  chipTitle: (streak: number) => `${streak}-day streak`,
   days: (n: number) => (n === 1 ? "day" : "days"),
   lv: (level: number) => `Lv ${level}`,
   xp: (n: number) => `+${n} XP`,
@@ -901,7 +909,7 @@ export const PROGRESS = {
   lastTime: (ships: number, cards: number, autoPct: number) =>
     `Last time: ${ships} shipped, ${cards} cards answered${autoPct ? `, ${autoPct}% launched on their own` : ""}.`,
   keepStreak: (n: number) => ` One move today keeps your streak at ${n}.`,
-  startStreak: "Answer a card or ship a PR every day to start a streak. Streaks unlock things for your island.",
+  startStreak: "Answer a card or ship a PR every day to start a streak. Streaks unlock things for your factory.",
   checkin: (n: number) => `Check in · ${n}`,
   twoMinutes: "about two minutes",
   later: "Later",
@@ -966,7 +974,7 @@ export const JUDGE = {
   rockets: "Rockets", users: "Users unblocked", autonomy: "Autonomy", floor: "Floor", advisor: "Advisor",
   done: "Story complete. Two launches. One stronger factory.",
   beats: [
-    { title: "The factory must grow", text: "Your codebase becomes a factory. Customer signals are ore. Your subscriptions power the machines." },
+    { title: "A little play. A lot shipped.", text: "Your codebase becomes a factory. Customer signals are ore. Your subscriptions power the machines." },
     { title: "Three signals, one floor", text: "Sentry reports a checkout crash affecting 112 users. An inbox report joins the same problem. A GitHub docs issue enters its own lane." },
     { title: "The planner picks the next move", text: "The foreman ranks the crash first, links the customer report, and plans a guarded total plus an empty-cart regression test. You approve the plan." },
     { title: "Build, prove, rework", text: "Your Claude Code assembler builds the PR. CI checks it, the verify bay reproduces the bug, and a separate reviewer attacks the fix. Failed proof goes back with a scar." },

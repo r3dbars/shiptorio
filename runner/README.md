@@ -152,3 +152,16 @@ SHIPTORIO_RUNNER_ROOT="$HOME/Library/Application Support/Shiptorio" bun run runn
 
 Keep that root stable: Claude's macOS Keychain login is scoped to its config path.
 A checkout login copied into a service directory may require signing in again.
+
+### macOS credential persistence
+
+The isolated agent home needs its own `Library/Preferences` and default Keychain,
+not just a Claude config folder. The runner creates an encrypted Shiptorio-only
+Keychain there and unlocks it before checking Claude sign-in. Its random password
+is an owner-only file beside `.agent-home`, outside the agent sandbox. The personal
+login Keychain and its search list are unchanged. Reinstalls reuse the existing
+store; sleep locks it and the trusted runner unlocks it on its next auth check.
+
+If an older bundle reported browser login success but the next process said signed
+out, reinstall the runner and repeat `login claude` once. Confirm the runner's final
+`claude_code: installed and signed in for Shiptorio` message, not only the browser page.

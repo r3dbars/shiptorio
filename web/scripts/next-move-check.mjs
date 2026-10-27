@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const require = createRequire(import.meta.url);
-const { chromium } = require("playwright");
+const { chromium } = require("@playwright/test");
 const base = process.argv[2] ?? "http://localhost:5173";
 const out = process.argv[3] ?? "playtest-results/next-move";
 const ROCKETS = Number(process.env.ROCKETS ?? 10);
