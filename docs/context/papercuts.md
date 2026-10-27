@@ -1,26 +1,47 @@
 # Overnight paper-cut sweep
 
-Run started Oct 26, 2026, 9:22 PM CT. Stop by Oct 27, 8:00 AM CT.
+Run: Oct 26, 2026, 9:22 PM CT → Oct 27, 8:00 AM CT at latest. In progress.
 
-## Summary (in progress)
+## Summary
 
-- Fixed/merged: 0. Logged, not fixed: 0. In progress: browser QA tools fail after a clean install.
-- Scope: existing behavior only; protected PRs #290/#295/#296/#299, shaft layout/art and runner install/login are excluded.
-- Browser plugin not available; using project Playwright. Local fixture providers only; no Testing PRs are merged.
+- **1 fixed/merged; 5 logged, not fixed yet** (4 queued cuts, 1 protected-area test issue).
+- Merged: browser QA commands work after a clean install, [#302](https://github.com/r3dbars/shiptorio/pull/302). Deploy pending; no live claim yet.
+- User-visible cuts queued: onboarding blank screen on a hung version probe; docs search remains empty after going back online; denied clipboard access produces an unhandled error; malformed scenario links crash the simulator.
+- Human decisions: none required for the queued cuts. Protected UI and runner install/login remain untouched.
 
-## Top unresolved
+## Top unresolved (up to 10)
 
-None confirmed yet outside the active fix.
+1. **Onboarding stays blank indefinitely when `/api/version` hangs.** `web/src/main.tsx` has no timeout; a held Playwright request leaves `#root` empty after 6s. Queued.
+2. **Docs search stays empty after reconnecting.** `docs/site/_assets/docs.js` caches the first failed index request as `[]` forever. Offline → online scripted search returns zero links. Queued.
+3. **Docs Copy produces an unhandled rejection when clipboard permission is denied.** Same file; scripted rejection produces page error `Clipboard denied`. Queued.
+4. **Inherited scenario names crash the simulator.** `web/src/source/index.ts` accepts `constructor`, `toString`, `__proto__` through `in`; simulator then throws an iterable TypeError. Queued.
+5. **Logged, not fixed: accessibility harness predates the protected Menu change (#290).** Several existing selectors expect directly visible tools. Initial run also hit 8s screenshot/locator timeouts under contention. Investigate test-only adaptation; do not change the Menu or protected product UI.
 
 ## Findings and receipts
 
-### Oct 26, 9:25 PM CT — browser QA imports fail after clean install
+### Oct 26, 9:38 PM CT — browser QA imports fixed, #302 merged
 
-- Reproduction: `bun install`, then `bun run --filter './web' a11y` exits with `Cannot find module 'playwright'` before opening a browser. `perf-bench`, `shaft-shot` and `next-move-check` have the same import.
-- Cause: the workspace declares `@playwright/test`; Bun isolates its transitive `playwright` dependency.
-- Fix in progress: import Chromium/devices from the declared package. No app behavior or screenshots change.
+- `bun install` then `bun run --filter './web' a11y` failed with `Cannot find module 'playwright'` before opening a browser. `perf-bench`, `shaft-shot` and `next-move-check` had the same import.
+- Import Chromium/devices from the declared root `@playwright/test` package. No app behavior changes; screenshots do not apply.
+- Rebased check: **790 passed, 2 platform skips, 0 failures**; all workspace typechecks and production/runner build passed. Docs links/anchors/images and player copy: 9 tests passed. Node resolves the declared package from all five script locations.
+- Local full stranger journey: all 16 steps passed in 82.1s. CI check, selfhost and stranger passed on head `e180dec`; [#302](https://github.com/r3dbars/shiptorio/pull/302) squash-merged as `b7cd43f`. Deploy pending.
+- Accessibility now launches and initially audited eight screens with zero axe violations, before selector/time-budget failures. This is not a complete a11y pass.
 
-## Rotation coverage (in progress)
+### Oct 26, 9:39 PM CT — first browser rotation
 
-- Baseline: fetched main, read AGENTS/VISION/IRON-STYLE/ATTENTION/threads/PLAN, reviewed last 40 main commits and open PRs. Main lacks principle 11; #290 owns that pending change.
-- Installed dependencies; UI dev server running. Baseline check, stranger journey and accessibility audit started.
+- Stable production-build copy served by a local Worker with fake GitHub/Meta providers; real app, auth/session and storage code. No production mutation or real bot/Testing merge.
+- **80 page checks:** 1440×900, 390×844, 412×915 and desktop reduced motion. Landing, onboarding/intro, first-run, `/judge`, scenario=judge, quiet-morning, rework-loop, heal, research, orbit, checkin, intro, shaft/iron worlds, attention tray, docs, admin paths and nonexistent path.
+- No unexpected app errors or horizontal overflow. `/admin` correctly denies the non-r3dbars fixture (403); nonexistent path returns 404. GPU readback/Canvas2D performance warnings recorded separately from app failures.
+- Initial overlapping build/browser runs produced transient missing assets. Reran against a stable dist copy; those 404s did not reproduce and are **not counted as product findings**.
+- Docs link-check/copy tests pass. Baseline stranger covers sign-in, installation, plan approval, PR publication, stale/current CI, verify/review and human Launch with fixtures.
+- Perf-bench runs after the import fix; its first contended SwiftShader numbers are not real-device performance proof. Five-minute stability and sequential judge/a11y runs remain outstanding.
+
+## Coverage still to complete
+
+- Fresh full judge story; keyboard/a11y with current tool visibility; five-minute perf stability.
+- Offline/slow network interactions, reload mid-flow, Back, resize/rotate, detailed keyboard/focus and docs interaction checks.
+- Fix/verify queued cuts, merge only green agent PRs, verify Deploy after each code merge; repeat a full rotation until it finds nothing new.
+
+## Boundaries
+
+Protected PRs #290/#295/#296/#299 remain excluded even after merge; no shaft layout/art modules or runner install/login changes. No new features, redesigns, secrets, other Workers or direct main pushes. Browser plugin unavailable; project Playwright used. Screenshots and scratch logs initially live under `/tmp/shiptorio-papercuts`; relevant before/after evidence will accompany visual fixes.
