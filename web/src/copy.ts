@@ -126,8 +126,8 @@ export const HUD = {
     place: "Place",
     placeLabel: (who: string) => `Place another ${who} assembler`,
     placeTitle: (who: string) => `Place another ${who} assembler (A)`,
-    placeNeedsPower: "Sign in with Claude or ChatGPT to place builders",
-    placeNeedsPowerTitle: "Sign in with Claude or ChatGPT first",
+    placeNeedsPower: "Plug in Claude or ChatGPT to place builders",
+    placeNeedsPowerTitle: "Plug in Claude or ChatGPT first",
     tools: "TOOLS",
   },
   /** The floor card, top left: the factory's numbers in one row, then what the colored items are. */
@@ -190,6 +190,7 @@ export const POWER = {
   unplugFailed: "Couldn't unplug the runner. Try again.",
   notSignedIn: "not signed in",
   signIn: "Sign in",
+  useDemo: "Use it (demo)", // the demo shop can't sign in to anything real
   pair: "pair the runner",
   pairTitle: "Run ~/.local/bin/shiptorio-runner pair on your machine to plug it in",
   slots: [
@@ -812,6 +813,17 @@ export const TOUR = {
 };
 
 // ---------- sign in and pick a repo ----------
+
+/** Play first, sign in later: the sandbox is the front door, and your own repo is an unlock you reach in play. */
+export const PLAY = {
+  chip: "Demo shop",
+  chipCta: "Use your repo ›",
+  chipLabel: "You're playing a demo shop. Sign in with GitHub to run your own repo",
+  kicker: "Unlocked · your repo",
+  title: "That was a demo shop. Run your own repo next",
+  why: "Sign in with GitHub and your real issues come up the shaft, built by your own agents.",
+  cta: "Sign in with GitHub",
+};
 
 export const ONBOARD = {
   label: "Welcome to Shiptorio",

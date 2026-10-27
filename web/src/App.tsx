@@ -4,7 +4,7 @@ import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
-import { savePref, setAccountReadOnly } from "./account";
+import { SANDBOX_REPO, savePref, serverUp, setAccountReadOnly, signInUrl, whoAmI, isGuestPlay } from "./account";
 import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
@@ -37,7 +37,7 @@ import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
-import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn } from "./flags";
@@ -128,6 +128,18 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
+  // Play first, sign in later: the sim on a real server is the demo shop new players start in, and signing
+  // in with GitHub is the unlock that brings their own repo (the floor card's chip, then a card after a rocket).
+  const [server, setServer] = useState(false);
+  // only a signed-out guest in the demo shop syncs progress to the guest session; a signed-in player's sim
+  // play, and every other scenario, stays in this browser so it never lands on the real account
+  const [guest, setGuest] = useState(false);
+  const demoShop = cfg.kind === "sim" && !intro && cfg.repo === SANDBOX_REPO;
+  useEffect(() => {
+    if (cfg.kind === "sim" && !intro) void serverUp().then(setServer);
+    if (demoShop) void serverUp().then((up) => (up ? whoAmI() : null)).then((me) => setGuest(isGuestPlay(cfg.repo, me)));
+  }, [cfg.kind, intro, demoShop]);
+  const sandbox = server && cfg.kind === "sim" && !intro;
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
   // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
   const lastTap = useRef(0);
@@ -178,7 +190,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
-  const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login);
+  const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login, guest);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on && viewReady, !!viewing);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
@@ -335,7 +347,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   };
   // No card open: always offer a next move, so the factory never goes quiet after a rocket (#105).
   // The first-run coach does its own teaching, so it waits until the coach is done.
-  const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
+  const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live", sandbox }) : null;
   const onNudge = (a: NudgeAction) => {
     if (a.do === "launch") {
       const item = state?.items.find((i) => i.id === a.itemId);
@@ -345,6 +357,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     else if (a.do === "research") setSheet("research");
     else if (a.do === "connect") setSource(a.source);
     else if (a.do === "place") build();
+    else if (a.do === "signin") location.href = signInUrl();
     else setSheet(a.sheet);
   };
   // the needs tray is up when nothing bigger holds the middle of the screen (the chain of sheets below)
@@ -497,7 +510,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             counts={counts}
             repo={state?.repo}
             showKey={false}
-            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" ? (<>
+            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
+              {sandbox && (
+                <a className="chip play-chip" href={signInUrl()} aria-label={PLAY.chipLabel} title={PLAY.chipLabel}>
+                  <span>{PLAY.chip}<small>{PLAY.chipCta}</small></span>
+                </a>
+              )}
               <SparkSpendChip expanded={sheet === "thinks"} repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
               {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
@@ -708,7 +726,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                   </span>
                   {opt && state?.move ? (
                     <button type="button" className="btn rec" style={{ flex: "none" }} onClick={() => send({ type: "choose_move", moveId: state.move!.id, optionId: opt.id })}>
-                      {POWER.signIn}
+                      {cfg.kind === "sim" ? POWER.useDemo : POWER.signIn}
                     </button>
                   ) : (
                     <span className="pill" title={POWER.pairTitle}>
