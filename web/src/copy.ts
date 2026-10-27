@@ -89,6 +89,8 @@ export const MAP = {
 const SCORE_FORMULA = "users helped + 10 × customers answered + rockets − 25 × bugs that got out";
 
 export const HUD = {
+  menuLabel: "Menu: tools, views and activity",
+  menuTitle: "Menu (tools, views, activity)",
   shipped: "shipped",
   shippedTitle: "PRs shipped",
   automated: "automated",

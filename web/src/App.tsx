@@ -215,6 +215,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   };
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
+  // The default screen is the map, one card and two counters (Justin, 2026-10-27: "still a ton of shit just in my
+  // face"). Every other tool waits behind one Menu button, and stays out while a sheet or the tray it opened is up.
+  const [menu, setMenu] = useState(false);
+  const toolsOut = menu || !!sheet || tray;
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -445,7 +449,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   );
 
   return (
-    <div className={panel ? "app picked" : "app"}>
+    <div className={`app${panel ? " picked" : ""}${toolsOut ? " tools-out" : ""}`}>
       <QuotaCard repo={cfg.kind === "live" ? cfg.repo : undefined} onBudget={() => toggleSheet("thinks")} />
       <main className="floor" ref={hv.host as Ref<HTMLElement>}>
         {intro && <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>}
@@ -483,7 +487,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </>) : undefined}
           />
           <div className="hudicons">
-            {state && (
+            <button type="button" className="tbtn ico menu-btn" aria-expanded={toolsOut} aria-label={HUD.menuLabel} title={HUD.menuTitle} onClick={() => { if (toolsOut) { setMenu(false); setSheet(null); setTray(false); } else setMenu(true); }}>
+              <Icon name="list" size={16} />
+            </button>
+            {toolsOut && state && (
               <button
                 type="button"
                 className="tbtn ico"
@@ -495,7 +502,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="eye" size={16} />
               </button>
             )}
-            <button
+            {toolsOut && <button
               type="button"
               className={`tbtn ico guide-btn${met.size > seenGuide ? " new" : ""}`}
               aria-pressed={sheet === "guide"}
@@ -504,8 +511,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               title={HUD.guideTitle(met.size)}
             >
               <Icon name="book" size={16} />
-            </button>
-            {state && (researchReady(state) || (state.research?.done.length ?? 0) > 0) && (
+            </button>}
+            {toolsOut && state && (researchReady(state) || (state.research?.done.length ?? 0) > 0) && (
               // Research shows up once there's enough science to buy a check, not before.
               <button
                 type="button"
@@ -518,7 +525,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="flask" size={16} />
               </button>
             )}
-            {ach.count > 0 && (
+            {toolsOut && ach.count > 0 && (
               // Achievements show up with the first one earned.
               <button
                 type="button"
@@ -531,10 +538,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="medal" size={16} />
               </button>
             )}
-            <button type="button" className="tbtn ico" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
+            {toolsOut && <button type="button" className="tbtn ico" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
               {waiting > 0 && <span className="n">{waiting}</span>}
               <Icon name="bell" size={16} />
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -719,9 +726,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         )}
 
-        {show("log") && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
+        {toolsOut && show("log") && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
 
-        {!checkin && (
+        {!checkin && toolsOut && (
         <nav className="ctrl" aria-label={HUD.dock.label} ref={hv.refs.ctrl as Ref<HTMLElement>}>
           {world && (
             <div className="row" role="group" aria-label={HUD.view}>

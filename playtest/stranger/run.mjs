@@ -153,6 +153,7 @@ async function clickMove(name) {
     await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: UI_TIMEOUT });
     return;
   }
+  if (!await page.getByRole("button", { name: /^Activity, / }).isVisible()) await page.getByRole("button", { name: /^Menu/ }).click();
   await page.getByRole("button", { name: /^Activity, / }).click();
   const tray = page.getByRole("complementary", { name: "Activity", exact: true });
   const visibleCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: card.title }) });
@@ -307,6 +308,7 @@ try {
     const card = factoryState.deck.find(m => m.title.startsWith("Launch #7"));
     assert.equal(card.evidence.length, 3);
     assert.ok(card.evidence.every(stamp => stamp.ok));
+    if (!await page.getByRole("button", { name: /^Activity, / }).isVisible()) await page.getByRole("button", { name: /^Menu/ }).click();
     await page.getByRole("button", { name: /^Activity, / }).click();
     const tray = page.getByRole("complementary", { name: "Activity", exact: true });
     const launchCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: /^Launch #7:/ }) });
