@@ -85,6 +85,7 @@ class SoundEngine {
   private stationsBusy = 0;
   private workTimer: number | undefined;
   private workRate = 0; // working machines
+  private lastClank = 0;
   private humLevel = 0; // 0..1, how busy the belts are
   private last = new Map<Sfx, number>();
   private listeners = new Set<() => void>();
@@ -309,13 +310,17 @@ class SoundEngine {
 
   private workTick() {
     if (!this.live || this.workRate <= 0) return;
-    // more assemblers → denser clanking, capped so it stays a texture
-    if (Math.random() > Math.min(0.85, 0.35 + this.workRate * 0.15)) return;
+    // more assemblers → denser clanking, capped so it stays a texture: a soft clank every second or two, never a
+    // drum roll (it was up to ~3 a second, Justin's playtest 2026-10-27)
+    const now = performance.now();
+    if (now - this.lastClank < 900) return;
+    if (Math.random() > Math.min(0.5, 0.2 + this.workRate * 0.1)) return;
+    this.lastClank = now;
     this.out = this.floor!;
     const t = this.ctx!.currentTime + Math.random() * 0.05;
     const pitch = [196, 220, 247, 294][Math.floor(Math.random() * 4)];
-    this.tone({ f: pitch, dur: 0.05, type: "square", vol: 0.05, at: t });
-    this.noise({ dur: 0.04, vol: 0.06, hp: 2000, at: t });
+    this.tone({ f: pitch, dur: 0.05, type: "square", vol: 0.035, at: t });
+    this.noise({ dur: 0.04, vol: 0.04, hp: 2000, at: t });
   }
 
   // Ship streak: one rising note per ship in the streak (capped), each a half step higher, so a run sounds like it's building.
