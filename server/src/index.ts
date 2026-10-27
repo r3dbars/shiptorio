@@ -162,7 +162,7 @@ app.use("*", async (c, next) => {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
       return c.json({error:'runner authentication required'},401);
     }
-    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({error:'repository access denied'},403);
+    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo, "write")) return c.json({error:'repository access denied'},403);
     if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
       return c.json({error:'runner pairing revoked'},401);
@@ -217,7 +217,10 @@ app.use("*", async (c, next) => {
     const user = await resolveUser(c.req.raw, c.env);
     if (!user) return c.json({ error: "login required" }, 401);
     const repo = match ? `${match[1]}/${match[2]}` : c.req.query("repo") ?? "";
-    if (!validRepo(repo) || !await repoAccess(c.env, user, repo)) return c.json({ error: "repository access denied" }, 403);
+    // Connector pages may disclose an inbound bearer URL or activate a mine on
+    // GET; all connector management and repository mutations require writers.
+    const authority = path.startsWith("/connect/") || !["GET", "HEAD"].includes(c.req.method) ? "write" : "read";
+    if (!validRepo(repo) || !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
     if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }

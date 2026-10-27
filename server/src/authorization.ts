@@ -19,7 +19,7 @@ export async function requireUser(request: Request, env: AuthorizationEnv): Prom
 
 export const validRepo = (repo: string) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && !repo.split('/').some(p => p === '.' || p === '..');
 // D1 is checked even on cache hits: uninstall/removal revokes all users immediately.
-export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string): Promise<number | null> {
+export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read"): Promise<number | null> {
   const repo = name.toLowerCase();
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
   if (!Number.isSafeInteger(user.id) || !/^[a-f0-9]{64}$/.test(user.sessionHash ?? '')) return null;
@@ -32,14 +32,17 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   const membership = await env.DB.prepare('SELECT installation_id FROM user_repos WHERE user_id = ? AND repo = ?').bind(user.id, repo).first<{ installation_id: number }>();
   const userInstallation = await env.DB.prepare('SELECT installation_id FROM user_installations WHERE user_id = ? AND installation_id = ?').bind(user.id, row.installation_id).first();
   if (!membership || membership.installation_id !== row.installation_id || !userInstallation) return null;
-  const key = `access:v2:${row.installation_id}:${repo}:${user.id}`;
+  // Never promote a cached visibility grant into mutation authority. Separate
+  // keys also make pre-upgrade read-only grants harmless for writers.
+  const key = `access:v2:${authority === "write" ? "write:" : ""}${row.installation_id}:${repo}:${user.id}`;
   const cached = await env.CACHE?.get<{ expiresAt: number }>(key, 'json').catch(() => null);
   if (cached && cached.expiresAt > Date.now() && cached.expiresAt <= Date.now() + 60000) return row.installation_id;
   try {
     if (await repoInstallationId(env, repo) !== row.installation_id) return null;
     const token = await installationToken(env, row.installation_id);
     const result = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
-    if (result.user?.id !== user.id || !['read', 'triage', 'write', 'maintain', 'admin'].includes(result.permission)) return null;
+    const permissions = authority === "write" ? ['write', 'maintain', 'admin'] : ['read', 'triage', 'write', 'maintain', 'admin'];
+    if (result.user?.id !== user.id || !permissions.includes(result.permission)) return null;
     await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }).catch(() => {});
     return row.installation_id;
   } catch { return null; } // API errors and suspended/uninstalled Apps fail closed.

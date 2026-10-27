@@ -2486,7 +2486,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     await this.load();
     const repo = this.meta?.repo ?? this.state?.repo;
-    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); return; }
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo, "write")) { ws.close(1008, "Repository write access required"); return; }
 
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
