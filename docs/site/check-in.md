@@ -22,6 +22,10 @@ A **Launch** card is different: its right edge is a big red button you press and
 
 Add `?attention=0` to the URL to get the older Next Move card below for one more release.
 
+## Catching up when you return
+
+The comeback replay shows launches that really happened while you were away. If new factory state changes the shaft layout during replay, the replay ends and the live line returns immediately, including any PR waiting at the gate. You can also skip the replay.
+
 ## The Next Move card
 
 The older card, behind `?attention=0`. It says:
