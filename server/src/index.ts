@@ -39,6 +39,7 @@ import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
+import { boundedBody, webhookBody } from "./webhook-body";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
@@ -257,8 +258,8 @@ app.get("/auth/login", (c) => signupMode(c.env) === 'password' ? login(new URL(c
 app.post('/auth/login', async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
-  const raw = await c.req.text();
-  if (raw.length>4096) return c.text('Too large',413);
+  const raw = await boundedBody(c.req.raw, 4096);
+  if (raw === null) return c.text('Too large',413);
   const form = new URLSearchParams(raw);
   if (!await turnstile(c.req.raw,c.env,form,'signin')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
   const response = await login(new URL(c.req.url),c.env);
@@ -271,8 +272,8 @@ app.get('/waitlist',c => signupPage(c.env));
 app.post('/waitlist',async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'waitlist'),5,3600000,'waitlist flood')) return c.text('Try again later',429);
-  const raw = await c.req.text();
-  if (raw.length>4096) return c.text('Too large',413);
+  const raw = await boundedBody(c.req.raw, 4096);
+  if (raw === null) return c.text('Too large',413);
   const form=new URLSearchParams(raw),email=(form.get('email')||'').trim().toLowerCase();
   if (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return signupPage(c.env,'Enter a valid email.',400);
   if (!await turnstile(c.req.raw,c.env,form,'waitlist')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
@@ -490,8 +491,8 @@ app.post("/api/runner-device/start", async c => {
   return c.json({ code, secret, expires, interval: 3, verificationUri: `${publicUrl(new URL(c.req.url), c.env)}/runner/pair?code=${code}` });
 });
 app.post("/api/runner-device/poll", async c => {
-  const raw = await c.req.text();
-  if (raw.length > 512) return c.json({ error: "too large" }, 413);
+  const raw = await boundedBody(c.req.raw, 512);
+  if (raw === null) return c.json({ error: "too large" }, 413);
   let body: { code?: string; secret?: string };
   try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (typeof body?.code !== "string" || !CODE_RE.test(body.code) || typeof body.secret !== "string" || body.secret.length !== 72) return c.json({ error: "invalid device" }, 400);
@@ -500,8 +501,8 @@ app.post("/api/runner-device/poll", async c => {
 // One-paste setup: the runner trades the join code from its install command for a repo credential.
 // The code is burned on first use, and the account's write access is checked again here, not just when it was minted.
 app.post("/api/runner-device/join", async c => {
-  const raw = await c.req.text();
-  if (raw.length > 256) return c.json({ error: "too large" }, 413);
+  const raw = await boundedBody(c.req.raw, 256);
+  if (raw === null) return c.json({ error: "too large" }, 413);
   let body: { join?: string };
   try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const fail = async () => {
@@ -801,10 +802,9 @@ async function installationFor(env: Env, repo: string): Promise<number> {
 // ---------- GitHub webhooks ----------
 
 app.post("/webhooks/github", async (c) => {
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
-  if (!(await githubSource.verify(c.req.raw.clone(), c.env))) return c.json({ error: "bad signature" }, 401);
-  const body = await c.req.text();
-  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  const body = await webhookBody(c.req.raw);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  if (!(await githubSource.verify({ text: async () => body, headers: c.req.raw.headers }, c.env))) return c.json({ error: "bad signature" }, 401);
   let payload: GitHubPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
@@ -854,9 +854,8 @@ app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
 async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   if (!/^[a-f0-9]{64}$/i.test(c.req.header("sentry-hook-signature") ?? "")) return c.json({ error: "bad signature" }, 401);
   if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
-  const body = await c.req.text();
-  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  const body = await webhookBody(c.req.raw);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
   const repo = perRepo ?? c.req.query("repo")?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
   if (!repo || !REPO_RE.test(repo)) return c.json({ error: "repository unavailable" }, 403);
   const installation = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
@@ -901,7 +900,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   if (!tokenMatches((await supportCreds(c.env, repo)).inboundToken, c.req.param("token"))) return c.json({ error: "unknown inbox" }, 401);
-  const body = await boundedBody(c);
+  const body = await webhookBody(c.req.raw);
   if (body === null) return c.json({ error: "payload too large" }, 413);
   let payload: unknown;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
@@ -914,7 +913,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
 app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  const body = await boundedBody(c);
+  const body = await webhookBody(c.req.raw);
   if (body === null) return c.json({ error: "payload too large" }, 413);
   if (!(await verifyIntercom((await supportCreds(c.env, repo)).intercomClientSecret, body, c.req.header("x-hub-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   let payload: unknown;
@@ -923,12 +922,6 @@ app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   if (!message) return c.json({ ok: true, ignored: true });
   return queueSupport(c, repo, message, body);
 });
-
-async function boundedBody(c: Context<AppEnv>): Promise<string | null> {
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return null;
-  const body = await c.req.text();
-  return body.length > 1048576 ? null : body;
-}
 
 async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);

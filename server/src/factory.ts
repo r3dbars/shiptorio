@@ -229,7 +229,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {

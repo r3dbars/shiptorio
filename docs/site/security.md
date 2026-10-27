@@ -64,7 +64,7 @@ More in [Connect your machine](/docs/runner#what-your-agent-can-and-cant-touch).
 
 ## Webhooks
 
-GitHub and Sentry webhooks are checked against their HMAC signatures with a constant-time compare, size-limited, and de-duplicated.
+GitHub and Sentry webhooks are checked against their HMAC signatures with a constant-time compare, size-limited, and de-duplicated. Public sign-in, waitlist and pairing messages also enforce byte limits while they are read, so oversized requests are rejected before being buffered in full.
 
 ## Merging
 
