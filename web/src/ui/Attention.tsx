@@ -117,11 +117,7 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: 
         </div>
         <span className="att">{shown.title}</span>
         <span className="aw">{shown.why}</span>
-        {why && (
-          <button type="button" className={`awhy${thinking ? " on" : ""}`} aria-expanded={thinking} onClick={() => setThinking((v) => !v)}>
-            {thinking ? <><b>{THINKS.why}</b> {why}</> : ATTENTION.whyAsk}
-          </button>
-        )}
+        {thinking && why && <p className="awhy-line"><b>{THINKS.why}</b> {why}</p>}
         {open && (
           <div className="amore">
             {!!shown.plan?.length && (
@@ -148,6 +144,11 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: 
           <button type="button" className="atog" aria-expanded={open} onClick={() => setOpen((v) => !v)} aria-label={`${open ? ATTENTION.hide : ATTENTION.details}: ${THINKS.why}`}>
             {open ? ATTENTION.hide : ATTENTION.details}
           </button>
+          {why && (
+            <button type="button" className="awhy" aria-expanded={thinking} onClick={() => setThinking((v) => !v)}>
+              {ATTENTION.whyAsk}
+            </button>
+          )}
         </div>
         </div>
         {isLaunch(shown) ? (
