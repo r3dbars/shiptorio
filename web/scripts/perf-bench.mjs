@@ -5,28 +5,17 @@
 // Headless Chromium draws with SwiftShader (CPU), so fps here is a floor, not a real phone's
 // number. Compare runs against each other; draw calls, triangles and bytes are exact.
 import { createRequire } from "node:module";
-import { createServer } from "node:http";
-import { readFileSync, existsSync, statSync } from "node:fs";
-import { gzipSync } from "node:zlib";
-import { join, extname, dirname } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { benchmarkServer } from "./perf-server.mjs";
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require("@playwright/test");
 const dist = process.env.DIST ?? join(dirname(fileURLToPath(import.meta.url)), "../dist");
 const scenario = process.argv[2] ?? "heal";
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
-
-const server = createServer((req, res) => {
-  let path = join(dist, decodeURIComponent(req.url.split("?")[0]));
-  if (!existsSync(path) || statSync(path).isDirectory()) path = join(dist, "index.html");
-  const body = readFileSync(path);
-  const type = TYPES[extname(path)] ?? "application/octet-stream";
-  const zip = /text|javascript|json|svg/.test(type);
-  res.writeHead(200, { "content-type": type, ...(zip ? { "content-encoding": "gzip" } : {}) });
-  res.end(zip ? gzipSync(body) : body);
-}).listen(0);
-const base = `http://localhost:${server.address().port}`;
+const server = benchmarkServer(dist);
+await new Promise(resolve => server.once("listening", resolve));
+const base = `http://127.0.0.1:${server.address().port}`;
 
 const PROFILES = {
   desktop: { ctx: { viewport: { width: 1440, height: 900 } }, cpu: 1, net: null },
