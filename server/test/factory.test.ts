@@ -445,6 +445,15 @@ describe("Factory lifecycle", () => {
     expect(f.saved().machines.find((m) => m.id === "assembler-1")?.state).toBe("blocked");
     expect(f.saved().tick).toBe(1);
   });
+  it("un-sticks the hosted assembler once a local agent plugs in, even with nothing left in the queue", async () => {
+    const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })]);
+    await f.factory.alarm();
+    expect(f.saved().machines.find((m) => m.id === "assembler-1")?.state).toBe("blocked");
+    f.data.set("state", { ...f.saved(), items: [] });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    await f.reload().alarm();
+    expect(f.saved().machines.find((m) => m.id === "assembler-1")?.state).toBe("idle");
+  });
   it("accepts build commands but ignores malformed messages and removal of active machinery", async () => {
     const f = fixture();
     await f.factory.webSocketMessage(authorizedSocket(), "not JSON");
@@ -688,4 +697,54 @@ it("budget and rate-limit waits leave AI review pending without a rework scar", 
       expect(f.saved().items[0].scars ?? []).toEqual([]);
     }
   } finally { globalThis.fetch = original; }
+});
+
+describe("Rush and Park from a cart's callout", () => {
+  const waiting = (id: string, over: Partial<Item> = {}) => item({ id, title: `Issue ${id}`, state: "queued", prNumber: undefined, attempts: 0, ...over });
+  const send = (f: ReturnType<typeof fixture>, raw: unknown, socket = authorizedSocket()) => f.factory.webSocketMessage(socket, JSON.stringify(raw));
+
+  it("rushes, parks and unparks a waiting item, and says so on the floor log", async () => {
+    const f = fixture([waiting("gh-1"), waiting("gh-2")], { SPARK_DISABLED: "1" });
+    await send(f, { type: "set_priority", itemId: "gh-2", priority: "rush" });
+    expect(f.saved().items.find((i) => i.id === "gh-2")?.priority).toBe("rush");
+    expect(f.events.some((e: any) => e.type === "log" && e.itemId === "gh-2" && /Rushed/.test(e.text))).toBe(true);
+    await send(f, { type: "set_priority", itemId: "gh-1", priority: "park" });
+    expect(f.saved().items.find((i) => i.id === "gh-1")?.priority).toBe("park");
+    await send(f, { type: "set_priority", itemId: "gh-1", priority: "none" });
+    expect(f.saved().items.find((i) => i.id === "gh-1")?.priority).toBeUndefined();
+  });
+
+  it("ignores items already on the line, unknown items and bad choices", async () => {
+    const f = fixture([waiting("gh-1", { state: "working" })], { SPARK_DISABLED: "1" });
+    const before = structuredClone(f.saved());
+    for (const raw of [
+      { type: "set_priority", itemId: "gh-1", priority: "rush" },
+      { type: "set_priority", itemId: "gh-1", priority: "none" },
+      { type: "set_priority", itemId: "gh-404", priority: "park" },
+      { type: "set_priority", itemId: "gh-1", priority: "first" },
+    ]) await send(f, raw);
+    expect(f.saved().items).toEqual(before.items);
+  });
+
+  it("needs the same signed-in write socket as every other player action", async () => {
+    const f = fixture([waiting("gh-1")], { SPARK_DISABLED: "1" });
+    const unauthorized = authorizedSocket();
+    unauthorized.serializeAttachment(null);
+    const closed: unknown[][] = [];
+    unauthorized.close = (...args) => { closed.push(args); };
+    await send(f, { type: "set_priority", itemId: "gh-1", priority: "rush" }, unauthorized);
+    expect(closed).toEqual([[1008, "Sign in again"]]);
+    expect(f.saved().items[0].priority).toBeUndefined();
+  });
+
+  it("offers the next plan for the rushed item first and never for a parked one", async () => {
+    const f = fixture([waiting("gh-1"), waiting("gh-2", { priority: "rush" }), waiting("gh-3", { priority: "park" })], { SPARK_DISABLED: "1" });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    const offer = (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan.bind(f.factory);
+    await offer();
+    // the plans in the order they were offered (the deck re-ranks what it shows; this is the line's order)
+    const offered = (f.factory as unknown as { openMoves: { title: string; itemId?: string }[] }).openMoves;
+    const planned = offered.filter((m) => m.title.startsWith("Plan")).map((m) => m.itemId);
+    expect(planned).toEqual(["gh-2", "gh-1"]);
+  });
 });

@@ -97,6 +97,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_module"), machineId: z.string(), module: z.string() }),
   z.object({ type: z.literal("launch_pr"), itemId: z.string() }),
   z.object({ type: z.literal("route_item"), itemId: z.string(), machineId: z.string() }), // drag ore onto a machine
+  // a cart's callout: Rush (front of its queue), Park (set aside, stops taking the line) or none (back in line)
+  z.object({ type: z.literal("set_priority"), itemId: z.string().max(80), priority: z.enum(["rush", "park", "none"]) }),
   z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
   // Check-in swipes (docs/PRODUCT.md "Check-in"). Right is choose_move with the recommended option.
   z.object({ type: z.literal("defer_move"), moveId: z.string() }), // left: later, back next check-in

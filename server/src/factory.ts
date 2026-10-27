@@ -32,7 +32,10 @@ import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-
 import {
   SCIENCE_FOR,
   WebToServer,
+  canSetPriority,
   emptyResearch,
+  lineOrder,
+  withPriority,
   fallbackExperiment,
   insertCheck,
   researchBlocked,
@@ -293,7 +296,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
-      if (proposing && item && (heldIssues.has(item.id) || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
+      if (proposing && item && (heldIssues.has(item.id) || item.priority === "park" || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
       const boundScars = move.options.flatMap(o => o.actions).find(a => typeof a.args.scarCount === "number")?.args.scarCount;
       if (proposing && item && boundScars !== undefined && boundScars !== (item.scars?.length ?? 0)) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
@@ -306,7 +309,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
     const yes = await flagEnabled(this.env, "attention") ? this.deckBook!.yes : undefined;
-    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = this.applyGameMaster(ranked);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -333,7 +336,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   // ---------- game master: Spark ranks the deck and words the bottleneck card ----------
 
-  private gm: { key: string; call: GameMasterCall } | null = null;
+  private gm: { key: string; call: GameMasterCall; wip?: number } | null = null;
   private gmAsking: string | null = null;
   private gmLastAt = 0;
   private gmFails = 0;
@@ -355,7 +358,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // A "do nothing" pick would stall autopilot on a card that has a real next step; ranking the card lower already says "later".
       const stalls = !m.options.find(o => o.id === pick)?.actions.length && m.options.some(o => o.recommended && o.actions.length);
       if (pick && !m.locked && !stalls) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
-      if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
+      // Spark's words quote the pile size it saw; once the pile changes, the card's own up-to-date words stand.
+      if (m.id.startsWith("bottleneck:") && call.bottleneck && this.gm!.wip === this.state!.bottleneck?.wip) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
       // The why line only describes the option Spark picked, so a locked or overruled card keeps its own reason.
       if (call.because[m.id] && !m.locked && !(pick && stalls)) move = { ...move, because: call.because[m.id] };
       return move;
@@ -383,7 +387,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     void this.rankBudgetLeft().then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
       () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
-      .then(async call => { this.gm = { key, call }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
+      .then(async call => { this.gm = { key, call, wip: brief.bottleneck?.wip }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
       .catch(error => { this.gm = null; this.gmFails = Math.min(this.gmFails + 1, 4); this.log("error", `Game master failed: ${String(error)}`); })
       .finally(() => { if (this.gmAsking === key) this.gmAsking = null; });
   }
@@ -515,7 +519,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
-    for (const item of s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
+    for (const item of lineOrder(s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber))) {
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
     const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
@@ -2775,6 +2779,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         }
         break;
       }
+      case "set_priority": {
+        // A cart's callout: Rush goes to the front of the line, Park sets it aside until Unpark (shared/src/priority.ts).
+        const item = s.items.find((i) => i.id === msg.itemId);
+        if (!item || !canSetPriority(item, msg.priority)) break;
+        await this.patch({ items: [{ ...withPriority(item, msg.priority), updatedAt: Date.now() }] });
+        this.log("info", msg.priority === "rush" ? `Rushed "${item.title}" to the front of the line` : msg.priority === "park" ? `Parked "${item.title}"` : `Unparked "${item.title}"`, item.id);
+        break;
+      }
       case "launch_pr": {
         // A human merge launches the rocket; this just points the player at the PR.
         const item = s.items.find((i) => i.id === msg.itemId);
@@ -2950,7 +2962,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } catch (error) { await this.reliabilityFailure(`tick:${item.id}`, error, item.id); }
     }
 
-    for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
+    if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
+      // The hosted assembler only stops here for want of a local agent. Once one is plugged in it isn't stuck,
+      // even after the queue empties, so the map stops saying "needs a look".
+      const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
+      const stale = s.machines.filter((m) => m.type === "assembler" && m.harness === "spark" && m.state === "blocked");
+      if (stale.length && presence?.harnesses.length && Date.now() - presence.seenAt < 20000) await this.patch({ machines: stale.map((m) => ({ ...m, state: "idle" as const })) });
+    }
+    for (const item of lineOrder(s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS))) {
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       const jobs = await this.runnerJobs();
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
