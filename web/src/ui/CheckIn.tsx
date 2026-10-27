@@ -395,47 +395,47 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
       {top && sheet === "details" && (
         <div className="ci-sheet ci-details card" role="dialog" aria-label={CHECKIN.details}>
           <div className="ci-details-head">
-          <button type="button" className="ci-close" onClick={() => setSheet(null)}>
-            {CHECKIN.closeSheet}
-          </button>
-          <div className="ci-title small">{top.title}</div>
+            <button type="button" className="ci-close" onClick={() => setSheet(null)}>
+              {CHECKIN.closeSheet}
+            </button>
+            <div className="ci-title small">{top.title}</div>
           </div>
           <div className="ci-review">
-          {top.plan && (
-            <>
-              <div className="ci-sec">{CHECKIN.onYes}</div>
-              <ol>
-                {top.plan.map((p) => (
-                  <li key={p}>{p}</li>
+            {top.plan && (
+              <>
+                <div className="ci-sec">{CHECKIN.onYes}</div>
+                <ol>
+                  {top.plan.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ol>
+              </>
+            )}
+            {top.url && (
+              <a className="nm-link" href={top.url} target="_blank" rel="noreferrer">
+                {WORDS.onGithub}
+              </a>
+            )}
+            {calm && (
+              <>
+                <div className="ci-sec">{ATTENTION.teach}</div>
+                {NEVER.filter((n) => n.why !== "once").map((n) => (
+                  <button key={n.why} type="button" disabled={!!fly} className="ci-opt why" onClick={() => { setSheet(null); never(n.why); }}>
+                    <b>{n.label}</b>
+                    {n.text}
+                  </button>
                 ))}
-              </ol>
-            </>
-          )}
-          {top.url && (
-            <a className="nm-link" href={top.url} target="_blank" rel="noreferrer">
-              {WORDS.onGithub}
-            </a>
-          )}
-          {calm && (
-            <>
-              <div className="ci-sec">{ATTENTION.teach}</div>
-              {NEVER.filter((n) => n.why !== "once").map((n) => (
-                <button key={n.why} type="button" disabled={!!fly} className="ci-opt why" onClick={() => { setSheet(null); never(n.why); }}>
-                  <b>{n.label}</b>
-                  {n.text}
-                </button>
-              ))}
-            </>
-          )}
+              </>
+            )}
           </div>
           <div className="ci-options">
-          <div className="ci-sec">{CHECKIN.pickOne}</div>
-          {top.options.map((o) => (
-            <button key={o.id} type="button" disabled={!!fly} className={o.recommended ? "ci-opt rec" : "ci-opt"} title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined} onClick={() => choose(top, o.id)}>
-              {o.recommended ? "★ " : ""}
-              {o.label}
-            </button>
-          ))}
+            <div className="ci-sec">{CHECKIN.pickOne}</div>
+            {top.options.map((o) => (
+              <button key={o.id} type="button" disabled={!!fly} className={o.recommended ? "ci-opt rec" : "ci-opt"} title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined} onClick={() => choose(top, o.id)}>
+                {o.recommended ? "★ " : ""}
+                {o.label}
+              </button>
+            ))}
           </div>
         </div>
       )}
