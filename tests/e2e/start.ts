@@ -1,6 +1,8 @@
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 const port = process.env.SHIPTORIO_TEST_PORT || '8799';
+// Browser fixtures keep inspection disabled; load profiling opts into a local CDP port.
+const inspectorPort = process.env.SHIPTORIO_TEST_INSPECTOR_PORT || '0';
 const occupied = await fetch(`http://localhost:${port}/api/version`, { signal: AbortSignal.timeout(1000) }).then(() => true, () => false);
 if (occupied) throw new Error(`Test port ${port} is already in use; stop the previous fixture server first`);
 const dir = resolve('.test-runtime');
@@ -23,4 +25,4 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => { 
 const run = async (args: string[]) => { const p = child = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' }); if (await p.exited) throw new Error(args.join(' ')); };
 await run(['bun', 'run', 'build']);
 await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
-await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', port, '--inspector-port', '0']);
+await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', port, '--inspector-port', inspectorPort]);
