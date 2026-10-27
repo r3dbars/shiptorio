@@ -147,3 +147,16 @@ explicit Launch. Do not implement the issue outside that runner path.
 - Paused only the idle isolated source watcher during this recovery, reducing
   failing requests. The user's installed Testing service and credentials remain
   untouched. No factory PR or Launch exists yet.
+
+## Lock-timeout fix merged
+
+- PR #294 changes patch delivery to queue the existing ordered, freshly
+  authorized browser broadcast without awaiting it inside runner state mutation.
+  State save and approval/lease checks remain awaited and atomic.
+- Regression holds browser authorization unresolved during two concurrent real
+  claims: exactly one job/lease persists and heartbeat completes, with no frame
+  before authorization. Revoking the session before releasing the wait sends no
+  frame. Restoring the old await fails the test deterministically.
+- Independent bounded review found no material blocker. Current-head full CI
+  40437123211 and Stranger40437121642 passed at cd57759; merged e05776b.
+  Deploy40437854040 is still running. This is not yet live recovery proof.
