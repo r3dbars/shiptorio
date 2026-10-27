@@ -54,7 +54,8 @@ export async function prepareAgentKeychain(home: string): Promise<void> {
   await regular(keychain);
   await security(home, ["list-keychains", "-d", "user", "-s", keychain]);
   await security(home, ["default-keychain", "-d", "user", "-s", keychain]);
-  await security(home, ["set-keychain-settings", "-l", "-u", "-t", "1800", keychain]);
+  // An existing store can be locked after sleep/restart; settings require it to be unlocked first.
   await unlockAgentKeychain(home);
+  await security(home, ["set-keychain-settings", "-l", "-u", "-t", "1800", keychain]);
   if (!(await security(home, ["default-keychain", "-d", "user"])).includes(keychain)) throw new Error("Dedicated default Keychain did not persist");
 }

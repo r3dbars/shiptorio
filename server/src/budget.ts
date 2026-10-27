@@ -1,5 +1,7 @@
+import { adminPaused } from "./admin-control";
 export interface BudgetEnv {
   DB?: D1Database;
+  budgetRepo?: string;
   SPARK_DISABLED?: string;
   SPARK_DAILY_CALLS?: string;
   SPARK_DAILY_TOKENS?: string;
@@ -27,12 +29,14 @@ export async function accountBudgetLimits(env: BudgetEnv, account: string) {
   const row = await env.DB!.prepare(`SELECT a.spark_calls_daily, a.spark_tokens_daily FROM users u
     LEFT JOIN signup_allowlist a ON lower(a.login) = lower(u.login) WHERE u.id = ?`)
     .bind(Number(account.slice(5))).first<{ spark_calls_daily: number | null; spark_tokens_daily: number | null }>();
-  return { ...caps, calls: row?.spark_calls_daily ?? caps.calls, tokens: row?.spark_tokens_daily ?? caps.tokens };
+  const override = await env.DB.prepare('SELECT spark_calls, spark_tokens FROM admin_user_limits WHERE user_id = ?').bind(Number(account.slice(5))).first<{spark_calls:number|null; spark_tokens:number|null}>();
+  return { ...caps, calls: override?.spark_calls ?? row?.spark_calls_daily ?? caps.calls, tokens: override?.spark_tokens ?? row?.spark_tokens_daily ?? caps.tokens };
 }
 
 export async function reserveSpark(env: BudgetEnv, account: string, tokens: number) {
   const caps = await accountBudgetLimits(env, account), day = utcDay();
   if (!Number.isSafeInteger(tokens) || tokens <= 0) throw new BudgetError("Invalid token reservation");
+  if (await adminPaused(env.DB, env.budgetRepo)) throw new BudgetError("Administrator paused Spark for this factory");
   if (caps.disabled) throw new BudgetError("Spark budget: global kill switch is on");
   if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
   const row = await env.DB.prepare(`INSERT INTO spark_usage(account, day, calls, tokens)

@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { loadConnections, persistRenewal } from "../src/grant-store";
+import { loadConnections, persistRenewal, persistGrantRejection } from "../src/grant-store";
 import { loadPairings, removePairing, savePairing, updatePairing, type Pairing } from "../src/pairing";
 
 // Runtime imports exercise the real verifier without adding Worker-only types to the runner TS graph.
@@ -157,3 +157,22 @@ test("manual pairing in another process shares the renewal store lock", async ()
     expect(await loadPairings(root)).toEqual([manual]);
   } finally { release(); await writer; child.kill(); await child.exited; }
 }));
+
+
+test("permanent rejection is durable without deleting evidence, and a fresh pairing clears it", async () => {
+  await inStore(async root => {
+    const original = await grant(now + 60000);
+    await savePairing(original, root);
+    await persistGrantRejection(root, original, "runner_pair_revoked", now);
+    const [stopped] = await loadConnections(root, env(original));
+    expect(stopped.rejected).toEqual({code: "runner_pair_revoked", at: now});
+    expect(stopped.token).toBe(original.token);
+    await persistRenewal(root, original, await grant(now + 120000));
+    expect((await loadConnections(root, env(await grant(now + 180000))))[0]).toEqual(stopped);
+    const fresh = await grant(now + 120000, {pairId: "fresh-pair"});
+    await savePairing(fresh, root);
+    // A delayed old response cannot stop the newly paired machine.
+    await persistGrantRejection(root, original, "runner_grant_expired", now);
+    expect((await loadConnections(root, env(original)))[0]).toEqual(fresh);
+  });
+});

@@ -196,11 +196,17 @@ export class ShaftScene {
     if (this.I) this.I.policy.speed = 1;
   }
 
+  private finishLapse() {
+    const lapse = this.lapse;
+    this.endTimelapse();
+    lapse?.onOver();
+  }
+
   private startLapse() {
     const lapse = this.lapse, I = this.I, driver = this.driver;
     if (!lapse || this.lapsing || !I || !driver?.state) return;
     this.lapsing = true;
-    const placed = driver.beginLapse(lapse.refs, LAPSE_MAX_S * LAPSE_SPEED, () => lapse.onOver());
+    const placed = driver.beginLapse(lapse.refs, LAPSE_MAX_S * LAPSE_SPEED, () => this.finishLapse());
     I.policy.speed = LAPSE_SPEED;
     this.governor.poke();
     this.setView("launch", null, true); // the rockets go up from the top floor
@@ -329,6 +335,8 @@ export class ShaftScene {
   // ---------- building ----------
 
   private rebuild(sp: ShaftPlan) {
+    // A new shaft cannot carry the old driver's replay timer. End it before carrying the real line.
+    if (this.lapsing) this.finishLapse();
     const keep = this.stage ? { zoom: this.stage.zoom } : null;
     const carried = this.driver?.carry() ?? null; // the work on the line stays where it is
     this.teardown();
