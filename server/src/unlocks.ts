@@ -44,6 +44,7 @@ export const PLAYBOOK: readonly Play[] = [
   { play: "fix_flaky_test", kinds: ["ci_flaky"], kind: "verify", effort: "hours", title: "Fix the flaky test", path: "actions" },
   { play: "fix_red_main", kinds: ["ci_red_main"], kind: "unblock", effort: "minutes", title: "Get main green again", path: "actions?query=branch%3Amain" },
   { play: "ci_add_runners", kinds: ["ci_queue"], kind: "automate", effort: "minutes", title: "Stop PRs queueing for CI", path: "actions" },
+  { play: "fix_blocking_check", kinds: ["ci_blocking"], kind: "unblock", effort: "minutes", title: "Fix the check failing on your PRs", path: "pulls" },
   { play: "add_ci", kinds: ["ci_missing"], kind: "automate", effort: "minutes", title: "Turn on CI so every PR gets checked", grows: ["+1 CHECK"], path: "actions/new" },
   // Sentry
   { play: "connect_sentry", kinds: ["sentry_missing"], kind: "input", effort: "minutes", title: "Connect Sentry to see what breaks", grows: ["+1 SOURCE"], action: connect("sentry") },

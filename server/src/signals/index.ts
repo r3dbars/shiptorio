@@ -9,6 +9,7 @@ import type { StageMetrics } from "../bottleneck";
 import type { FactoryEnv } from "../factory";
 import type { postHogCreds } from "../sources/creds";
 import { repoCollector } from "./repo";
+import { ciCollector, kvCiCache } from "./ci";
 
 /** What every collector gets. Read-only: collectors look, they never change the factory. */
 export interface SignalContext {
@@ -68,6 +69,7 @@ export const factoryCollector: Collector = {
 export const COLLECTORS: Collector[] = [
   factoryCollector,
   bind(repoCollector, c => ({ repo: c.repo, token: c.githubToken, env: c.env, state: c.state })),
+  bind(ciCollector, async c => ({ repo: c.repo ?? c.state.repo, defaultBranch: c.state.baseBranch, token: c.githubToken ? await c.githubToken() : undefined, cache: kvCiCache(c.env.CACHE) })),
 ];
 
 export interface SignalCache { readAt: Partial<Record<SignalSource, number>>; signals: BrainSignal[] }
