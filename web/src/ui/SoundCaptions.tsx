@@ -15,6 +15,9 @@ const CAPTION: Partial<Record<Sfx, string>> = {
   gate_clank: "Merge gate opened",
   dock: "A PR docked on the launch pad",
   arm: "Launch armed",
+  hold_start: "Launch hold started",
+  hold_cancel: "Launch hold cancelled",
+  hold_go: "Launch requested",
   launch: "Rocket launching",
   shipped: "Shipped",
   orbit_alarm: "Orbit alarm: new errors after a launch",
@@ -25,7 +28,12 @@ const CAPTION: Partial<Record<Sfx, string>> = {
   permit_revoke: "Launch permit revoked",
   level_up: "Autonomy level up",
   suggest: "Suggestion",
+  steam_hiss: "Steam hiss: a build started",
+  iron_clank: "Iron clank: work moved up a floor",
 };
+// Texture accents: on the caption strip for people who can't hear them, but not read out, since anyone
+// hearing the screen reader hears the sound itself and the strip would otherwise talk over everything.
+const STRIP_ONLY = new Set<Sfx>(["steam_hiss", "iron_clank"]);
 const KEY = "shiptorio:captions";
 const HOLD_MS = 3200;
 
@@ -71,7 +79,7 @@ export function SoundCaptions() {
       timers.push(
         window.setTimeout(() => {
           const id = ++n;
-          setSaid(text);
+          if (!STRIP_ONLY.has(sfx)) setSaid(text);
           setLines((l) => (l.some((x) => x.text === text) ? l : [...l.slice(-2), { id, text }]));
           timers.push(window.setTimeout(() => setLines((l) => l.filter((x) => x.id !== id)), HOLD_MS));
         }, delayMs),

@@ -205,6 +205,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (intro) return tourly.pick(k);
     if (k?.startsWith("island:")) return void (location.href = empire.hrefFor(k.slice(7)));
     if (k?.startsWith("src:")) {
+      sound.play("tap_mine"); // an empty mine opens a sheet, not a close-up, so it gets its tap here
       setSource(k.slice(4));
       setCheckin(false);
     } else setPanel(k);

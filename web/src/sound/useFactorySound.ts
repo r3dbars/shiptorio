@@ -7,6 +7,8 @@ import { sound, type Focus, type Sfx } from "./engine";
 import type { ScapeKind } from "./scapes";
 import { celebrateShip } from "./ship";
 import type { MusicInput } from "./music";
+import { accentsFor, freshAccentMemory, LAUNCH_IRON_DELAY_S, limitAccents } from "./accents";
+import { tapFor, type MachineMood } from "./steamIron";
 
 // Each gauntlet station's verdict sounds: [pass, fail].
 const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
@@ -77,6 +79,26 @@ const MACHINE_SCAPE: Partial<Record<Machine["type"], ScapeKind>> = {
 // The thing the camera is locked onto (a station id, "m:<machine id>", "rework" or "power"),
 // as a soundscape kind plus how busy it is right now.
 export function focusFor(key: string | null | undefined, state: FactoryState): Focus | null {
+  const f = scapeFocus(key, state);
+  return f && { ...f, mood: moodOf(f, state) };
+}
+
+// What the close-up should sound like: stuck when it's waiting on you, rework when work is going back
+// to be fixed, working while it has work, idle when it has none.
+export function moodOf(f: Focus, state: FactoryState): MachineMood {
+  if (f.kind === "rework") return f.busy > 0 ? "rework" : "idle";
+  const mid = f.key.startsWith("m:") ? f.key.slice(2) : undefined;
+  const st = state.stations?.find((x) => x.id === f.key || (mid && x.machineId === mid));
+  const machineId = st?.machineId ?? mid;
+  const m = machineId ? state.machines.find((x) => x.id === machineId) : undefined;
+  const focusOf = (id?: string) => !!id && (id === f.key || id === mid || `m:${id}` === f.key);
+  const waiting = m?.state === "blocked" || (st && state.bottleneck?.stationId === st.id) || focusOf(state.move?.focus) || (m?.type === "launch_pad" && state.items.some((i) => i.state === "on_pad"));
+  if (waiting) return "stuck";
+  if (machineId && state.items.some((i) => i.state === "rejected" && i.machineId === machineId)) return "rework";
+  return f.busy > 0 ? "working" : "idle";
+}
+
+function scapeFocus(key: string | null | undefined, state: FactoryState): Focus | null {
   if (!key) return null;
   const n = (x: number, full: number) => Math.min(1, x / full);
   if (key === "rework") return { kind: "rework", key, busy: n(state.items.filter((i) => i.state === "rejected").length, 3) };
@@ -193,9 +215,15 @@ export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
 
 export function useFactorySound(state: FactoryState | null, focus?: string | null, calm = false) {
   const prev = useRef<FactoryState | null>(null);
+  const accentMem = useRef(freshAccentMemory());
   const focused = state ? focusFor(focus, state) : null;
-  useEffect(() => sound.setFocus(focused), [focus]);
-  useEffect(() => sound.updateFocus(focused), [focused?.busy, focused?.kind]);
+  useEffect(() => {
+    sound.setFocus(focused);
+    // the camera just flew in on something: that machine's own tap sound (soundboard picks)
+    const tap = focused && tapFor(focused.kind, focused.key, focused.busy);
+    if (tap) sound.play(tap);
+  }, [focus]);
+  useEffect(() => sound.updateFocus(focused), [focused?.busy, focused?.kind, focused?.mood]);
   useEffect(() => {
     const p = prev.current;
     prev.current = state;
@@ -212,6 +240,10 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     // docs/ATTENTION.md: suggestions never make a sound
     sfx.filter((s) => !(calm && s === "suggest")).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
     if (sfx.some((s) => CAUGHT.includes(s))) sound.musicAlert();
+    // steam and iron over the hum, rate-limited so a busy floor stays a texture, not a drum roll
+    const acc = limitAccents(accentsFor(p, state), performance.now(), accentMem.current);
+    accentMem.current = acc.mem;
+    acc.play.forEach((a, i) => sound.play(a, a === "launch_iron" ? LAUNCH_IRON_DELAY_S : 0.04 + i * 0.12));
     // each PR that just launched gets the full celebration (event for the art + launch, fanfare, streak)
     const was = new Map(p.items.map((i) => [i.id, i.state]));
     state.items.filter((i) => i.state === "launched" && was.get(i.id) !== "launched").forEach((i, n) => celebrateShip(i, n * 0.4));
