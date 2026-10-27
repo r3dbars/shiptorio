@@ -28,7 +28,7 @@ jobs:
 
           def batch(pr, repo):
               owner = repo.split('/')[0]
-              return (pr.get('base', {}).get('ref') == 'main'
+              return (pr.get('draft') is False and pr.get('base', {}).get('ref') == 'main'
                       and pr.get('head', {}).get('repo', {}).get('full_name') == repo
                       and pr.get('head', {}).get('ref', '').startswith('release/')
                       and pr.get('user', {}).get('login') == owner
@@ -36,7 +36,7 @@ jobs:
 
           # Admission regressions: a label, fork, branch name or bot cannot impersonate
           # the owner's release batch. Factory/bot candidates instead keep the FULL suite.
-          fixture = {'base': {'ref': 'main'}, 'head': {'ref': 'release/test', 'repo': {'full_name': 'owner/repo'}}, 'user': {'login': 'owner', 'type': 'User'}}
+          fixture = {'draft': False, 'base': {'ref': 'main'}, 'head': {'ref': 'release/test', 'repo': {'full_name': 'owner/repo'}}, 'user': {'login': 'owner', 'type': 'User'}}
           assert batch(fixture, 'owner/repo')
           for change in [{'user': {'login': 'shiptorio[bot]', 'type': 'Bot'}}, {'user': {'login': 'stranger', 'type': 'User'}}, {'head': {'ref': 'release/test', 'repo': {'full_name': 'stranger/fork'}}}, {'head': {'ref': 'feature/test', 'repo': {'full_name': 'owner/repo'}}}, {'base': {'ref': 'release/test'}}]:
               assert not batch({**fixture, **change}, 'owner/repo')
@@ -56,10 +56,10 @@ jobs:
           inputs = event.get('inputs') or {}
           diagnostic = manual and (bool(inputs.get('browser_grep')) or str(inputs.get('update_baselines', 'false')).lower() == 'true')
           protected_main = manual and os.environ['GITHUB_REF'] == 'refs/heads/main' and os.environ.get('GITHUB_REF_PROTECTED') == 'true' and os.environ['GITHUB_ACTOR'] == repo.split('/')[0]
-          eligible = protected_main or any(batch(pr, repo) or factory(pr) for pr in prs)
+          eligible = protected_main or any(pr.get('draft') is False and (batch(pr, repo) or factory(pr)) for pr in prs)
           full = eligible and not diagnostic
           targets_main = protected_main or any(pr.get('base', {}).get('ref') == 'main' for pr in prs)
-          admit = full or (bool(prs) and not targets_main and not diagnostic)
+          admit = full or (bool(prs) and not targets_main and not diagnostic and not any(factory(pr) for pr in prs))
           reason = ('Full frozen-batch/factory verification' if full else 'Explicit browser diagnostic; not a release receipt' if diagnostic else 'Fast integration-branch verification' if admit else 'Direct feature merges to main are blocked: target the next integration branch, then freeze an owner-authored same-repo release/* PR to main')
           outputs = {'full': full, 'browser': full or diagnostic, 'load': full, 'admit': admit}
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
