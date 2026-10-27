@@ -130,7 +130,7 @@ try {
     await page.getByRole("button", { name: "Skip" }).click({ timeout: 20000 });
   });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
-    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: 10000 });
+    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: 25000 }); // the sandbox map loads first and CI runners are slow
     await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: 10000 });
     await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: 10000 });
   });
