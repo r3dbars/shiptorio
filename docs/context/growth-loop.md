@@ -59,4 +59,4 @@ acquisition, retention, same game, more districts). PR #177.
   queries must supply whole-window unique-person counts before the guarded live adapter can run.
   Missing baseline/after windows leave measurements pending; route traffic alone never creates an experiment.
 
-The author's per-person/day ordered funnel query and parser are retained in the PostHog source module as prototype helpers. Their daily uniques are not a whole-window unique-person sample, so the guarded live adapter does not feed them into experiment verdicts. A future producer must provide exact, definition-matched cohort windows.
+The unused per-person/day query, parser, fake cohort generator and traffic-only selection helpers were removed in the dead-code sweep. Daily uniques are not a whole-window unique-person sample. A future producer must provide exact, definition-matched cohort windows.

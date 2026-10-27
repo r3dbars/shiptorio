@@ -332,11 +332,6 @@ export async function repoTree(
   return { branch: repo.default_branch, sha: tree.sha, entries: tree.tree, truncated: tree.truncated };
 }
 
-export async function pullRequestFiles(token: string, fullName: string, number: number): Promise<string[]> {
-  const files = await gh<{ filename: string }[]>(`/repos/${fullName}/pulls/${number}/files?per_page=100`, token);
-  return files.map((f) => f.filename);
-}
-
 export async function openIssues(token: string, repo: string): Promise<GitHubIssue[]> {
   const issues: GitHubIssue[] = [];
   for (let page = 1; page <= 10 && issues.length < 50; page++) {
