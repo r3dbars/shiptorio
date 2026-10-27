@@ -352,6 +352,8 @@ renewing from the independent heartbeat; preserving revocation and saved work.
 
 ## Codex merge helper
 
+- 2026-10-27 23:13 UTC: ready Claude heads inspected after root #438 deployed. #433 exact `dbf5df18300712090f452a1e126a902aaff77ea0` had no manual browser/load run; dispatched [40600771254](https://github.com/r3dbars/shiptorio/actions/runs/40600771254) once. Queued; not ready proof. One manual PR at a time. #427 remains under root hold for buildout acceptance coverage/rendering; no duplicate dispatch, no merges or retargets, no factory changes.
+
 Historical check-only dispatch receipt (heads below are superseded; queued was never counted as green):
 - 2026-10-27 19:50 UTC: check-only batch helper; no merges or retargets. Ready Claude PRs had green check/selfhost and Stranger on the heads below, but browser/load were skipped. Dispatched each missing manual CI once; queued is not ready-to-release proof:
   - #357, `89268d9ae8c8524acb46c0f9480ce776b844b502`: [CI 40572747521](https://github.com/r3dbars/shiptorio/actions/runs/40572747521), queued.
