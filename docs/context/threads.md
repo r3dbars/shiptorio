@@ -333,3 +333,9 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+
+## Public repository guardrails (Codex, Oct 27, 2026)
+
+Added advisory CodeQL, grouped weekly dependency updates, private reporting/scope policy,
+and HTML response-header regression coverage preserving the preview nonce. Full-history
+secret-scan counts and validation receipts are recorded in the PR; see [security.md](security.md).
