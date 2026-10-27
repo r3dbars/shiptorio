@@ -1,5 +1,6 @@
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
+import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
@@ -132,7 +133,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private running = new Set<string>(); // item ids with a job in flight
 
   private sparkEnv(): SparkEnv {
-    return { ...this.env, budgetAccount: () => budgetAccount(this.env.DB, this.meta!.repo) };
+    return { ...this.env, budgetRepo: this.meta!.repo, budgetAccount: () => budgetAccount(this.env.DB, this.meta!.repo) };
   }
 
   async usage() {
@@ -709,7 +710,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (job.needsApproval) {
         const candidates = [...new Set([...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)])].filter(runnerPathAllowed);
         job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
-          files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
+          files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }))
+          .then(files => files.filter(runnerPathAllowed));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
       const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
@@ -1632,6 +1634,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const explanation = explain(out);
       if (this.env.DB && this.env.META_API_KEY) {
         const usage = await this.usage();
+        const spend = await factorySpend(this.env.DB, this.meta!.repo);
+        explanation.reason += ` Spark: ~$${spend.estimatedUsd.toFixed(4)} / $${spend.dailyBudgetUsd.toFixed(2)} today. ${spend.explanation}`;
         explanation.reason += ` Budget: ${usage.calls}/${usage.limits.calls} calls, ${usage.tokens}/${usage.limits.tokens} tokens today (UTC).`;
       }
       await this.note({ decision, by: "spark", ms: Date.now() - start, itemId: about.itemId, title: about.title, ...explanation });

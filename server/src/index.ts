@@ -1,3 +1,5 @@
+import { factorySpend, NANO_USD } from "./spend";
+import { budgetAccount } from "./budget";
 import { byRepoId, repositoryFactory } from "./repository";
 import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
@@ -23,9 +25,9 @@ import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./gith
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
 import { isAllowed } from "./session";
-import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
 import { joinWaitlist } from "./waitlist";
-import { landingPage, publicFile } from "./landing";
+import { judgePage, landingPage, publicFile } from "./landing";
 
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
@@ -66,6 +68,7 @@ export interface Env extends FactoryEnv, SignupEnv {
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const RUNNER_POLL = /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(heartbeat|claim)$/;
 
 const factory = async (env: Env, repo: string, repoId?: number) => {
   const stub = repoId ? byRepoId(env, repoId) : await repositoryFactory(env, repo);
@@ -85,7 +88,7 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean } };
 const app = new Hono<AppEnv>();
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
   const user = await signedIn(c);
@@ -108,10 +111,12 @@ app.use("*", async (c, next) => {
     await next();
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);
+    // A paired runner polls every 5s. Successful polls go to the console only, so they don't burn KV writes.
+    const routine = RUNNER_POLL.test(c.req.path) && c.res.status < 400;
     log(c.res.status >= 500 ? "error" : "info", c.req.path.startsWith("/webhooks/") ? "webhook.delivery" : "http.request", {
       method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - start,
       ...(c.req.path.startsWith("/webhooks/") ? { deliveryId: c.req.header("x-github-delivery") ?? c.req.header("request-id"), webhookEvent: c.req.header("x-github-event") ?? c.req.header("sentry-hook-resource") } : {}),
-    });
+    }, { persist: !routine });
   });
 });
 
@@ -119,7 +124,8 @@ app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
   if (redirect) c.res = redirect;
   else await next();
-  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN))) c.header(key, value);
+  const gatePolicy = c.get("gateResponse") ? c.res.headers.get("Content-Security-Policy") ?? undefined : undefined;
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN, gatePolicy))) c.header(key, value);
 
 });
 
@@ -168,12 +174,17 @@ app.use("*", async (c, next) => {
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
   const open = await publicRoute(c.req.raw, c.env);
+  if (open === "judge") return judgePage(c.req.raw, c.env.ASSETS);
   if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
   if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
-  if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
+  if (open === "file") {
+    const response = await publicFile(c.req.raw, c.env.ASSETS);
+    if (isJudgeAsset(c.req.path)) response.headers.set("Cache-Control", browserCacheControl(c.req.raw, response.status));
+    return response;
+  }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
   const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
-  if (denied) return denied;
+  if (denied) { c.set("gateResponse", true); return denied; }
   await next();
   // Docs are public static content; authenticated build assets retain their private immutable policy.
   c.header("Cache-Control", isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method) && c.res.ok
@@ -450,7 +461,7 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
   const code = normalizeCode(c.req.query("code") ?? "");
-  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "no-referrer" };
+  const headers = { "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'", "referrer-policy": "same-origin" };
   if (!CODE_RE.test(code)) return c.html(runnerPage("Connect your machine", "<p>Start the installer on your computer to get a fresh pairing code. <a href='/docs/runner'>Runner instructions</a>.</p>"), 400, headers);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.text("invalid origin", 403);
@@ -636,6 +647,25 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   const parsed = RunnerReceipt.safeParse(JSON.parse(body));
   if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
   return c.json(await (await factory(c.env, identity.repo)).finishRunner(identity.pairId, parsed.data));
+});
+
+// Spend belongs to the stable payer, rather than every collaborator with map access.
+app.on(["GET", "POST"], "/api/repos/:owner/:repo/spend", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (await budgetAccount(c.env.DB, repo) !== `user:${c.get("user").id}`) return c.json({ error: "budget owner required" }, 403);
+  if (c.req.method === "POST") {
+    if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+    const raw = await c.req.text();
+    if (raw.length > 128) return c.json({ error: "too large" }, 413);
+    let value: unknown;
+    try { value = JSON.parse(raw).dailyBudgetUsd; } catch { return c.json({ error: "invalid JSON" }, 400); }
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10000 || Math.abs(value * 100 - Math.round(value * 100)) > 0.000001)
+      return c.json({ error: "Budget must be $0–$10,000 in whole cents" }, 400);
+    await c.env.DB.prepare("INSERT INTO spark_factory_budgets(repo, daily_nano_usd) VALUES (?, ?) ON CONFLICT(repo) DO UPDATE SET daily_nano_usd = excluded.daily_nano_usd")
+      .bind(repo, Math.round(value * NANO_USD)).run();
+  }
+  c.header("Cache-Control", "no-store");
+  return c.json(await factorySpend(c.env.DB, repo));
 });
 
 // Exports are stricter than map access: only the repository owner can download them.
@@ -845,22 +875,39 @@ const wrapped = Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app
 // HTTPS redirect, the per-IP sign-in budget, the gate itself, then the same security headers.
 export async function accessFastPath(request: Request, env: Env): Promise<Response | null> {
   if (new URL(request.url).pathname !== "/access" || signupMode(env) !== "password") return null;
-  let response = secureTransport(request);
-  const budget = response ? null : requestBudget(request, "/access");
-  if (budget) {
-    const result = await rateLimit(env, ipSubject(request), budget);
-    if (!result.allowed) response = Response.json({ error: "too many requests" }, { status: 429, headers: { "Retry-After": String(result.retryAfter) } });
+  let response: Response | null;
+  try {
+    response = secureTransport(request);
+    const budget = response ? null : requestBudget(request, "/access");
+    if (budget) {
+      const result = await rateLimit(env, ipSubject(request), budget);
+      if (!result.allowed) response = Response.json({ error: "too many requests" }, { status: 429, headers: { "Retry-After": String(result.retryAfter) } });
+    }
+    response ??= await previewAccess(request, env);
+  } catch {
+    // A failed limiter or form read must never fall through and retry sign-in without its budget.
+    // Keep this error path small too; provider/internal error text may contain credentials.
+    const requestId = crypto.randomUUID();
+    response = Response.json({ error: "Sign-in temporarily unavailable. Please try again." }, {
+      status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "5", "X-Request-ID": requestId },
+    });
+    console.error(JSON.stringify({ level: "error", event: "access.unavailable", requestId, status: 503, ts: new Date().toISOString() }));
   }
-  response ??= await previewAccess(request, env);
   if (!response) return null; // local dev login: the full app handles it
   response = new Response(response.body, response);
-  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN))) response.headers.set(key, value);
+  response.headers.set("Cache-Control", "no-store");
+  const gatePolicy = response.headers.get("Content-Security-Policy") ?? undefined;
+  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN, gatePolicy))) response.headers.set(key, value);
   console.log(JSON.stringify({ level: "info", event: "http.request", method: request.method, path: "/access", status: response.status, ts: new Date().toISOString() }));
   return response;
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
-    return await accessFastPath(request, env) ?? wrapped.fetch!(request as never, env, ctx as ExecutionContext);
+    const response = await accessFastPath(request, env);
+    if (response) return response;
+    // Runner polls skip Sentry's per-binding instrumentation too. Errors still reach the log; renew and finish stay wrapped.
+    if (ctx && RUNNER_POLL.test(new URL(request.url).pathname)) return app.fetch(request, env, ctx);
+    return wrapped.fetch!(request as never, env, ctx as ExecutionContext);
   },
 } satisfies ExportedHandler<Env>;

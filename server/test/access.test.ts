@@ -144,3 +144,12 @@ describe("docs caching", () => {
     expect(browserCacheControl(new Request("https://shiptorio.com/"), 200)).toBe("no-store");
   });
 });
+
+ it("serves the explicit access form with 200 and permits only GET to start OAuth", async () => {
+  const response = await previewAccess(new Request("https://shiptorio.com/access"), env);
+  expect(response?.status).toBe(200);
+  expect(await response!.text()).toContain('method="post" action="/access"');
+  expect(await previewAccess(new Request("https://shiptorio.com/auth/login"), env)).toBeNull();
+  expect((await previewAccess(new Request("https://shiptorio.com/auth/login", { method: "POST" }), env))?.status).toBe(401);
+  expect((await previewAccess(new Request("https://shiptorio.com/auth/login/extra"), env))?.status).toBe(401);
+});

@@ -179,4 +179,14 @@ describe("pickFiles drops picks outside the list", () => {
     globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify({ files: ["server/.dev.vars"] }) } }] })) as unknown as typeof fetch;
     await expect(pickFiles(env, { title: "x", body: "", district: "src" }, ["src/cart.ts"])).rejects.toThrow("Unapproved file selection");
   });
+  it("lets a docs task propose up to two new Markdown files at the root or in docs/", async () => {
+    const { pickFiles } = await import("../src/spark");
+    globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify({ files: ["CHANGELOG.md", "docs/deep/x.md", "docs/SHIPPING.md", "docs/THIRD.md"] }) } }] })) as unknown as typeof fetch;
+    expect(await pickFiles(env, { title: "Add a changelog", body: "", district: "docs" }, ["README.md"])).toEqual(["CHANGELOG.md", "docs/SHIPPING.md"]);
+  });
+  it("never lets it invent a new code file", async () => {
+    const { pickFiles } = await import("../src/spark");
+    globalThis.fetch = (async () => Response.json({ choices: [{ message: { content: JSON.stringify({ files: ["src/new.ts", ".github/x.md"] }) } }] })) as unknown as typeof fetch;
+    await expect(pickFiles(env, { title: "x", body: "", district: "src" }, ["README.md"])).rejects.toThrow("Unapproved file selection");
+  });
 });
