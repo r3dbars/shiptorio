@@ -78,7 +78,10 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   const power = page.getByRole('region', { name: 'Power', exact: true });
   await expect(power).toBeVisible();
   await power.getByRole('button', { name: 'Close', exact: true }).click();
-  const card = page.getByRole('region', { name: 'Next move', exact: true });
+  // Exercise the default Needs you card, without the legacy attention=0 route.
+  const card = page.locator('section.acard').filter({ hasText: 'Fix cart total' });
+  await expect(card).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Next move', exact: true })).toHaveCount(0);
   await card.getByRole('button', { name: /Plan with Codex/ }).click();
   await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json()).length).toBe(1);
   await post(`/__test/${repo}/tick`);
