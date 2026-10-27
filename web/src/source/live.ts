@@ -9,6 +9,7 @@ const NOTICE_MS = 3_000;
 export function connectLive(repo: string, onMessage: Listener, onStatus: StatusListener): Source {
   let ws: WebSocket | null = null;
   let closed = false, synced = false, attempt = 0, lastSeq = -1;
+  let openedAt = 0, openedOnline = true;
   let heartbeat: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -65,6 +66,8 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     try { socket = new WebSocket(`${proto}://${location.host}/api/repos/${repo}/factory`); }
     catch { lost(); return; }
     ws = socket;
+    openedAt = Date.now();
+    openedOnline = typeof navigator === "undefined" || navigator.onLine !== false;
     const current = () => !closed && ws === socket;
     // Covers a hung handshake and an open socket that never sends its snapshot.
     deadline = setTimeout(lost, DEAD_MS);
@@ -106,11 +109,17 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
   };
   const resume = () => {
     if (closed || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
+    // online and visibilitychange often arrive together. Keep the fresh handshake.
+    if (ws && !synced && openedOnline && Date.now() - openedAt < 1000) return;
     // Mobile browsers can leave readyState OPEN on a dead socket. Replacing it
     // also discards frames buffered while asleep before they can replay sounds.
     open();
   };
-  if (typeof window !== "undefined") window.addEventListener("online", resume);
+  const offline = () => { openedOnline = false; };
+  if (typeof window !== "undefined") {
+    window.addEventListener("online", resume);
+    window.addEventListener("offline", offline);
+  }
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", resume);
   onStatus("connecting");
   open();
@@ -126,7 +135,10 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       closed = true;
       detach(); clearTimeout(retry); clearTimeout(noticeTimer);
       notice?.remove();
-      if (typeof window !== "undefined") window.removeEventListener("online", resume);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", resume);
+        window.removeEventListener("offline", offline);
+      }
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", resume);
     },
   };

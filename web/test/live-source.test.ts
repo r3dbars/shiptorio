@@ -209,3 +209,15 @@ describe("quiet resync", () => {
     expect(h.messages).toHaveLength(0); source.close();
   }));
 });
+
+
+it("coalesces simultaneous return signals but replaces a handshake that crossed an outage", () => transportTest(h => {
+  const source = h.connect(); h.sockets[0].open(); sync(h.sockets[0]);
+  h.win.dispatchEvent(new Event("online"));
+  h.doc.dispatchEvent(new Event("visibilitychange"));
+  expect(h.sockets).toHaveLength(2);
+  h.win.dispatchEvent(new Event("offline"));
+  h.win.dispatchEvent(new Event("online"));
+  expect(h.sockets).toHaveLength(3);
+  source.close();
+}));

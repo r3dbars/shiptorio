@@ -73,7 +73,9 @@ test('60s offline while a PR ships → snapshot in 2s, one celebration, no repla
     // The map's accessible description is driven by the same applied FactoryState.
     const map = page.locator('#map-summary');
     await expect(map).toContainText('0 shipped');
-    await page.clock.install();
+    const clock = new Date();
+    await page.clock.install({ time: clock });
+    await page.clock.pauseAt(new Date(clock.getTime() + 1000));
     playerOnline = false;
     await context.setOffline(true);
     // The Worker remains online; only the player's browser network is cut.
@@ -88,9 +90,7 @@ test('60s offline while a PR ships → snapshot in 2s, one celebration, no repla
     const start = Date.now();
     playerOnline = true;
     await context.setOffline(false);
-    // Chromium offline emulation does not guarantee OS network events; deliver
-    // the event a phone's restored network dispatches, on the real browser socket.
-    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    // Restoring Chromium networking dispatches the real online event.
     await expect.poll(() => snapshots, { timeout: 2000, intervals: [25, 50, 100] }).toBe(before + 1);
     await expect(map).toContainText('1 shipped', { timeout: 2000 });
     const elapsed = Date.now() - start;
@@ -103,6 +103,7 @@ test('60s offline while a PR ships → snapshot in 2s, one celebration, no repla
     await page.clock.fastForward(1000);
     await expect(map).toContainText('1 shipped');
     expect(await page.evaluate(() => (window as any).__ships.length)).toBe(1);
+    await page.clock.resume();
     await page.screenshot({ path: `/tmp/shiptorio-reconnect-${info.project.name}.png` });
     expect(errors).toEqual([]);
     await info.attach('recovery', { body: JSON.stringify({ elapsedMs: elapsed, shipped: 1, celebrations: 1 }), contentType: 'application/json' });
@@ -120,7 +121,9 @@ test('a 1s blip never shows reconnect UI; a long outage shows a quiet notice', a
   }));
   await page.goto(`/?source=live&repo=${repo}&tour=0`);
   await expect(page.locator('#map-summary')).toContainText(repo);
-  await page.clock.install();
+  const clock = new Date();
+  await page.clock.install({ time: clock });
+  await page.clock.pauseAt(new Date(clock.getTime() + 1000));
   await page.evaluate(() => {
     (window as any).__notices = [];
     new MutationObserver(() => {
