@@ -59,7 +59,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await expect(page).toHaveTitle(/Shiptorio/i);
   await expect(page.getByRole('region', { name: 'Welcome tour' })).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Welcome tour' })).toContainText('Your agents are');
+  await expect(page.getByRole('region', { name: 'Welcome tour' })).toContainText('AI agents do the');
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   const welcome = page.getByRole('region', { name: 'Welcome to Shiptorio' });
   await expect(welcome).toBeVisible();

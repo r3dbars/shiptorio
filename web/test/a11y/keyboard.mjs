@@ -15,8 +15,8 @@ const base = process.argv[2] ?? "http://localhost:5173/";
 // What to press next, best first. The first one that's on screen and enabled gets reached with Tab and pressed.
 const NEXT = [
   /^Ship #|^Ship it$/i,
-  /Let docs ship on their own/i,
-  /^Add a test turret/i,
+  /Let these ship on their own/i,
+  /^Add a check on/i,
   /^Connect Sentry/i,
   /^Launch/i,
   /Start your factory/i,

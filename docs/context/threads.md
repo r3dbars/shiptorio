@@ -1,6 +1,10 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
 
+## Let players play first, sign in later (Claude, 2026-10-27)
+
+- A bare visit plays the welcome tour, then drops signed-out players straight into the demo shop sandbox. GitHub sign-in is an unlock: the floor card's "Demo shop · Use your repo" chip, and a Suggested card after the first rocket. See docs/context/accounts.md "Play first". Codex prompt 3 (guest accounts, server side) builds on this; the intro story/look stays with "Fix the onboarding from Justin's playtest".
+
 ## Give Spark tools and full understanding (Claude, 2026-10-27)
 
 - Owns Spark's tool layer: `server/src/spark-tools.ts` (toolbox, planner loop, review loop) and `spark-context.ts` (what the tools see). The "Make Meta Muse Spark central" thread keeps the audit (docs/context/spark-audit.md); this thread owns the planner and review prompts.
