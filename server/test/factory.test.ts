@@ -41,6 +41,23 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("publishes Codex/Claude sign-in cards on heartbeat, keeps them during builds, and clears them after reauth", async () => {
+    const f = fixture([item({ state: "working" })], { SPARK_DISABLED: "1" });
+    await f.factory.activateRunner("pair");
+    for (const h of ["codex", "claude_code"] as const) {
+      await f.factory.heartbeatRunner("pair", [], [h]);
+      const card = f.saved().deck?.find(m => m.id === `runner-auth:${h}`);
+      expect(card?.title).toContain(h === "codex" ? "Codex" : "Claude Code");
+      expect(card?.why).toContain(`shiptorio-runner login ${h === "codex" ? "codex" : "claude"}`);
+      await f.factory.heartbeatRunner("pair", [], [h]);
+      expect(f.saved().deck?.filter(m => m.id === card!.id)).toHaveLength(1);
+      const reloaded = f.reload();
+      await reloaded.heartbeatRunner("pair", [h], []);
+      expect(f.saved().deck?.some(m => m.id.startsWith("runner-auth:"))).toBe(false);
+    }
+    await expect(f.factory.heartbeatRunner("revoked", [], ["codex"])).rejects.toThrow("revoked");
+  });
+
   it("broadcasts and persists exact player goals across Factory reloads, including clearing", async () => {
     const f = fixture();
     for (const goal of ["  Ship checkout fixes\nwithout regressions  ", "g".repeat(200), ""]) {

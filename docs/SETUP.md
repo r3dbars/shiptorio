@@ -1,5 +1,9 @@
 # Going live
 
+For an independent open-source installation, use `bun run selfhost` and follow
+[the self-host guide](site/self-host.md). It creates an isolated owner config; the
+maintainer production commands below use Shiptorio's existing resources.
+
 Local dev needs none of this. See the README. Commands run from the repo root unless noted.
 
 Already done: the `shiptorio` D1 database (schema applied) and the `shiptorio-cache`

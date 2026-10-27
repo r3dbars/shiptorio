@@ -91,6 +91,14 @@ async function hasPreviewAccess(request: Request, env: AccessEnv): Promise<boole
   return !!(await readSession(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, cookie ? `shiptorio_session=${cookie}` : null));
 }
 
+/** Opt-in first-install access before a GitHub App exists. The owner must unlock the preview. */
+export async function selfhostSetupAccess(request: Request, env: AccessEnv & { SELFHOST_SETUP?: string; GITHUB_APP_ID?: string }): Promise<boolean> {
+  const url = new URL(request.url);
+  if (env.SELFHOST_SETUP !== "1" || env.GITHUB_APP_ID || env.SIGNUP_GATE_MODE === "waitlist") return false;
+  if (request.method !== "GET" || url.protocol !== "https:" || !["/setup", "/setup/callback"].includes(url.pathname)) return false;
+  return hasPreviewAccess(request, env);
+}
+
 export async function previewAccess(request: Request, env: AccessEnv): Promise<Response | null> {
   const secure = secureTransport(request);
   if (secure) return secure;

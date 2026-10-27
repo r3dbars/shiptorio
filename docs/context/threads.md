@@ -1,7 +1,28 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Stranger E2E: latest status (2026-10-26)
+
+| PR | State | Result |
+| --- | --- | --- |
+| #252 | merged after CI + Stranger passed | Fix Chromium runner approval submitting opaque Origin under no-referrer; retain exact-origin checks. |
+| #260 | merged after CI + Stranger passed | Preserve the password gate script nonce on fast and wrapped paths while retaining the other global CSP restrictions. |
+| #256 | full E2E suite | Signup → App install → repo → signed issue/retry → Spark plan → browser approval → runner PR → stale/current CI → verify + AI review → visible Launch → merge/rocket. Every PR to main runs the suite, including drafts and docs-only changes, and retains screenshots, timing/state and browser trace. GitHub, Spark and runner build results are fixtures; no real bot PR merges. Local 16-step run passed in 60.9s. Fixture runner heartbeats keep slow CI render time from simulating an unplugged machine. |
+
+## Codex: pre-hackathon security pass (2026-10-26)
+
+- Auditing all server routes, factory isolation, GitHub/Sentry authentication,
+  Spark's untrusted-input boundary and secret logging from updated main.
+- First separate fix: [#267](https://github.com/r3dbars/shiptorio/pull/267), current
+  repository checks before empire summaries. Regression demonstrated the old
+  leak; full local check passes. Further findings and PRs are in progress.
+- Summary: [security.md](security.md). No manual deployment or resource changes.
+
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
+
+> **Plan through Nov 4 (locked 2026-10-27):** prove the loop (Testing #5 + 5 to 10 more clean ships + one real
+> autonomy level-up), nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1,
+> park build mode / pricing / empire / new mines. Codex is on reliability prompts only. Details: `docs/VISION.md`.
 
 | Thread | State | What it did / produced |
 | --- | --- | --- |
@@ -30,6 +51,7 @@ is the only copy agents outside it (Codex) can see.
 | Add progression and daily streaks | PR #172 | XP from real results, levels, daily streak + shields, unlocks on the island (glass lake, lanterns, gold pad), morning brief with the deck-size trend, check-in end tally, opt-in "you're the bottleneck" notification. `shared/src/progression.ts`, `web/src/ui/Progress.tsx`. Behind `?progress=1` (`?progress=demo` in the sim) |
 | Grow the factory across many repos | PR open | The empire, behind `?empire=1` (remembered; `?empire=0` off). Every other repo you connect floats as a satellite island beyond the main one, tied by a sky rail with crates (`web/src/map/empire.ts`: real island, districts and launch pad, flattened to ~25 draw calls, no shadows). Island chip in the top bar opens the overview: camera pulls back over every island, sheet rolls up shipped, weighted Automated %, waiting on you, and the most stuck island; tap an island to sail there (`web/src/ui/Empire.tsx`). `IslandSummary` + `rollup` in `shared/src/empire.ts`; `GET /api/empire` asks each repo's Factory `summary()` (player's own repos via `reposFor`). Sim shows shiptorio, testing, transcripted |
 | Always show a next move after rockets | PR open | #105 follow-up. `web/src/ui/whatsNext.ts`: when no Next Move card is open, one clear move is always picked from state (launch, check in, stuck station, research, connect a mine, near permit, place a builder, the line, grow) and shown in the Next Move slot, live and sim. Sim planner keeps dealing moves after scripted ore runs out (connect a mine, then "pull 3 more open issues"). Check: `node web/scripts/next-move-check.mjs` (10 rockets, card within 2s each) |
+| Design build mode and Codex task pack | parked (after Nov 4) | Justin 2026-10-27: optional Factorio / RCT-style build mode (place, move, rotate, rewire machines and belts). Spec `docs/BUILD-MODE.md`: every piece, its real pipeline meaning and ports, the per-tier grid on the vertical shaft (`web/src/map/shaft/layout.js`), the `Blueprint` model, `compile()` from layout to real pipeline config, safety rules, server draft/apply, web tools behind `?build=1`. 8-prompt Codex pack in project files `shiptorio/codex-prompts/build-mode.md`, parked until after Nov 4, then needs the shaft map on main |
 
 ## Codex: public judge replay (2026-10-26)
 
@@ -90,6 +112,12 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 | #175 | Geothermal power: local models (Ollama / OpenAI-compatible) as a free assembler for small jobs; fixed guard + planner route; map plant, power accounting, sim `?scenario=geothermal`. Docs: docs/runner-local-models.md | in progress |
 | #3, #4 | Old pre-#1 drafts | closed |
 
+## Runner resilience (Codex, 2026-10-26)
+
+- [PR #259](https://github.com/r3dbars/shiptorio/pull/259), branch `codex/runner-resilience`, rebased onto current main; checkpoint: Oct 29 local runner.
+- Implemented: per-repository capped reconnect backoff, private lease-bound recovery journal, automatic completion receipt retry, explicit subscription sign-in cards, and doctor auth/sandbox/pairing probes. Builds still require player approval; expired/revoked leases never resume automatically. No deployment requested.
+- Focused macOS validation: 54 tests passed, including real sandbox/publication tests and card lifecycle through Factory reload; HTTP polling smoke also passed with dropped requests and an expired fake sign-in. Added immutable patch recovery, automatic receipt replay even when claim is empty, and cached-auth failure latching. Local full validation after rebase: `bun run test:fast` passed (671 tests, 2 platform skips; 24 playtest cases / 306 decisions / no findings), plus `bun run build`. Includes real macOS sandbox/publication probes and a doctor subprocess test. PR checks and merge result are on the linked PR. Merge gate: CI and stranger-path checks green on the exact head; native GitHub auto-merge is disabled, so the chat performs that gate.
+
 ## Codex (outside the Claude project)
 
 Only what Codex has pushed is visible here, not its live session. Codex commits show as "J B" or "Redbars". As of ~17:20 UTC:
@@ -149,3 +177,46 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Validation: full fast suite passes (662 passed, 2 skipped), all workspace/test typechecks, build, and 24 playtest cases / 306 decisions. Playwright budget flow passes on desktop, iPhone 14 and Pixel 7; admin table refresh renders without console errors in a local authenticated SQLite fixture. No paid API request was made for validation.
 - Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
 | Stranger E2E: preview gate CSP | in progress | Browser console assertion caught the outer security middleware replacing the preview gate nonce policy, blocking the gate animation script. Carry the server-generated gate nonce into the global script rule on both fast and wrapped paths, retaining all other global restrictions; application-page policies remain unchanged. Separate fix for the first-day signup checkpoint. |
+
+## Codex: BYOK self-hosting (2026-10-26)
+
+- Branch `codex/selfhost`: `bun run selfhost` creates dedicated D1/KV through Wrangler, migrates, uploads Meta/GitHub/preview/session/encryption secrets, bootstraps the GitHub App setup page, deploys and prints the workers.dev URL. Uses an ignored owner config and resumable non-secret progress; never inherits production domains, IDs, users or mines.
+- Public Black Iron docs: `docs/site/self-host.md`; docs index and maintainer setup guide link to it.
+- Bootstrap: the existing `/setup` requires GitHub auth before an App exists. The self-host config explicitly opts into preview-password-authenticated setup only until `GITHUB_APP_ID` is set, then the wizard disables it. Normal deployments retain their existing login requirement.
+- CI `selfhost` job uses a fresh clone with no Cloudflare credentials, builds assets/runner, applies local D1 migrations and runs real `wrangler deploy --dry-run`. Focused tests cover isolated config, forbidden Worker names, resume and failures.
+- Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
+- Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
+
+## Quota recovery (Codex, 2026-10-26; PR #269)
+
+- Day 1 loop reliability: [PR #269](https://github.com/r3dbars/shiptorio/pull/269), `codex/quota-recovery`.
+- Black Iron live card warns at 80% and at exhaustion, naming the allowance, used/limit,
+  local reset time and 00:00 UTC. `/admin/signup?login=…` selects the correct run owner or
+  stable Spark payer for quota increases. Resource caps have no timed reset; job slots
+  free on completion. Dollar totals remain private to the stable payer, who can open
+  the existing thinking-budget editor. Global Spark pause and refresh failures stay visible.
+- Card refreshes every 15s, on focus/visibility, and after budget edits. Requests time out
+  so a hung refresh can recover. Raising run/call/token caps takes effect on the next
+  attempt, with no restart. Migration `0013_quota_controls.sql` adds nullable per-account
+  Spark call/token overrides; blank inherits Worker defaults, zero pauses that allowance.
+- Local planning only checks run capacity; actual dispatch charges it. Lost claim responses
+  reuse the lease without another charge. Failed, declined or stale plans spend no run.
+  Quota-paused ready jobs remain ready and poll without abuse-counter writes.
+- Failed planning persists a per-issue UTC-day ledger: 1m, 2m, then until midnight after
+  three failures. Restarting the factory or changing the issue does not bypass it. Early
+  plan cards disappear; the alarm wakes at cooldown expiry. A new plan still requires
+  the player's approval. The optional hosted assembler also charges after successful
+  scoping, when writing starts, and uses the same cooldown after scoping failures.
+- Rebases include #259 runner resilience, #262 approval binding and #265's separate
+  per-autopilot-session attempt cap. Narrow `web/` edits implement Justin's requested
+  card; shared websocket contracts and the simulator remain unchanged.
+- Validation: all workspace/test typechecks; full fast suite (697 passed, 2 platform
+  skips); 26 playtest cases / 332 decisions, no findings; production build. SQL-backed
+  enforcement/reset/admin/access tests plus real Factory failure/restart/dispatch tests.
+  Playwright card warning → stop → admin link → recovery → retry cooldown passes on
+  desktop (1440×900) and iPhone 14 (390×664), with no page or console errors. Existing
+  spend-panel save/stop/resume also passes on both. Browser plugin unavailable; used
+  project Playwright. Browser quota states are mocked; backend enforcement uses SQLite.
+- No manual deploy or Cloudflare resource changes. Production recovery remains untested;
+  migration 0013 must run through the existing deployment workflow. No historical run
+  counters were reset or refunded.

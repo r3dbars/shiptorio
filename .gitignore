@@ -16,3 +16,7 @@ playwright-report/
 
 runner/.agent-home/
 web/test/a11y/out/
+
+# Per-owner self-host config and non-secret progress
+server/wrangler.selfhost.json
+server/.selfhost/

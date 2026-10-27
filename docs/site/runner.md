@@ -77,6 +77,12 @@ keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
 sign-in and contact its inference provider; tests run without those credentials.
 
+Codex returns a structured edit proposal in read-only mode. After Codex exits, the
+supervisor applies only exact, unique replacements in approved regular files; new
+files require an explicit create proposal. Dirty checkouts, ambiguous matches and
+links are rejected. Claude Code and local-model adapters retain their existing edit
+flow.
+
 The supervisor runs the repository's checks and verifies the frozen patch before
 publication. You still approve the plan and decide when to merge.
 
@@ -98,3 +104,6 @@ their checkout. That service has a separate install under
 `~/Library/Application Support/Shiptorio` and a launch agent at
 `~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
 files to uninstall the legacy service.
+
+Approving a plan stays bound to that exact issue and plan even if another card moves to
+the top of the deck. If the issue changes before approval, request a fresh plan.

@@ -1,8 +1,10 @@
+import { runnerAuthMove, type AuthHarness } from "./runner-health";
+import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
 import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
-import { runQuota } from "./signup";
+import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
 import { redact } from "./redact";
@@ -216,7 +218,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -257,6 +259,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!this.state || !this.meta || this.batchingDecisions) return;
     await this.decisionData();
     const s = this.state, now = Date.now(), jobs = await this.runnerJobs();
+    const heldIssues = new Set((await this.planningRetries()).map(r => r.itemId));
     const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
     const history = await this.ctx.storage.get<StageHistory[]>("stageHistory") ?? [];
     let changed = false;
@@ -282,13 +285,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
-      if (proposing && item && (!runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
+      if (proposing && item && (heldIssues.has(item.id) || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
       const boundScars = move.options.flatMap(o => o.actions).find(a => typeof a.args.scarCount === "number")?.args.scarCount;
       if (proposing && item && boundScars !== undefined && boundScars !== (item.scars?.length ?? 0)) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
       if (jobId && !jobs.some(j => j.id === jobId && j.status === "awaiting_approval")) return false;
       if (move.stage === "pad" && item && item.state !== "on_pad" && item.state !== "rejected") return false;
-      if (move.stage === "resources" && s.bottleneck?.stage !== "resources") return false;
+      if (move.stage === "resources" && !move.id.startsWith("runner-auth:") && s.bottleneck?.stage !== "resources") return false;
       return true;
     });
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
@@ -441,7 +444,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async clearRunnerMove(): Promise<void> {
-    if (this.state?.move?.stage === "resources") await this.publishDecision(null);
+    if (this.state?.move?.stage === "resources" && !this.state.move.id.startsWith("runner-auth:")) await this.publishDecision(null);
   }
 
   private async publishRunnerMove(move: Move | null) { await this.publishDecision(move); }
@@ -477,6 +480,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     for (const item of s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
+      if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
     const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
     const lead = small ? "local" : presence.harnesses.find(h => h !== "local") ?? presence.harnesses[0];
@@ -486,41 +490,48 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
-  private async chooseRunnerMove(moveId: string, optionId: string): Promise<void> {
-    const move = this.state?.move;
-    if (!move || move.id !== moveId || !move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
+  private async resolveRunnerMove(move: Move): Promise<void> {
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(card => card.id !== move.id);
+    await this.refreshDecisions();
+  }
+
+  private async chooseRunnerMove(move: Move, optionId: string): Promise<void> {
+    const moveId = move.id;
+    if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
     const item = this.state!.items.find(i => i.id === move.itemId);
     if (!item || item.prNumber && item.state !== "rejected" || !["ore", "queued", "rejected"].includes(item.state)) return;
-    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.status === "awaiting_approval");
+    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo === this.meta?.repo && j.status === "awaiting_approval");
     if (job) {
       await this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
-        if (!stored || stored.status !== "awaiting_approval" || this.state?.move?.id !== moveId) return;
-        if (stored.inputRevision !== await workRevision(item)) {
+        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return;
+        const currentItem = this.state?.items.find(i => i.id === stored.itemId);
+        if (!currentItem || currentItem.prNumber && currentItem.state !== "rejected" || !["ore", "queued", "rejected"].includes(currentItem.state)) return;
+        if (stored.inputRevision !== await workRevision(currentItem)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.accountPut(`runnerJob:${stored.id}`, stored);
-          await this.publishRunnerMove(null);
+          await this.resolveRunnerMove(move);
           this.log("warn", stored.error, item.id);
           return;
         }
         if (optionId === "approve") { stored.status = "ready"; stored.approvedAt = Date.now(); }
-        else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); }
+        else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${currentItem.id}`, currentItem.updatedAt); }
         else return;
         await this.accountPut(`runnerJob:${stored.id}`, stored);
-        await this.publishRunnerMove(null);
-        await this.refreshDecisions();
+        await this.resolveRunnerMove(move);
         this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: "player", reason: "Decision from the game", itemId: item.id });
       });
       return;
     }
-    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.publishRunnerMove(null); await this.refreshDecisions(); return; }
+    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
     if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true });
-      await this.publishRunnerMove(null);
+      await this.resolveRunnerMove(move);
       this.log("info", "Reading the issue and code to prepare your plan. No build has started.", item.id);
-    } catch { this.log("warn", "This work is already queued or has changed. Refresh to see its latest state.", item.id); }
+    } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); }
   }
 
   async allowDeviceStart() {
@@ -557,9 +568,18 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (record) { record.ready = true; await this.accountPut("device", record); }
     });
   }
-  async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
+  async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][], authRequired?: AuthHarness[]) {
     if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
-    await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
+    await this.accountPut("runnerPresence", { harnesses, authRequired, seenAt: Date.now() });
+    if (authRequired !== undefined && await this.load()) {
+      await this.decisionData();
+      const ids = authRequired.map(h => `runner-auth:${h}`);
+      const current = this.openMoves!.filter(m => m.id.startsWith("runner-auth:")).map(m => m.id);
+      if (ids.length === current.length && ids.every(id => current.includes(id))) return;
+      this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("runner-auth:") || ids.includes(m.id));
+      for (const h of authRequired) if (!this.openMoves.some(m => m.id === `runner-auth:${h}`)) this.openMoves.push(runnerAuthMove(h));
+      await this.refreshDecisions();
+    }
   }
   async pollDevice(secret: string) {
     return this.ctx.blockConcurrencyWhile(async () => {
@@ -603,6 +623,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.redactor.value([...jobs.values()].map(({ lease, ...job }) => job));
   }
 
+  private async runAccount(fallback?: string) {
+    return (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1")
+      .bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login ?? fallback;
+  }
+
+  async planningRetries() {
+    const rows = await this.ctx.storage.list<PlanningRetry>({ prefix: "planningRetry:" });
+    return this.redactor.value([...rows.entries()].flatMap(([key, retry]) => planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []));
+  }
+
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
@@ -619,14 +649,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (stored) await this.accountPut(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
+      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active runner job; finish its plan or build first");
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
-      {
-        const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
-        if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
-      }
+      const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
+      if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      const account = await this.runAccount(requestedBy);
+      if (!account) throw new Error("Run quota owner unavailable");
+      const quota = await runQuotaStatus(this.env, account);
+      if (quota.used >= quota.limit) throw new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      const usage = await this.usage();
+      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) throw new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
 
       const id = crypto.randomUUID();
-      const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
+      const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
       if (currentTrace()) await this.accountPut(`trace:${item.id}`, currentTrace());
       await this.accountPut(`runnerJob:${id}`, job);
@@ -725,6 +760,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       job.allowedPaths = assignment.files;
       await this.routeRunnerJob(job, item);
       await this.planComment(token, job, item).catch(error => this.reliabilityFailure(`planComment:${item.id}`, error, item.id));
+      await this.ctx.storage.delete(`planningRetry:${job.itemId}`);
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
         const move = this.runnerApprovalMove(job, item);
@@ -737,7 +773,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch (e) {
       // Keep the cause on the job and in the log, so a failed plan says why instead of just failing.
       const why = e instanceof Error ? e.message.replace(/\s+/g, " ").slice(0, 240) : "unknown error";
-      job.status = "failed"; job.error = `Planning failed: ${why}. Check the setup, then approve a new try.`;
+      const key = `planningRetry:${job.itemId}`;
+      const retry = planningFailure(await this.ctx.storage.get<PlanningRetry>(key), why);
+      await this.accountPut(key, retry);
+      job.status = "failed"; job.error = `Planning failed: ${why}. Try ${retry.failures}/3. No build run charged. Retry after ${new Date(retry.retryAt).toISOString()}.`;
       await this.accountPut(`runnerJob:${job.id}`, job);
       this.log("error", job.error, job.itemId);
     }
@@ -757,7 +796,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const live = [...running.values()].find(j => j.status === "running" && j.deadline && j.deadline > Date.now());
       // The runner claims only while idle, so the same pairing claiming again well after the lease was
       // granted means the claim response was lost (reset or client timeout). Hand the same job back.
-      if (live?.pairId === pairId && live.deadline! - RUNNER_LEASE_MS + LOST_CLAIM_MS < Date.now()) {
+      if (live?.pairId === pairId && harnesses.includes(live.harness) && live.deadline! - RUNNER_LEASE_MS + LOST_CLAIM_MS < Date.now()) {
         this.log("info", "The local runner lost its last claim, so Shiptorio handed the same job back.", live.itemId);
         return live;
       }
@@ -783,6 +822,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.accountPut(`runnerJob:${job.id}`, job);
         return null;
       }
+      // Charge only a validated plan actually dispatched to the runner. Lost-claim recovery above never charges twice.
+      const account = job.runAccount ?? await this.runAccount();
+      if (!account) return null;
+      const quota = await runQuotaStatus(this.env, account);
+      if (quota.used >= quota.limit || !await runQuota(this.env as never, account)) return null;
       await this.accountPut("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);
@@ -816,6 +860,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       return { prUrl: job.prUrl }; // lost acknowledgment
     }
+    if (job.status === "failed" && !receipt.ok && job.pairId === pairId && job.lease === receipt.lease) return { status: "failed" };
     if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
     const item = this.state.items.find(i => i.id === job.itemId)!;
     if (!receipt.ok) {
@@ -2277,7 +2322,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       s.move = card;
       const before = JSON.stringify(await this.runnerJobs());
       const handled = await this.choosePermitMove(card.id, tap.optionId) || await this.chooseGauntletMove(card.id, tap.optionId);
-      if (!handled) await this.chooseRunnerMove(card.id, tap.optionId);
+      if (!handled) await this.chooseRunnerMove(card, tap.optionId);
       const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
       await this.refreshDecisions();
       if (!consumed) continue;
@@ -2468,7 +2513,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     await this.load();
     const repo = this.meta?.repo ?? this.state?.repo;
-    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo)) { ws.close(1008, "Repository access revoked"); return; }
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo, "write")) { ws.close(1008, "Repository write access required"); return; }
 
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
@@ -2511,7 +2556,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else {
         const before = JSON.stringify(await this.runnerJobs());
         const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
-        if (!handled) await this.chooseRunnerMove(msg.moveId, msg.optionId);
+        if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
       }
@@ -2797,6 +2842,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
 
     for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
+      if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       const jobs = await this.runnerJobs();
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "ready", "running", "awaiting_approval"].includes(j.status)).length >= budgetLimits(this.env).jobs) continue;
@@ -2822,10 +2868,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       {
         const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
-        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
+        if (!account) break;
+        const quota = await runQuotaStatus(this.env, account);
+        if (quota.used >= quota.limit) break;
       }
       await this.patch({
-        items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
+        items: [{ ...item, state: "working", machineId: m.id, updatedAt: now }],
         machines: [{ ...m, state: "working" }],
       });
       this.running.add(item.id);
@@ -2848,6 +2896,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.accountAlarm(Date.now() + TICK_MS);
     else await this.save();
+    const retryAt = Math.min(...(await this.planningRetries()).map(r => r.retryAt));
+    const currentAlarm = await this.ctx.storage.getAlarm();
+    if (Number.isFinite(retryAt) && (currentAlarm == null || currentAlarm > retryAt)) await this.accountAlarm(retryAt);
     const poll = await this.ctx.storage.get<{ nextAt: number }>("posthogPoll");
     if (poll && (await this.ctx.storage.get<boolean>("posthogLinked"))) {
       const next = Math.max(Date.now() + TICK_MS, poll.nextAt);
@@ -2872,6 +2923,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     const get = () => s.items.find((i) => i.id === itemId)!;
     const machine = () => s.machines.find((m) => m.id === machineId);
+    let buildStarted = false;
     try {
       if (!sparkConfigured(this.env)) throw new Error("The planner has no power: META_API_KEY isn't set");
       if (!this.meta) throw new Error("factory has no repo");
@@ -2889,6 +2941,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await Promise.all(wanted.map(async (path) => ({ path, content: await fileContent(token, this.meta!.repo, path, ref) })))
       ).filter((f): f is { path: string; content: string } => f.content !== null);
 
+      // Scoping is planning; charge only when the legacy hosted assembler actually starts writing.
+      const account = await this.runAccount();
+      if (!account || !await runQuota(this.env as never, account)) throw new Error("Daily run quota reached; builds paused until 00:00 UTC or a limit increase");
+      buildStarted = true;
+      await this.ctx.storage.delete(`planningRetry:${itemId}`);
+      await this.patch({ items: [{ ...get(), attempts: get().attempts + 1, updatedAt: Date.now() }] });
       this.log("info", `Assembler ${machineId} is writing a fix`, itemId);
       const fix = await writeFix(this.sparkEnv(), task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
@@ -2917,8 +2975,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       this.log("success", `PR #${prNumber} is on the belt to the inspector`, itemId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (!buildStarted) {
+        const key = `planningRetry:${itemId}`;
+        await this.accountPut(key, planningFailure(await this.ctx.storage.get<PlanningRetry>(key), msg));
+      }
       await this.patch({
-        items: [{ ...get(), state: "rejected", failure: msg, updatedAt: Date.now() }],
+        items: [{ ...get(), state: buildStarted ? "rejected" : "queued", failure: msg, updatedAt: Date.now() }],
         machines: machine() ? [{ ...machine()!, state: "idle" }] : [],
       });
       this.log("error", `Assembler ${machineId} failed: ${msg}`, itemId);
