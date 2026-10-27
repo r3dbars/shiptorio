@@ -86,3 +86,43 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sentry, then email + Stripe test mode).
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.
 
+
+## Deploy smoke + automatic rollback (Codex, 2026-10-26)
+
+- Day 1 deploy reliability checkpoint, extending merged #173: one local/CI smoke
+  script checks access form 200, wrong password 401, GitHub redirect, exact build
+  SHA, landing/private gates and HTTPS. Explicit GET /access is now 200; GET
+  /auth/login can start OAuth before preview access (private routes stay gated).
+- Deploy saves the active Worker version before mutation, rolls back on deploy or
+  smoke failure, verifies recovery, and leaves a red job with error annotations
+  and a summary. Manual branch deploys share the production concurrency lock.
+- Implementation [#250](https://github.com/r3dbars/shiptorio/pull/250) merged after CI
+  and stranger-path checks passed. Local validation: 656 tests passed, 2 platform
+  skips; workspace + test typechecks, build, 24 playtest cases (306 decisions) passed.
+- Healthy production [Deploy 40428675804](https://github.com/r3dbars/shiptorio/actions/runs/40428675804)
+  passed every smoke at `dc2843715157e0835c52019db00cccb16537718d`.
+- **Live rollback proved**, 2026-10-26 7:52 PM CT: temporary branch
+  `codex/deploy-smoke-drill`, commit `bd4bd76d4ebc6814a64d748311c8fe5a2a73e175`,
+  deliberately returned 503 for Cloudflare GET /access. [Deploy 40428959075](https://github.com/r3dbars/shiptorio/actions/runs/40428959075)
+  deployed bad Worker version `8ab17ba2-93fa-45fb-8749-b72db215a017`, failed smoke
+  with “GET /access: expected 200, got 503”, then automatically ran Wrangler rollback
+  to captured version `e06a9ca5-cda0-4097-912a-112034233b87` at 100% traffic.
+  Cloudflare's active-version check and all restored-site smoke probes passed at
+  `dc28437`; the job remained **failed**, with an error annotation and summary.
+  Failure detected 00:52:28Z; restored smoke passed 00:52:32Z (about four seconds).
+  The fault branch was never merged and was deleted after the drill.
+- See scripts/smoke/README.md for local use and repeating the drill. No data/schema
+  rollback is claimed; cancellation/timeout cannot guarantee automatic recovery.
+
+| Stranger E2E: browser runner pairing | in progress | Full browser journey exposed Chromium submitting the device approval form with opaque Origin under no-referrer, rejected by the same-origin guard. Pairing page now uses same-origin referrer policy; foreign and missing origins remain rejected. Day 4 runner checkpoint. |
+
+## Spark spend and factory budgets (Codex, 2026-10-26; PR #255)
+
+- Checkpoint: Friday cost/power guardrails. `codex/spark-spend` adds migration `0012_spark_spend.sql` (checked against #150's gapless-number guard).
+- D1 records each factory's UTC day, calls, measured input/output/cache tokens and estimated USD. Default daily budget: **$5 per factory**; the stable payer can change it in whole cents, including $0 to pause.
+- Before each Meta attempt, reserve UTF-8 input upper bound plus capped output at Spark 1.3 standard rates. Concurrent reservations are atomic. Reported usage settles once; missing usage/errors keep a conservative reservation and show as unmeasured. Existing account call/token limits remain in force. Unknown model prices fail closed.
+- Owner HUD chip → How it thinks: usage, 80% warning card, daily budget form, 100% stop explanation/reset at 00:00 UTC. Admin `/admin` has a Black Iron spend table. Early stop is possible when the remaining budget cannot cover the next reservation. No additional model call is spent explaining a stop.
+- Explicitly crosses into `web/` for the requested owner UI; adds a REST endpoint rather than changing the shared websocket contract. Simulator remains independent.
+- Pricing source, checked 2026-10-26: https://dev.meta.ai/docs/pricing-rate-limits — $1.25/M input, $0.15/M cached input, $4.25/M output. These are estimates, not invoices. No historical backfill: old account totals cannot recover per-factory token splits.
+- Validation: full fast suite passes (662 passed, 2 skipped), all workspace/test typechecks, build, and 24 playtest cases / 306 decisions. Playwright budget flow passes on desktop, iPhone 14 and Pixel 7; admin table refresh renders without console errors in a local authenticated SQLite fixture. No paid API request was made for validation.
+- Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.

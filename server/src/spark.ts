@@ -1,3 +1,4 @@
+import { reserveFactorySpend, settleFactorySpend, type TokenUsage } from "./spend";
 import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
 
@@ -12,6 +13,7 @@ import type { FileChange } from "./github";
 
 export interface SparkEnv extends BudgetEnv {
   budgetAccount?: () => Promise<string>;
+  budgetRepo?: string;
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
@@ -43,7 +45,13 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
   const base = (env.SPARK_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   return retry("Spark completion", async () => {
     // A provider retry is another billable call: reserve every attempt independently.
-    const reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens);
+    const spendId = env.budgetRepo ? await reserveFactorySpend(env.DB!, env.budgetRepo, reservedTokens - output, output, sparkModel(env)) : null;
+    let reservation;
+    try { reservation = await reserveSpark(env, await env.budgetAccount!(), reservedTokens); }
+    catch (error) {
+      if (spendId) await env.DB!.prepare("DELETE FROM spark_factory_calls WHERE id = ?").bind(spendId).run();
+      throw error;
+    }
     const res = await observedFetch("spark", `${base}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(90000),
@@ -51,8 +59,11 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
       body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output }),
     });
     if (!res.ok) throw new OutboundError(res.status);
-    const data = (await res.json()) as { usage?: { total_tokens?: number }; choices?: { message?: { content?: string } }[] };
-    await settleSpark(env, reservation, data.usage?.total_tokens);
+    const data = (await res.json()) as { usage?: TokenUsage; choices?: { message?: { content?: string } }[] };
+    try {
+      if (spendId) await settleFactorySpend(env.DB!, spendId, data.usage);
+      await settleSpark(env, reservation, data.usage?.total_tokens);
+    } catch { throw new BudgetError("Spark accounting unavailable; paid calls paused with reservation retained"); }
     const text = data.choices?.[0]?.message?.content;
     if (typeof text !== "string" || !text || text.length > 100000) throw new SparkError("Spark returned no content");
     return text;

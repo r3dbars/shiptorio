@@ -19,12 +19,12 @@ export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['
     return run();
   }));
 }
-export function log(level: LogEntry['level'], event: string, fields: Record<string, unknown> = {}): LogEntry {
+export function log(level: LogEntry['level'], event: string, fields: Record<string, unknown> = {}, { persist = true } = {}): LogEntry {
   const ctx = context.getStore();
   const entry = new Redactor(ctx?.env).value(redact({ ...fields, ...ctx?.trace, requestId: ctx?.trace.requestId ?? crypto.randomUUID(), level, ts: new Date().toISOString(), event })) as LogEntry;
   console[level](JSON.stringify(entry));
   // One immutable key per event avoids cross-isolate lost updates. Seven-day retention.
-  if (ctx?.env.CACHE) {
+  if (persist && ctx?.env.CACHE) {
     const suffix = `${String(9999999999999 - Date.now()).padStart(13, '0')}:${crypto.randomUUID()}`;
     const categories = ['events', ...(level === 'error' ? ['errors'] : []), ...(event.startsWith('spark.') ? ['spark'] : []), ...(event.startsWith('webhook.') ? ['webhooks'] : [])];
     const groups = categories.flatMap(group => [`${group}:all`, ...(entry.repo ? [`${group}:repo:${entry.repo}`] : [])]);

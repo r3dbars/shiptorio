@@ -5,6 +5,7 @@ export function budgetDb() {
   const sqlite = new Database(":memory:");
   sqlite.exec("CREATE TABLE installations(id INTEGER PRIMARY KEY, account_login TEXT); INSERT INTO installations VALUES(1, 'owner')");
   sqlite.exec(readFileSync(new URL("../migrations/0009_cost_guards.sql", import.meta.url), "utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0012_spark_spend.sql", import.meta.url), "utf8"));
   sqlite.exec("CREATE TABLE user_repos(repo TEXT, user_id INTEGER); INSERT INTO user_repos VALUES('owner/repo', 1)");
   const db = { prepare(sql: string) {
     const query = sqlite.query(sql);

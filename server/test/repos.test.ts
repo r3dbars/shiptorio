@@ -112,3 +112,22 @@ test("progress follows the player, validated by the shared schema", async () => 
   expect(got.progress).toMatchObject({ xp: 120, streak: 2 });
   expect((await get(env, "/api/me/progress", "")).status).toBe(401);
 });
+
+test("only the stable payer can read and change a factory dollar budget; validates cents and origin", async () => {
+  const env = baseEnv(), repo = "r3dbars/shiptorio", path = `/api/repos/${repo}/spend`;
+  const owner = `${await signedInCookie(env, "r3dbars", [repo], 11)}; ${await preview()}`;
+  const friend = `${await signedInCookie(env, "friend", [repo], 12)}; ${await preview()}`;
+  expect((await get(env, path, owner)).status).toBe(200);
+  expect((await get(env, path, friend)).status).toBe(403);
+  const post = (cookie: string, body: string, origin = "https://shiptorio.com") => app.fetch(new Request(`https://shiptorio.com${path}`, { method: "POST", headers: { cookie, origin, "content-type": "application/json" }, body }), env as never);
+  expect((await post(friend, '{"dailyBudgetUsd":99}')).status).toBe(403);
+  expect((await post(owner, '{"dailyBudgetUsd":99}', "https://evil.example")).status).toBe(403);
+  for (const value of [-1, "5", 10001, 1.001, null]) expect((await post(owner, JSON.stringify({ dailyBudgetUsd: value }))).status).toBe(400);
+  expect((await post(owner, "null")).status).toBe(400);
+  expect((await post(owner, "x".repeat(129))).status).toBe(413);
+  const saved = await post(owner, '{"dailyBudgetUsd":0}');
+  expect(saved.status).toBe(200);
+  expect(await saved.json()).toMatchObject({ dailyBudgetUsd: 0, status: "stopped" });
+  expect(await (await get(env, path, owner)).json()).toMatchObject({ dailyBudgetUsd: 0, status: "stopped" });
+  expect((await get(env, path, owner)).headers.get("Cache-Control")).toBe("no-store");
+});

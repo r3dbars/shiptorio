@@ -177,6 +177,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   if (tables.has("factory_budget_owners")) statements.push(env.DB.prepare("DELETE FROM factory_budget_owners WHERE user_id = ?").bind(user.id));
   for (const repo of repos) if (tables.has("factory_budget_owners")) statements.push(env.DB.prepare("DELETE FROM factory_budget_owners WHERE repo = ?").bind(repo.full_name));
   for (const install of installs.results) if (tables.has("api_limits")) statements.push(env.DB.prepare("DELETE FROM api_limits WHERE scope = ?").bind(`github:installation:${install.id}`));
+  for (const repo of repos) for (const table of ["spark_factory_calls", "spark_factory_budgets"]) if (tables.has(table)) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(repo.full_name));
   const receipt = crypto.randomUUID();
   statements.push(env.DB.prepare("INSERT INTO account_deletion_receipts (id, completed_at, factory_count) VALUES (?, ?, ?)").bind(receipt, now, repos.length));
   await env.DB.batch(statements);
