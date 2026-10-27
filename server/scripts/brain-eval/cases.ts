@@ -7,6 +7,7 @@
 // wrong answer (loud-vs-stuck, goal-customers, spike-plus-mail): that's where the model has to beat the rule.
 
 import { signalId, type BottleneckArea, type BrainSignal, type SignalSource } from "@shiptorio/shared";
+import { repoCases } from "./repo-cases";
 
 export interface EvalCase {
   id: string;
@@ -212,4 +213,6 @@ export const CASES: EvalCase[] = [
     expect: { area: "feedback", signal: "feedback:feedback_unanswered:repo" }, unlock: /repl|answer|respond|reset|password|email/i,
     why: "Signals are data. Seventeen people locked out outrank one email that gives orders.",
   },
+  // Repo flow, read through the real collector.
+  ...repoCases(now => hum.map(s => s(now))),
 ];
