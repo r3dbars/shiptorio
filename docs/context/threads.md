@@ -1,6 +1,12 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
 
+## Build the agent loop that picks the bottleneck (Claude, 2026-10-27)
+
+- Loop core of the bottleneck brain (docs/BRAIN.md): `server/src/diagnose.ts` (one bottleneck + one unlock per pass, memory of Later/Continue/wins, throttle: main-signal change or 30 min, 24 a day, stops at half the model budget, rule fallback), `server/src/unlocks.ts` (playbook by signal kind; actions are only `inspect_bottleneck`, `connect_source`, `ask_goal`, everything else is a link), `server/src/signals/index.ts` (collector registry, `bind()` for collectors with their own ctx, plus the `factory:*` collector over bottleneck.ts).
+- Factory: `kickBrain` runs off the tick (one pass in flight, ≥30 s apart), stores `brainMemory`, `brainSignals`, `brainDiagnoses` (last 50, for the eval harness). Model calls go through `Factory.think("diagnose")`. Behind the `brain` flag, off by default.
+- Collector threads add one line to `COLLECTORS`. Eval entry point: `runDiagnose()` with an injectable `think`.
+
 ## Give Spark tools and full understanding (Claude, 2026-10-27)
 
 - Owns Spark's tool layer: `server/src/spark-tools.ts` (toolbox, planner loop, review loop) and `spark-context.ts` (what the tools see). The "Make Meta Muse Spark central" thread keeps the audit (docs/context/spark-audit.md); this thread owns the planner and review prompts.

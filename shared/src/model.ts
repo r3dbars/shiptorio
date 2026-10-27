@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { Goals } from "./goals";
+import { HoldingBack } from "./signals";
 
 // Science colors double as the kind of work an item is.
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
@@ -504,6 +505,7 @@ export const FactoryState = z.object({
   goal: z.string().optional(), // goalText(goals): the sentence Spark's prompts read
   goals: Goals.optional(), // shared/src/goals.ts: what the player wants, picked on one earned card
   bottleneck: Bottleneck.nullable().optional(),
+  holdingBack: HoldingBack.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
   move: Move.nullable().optional(), // the open Next Move card
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),

@@ -36,6 +36,7 @@ export function applyPatch(s: FactoryState, p: Patch): FactoryState {
     goal: p.goal ?? s.goal,
     goals: p.goals ?? s.goals,
     bottleneck: p.bottleneck !== undefined ? p.bottleneck : s.bottleneck,
+    holdingBack: p.holdingBack !== undefined ? p.holdingBack : s.holdingBack,
     autonomy: p.autonomy ?? s.autonomy,
     metrics: p.metrics ?? s.metrics,
     foreman: p.foreman ?? s.foreman,

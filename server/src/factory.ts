@@ -29,6 +29,7 @@ import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing
 import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
+import { unlockMove, signalWeight, type Diagnosis } from "@shiptorio/shared";
 import {
   SCIENCE_FOR,
   WebToServer,
@@ -64,6 +65,7 @@ import {
   goalMove,
   goalsFromPick,
   goalText,
+  tiltByGoals,
   inferGoals,
   type GoalGuess,
   type Goals,
@@ -85,6 +87,8 @@ import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/git
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
+import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
+import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
@@ -318,7 +322,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
     const yes = await flagEnabled(this.env, "attention") ? this.deckBook!.yes : undefined;
-    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    this.kickBrain(derived, now);
+    const brainCard = await this.brainCard(derived);
+    const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = this.applyGameMaster(ranked);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -341,6 +347,104 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.broadcast({ type: "deck", deck });
     if (s.move) this.broadcast({ type: "move", move: s.move });
     else if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
+  }
+
+  // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------
+
+  private brainBusy = false;
+  private brainKickedAt = 0;
+
+  /** The brain's current card, from its stored memory. The "brain" flag (default off) gates it. */
+  private async brainCard(derived: { bottleneck: FactoryState["bottleneck"] }): Promise<Move | null> {
+    if (!await flagEnabled(this.env, "brain")) return null;
+    const cur = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.current;
+    if (!cur) return null;
+    const move = unlockMove(cur.bottleneck, cur.unlock, cur.shownAt);
+    // A queue-jam card stands on the jam's station, so the deck doesn't also deal the plain bottleneck card.
+    const jam = derived.bottleneck;
+    return cur.bottleneck.id.startsWith("factory:queue_jam") && jam ? { ...move, stage: jam.stage, focus: jam.stationId ?? jam.stage } : move;
+  }
+
+  /**
+   * One pass of the loop, off the tick: read due collectors, diagnose (throttled inside runDiagnose), store
+   * memory and the Diagnosis, and refresh the deck only when the card changed. One pass in flight; at most every 30s.
+   */
+  private kickBrain(derived: { bottleneck: FactoryState["bottleneck"]; stages: StageMetrics[] }, now: number) {
+    if (this.brainBusy || now - this.brainKickedAt < 30_000 || !this.meta) return;
+    this.brainBusy = true; this.brainKickedAt = now;
+    const run = async () => {
+      if (!await flagEnabled(this.env, "brain")) {
+        if (this.state?.holdingBack) { this.state.holdingBack = null; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack: null } }); }
+        return;
+      }
+      const s = this.state!, meta = this.meta!;
+      let token: Promise<string> | undefined;
+      const { cache, errors } = await collect({
+        state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
+        storage: { get: key => this.ctx.storage.get(key) },
+        githubToken: () => token ??= installationToken(this.env, meta.installationId),
+        posthogCreds: async () => await this.ctx.storage.get<boolean>("posthogLinked") ? postHogCreds(this.env, this.credentialScope(), this.redactor) : {},
+      }, await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
+      for (const e of errors) this.log("warn", `Couldn't read ${e.source} signals: ${e.error.slice(0, 200)}`);
+      await this.accountPut("brainSignals", cache);
+      await this.decisionData();
+      const before = await this.ctx.storage.get<BrainMemory>("brainMemory") ?? emptyBrainMemory();
+      const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
+      const budget = await this.brainBudget();
+      const permits = await this.ctx.storage.get<PermitBook>("permits");
+      const result = await runDiagnose({
+        signals: tiltByGoals(cache.signals, s.goals), memory: before, now, goal: s.goal, playerFeedback: feedback, ctx: { repo: meta.repo }, budget,
+        think: sparkConfigured(this.env) ? brief => this.think("diagnose", { title: `${brief.signals.length} ${brief.signals.length === 1 ? "signal" : "signals"}, heaviest: ${brief.signals[0]?.title ?? "none"}`, target: derived.bottleneck?.stationId },
+          () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }),
+          out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
+      });
+      await this.accountPut("brainMemory", result.memory);
+      const main = result.memory.current && cache.signals.find(x => x.id === result.memory.current!.bottleneck.signalIds[0]);
+      const holdingBack = result.memory.current ? { ...result.memory.current.bottleneck, severity: main ? Math.min(1, signalWeight(main, now)) : 0 } : null;
+      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) { s.holdingBack = holdingBack; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack } }); }
+      for (const c of result.cleared) this.log("info", `Unblocked: ${c.title}.`);
+      if (result.decided) {
+        const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
+        await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));
+      }
+      if (result.decided && !result.thought && result.fellBack === undefined && result.diagnosis.bottleneck) {
+        await this.note({ decision: "diagnose", by: "fallback", ms: 0, title: result.diagnosis.bottleneck.title, outcome: result.diagnosis.unlock?.title ?? "No card", reason: result.why, model: "heaviest-signal rule" });
+      }
+      const key = (m?: BrainMemory) => m?.current ? `${m.current.bottleneck.id}|${m.current.unlock.id}|${m.current.unlock.title}` : "";
+      if (key(before) !== key(result.memory)) await this.refreshDecisions();
+    };
+    void run().catch(error => this.log("error", `Bottleneck brain failed: ${String(error)}`)).finally(() => { this.brainBusy = false; });
+  }
+
+  /** The day's model budget as one fraction (calls or tokens, whichever is further along); null with no ledger. */
+  private async brainBudget(): Promise<{ used: number; limit: number } | null> {
+    const env = this.sparkEnv();
+    if (!env.DB || !env.budgetAccount) return null;
+    try {
+      const u = await budgetUsage(env, await env.budgetAccount());
+      return { used: Math.max(u.calls / Math.max(1, u.limits.calls), u.tokens / Math.max(1, u.limits.tokens)), limit: 1 };
+    } catch { return null; }
+  }
+
+  private async tapBrainCard(bottleneckId: string, choice: "continue" | "later") {
+    const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
+    if (!memory) return;
+    const signal = (await this.ctx.storage.get<SignalCache>("brainSignals"))?.signals.find(x => x.id === bottleneckId);
+    await this.accountPut("brainMemory", tapBrain(memory, bottleneckId, choice, signal ? signalWeight(signal, Date.now()) : 0, Date.now()));
+    this.brainKickedAt = 0; // the slot is free: look again on the next tick
+  }
+
+  /** Continue on an unlock card: run its one safe action (or the browser opens its link), and watch whether it worked. */
+  private async chooseBrainMove(card: Move, option: Move["options"][number]): Promise<boolean> {
+    if (!card.id.startsWith("unlock:")) return false;
+    if (option.id === "later") { await this.swipe(card, "defer"); return true; }
+    const action = option.actions[0];
+    if (action?.tool === "connect_source" && (action.args.kind === "sentry" || action.args.kind === "posthog")) await this.connectMine(action.args.kind);
+    else if (action?.tool === "inspect_bottleneck") this.log("info", card.why);
+    else if (action?.tool === "ask_goal") await this.offerGoalMove(true); // set_a_goal / revisit_goal: deal the goal card now
+    await this.recordApproval(card.kind ?? "unblock", moveScope(card, this.state!));
+    await this.tapBrainCard(card.id.slice(7), "continue");
+    return true;
   }
 
   // ---------- game master: Spark ranks the deck and words the bottleneck card ----------
@@ -427,6 +531,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong") {
     await this.decisionData();
+    if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
     resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!));
     if (why === "defer") deferCard(book, move);
@@ -2754,7 +2859,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("warn", "Run the missing checks before launching.");
       } else {
         const before = JSON.stringify(await this.runnerJobs());
-        const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
+        const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) {

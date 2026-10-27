@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { GoalId, Goals } from "./goals";
+import { HoldingBack } from "./signals";
 import {
   Actor,
   Autonomy,
@@ -43,6 +44,7 @@ export const Patch = z.object({
   goal: z.string().optional(),
   goals: Goals.optional(),
   bottleneck: Bottleneck.nullable().optional(),
+  holdingBack: HoldingBack.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),

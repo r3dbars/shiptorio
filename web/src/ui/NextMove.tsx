@@ -4,6 +4,7 @@
 // No card open, the row is the "what's next" pick (ui/whatsNext.ts), so the game never goes quiet after a rocket.
 
 import { useState, type ReactNode } from "react";
+import { openUnlockLink } from "./unlockLink";
 import { because } from "./because";
 import type { Bottleneck, Move, Station, WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
@@ -70,7 +71,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen, onPower, nu
               type="button"
               className={o.recommended ? "rec" : undefined}
               title={o.actions.map((a) => `${a.tool}: ${a.reason}`).join("\n") || undefined}
-              onClick={() => (onPower && plugsInAgent(o) ? onPower() : send({ type: "choose_move", moveId: move.id, optionId: o.id }))}
+              onClick={() => (onPower && plugsInAgent(o) ? onPower() : (openUnlockLink(move, o), send({ type: "choose_move", moveId: move.id, optionId: o.id })))}
             >
               {o.label}
               {o.recommended && <span className="sr">, {WORDS.suggested}</span>}
