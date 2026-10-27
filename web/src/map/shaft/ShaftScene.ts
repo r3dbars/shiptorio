@@ -21,13 +21,23 @@ import { FirstRunLight, LIT_LINE, litFloors } from "./firstRun";
 import { biasFor } from "./frame";
 import { ShaftHud } from "./hud";
 import { makeLayout, MINES } from "./layout";
-import { clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
+import { cartAt, clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
 import { ShaftStage, type ShaftView } from "./stage";
+import { Trophies } from "./trophies";
 
 // the mockup's art was tuned without color management (three r128); the engine's lights are patched to match
 THREE.ColorManagement.enabled = false;
 
 type Install = (I: Iron) => void;
+
+export interface Timelapse {
+  refs: string[]; // launched item ids, oldest first
+  onStart: (placed: string[]) => void; // the ones that found room on the line (none: nothing to show)
+  onShip: (ref: string) => void; // one of them just launched
+  onOver: () => void; // the replay ran its full length
+}
+const LAPSE_SPEED = 8; // the whole factory runs this much faster while the replay plays
+const LAPSE_MAX_S = 9; // and never longer than this
 const MODS = import.meta.glob("./modules/*.js");
 let installs: Promise<Install[]> | null = null;
 function loadModules(): Promise<Install[]> {
@@ -73,6 +83,11 @@ export class ShaftScene {
   // a factory that never shipped starts dark and lights floor by floor (firstRun.ts)
   private readonly firstRun = new FirstRunLight();
   private readonly said: HTMLElement;
+  // the coming-back time-lapse (ui/away.ts): asked for before the shaft may be built, started on the first sync
+  private lapse: Timelapse | null = null;
+  private lapsing = false;
+  private asked: string | null = null; // the last focus asked for, kept for a shaft that wasn't built yet
+  private readonly trophies = new Trophies(); // a green lamp per shipped PR, by the assembler that built it
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -151,8 +166,10 @@ export class ShaftScene {
     if (!this.sp || sp.key !== this.sp.key) this.rebuild(sp);
     else this.sp = sp;
     this.driver?.sync(state);
+    if (this.I) this.trophies.sync(this.I, state);
     this.hud.read(state, this.sp!);
     this.light(state);
+    this.startLapse();
   }
 
   // A floor lit up: a quick swoop to it (a snap under reduced motion), unless you're looking somewhere yourself.
@@ -164,11 +181,48 @@ export class ShaftScene {
     if (!this.home && this.view.view !== "free" && this.view.view !== "station") this.setView(floor, null);
   }
 
+  /** Fly these launched items up the shaft again, fast: what really shipped while the player was away. */
+  timelapse(lapse: Timelapse) {
+    this.lapse = lapse;
+    this.lapsing = false;
+    this.startLapse();
+  }
+
+  /** The replay is over or skipped: back to real time, and the PR waiting at the gate is back on it. */
+  endTimelapse() {
+    this.lapse = null;
+    this.lapsing = false;
+    this.driver?.endLapse();
+    if (this.I) this.I.policy.speed = 1;
+  }
+
+  private startLapse() {
+    const lapse = this.lapse, I = this.I, driver = this.driver;
+    if (!lapse || this.lapsing || !I || !driver?.state) return;
+    this.lapsing = true;
+    const placed = driver.beginLapse(lapse.refs, LAPSE_MAX_S * LAPSE_SPEED, () => lapse.onOver());
+    I.policy.speed = LAPSE_SPEED;
+    this.governor.poke();
+    this.setView("launch", null, true); // the rockets go up from the top floor
+    lapse.onStart(placed);
+  }
+
   keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
     this.governor.poke();
     const I = this.I, stage = this.stage, sp = this.sp;
     if (!I || !stage || !sp) return undefined;
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    // a cart riding the shaft first: it's small and moving, so it gets a finger's reach around it
+    const at = new THREE.Vector3();
+    const carts = I.items
+      .filter((it) => it.ref && !it.owner && !it.gone && !it.hidden && it.mesh.visible) // inside a machine, the machine answers
+      .map((it) => {
+        it.mesh.getWorldPosition(at).project(stage.camera);
+        return { ref: it.ref!, x: rect.left + ((at.x + 1) / 2) * rect.width, y: rect.top + ((1 - at.y) / 2) * rect.height, z: at.z };
+      })
+      .filter((c) => c.z > -1 && c.z < 1);
+    const cart = cartAt(carts, clientX, clientY);
+    if (cart) return cart;
     this.ray.setFromCamera(ndc, stage.camera);
     const mine = stage.root.getObjectByName("part:mine");
     const targets: THREE.Object3D[] = I.stationList.map((s) => s.holder);
@@ -226,6 +280,7 @@ export class ShaftScene {
 
   // Fly in on a picked thing (its panel is open), or back to where you were (null).
   focus(key: string | null) {
+    this.asked = key;
     this.hud.selected = key ?? undefined;
     const id = key ? this.stationOfKey(key) : undefined;
     if (key && (id || this.floorOfKey(key))) {
@@ -265,6 +320,7 @@ export class ShaftScene {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.teardown();
+    this.trophies.dispose();
     this.hud.dispose();
     this.said.remove();
     this.renderer.dispose();
@@ -287,6 +343,9 @@ export class ShaftScene {
     const layout = makeLayout(sp.plan);
     const driver = new GameDriver(I, layout);
     I.setDriver(driver);
+    I.on("ship", ({ item }: { item: { ref: string | null } }) => {
+      if (this.lapsing && item.ref && this.lapse?.refs.includes(item.ref)) this.lapse.onShip(item.ref);
+    });
     const small = (window.matchMedia?.("(pointer: coarse)").matches ?? false) || (navigator.hardwareConcurrency ?? 8) <= 4;
     const stage = new ShaftStage(I, layout, { shadowMap: small ? 1024 : 2048 });
     stage.reduceMotion = this.reduceMotion;
@@ -296,6 +355,8 @@ export class ShaftScene {
     bakeShaft(I, stage.root);
     if (this.firstRun.level < 0 && this.state) this.firstRun.set(litFloors(this.state), this.reduceMotion); // the first look: no swoop
     this.firstRun.patch(stage.root);
+    this.trophies.reset();
+    stage.root.add(this.trophies.group);
     if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
@@ -305,6 +366,7 @@ export class ShaftScene {
     if (keep) stage.zoom = keep.zoom;
     this.hud.build(I, stage, sp);
     this.setView(this.view.view === "station" && this.view.id && !I.stations[this.view.id] ? "stack" : this.view.view, this.view.id, true);
+    if (this.asked && !this.home) this.focus(this.asked); // asked before the shaft stood (coming back parks on a launch)
     this.applyBias();
     this.renderer.shadowMap.needsUpdate = true;
     if (import.meta.env.DEV)
@@ -330,6 +392,7 @@ export class ShaftScene {
 
   private teardown() {
     this.hud.clear();
+    this.trophies.group.removeFromParent(); // its meshes outlive the shaft; I.dispose frees what's under the root
     if (this.I) this.I.dispose();
     this.stage?.dispose();
     this.I = null;

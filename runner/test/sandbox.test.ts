@@ -25,6 +25,9 @@ import {test,expect} from "bun:test";
 import {readFileSync,writeFileSync,symlinkSync,linkSync} from "node:fs";
 import {dlopen,ptr} from "bun:ffi";
 test("host isolation",async()=>{
+ const localDate = new Date(2026, 9, 26, 9);
+ expect(Number.isFinite(localDate.getTime())).toBe(true);
+ expect([localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), localDate.getHours()]).toEqual([2026, 9, 26, 9]);
  expect(process.env.SHIPTORIO_RUNNER_TOKEN).toBeUndefined();
  expect(process.env.GITHUB_TOKEN).toBeUndefined();
  expect(process.env.CODEX_HOME).toBeUndefined();

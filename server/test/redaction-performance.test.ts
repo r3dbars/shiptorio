@@ -4,7 +4,7 @@ import { redactText } from "../src/redact";
 // A separate process lets the watchdog stop a pathological regexp without hanging
 // the entire suite. The old implementation exceeds this generous 2-second budget.
 test("redaction handles long untrusted tokens without quadratic rescanning", async () => {
-  const module = new URL("../src/redact.ts", import.meta.url).pathname;
+  const module = new URL("../src/redact.ts", import.meta.url).href;
   const child = Bun.spawn([process.execPath, "--no-env-file", "-e", `
     import { redactText } from ${JSON.stringify(module)};
     const token = "x".repeat(200000);

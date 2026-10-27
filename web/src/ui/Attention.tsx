@@ -38,13 +38,14 @@ interface Props {
   onPower?: () => void; // live local-agent setup opens Power, never a server connector action
   onCheckin?: () => void;
   quiet?: { kicker: string; title: string; cta: string; onGo: () => void } | null; // the "what's next" idea when nothing waits
+  first?: string; // this card goes on top while it waits (coming back: the launch the comeback parked on)
 }
 
-export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) {
-  const card = trayCard(deck);
+export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: Props) {
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState<Move | null>(null); // a Later held for a moment so the player can say why
   const [gone, setGone] = useState<string | null>(null);
+  const card = (first && first !== gone && deck.find((m) => m.id === first)) || trayCard(deck);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const drag = useRef<{ x: number; id: number } | null>(null);
   const [dx, setDx] = useState(0);

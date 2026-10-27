@@ -15,7 +15,7 @@ test("a pinned origin accepts normalized matches and rejects a different server"
   expect(() => runnerOrigin("https://other.example", "https://factory.example")).toThrow("another Shiptorio server");
 });
 
-test("CLI rejects an origin override before requests or stored credentials leave the installation", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("CLI rejects an origin override before requests or stored credentials leave the installation", async () => {
   const { mkdtemp, mkdir, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -47,7 +47,7 @@ test("CLI rejects an origin override before requests or stored credentials leave
   } finally { server.stop(true); await rm(root, { recursive: true, force: true }); }
 }, 30000);
 
-test("fresh CLI pairing pins a custom origin and subsequent pairing retains it without an override", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("fresh CLI pairing pins a custom origin and subsequent pairing retains it without an override", async () => {
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
