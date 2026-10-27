@@ -7,6 +7,8 @@
 // wrong answer (loud-vs-stuck, goal-customers, spike-plus-mail): that's where the model has to beat the rule.
 
 import { signalId, type BottleneckArea, type BrainSignal, type SignalSource } from "@shiptorio/shared";
+import { deriveCiSignals, type WorkflowRun } from "../../src/signals/ci";
+import clogged from "../../test/fixtures/ci/clogged-runs.json";
 
 export interface EvalCase {
   id: string;
@@ -51,7 +53,38 @@ const humBut = (...replace: ((now: number) => BrainSignal)[]) => (now: number) =
   return [...hum.map(s => s(now)).filter(h => !mine.some(m => m.id === h.id)), ...mine];
 };
 
+/**
+ * Real CI collector output, not hand-written signals: GitHub Actions runs from a fixture go through
+ * deriveCiSignals, shifted so the fixture's "now" is the eval's now.
+ */
+const FIXTURE_NOW = Date.parse("2026-10-27T18:00:00Z");
+function fromRuns(runs: WorkflowRun[], keep: (s: BrainSignal) => boolean = () => true) {
+  return (now: number) => {
+    const shift = (t: string | undefined) => t && new Date(Date.parse(t) - FIXTURE_NOW + now - 60_000).toISOString();
+    const moved = runs.map(r => ({ ...r, created_at: shift(r.created_at)!, updated_at: shift(r.updated_at)!, run_started_at: shift(r.run_started_at) }));
+    return deriveCiSignals(moved, { repo: "acme/shop", defaultBranch: "main", observedAt: now - 60_000 }).filter(keep);
+  };
+}
+const cloggedRuns = clogged.workflow_runs as WorkflowRun[];
+const humWithCi = (ci: (now: number) => BrainSignal[], ...more: ((now: number) => BrainSignal)[]) => (now: number) => {
+  const mine = [...ci(now), ...more.map(s => s(now))];
+  return [...hum.map(s => s(now)).filter(h => h.source !== "ci" && !mine.some(m => m.id === h.id)), ...mine];
+};
+
 export const CASES: EvalCase[] = [
+  {
+    id: "ci-collector-clogged", title: "Real CI collector: main red 5 h, CI 23 min, flaky retries, 4 runs queued, Lint failing on PRs",
+    signals: humWithCi(fromRuns(cloggedRuns),
+      sig("sentry", "errors_piling", 0.35, "22 open errors, steady; 30 users hit one this week.", ["22 unresolved, 300 events/24h (310 the day before)"])),
+    expect: { area: "speed", signal: "ci:ci_red_main:CI" }, unlock: /green|main|fix|revert|red/i, plays: ["fix_red_main"],
+    why: "Five CI problems at once all point the same way, and red main is the one that stops every ship. Fix it first.",
+  },
+  {
+    id: "ci-collector-blocking", title: "Real CI collector: Lint is failing on 4 PRs, main is green, everything else calm",
+    signals: humWithCi(fromRuns(cloggedRuns, s => s.kind === "ci_blocking")),
+    expect: { area: "speed", signal: "ci:ci_blocking:Lint" }, alsoOk: ["ship"], unlock: /lint|check|fail|fix|unblock|PRs?/i, plays: ["fix_blocking_check"],
+    why: "One failing check holds four finished PRs. One fix ships all of them.",
+  },
   {
     id: "red-ci-quiet-sentry", title: "Main has been red for 5 hours, production is calm",
     signals: humBut(sig("ci", "ci_red_main", 0.85, "Main has been red for 5 hours; 4 PRs can't merge.", ["Run #4812 failed: checkout.test.ts", "4 PRs blocked on a red base"])),
