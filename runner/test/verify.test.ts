@@ -44,6 +44,9 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
     const firstFix = await git("rev-parse", "HEAD");
     await Bun.write(join(work, "value.ts"), "export const value = 3;\n");
     await Bun.write(join(work, "value.test.ts"), 'import {test,expect} from "bun:test";import {value} from "./value";test("value",()=>expect(value).toBe(3));\n');
+    // Simulate a runner killed halfway through the verify bay, before its finally block.
+    await git("worktree", "add", "--detach", join(work, ".shiptorio-verify-base"), base);
+    await Bun.write(join(work, ".shiptorio-verify-base", "orphan.tmp"), "interrupted");
     expect(await verifyRegression(work, base, ["value.test.ts"], env, root)).toMatchObject({ failsOnBase: true, passesOnHead: true });
     await git("add", ".");
     await git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "scar rework fix");
