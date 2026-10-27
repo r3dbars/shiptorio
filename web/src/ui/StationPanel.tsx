@@ -4,7 +4,7 @@
 // what feeds it and where its work goes, recent history, and 1–3 actions with the planner's pick marked.
 
 import { useEffect } from "react";
-import { rate, techById, type Experiment, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
+import { priorityChoices, rate, techById,type Experiment, type FactoryState, type Item, type Machine, type WebToServer } from "@shiptorio/shared";
 import { lc } from "../sim/engine";
 import type { LogLine } from "../store";
 import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
@@ -230,6 +230,73 @@ function panelFor(id: string, state: FactoryState, jobs: Map<string, string> = n
   };
 }
 
+/** A cart's callout: what it is, where it is, and Rush / Park / Unpark while it waits (shared/src/priority.ts). */
+export function itemPanel(key: string, state: FactoryState) {
+  const item = key.startsWith("item:") ? state.items.find((i) => i.id === key.slice(5)) : undefined;
+  if (!item) return null;
+  const C = PANEL.cart;
+  const choices = priorityChoices(item).map((priority) => ({ priority, label: C.choice[priority] }));
+  const note = item.priority === "park" ? C.isParked : item.priority === "rush" && choices.length ? C.isRushed : choices.length ? C.waiting : C.onLine;
+  const stats: [string, string][] = [
+    [PANEL.stats.state, STATE_WORD[item.state]],
+    [C.folder, item.district === "/" ? "/" : `/${item.district}`],
+    [C.tries, String(item.attempts)],
+  ];
+  return { item, title: `${item.prNumber ? `#${item.prNumber} ` : ""}${item.title}`, note, stats, choices };
+}
+
+function CartPanel({ id, state, log, send, onClose }: Pick<Props, "id" | "state" | "log" | "send" | "onClose">) {
+  const p = itemPanel(id, state);
+  if (!p) return null;
+  const { item } = p;
+  const recent = log.filter((l) => l.itemId === item.id).slice(-4).reverse();
+  const tag = item.priority === "park" ? PANEL.cart.parked : item.priority === "rush" ? PANEL.cart.rushed : item.kind;
+  return (
+    <section className="card stationpanel" aria-label={p.title}>
+      <div className="sp-head">
+        <span className="sp-zone">{PANEL.cart.zone}</span>
+        <button type="button" className="sp-close" onClick={onClose} aria-label={PANEL.closeLabel}>
+          <Icon name="cross" size={14} />
+        </button>
+      </div>
+      <div className="sp-name">
+        <span className="ptitle small">{p.title}</span>
+        <span className={`sp-tag ${item.priority === "park" ? "steel" : item.priority === "rush" ? "red" : "amber"}`}>{tag}</span>
+      </div>
+      <p className="sp-what">{p.note}</p>
+      <dl className="sp-stats">
+        {p.stats.map(([k, v]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd className={v.length > 10 ? "long" : undefined}>{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {recent.length > 0 && (
+        <div className="sp-sec">
+          <div className="sp-h">{PANEL.lately}</div>
+          <ul className="sp-recent">
+            {recent.map((l, n) => (
+              <li key={`${l.at}-${n}`} className={l.level}>
+                {l.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {p.choices.length > 0 && (
+        <div className="sp-actions">
+          {p.choices.map((c) => (
+            <button key={c.priority} type="button" className={c.priority === "rush" ? "btn rec" : "btn"} onClick={() => send({ type: "set_priority", itemId: item.id, priority: c.priority })}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface Props {
   id: string;
   state: FactoryState;
@@ -257,6 +324,7 @@ export function StationPanel({ id, state, log, send, onClose, jobs, live }: Prop
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
 
+  if (id.startsWith("item:")) return <CartPanel id={id} state={state} log={log} send={send} onClose={onClose} />;
   const p = panelFor(id, state, jobs);
   if (!p) return null;
   const hot = state.bottleneck?.stationId === id;
