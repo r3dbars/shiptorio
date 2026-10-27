@@ -16,12 +16,15 @@ describe("current-commit inspection", () => {
   it("paginates issue backfill, excludes PRs and caps it at fifty issues", async () => {
     const pages: number[] = [];
     const fetcher = spyOn(globalThis, "fetch").mockImplementation((async (url: RequestInfo | URL) => {
-      const page = Number(new URL(String(url)).searchParams.get("page"));
+      const request = new URL(String(url));
+      // Other factory fixtures may still be finishing background requests. Count only this backfill.
+      if (request.pathname !== "/repos/example/demo/issues") return new Response(null, { status: 404 });
+      const page = Number(request.searchParams.get("page"));
       pages.push(page);
       return Response.json(Array.from({ length: 25 }, (_, index) => ({ number: (page - 1) * 25 + index, ...(index === 0 ? { pull_request: {} } : {}) })));
     }) as unknown as typeof fetch);
     try {
-      const issues = await openIssues("fake-token", "example/demo");
+      const issues = await openIssues(`inspection-${crypto.randomUUID()}`, "example/demo");
       expect(issues).toHaveLength(50);
       expect(issues.some((issue) => issue.pull_request)).toBe(false);
       expect(pages).toEqual([1, 2, 3]);

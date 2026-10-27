@@ -1,3 +1,4 @@
+import { configuredAdmin } from "./admin-policy";
 import { spendReport } from "./spend";
 import { budgetReport } from "./budget";
 import type { Hono } from 'hono';
@@ -9,11 +10,11 @@ import { currentUser } from './accounts';
 import { ironPage } from './ironPage';
 
 // Deliberately independent of ALLOWED_LOGINS: adding a player never grants diagnostics.
-export const isAdmin = (login: string | null) => login?.toLowerCase() === 'r3dbars';
+export const isAdmin = configuredAdmin;
 export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) => DurableObjectStub<Factory> | Promise<DurableObjectStub<Factory>>) {
   app.use('/admin/*', async (c, next) => {
     const user = await currentUser(c.env, c.req.header('cookie') ?? null, new URL(c.req.url));
-    if (!isAdmin(user?.login ?? null)) return c.json({ error: 'admin login required' }, 403);
+    if (!isAdmin(c.env, user?.login ?? null)) return c.json({ error: 'admin login required' }, 403);
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     await next();
