@@ -7,6 +7,7 @@ import { sound, type Focus, type Sfx } from "./engine";
 import type { ScapeKind } from "./scapes";
 import { celebrateShip } from "./ship";
 import type { MusicInput } from "./music";
+import { accentsFor, freshAccentMemory, LAUNCH_IRON_DELAY_S, limitAccents } from "./accents";
 
 // Each gauntlet station's verdict sounds: [pass, fail].
 const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
@@ -193,6 +194,7 @@ export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
 
 export function useFactorySound(state: FactoryState | null, focus?: string | null, calm = false) {
   const prev = useRef<FactoryState | null>(null);
+  const accentMem = useRef(freshAccentMemory());
   const focused = state ? focusFor(focus, state) : null;
   useEffect(() => sound.setFocus(focused), [focus]);
   useEffect(() => sound.updateFocus(focused), [focused?.busy, focused?.kind]);
@@ -212,6 +214,10 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     // docs/ATTENTION.md: suggestions never make a sound
     sfx.filter((s) => !(calm && s === "suggest")).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
     if (sfx.some((s) => CAUGHT.includes(s))) sound.musicAlert();
+    // steam and iron over the hum, rate-limited so a busy floor stays a texture, not a drum roll
+    const acc = limitAccents(accentsFor(p, state), performance.now(), accentMem.current);
+    accentMem.current = acc.mem;
+    acc.play.forEach((a, i) => sound.play(a, a === "launch_iron" ? LAUNCH_IRON_DELAY_S : 0.04 + i * 0.12));
     // each PR that just launched gets the full celebration (event for the art + launch, fanfare, streak)
     const was = new Map(p.items.map((i) => [i.id, i.state]));
     state.items.filter((i) => i.state === "launched" && was.get(i.id) !== "launched").forEach((i, n) => celebrateShip(i, n * 0.4));

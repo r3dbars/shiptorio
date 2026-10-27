@@ -36,12 +36,14 @@ export type Sfx =
   | "achievement"
   | "beat"
   | "beat_done"
-  | "finale";
+  | "finale"
+  | Accent;
 
 import { SCAPES, type Focus } from "./scapes";
 import { MusicPlayer } from "./musicPlayer";
 import type { MusicInput } from "./music";
 import type { FoundryPlayer } from "./foundryPlayer";
+import { ACCENT_RECIPE, type Accent } from "./accents";
 
 export const SFX_EVENT = "shiptorio:sfx";
 export interface SfxEvent {
@@ -660,6 +662,14 @@ class SoundEngine {
       case "finale": // intro's last beat: lights out, the whole factory hums in harmony
         for (const [f, v] of [[131, 0.08], [196, 0.06], [262, 0.06], [330, 0.05], [392, 0.04]] as const) this.tone({ f, dur: 3, type: "triangle", vol: v, at: t, attack: 0.8 });
         for (let i = 0; i < 6; i++) this.tone({ f: [1047, 1319, 1568, 2093][i % 4], dur: 0.3, type: "sine", vol: 0.04, at: t + 0.8 + i * 0.25 });
+        break;
+      case "steam_hiss": // steam and iron accents over the hum (sound/accents.ts)
+      case "iron_clank":
+      case "launch_iron":
+        for (const v of ACCENT_RECIPE[s]) {
+          if (v.k === "tone") this.tone({ ...v, at: t + v.at });
+          else this.noise({ ...v, at: t + v.at });
+        }
         break;
       case "think": // Spark is thinking: a soft data warble
         for (let i = 0; i < 4; i++) this.tone({ f: 600 + Math.random() * 900, dur: 0.04, type: "triangle", vol: 0.05, at: t + i * 0.05 });
