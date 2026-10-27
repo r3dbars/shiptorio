@@ -29,7 +29,7 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   await expect(story).toContainText('CAUGHT');
   await expect(story).toHaveAttribute('data-beat', '4');
   await expect(page.getByTestId('judge-item-sentry')).toHaveAttribute('data-state', 'on_pad');
-  await expect(story.getByRole('list', { name: 'Gauntlet receipts' })).toContainText(['CI inspector: PASS', 'Verify bay: PASS', 'AI review: PASS']);
+  await expect(story.getByRole('list', { name: 'Gauntlet receipts' }).getByRole('listitem')).toContainText(['CI inspector: PASS', 'Verify bay: PASS', 'AI review: PASS']);
   await info.attach('judge-permit', { body: await page.screenshot(), contentType: 'image/png' });
   await page.screenshot({ path: `/tmp/shiptorio-judge-${info.project.name}.png` });
   if (info.project.name !== 'desktop') {
