@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { localBudget } from "./local-budget";
+import { escapeMarkdownCell as escapeCell } from "./markdown-cell";
 import { budgetUsage } from "../src/budget";
 import { diffText, referencedFiles, reviewDiff, type ReviewVerdict } from "../src/gauntlet";
 import { REVIEW_TURNS, type SparkStep } from "../src/spark-tools";
@@ -81,7 +82,6 @@ function prepare(): Prepared[] {
   });
 }
 const dollars = (n: number) => `$${n.toFixed(6)}`;
-const escapeCell = (s: string) => s.replace(/\|/g, "\\|").replace(/\s+/g, " ");
 function report(run: { started: string; revision: string; fixtureHash: string; rows: Row[]; complete: boolean }, filename: string) {
   const rows = run.rows;
   const caught = rows.filter(r => !r.good && r.outcome === "caught").length;
