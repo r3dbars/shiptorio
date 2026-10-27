@@ -230,7 +230,7 @@ describe("runner approval survives concurrent deck selection changes", () => {
       const original = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
       internal.ctx.blockConcurrencyWhile = fn => original(async () => {
         internal.state.move = other;
-        if (boundary === "revised-item") internal.state.items = [{ ...item, title: "Changed since the player saw the plan" }];
+        if (boundary === "revised-item") internal.state.items = internal.state.items.map(current => current.id === item.id ? { ...current, title: "Changed since the player saw the plan" } : current);
         if (boundary === "rebound-job") f.data.set("runnerJob:job-58", { ...(f.data.get("runnerJob:job-58") as object), approvalMoveId: "a-different-plan" });
         return fn();
       });
