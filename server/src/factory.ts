@@ -1,3 +1,4 @@
+import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
@@ -669,29 +670,32 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
-    return this.ctx.blockConcurrencyWhile(async () => {
-      if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
+    // Expected planning denials must leave the atomic callback normally: a throw
+    // inside blockConcurrencyWhile resets the entire object, even if callers catch it.
+    const result = await this.ctx.blockConcurrencyWhile(async () => {
+      if (!(await this.load()) || !this.meta) return new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
       const rework = !!item?.prNumber && item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-");
-      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) throw new Error("Item is not available to build");
-      if (rework && (!input.needsApproval || !canRework(item))) throw new Error("This PR requires player escalation, not another automatic rework offer");
-      if (!input.allowedPaths.every(runnerPathAllowed)) throw new Error("Unsafe approved path");
+      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) return new Error("Item is not available to build");
+      if (rework && (!input.needsApproval || !canRework(item))) return new Error("This PR requires player escalation, not another automatic rework offer");
+      if (!input.allowedPaths.every(runnerPathAllowed)) return new Error("Unsafe approved path");
       const jobs = await this.runnerJobs();
       for (const old of jobs.filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now())) {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${old.id}`);
         if (stored) await this.accountPut(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active runner job; finish its plan or build first");
-      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
+      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return new Error("This issue already has an active runner job; finish its plan or build first");
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) return new Error("Factory job budget reached; finish the active runner job first");
       const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
-      if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      if (hold) return new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
       const account = await this.runAccount(requestedBy);
-      if (!account) throw new Error("Run quota owner unavailable");
+      if (!account) return new Error("Run quota owner unavailable");
       const quota = await runQuotaStatus(this.env, account);
-      if (quota.used >= quota.limit) throw new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
-      const usage = await this.usage();
-      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) throw new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
+      if (quota.used >= quota.limit) return new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      const usage = await this.usage().catch(error => { if (error instanceof BudgetError) return error; throw error; });
+      if (usage instanceof BudgetError) return usage;
+      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) return new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
 
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
@@ -704,6 +708,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
       return job;
     });
+    if (result instanceof Error) throw result;
+    return result;
   }
 
   /** Pick the power plant. The planner chooses among plants the fixed geothermal guard allows; the guard has the last word. */
@@ -2528,7 +2534,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.login }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
   }
 
   private async socketFetch(request: Request): Promise<Response> {
@@ -2556,9 +2562,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    let auth: { login?: string } | null = null;
+    let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
-    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
     });
   }

@@ -35,6 +35,18 @@ macOS needs Apple Command Line Tools (`xcode-select --install`). Linux needs
 bubblewrap (`sudo apt install bubblewrap`) and working unprivileged user namespaces.
 The runner refuses jobs if the OS sandbox is unavailable.
 
+For a self-hosted factory, copy the command from that factory's **Power** panel.
+It downloads from your own origin and passes `SHIPTORIO_URL` to the installer, for example:
+
+```sh
+curl -fsSL 'https://factory.example/install.sh' | SHIPTORIO_URL='https://factory.example' sh
+```
+
+The installer saves the server URL for later `pair`, `watch` and `doctor` commands.
+The installer and CLI refuse to reuse an installation configured for a different
+server, including a different `SHIPTORIO_URL`, so existing pairing tokens cannot be sent to the new endpoint. Use a separate installation or
+uninstall the previous one before switching servers.
+
 The installer places a private pinned Bun and standalone bundle in
 `~/.local/share/shiptorio/runner`, checks the bundle against its HTTPS checksum
 manifest, and creates `~/.local/bin/shiptorio-runner`. No repository checkout or

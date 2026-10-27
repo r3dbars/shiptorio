@@ -51,6 +51,7 @@ export interface IO {
   ask(question: string, fallback?: string): Promise<string>;
   log(message: string): void;
 }
+export const legacyOwnerCleanup = "UPDATE signup_allowlist SET enabled = 0 WHERE login = 'r3dbars' AND approved_by = 'r3dbars' AND factories = 99999 AND repos = 99999 AND runs_daily = 200 AND spark_calls_daily IS NULL AND spark_tokens_daily IS NULL";
 export async function provision(s: State, io: IO) {
   validate(s);
   if (!s.databaseId) {
@@ -62,6 +63,12 @@ export async function provision(s: State, io: IO) {
     await io.save(s);
   }
   await io.wrangler(["d1", "migrations", "apply", "DB", "--remote"]);
+  if (s.login.toLowerCase() !== "r3dbars") {
+    // Old 0014 overwrote provenance. Quarantine only its exact synthetic footprint;
+    // intentional access with that footprint must be approved again by this owner.
+    await io.wrangler(["d1", "execute", "DB", "--remote", "--command", legacyOwnerCleanup]);
+    io.log("Reconciled legacy maintainer enrollment. Reapprove any intentional access in your admin settings.");
+  }
 }
 export async function configureSecrets(s: State, io: IO, github = false) {
   const names = github

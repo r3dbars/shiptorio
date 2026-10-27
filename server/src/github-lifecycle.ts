@@ -1,3 +1,4 @@
+import { rememberInstallationOwner } from "./installation-owner";
 import { factoryDeleted } from "./account-lifecycle";
 import { RetryExhausted } from "./reliability";
 import type { SourceStatus } from "@shiptorio/shared";
@@ -65,6 +66,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   if (!id) throw new Error("Installation ID required");
   purgeInstallationTokens(id);
   await env.DB.prepare("INSERT OR IGNORE INTO installations (id, account_login) VALUES (?, ?)").bind(id, p.installation?.account?.login ?? "").run();
+  await rememberInstallationOwner(env.DB, id, p.installation?.account);
   // Cross-isolate invalidation: every token acquisition/use checks this generation.
   await env.DB.prepare("UPDATE installations SET token_version = token_version + 1 WHERE id = ?").bind(id).run();
   if (event === "repository") {
@@ -90,7 +92,7 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
   const status = p.action === "deleted" ? "deleted" : p.action === "suspend" ? "suspended" : "active";
   if (event === "installation") {
     if (!["created", "deleted", "suspend", "unsuspend", "new_permissions_accepted"].includes(p.action ?? "")) return;
-    await env.DB.prepare("INSERT INTO installations (id, account_login, status, permissions, account_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login, status = excluded.status, permissions = COALESCE(excluded.permissions, installations.permissions), account_type = excluded.account_type").bind(id, account?.login ?? "", status, p.installation?.permissions ? JSON.stringify(p.installation.permissions) : null, account?.type ?? "User").run();
+    await env.DB.prepare("INSERT INTO installations (id, account_login, status, permissions, account_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_login = excluded.account_login, status = excluded.status, permissions = COALESCE(excluded.permissions, installations.permissions), account_type = COALESCE(excluded.account_type, installations.account_type)").bind(id, account?.login ?? "", status, p.installation?.permissions ? JSON.stringify(p.installation.permissions) : null, account?.type ?? null).run();
     if (status !== "active") {
       if (status === "deleted") await env.DB.batch([
         env.DB.prepare("DELETE FROM user_repos WHERE installation_id = ?").bind(id),
@@ -124,13 +126,14 @@ export async function handleLifecycle(env: RepositoryEnv, event: string, p: GitH
 
 export async function refreshInstallationPermissions(env: RepositoryEnv, id: number, p?: GitHubPayload): Promise<void> {
   const account = p?.installation?.account;
-  const info = await env.DB.prepare("SELECT permissions, account_login, account_type FROM installations WHERE id = ?").bind(id).first<{ permissions: string | null; account_login: string; account_type: string }>();
+  const info = await env.DB.prepare("SELECT permissions, account_login, account_type, account_id, status FROM installations WHERE id = ?").bind(id).first<{ permissions: string | null; account_login: string; account_type: string; account_id: number | null; status: string }>();
   let permissions = info?.permissions ? JSON.parse(info.permissions) as Record<string, string> : p?.installation?.permissions;
-  if (!permissions) {
+  if (!permissions || !info?.account_id && info?.status === "active") {
     const { appJwt } = await import("./github");
-    const installation = await gh<{ permissions: Record<string, string>; account?: { login: string; type: string } }>(`/app/installations/${id}`, await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY));
+    const installation = await gh<{ permissions: Record<string, string>; account?: { id?: number; login: string; type: string } }>(`/app/installations/${id}`, await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY));
     permissions = installation.permissions;
-    await env.DB.prepare("INSERT INTO installations (id, account_login, permissions, account_type) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET permissions = excluded.permissions, account_type = excluded.account_type").bind(id, installation.account?.login ?? account?.login ?? "", JSON.stringify(permissions), installation.account?.type ?? account?.type ?? "User").run();
+    await env.DB.prepare("INSERT INTO installations (id, account_login, permissions, account_type) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET permissions = excluded.permissions, account_type = COALESCE(excluded.account_type, installations.account_type)").bind(id, installation.account?.login ?? account?.login ?? "", JSON.stringify(permissions), installation.account?.type ?? account?.type ?? null).run();
+    await rememberInstallationOwner(env.DB, id, installation.account);
     if (!account && installation.account) p = { installation: { id, account: installation.account } };
   }
   const source = permissionStatus(id, permissions, info?.account_login ?? p?.installation?.account?.login, info?.account_type ?? p?.installation?.account?.type);
