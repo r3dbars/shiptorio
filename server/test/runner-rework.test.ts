@@ -81,6 +81,13 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   try {
     await f.alarm();
     expect(saved().move?.options[0].id).toBe("rework-codex");
+    // A planning hold drops the rework card. Once the hold ends it comes back, rather than waiting forever.
+    data.set("planningRetry:gh-1", { day: new Date().toISOString().slice(0, 10), failures: 1, reason: "offline", retryAt: Date.now() + 60000 });
+    await f.alarm();
+    expect(saved().deck?.some(m => m.options.some(o => o.id === "rework-codex"))).toBe(false);
+    data.delete("planningRetry:gh-1");
+    await f.alarm();
+    expect(saved().move?.options[0].id).toBe("rework-codex");
     await choose("rework-codex");
     await f.alarm();
     const job = (await f.runnerJobs()).find(j => j.id !== "old")!;

@@ -6,6 +6,7 @@
 //
 //   SHIPTORIO_REPO=r3dbars/testing bun run autopilot            # 120 minutes
 //   AUTOPILOT_MINUTES=30 AUTOPILOT_DRY=1 bun run autopilot      # watch only, tap nothing
+//   AUTOPILOT_HOLD=gh-7,gh-9 bun run autopilot                   # never launch these items
 import { mkdir, appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { FactoryState, Move, ServerToWeb } from "@shiptorio/shared";
@@ -29,9 +30,13 @@ const record = async (kind: string, data: Record<string, unknown>) => {
 };
 
 const acted = new Map<string, number>(), skipped = new Set<string>(), thoughts = new Set<string>();
-// Every plan tap spends one of the owner's daily runs; a plan that keeps failing would burn them all.
+// Every plan that starts spends one of the owner's daily runs; a plan that keeps failing would burn them all.
+// Count plans the factory actually started (its log line), not taps: a tap refused because another job holds
+// the one job slot costs nothing and must not use up the item's tries.
+const PLAN_STARTED = "Reading the issue and code to prepare your plan.";
 const MAX_PLANS_PER_ITEM = Number(process.env.AUTOPILOT_MAX_PLANS || 3);
 const plans = new Map<string, number>();
+const held = new Set((process.env.AUTOPILOT_HOLD || "").split(",").map(s => s.trim()).filter(Boolean));
 let cards: Move[] = [];
 let ws: WebSocket | null = null;
 const deadline = Date.now() + minutes * 60_000;
@@ -53,7 +58,7 @@ async function tap() {
     // A tap the server ignored (stale card) gets one more try after three minutes.
     const last = acted.get(card.id);
     if (last && Date.now() - last < 180_000) continue;
-    const pick = allowedTap(card);
+    const pick = allowedTap(card, held);
     if ("skip" in pick) {
       if (!skipped.has(card.id)) { skipped.add(card.id); await record("skip", { card: card.title, itemId: card.itemId, why: pick.skip }); }
       continue;
@@ -64,7 +69,6 @@ async function tap() {
         if (!skipped.has(card.id)) { skipped.add(card.id); await record("skip", { card: card.title, itemId: card.itemId, why: `planned ${tries} times already; leaving it for a human` }); }
         continue;
       }
-      plans.set(card.itemId, tries + 1);
     }
     acted.set(card.id, Date.now());
     await record(dry ? "would_tap" : "tap", { card: card.title, itemId: card.itemId, option: pick.optionId, why: pick.why, url: card.url });
@@ -82,7 +86,10 @@ async function connect() {
     if (msg.type === "snapshot") take(msg.state);
     else if (msg.type === "deck") cards = msg.deck;
     else if (msg.type === "move") cards = [msg.move, ...cards.filter(c => c.id !== msg.move.id)];
-    else if (msg.type === "log") void record("log", { level: msg.level, text: msg.text, itemId: msg.itemId, actor: msg.actor, tool: msg.tool, reason: msg.reason, approvedBy: msg.approvedBy });
+    else if (msg.type === "log") {
+      if (msg.itemId && msg.text.startsWith(PLAN_STARTED)) plans.set(msg.itemId, (plans.get(msg.itemId) ?? 0) + 1);
+      void record("log", { level: msg.level, text: msg.text, itemId: msg.itemId, actor: msg.actor, tool: msg.tool, reason: msg.reason, approvedBy: msg.approvedBy });
+    }
     else if (msg.type === "autonomy_unlocked") void record("unlock", { level: msg.level, district: msg.district, text: msg.text });
     else if (msg.type === "move_resolved") void record("resolved", { moveId: msg.moveId, optionId: msg.optionId, actor: msg.actor });
   };
@@ -90,7 +97,7 @@ async function connect() {
   await new Promise<void>((ok, fail) => { socket.onopen = () => ok(); socket.onerror = () => fail(new Error("socket error")); });
 }
 
-await record("start", { repo, base, minutes, dry });
+await record("start", { repo, base, minutes, dry, held: [...held] });
 while (Date.now() < deadline) {
   try {
     // Reconnect every two minutes for a fresh snapshot instead of applying patches.

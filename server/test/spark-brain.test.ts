@@ -190,3 +190,32 @@ describe("pickFiles drops picks outside the list", () => {
     await expect(pickFiles(env, { title: "x", body: "", district: "src" }, ["README.md"])).rejects.toThrow("Unapproved file selection");
   });
 });
+
+describe("a re-plan sees why the last attempt was sent back", () => {
+  it("puts the failure and scars next to the title on every turn", async () => {
+    const { planLocalTask } = await import("../src/spark");
+    const users: string[] = [];
+    const script = [{ tool: "read_issue", reason: "ask" }, { tool: "read_file", path: "README.md", reason: "look" }, { tool: "assign_job", reason: "fix", plan: "Show the coupon as a positional argument.", acceptance: ["No --coupon flag"], files: ["README.md"] }];
+    let n = 0;
+    globalThis.fetch = (async (_u: unknown, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { messages: { role: string; content: string }[] };
+      users.push(body.messages.find(m => m.role === "user")!.content);
+      return Response.json({ choices: [{ message: { content: JSON.stringify(script[n++]) } }] });
+    }) as unknown as typeof fetch;
+    await planLocalTask(env, { title: "README uses npm", body: "", district: "/", failure: "AI review: --coupon is never parsed", scars: [{ station: "review", reason: "src/index.ts reads argv[2]", strike: 1 }] }, ["README.md"], async () => "# readme", async () => {});
+    expect(users).toHaveLength(3);
+    for (const u of users) { expect(u).toContain("--coupon is never parsed"); expect(u).toContain("review: src/index.ts reads argv[2]"); }
+  });
+  it("leaves a first plan alone", async () => {
+    const { planLocalTask } = await import("../src/spark");
+    const users: string[] = [];
+    const script = [{ tool: "read_issue", reason: "ask" }, { tool: "read_file", path: "README.md", reason: "look" }, { tool: "assign_job", reason: "fix", plan: "Use bun.", acceptance: ["bun"], files: ["README.md"] }];
+    let n = 0;
+    globalThis.fetch = (async (_u: unknown, init: RequestInit) => {
+      users.push((JSON.parse(String(init.body)) as { messages: { role: string; content: string }[] }).messages.find(m => m.role === "user")!.content);
+      return Response.json({ choices: [{ message: { content: JSON.stringify(script[n++]) } }] });
+    }) as unknown as typeof fetch;
+    await planLocalTask(env, { title: "README uses npm", body: "", district: "/" }, ["README.md"], async () => "# readme", async () => {});
+    expect(users[0]).not.toContain('"rework"');
+  });
+});

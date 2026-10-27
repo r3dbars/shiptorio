@@ -25,7 +25,7 @@ It decays with a seven-day half-life, down to a floor of 10%. Weight is evidence
 
 ## GitHub issues
 
-Live as soon as you [install the GitHub App](/docs/github-app). Every open issue (not PRs) becomes ore. Labels and the latest comment ride along, and everyone who reacted counts as a reporter. Closing the issue removes the ore.
+Live as soon as you [install the GitHub App](/docs/github-app). Every open issue (not PRs) opened by the repo owner, an org member or a collaborator becomes ore. Anyone else's issue stays out until someone with triage access adds the `shiptorio` label, and only those same people's comments ride along. That way a stranger on a public repo can't steer your agents. Labels and the latest comment ride along, and everyone who reacted counts as a reporter. Closing the issue removes the ore.
 
 You can give Spark hints in the issue text: `sentry:12345` links a Sentry issue, and `route:/checkout` (or `path:/checkout`) points at a route.
 

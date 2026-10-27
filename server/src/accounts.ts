@@ -1,3 +1,4 @@
+import { rememberInstallationOwner } from "./installation-owner";
 import { gh } from "./github";
 import { signupAllowed } from "./signup";
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
@@ -78,14 +79,14 @@ async function userApi<T>(path: string, token: string): Promise<T> {
   return gh<T>(path, token);
 }
 
-interface Reach { installations: { id: number; account: string }[]; repos: { repo: string; installationId: number; defaultBranch: string | null }[] }
+interface Reach { installations: { id: number; account: string; accountId?: number; accountType?: string }[]; repos: { repo: string; installationId: number; defaultBranch: string | null }[] }
 
 // Caps keep one sign-in inside the Worker's subrequest budget: 10 installations × 10 pages of 100 repos.
 export async function fetchReach(token: string): Promise<Reach> {
   const reach: Reach = { installations: [], repos: [] };
-  const { installations } = await userApi<{ installations: { id: number; account?: { login?: string } }[] }>("/user/installations?per_page=100", token);
+  const { installations } = await userApi<{ installations: { id: number; account?: { id?: number; login?: string; type?: string } }[] }>("/user/installations?per_page=100", token);
   for (const inst of installations.slice(0, 10)) {
-    reach.installations.push({ id: inst.id, account: inst.account?.login ?? "" });
+    reach.installations.push({ id: inst.id, account: inst.account?.login ?? "", accountId: inst.account?.id, accountType: inst.account?.type });
     for (let page = 1; page <= 10; page++) {
       const { repositories } = await userApi<{ repositories: { full_name: string; default_branch?: string }[] }>(`/user/installations/${inst.id}/repositories?per_page=100&page=${page}`, token);
       for (const r of repositories) reach.repos.push({ repo: r.full_name.toLowerCase(), installationId: inst.id, defaultBranch: r.default_branch ?? null });
@@ -111,6 +112,7 @@ export async function saveReach(env: AccountsEnv, userId: number, reach: Reach):
         .bind(r.repo, r.installationId, r.defaultBranch),
     ]),
   ]);
+  for (const i of reach.installations) await rememberInstallationOwner(db, i.id, {id: i.accountId, login: i.account, type: i.accountType});
 }
 
 export async function canSeeRepo(env: AccountsEnv, user: User, repo: string): Promise<boolean> {

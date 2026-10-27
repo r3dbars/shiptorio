@@ -8,9 +8,21 @@ if [ "${1:-}" = --join ]; then
   join=${2:-}
   case "$join" in *[!a-f0-9]*|'') echo 'That setup command looks cut off. Copy a fresh one from Power in your factory.' >&2; exit 1 ;; esac
 fi
-origin=https://shiptorio.com
-support="$HOME/.local/share/shiptorio/runner"
-bin="$HOME/.local/bin"
+origin=${SHIPTORIO_URL:-https://shiptorio.com}
+origin=${origin%/}
+support="${SHIPTORIO_RUNNER_ROOT:-$HOME/.local/share/shiptorio/runner}"
+bin="${SHIPTORIO_RUNNER_BIN_DIR:-$HOME/.local/bin}"
+# Never send an existing installation's pairing tokens to a different server.
+previous="$origin"
+if [ -f "$support/server-url" ]; then
+  previous=$(cat "$support/server-url")
+elif [ -f "$support/runner.mjs" ]; then
+  previous=https://shiptorio.com
+fi
+if [ "$previous" != "$origin" ]; then
+  echo 'This runner is installed for another Shiptorio server. Use a separate SHIPTORIO_RUNNER_ROOT and SHIPTORIO_RUNNER_BIN_DIR, or uninstall it first.' >&2
+  exit 1
+fi
 case "$(uname -s)" in
   Darwin) platform=darwin ;;
   Linux) platform=linux ;;
@@ -46,10 +58,12 @@ const digest = new Bun.CryptoHasher("sha256").update(await Bun.file(bundle).arra
 if (!/^[a-f0-9]{64}$/.test(info.sha256) || digest !== info.sha256) throw Error("Runner download changed. Rerun the installer.");
 ' "$staging/manifest.json" "$staging/runner.mjs"
 mv "$staging/runner.mjs" "$support/runner.mjs"
+printf '%s\n' "$origin" > "$support/server-url"
 cat > "$staging/shiptorio-runner" <<'LAUNCHER'
 #!/bin/sh
-cd "$HOME/.local/share/shiptorio/runner"
-exec "$HOME/.local/share/shiptorio/runner/bun" --no-env-file --config=/dev/null "$HOME/.local/share/shiptorio/runner/runner.mjs" "$@"
+support="${SHIPTORIO_RUNNER_ROOT:-$HOME/.local/share/shiptorio/runner}"
+cd "$support"
+exec "$support/bun" --no-env-file --config=/dev/null "$support/runner.mjs" "$@"
 LAUNCHER
 chmod 700 "$staging/shiptorio-runner"
 mv "$staging/shiptorio-runner" "$bin/shiptorio-runner"

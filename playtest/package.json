@@ -1,5 +1,6 @@
 {
-  "name": "@shiptorio/playtest", "private": true, "type": "module",
+  "name": "@shiptorio/playtest",
+  "license": "MIT", "private": true, "type": "module",
   "scripts": { "typecheck": "tsc --noEmit" },
   "devDependencies": { "@types/bun": "latest", "typescript": "^5.9.0" }
 }
