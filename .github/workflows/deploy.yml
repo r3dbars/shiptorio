@@ -39,6 +39,8 @@ jobs:
           # Match CI: run real runner isolation fixtures before any Cloudflare mutation.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun test
+      - name: Verify real Durable Object storage on host
+        run: bun run test:storage
       # Capture the active version BEFORE mutation, not whichever version is second later.
       # Refuse split traffic: rollback restores exactly one known 100% version.
       - name: Capture rollback target
