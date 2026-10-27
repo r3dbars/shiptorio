@@ -79,6 +79,9 @@ permission stay deterministic so the automation earned by playing is provable.
 11. Docs issues that need a new file (CHANGELOG.md, docs/SHIPPING.md) failed scoping, because the file pick only
     accepted existing paths. Spark can now propose up to two new `.md` files at the repo root or directly in `docs/`.
     They still pass the runner path rules, and the player still approves the scope on the Build card.
+12. Testing #12 passed AI review with a broken README example (`--coupon` flag the code never reads), because the
+    reviewer only saw the diff. Now lines added to a docs file that name code (or a `bun run`/`npm run` command) pull up
+    to 3 of those unchanged files, read at the PR head, into the review, and a wrong example is blocking.
 
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.

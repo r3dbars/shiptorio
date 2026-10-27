@@ -36,6 +36,8 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   const captionBox = await story.boundingBox();
   expect(captionBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height);
   expect(captionBox!.y + captionBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  // On phones the factory stays in view: the caption never takes more than about half the screen.
+  if (info.project.name !== 'desktop') expect(captionBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height * 0.5);
   await info.attach('judge-permit', { body: await page.screenshot(), contentType: 'image/png' });
   await page.screenshot({ path: `/tmp/shiptorio-judge-${info.project.name}.png` });
   if (info.project.name !== 'desktop') {
@@ -59,5 +61,6 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   await page.getByRole('button', { name: 'Replay', exact: true }).first().click();
   await expect(page.getByTestId('judge-rockets')).toHaveText('0');
   await expect(page.getByTestId('judge-autonomy')).toHaveText('Advisor');
-  await expect(story).toHaveAttribute('data-beat', '0');
+  // Beat 0 lasts under two seconds, so a slow runner may already be on beat 1: either means the story restarted.
+  await expect(story).toHaveAttribute('data-beat', /^[01]$/);
 });
