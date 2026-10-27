@@ -28,6 +28,7 @@ The **Factory limits** card appears when a daily allowance is near its limit or 
 It shows usage, the reset time in your timezone, and midnight UTC. Account admins can follow
 **Raise limit** to the selected account's quota form; saving applies immediately. Return to
 the factory to refresh the card, or leave it visible for its automatic refresh.
+Configured owner accounts retain a minimum of 200 build runs per day.
 
 Build runs are charged when a job starts building, not when planning fails. Failed plans
 wait one minute, then two; after three failed tries for an issue in a UTC day, planning
