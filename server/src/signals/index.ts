@@ -14,6 +14,7 @@ import { postHogCollector } from "./posthog";
 import { SENTRY_PULSES_KEY, sentryCollector, type SentryPulse } from "./sentry";
 import { goalsCollector } from "./goals";
 import { ciCollector, kvCiCache } from "./ci";
+import { tapsCollector } from "./taps";
 
 /** What every collector gets. Read-only: collectors look, they never change the factory. */
 export interface SignalContext {
@@ -83,6 +84,7 @@ export const COLLECTORS: Collector[] = [
   bind(sentryCollector, async c => ({ items: c.state.items, pulses: await c.storage.get<SentryPulse[]>(SENTRY_PULSES_KEY), connected: !!await c.storage.get<boolean>("sentryLinked"), connectUrl: `${c.publicUrl ?? "https://shiptorio.com"}/connect/sentry` })),
   bind(goalsCollector, c => ({ state: c.state, yes: c.yes })),
   bind(ciCollector, async c => ({ repo: c.repo ?? c.state.repo, defaultBranch: c.state.baseBranch, token: c.githubToken ? await c.githubToken() : undefined, cache: kvCiCache(c.env.CACHE) })),
+  bind(tapsCollector, c => ({ db: c.env.DB, repo: c.repo })),
 ];
 
 export interface SignalCache { readAt: Partial<Record<SignalSource, number>>; signals: BrainSignal[] }
