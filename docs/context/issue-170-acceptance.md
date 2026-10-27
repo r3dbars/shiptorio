@@ -130,3 +130,20 @@ explicit Launch. Do not implement the issue outside that runner path.
   at 21/21; coordinating recovery with the owner-quota lane. No issue #170 PR
   or Launch exists yet. The watcher subsequently reported heartbeat500 and the
   reloaded game stalled loading: this is under live diagnosis, not acceptance.
+
+## Owner quota recovered; lock timeout isolated
+
+- Owner-quota PR #281 merged at 5a91693; Deploy40435894561 passed. The real
+  game no longer shows the exhausted21/21 banner. This preserves the separate
+  Meta daily spend limit.
+- The same #170 approval card is visible in Activity. Retrying it did not yet
+  advance the stored job from awaiting_approval, so no successful handoff is
+  claimed.
+- Scoped live Worker tail confirmed both Shiptorio and Testing heartbeat500s
+  coincide with a Durable Object blockConcurrencyWhile30-second timeout/reset.
+  Independent static trace found claimRunner -> patch -> awaited browser
+  broadcast -> serialized fresh GitHub authorization can retain that lock while
+  waiting on network I/O. A bounded fix and regression are in progress.
+- Paused only the idle isolated source watcher during this recovery, reducing
+  failing requests. The user's installed Testing service and credentials remain
+  untouched. No factory PR or Launch exists yet.
