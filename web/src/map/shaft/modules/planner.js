@@ -348,17 +348,18 @@ export default function install(IRON) {
     K.cyl(0.06, 0.06, 1.62, MT.ironL, 8, 0, 4.15, 0, S);
     K.cyl(0.24, 0.24, 0.14, MT.brass, 10, 0, 4.98, 0, S);
     for (let i = 0; i < 4; i++) { const sp = K.box(3.4, 0.06, 0.06, MT.brassD, 0, 4.98, 0, S); sp.rotation.y = i * Math.PI / 4; }
-    // PLANNER nameplate: a marquee board on the crown's front, facing the camera, the name lit in aether teal
+    // PLANNER nameplate: a marquee board bolted to the crown ring at the front, facing the camera, the name lit in
+    // aether teal (it sits above the orrery so the rings stay in view)
     const NT = textTex('PLANNER', '#7af0d8', { rim: '#1e4a40' });
     const nameM = new THREE.MeshBasicMaterial({ map: NT.tex, color: 0xffffff, fog: false });
     {
-      const pl = K.group(S, Math.cos(ANG.front) * 2.0, 4.86, Math.sin(ANG.front) * 2.0); pl.rotation.order = 'YXZ'; pl.rotation.y = Math.PI / 4; pl.rotation.x = -0.18;
+      const pl = K.group(S, Math.cos(ANG.front) * 2.0, 5.3, Math.sin(ANG.front) * 2.0); pl.rotation.order = 'YXZ'; pl.rotation.y = Math.PI / 4; pl.rotation.x = -0.18;
       const PH = 0.36, PW = PH * NT.aspect;
       K.box(PW + 0.16, PH + 0.16, 0.07, MT.ironM, 0, 0, -0.04, pl);
       K.mesh(new THREE.PlaneGeometry(PW, PH), nameM, 0, 0, 0, pl).castShadow = false;
       for (const sy of [-1, 1]) K.box(PW + 0.24, 0.05, 0.1, MT.brass, 0, sy * (PH / 2 + 0.07), -0.01, pl);
       for (const sx of [-1, 1]) { K.box(0.05, PH + 0.18, 0.1, MT.brassD, sx * (PW / 2 + 0.1), 0, -0.01, pl); for (const sy of [-1, 1]) K.box(0.05, 0.05, 0.05, MT.brassL, sx * (PW / 2 + 0.1), sy * (PH / 2 + 0.07), 0.05, pl); }
-      for (const sx of [-0.3, 0.3]) K.box(0.05, 0.3, 0.05, MT.iron, sx, PH / 2 + 0.2, -0.08, pl); // hung from the crown ring
+      for (const sx of [-0.4, 0.4]) K.box(0.06, 0.06, 0.34, MT.iron, sx, -0.06, -0.22, pl); // brackets back to the crown
     }
 
     // difference drum under the core (spins with the rings); each gear baked to one draw call per material
@@ -609,11 +610,13 @@ export default function install(IRON) {
     stroke(gB, 0.16, 0.5, gBang, 0, 0.12, 0); stroke(gB, 0.16, 0.16, gBang, 0, -0.32, 0);
     K.bake(gB);
     const gFrame = dyn(K.torus(0.52, 0.03, K.glow(0xffffff, 0.5, true), 4, 24, 0, 0, 0, glyph));
-    // destination cards: the chosen agent's name in its accent color, glowing letters with a soot outline
+    // destination cards: the chosen agent's name in its accent color, glowing letters with a soot outline; they
+    // pop up out front over the lectern (clear of the columns), where the routing lever is thrown
+    const destG = dyn(K.group(g, 1.95, 2.55, 1.95)); destG.rotation.y = Math.PI / 4; destG.visible = false;
     const cards = ASM.map((a) => {
       const T = textTex(a.name, hex(a.lamp), { cut: true });
       const H = 0.34, W = H * T.aspect;
-      const cg = dyn(K.group(glyph));
+      const cg = dyn(K.group(destG));
       const cm = new THREE.MeshBasicMaterial({ map: T.tex, color: 0xffffff, alphaTest: 0.5, fog: false });
       K.mesh(new THREE.PlaneGeometry(W, H), cm, 0, 0, 0.03, cg);
       const fm = K.glow(a.lamp, 0.55, true);
@@ -625,7 +628,7 @@ export default function install(IRON) {
       cg.visible = false;
       return { g: cg, fm };
     });
-    glyph.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+    [glyph, destG].forEach((gr) => gr.traverse((o) => { if (o.isMesh) o.castShadow = false; }));
     glyph.visible = false; let glyphT = 0;
 
     kitLamps(caution.g); kitLamps(statLamp.g);
@@ -672,6 +675,7 @@ export default function install(IRON) {
         const w = M.waiting('in');
         if (w) { it = M.take('in'); it.follow(platAnchor); routed = false; dest = -1; asked = false; looping = false; brake = null; rework = it.attempts > 0 || it.kind === 'reject'; setPhase('rise'); }
       }
+      if (it && it.gone) { it = null; setPhase('idle'); }
       if (it) pt += adt;
       let detail = 'waiting for issues', st = 'IDLE';
       if (it) { st = 'WORKING'; detail = L() + ' · intake lift'; }
@@ -913,17 +917,19 @@ export default function install(IRON) {
       nameM.color.setScalar(blk ? (Math.sin(t * 9) > 0 ? 1 : 0.6) : working ? 1 : 0.72);
       // destination card: pops up with the route decision, stays while the item is sent; amber "!" while blocked
       const showV = routed && it && dest >= 0 && ph !== 'out' && ph !== 'idle';
-      glyph.visible = !!(blk || showV);
+      glyph.visible = !!blk; destG.visible = !blk && !!showV;
       if (glyph.visible) {
-        glyphT += dt;
-        gB.visible = blk; gFrame.visible = blk;
-        cards.forEach((c, i) => { c.g.visible = !blk && i === dest; if (c.g.visible) c.fm.opacity = 0.4 + Math.sin(t * 10) * 0.2; });
-        const pop = blk ? 1 + Math.sin(t * 8) * 0.08 : Math.min(1.25, glyphT * 6) - Math.max(0, Math.min(0.25, (glyphT - 0.2) * 2));
-        glyph.scale.setScalar(Math.max(0.01, pop));
+        glyph.scale.setScalar(1 + Math.sin(t * 8) * 0.08);
         gFrame.material.color.setHex(0xffb020);
         gFrame.material.opacity = 0.35 + Math.sin(t * 10) * 0.2;
-        if (blk) gBang.opacity = Math.sin(t * 9) > -0.2 ? 0.95 : 0.3;
-        glyph.position.y = (blk ? 4.0 : 4.15) + Math.sin(t * 2) * 0.05;
+        gBang.opacity = Math.sin(t * 9) > -0.2 ? 0.95 : 0.3;
+        glyph.position.y = 4.0 + Math.sin(t * 2) * 0.05;
+      }
+      if (destG.visible) {
+        glyphT += dt;
+        cards.forEach((c, i) => { c.g.visible = i === dest; if (c.g.visible) c.fm.opacity = 0.4 + Math.sin(t * 10) * 0.2; });
+        destG.scale.setScalar(Math.max(0.01, Math.min(1.25, glyphT * 6) - Math.max(0, Math.min(0.25, (glyphT - 0.2) * 2))));
+        destG.position.y = 2.55 + Math.sin(t * 2) * 0.04;
       } else glyphT = 0;
       statLamp.set(M.stateShown, t);
       caution.update(t, dt, M.stateShown);

@@ -95,6 +95,12 @@ Porting a mockup module = drop its IIFE wrapper, wrap it like this (the mockup m
   IRON.look. Keeps clear of machine bays, paths, ports and lift columns (see "Keep clear").
 - **POWER** builds the power plants and the cables/aether conduits from each plant to the machines it feeds
   (`ctx.stations[i].def.feeds`), with flowing pulses.
+  Lines end in the machine's own power fitting, so these stay put unless power.js's `entryFor` moves with them:
+  the assembler's aether socket (assembler.js `SOCK`: (0.35, 0.65, −2.1), face at z −2.35) and the planner's aether
+  manifold (planner.js: group at (−2.05, 0, −2.05) turned π/4, stubs at x −0.3 / 0 / 0.3, y 0.32, tips at z −0.57).
+  A machine without a fitting gets POWER's socket box at its back corner. The geothermal riser climbs the cliff's
+  right edge at x 19.0: MINE keeps x ≥ 18.85 clear there, STRUCTURE keeps x > 18.1 clear along the build deck's
+  right edge (z −4.5 to 6.9), where a geothermal line to a builder runs at x 18.3.
 - Every module: keep out of other agents' areas; if two things meet (a belt into a tray, a tube onto a fitting, a cable
   onto a socket), make your half meet the coordinates exactly.
 
