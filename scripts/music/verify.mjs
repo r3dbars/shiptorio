@@ -10,6 +10,7 @@ const results = {};
 const url = `${base}/?source=sim&scenario=quiet-morning&intro=0&tour=0&autolaunch=1&music=2`;
 try {
   for (const [name, device] of [['desktop',{viewport:{width:1440,height:900}}],['phone',devices['iPhone 13']]]) {
+    console.log(`Checking ${name}`);
     const context = await browser.newContext(device);
     const page = await context.newPage();
     const errors=[]; const requests=[];
@@ -18,15 +19,17 @@ try {
     await page.addInitScript(()=>localStorage.setItem('shiptorio.sound',JSON.stringify({muted:false,volume:0.5,music:false,musicVolume:0.8})));
     await page.goto(url);
     await page.locator('canvas').first().waitFor();
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2500);
     const musicRequests=()=>requests.filter(u=>/foundry(Player|Score)|\.(m4a|mp3|opus|ogg|wav)(\?|$)/.test(u));
     if(musicRequests().length) throw Error('Music requested before first gesture');
     await page.getByRole('button',{name:/^Activity, /}).click();
-    await page.getByRole('slider',{name:'Music volume',exact:true}).scrollIntoViewIfNeeded();
+    await page.getByRole('slider',{name:'Music volume',exact:true}).evaluate(el=>el.scrollIntoView({block:'center'}));
     if(musicRequests().length) throw Error('Music requested while music off');
+    console.log('Enable music');
     await page.getByRole('button',{name:'MUSIC OFF',exact:true}).click();
     await page.waitForTimeout(4000);
-    const state=()=>page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');return sound.musicState();});
+    const engineUrl=requests.find(u=>u.includes('/src/sound/engine.ts'));
+    const state=()=>page.evaluate(async url=>{const {sound}=await import(url);return {...sound.musicState(),settings:sound.settings};},engineUrl);
     const playing=await state();
     if(!playing.attached || playing.scheduledNotes<=0) throw Error(`Music did not start: ${JSON.stringify(playing)}`);
     await page.getByRole('slider',{name:'Music volume',exact:true}).fill('37');
@@ -43,15 +46,17 @@ try {
     await page.waitForTimeout(300);
     await page.getByRole('button',{name:'ON',exact:true}).click();
     await page.waitForTimeout(400);
-    const suspended=await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');return sound.audio.state;});
+    const suspended=await page.evaluate(async url=>{const {sound}=await import(url);return sound.audio.state;},engineUrl);
     if(suspended!=='suspended') throw Error(`Muted context ${suspended}`);
     if(errors.length) throw Error(errors.join('\n'));
     results[name]={url:page.url(),title:await page.title(),musicRequests:musicRequests(),playing,persisted:stored,offStopsScheduling:true,muteSuspends:true,errors};
     await context.close();
   }
-  const page=await browser.newPage();
+  const benchContext=await browser.newContext(devices['iPhone 13']);
+  const page=await benchContext.newPage();
   await page.goto(`${base}/?source=sim&intro=0&tour=0&music=2&quality=2`);
   // Render the exact score/instruments offline and write a standard mono PCM WAV.
+  console.log("Rendering audition");
   const pcm=await page.evaluate(async()=>{
     const {renderFoundryPreview}=await import('/src/sound/foundryScore.ts');
     const buffer=await renderFoundryPreview();
@@ -72,10 +77,10 @@ try {
   results.audition={...pcm,bytes:bytes.length};
   if(pcm.peak>=1 || pcm.rms<0.01) throw Error('Audition clips or is inaudible');
   // Profile the music in isolation at 4x CPU, avoiding 3D map cost in attribution.
-  await page.route('**/music-bench',r=>r.fulfill({contentType:'text/html',body:'<button>Start music</button>'}));
+  await page.route('**/music-bench?*',r=>r.fulfill({contentType:'text/html',body:'<button>Start music</button>'}));
   await page.goto(`${base}/music-bench?music=2&quality=2`);
-  await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');sound.install();sound.set({muted:false,music:true,musicVolume:0.8});sound.setMusic({moving:15,working:4,stationsBusy:5,rejected:4,bottleneck:{stage:'build',wip:8,ageMs:30000000}});});
-  await page.getByRole('button').click();
+  await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');window.musicProbe=sound;sound.install();sound.set({muted:false,music:true,musicVolume:0.8});sound.setMusic({moving:15,working:4,stationsBusy:5,rejected:4,bottleneck:{stage:'build',wip:8,ageMs:30000000}});});
+  await page.getByRole('button',{name:'Start music',exact:true}).click();
   await page.waitForTimeout(500);
   const cdp=await page.context().newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
@@ -86,7 +91,25 @@ try {
   let attributedUs=0;
   for(let i=0;i<profile.samples.length;i++) if(ids.has(profile.samples[i])) attributedUs+=profile.timeDeltas[i];
   const musicPercent=attributedUs/(profile.endTime-profile.startTime)*100;
+  if(musicPercent>=1) throw Error(`Music scheduling exceeded 1%: ${musicPercent}`);
   results.phoneMusicProfile={cpuThrottle:4,musicSelfTimePercent:musicPercent,seconds:(profile.endTime-profile.startTime)/1e6,decodedPCMBytes:0,state:await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');return sound.musicState();})};
+  // Exercise real scheduler transitions as well as the pure score audition.
+  const waitState=state=>page.waitForFunction(state=>window.musicProbe.musicState().state===state,state,{timeout:18000});
+  await waitState('blocked');
+  await page.evaluate(()=>window.musicProbe.setMusic({moving:0,working:0,stationsBusy:0,rejected:0}));
+  await waitState('idle');
+  await page.evaluate(()=>window.musicProbe.setMusic({moving:15,working:4,stationsBusy:4,rejected:0}));
+  await waitState('working');
+  await page.evaluate(()=>window.musicProbe.musicResolve());
+  await waitState('launch');
+  await waitState('working');
+  const beforeHide=await page.evaluate(()=>window.musicProbe.musicState().scheduledNotes);
+  // Synthetic visibility event: checks the handler, not OS background-tab behavior.
+  await page.evaluate(()=>{Object.defineProperty(document,'hidden',{get:()=>true,configurable:true});document.dispatchEvent(new Event('visibilitychange'));});
+  await page.waitForTimeout(500);
+  const hidden=await page.evaluate(()=>({context:window.musicProbe.audio.state,notes:window.musicProbe.musicState().scheduledNotes}));
+  if(hidden.context!=='suspended'||hidden.notes!==beforeHide) throw Error('Hidden score kept running');
+  results.scheduler={states:['blocked','idle','working','launch','working'],hiddenHandlerSuspends:true};
   await page.close();
   writeFileSync(`${out}/results.json`,JSON.stringify(results,null,2));
   console.log(JSON.stringify(results,null,2));

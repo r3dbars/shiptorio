@@ -140,3 +140,9 @@ export function crossfadeGains(progress: number): [number, number] {
   const angle = clamp(progress) * Math.PI / 2;
   return [Math.cos(angle), Math.sin(angle)];
 }
+
+// Resume at the next eighth after a browser stall; preserve absolute phrase/bar position.
+export function transportAt(time: number, origin: number) {
+  const slot = Math.max(0, Math.ceil((time-origin)/EIGHTH - 1e-9));
+  return { time: origin+slot*EIGHTH, step: slot%STEPS_PER_BAR, bar: Math.floor(slot/STEPS_PER_BAR) };
+}

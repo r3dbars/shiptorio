@@ -178,3 +178,13 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - CI `selfhost` job uses a fresh clone with no Cloudflare credentials, builds assets/runner, applies local D1 migrations and runs real `wrangler deploy --dry-run`. Focused tests cover isolated config, forbidden Worker names, resume and failures.
 - Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
 - Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
+
+## Game music (Codex, PR #263)
+
+Original composed foundry theme in `web/src/sound/foundryScore.ts`, opt-in via `?music=2`.
+Built at Justin's request as a scoped web-lane exception: 16-bar low strings/harmonium
+motif, celesta climb, piston/metal groove, blocked brass and three-bar launch fanfare.
+Lazy procedural instruments avoid stems/download/decode budgets; CC0 music inventory.
+Separate persisted music volume, bar-boundary hysteresis/equal-power arrangement changes,
+quality=2 voice reduction, and state/voice diagnostics. Existing music remains default.
+PR is for review; no merge/deploy. Audition and browser evidence linked from the PR.

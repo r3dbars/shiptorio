@@ -116,7 +116,7 @@ describe('musicInput', () => {
 });
 
 // v2's arrangement and score are pure; browser integration tests exercise the actual graph.
-import { arrangementFor, BAR_SECONDS, crossfadeGains, FADE_SECONDS, MUSIC_BUDGET, nextBarTime, stateFor } from '../src/sound/music';
+import { arrangementFor, BAR_SECONDS, crossfadeGains, FADE_SECONDS, MUSIC_BUDGET, nextBarTime, stateFor, transportAt, EIGHTH } from '../src/sound/music';
 import { notesFor } from '../src/sound/foundryScore';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -143,6 +143,15 @@ describe('foundry state and transport', () => {
     expect(arrangementFor(0.6,a).theme).toBe(true);
     expect(arrangementFor(0.56,a).theme).toBe(false);
     expect(Object.values(arrangementFor(0,a)).some(Boolean)).toBe(false);
+  });
+  test('a stalled clock resumes within an eighth without restarting its phrase', () => {
+    for (const elapsed of [0,0.01,0.8,2.9,18.01,79.75]) {
+      const r = transportAt(10+elapsed,10);
+      expect(r.time).toBeGreaterThanOrEqual(10+elapsed-1e-8);
+      expect(r.time-(10+elapsed)).toBeLessThan(EIGHTH+1e-8);
+      expect(r.bar*8+r.step).toBeCloseTo((r.time-10)/EIGHTH);
+    }
+    expect(transportAt(10+BAR_SECONDS*19,10)).toEqual({time:10+BAR_SECONDS*19,step:0,bar:19});
   });
   test('crossfades start on the existing bar clock and preserve power', () => {
     expect(nextBarTime(0)).toBe(0);

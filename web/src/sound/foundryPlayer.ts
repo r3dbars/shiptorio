@@ -1,7 +1,7 @@
 // Lazy-loaded only after unlock, with music enabled. Original procedural score, zero samples.
 import type { sound } from './engine';
 import { arrangementFor, BAR_SECONDS, crossfadeGains, ease, EIGHTH, FADE_SECONDS, intensityFor,
-  nextBarTime, stateFor, tensionFor, type Arrangement, type MusicInput, type MusicState } from './music';
+  nextBarTime, stateFor, tensionFor, transportAt, type Arrangement, type MusicInput, type MusicState } from './music';
 import { FoundryInstruments, notesFor, type ScoreFrame } from './foundryScore';
 
 export class FoundryPlayer {
@@ -62,6 +62,8 @@ export class FoundryPlayer {
     this.output.gain.cancelScheduledValues(t);
     this.output.gain.setTargetAtTime(0,t,0.015);
     this.instruments?.stop(t+0.08);
+    this.duck?.gain.cancelScheduledValues(t);
+    this.duck?.gain.setValueAtTime(1,t);
     this.launchAt = null; this.launchBar = null;
     this.silent = true;
   }
@@ -76,9 +78,18 @@ export class FoundryPlayer {
     const ctx = this.s.audio;
     if (this.silent || this.nextTime < ctx.currentTime) {
       if (this.bar < 0) this.origin = ctx.currentTime+0.08;
-      this.nextTime = nextBarTime(ctx.currentTime+0.08,this.origin);
-      this.step = 0;
+      const recovered = transportAt(ctx.currentTime+0.04,this.origin);
+      this.nextTime = recovered.time;
+      this.step = recovered.step;
+      this.bar = recovered.bar-(this.step === 0 ? 1 : 0);
+      // Missed notes stay missed. Keep harmony/state until a real bar boundary; never
+      // rush a backlog or add a whole silent bar just because a frame was late.
+      if (this.frame && this.step !== 0) {
+        this.frame = {...this.frame,bar:this.bar};
+        this.frameNotes = notesFor(this.frame);
+      }
       this.silent = false;
+      this.output.gain.cancelScheduledValues(ctx.currentTime);
       this.output.gain.setTargetAtTime(1,ctx.currentTime,0.04);
     }
     while (this.nextTime < ctx.currentTime+0.3) {
