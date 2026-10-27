@@ -1,5 +1,13 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Claude private Keychain persistence (Codex, 2026-10-26)
+
+- Live Testing #2 acceptance found a gap after #274: the isolated HOME had no `Library/Preferences` or default Keychain. Claude saved account metadata, but a new status process had no credential; neither a fake provider nor a signed-out native startup test proved persistence.
+- `codex/claude-private-keychain` initializes a separate encrypted Keychain plus private preferences under `.agent-home`, with a random 0600 password beside the home (outside the sandbox). The trusted runner unlocks it before Claude auth checks; settings lock it on sleep and after 30 minutes. Reinstall reuses the store. Never points at or copies the personal login Keychain.
+- Real macOS test: create a non-secret credential through the isolated default store, read it in a second process and inside the agent sandbox, lock/unlock/restart, verify the personal default is unchanged, and verify the agent cannot read the unlock password. Focused subscription/native tests and runner typecheck pass; full Linux CI gates merge to avoid duplicate heavy local runs.
+- Runner bundle reinstall is required; PR includes the paste. Testing #2 still needs actual Claude sign-in and a real PR receipt. Justin authorized the allowance 21 → 22 for one attempt only; no build attempt has been submitted by this chat yet.
+
+
 ## Stranger E2E: latest status (2026-10-26)
 
 | PR | State | Result |
@@ -21,6 +29,14 @@
 - Full local checks passed on each fix. No additional confirmed webhook,
   Spark secret-tool or log-secret vulnerability; no production exploitation or
   live model red-team claim. Details and limitations: [security.md](security.md).
+- **Production verified (2026-10-27 UTC / 2026-10-26 CT):** all four fixes are
+  ancestors of `06b355a82f54b1f91af483a4ce6a46c362e5cfd8`.
+  [Deploy + live smoke passed](https://github.com/r3dbars/shiptorio/actions/runs/40434908855);
+  `/api/version` independently returned that commit and `/api/health` reported
+  D1, KV and Durable Objects healthy. #278 and #282 resolved the Linux sandbox
+  test dependency blocking earlier deploys. This is the verified rollout snapshot;
+  later deployments may advance production. Combined local check: 723 passed,
+  two skipped, zero failures, plus typechecks/builds.
 - No manual deployment, Cloudflare resource or web source changes. Merges use
   green CI; existing deployment automation remains responsible for rollout.
 
@@ -33,6 +49,7 @@ is the only copy agents outside it (Codex) can see.
 
 | Thread | State | What it did / produced |
 | --- | --- | --- |
+| Design a calm attention system for players | v1 behind flag | `docs/ATTENTION.md` (PR #268). One Needs you tray, three kinds (approve / steer / suggested, `attentionOf` in shared), every card is Continue or Later, Continue streaks steer deck ranking + planner feedback. Behind flag `attention` (off by default; try `?attention=1`). Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb |
 | Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README). Other repos: transcripted, transcripted-webapp, redbars, pipread, BetterFeedback |
 | Review Justin's Cloudflare account | done | Surveyed the account: Workers `transcripted-feedback`, `stack99-relay`, `r3dbar-subscribe`, `redbars` (don't touch). Nothing Shiptorio yet. R2 not enabled |
 | Build Shiptorio on Cloudflare for the hackathon | working | PR #1 (merged): Cloudflare Worker + GitHub App + D1/KV, reshaped into `shared/` `server/` `web/` bun workspaces, Spark client, issue → Spark → PR first cut, Three.js pixel map + `?source=sim`. Created D1 `shiptorio` + KV `shiptorio-cache`. Rebuilt the repo handoff doc as PR #5 (merged: PLAN.md, docs/ARCHITECTURE.md, docs/ART.md, briefs/, both prototypes). Now porting the Pixel Prototype art into `web/` (draft PR #8: shader, models, scene rebuilt, prototype-style HUD as of 16:53) |
@@ -62,6 +79,10 @@ is the only copy agents outside it (Codex) can see.
 | Design build mode and Codex task pack | parked (after Nov 4) | Justin 2026-10-27: optional Factorio / RCT-style build mode (place, move, rotate, rewire machines and belts). Spec `docs/BUILD-MODE.md`: every piece, its real pipeline meaning and ports, the per-tier grid on the vertical shaft (`web/src/map/shaft/layout.js`), the `Blueprint` model, `compile()` from layout to real pipeline config, safety rules, server draft/apply, web tools behind `?build=1`. 8-prompt Codex pack in project files `shiptorio/codex-prompts/build-mode.md`, parked until after Nov 4, then needs the shaft map on main |
 
 ## Codex: public judge replay (2026-10-26)
+
+- Landing-page follow-up: a Black Iron “Try the 90-second walkthrough” link below the tagline goes
+  directly to `/judge`, labeled “No sign-in required · simulated factory”. Requested frontend-lane
+  change, limited to `web/public/welcome/index.html`; no map, auth or simulator changes.
 
 - Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
   90-second, explicitly labeled simulation; query parameters cannot select a live repo.
@@ -139,7 +160,7 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | PR | What | State |
 | --- | --- | --- |
 | #13 | Private preview (password gate), hardened issue → Spark → PR → inspector/rework loop, bounded alarm jobs, stale-check handling | merged. Supersedes #4's fixes |
-| Game music | PR #263; merge authorized after green CI | Original 16-bar foundry score, activity layers, blocked brass and launch fanfare; separate persisted music volume, CC0, no audio downloads/decoded stems. Desktop/phone controls and two 65s recordings verified. **Keep behind `?music=2`**; existing score stays default. Code: `web/src/sound/foundryScore.ts`; evidence: `docs/evidence/music/`. |
+| Game music | PR #263; merge authorized after green CI | Original 16-bar foundry score, activity layers, blocked brass and launch fanfare; separate persisted music volume, CC0, no audio downloads/decoded stems. Desktop/phone controls and two 65s recordings verified. Justin approved the live audition and requested the new theme as default; `?music=1` retains the older score for comparison. Code: `web/src/sound/foundryScore.ts`; evidence: `docs/evidence/music/`. |
 | #19, #21 | Auto-deploy of `main` verified, `/api/version` shows the live SHA, shiptorio.com + shiptorio.dev live | merged |
 | #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
 | Add real user accounts and sign-in | working | D1 `users`/`sessions`/`user_installations`/`user_repos`/`user_prefs` (migration 0004), revocable sessions, repo membership on every factory route, per-repo Sentry/PostHog keys + per-repo Sentry webhook, `requireUser` helper. Password gate stays in front. Next: web install link + prefs sync |
@@ -265,3 +286,17 @@ resource attribution, migration upsert/cleanup, zero-charge failed plans across 
 and independent issue retry caps. Validation and merge are tracked in
 [PR #281](https://github.com/r3dbars/shiptorio/pull/281); its final verification comment
 links the successful Deploy run, including D1 migration application and live smoke.
+
+## Live quota admin form recovery (Codex, 2026-10-26)
+
+Follow-up [PR #284](https://github.com/r3dbars/shiptorio/pull/284) to #269 on `codex/quota-admin-origin`: verified Deploy run 40432397609
+succeeded and production SHA `6c7bca1` includes its merge. The real
+r3dbars/shiptorio card showed 20/21 runs and correctly linked to the prefilled owner
+admin page. Native Save returned 403 `invalid origin`; no quota change persisted.
+The global `no-referrer` policy makes Chromium's native form Origin opaque, as with
+the already-fixed pairing form. Use `same-origin` only on `/admin/signup` as well;
+retain exact Origin/CSRF checks and hide off-site referrers. Replace the mocked
+admin popup in quota browser tests with the real authenticated form and persisted
+save/reload checks, passing on desktop and iPhone. Public FAQ now explains quotas and
+recovery. PR #284 carries the deployment and live stop/recovery verification receipt.
+The rejected production saves left all original account limits intact.

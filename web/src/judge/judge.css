@@ -38,3 +38,9 @@
   .judge-header > button { grid-column: 3; grid-row: 1; }
   .judge .judge-caption { max-height: calc(100% - 168px); }
 }
+/* Phones: the caption keeps the bottom ~45% so the factory stays visible; the permit beat drops its long paragraph. */
+@media (max-width: 600px) {
+  .judge .judge-caption { max-height: 45dvh; }
+  .judge-caption .judge-disclosure, .judge-permit small { display: none; }
+  .judge-caption[data-beat="4"] [aria-live] > p:not(.iron-eyebrow) { display: none; }
+}

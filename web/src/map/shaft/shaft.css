@@ -25,6 +25,10 @@
 .maplabels.shaft .maplabel[data-s="BLOCKED"] .st { color: var(--iron-amber); }
 .maplabels.shaft .maplabel[data-s="BLOCKED"] .det { color: #fff1d0; }
 .maplabels.shaft .maplabel.ghost { opacity: 0.85; border-style: dashed; }
+/* an idle machine on the floor the camera is on: just its name, quiet, so the busy ones read first */
+.maplabels.shaft .maplabel.faint { opacity: 0.55; background: rgba(14, 10, 8, 0.6); border-color: rgba(90, 68, 52, 0.6); outline-color: transparent; }
+.maplabels.shaft .maplabel.faint .row2, .maplabels.shaft .maplabel.faint .st, .maplabels.shaft .maplabel.faint .dot { display: none; }
+.maplabels.shaft .maplabel.faint:hover, .maplabels.shaft .maplabel.faint:focus-visible { opacity: 1; }
 .maplabels.shaft .maplabel.ghost .dot { background: transparent; border: 1px solid var(--iron-dim); }
 .maplabels.shaft .maplabel.teaching { border-color: var(--iron-aether); box-shadow: 0 0 0 2px rgba(122, 240, 216, 0.35); }
 .maplabels.shaft .maplabel.sel { border-color: var(--iron-amber-hi, #ffd060); }

@@ -15,7 +15,7 @@ const config = {
   migrations: [{ tag: 'v1', new_sqlite_classes: ['Factory'] }],
   d1_databases: [{ binding: 'DB', database_name: 'test', database_id: '00000000-0000-0000-0000-000000000001', migrations_dir: '../server/migrations' }],
   kv_namespaces: [{ binding: 'CACHE', id: 'local-only' }],
-  vars: { BUILD_SHA: process.env.SHIPTORIO_TEST_RUN_ID || 'e2e-fixture', DEV_LOGIN: 'fixture', ALLOWED_LOGINS: 'fixture,fixture1,fixture2,fixture3,fixture4,fixture5', SESSION_SECRET: 'public-test-only-session', APP_PASSWORD: 'public-test-only-preview', GITHUB_APP_SLUG: 'fixture-app', GITHUB_CLIENT_ID: 'fixture-client', GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem, GITHUB_WEBHOOK_SECRET: 'public-test-hook', META_API_KEY: 'public-test-only-meta-key', SPARK_BASE_URL: 'https://fixture.meta/v1' },
+  vars: { BUILD_SHA: process.env.SHIPTORIO_TEST_RUN_ID || 'e2e-fixture', DEV_LOGIN: 'fixture', ADMIN_LOGINS: 'fixture', ALLOWED_LOGINS: 'fixture,fixture1,fixture2,fixture3,fixture4,fixture5', SESSION_SECRET: 'public-test-only-session', APP_PASSWORD: 'public-test-only-preview', GITHUB_APP_SLUG: 'fixture-app', GITHUB_CLIENT_ID: 'fixture-client', GITHUB_CLIENT_SECRET: 'fixture-client-secret', GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem, GITHUB_WEBHOOK_SECRET: 'public-test-hook', META_API_KEY: 'public-test-only-meta-key', SPARK_BASE_URL: 'https://fixture.meta/v1' },
 };
 await Bun.write(`${dir}/wrangler.json`, JSON.stringify(config));
 let child: ReturnType<typeof Bun.spawn> | undefined;

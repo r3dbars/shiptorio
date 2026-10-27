@@ -7,8 +7,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   achieved,
   answered,
+  ATTENTION_RANK,
+  ATTENTION_WAIT_MS,
+  attentionOf,
   dayKey,
-  levelOf,
   liveStreak,
   mergeProgress,
   nextUnlock,
@@ -24,10 +26,9 @@ import {
   type Step,
   type Unlock,
 } from "@shiptorio/shared";
-import { PressureGauge } from "./ironArt";
 import { Icon, type IconName } from "./icons";
 import { sound } from "../sound/engine";
-import { PROGRESS, WORDS } from "../copy";
+import { ATTENTION, PROGRESS, WORDS } from "../copy";
 
 const ON_KEY = "shiptorio:progress-on";
 const BRIEF_KEY = "shiptorio:brief-day";
@@ -176,23 +177,18 @@ export function cosmeticsOf(p: Progress, on: boolean) {
 // ---- top bar ----
 
 export function ProgressChip({ p, onOpen }: { p: Progress; onOpen: () => void }) {
-  const lv = levelOf(p.xp);
   const streak = liveStreak(p, Date.now());
   const today = p.last === dayKey(Date.now());
   return (
-    <button type="button" className="chip lvl-chip" onClick={onOpen} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
+    <button type="button" className="chip lvl-chip" onClick={onOpen} title={PROGRESS.chipTitle(streak)}>
       {/* the name is what the chip shows plus this, so voice control can say what it sees */}
-      <span className="sr">{PROGRESS.chipLabel(lv.level, streak)}</span>
+      <span className="sr">{PROGRESS.chipLabel(streak)}</span>
       <span className={`badge flame${today ? " lit" : ""}`}>
         <Icon name="flame" size={14} />
       </span>
       <span>
         {streak}
         <small>{PROGRESS.days(streak)}</small>
-      </span>
-      <span className="lvl">
-        {PROGRESS.lv(lv.level)}
-        <i style={{ width: `${Math.round(lv.into * 100)}%` }} />
       </span>
     </button>
   );
@@ -343,7 +339,6 @@ export function MorningBrief({ p, deck, onCheckin, onClose }: { p: Progress; dec
 // ---- the progress sheet ----
 
 export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Progress; notify: NotifyState; onNotify: () => void; onEquip: (id: string, on: boolean) => void; onClose: () => void }) {
-  const lv = levelOf(p.xp);
   const streak = liveStreak(p, Date.now());
   const next = nextUnlock(p);
   const today = dayKey(Date.now());
@@ -352,20 +347,10 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
   return (
     <section className="card sheet progress" aria-label={PROGRESS.sheet}>
       <div className="sheet-top">
-        <h2>{PROGRESS.sheetTitle(lv.level, lv.title)}</h2>
+        <h2>{PROGRESS.sheet}</h2>
         <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
-      </div>
-      <div className="pg-level">
-        <PressureGauge into={lv.into} />
-        <span className="pg-odo">
-          <span className="iron-eyebrow">{PROGRESS.gauge}</span>
-          <span className="pg-digits" aria-hidden="true">
-            {String(lv.level).padStart(2, "0").split("").map((d, i) => <i key={i}>{d}</i>)}
-          </span>
-          <span>{PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}</span>
-        </span>
       </div>
       <div className="pg-streak">
         <span className="badge flame lit">
@@ -438,6 +423,9 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
 
 export type NotifyState = "on" | "off" | "blocked" | "unsupported";
 const NOTIFY_GAP = 15 * 60_000;
+const CALM_GAP = 60 * 60_000; // calm mode bundles: at most one push an hour
+/** Quiet hours, 10 pm to 8 am local: cards still collect, nothing pings. */
+export const quietHour = (h: number) => h >= 22 || h < 8;
 
 function readNotify(): NotifyState {
   if (typeof Notification === "undefined") return "unsupported";
@@ -445,8 +433,10 @@ function readNotify(): NotifyState {
   return Notification.permission === "granted" && store.get(NOTIFY_KEY) === "1" ? "on" : "off";
 }
 
-/** Opt-in, while the tab is open in the background: one notification when new cards wait on you. */
-export function useBottleneckNudge(deck: Move[], on: boolean) {
+/** Opt-in, while the tab is open in the background: one notification when new cards wait on you.
+ * With the attention flag (docs/ATTENTION.md) only Approve and Steer cards count, only after they've waited
+ * (30 / 10 min), at most once an hour, and never in quiet hours. Suggestions never leave the game. */
+export function useBottleneckNudge(deck: Move[], on: boolean, calm = false) {
   const [state, setState] = useState<NotifyState>(readNotify);
   const lastCount = useRef(deck.length);
   const lastAt = useRef(0);
@@ -456,10 +446,40 @@ export function useBottleneckNudge(deck: Move[], on: boolean) {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, [on, state]);
 
+  // Calm mode: check once a minute which cards have waited long enough.
+  const [minute, setMinute] = useState(0);
+  const seen = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (!calm || !on || state !== "on") return;
+    const t = setInterval(() => setMinute((m) => m + 1), 60_000);
+    return () => clearInterval(t);
+  }, [calm, on, state]);
+  useEffect(() => {
+    if (!calm || !on || state !== "on") return;
+    if (!document.hidden) { for (const m of deck) if (!seen.current.has(m.id)) seen.current.set(m.id, Date.now()); return; }
+    const now = Date.now();
+    // Some cards are rebuilt each tick with a fresh createdAt (the bottleneck card), so also count from first sight.
+    for (const m of deck) if (!seen.current.has(m.id)) seen.current.set(m.id, now);
+    if (now - lastAt.current < CALM_GAP || quietHour(new Date(now).getHours())) return;
+    const due = deck.filter((m) => { const wait = ATTENTION_WAIT_MS[attentionOf(m)]; return wait !== null && now - Math.min(m.createdAt, seen.current.get(m.id)!) >= wait; });
+    if (!due.length) return;
+    lastAt.current = now;
+    const n = { approve: 0, steer: 0 };
+    for (const m of due) n[attentionOf(m) as "approve" | "steer"]++;
+    const top = [...due].sort((a, b) => ATTENTION_RANK[attentionOf(a)] - ATTENTION_RANK[attentionOf(b)])[0];
+    const opts: NotificationOptions = { body: top.title, tag: "shiptorio-bottleneck", data: { url: location.href } };
+    const show = async () => {
+      const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
+      if (reg) return reg.showNotification(ATTENTION.pushTitle(n.approve, n.steer), opts);
+      new Notification(ATTENTION.pushTitle(n.approve, n.steer), opts);
+    };
+    show().catch(() => {});
+  }, [calm, deck, on, state, minute]);
+
   useEffect(() => {
     const was = lastCount.current;
     lastCount.current = deck.length;
-    if (!on || state !== "on" || deck.length <= was || !document.hidden || Date.now() - lastAt.current < NOTIFY_GAP) return;
+    if (calm || !on || state !== "on" || deck.length <= was || !document.hidden || Date.now() - lastAt.current < NOTIFY_GAP) return;
     lastAt.current = Date.now();
     const title = PROGRESS.notifyTitle(deck.length);
     const opts: NotificationOptions = { body: deck[0]?.title ?? PROGRESS.notifyBody, tag: "shiptorio-bottleneck", data: { url: location.href } };

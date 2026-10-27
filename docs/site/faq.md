@@ -22,6 +22,18 @@ Claude Code and Codex today. Each one you sign in to becomes a power plant on th
 
 Spark's thinking runs on Shiptorio's Meta API key. The building runs on your own Claude or ChatGPT subscription through the runner. GitHub, Sentry and PostHog are your existing accounts.
 
+## Why is my factory paused at a quota?
+
+The **Factory limits** card appears when a daily allowance is near its limit or exhausted.
+It shows usage, the reset time in your timezone, and midnight UTC. Account admins can follow
+**Raise limit** to the selected account's quota form; saving applies immediately. Return to
+the factory to refresh the card, or leave it visible for its automatic refresh.
+Configured owner accounts retain a minimum of 200 build runs per day.
+
+Build runs are charged when a job starts building, not when planning fails. Failed plans
+wait one minute, then two; after three failed tries for an issue in a UTC day, planning
+waits until the next day. A new plan still needs your approval.
+
 ## Can it merge without me?
 
 Only in a lane you gave a [launch permit](/docs/permits), and only for PRs that passed every station with zero rework. One slip and the permit is gone.

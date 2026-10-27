@@ -216,6 +216,8 @@ export class ShaftHud {
     const { I, stage } = w;
     const phone = isPhone(W);
     this.measureCover(W, H);
+    const pinged = new Set(this.pings.map((p) => p.key));
+    const floorView = stage.view !== "stack" && stage.view !== "follow" && stage.view !== "free";
     // a chip or ping under a plate can't be read or tapped, so it waits until the camera brings it out
     const top = cover.top + 4, bottom = H - cover.bottom - 4;
     type Placed = { c: Chip; x: number; y: number; w: number; h: number; rank: number };
@@ -233,7 +235,15 @@ export class ShaftHud {
       }
       const hot = t.s === "BLOCKED";
       const teaching = this.teaching.has(c.key);
-      const shown = c.always ? !(c.key === "rework" && !this.reworkCount) : hot || teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected)) || (c.key === "rework" && this.reworkCount > 0);
+      // Quiet by default: a chip speaks up only when its machine has work in hand, is stuck, has a ping, or its mine
+      // has ore waiting. Idle ones come back when asked for (hover, keyboard on the map, selected, the tour), and
+      // as a faint name when the camera is down on one floor.
+      const busy = c.station ? hot || (t.s === "WORKING" && !!c.station.item) : t.s === "WORKING";
+      const asked = teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected));
+      const loud = busy || pinged.has(c.key) || asked;
+      const faint = !loud && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
+      const shown = loud || faint;
+      c.el.classList.toggle("faint", faint);
       c.el.classList.toggle("teaching", teaching);
       c.el.classList.toggle("sel", !!c.key && c.key === this.selected);
       const [x, y] = stage.project(...c.at());
@@ -243,7 +253,7 @@ export class ShaftHud {
         continue;
       }
       if (c.el.style.display === "none") c.el.style.display = "";
-      placed.push({ c, x, y, w: 0, h: 0, rank: hot ? 0 : teaching || c.key === this.selected ? 1 : t.s === "WORKING" ? 2 : 3 });
+      placed.push({ c, x, y, w: 0, h: 0, rank: hot ? 0 : teaching || c.key === this.selected ? 1 : faint ? 4 : t.s === "WORKING" ? 2 : 3 });
     }
     // read every size once, then write every position (no layout thrash)
     for (const p of placed) (p.w = p.c.el.offsetWidth), (p.h = p.c.el.offsetHeight);
@@ -254,7 +264,7 @@ export class ShaftHud {
     const kept: Placed[] = [];
     for (const p of placed) {
       let clash = kept.find((q) => Math.abs(p.x - q.x) < (p.w + q.w) / 2 + 2 && Math.abs(p.y - q.y) < (p.h + q.h) / 2 + 2);
-      if (clash && phone && p.rank >= 2) {
+      if (clash && (p.rank === 4 || (phone && p.rank >= 2))) {
         p.c.el.style.display = "none";
         continue;
       }

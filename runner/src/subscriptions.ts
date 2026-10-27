@@ -1,3 +1,4 @@
+import { prepareAgentKeychain, unlockAgentKeychain } from "./keychain";
 import { chmod, lstat, mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment } from "./policy";
@@ -14,9 +15,11 @@ export async function prepareAgentHome(root: string): Promise<string> {
     if (!(await lstat(path)).isDirectory() || await realpath(path) !== path) throw new Error("Agent home must not be a symlink");
     await chmod(path, 0o700);
   }
+  await prepareAgentKeychain(home);
   return home;
 }
 export async function subscriptionSignedIn(h: Subscription, executable: string, home: string): Promise<boolean> {
+  if (h === "claude_code") { try { await unlockAgentKeychain(home); } catch { return false; } }
   let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
   try { child = Bun.spawn([executable, ...subscriptionArgs(h)], { cwd: home, env: agentEnvironment(process.env, home), stdin: "ignore", stdout: "pipe", stderr: "pipe" }); }
   catch { return false; }

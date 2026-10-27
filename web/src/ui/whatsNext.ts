@@ -35,6 +35,11 @@ const MINE_WHY: Record<string, string> = {
   sentry: "Live errors become ore, so the next fix comes from what's actually breaking.",
   posthog: "User signals weigh what gets built first, so the next fix is the one people feel.",
 };
+/** Mines unlock slowly: the first after 3 rockets, the next after 6, then 9. One new source at a time, never up front. */
+export function mineUnlocked(state: FactoryState): boolean {
+  const connected = (state.sources ?? []).filter((x) => x.state === "connected").length;
+  return (state.metrics?.rockets ?? 0) >= 3 * (connected + 1);
+}
 const IN_FLIGHT = new Set(["ore", "queued", "working", "inspecting", "rejected"]);
 const dir = (d: string) => (d === "/" ? "/" : `/${d}`);
 
@@ -97,7 +102,7 @@ export function whatsNext(state: FactoryState, ctx: NudgeContext = {}): Nudge {
   }
 
   // 5. An empty mine on the island: more ore, from the real world.
-  const ghost = rockets > 0 ? ghostSpots(state)[0] : undefined;
+  const ghost = mineUnlocked(state) ? ghostSpots(state)[0] : undefined;
   const pendingSource = state.sources?.find((x) => (x.kind === "sentry" || x.kind === "posthog") && x.state === "needs_action");
   const mine = pendingSource?.kind ?? ghost?.kind;
   if (mine) {

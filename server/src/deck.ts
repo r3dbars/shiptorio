@@ -1,7 +1,7 @@
 // The live check-in deck is a projection, never an executor. The DO supplies all open
 // proposals and stores resolutions separately. A new proposal joins the set; it does
 // not overwrite the previous card. All times/ids below are deterministic for replay.
-import type { FactoryState, Item, Move, MoveKind } from "@shiptorio/shared";
+import { attentionOf, type FactoryState, type Item, type Move, type MoveKind } from "@shiptorio/shared";
 
 // A modest, fixed bonus (weighted item-minutes) favors growing the loop without
 // letting a new connection card bury an old, valuable shipping decision forever.
@@ -16,7 +16,11 @@ export interface DeckOptions {
   rules?: readonly DeckRule[];
   /** The caller may supply a model-authored bottleneck proposal instead of the safe default. */
   impliedMove?: Move;
+  /** docs/ATTENTION.md: the player's Continues in a row per `kind|scope`; each one lifts that class a little. */
+  yes?: Readonly<Record<string, number>>;
 }
+// Each Continue in a row is worth a few weighted item-minutes, capped, so a habit nudges the order but never buries a stuck line.
+export const YES_BONUS = 4, YES_BONUS_MAX = 20;
 
 /** Item/district first, then source/tool scope; prefixing prevents accidental collisions. */
 export function moveScope(move: Move, state: FactoryState): string {
@@ -47,7 +51,7 @@ export function enrichMove(move: Move, state: FactoryState): Move {
   const focus = move.focus ?? item?.machineId ?? (move.stage === state.bottleneck?.stage ? state.bottleneck?.stationId : undefined) ?? item?.district ?? move.stage ?? "factory";
   const grows = move.grows ?? (kind === "verify" ? ["+1 CHECK"] : kind === "input" ? ["+1 SOURCE"] : kind === "automate" ? ["+1 AUTOMATION"] : []);
   const plan = move.plan ?? move.options.find(o => o.recommended)?.actions.map(a => a.reason).filter(Boolean) ?? [];
-  const enriched: Move = { ...move, kind, focus, grows, plan, options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args } })) })) };
+  const enriched: Move = { ...move, kind, focus, grows, plan, attention: attentionOf(move, item), options: move.options.map(o => ({ ...o, actions: o.actions.map(a => ({ ...a, args: { ...a.args } })) })) };
   // Scar/rework cards deliberately retain their existing explicit overrule behavior.
   // Only actual shipping cards get a safe default for a fast right swipe.
   if (kind !== "ship") return enriched;
@@ -67,13 +71,14 @@ export function enrichMove(move: Move, state: FactoryState): Move {
   return enriched;
 }
 
-export function deckScore(move: Move, state: FactoryState, now: number): number {
+export function deckScore(move: Move, state: FactoryState, now: number, yes?: Readonly<Record<string, number>>): number {
   const item = state.items.find(i => i.id === move.itemId);
   const jam = state.bottleneck;
   const matchesJam = !!jam && move.stage === jam.stage;
   const value = item ? (Number.isFinite(item.value) && item.value! >= 0 ? item.value! : FALLBACK_VALUE[item.kind]) : matchesJam ? Math.max(0, jam!.valueAtRisk) : 1;
   const waitMs = item ? Math.max(0, now - item.updatedAt) : matchesJam ? Math.max(0, jam!.ageMs) : Math.max(0, now - move.createdAt);
-  return value * waitMs / 60_000 + (GROW_BONUS[move.kind ?? inferKind(move)] ?? 0);
+  const streak = yes?.[`${move.kind ?? inferKind(move)}|${moveScope(move, state)}`] ?? 0;
+  return value * waitMs / 60_000 + (GROW_BONUS[move.kind ?? inferKind(move)] ?? 0) + Math.min(YES_BONUS_MAX, streak * YES_BONUS);
 }
 
 function coversBottleneck(move: Move, state: FactoryState): boolean {
@@ -115,7 +120,7 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
     const candidate = options.impliedMove ?? impliedBottleneckMove(state, now);
     if (candidate) { const move = enrichMove(candidate, state); if (allowed(move)) byId.set(move.id, move); }
   }
-  const ranked = [...byId.values()].sort((a, b) => deckScore(b, state, now) - deckScore(a, state, now) || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  const ranked = [...byId.values()].sort((a, b) => deckScore(b, state, now, options.yes) - deckScore(a, state, now, options.yes) || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const visible = ranked.slice(0, 12);
   const runnerDecision = (move: Move, tool: string) => {
     const item = state.items.find(i => i.id === move.itemId);

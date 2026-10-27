@@ -108,6 +108,65 @@ describe("Factory lifecycle", () => {
     expect(f.saved()).toEqual(before);
     expect(f.events).toEqual([]);
   });
+  it("commits an exclusive runner lease while earlier browser authorization is held", async () => {
+    const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+    const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+    const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], { GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, SPARK_DISABLED: "0" });
+    const internal = f.factory as unknown as { env: { DB: { prepare(sql: string): any } }; broadcast(value: unknown): Promise<void> };
+    await f.factory.exportState();
+    await f.factory.activateRunner("pair");
+    const id = crypto.randomUUID();
+    f.data.set(`runnerJob:${id}`, { id, itemId: "gh-1", repo: "r3dbars/demo", harness: "codex", allowedPaths: ["src/a.ts"], plan: "Apply the approved fix", baseSha: "a".repeat(40), branch: `shiptorio/runner-${id}`, status: "ready", approvedAt: Date.now(), runAccount: "test-player" });
+    const authStarted = Promise.withResolvers<void>(), releaseAuth = Promise.withResolvers<void>();
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    let revoked = false, checks = 0;
+    internal.env.DB.prepare = (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith("SELECT u.id, u.login FROM sessions")) return statement;
+      return { ...statement, bind: (...args: unknown[]) => {
+        const bound = statement.bind(...args);
+        return { ...bound, first: async () => { checks++; authStarted.resolve(); await releaseAuth.promise; return revoked ? null : bound.first(); } };
+      } };
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown) => {
+      if (String(url).endsWith("/access_tokens")) return Response.json({ token: "synthetic-installation-token" });
+      throw Error("Unexpected provider request in held-auth regression");
+    }) as typeof fetch;
+    const queued = internal.broadcast({ type: "patch", patch: { tick: 9 } });
+    await authStarted.promise;
+    const claiming = Promise.all([f.factory.claimRunner("pair", ["codex"]), f.factory.claimRunner("pair", ["codex"])]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // The timeout is a failure bound, never a synchronization sleep: authorization
+      // remains unresolved until after the real concurrent claims/heartbeat return.
+      const claims = await Promise.race([
+        claiming,
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error("Runner mutation waited on browser delivery")), 1000); }),
+      ]);
+      expect(claims.filter(Boolean)).toHaveLength(1);
+      expect(claims.find(Boolean)).toMatchObject({ id, status: "running", pairId: "pair" });
+      const running = f.data.get(`runnerJob:${id}`) as { lease: string; deadline: number };
+      expect(running.lease).toMatch(/^[a-f0-9-]{36}$/);
+      expect(running.deadline).toBeGreaterThan(Date.now());
+      expect(f.saved().items[0]).toMatchObject({ state: "working", attempts: 1 });
+      await f.factory.heartbeatRunner("pair", ["codex"]);
+      expect((f.data.get("runnerPresence") as { harnesses: string[] }).harnesses).toEqual(["codex"]);
+      expect(f.events).toEqual([]); // No frame bypasses its pending authorization.
+      revoked = true;
+    } finally {
+      clearTimeout(timer);
+      revoked = true;
+      releaseAuth.resolve();
+      await claiming.catch(() => {});
+      await queued;
+      await (f.factory as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
+      globalThis.fetch = originalFetch;
+    }
+    expect(checks).toBeGreaterThan(1); // Each queued frame revalidates after revocation.
+    expect(f.events).toEqual([]);
+  });
+
   it("runs Spark planning, exclusive runner claim, scoped branch verification and idempotent PR receipts", async () => {
     const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
     const der = await crypto.subtle.exportKey("pkcs8", keys.privateKey);

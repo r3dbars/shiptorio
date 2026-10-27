@@ -196,8 +196,9 @@ its runner token in `~/.config/shiptorio/runner.json` and reconnects on start.
 
 ### Adaptive foundry music (Day 2 feel checkpoint)
 
-`?music=2` opts into “Up from the Mine”, a 16-bar original theme. The default remains
-PR #182's procedural score for comparison. `music.ts` maps factory activity into idle,
+“Up from the Mine”, a 16-bar original theme, is the default after Justin's listening
+approval. `?music=1` selects PR #182's older procedural score for comparison; existing
+`?music=2` links keep selecting the foundry theme. `music.ts` maps factory activity into idle,
 working, blocked and launch states with hysteresis. `foundryPlayer.ts` retains one
 transport, schedules eighths ahead, and changes arrangements on bar boundaries with
 0.48s equal-power crossfades. `foundryScore.ts` holds the reproducible score and cached

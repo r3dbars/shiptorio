@@ -145,3 +145,11 @@ the top of the deck. If the issue changes before approval, request a fresh plan.
 
 If old source alerts fill the check-in, one existing build or plan-approval card stays
 reachable. This only makes the decision visible; it does not approve a plan or start work.
+
+### macOS says signed in, then asks again
+
+The runner keeps a separate encrypted Keychain inside its private agent home. Older
+bundles could finish the browser step without a default Keychain to persist the
+credential. Reinstall the runner and repeat `login claude` once. Wait for the Terminal
+message `claude_code: installed and signed in for Shiptorio`. Your personal Claude
+credentials and macOS Keychain stay separate.

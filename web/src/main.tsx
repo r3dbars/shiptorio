@@ -54,7 +54,9 @@ function Root() {
 
 const judge = location.pathname === "/judge" || location.pathname === "/judge/";
 // Public replay stays offline, including boot: no telemetry/account/flag requests.
-if (judge) history.replaceState(null, "", "/judge?source=sim");
+// Only the map style survives (?world=shaft), so judges can watch the replay in the vertical shaft too.
+const judgeWorld = new URLSearchParams(location.search).get("world");
+if (judge) history.replaceState(null, "", `/judge?source=sim${judgeWorld && /^(shaft|iron|classic)$/.test(judgeWorld) ? `&world=${judgeWorld}` : ""}`);
 void Promise.all(judge ? [] : [initTelemetry(), loadFeatureFlags()]).then(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary><Root /></ErrorBoundary>

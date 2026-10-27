@@ -95,6 +95,21 @@ it("does not turn an earned permit card into a missing-proof merge card", () => 
   expect(enrichMove(permit, state()).locked).toBeUndefined();
 });
 
+describe("attention: every tap steers the deck", () => {
+  it("tags each card with its attention kind", () => {
+    expect(enrichMove(ship(), state([item("pr", { state: "on_pad" })])).attention).toBe("approve");
+    expect(enrichMove(move("stuck:pr:1"), state()).attention).toBe("steer");
+    expect(enrichMove(move("idea", { kind: "verify" }), state()).attention).toBe("suggest");
+  });
+  it("Continues in a row lift that class of card, capped", () => {
+    const s = state([item("a", { value: 1, district: "web" }), item("b", { value: 1, district: "api" })]);
+    const input = [move("a", { itemId: "a", kind: "build" }), move("b", { itemId: "b", kind: "build" })];
+    expect(buildDeck(s, input, { now }).map(m => m.id)).toEqual(["a", "b"]);
+    expect(buildDeck(s, input, { now, yes: { "build|district:api": 2 } }).map(m => m.id)).toEqual(["b", "a"]);
+    expect(deckScore(input[1], s, now, { "build|district:api": 99 }) - deckScore(input[1], s, now)).toBe(20);
+  });
+});
+
 describe("runner decisions stay reachable in a full alert deck", () => {
   const clock = 5 * 60 * 60_000;
   const alerts = () => Array.from({ length: 12 }, (_, n) => move(`alert-${n}`, { kind: "unblock", stage: "intake", createdAt: clock - 4 * 60 * 60_000, options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] }));

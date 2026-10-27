@@ -57,3 +57,13 @@ Tap any station on the map to see what it does, what's waiting there and what it
 - Learn the [gauntlet](/docs/gauntlet), since that's where most of the game happens.
 - Learn the [check-in deck](/docs/check-in), the fast way to clear everything waiting on you.
 - Read the [FAQ](/docs/faq) if something looks off.
+
+## Sound and music
+
+The foundry soundtrack plays by default after your first click or keypress. It builds
+with the factory, adds pressure when work is blocked, and resolves when a rocket launches.
+Open **Activity → Settings** to turn music off or adjust its own volume separately from
+other sounds. Your choices are saved in this browser. Press **M** to mute all sound.
+
+For comparison, add `music=1` to the URL to hear the older score. The `music=2` option
+still selects the new soundtrack, but is no longer needed.

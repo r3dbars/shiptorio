@@ -36,6 +36,8 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   const captionBox = await story.boundingBox();
   expect(captionBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height);
   expect(captionBox!.y + captionBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  // On phones the factory stays in view: the caption never takes more than about half the screen.
+  if (info.project.name !== 'desktop') expect(captionBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height * 0.5);
   await info.attach('judge-permit', { body: await page.screenshot(), contentType: 'image/png' });
   await page.screenshot({ path: `/tmp/shiptorio-judge-${info.project.name}.png` });
   if (info.project.name !== 'desktop') {
@@ -59,5 +61,19 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   await page.getByRole('button', { name: 'Replay', exact: true }).first().click();
   await expect(page.getByTestId('judge-rockets')).toHaveText('0');
   await expect(page.getByTestId('judge-autonomy')).toHaveText('Advisor');
-  await expect(story).toHaveAttribute('data-beat', '0');
+  // Beat 0 lasts under two seconds, so a slow runner may already be on beat 1: either means the story restarted.
+  await expect(story).toHaveAttribute('data-beat', /^[01]$/);
+});
+
+test('judge replay plays in the vertical shaft map', async ({ page }, info) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto('/judge?world=shaft&repo=private/repo');
+  await expect(page).toHaveURL(/\/judge\?source=sim&world=shaft$/);
+  await page.getByRole('button', { name: 'Play the 90-second story' }).click();
+  const story = page.getByRole('region', { name: 'Judge story', exact: true });
+  await expect(page.getByTestId('judge-item-sentry')).toHaveAttribute('data-scars', '1', { timeout: 60_000 });
+  await expect(story).toHaveAttribute('data-beat', '4', { timeout: 60_000 });
+  await page.screenshot({ path: `/tmp/shiptorio-judge-shaft-${info.project.name}.png` });
+  expect(errors).toEqual([]);
 });
