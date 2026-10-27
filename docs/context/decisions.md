@@ -1,5 +1,14 @@
 # Decisions and open items
 
+- 2026-10-27 deployment recovery: external merge #427 put unverified UI at main
+  `c5e23309`. Cancellation of Deploy40604211672 raced Cloudflare acceptance.
+  [Rollback40604702919](https://github.com/r3dbars/shiptorio/actions/runs/40604702919)
+  restored verified `eb6a820`; live version and anonymous401 confirmed.
+  Root temporarily set repository `DEPLOY_ENABLED=false` to prevent another
+  unverified main deployment. Preserve merged history in repair #445; restore
+  `DEPLOY_ENABLED=true` only after its current-main combined checks pass, then
+  deploy main and verify the exact live SHA. No other Worker was changed.
+
 - 2026-10-27: A full governance/escalation window can no longer hide the only real
   runner plan or approval. Keep the existing passive-alert replacement preference,
   then reserve the lowest-ranked non-merge slot when needed. This only changes the
