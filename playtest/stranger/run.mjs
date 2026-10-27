@@ -126,7 +126,7 @@ page.on("websocket", socket => {
   socket.on("close", () => socketMessages.push({ type: "socket-closed" }));
 });
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
-page.on("console", (m) => { if (m.type() === "error") { if (!signedIn && /401/.test(m.text())) expectedAnonymousErrors.push(m.text()); else consoleErrors.push(m.text()); } if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
+page.on("console", (m) => { if (m.type() === "error") { if (!signedIn && /401/.test(m.text())) expectedAnonymousErrors.push(m.text()); else consoleErrors.push(`${m.text()} at ${JSON.stringify(m.location())}`); } if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
 const apiErrors = [];
 let repoPolls = 0;
 page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/repos") repoPolls++; });
@@ -284,11 +284,15 @@ try {
     assert.equal(stub.state.merges.length, 0);
   });
   await step("Launch card merges only after the player's click", async () => {
-    await until("Launch card over socket", () => factoryState.move?.title?.startsWith("Launch #7"));
-    const card = factoryState.move;
+    await until("Launch card over socket", () => factoryState.deck?.some(m => m.title.startsWith("Launch #7")));
+    const card = factoryState.deck.find(m => m.title.startsWith("Launch #7"));
     assert.equal(card.evidence.length, 3);
     assert.ok(card.evidence.every(stamp => stamp.ok));
-    await clickMove(/Launch #7/);
+    await page.getByRole("button", { name: /^Activity, / }).click();
+    const tray = page.getByRole("complementary", { name: "Activity", exact: true });
+    const launchCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: /^Launch #7:/ }) });
+    await launchCard.getByRole("button", { name: /^Launch #7:/ }).click();
+    await launchCard.getByRole("button", { name: /^Launch #7(?!:)/ }).click();
     await until("rocket launched", () => item()?.state === "launched");
     assert.equal(stub.state.merges.length, 1);
     assert.equal(stub.state.merges[0].sha, stub.state.headSha);
