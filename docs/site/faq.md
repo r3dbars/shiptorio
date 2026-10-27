@@ -66,6 +66,8 @@ Install the Shiptorio GitHub App on it and refresh. If someone else installed it
 
 Yes. The map, cards and check-in deck are built mobile first. The check-in deck is made for a two-minute swipe on your phone.
 
+At floor zoom, a one-finger drag settles on the nearest floor. Pinching and the full-shaft overview keep your chosen framing; cancelled gestures do not select or snap. With reduced motion enabled, the floor change is immediate.
+
 ## Can I try it without connecting anything?
 
 Yes. The sandbox runs a whole factory on sample data: [?source=sim](/?source=sim). See [Getting started](/docs/getting-started).
