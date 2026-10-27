@@ -4,7 +4,7 @@ Run: Oct 26, 2026, 9:22 PM CT → Oct 27, 8:00 AM CT at latest. In progress.
 
 ## Summary
 
-- **1 fixed/merged; 8 logged, not fixed yet** (6 queued product cuts, 2 protected-area/test issues).
+- **1 fixed/merged; 0 verified deployed; 10 logged, not fixed yet** (8 queued product cuts, 2 protected-area/test issues).
 - Merged: browser QA commands work after a clean install, [#302](https://github.com/r3dbars/shiptorio/pull/302). **Deploy blocked before any step by GitHub billing**; no live claim.
 - User-visible cuts queued: onboarding blank screen on a hung version probe; docs search remains empty after going back online; denied clipboard access produces an unhandled error; malformed scenario links crash the simulator.
 - **Human action required:** resolve GitHub Billing & plans. Deploy [40439556051](https://github.com/r3dbars/shiptorio/actions/runs/40439556051) never started: recent payments failed or spending limit must increase. Public `/api/version` remains `be3a81b`. New code fixes are paused under the requested Deploy gate; read-only hunting/local checks continue. Protected UI and runner install/login remain untouched.
@@ -19,6 +19,9 @@ Run: Oct 26, 2026, 9:22 PM CT → Oct 27, 8:00 AM CT at latest. In progress.
 6. **Logged, not fixed: shaft map chip accessible-name mismatch.** Current-build axe audit (with a temporary Menu-aware harness) reports serious `label-content-name-mismatch` on Sentry/GitHub and station chips. Owner: protected #296 / `web/src/map/shaft/hud.ts`; leave the map/chip work untouched.
 7. **Docs search reopens after Escape on slow requests.** Hold `/docs/search.json` for 1s, type “gauntlet”, press Escape; results reopen after the response. `docs/site/_assets/docs.js`; queued, blocked by Deploy gate.
 8. **Docs search ArrowUp starts one result too early.** From an unselected 8-result list, first ArrowUp selects index 6 rather than the last result (7). Same docs file; scripted keyboard reproduction. Queued, blocked by Deploy gate.
+
+9. **Admin access/quotas page is unstyled.** Authenticated `/admin/signup` renders white browser-default Times/Arial controls, unlike the other Black Iron admin pages. Reproduced at all three sizes; screenshot `admin-iphone-signup.png`. `server/src/signup.ts:147` returns raw HTML instead of the existing utility-page shell. Queued; use the existing theme only, no redesign.
+10. **Landing pause target is only 36×36 px.** `web/public/welcome/index.html:82`, `#toggle` has no extended hit area; Playwright confirms its rendered rectangle. Below the style guide’s 44px touch-target minimum. Queued; no change while Deploy is blocked.
 
 ## Findings and receipts
 
@@ -52,6 +55,13 @@ Run: Oct 26, 2026, 9:22 PM CT → Oct 27, 8:00 AM CT at latest. In progress.
 - Five-minute phone stability: after warmup, 1,771 geometries / 85 textures / 33 shader programs stayed flat from 150–330s. Post-GC JS heap 76.82→77.27 MiB; DOM 233 throughout. Draw calls oscillated 1,630–2,045 with render passes, without monotonic growth. Zero page errors. SwiftShader/headless timings are not physical-phone FPS.
 - Authenticated local admin/flags/signup pages: all 9 size×route reads returned 200, no overflow or page errors; fake session/local SQLite identity only, no production admin writes. Access-denial behavior was checked separately.
 - Temporary Menu-aware axe audit reached all 14 screens. Welcome/sign-in/intro passed; map-bearing screens expose the protected accessible-name mismatch above. Actual committed a11y command remains red; no claim of a clean audit.
+
+### Oct 26, 10:02 PM CT — network, keyboard and remaining UI cuts
+
+- Sim on a 150ms / ~1.4Mbps profile: meaningful UI at 10.28s. Menu → Line opened; Escape restored button focus. Resizing to 844×390, 412×915 and 1440×900 produced no document overflow. Back and reload restored the sim; an already-loaded sim remained visible offline. Zero page errors.
+- Existing keyboard-only harness remains red: welcome tour and rocket completed; after entering first-run it repeatedly chooses the LAUNCH tool instead of the next tutorial/build action. A temporary narrower label matcher reached first-run but the generic action selection still needs repair. **No complete keyboard first-run pass is claimed**, and this is not sufficient evidence of a product dead end.
+- Font probe: default Arial on SVG-only icon buttons is not visible text and is not counted as a typography bug. The unstyled admin page is a separate, screenshot-confirmed theme regression. Existing CSP-driven font-free utility pages were left alone.
+- Only one code fix merged before the external gate; it repairs QA tooling rather than player-facing behavior. There are not five shipped player-facing fixes to list. The report names every reproduced queued cut instead.
 
 ## Coverage still to complete
 
