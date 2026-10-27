@@ -103,7 +103,7 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 };
 
 app.use("*", async (c, next) => {
-  const trace: Trace = { requestId: crypto.randomUUID() };
+  const trace: Trace = { requestId: crypto.randomUUID(), route: c.req.path };
   const match = c.req.path.match(/^\/api\/repos\/([\w.-]+\/[\w.-]+)/);
   if (match) trace.repo = match[1].toLowerCase();
   const start = Date.now();
