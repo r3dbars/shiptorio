@@ -25,6 +25,17 @@ export function oreMine(m: Machine): string {
 // a pick key the game's panels open (districts and the drone have no panel)
 export const clickable = (key: string) => !!key && !key.startsWith("d:") && key !== "drone";
 
+/** The cart (a real item riding a belt, rail or lift) nearest a tap, within reach of a finger. Its key opens the cart's
+ *  callout (Rush / Park, docs/GAMEPLAY-PICKS.md r3-rush). Points are the carts' screen positions in CSS pixels. */
+export function cartAt(carts: { ref: string; x: number; y: number }[], x: number, y: number, reach = 22): string | undefined {
+  let best: string | undefined, d = reach;
+  for (const c of carts) {
+    const dd = Math.hypot(c.x - x, c.y - y);
+    if (dd <= d) (d = dd), (best = c.ref);
+  }
+  return best && `item:${best}`;
+}
+
 export interface ShaftPlan {
   plan: Plan;
   key: string; // changes only when the shaft must be rebuilt
