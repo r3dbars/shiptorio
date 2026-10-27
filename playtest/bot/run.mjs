@@ -14,7 +14,7 @@ const out = resolve(option("--out", `playtest/out/${new Date().toISOString().rep
 await mkdir(out, { recursive: true });
 const local = ["localhost", "127.0.0.1"].includes(url.hostname);
 const steps = [], failures = [];
-let fixture, browser;
+let fixture, browser, lastPage;
 try {
   if (local) fixture = await localFactory(persona, url.origin);
   browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"] });
@@ -22,6 +22,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 } });
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
     const page = await context.newPage();
+    lastPage = page;
     page.setDefaultTimeout(10000);
     let admitted = false;
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
@@ -37,7 +38,8 @@ try {
       const password = local ? "isolated-bot-preview" : process.env.SHIPTORIO_TEST_PASSWORD;
       if (!password) throw new Error("Staging preview password is required in SHIPTORIO_TEST_PASSWORD");
       await page.getByLabel("Password", { exact: true }).fill(password);
-      await page.getByRole("button", { name: "Enter the factory", exact: true }).click();
+      await page.getByRole("button", { name: /Enter the factory/ }).click();
+      await page.waitForURL(current => current.pathname !== "/access");
     }
     const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
@@ -76,7 +78,13 @@ try {
   }
   if (fixture?.stub.state.unexpected.length) failures.push(...fixture.stub.state.unexpected.map(p => `Unexpected provider request: ${p}`));
   if (fixture?.runnerErrors.length) failures.push(...fixture.runnerErrors);
-} catch (error) { failures.push(String(error)); }
+} catch (error) {
+  failures.push(String(error));
+  if (lastPage && !lastPage.isClosed()) {
+    failures.push(`Screen: ${(await lastPage.locator("body").innerText().catch(() => "unavailable")).slice(0, 1500)}`);
+    await lastPage.screenshot({ path: join(out, "failure.png"), timeout: 5000 }).catch(() => {});
+  }
+}
 finally {
   const unique = [...new Set(failures)];
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
