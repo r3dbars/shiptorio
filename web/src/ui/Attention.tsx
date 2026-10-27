@@ -151,6 +151,7 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: 
         ) : (
           <button type="button" className="ago atab" onClick={() => go(shown)}>
             {ATTENTION.go}
+            <span aria-hidden="true"> →</span>
             <span className="sr">: {continueOption(shown).label}</span>
           </button>
         )}
