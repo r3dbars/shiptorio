@@ -529,6 +529,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
   .floorcard .eyebrow, .fkey { display: none; }
   .floorcard { padding: 6px 10px; gap: 4px; }
   .needs-slot { max-height: calc(var(--vh) - 110px - var(--sat) - var(--top-h, 92px)); overflow-y: auto; overscroll-behavior: contain; }
+  .ticker div:nth-child(n + 2) { display: none; } /* one line, as on a phone held upright: the map needs the height */
 }
 /* fingers: the small iron buttons keep their look and get a 44px hit area */
 @media (pointer: coarse) {
@@ -1303,3 +1304,39 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .spend-panel input { width: 100%; padding: 8px; background: var(--panel); color: inherit; border: 1px solid var(--iron-amber); }
 .spend-panel label { display: block; font-size: 12px; }
 .spend-panel small { display: block; margin-top: 8px; }
+
+/* ---------- attention tray (flag "attention", docs/ATTENTION.md): one card shape, Continue or Later ---------- */
+.needs.attention { gap: 4px; }
+.acard {
+  --ak: var(--amber); --ak-ink: #140c02; --ak-stripe: var(--iron-caution);
+  position: relative; display: flex; flex-direction: column; gap: 3px; padding: 9px 10px 9px 22px;
+  background: rgba(14, 10, 8, 0.96); border: 2px solid var(--ak); outline: 2px solid #000; box-shadow: var(--iron-plate-shadow);
+  touch-action: pan-y; user-select: none; cursor: grab; transition: transform .15s ease-out;
+}
+.acard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 10px; background: var(--ak-stripe); }
+.acard.steer { --ak: var(--iron-bad); --ak-ink: #fff; --ak-stripe: repeating-linear-gradient(-45deg, var(--iron-bad) 0 6px, #1a0604 6px 12px); }
+.acard.suggest { --ak: var(--iron-aether); --ak-stripe: var(--iron-aether); border-color: #2f5a52; }
+.acard.suggest::before { opacity: .7; }
+.acard .atop { display: flex; justify-content: space-between; gap: 8px; font: 700 9px/1.3 var(--pixel); letter-spacing: .12em; text-transform: uppercase; }
+.acard .atop b { color: var(--ak); }
+.acard .atop span { color: var(--dim); font-weight: 400; }
+.acard .att { font: 700 13px/1.3 var(--mono); color: var(--iron-ink); }
+.acard .aw { font-size: 11px; line-height: 1.35; color: var(--dim); }
+.acard .abc { font-size: 11px; line-height: 1.35; color: var(--iron-aether); }
+.acard .amore { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; font-size: 12px; max-height: min(40vh, 320px); overflow-y: auto; }
+.acard .amore p { margin: 0; }
+.acard .amore a { color: var(--iron-aether); }
+.acard .aothers { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.acard .aothers span { font: 700 9px var(--pixel); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); margin-right: 4px; }
+.acard .aacts { display: flex; gap: 6px; margin-top: 4px; }
+.acard button { font: 700 10px/1 var(--pixel); letter-spacing: .08em; text-transform: uppercase; padding: 10px 12px 9px; border: 2px solid var(--iron-line); background: transparent; color: var(--dim); cursor: pointer; }
+.acard button.ago { flex: 1; background: var(--ak); color: var(--ak-ink); border-color: #000; }
+.acard.suggest button.ago { background: transparent; color: var(--iron-aether); border-color: var(--iron-aether); }
+.acard button.atog { margin-left: auto; border-color: transparent; }
+.acard button:focus-visible, .aask button:focus-visible, .arest button:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+.aask, .arest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 10px; background: rgba(14, 10, 8, 0.94); border: 2px solid var(--iron-line); outline: 2px solid #000; font-size: 11px; color: var(--dim); }
+.aask div { display: flex; flex-wrap: wrap; gap: 4px; }
+.aask button { font: 600 11px var(--mono); padding: 6px 8px; background: var(--iron-soot); color: var(--iron-ink); border: 2px solid var(--iron-line); cursor: pointer; }
+.arest span { font: 700 9px var(--pixel); letter-spacing: .1em; text-transform: uppercase; }
+.arest button { font: 700 9px var(--pixel); letter-spacing: .1em; text-transform: uppercase; background: none; border: 0; color: var(--amber); cursor: pointer; padding: 4px; }
+@media (prefers-reduced-motion: reduce) { .acard { transition: none; } }

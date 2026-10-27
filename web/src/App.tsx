@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
 import { savePref } from "./account";
-import type { FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
+import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
@@ -38,6 +38,8 @@ import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
+import { AttentionTray } from "./ui/Attention";
+import { attentionOn } from "./flags";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -117,7 +119,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
-  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink, progressProfile(cfg.kind, login));
+  // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
+  const lastTap = useRef(0);
+  const ach = useAchievements(state, cfg.kind === "live", intro || (attentionOn() && Date.now() - lastTap.current > 10_000), sendRaw, achLink, progressProfile(cfg.kind, login));
   const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -152,17 +156,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   const [supportReview, setSupportReview] = useState<string | null>(null);
   const sendCard = (message: WebToServer) => {
+    lastTap.current = Date.now();
     const ticketId = supportReviewTarget(message, deck);
     if (ticketId) { setSupportReview(ticketId); setPanel("m:ore-inbox"); setCheckin(false); return; }
     send(message);
   };
-  useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
+  useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
   const profile = progressProfile(cfg.kind, login);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
-  const nudge = useBottleneckNudge(deck, progressing);
+  const [calm] = useState(attentionOn); // docs/ATTENTION.md, behind the "attention" flag
+  const nudge = useBottleneckNudge(deck, progressing, calm);
   achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson }; // achievements pay XP into progression; toasts wait out the tour coach card
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
@@ -256,7 +262,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // "show only two counters"). Mined, on line and rework are on the map and in the Line sheet.
   const F = HUD.floor;
   const counts: Count[] = [];
-  if (show("line")) counts.push({ key: "need", label: F.needs, value: waiting + blocked.length, tone: "need", title: F.needsTitle });
+  // Calm: "Waiting on you" counts only what's parked on you (approve + steer), never ideas.
+  const needs = calm ? deck.filter((m) => attentionOf(m) !== "suggest").length : waiting + blocked.length;
+  if (show("line")) counts.push({ key: "need", label: F.needs, value: needs, tone: "need", title: F.needsTitle });
   if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
   // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
   const extras: Count[] = [];
@@ -568,6 +576,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               onClose={() => { setCheckin(false); setFocus(null); }}
               onAnswered={progressing ? prog.card : undefined}
               end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+              calm={calm}
             />
           </Suspense>
         ) : sheet === "line" ? (
@@ -696,7 +705,17 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </section>
         ) : (
           <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
-            <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} rows={needRows} />
+            {calm ? (
+              <AttentionTray
+                deck={deck}
+                send={sendCard}
+                onPower={cfg.kind === "live" ? () => setSheet("power") : undefined}
+                onCheckin={world !== "checkin" && show("checkin") && !checkin ? () => setCheckin(true) : undefined}
+                quiet={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null}
+              />
+            ) : (
+              <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} rows={needRows} />
+            )}
           </div>
         )}
 

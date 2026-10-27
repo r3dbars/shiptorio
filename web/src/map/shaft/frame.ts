@@ -8,6 +8,21 @@ export type FloorView = "stack" | "mine" | "build" | "checks" | "launch" | "line
 
 // a phone, for the camera and the chips (shaft.css switches at the same width)
 export const isPhone = (W: number) => W <= 760;
+// a phone on its side: short and wide (the HUD's plates sit top and bottom, the floor panel on the right)
+export const isLandscapePhone = (W: number, H: number) => H <= 500 && W > H;
+
+/**
+ * How many pixels the game's fixed plates hide at the top and bottom of the map, when they span most of its width (a
+ * phone: the floor card, the needs tray, the ticker and the controls). The HUD measures it every few frames (hud.ts),
+ * and the floor views frame what's left, so a floor never sits under a plate.
+ */
+export const cover = { top: 0, bottom: 0 };
+
+/** the screen height the plates leave free, and the factor that grows a view so its content fits in it */
+function freeBand(H: number) {
+  const free = Math.max(H * 0.4, H - cover.top - cover.bottom);
+  return { free, grow: H / free };
+}
 
 // [root x, y, z the view centers on, view height on a wide screen, the width it must fit]
 type Preset = { at: [number, number, number]; h: number; w: number; phone: { at: [number, number, number]; h: number } };
@@ -25,14 +40,19 @@ export const isFloorView = (v: string): v is FloorView => v in PRESETS;
 /** a floor view on a W x H screen: the root point it centers on and the view height */
 export function floorFrame(view: FloorView, W: number, H: number): { at: [number, number, number]; h: number } {
   const P = PRESETS[view];
-  const a = W / H;
-  return isPhone(W) ? { at: P.phone.at, h: Math.max(P.phone.h, (P.w * 0.62) / a) } : { at: P.at, h: Math.max(P.h, P.w / a) };
+  // frame the floor into the band the plates leave free, then grow the view so that band shows all of it
+  const { free, grow } = freeBand(H);
+  const a = W / free;
+  // a phone shows the floor's middle up close, as the mockup's phone does, and the player pans for the rest
+  const h = isPhone(W) ? Math.max(P.phone.h, (P.w * 0.4) / a) : Math.max(P.h, P.w / a);
+  return { at: isPhone(W) ? P.phone.at : P.at, h: h * grow };
 }
 
 /** a picked station: the root point the view centers on and the view height */
 export function stationFrame(st: IronStation, W: number): { at: [number, number, number]; h: number } {
   const small = st.type === "check" || st.type === "battery" || st.type === "dynamo";
-  return { at: [st.x, st.y + (small ? 1.6 : 2.6), st.z + 0.6], h: (small ? 7.5 : 11) * (isPhone(W) ? 1.3 : 1) };
+  const grow = typeof window === "undefined" ? 1 : freeBand(window.innerHeight).grow;
+  return { at: [st.x, st.y + (small ? 1.6 : 2.6), st.z + 0.6], h: (small ? 7.5 : 11) * (isPhone(W) ? 1.3 : 1) * grow };
 }
 
 /** the follow cam's view height (it rides the item furthest up the shaft) */
@@ -50,7 +70,9 @@ export function chipAnchor(st: IronStation): [number, number, number] {
  */
 export function biasFor(W: number, H: number, lift: number, focused: boolean): { x: number; y: number } {
   if (lift) return { x: 0, y: lift };
-  if (H <= 500 && W > H) return { x: focused ? -0.22 : 0, y: 0 }; // landscape phone: the panel sits on the right
-  if (isPhone(W)) return { x: 0, y: focused ? 0.22 : 0.05 };
-  return { x: 0, y: 0 };
+  // the middle of the band the plates leave free, as a fraction of the view up from the screen's middle
+  const band = (cover.bottom - cover.top) / (2 * H);
+  if (isLandscapePhone(W, H)) return { x: focused ? -0.22 : -0.04, y: band }; // the floor panel sits on the right
+  if (isPhone(W)) return { x: 0, y: band + (focused ? 0.12 : 0) };
+  return { x: 0, y: band };
 }

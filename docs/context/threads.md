@@ -33,6 +33,7 @@ is the only copy agents outside it (Codex) can see.
 
 | Thread | State | What it did / produced |
 | --- | --- | --- |
+| Design a calm attention system for players | v1 behind flag | `docs/ATTENTION.md` (PR #268). One Needs you tray, three kinds (approve / steer / suggested, `attentionOf` in shared), every card is Continue or Later, Continue streaks steer deck ranking + planner feedback. Behind flag `attention` (off by default; try `?attention=1`). Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb |
 | Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README). Other repos: transcripted, transcripted-webapp, redbars, pipread, BetterFeedback |
 | Review Justin's Cloudflare account | done | Surveyed the account: Workers `transcripted-feedback`, `stack99-relay`, `r3dbar-subscribe`, `redbars` (don't touch). Nothing Shiptorio yet. R2 not enabled |
 | Build Shiptorio on Cloudflare for the hackathon | working | PR #1 (merged): Cloudflare Worker + GitHub App + D1/KV, reshaped into `shared/` `server/` `web/` bun workspaces, Spark client, issue → Spark → PR first cut, Three.js pixel map + `?source=sim`. Created D1 `shiptorio` + KV `shiptorio-cache`. Rebuilt the repo handoff doc as PR #5 (merged: PLAN.md, docs/ARCHITECTURE.md, docs/ART.md, briefs/, both prototypes). Now porting the Pixel Prototype art into `web/` (draft PR #8: shader, models, scene rebuilt, prototype-style HUD as of 16:53) |
@@ -62,6 +63,10 @@ is the only copy agents outside it (Codex) can see.
 | Design build mode and Codex task pack | parked (after Nov 4) | Justin 2026-10-27: optional Factorio / RCT-style build mode (place, move, rotate, rewire machines and belts). Spec `docs/BUILD-MODE.md`: every piece, its real pipeline meaning and ports, the per-tier grid on the vertical shaft (`web/src/map/shaft/layout.js`), the `Blueprint` model, `compile()` from layout to real pipeline config, safety rules, server draft/apply, web tools behind `?build=1`. 8-prompt Codex pack in project files `shiptorio/codex-prompts/build-mode.md`, parked until after Nov 4, then needs the shaft map on main |
 
 ## Codex: public judge replay (2026-10-26)
+
+- Landing-page follow-up: a Black Iron “Try the 90-second walkthrough” link below the tagline goes
+  directly to `/judge`, labeled “No sign-in required · simulated factory”. Requested frontend-lane
+  change, limited to `web/public/welcome/index.html`; no map, auth or simulator changes.
 
 - Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
   90-second, explicitly labeled simulation; query parameters cannot select a live repo.
