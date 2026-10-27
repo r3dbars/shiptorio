@@ -1,0 +1,15 @@
+# Are we using Meta's Model API to its fullest? (2026-10-27)
+
+Checked against the docs at https://dev.meta.ai/docs (tool calling, structured output, prompt caching, SDKs,
+Responses API). Spark today: `sparkChat` POSTs to `api.meta.ai/v1/chat/completions` (muse-spark-1.3), every
+reply is prompt-described JSON, and `parseJsonReply` repairs it. The planner and review loops in
+`spark-tools.ts` are a hand-rolled one-tool-per-turn JSON loop.
+
+| Feature | What Meta offers | What we do | Call |
+|---|---|---|---|
+| **Structured output** | `response_format: {type: "json_schema", json_schema: {name, schema}}` on Chat Completions (`text.format` on Responses). No recursive `$ref`. | Prompt-only JSON + repair + one retry | **Use it.** `SPARK_NATIVE_JSON=1` sends each `sparkJson` schema natively (`nativeFormat()` in spark.ts). Repair parsing stays as the fallback. Turn it on after one `bun run spark:loop` pass on the Mac with the flag set. |
+| **Native tool calling** | `tools` + `tool_calls` + `role: "tool"` messages. `tool_choice` is **only `"auto"`** (others 400). `parallel_tool_calls: false` and `strict: true` are supported. | JSON `{tool, reason, ...}` per turn | **Not now.** With `auto` only, the model can still answer in plain text, so we'd keep the same "no tool picked" handling. Our loop's rules (read before assign, free repeats, path checks, finishing tools) are policy, not parsing, so they don't get simpler. The loop just went 9/9 live, and the feature freeze is Nov 1. Structured output gets most of the win (no malformed replies) for a few lines. |
+| **Responses API** | Keeps reasoning between turns (encrypted replay with `store: false`, or `previous_response_id`). Native `function_call` / `function_call_output`. | Chat Completions; reasoning is lost between loop turns | **Best next upgrade, after the hackathon.** Moving the planner and review loops to Responses + native tools lets Spark remember *why* it opened a file. That's the real reason to switch, and it's a rewrite of spark-tools.ts (owned by "Give Spark tools"). |
+| **Prompt caching** | Automatic for stable prefixes. `usage.prompt_tokens_details.cached_tokens` reports hits. Optional `prompt_cache_key`. | Developer prompt comes first. Per-turn bits (turns left, the rejection reason) sit at the end, which is the right order. | Already benefiting. Pricing in /admin already lists the cached rate. Next cheap step: pass `prompt_cache_key` per factory and log `cached_tokens` (Codex #12 owns spend.ts). |
+| **Official SDK** | None. The docs say use the OpenAI or Anthropic SDK with a custom base URL. The only Meta npm packages are for SAM. | Plain `fetch` | Keep `fetch`. An SDK would add bundle weight to the Worker and change nothing. |
+| **Evals / tracing / feedback** | Nothing in the API or docs. | Our own: `Factory.think()` decision log, `spark:check`, `spark:loop`, the AI review eval (Codex #14) | **We build it.** The tap log (`docs/context/taps.md`, `/admin/taps`) is the "what do players approve" eval, and it feeds the brain as the taps signal. |

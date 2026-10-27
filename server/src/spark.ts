@@ -17,6 +17,8 @@ export interface SparkEnv extends BudgetEnv {
   META_API_KEY?: string;
   SPARK_BASE_URL?: string;
   SPARK_MODEL?: string;
+  /** "1" sends each reply's schema as a native `response_format` (docs/context/meta-api.md). Repair parsing stays as the fallback. */
+  SPARK_NATIVE_JSON?: string;
 }
 
 type Effort = "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -34,7 +36,7 @@ export function sparkConfigured(env: SparkEnv): boolean {
 
 export const sparkModel = (env: SparkEnv): string => env.SPARK_MODEL || "muse-spark-1.3";
 
-export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: Effort = "low"): Promise<string> {
+export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: Effort = "low", format?: ResponseFormat): Promise<string> {
   if (!env.META_API_KEY) throw new SparkError("META_API_KEY isn't set");
   if (env.SPARK_DISABLED === "1") throw new BudgetError("Spark budget: global kill switch is on");
   const output = budgetLimits(env).output;
@@ -56,7 +58,7 @@ export async function sparkChat(env: SparkEnv, messages: ChatMessage[], effort: 
       method: "POST",
       signal: AbortSignal.timeout(90000),
       headers: { authorization: `Bearer ${env.META_API_KEY}`, "content-type": "application/json" },
-      body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output }),
+      body: JSON.stringify({ model: sparkModel(env), messages: requestMessages, reasoning_effort: effort, max_completion_tokens: output, ...(format ? { response_format: format } : {}) }),
     });
     if (!res.ok) throw new OutboundError(res.status);
     const data = (await res.json()) as { usage?: TokenUsage; choices?: { message?: { content?: string } }[] };
@@ -137,6 +139,23 @@ export function escapeStrayQuotes(json: string): string {
   return out.join("");
 }
 
+/** Meta Model API structured output (Chat Completions): https://dev.meta.ai/docs/structured-output */
+export interface ResponseFormat { type: "json_schema"; json_schema: { name: string; schema: Record<string, unknown> } }
+
+/**
+ * The reply schema as a native response_format, or undefined when the flag is off or zod can't express it
+ * (preprocess steps, recursion). Meta rejects self-referencing $refs, so those fall back to prompt-only JSON.
+ */
+export function nativeFormat(env: SparkEnv, schema: z.ZodType): ResponseFormat | undefined {
+  if (env.SPARK_NATIVE_JSON !== "1") return undefined;
+  try {
+    // propertyNames (from z.record) isn't in the OpenAI-style strict subset the docs describe; record keys are checked by zod anyway.
+    const { $schema: _, ...raw } = z.toJSONSchema(schema, { io: "input", unrepresentable: "throw", cycles: "throw" }) as Record<string, unknown>;
+    const json = JSON.parse(JSON.stringify(raw, (k, v) => k === "propertyNames" ? undefined : v)) as Record<string, unknown>;
+    return JSON.stringify(json).includes('"$ref"') ? undefined : { type: "json_schema", json_schema: { name: "reply", schema: json } };
+  } catch { return undefined; }
+}
+
 const issues = (e: z.ZodError) => e.issues.slice(0, 3).map(i => `${i.path.join(".") || "reply"}: ${i.message}`).join("; ");
 
 /**
@@ -153,6 +172,7 @@ export async function sparkJson<S extends z.ZodType>(env: SparkEnv, schema: S, d
         { role: "user", content: user },
       ],
       effort,
+      nativeFormat(env, schema),
     );
     let value: unknown;
     try { value = parseJsonReply<unknown>(text); } catch (e) { rejected = e instanceof Error ? e.message.slice(0, 200) : "malformed JSON"; continue; }
