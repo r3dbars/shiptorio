@@ -1,5 +1,14 @@
 # Security
 
+## Pre-hackathon security pass (2026-10-26)
+
+- **Empire access revocation — PR #267:** `/api/empire` previously trusted the
+  sign-in-time repository inventory. It now resolves a revocable session and
+  rechecks each repository before calling its Factory, so stale memberships or
+  GitHub failures cannot expose summaries. The regression failed before the fix
+  and passes after it; full local typecheck, tests and build pass. Merge/CI status
+  is tracked in the PR. Additional audit findings are being handled separately.
+
 ## Access model
 
 Every live factory belongs to a canonical lowercase `owner/repo`. Preview access
