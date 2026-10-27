@@ -6,8 +6,8 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// playwright comes from the machine (CI images and the cloud sandbox ship one); it is not a web dependency
-const { chromium } = createRequire(import.meta.url)("playwright");
+// Use the Playwright package declared at the workspace root, including in a fresh install.
+const { chromium } = createRequire(import.meta.url)("@playwright/test");
 const here = dirname(fileURLToPath(import.meta.url));
 const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.min.js"), "utf8");
 const base = process.argv[2] ?? "http://localhost:5173/";
