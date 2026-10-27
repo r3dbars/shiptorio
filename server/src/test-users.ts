@@ -81,10 +81,14 @@ export function testUserRoutes(app: Hono<any>): void {
     const sourceRead = ["/api/setup/status", "/api/sources"].includes(url.pathname) && c.req.method === "GET";
     if (match || sourceRead) {
       if ((match?.[1] ?? url.searchParams.get("repo")) !== repo || /\/runner(?:\/|$)/.test(url.pathname) && !(c.req.method === "GET" && url.pathname.endsWith("/runner/status"))) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
-      // The local fixture service re-enters this same real Worker after installing the outbound
-      // GitHub/Spark stubs. A flag alone cannot open this route: the service AND private hop key
-      // are required. Remote staging always goes through its separate isolated service.
-      if (env.TEST_FACTORY && local(url) && (env.TEST_FACTORY_KEY?.length ?? 0) >= 32 && c.req.header("x-shiptorio-test-hop") === env.TEST_FACTORY_KEY) return next();
+      // The local capability service is installed alongside Miniflare's outbound stubs. Keep
+      // sockets inside workerd (a Node fetch bridge cannot preserve hibernating WebSockets).
+      // A flag alone cannot enable this: both a private key and its service must answer.
+      if (env.TEST_FACTORY && local(url) && (env.TEST_FACTORY_KEY?.length ?? 0) >= 32) {
+        const ready = await env.TEST_FACTORY.fetch("http://test-fixture.invalid/ready", { method: "POST", headers: { "x-shiptorio-test-hop": env.TEST_FACTORY_KEY! } }).catch(() => null);
+        if (ready?.status === 204) return next();
+        return c.json({ error: "Local fixture boundary is unavailable" }, 503);
+      }
       if (env.TEST_FACTORY) {
         const headers = new Headers();
         for (const name of ["cookie", "content-type", "origin", "upgrade", "sec-websocket-key", "sec-websocket-version"]) {

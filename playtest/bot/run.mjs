@@ -51,6 +51,7 @@ try {
     const deadline = Date.now() + Number(option("--duration", "90")) * 1000;
     while (Date.now() < deadline) {
       const text = await page.locator("body").innerText();
+      if (fixture?.stub.state.merges.length && new URL(page.url()).searchParams.has("repo")) { await capture("fixture-launch-complete"); break; }
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();

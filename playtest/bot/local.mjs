@@ -29,10 +29,7 @@ export async function localFactory(persona, origin) {
     META_API_KEY: "stub-meta-key", SPARK_DAILY_TOKENS: "5000000" };
   mf = new Miniflare(convertV4MiniflareOptions({ port: Number(new URL(origin).port), workers: [{ compatibilityDate, compatibilityFlags, kvNamespaces, d1Databases, durableObjects, assets,
     name: "shiptorio", rootPath: bundle, modules: true, scriptPath: join(bundle, "worker.js"), bindings,
-    serviceBindings: { TEST_FACTORY: async request => {
-      const headers = new Headers(request.headers); headers.set("x-shiptorio-test-hop", key);
-      return mf.dispatchFetch(request.url, { method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer() });
-    } },
+    serviceBindings: { TEST_FACTORY: async request => new Response(null, { status: request.url === "http://test-fixture.invalid/ready" && request.method === "POST" && request.headers.get("x-shiptorio-test-hop") === key ? 204 : 403 }) },
     outboundService: request => new URL(request.url).host === "api.meta.ai" ? spark.outbound(request) : stub.outbound(request),
   }] }));
   await mf.ready;
@@ -41,7 +38,7 @@ export async function localFactory(persona, origin) {
     const sql = wrangler.unstable_splitSqlQuery(readFileSync(join(server, "migrations", file), "utf8")).filter(s => s.trim());
     await db.batch(sql.map(s => db.prepare(s)));
   }
-  let runnerTimer, busy = false, runnerToken;
+  let runnerTimer, busy = false, runnerToken, completed = false;
   const runnerErrors = [];
   const api = async (path, body, cookie) => {
     const response = await mf.dispatchFetch(origin + path, { method: "POST", headers: { origin, "content-type": "application/json", ...(cookie ? { cookie, "x-shiptorio-test-hop": key } : { authorization: `Bearer ${runnerToken}` }) }, body: JSON.stringify(body) });
@@ -56,6 +53,7 @@ export async function localFactory(persona, origin) {
       if (busy) return; busy = true;
       try {
         await api(`/api/runner/${stub.state.repo}/heartbeat`, { harnesses: ["codex"] });
+        if (completed) return;
         const { job } = await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] });
         if (job) {
           // Same external CLI/Git transport fixture as Stranger E2E. The real server validates
@@ -65,6 +63,7 @@ export async function localFactory(persona, origin) {
           await api(`/api/runner/${stub.state.repo}/finish`, { jobId: job.id, lease: job.lease, ok: true, sha: stub.state.headSha,
             summary: "Fixture: SAVE10 regression fix", checks: ["typecheck", "test", "build"], proof: { baseSha: job.baseSha, headSha: stub.state.headSha, failsOnBase: true, passesOnHead: true, command: "bun test test/cart.test.ts", logTail: "FIXTURE ONLY: base fails, head passes" } });
           await stub.completeChecks("success");
+          completed = true;
         }
       } catch (error) { runnerErrors.push(String(error)); } finally { busy = false; }
     };
