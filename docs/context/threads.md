@@ -144,4 +144,6 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
   at desktop, iPhone and Pixel sizes, including passive playback, interactive permit, scar, three green
   receipts, two actual ship events, 112 simulated users unblocked, Floor and replay reset. The optional
   test port avoids collisions with other agents; default remains 8799. Gate tests: `server/test/judge.test.ts`.
-- Branch: `codex/judge-mode`. These are simulated outcomes, not proof of live AI/provider execution.
+- PR: [#254](https://github.com/r3dbars/shiptorio/pull/254), branch `codex/judge-mode`.
+  Local `bun run test:fast`: 662 passed, 2 platform skips; 26 playtest cases / 332 decisions, no findings.
+  These are simulated outcomes, not proof of live AI/provider execution.
