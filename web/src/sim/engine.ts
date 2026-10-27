@@ -38,6 +38,7 @@ import {
   type Machine,
   type Metrics,
   type Move,
+  type MoveKind,
   type OreSource,
   type Patch,
   type PowerSource,
@@ -101,11 +102,24 @@ interface GrowthDrop {
   spark: SparkLine[];
 }
 
+// The bottleneck brain (docs/BRAIN.md): one diagnosis at a time, each a Continue/Later card. Mirrors the eval
+// cases in server/scripts/brain-eval/cases.ts, so ?source=sim&scenario=brain plays what the eval grades.
+interface BrainBeat {
+  area: "ship" | "speed" | "quality" | "users" | "feedback" | "focus";
+  reads: SparkLine[]; // the signals the brain reads before naming it
+  title: string; // the bottleneck, plain words
+  why: string; // who it hurts, with the number
+  card: string; // the unlock's headline
+  because: string; // under 20 words, cites the number
+  kind: MoveKind;
+  cleared: string; // what the floor log says once the unlock worked
+}
 // The demo shop's README, as the goal guess reads it: a live store whose customers hit checkout bugs.
 const SIM_README = "# Demo shop\nA small online store. Customers report checkout errors and crashes on Safari; we fix bugs fast and keep it stable. Support: email us.";
 
 interface Scenario {
   ores: Ore[];
+  brain?: { beats: BrainBeat[]; quiet: string }; // the bottleneck brain deals these in order, then goes quiet
   growth?: GrowthDrop[]; // funnel drops from the PostHog mine, each one an experiment card
   districts?: District[];
   harness?: Harness; // who builds; the player's subscription
@@ -184,6 +198,31 @@ export const SCENARIOS = {
       { at: 11, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
       { at: 16, title: "Remove dead map cache code", kind: "cleanup", district: "server" },
     ],
+  },
+  // The bottleneck brain, beat by beat: red CI, a crash spike, an unanswered inbox, a feature nobody found,
+  // then nothing worth a card. Continue clears each one; Later moves on without nagging.
+  brain: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    // One late ore, once the brain has dealt its cards: an earlier one's launch card would jump the brain's.
+    ores: [{ at: 45, title: "Clarify the shipping FAQ", kind: "cleanup", district: "docs" }],
+    brain: {
+      quiet: "Everything's under the bar: CI 6 min, 8 quiet errors, inbox clear. Staying quiet.",
+      beats: [
+        { area: "speed", kind: "unblock", title: "Main has been red for 5 hours", why: "4 PRs can't merge until checkout.test.ts passes again.",
+          card: "Get main green again", because: "Nothing ships while main is red; 4 PRs wait on it.", cleared: "Main is green. 4 PRs moving again.",
+          reads: [{ tool: "read_signal", text: "CI: main red 5 h, run #4812 failed in checkout.test.ts", reason: "Heaviest signal" }, { tool: "read_signal", text: "Sentry: 8 open errors, flat", reason: "Is production burning too?" }] },
+        { area: "quality", kind: "unblock", title: "A new crash hit 331 users overnight", why: "TypeError: cart.total is undefined, 2,180 events since last night.",
+          card: "Chase down the checkout crash", because: "331 people hit it overnight; nothing else is close.", cleared: "Crash gone: 0 events in the last hour.",
+          reads: [{ tool: "read_signal", text: "Sentry: cart.total is undefined, 331 users, first seen 14 h ago", reason: "New spike" }] },
+        { area: "feedback", kind: "reply", title: "23 people wrote in, no reply", why: "Oldest has waited 4 days; 9 are about CSV export.",
+          card: "Answer the people who wrote in", because: "23 customers waiting, oldest 4 days.", cleared: "Inbox answered. Oldest wait now 2 h.",
+          reads: [{ tool: "read_signal", text: "Inbox: 23 unanswered, oldest 96 h", reason: "Customers waiting" }, { tool: "read_signal", text: "PostHog: 420 a day, steady", reason: "Is usage the bigger problem?" }] },
+        { area: "users", kind: "input", title: "Saved cards: 3 of 420 used it", why: "It shipped 14 days ago and almost nobody has found it.",
+          card: "Tell people about saved cards", because: "3 of 420 people found it in two weeks.", cleared: "62 people used saved cards today.",
+          reads: [{ tool: "read_signal", text: "PostHog: saved_card_used 3 users in 14 days", reason: "Shipped but unused" }] },
+      ],
+    },
   },
   // A busy morning: issues land faster than one builder can take them, so work waits on it and a card offers a
   // second builder (docs/GAMEPLAY-PICKS.md r5-second).
@@ -680,7 +719,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   if (sc.waiting) (s.items.push(shippedItem(sc.waiting, opened - 20 * 60_000, "on_pad")), since.set(`pr-${sc.waiting.pr}`, 0));
   pr = Math.max(pr, ...s.items.map((i) => i.prNumber ?? 0));
 
-  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { read_feedback: "support", draft_customer_reply: "support", triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth" };
+  const THOUGHT_FOR: Partial<Record<string, ThoughtDecision>> = { read_feedback: "support", draft_customer_reply: "support", triage: "triage", link_items: "triage", start_job: "plan", request_rework: "plan", escalate: "review", read_repo: "rank", set_autonomy: "permit", route: "route", propose_experiment: "growth", diagnose: "diagnose" };
   const emit = (msg: ServerToWeb) => queueMicrotask(() => { if (!closed) onMessage(msg); });
   const log = (level: "info" | "warn" | "error" | "success", text: string, itemId?: string) =>
     emit({ type: "log", level, text, at: Date.now(), itemId });
@@ -796,8 +835,18 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     pull(moveId, s.deck && s.deck.length > 1 ? 0 : 600);
     if (optionId) then(optionId);
   };
-  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in).
+  // Swipe left: later. It goes to the back of the deck (a real server holds it for the next check-in),
+  // unless the card parks itself on Later (the brain's unlock cards): then it leaves the deck.
+  const onLater = new Map<string, () => void>();
   const defer = (moveId: string) => {
+    const park = onLater.get(moveId);
+    if (park) {
+      onLater.delete(moveId);
+      onChoose.delete(moveId);
+      emit({ type: "move_resolved", moveId, optionId: "later", actor: "player" });
+      pull(moveId, 0);
+      return park();
+    }
     const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
     if (!m) return;
     pull(moveId, 0);
@@ -1703,6 +1752,39 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // ---------- the check-in deck ----------
 
   // A morning's worth of Next Moves, dealt at once. Mostly loop-growers: checks, sources, autonomy.
+  // ---------- the bottleneck brain (docs/BRAIN.md) ----------
+
+  // Reads the signals, names the one bottleneck, deals one Continue/Later card. Continue runs the unlock and
+  // the next diagnosis waits until it clears; Later parks it and the brain moves on, never re-raising it.
+  const brainBeats = [...(sc.brain?.beats ?? [])];
+  const nextDiagnosis = () => {
+    const beat = brainBeats.shift();
+    if (!beat) {
+      spark({ tool: "diagnose", text: "Nothing worth a card right now", outcome: "Quiet: nothing worth a card", reason: sc.brain!.quiet });
+      return;
+    }
+    beat.reads.forEach((r, n) => later(TICK_MS * n, () => spark(r)));
+    later(TICK_MS * beat.reads.length, () => {
+      spark({ tool: "diagnose", text: `Bottleneck: ${beat.title}`, outcome: `${beat.area}: ${beat.title} → ${beat.card}`, reason: beat.because });
+      const park = () => {
+        log("info", `Parked "${beat.card}" for a day. It comes back only if it gets worse.`);
+        later(TICK_MS * 2, nextDiagnosis);
+      };
+      const id = propose({ title: beat.card, why: beat.why, because: beat.because, kind: beat.kind, attention: "suggest",
+        options: [{ id: "continue", label: "Continue", recommended: true, actions: [] }, { id: "later", label: "Later", recommended: false, actions: [] }] },
+      (choice) => {
+        onLater.delete(id);
+        if (choice !== "continue") return park();
+        log("info", `On it: ${beat.card}`);
+        later(TICK_MS * 4, () => {
+          log("success", `Unlocked: ${beat.cleared}`);
+          later(TICK_MS * 2, nextDiagnosis);
+        });
+      });
+      onLater.set(id, park);
+    });
+  };
+
   const dealCheckIn = () => {
     const yes = (text: string, tool: string, target: string, extra?: () => void) => () => {
       spark({ tool, text, reason: "you swiped right" }, { target, approvedBy: "player", undo: () => log("info", `Undid: ${text.toLowerCase()}`) });
@@ -1864,6 +1946,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const onPad = s.items.find((i) => i.state === "on_pad");
   if (onPad) askToLaunch(onPad);
   if (sc.checkin) later(TICK_MS, dealCheckIn);
+  if (sc.brain) later(TICK_MS * 3, nextDiagnosis);
   // a player who already has rockets but no goal gets the goal card soon after they come back, like the live tick
   if ((sc.rockets ?? 0) > 0) later(TICK_MS * 4, offerGoal);
   if (sc.onboard) later(TICK_MS, scan);
