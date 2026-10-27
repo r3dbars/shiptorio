@@ -255,4 +255,6 @@ run until dispatch; per-issue backoff of 1m, 2m, then midnight UTC after three f
 The daily retry cap now also holds when a stored cooldown timestamp has elapsed.
 Regression tests cover absent/low/high owner limits, ordinary users, wildcard configuration,
 resource attribution, migration upsert/cleanup, zero-charge failed plans across restarts,
-and independent issue retry caps. CI, merge and Deploy verification pending.
+and independent issue retry caps. Validation and merge are tracked in
+[PR #281](https://github.com/r3dbars/shiptorio/pull/281); its final verification comment
+links the successful Deploy run, including D1 migration application and live smoke.
