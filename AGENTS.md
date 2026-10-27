@@ -191,8 +191,8 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
 ## Hard rules
 
 - **Don't deploy, and don't create or change Cloudflare resources, unless Justin says so.**
-- **Never touch the other Workers on the account**: `transcripted-feedback`,
-  `stack99-relay`, `r3dbar-subscribe`, `redbars`. Only the `shiptorio` Worker is ours.
+- **Never touch any other Worker on the account.** Only the `shiptorio` and `shiptorio-staging`
+  Workers are ours.
 - Never commit secrets. Local secrets go in `.dev.vars` (gitignored); deployed ones via
   `wrangler secret put`.
 - Work on a branch and open a PR. Don't push to `main`.

@@ -21,7 +21,7 @@ test("self-host config contains only the owner's bindings and login, no producti
   const config = configuration({ ...fresh(), databaseId: db, namespaceId: kv });
   expect(config).toMatchObject({ account_id: "a".repeat(32), workers_dev: true, vars: { PUBLIC_URL: "https://shiptorio-alice.alice.workers.dev", ALLOWED_LOGINS: "alice", ADMIN_LOGINS: "alice" } });
   for (const forbidden of ["shiptorio.com", "r3dbars", "153f63dc", "routes", '"env"', "SENTRY_REPO", "POSTHOG_REPO"]) expect(JSON.stringify(config)).not.toContain(forbidden);
-  for (const name of ["transcripted-feedback", "stack99-relay", "r3dbar-subscribe", "redbars", "../shiptorio", "shiptorio;echo x"]) expect(() => validate({ ...fresh(), name })).toThrow();
+  for (const name of ["other-worker", "billing-relay", "newsletter", "site", "../shiptorio", "shiptorio;echo x"]) expect(() => validate({ ...fresh(), name })).toThrow();
   expect(() => validate({ ...fresh(), account: "bad" })).toThrow();
   expect(() => validate({ ...fresh(), subdomain: "https://example.com" })).toThrow();
   expect(() => validate({ ...fresh(), login: "*" })).toThrow();
