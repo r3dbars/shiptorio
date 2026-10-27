@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { BottleneckArea, BrainSignal, SIGNAL_KINDS, SignalSource } from "@shiptorio/shared";
 import { CASES } from "../scripts/brain-eval/cases";
-import { evaluate, runCase, sparkThink, stubSpark, summarize, T0 } from "../scripts/brain-eval/harness";
+import { evaluate, ready, runCase, sparkThink, stubSpark, summarize, T0 } from "../scripts/brain-eval/harness";
 import { emptyMemory, ruleDiagnosis } from "../src/diagnose";
 
 // The eval itself runs live on a Meta key (bun run brain:eval --live). Here: the fixtures are valid contract
@@ -18,11 +18,12 @@ describe("brain eval fixtures", () => {
       const signals = c.signals(T0);
       for (const s of signals) {
         expect(() => BrainSignal.parse(s)).not.toThrow();
-        expect(SIGNAL_KINDS[s.source]).toContain(s.kind);
+        if (!c.needs) expect(SIGNAL_KINDS[s.source]).toContain(s.kind);
       }
       if (c.expect.area) expect(BottleneckArea.options).toContain(c.expect.area);
       if (c.expect.signal) expect(signals.map(s => s.id)).toContain(c.expect.signal);
       if (c.expect.area) expect(c.unlock).toBeDefined();
+      if (!ready(c)) expect(c.needs).toBeDefined(); // a new kind must name the PR that adds it
     }
   });
 
