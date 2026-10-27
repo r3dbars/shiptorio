@@ -54,6 +54,7 @@ try {
  assert((await probe({action:"sample",operation:"claim",sample:1})).ok===true,"Tick created an approved runner job");
  assert((await probe({action:"sample",operation:"webhook",sample:300})).ok===false,"Unbounded sample admitted");
  assert((await probe({action:"sample",operation:"heartbeat",sample:1,authorization:"canary"})).ok===false,"Unknown probe field admitted");
+ assert((await probe({action:"sample",operation:"heartbeat",sample:1,until:"PRIVATE_CANARY"})).ok===false,"Extraneous argument admitted");
  assert((await probe({action:"end"})).ok===true,"CPU cleanup failed");
  assert((await probe({action:"sample",operation:"heartbeat",sample:1})).ok===false,"Ended run admitted");
  assert(outbound===0,"Native provider egress occurred");
