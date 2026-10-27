@@ -45,7 +45,7 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
   };
   for (const [name, body] of Object.entries(files)) { await Bun.write(join(fakeBin, name), body); await chmod(join(fakeBin, name), 0o700); }
   const installer = join(home, "install.sh");
-  await Bun.write(installer, (await Bun.file(join(import.meta.dir, "../install.sh")).text()).replace("origin=https://shiptorio.com", `origin=${origin}`).replaceAll("__BUN_VERSION__", Bun.version));
+  await Bun.write(installer, (await Bun.file(join(import.meta.dir, "../install.sh")).text()).replaceAll("__BUN_VERSION__", Bun.version));
   await Bun.write(join(home, "bunfig.toml"), 'preload = ["./untrusted-preload.ts"]\n');
   await Bun.write(join(home, "untrusted-preload.ts"), `await Bun.write(${JSON.stringify(join(home, "preload-ran"))}, "unexpected");`);
   const env = { HOME: home, PATH: `${fakeBin}:/usr/bin:/bin`, SHIPTORIO_URL: origin };
@@ -59,16 +59,26 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
     const first = run(["/bin/sh", installer]);
     await until(() => claims.has("you/first"));
     expect(await Bun.file(join(home, "browser-url")).text()).toContain(`/runner/pair?code=${code}`);
+    expect((await Bun.file(join(home, ".local/share/shiptorio/runner/server-url")).text()).trim()).toBe(origin);
+    // Subsequent launches must retain the server after the one-shot installer env is gone.
+    delete (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL;
     const launcher = join(home, ".local/bin/shiptorio-runner");
     const pair = run([launcher, "pair"]); expect(await pair.exited).toBe(0);
     await until(() => claims.has("you/second") && beats.has("you/second"));
     const config = join(home, ".local/share/shiptorio/runner/pairings/you%2Ffirst.json");
     const before = await Bun.file(config).text(); expect((await stat(config)).mode & 0o777).toBe(0o600);
     first.kill(); await first.exited;
+    (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL = origin;
     claims.clear(); const update = run(["/bin/sh", installer]); await until(() => claims.size === 2);
     expect(await Bun.file(join(home, "preload-ran")).exists()).toBe(false);
     expect(starts).toBe(2); expect(await Bun.file(config).text()).toBe(before);
     update.kill(); await update.exited;
+    (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL = "https://another.example";
+    const switched = run(["/bin/sh", installer]); expect(await switched.exited).not.toBe(0);
+    expect(await Bun.file(config).text()).toBe(before);
+    delete (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL;
+    // Updating uses the same explicit installation origin, as the UI's command does.
+    (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL = origin;
     corrupt = true;
     const broken = run(["/bin/sh", installer]); expect(await broken.exited).not.toBe(0);
     expect(await Bun.file(config).text()).toBe(before);

@@ -6,6 +6,8 @@ export function sparkStub() {
     const prompt = messages.filter(m => m.role === "developer").map(m => m.content).join("\n");
     let reply, kind;
     if (prompt.includes("You triage incoming work")) { kind = "triage"; reply = { kind: "bug", district: "src", reason: "Checkout discount is missing." }; }
+    // The review station is a tool loop too, so it is matched before the planner's prompt.
+    else if (prompt.includes("hostile reviewer")) { kind = "review"; reply = { tool: "verdict", verdict: "pass", reason: "Discount calculation and regression agree.", findings: [] }; }
     else if (prompt.includes("Choose ONE tool per turn")) {
       kind = "plan";
       // Request history includes observations, so each plan starts fresh without global counters.
@@ -14,7 +16,6 @@ export function sparkStub() {
       else if (!data.includes('"tool":"read_file"')) reply = { tool: "read_file", path: "src/cart.ts", reason: "Inspect the checkout calculation." };
       else reply = { tool: "assign_job", reason: "Fix the calculation with regression coverage.", plan: "Apply the SAVE10 discount to the checkout total and add a regression test.", acceptance: ["SAVE10 reduces a 100 subtotal to 90.", "Regression fails on base and passes on head."], files: ["src/cart.ts", "test/cart.test.ts"], heeded: [] };
     }
-    else if (prompt.includes("hostile reviewer")) { kind = "review"; reply = { verdict: "pass", reason: "Discount calculation and regression agree.", findings: [] }; }
     else if (prompt.includes("Pick the files you need")) { kind = "scope"; reply = { files: ["src/cart.ts", "test/cart.test.ts"] }; }
     else if (prompt.includes("routing one approved coding job")) { kind = "power"; reply = { harness: "codex", why: "Use the connected subscription." }; }
     else if (prompt.includes('"order"')) { kind = "deck"; const brief = JSON.parse(JSON.parse(messages.at(-1).content.split("\n").slice(1, -1).join("\n")));

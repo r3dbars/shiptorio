@@ -1,3 +1,4 @@
+import { configuredAdmin } from "./admin-policy";
 import { currentUser } from './accounts';
 import type { Env } from './index';
 import { isAllowed } from './session';
@@ -14,9 +15,9 @@ export interface SignupEnv {
 export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist' ? 'waitlist' : 'password';
 export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
-export const isAdmin = (env: Env, login: string) => isAllowed(env.ADMIN_LOGINS || 'r3dbars', login);
+export const isAdmin = configuredAdmin;
 // Only explicitly configured owner/admin identities get quota exemptions, never a wildcard.
-export const isQuotaOwner = (env: SignupEnv, login: string) => (env.ADMIN_LOGINS || 'r3dbars').split(',').some(owner => owner.trim().toLowerCase() === login.toLowerCase());
+export const isQuotaOwner = configuredAdmin;
 export async function signupAllowed(env: {DB:D1Database;ALLOWED_LOGINS?:string}, login: string): Promise<boolean> {
   const row = await env.DB.prepare('SELECT enabled FROM signup_allowlist WHERE login = ?').bind(login.toLowerCase()).first<{enabled: number}>();
   return row ? row.enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", login);

@@ -1,3 +1,4 @@
+import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
@@ -8,7 +9,7 @@ import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget"
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
-import { redact } from "./redact";
+import { redact, redactText } from "./redact";
 import { Redactor } from "./redact";
 
 import { repoAccess, requireUser, validRepo } from "./authorization";
@@ -60,6 +61,8 @@ import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./eng
 import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
+import type { SparkStep, Toolbox } from "./spark-tools";
+import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
@@ -461,6 +464,28 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async publishRunnerMove(move: Move | null) { await this.publishDecision(move); }
 
   /** Posts Spark's plan and every tool call behind it on the GitHub issue, so the thinking is checkable in GitHub. */
+  /**
+   * Spark's read tools for one item at one commit: the repo (read, list, search), the issue thread, the PR and its
+   * checks when there is one, the factory and the mines. All read-only; see server/src/spark-tools.ts.
+   */
+  private async sparkToolbox(token: string, item: Item, sha: string, paths: string[], pr?: { headSha: string; diff: () => Promise<string> }): Promise<Toolbox> {
+    const repo = this.meta!.repo;
+    await this.decisionData();
+    const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
+    const permits = await this.permitBook();
+    const issue = item.id.startsWith("gh-") ? Number(item.id.slice(3)) : undefined;
+    return {
+      paths: [...new Set(paths)].filter(runnerPathAllowed),
+      read: path => fileContent(token, repo, path, sha),
+      search: query => codeSearch(token, repo, query),
+      ...(issue ? { comments: () => issueComments(token, repo, issue) } : {}),
+      ...(pr ? { pr: pr.diff, ci: () => ciReport(token, repo, pr.headSha, item.failure) } : {}),
+      issue: () => JSON.stringify({ title: item.title, body: item.body ?? "", district: item.district, failure: item.failure, scars: item.scars }),
+      factory: () => factoryBrief(this.state!, item, permits, feedback),
+      signals: () => signalsBrief(this.state!, item),
+    };
+  }
+
   private async planComment(token: string, job: RunnerJob, item: Item): Promise<void> {
     if (!item.id.startsWith("gh-") || !job.plan) return;
     const triage = this.state?.brain?.thoughts.find(t => t.itemId === item.id && t.decision === "triage" && t.by === "spark");
@@ -669,29 +694,32 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
-    return this.ctx.blockConcurrencyWhile(async () => {
-      if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
+    // Expected planning denials must leave the atomic callback normally: a throw
+    // inside blockConcurrencyWhile resets the entire object, even if callers catch it.
+    const result = await this.ctx.blockConcurrencyWhile(async () => {
+      if (!(await this.load()) || !this.meta) return new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
       const rework = !!item?.prNumber && item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-");
-      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) throw new Error("Item is not available to build");
-      if (rework && (!input.needsApproval || !canRework(item))) throw new Error("This PR requires player escalation, not another automatic rework offer");
-      if (!input.allowedPaths.every(runnerPathAllowed)) throw new Error("Unsafe approved path");
+      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) return new Error("Item is not available to build");
+      if (rework && (!input.needsApproval || !canRework(item))) return new Error("This PR requires player escalation, not another automatic rework offer");
+      if (!input.allowedPaths.every(runnerPathAllowed)) return new Error("Unsafe approved path");
       const jobs = await this.runnerJobs();
       for (const old of jobs.filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now())) {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${old.id}`);
         if (stored) await this.accountPut(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active runner job; finish its plan or build first");
-      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
+      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return new Error("This issue already has an active runner job; finish its plan or build first");
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) return new Error("Factory job budget reached; finish the active runner job first");
       const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
-      if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      if (hold) return new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
       const account = await this.runAccount(requestedBy);
-      if (!account) throw new Error("Run quota owner unavailable");
+      if (!account) return new Error("Run quota owner unavailable");
       const quota = await runQuotaStatus(this.env, account);
-      if (quota.used >= quota.limit) throw new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
-      const usage = await this.usage();
-      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) throw new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
+      if (quota.used >= quota.limit) return new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      const usage = await this.usage().catch(error => { if (error instanceof BudgetError) return error; throw error; });
+      if (usage instanceof BudgetError) return usage;
+      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) return new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
 
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
@@ -704,6 +732,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
       return job;
     });
+    if (result instanceof Error) throw result;
+    return result;
   }
 
   /** Pick the power plant. The planner chooses among plants the fixed geothermal guard allows; the guard has the last word. */
@@ -782,13 +812,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           .then(files => files.filter(runnerPathAllowed));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
+      // Spark plans with the whole factory in reach: repo search and reads, the issue thread, the rework PR and its CI, scars, permits and mines.
+      const box = await this.sparkToolbox(token, item, job.baseSha!, [...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)],
+        job.reworkPr ? { headSha: job.baseSha!, diff: async () => diffText(changedFiles) } : undefined);
       const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
-        path => fileContent(token, job.repo, path, job.baseSha!), async step => {
+        box, async step => {
           job.steps!.push(step);
           await this.accountPut(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+        }, { widen: !!job.needsApproval }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
+      if (!assignment.files.every(runnerPathAllowed)) throw new Error("Planned files fall outside the runner's path rules");
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
       await this.routeRunnerJob(job, item);
@@ -2054,10 +2088,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
-        const context = (await Promise.all(referencedFiles(files).map(async path => ({ path, content: (await fileContent(token, this.meta!.repo, path, headSha).catch(() => null))?.slice(0, 6000) }))))
+        const context = (await Promise.all(referencedFiles(files).map(async path => {
+          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(() => null);
+          return { path, content: content === null ? undefined : redactText(content).slice(0, 6000) };
+        })))
           .filter((c): c is { path: string; content: string } => typeof c.content === "string");
-        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context),
-          v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
+        // The reviewer can read, list and search the repo at the PR head, the issue thread and CI before it rules.
+        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(() => files.map(f => f.filename)), { headSha, diff: async () => diffText(files) });
+        const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
+        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
+          v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
         const now = currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
@@ -2130,7 +2170,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         continue;
       }
       if (item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-") && item.scars?.length) {
-        if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) continue;
+        // Offered once per scar, unless the card was dropped (a planning hold drops plan cards) and nothing
+        // took its place: then the rework would wait forever behind a card nobody can see.
+        if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) {
+          await this.decisionData();
+          const jobs = await this.runnerJobs();
+          const waiting = this.openMoves!.some(m => m.itemId === item.id && m.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"))) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status));
+          if (waiting || planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
+        }
         await this.accountPut(`gauntletOffered:${item.id}`, item.scars.length);
         const last = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
         // A scarred job never goes back to geothermal: the retry takes a subscription.
@@ -2521,7 +2568,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.login }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
   }
 
   private async socketFetch(request: Request): Promise<Response> {
@@ -2549,9 +2596,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    let auth: { login?: string } | null = null;
+    let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
-    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
     });
   }

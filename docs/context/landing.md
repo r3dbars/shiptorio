@@ -22,12 +22,13 @@ Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind th
 - **Signup modes:** password mode (default) shows the landing to anyone without the preview cookie. In
   `SIGNUP_GATE_MODE=waitlist`, anyone with a `shiptorio_session` cookie skips the landing for the signup gate.
 - **CSP:** security.ts sets `script-src 'self'` site-wide, so the page's JS lives in `/welcome/landing.js`.
-- **Art:** `hero.webp` (1600×900) / `hero-1024.webp` / `hero-phone.webp` (600×800 cut of the dome + rocket) are frame 0
-  of `hero.mp4` / `hero-phone.mp4`: 10s of the real Black Iron line (`docs/black-iron.html`), DECK view, fixed camera,
-  every overlay (HUD, chips, tags, ticker, controls) hidden. Rendered frame by frame in headless Playwright (three r128
-  routed to a local copy, seeded `Math.random`, rAF off, `IRON.debug.advance(1/24)` + `camStep` + `render` + screenshot),
-  the last second crossfaded into the first so it loops without a seam, then ffmpeg. The still paints first; the loop
-  fades in after load and never under reduced motion or Save-Data. A small pause button sits top right (bottom of the art on phones).
+- **Art:** `hero.webp` (1600×900) / `hero-1024.webp` / `hero-phone.webp` (600×800) are frame 0 of `hero.mp4` /
+  `hero-phone.mp4`: 10s of the real vertical shaft map (the game's default), the build floor on desktop and the launch
+  floor on phones, judge scenario, every overlay hidden. Re-record with `node docs/art/shaft-hero.mjs` against a running
+  `vite --port 5310` (seeded `Math.random`, `?raf=0`, `__shaft.advance(1/24)` + `render` + screenshot per frame, the
+  last second crossfaded into the first so it loops without a seam, then ffmpeg). Take it again whenever the shaft art
+  changes a lot. The still paints first; the loop fades in after load and never under reduced motion or Save-Data. A
+  small pause button sits top right (bottom of the art on phones).
 - **Copy rule:** the only model credit is the footer line "powered by Meta Muse Spark". No "Spark" elsewhere.
 - **Verified (local wrangler dev):** Lighthouse desktop 100/100/100/100 (LCP 0.5s), mobile 99/100/100/100
   (LCP 2.1s on simulated slow 4G, CLS 0).

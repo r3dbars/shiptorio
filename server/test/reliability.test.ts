@@ -35,7 +35,9 @@ it('recovers a comment after a lost POST response, without a second comment', as
   const original = globalThis.fetch;
   const comments: { body: string }[] = [];
   let posts = 0;
-  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    // An unrelated factory's deferred provider call is not a comment delivery attempt.
+    if (new URL(String(input)).pathname !== '/repos/owner/repo/issues/1/comments') return new Response(null, { status: 404 });
     if (init?.method === 'POST') { posts++; comments.push(JSON.parse(String(init.body))); throw new Error('connection lost after acceptance'); }
     return Response.json(comments);
   }) as typeof fetch;
