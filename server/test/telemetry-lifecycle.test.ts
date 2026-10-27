@@ -35,3 +35,17 @@ it("shares registered request credentials with subsequent logs and drops them af
     expect(currentRedactor()).toBeUndefined();
   } finally { info.mockRestore(); }
 });
+
+it("redacts credentials learned during a request before diagnostic truncation", () => {
+  const info = spyOn(console, "info").mockImplementation(() => {});
+  const secret = `fixture-${crypto.randomUUID()}-learned-private`;
+  try {
+    inTrace({ requestId: "learned-boundary" }, {}, () => {}, () => {
+      currentRedactor()!.register({ token: secret });
+      const entry = log("info", "fixture.boundary", { message: "x".repeat(11995) + secret }, { persist: false });
+      const serialized = JSON.stringify(entry);
+      expect(serialized.includes(secret)).toBe(false);
+      expect(serialized.includes(secret.slice(0, 5))).toBe(false);
+    });
+  } finally { info.mockRestore(); }
+});
