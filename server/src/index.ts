@@ -170,7 +170,7 @@ app.use("*", async (c, next) => {
     try { allowed = !!identity.user && await signupAllowed(c.env, identity.user.login) && !!await repoAccess(c.env, identity.user, identity.repo, "write", true); }
     catch { c.header("Retry-After", "60"); return c.json({error: "Repository access check temporarily unavailable"}, 503); }
     if (!allowed) {
-      await (await factory(c.env, identity.repo)).rejectRunnerGrant(identity.pairId, "runner_access_revoked");
+      // Denied repository access must not invoke or mutate that repository's Durable Object.
       return c.json({error:'repository access denied', code:'runner_access_revoked'},403);
     }
     if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
