@@ -5,9 +5,9 @@ export const localTestHost = (u: URL) => ["localhost", "127.0.0.1", "[::1]"].inc
 export const personaId = (p: TestPersona) => -9001 - TEST_PERSONAS.indexOf(p);
 export const personaRepo = (p: TestPersona) => `test-fixture/${p}`;
 export function testUsersEnabled(env: TestPolicy, url: URL): boolean {
-  if (env.TEST_USERS !== "on") return false;
+  if (env.TEST_USERS !== "on" || !env.PUBLIC_URL) return false;
   let canonical: URL;
-  try { canonical = new URL(env.PUBLIC_URL ?? url.origin); } catch { return false; }
+  try { canonical = new URL(env.PUBLIC_URL); } catch { return false; }
   if (localTestHost(url)) return localTestHost(canonical) && canonical.origin === url.origin;
   return url.origin === "https://shiptorio.dev" && canonical.origin === url.origin;
 }

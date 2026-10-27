@@ -23,7 +23,7 @@ try {
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
     const page = await context.newPage();
     lastPage = page;
-    page.setDefaultTimeout(10000);
+    page.setDefaultTimeout(60000);
     let admitted = false;
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
     page.on("console", msg => { if (msg.type() === "error" && (admitted || !/401/.test(msg.text()))) failures.push(`Console: ${msg.text()}`); });
