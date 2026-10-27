@@ -1029,3 +1029,10 @@ export const ATTENTION = {
   moreWaiting: (n: number) => `${n} more waiting`,
   pushTitle: (approve: number, steer: number) => [steer && `${steer} to steer`, approve && `${approve} to approve`].filter(Boolean).join(", ") + " in Shiptorio",
 };
+
+/** Coming back (docs/GAMEPLAY-PICKS.md r3-return): what really shipped while you were gone. */
+export const AWAY = {
+  line: (n: number) => `${n} shipped while you were away`,
+  skip: "Tap to skip",
+  skipLabel: "Skip the replay of what shipped while you were away",
+};

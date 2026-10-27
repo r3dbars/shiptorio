@@ -6,12 +6,17 @@ import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
 import { mapGesture } from "./gesture";
+import type { Timelapse } from "./shaft/ShaftScene";
 
 // What FactoryMap asks of a map. The shaft (shaft/ShaftScene.ts, the map) and the island (scene.ts, ?world=iron) both do it.
 type MapScene = Pick<
   FactoryScene,
   "setSize" | "setLift" | "zoomBy" | "panBy" | "update" | "pick" | "hover" | "clearHover" | "setTeachingKeys" | "setShowAllLabels" | "setPings" | "focus" | "setSatellites" | "backToLine" | "empireView" | "overview" | "setCosmetics" | "dispose"
-> & { settle?: () => void }; // the shaft snaps a phone drag to the nearest floor
+> & {
+  settle?: () => void; // the shaft snaps a phone drag to the nearest floor
+  timelapse?: (lapse: Timelapse) => void; // the shaft replays what shipped while you were away (ui/away.ts)
+  endTimelapse?: () => void;
+};
 type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void) => MapScene;
 
 interface Props {
@@ -28,12 +33,16 @@ interface Props {
   satellites?: SatelliteSpec[]; // the player's other repos, floating nearby
   empire?: boolean; // pulled back over every island (the empire overview)
   summary?: string; // the floor in one sentence, for screen readers (ui/FactoryText.tsx has the full text view)
+  lapse?: Timelapse | null; // coming back: replay what shipped while you were away; null ends it
 }
 
 const NO_PINGS: Ping[] = [];
+
+// a map that can't replay (the island) says so right away, and the comeback skips to the end
+const playLapse = (scene: MapScene, lapse: Timelapse) => (scene.timelapse ? scene.timelapse(lapse) : lapse.onStart([]));
 const NO_SATS: SatelliteSpec[] = [];
 
-export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary }: Props) {
+export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary, lapse = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
@@ -41,8 +50,8 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
   // the latest props, for a map that arrives late (the shaft loads its art first)
-  const propsRef = useRef({ showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire });
-  propsRef.current = { showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire };
+  const propsRef = useRef({ showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire, lapse });
+  propsRef.current = { showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire, lapse };
 
   useEffect(() => {
     let off: (() => void) | null = null;
@@ -62,6 +71,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       if (p.empire) scene.empireView();
       else if (!p.focus && p.wide) scene.overview(p.wide);
       else if (p.focus) scene.focus(p.focus);
+      if (p.lapse) playLapse(scene, p.lapse);
     };
     const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id));
     // (a map whose effect was already cleaned up, like StrictMode's first mount, is never built)
@@ -170,6 +180,11 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     wasEmpire.current = empire;
     // the overview refits when an island joins
   }, [empire, empire && satellites.length]);
+  useEffect(() => {
+    if (!lapse) return;
+    if (sceneRef.current) playLapse(sceneRef.current, lapse); // else the map starts it when it arrives
+    return () => sceneRef.current?.endTimelapse?.();
+  }, [lapse]);
   const labelsOnRef = useRef(showLabels);
   labelsOnRef.current = showLabels;
   useEffect(() => sceneRef.current?.setShowAllLabels(showLabels), [showLabels]);
