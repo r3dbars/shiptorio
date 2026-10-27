@@ -7,6 +7,14 @@
 - Real macOS test: create a non-secret credential through the isolated default store, read it in a second process and inside the agent sandbox, lock/unlock/restart, verify the personal default is unchanged, and verify the agent cannot read the unlock password. Focused subscription/native tests and runner typecheck pass; full Linux CI gates merge to avoid duplicate heavy local runs.
 - Runner bundle reinstall is required; PR includes the paste. Testing #2 still needs actual Claude sign-in and a real PR receipt. Justin authorized the allowance 21 → 22 for one attempt only; no build attempt has been submitted by this chat yet.
 
+## Codex: Testing real-loop acceptance (2026-10-26)
+
+Real Spark and the local Codex runner opened [Testing #12](https://github.com/r3dbars/Testing/pull/12)
+for issue #5. CI, docs verify and AI review passed, but executing the README coupon example
+on the exact PR head found an ignored flag. A genuine failing manual status now blocks that
+head. Rework and the actual Launch card remain pending while the live factory recovers from
+Durable Object timeouts (#294). No bot PR has been merged directly.
+[Evidence and remaining proof](testing-live-acceptance.md).
 
 ## Stranger E2E: latest status (2026-10-26)
 
