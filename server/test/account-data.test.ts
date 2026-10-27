@@ -45,7 +45,7 @@ async function fixture() {
       ["schemaVersion", 2], ["backup:old", {items: ["private"]}],
     ]), alarm: 10 as number | null, closed: 0, factory: null as unknown as InstanceType<typeof Factory> };
     const storage = {
-      get: async (key: string) => structuredClone(record.data.get(key)),
+      get: async (key: string | string[]) => Array.isArray(key) ? new Map(key.filter(k => record.data.has(k)).map(k => [k, structuredClone(record.data.get(k))])) : structuredClone(record.data.get(key)),
       put: async (key: string, value: unknown) => { record.data.set(key, value); },
       list: async () => new Map(record.data),
       deleteAlarm: async () => { record.alarm = null; },

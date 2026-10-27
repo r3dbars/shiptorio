@@ -1,3 +1,4 @@
+import { hmacSigningKey } from "../hmac-key";
 import type { ItemKind, OreSource, SourceStatus } from "@shiptorio/shared";
 
 export interface Signal {
@@ -34,7 +35,7 @@ export async function verifyHmac(secret: string | undefined, body: string, signa
   const supplied = signature.slice(prefix.length);
   if (!/^[0-9a-f]{64}$/i.test(supplied)) return false;
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await hmacSigningKey(secret);
   const expected = new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(body)));
   let difference = 0;
   for (let i = 0; i < expected.length; i++) difference |= expected[i] ^ Number.parseInt(supplied.slice(i * 2, i * 2 + 2), 16);

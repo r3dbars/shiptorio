@@ -2,6 +2,8 @@
 
 **The factory must grow.**
 
+AI review eval: caught 10/10 seeded bad fixes (100%); 0/5 good fixes flagged; 0 rules fallbacks, 0 unavailable. [Results and limits](docs/EVAL.md).
+
 Your codebase is a Factorio-style map. Feedback is the ore: Sentry errors, user emails, GitHub issues and
 PostHog traffic. The machines are agents you place and wire together. What ships is real pull requests.
 
@@ -28,6 +30,7 @@ bun install
 bun run dev:web     # http://localhost:5173/?source=sim  (UI + simulator, nothing else needed)
 bun run dev         # full stack on wrangler dev: http://localhost:8787
 bun test
+bun run test:storage # host-only real Durable Object storage integration
 bun run typecheck
 ```
 
@@ -64,3 +67,9 @@ Shiptorio is a fan-inspired project and isn't affiliated with or endorsed by Wub
 All game art is original.
 
 Found a security issue? See [SECURITY.md](SECURITY.md).
+
+`bun test` and `bun run check` keep repository verification offline for the local runner's OS sandbox.
+Run `bun run test:storage` separately on a host with Node.js 22+ and permission to bind a local TCP port.
+It runs one real Wrangler/Miniflare Durable Object integration with a 25-second deadline and fails on
+startup errors, assertion failures, timeout, or a missing test receipt. The required CI check and both
+deployment workflows run this command before deployment; it requires no Cloudflare credentials.

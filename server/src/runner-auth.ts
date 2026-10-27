@@ -1,3 +1,4 @@
+import { hmacSigningKey } from "./hmac-key";
 // Repo-scoped, expiring runner pairing. This is never a browser session token.
 const enc = new TextEncoder();
 const encode = (s: string) => btoa(s).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -8,7 +9,7 @@ export function runnerGrantExpiry(user: RunnerIdentity["user"], now = Date.now()
   return Math.min(now + RUNNER_GRANT_TTL, user?.expiresAt ?? now + RUNNER_GRANT_TTL);
 }
 async function signature(secret: string, text: string) {
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const key = await hmacSigningKey(secret);
   return encode(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)))));
 }
 export async function pairToken(secret: string, identity: RunnerIdentity): Promise<string> {

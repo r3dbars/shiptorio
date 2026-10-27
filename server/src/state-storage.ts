@@ -5,6 +5,7 @@ import { migrateGauntlet } from "./gauntlet";
 export const STATE_SCHEMA_VERSION = 2;
 export const THOUGHT_LIMIT = 40;
 export const INLINE_BYTES = 96 * 1024;
+const STORAGE_BATCH_KEYS = 128; // DurableObjectStorage multi-key operation limit
 const CHUNK_CHARS = 16000; // <=64 KiB UTF-8, including astral characters
 const CHUNK_FORMAT = "shiptorio-state-chunks";
 export type StoredFactoryState = FactoryState & { schemaVersion: number };
@@ -49,10 +50,15 @@ async function readState(storage: Pick<Storage, "get">): Promise<unknown> {
   if (!isChunks(value)) return value;
   if (!Number.isSafeInteger(value.chunks) || value.chunks < 1 || value.chunks > 10000) throw new Error("Invalid state chunk manifest");
   const parts: string[] = [];
-  for (let i = 0; i < value.chunks; i++) {
-    const part = await storage.get<string>(chunkKey(i));
-    if (typeof part !== "string") throw new Error(`Missing factory state chunk ${i}`);
-    parts.push(part);
+  for (let start = 0; start < value.chunks; start += STORAGE_BATCH_KEYS) {
+    const keys = Array.from({ length: Math.min(STORAGE_BATCH_KEYS, value.chunks - start) }, (_, i) => chunkKey(start + i));
+    const batch = await storage.get<string>(keys);
+    // Storage returns a Map; reconstruct in manifest order, never iteration order.
+    for (let i = 0; i < keys.length; i++) {
+      const part = batch.get(keys[i]);
+      if (typeof part !== "string") throw new Error(`Missing factory state chunk ${start + i}`);
+      parts.push(part);
+    }
   }
   const text = parts.join("");
   if (new TextEncoder().encode(text).byteLength !== value.bytes) throw new Error("Factory state size mismatch");
@@ -80,10 +86,20 @@ async function writeState(storage: Pick<Storage, "get" | "put" | "delete">, stat
   const previous = await storage.get<unknown>("state");
   const text = JSON.stringify(state), bytes = new TextEncoder().encode(text).byteLength;
   const chunks = bytes > INLINE_BYTES ? Math.ceil(text.length / CHUNK_CHARS) : 0;
-  for (let i = 0; i < chunks; i++) { assertActive(); await storage.put(chunkKey(i), text.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS)); }
+  for (let start = 0; start < chunks; start += STORAGE_BATCH_KEYS) {
+    const batch: Record<string, string> = {};
+    for (let i = start; i < Math.min(start + STORAGE_BATCH_KEYS, chunks); i++) {
+      assertActive();
+      batch[chunkKey(i)] = text.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS);
+    }
+    await storage.put(batch);
+  }
   assertActive();
   await storage.put("state", chunks ? { format: CHUNK_FORMAT, chunks, bytes, schemaVersion: STATE_SCHEMA_VERSION } : state);
-  if (isChunks(previous)) for (let i = chunks; i < previous.chunks; i++) await storage.delete(chunkKey(i));
+  if (isChunks(previous)) for (let start = chunks; start < previous.chunks; start += STORAGE_BATCH_KEYS) {
+    assertActive();
+    await storage.delete(Array.from({ length: Math.min(STORAGE_BATCH_KEYS, previous.chunks - start) }, (_, i) => chunkKey(start + i)));
+  }
 }
 
 export async function saveFactoryState(storage: Storage, state: FactoryState, assertActive: () => void = () => {}): Promise<void> {

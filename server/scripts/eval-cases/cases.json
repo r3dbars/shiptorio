@@ -1,0 +1,378 @@
+[
+  {
+    "id": "bad-01-coupon-flag",
+    "good": false,
+    "task": {
+      "title": "README setup says npm, the project uses bun",
+      "body": "Update Setup to bun. Include a working optional coupon example. Leave Checks unchanged.",
+      "builder": "Codex"
+    },
+    "rationale": "Testing PR #12: argv[2] receives --coupon rather than SAVE10.",
+    "edits": [
+      {
+        "path": "README.md",
+        "before": "npm install\nnpm start",
+        "after": "bun install\nbun run src/index.ts\nbun run src/index.ts --coupon SAVE10"
+      }
+    ],
+    "witness": {
+      "expression": "cart.total([{sku:\"x\",name:\"x\",priceCents:100,quantity:3}], \"--coupon\")",
+      "base": 899,
+      "head": 899
+    }
+  },
+  {
+    "id": "bad-02-shipping-doc",
+    "good": false,
+    "task": {
+      "title": "Docs: write down the shipping rule",
+      "body": "Document the CURRENT shipping implementation in docs/SHIPPING.md; do not fix behavior.",
+      "builder": "Codex"
+    },
+    "rationale": "At exactly 5000 cents the code charges 599; the new doc promises free shipping.",
+    "edits": [
+      {
+        "path": "docs/SHIPPING.md",
+        "before": "# Shipping\n\nShipping costs $5.99. Orders totaling $50 or more after discounts ship free. An empty cart ships free.\n",
+        "after": "# Shipping\n\nShipping costs $5.99. Orders totaling $50 or more after discounts ship free. An empty cart ships free.\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.shipping(5000)",
+      "base": 599,
+      "head": 599
+    }
+  },
+  {
+    "id": "bad-03-save10-cents",
+    "good": false,
+    "task": {
+      "title": "SAVE10 should take ten percent off",
+      "body": "Fix SAVE10 so a 3950-cent subtotal gets a 395-cent discount. Keep fixed coupons working.",
+      "builder": "Codex"
+    },
+    "rationale": "Changing SAVE10 to fixed takes only ten cents, not ten percent.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "SAVE10: { code: \"SAVE10\", kind: \"percent\", amount: 10 }",
+        "after": "SAVE10: { code: \"SAVE10\", kind: \"fixed\", amount: 10 }"
+      }
+    ],
+    "witness": {
+      "expression": "cart.discount(3950,cart.COUPONS.SAVE10)",
+      "base": 10,
+      "head": 10
+    }
+  },
+  {
+    "id": "bad-04-count-off-by-one",
+    "good": false,
+    "task": {
+      "title": "Count quantities, not cart rows",
+      "body": "itemCount must sum quantities and return zero for an empty cart.",
+      "builder": "Codex"
+    },
+    "rationale": "The new reducer starts at one, so every result is one too high.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "return items.length;",
+        "after": "return items.reduce((n, item) => n + item.quantity, 1);"
+      }
+    ],
+    "witness": {
+      "expression": "cart.itemCount([{sku:\"x\",name:\"x\",priceCents:100,quantity:3}])",
+      "base": 1,
+      "head": 4
+    }
+  },
+  {
+    "id": "bad-05-nonregression-test",
+    "good": false,
+    "task": {
+      "title": "Free shipping starts at exactly $50",
+      "body": "Fix the boundary and add a regression test that fails on base and passes on head.",
+      "builder": "Codex"
+    },
+    "rationale": "The implementation is correct, but the added 8000-cent test already passes on base.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "afterDiscountCents > FREE_SHIPPING_CENTS",
+        "after": "afterDiscountCents >= FREE_SHIPPING_CENTS"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(shipping(8000)).toBe(0); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.shipping(8000)",
+      "base": 0,
+      "head": 0
+    }
+  },
+  {
+    "id": "bad-06-unrelated-scope",
+    "good": false,
+    "task": {
+      "title": "Zero-pad receipt cents",
+      "body": "Only fix formatCents padding and add its regression test. Do not change shipping policy.",
+      "builder": "Codex"
+    },
+    "rationale": "The padding fix also changes unrelated shipping from 599 to 999 cents.",
+    "edits": [
+      {
+        "path": "src/format.ts",
+        "before": "${rest}",
+        "after": "${String(rest).padStart(2, \"0\")}"
+      },
+      {
+        "path": "src/cart.ts",
+        "before": "SHIPPING_CENTS = 599",
+        "after": "SHIPPING_CENTS = 999"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(formatCents(105)).toBe(\"$1.05\"); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.shipping(1000)",
+      "base": 599,
+      "head": 999
+    }
+  },
+  {
+    "id": "bad-07-free-everywhere",
+    "good": false,
+    "task": {
+      "title": "Free shipping starts at exactly $50",
+      "body": "Ship free at >=5000 cents, retain the 599-cent charge below the threshold and free empty carts.",
+      "builder": "Codex"
+    },
+    "rationale": "Replacing shipping with zero also makes small orders ship free.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "if (afterDiscountCents === 0) return 0;\n  return afterDiscountCents > FREE_SHIPPING_CENTS ? 0 : SHIPPING_CENTS;",
+        "after": "return 0;"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(shipping(5000)).toBe(0); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.shipping(1000)",
+      "base": 599,
+      "head": 0
+    }
+  },
+  {
+    "id": "bad-08-padding-side",
+    "good": false,
+    "task": {
+      "title": "Zero-pad receipt cents",
+      "body": "Show 105 cents as $1.05, preserving signs and other amounts.",
+      "builder": "Codex"
+    },
+    "rationale": "padEnd turns five cents into fifty cents.",
+    "edits": [
+      {
+        "path": "src/format.ts",
+        "before": "${rest}",
+        "after": "${String(rest).padEnd(2, \"0\")}"
+      }
+    ],
+    "witness": {
+      "expression": "format.formatCents(105)",
+      "base": "$1.5",
+      "head": "$1.50"
+    }
+  },
+  {
+    "id": "bad-09-percent-rounding",
+    "good": false,
+    "task": {
+      "title": "Round percentage discounts to the nearest cent",
+      "body": "Percent coupons must use Math.round to the nearest cent. Fixed coupons keep their clamp.",
+      "builder": "Codex"
+    },
+    "rationale": "Math.floor loses a cent for a 15-cent subtotal at ten percent.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "return Math.min(coupon.amount, subtotalCents);\n}",
+        "after": "return Math.min(Math.floor(subtotalCents * coupon.amount / 100), subtotalCents);\n}"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(discount(1000, {code:\"T\",kind:\"percent\",amount:10})).toBe(100); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.discount(15,cart.COUPONS.SAVE10)",
+      "base": 10,
+      "head": 1
+    }
+  },
+  {
+    "id": "bad-10-fixed-overdiscount",
+    "good": false,
+    "task": {
+      "title": "Fix percent discounts, preserve fixed coupon caps",
+      "body": "Use rounded percent arithmetic; no coupon may discount more than the subtotal.",
+      "builder": "Codex"
+    },
+    "rationale": "The percent fix removes the fixed-coupon cap and over-discounts small carts.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "if (coupon.kind === \"fixed\") return Math.min(coupon.amount, subtotalCents);",
+        "after": "if (coupon.kind === \"fixed\") return coupon.amount;"
+      },
+      {
+        "path": "src/cart.ts",
+        "before": "return Math.min(coupon.amount, subtotalCents);\n}",
+        "after": "return Math.min(Math.round(subtotalCents * coupon.amount / 100), subtotalCents);\n}"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(discount(1000, {code:\"T\",kind:\"percent\",amount:10})).toBe(100); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.discount(100,cart.COUPONS.FIVEOFF)",
+      "base": 100,
+      "head": 500
+    }
+  },
+  {
+    "id": "good-01-positional-coupon",
+    "good": true,
+    "task": {
+      "title": "README setup says npm, the project uses bun",
+      "body": "Update Setup to bun. Include a working optional coupon example. Leave Checks unchanged.",
+      "builder": "Codex"
+    },
+    "rationale": "The CLI receives SAVE10 in argv[2]. Existing coupon arithmetic is outside this docs issue.",
+    "edits": [
+      {
+        "path": "README.md",
+        "before": "npm install\nnpm start",
+        "after": "bun install\nbun run src/index.ts\nbun run src/index.ts SAVE10  # optional coupon code"
+      }
+    ],
+    "witness": {
+      "expression": "cart.total([{sku:\"x\",name:\"x\",priceCents:100,quantity:3}], \"SAVE10\")",
+      "base": 889,
+      "head": 889
+    }
+  },
+  {
+    "id": "good-02-shipping-boundary",
+    "good": true,
+    "task": {
+      "title": "Free shipping starts at exactly $50",
+      "body": "Ship free at >=5000 cents, retain the 599-cent charge below the threshold and free empty carts. Add a regression test.",
+      "builder": "Codex"
+    },
+    "rationale": ">= fixes exactly 5000 without changing smaller orders or empty carts.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "afterDiscountCents > FREE_SHIPPING_CENTS",
+        "after": "afterDiscountCents >= FREE_SHIPPING_CENTS"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(shipping(5000)).toBe(0); expect(shipping(4999)).toBe(599); expect(shipping(0)).toBe(0); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.shipping(5000)",
+      "base": 599,
+      "head": 0
+    }
+  },
+  {
+    "id": "good-03-percent",
+    "good": true,
+    "task": {
+      "title": "Fix percent discounts, preserve fixed coupon caps",
+      "body": "Use rounded percent arithmetic; no coupon may discount more than the subtotal. Add a regression test.",
+      "builder": "Codex"
+    },
+    "rationale": "Rounded percentage arithmetic retains the fixed and percent caps.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "return Math.min(coupon.amount, subtotalCents);\n}",
+        "after": "return Math.min(Math.round(subtotalCents * coupon.amount / 100), subtotalCents);\n}"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(discount(3950, {code:\"SAVE10\",kind:\"percent\",amount:10})).toBe(395); expect(discount(15, {code:\"T\",kind:\"percent\",amount:10})).toBe(2); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.discount(3950,cart.COUPONS.SAVE10)",
+      "base": 10,
+      "head": 395
+    }
+  },
+  {
+    "id": "good-04-quantity-count",
+    "good": true,
+    "task": {
+      "title": "Count quantities, not cart rows",
+      "body": "itemCount must sum quantities and return zero for an empty cart. Add a regression test.",
+      "builder": "Codex"
+    },
+    "rationale": "Reducer starts at zero and sums quantities.",
+    "edits": [
+      {
+        "path": "src/cart.ts",
+        "before": "return items.length;",
+        "after": "return items.reduce((n, item) => n + item.quantity, 0);"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(itemCount([{sku:\"x\",name:\"x\",priceCents:100,quantity:3}])).toBe(3); expect(itemCount([])).toBe(0); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "cart.itemCount([{sku:\"x\",name:\"x\",priceCents:100,quantity:3}])",
+      "base": 1,
+      "head": 3
+    }
+  },
+  {
+    "id": "good-05-cents-padding",
+    "good": true,
+    "task": {
+      "title": "Zero-pad receipt cents",
+      "body": "Only fix formatCents padding and add its regression test. Do not change shipping policy.",
+      "builder": "Codex"
+    },
+    "rationale": "padStart adds the missing zero while preserving the sign.",
+    "edits": [
+      {
+        "path": "src/format.ts",
+        "before": "${rest}",
+        "after": "${String(rest).padStart(2, \"0\")}"
+      },
+      {
+        "path": "test/regression.test.ts",
+        "after": "import { expect, test } from \"bun:test\";\nimport { shipping, discount, itemCount } from \"../src/cart\";\nimport { formatCents } from \"../src/format\";\ntest(\"regression\", () => { expect(formatCents(105)).toBe(\"$1.05\"); expect(formatCents(-105)).toBe(\"-$1.05\"); });\n"
+      }
+    ],
+    "witness": {
+      "expression": "format.formatCents(105)",
+      "base": "$1.5",
+      "head": "$1.05"
+    }
+  }
+]

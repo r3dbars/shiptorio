@@ -1,3 +1,4 @@
+import { ShiptorioError } from "./errors";
 import { reserveFactorySpend, settleFactorySpend, type TokenUsage } from "./spend";
 import { observedFetch } from "./telemetry";
 import { retry, OutboundError } from "./reliability";
@@ -28,7 +29,7 @@ interface ChatMessage {
   content: string;
 }
 
-export class SparkError extends Error {}
+export class SparkError extends ShiptorioError {}
 
 export function sparkConfigured(env: SparkEnv): boolean {
   return !!env.META_API_KEY;

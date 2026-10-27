@@ -1,5 +1,6 @@
 import { isPublicDocs } from "./access";
-// One response policy for assets, API errors, redirects and the preview gate.
+// One response policy for public/authenticated HTML, assets, API errors and redirects.
+// The preview gate supplies its own script nonce; retain it when adding the shared headers.
 export function securityHeaders(request: Request, artNonce?: string, turnstile = false, sentryDsn?: string, gatePolicy?: string): Record<string, string> {
 
   const url = new URL(request.url);

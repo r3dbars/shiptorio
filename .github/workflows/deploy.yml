@@ -26,8 +26,10 @@ jobs:
       cancel-in-progress: false
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - name: Install Linux runner verification boundary
@@ -37,6 +39,8 @@ jobs:
           # Match CI: run real runner isolation fixtures before any Cloudflare mutation.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun test
+      - name: Verify real Durable Object storage on host
+        run: bun run test:storage
       # Capture the active version BEFORE mutation, not whichever version is second later.
       # Refuse split traffic: rollback restores exactly one known 100% version.
       - name: Capture rollback target

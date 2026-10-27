@@ -1,5 +1,6 @@
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
+import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
 import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
@@ -10,7 +11,7 @@ import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
-import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
+import { capture, currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
 import { redact, redactText } from "./redact";
 import { Redactor } from "./redact";
 
@@ -28,7 +29,7 @@ import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
-import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import { unlockMove, signalWeight, type Diagnosis } from "@shiptorio/shared";
@@ -45,11 +46,9 @@ import {
   suggestResearch,
   techById,
   TECHS,
-  type Belt,
   type FactoryState,
   type FunnelWindow,
   type Item,
-  type Machine,
   type Move,
   type Patch,
   type ServerToWeb,
@@ -75,6 +74,8 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
+import { initialFactoryState } from "./factory-initialization";
+import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import type { SparkStep, Toolbox } from "./spark-tools";
@@ -267,7 +268,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -1035,7 +1036,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
     const trace = await this.ctx.storage.get<Trace>(`trace:${job.itemId}`);
-    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
+    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId, job: job.id }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
   }
 
   private async planRunnerJob(job: RunnerJob): Promise<void> {
@@ -1970,11 +1971,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private broadcastQueue: Promise<void> = Promise.resolve();
+  private browserFrames = new BrowserFrames(this.ctx.storage);
 
   private broadcast(msg: ServerToWeb) {
-    const text = JSON.stringify(this.redactor.value(msg));
+    const frame = this.browserFrames.frame(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
+      const text = await frame;
       // A player may have many sockets. Share the same revocable session check only
       // within this frame; the next frame must query D1 again (no authorization TTL).
       const access = new Map<string, Promise<boolean>>();
@@ -1999,7 +2002,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
     text = this.redactor.text(text);
     log(level === "success" ? "info" : level, "factory.event", { message: text, itemId, repo: this.meta?.repo });
-    if (level === "error") Sentry.captureException(new Error(text), { tags: { itemId, repo: this.meta?.repo } });
+    if (level === "error") capture(new Error(text), { itemId, repo: this.meta?.repo });
     this.broadcast({ type: "log", level, text, at: Date.now(), itemId });
   }
 
@@ -2161,17 +2164,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, installationId);
     const tree = await repoTree(token, repo);
     if (await this.githubStopped()) return;
-    this.state = {
-      repo,
-      baseBranch: tree.branch,
-      districts: layoutMap(tree.entries).zones,
-      ...starterLine(),
-      items: [],
-      science: { red: 0, green: 0, grey: 0, blue: 0 },
-      trust: 0.5,
-      tick: 0,
-      sources: [githubStatus(this.env)],
-    };
+    this.state = initialFactoryState(repo, tree, this.env);
     await this.save();
   }
 
@@ -2950,10 +2943,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
     const state = await this.load();
-    if (!adminView && state && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
-    else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
+    else if (state) {
+      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
+      server.send(await this.browserFrames.frame(snapshot, false));
+    }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    // Restoring the map must not wait for a new planner turn (or provider latency).
+    if (!adminView && state) this.ctx.waitUntil((async () => {
+      if (!(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+    })());
     // The initial snapshot was authorized above. Other sockets may still be
     // revalidating queued frames; they must not hold this handshake open.
     return new Response(null, { status: 101, webSocket: client });
@@ -2974,7 +2974,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
-    if (typeof raw !== "string" || raw === "ping") return;
+    if (typeof raw !== "string" || browserHeartbeat(ws, raw)) return;
     if (raw.length > 16384) return;
     for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
@@ -3042,7 +3042,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.refreshDecisions(); return;
     }
-    switch (msg.type) {
+    const inventory = inventoryCommand(s, msg, () => crypto.randomUUID().slice(0, 6));
+    if (inventory.handled) {
+      if (inventory.stop) return;
+      if (inventory.patch) await this.patch(inventory.patch);
+    } else switch (msg.type) {
       case "send_reply":
         await this.sendSupportReply(playerTap(msg.ticketId, msg.draftHash, playerLogin(auth)));
         await this.refreshDecisions();
@@ -3093,53 +3097,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         else if (msg.kind === "sentry" || msg.kind === "posthog") await this.disconnectMine(msg.kind);
         else if (msg.kind === "email") await this.disconnectSupport();
         else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
-        break;
-      }
-      case "place_machine": {
-        const m: Machine = {
-          id: `${msg.machineType}-${crypto.randomUUID().slice(0, 6)}`,
-          type: msg.machineType,
-          x: msg.x,
-          y: msg.y,
-          district: msg.district,
-          harness: msg.harness,
-          powerId: msg.harness === "spark" ? "steam-spark" : undefined,
-          tier: 1,
-          state: "idle",
-        };
-        await this.patch({ machines: [m] });
-        break;
-      }
-      case "remove_machine":
-        if (s.machines.some((m) => m.id === msg.id && m.state === "working")) break;
-        if (s.stations?.some((st) => st.machineId === msg.id)) break; // gauntlet stations stay on the line
-        await this.patch({
-          removed: [
-            { kind: "machine", id: msg.id },
-            ...s.belts.filter((b) => b.from === msg.id || b.to === msg.id).map((b) => ({ kind: "belt" as const, id: b.id })),
-          ],
-        });
-        break;
-      case "connect_belt": {
-        if (!s.machines.some((m) => m.id === msg.from) || !s.machines.some((m) => m.id === msg.to)) return;
-        const b: Belt = { id: `belt-${crypto.randomUUID().slice(0, 6)}`, from: msg.from, to: msg.to, carries: msg.carries };
-        await this.patch({ belts: [b] });
-        break;
-      }
-      case "move_machine": {
-        const m = s.machines.find((x) => x.id === msg.id);
-        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
-        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
-        break;
-      }
-      case "set_harness": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
-        break;
-      }
-      case "set_module": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m) await this.patch({ machines: [{ ...m, module: msg.module }] });
         break;
       }
       case "route_item": {
@@ -3201,9 +3158,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.accountPut(key, clock);
     }
-    for (const [key, expiry] of await this.ctx.storage.list<number>({ prefix: "done:delivery:" })) {
-      if (expiry <= now) await this.ctx.storage.delete(key);
-    }
+    await pruneExpiredDeliveryMarkers(this.ctx.storage, now);
   }
 
   /** Repair missed webhooks without ever issuing a merge. Reuse the normal gated transitions. */
