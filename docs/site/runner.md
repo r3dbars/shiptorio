@@ -43,8 +43,8 @@ curl -fsSL 'https://factory.example/install.sh' | SHIPTORIO_URL='https://factory
 ```
 
 The installer saves the server URL for later `pair`, `watch` and `doctor` commands.
-It refuses to reuse an installation configured for a different server, so existing
-pairing tokens cannot be sent to the new endpoint. Use a separate installation or
+The installer and CLI refuse to reuse an installation configured for a different
+server, including a different `SHIPTORIO_URL`, so existing pairing tokens cannot be sent to the new endpoint. Use a separate installation or
 uninstall the previous one before switching servers.
 
 The installer places a private pinned Bun and standalone bundle in
