@@ -398,3 +398,9 @@ shaft replay relied on real timers and missed scar1 within60s. Drive its same
 assertion and180s testdeadline. Nine serial desktop cases overran the12min job
 as the failed report printed, so only the wholejob budget is18min to retain
 complete evidence. No production runtime or visual baselines change.
+
+## Public repository guardrails (Codex, Oct 27, 2026)
+
+Added advisory CodeQL, grouped weekly dependency updates, private reporting/scope policy,
+and HTML response-header regression coverage preserving the preview nonce. Full-history
+secret-scan counts and validation receipts are recorded in the PR; see [security.md](security.md).
