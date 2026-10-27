@@ -39,6 +39,7 @@ import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
+import { webhookBody } from "./webhook-body";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
@@ -801,10 +802,9 @@ async function installationFor(env: Env, repo: string): Promise<number> {
 // ---------- GitHub webhooks ----------
 
 app.post("/webhooks/github", async (c) => {
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
-  if (!(await githubSource.verify(c.req.raw.clone(), c.env))) return c.json({ error: "bad signature" }, 401);
-  const body = await c.req.text();
-  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  const body = await webhookBody(c.req.raw);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  if (!(await githubSource.verify({ text: async () => body, headers: c.req.raw.headers }, c.env))) return c.json({ error: "bad signature" }, 401);
   let payload: GitHubPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
@@ -854,9 +854,8 @@ app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
 async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   if (!/^[a-f0-9]{64}$/i.test(c.req.header("sentry-hook-signature") ?? "")) return c.json({ error: "bad signature" }, 401);
   if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
-  const body = await c.req.text();
-  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  const body = await webhookBody(c.req.raw);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
   const repo = perRepo ?? c.req.query("repo")?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
   if (!repo || !REPO_RE.test(repo)) return c.json({ error: "repository unavailable" }, 403);
   const installation = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
@@ -901,7 +900,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   if (!tokenMatches((await supportCreds(c.env, repo)).inboundToken, c.req.param("token"))) return c.json({ error: "unknown inbox" }, 401);
-  const body = await boundedBody(c);
+  const body = await webhookBody(c.req.raw);
   if (body === null) return c.json({ error: "payload too large" }, 413);
   let payload: unknown;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
@@ -914,7 +913,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
 app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  const body = await boundedBody(c);
+  const body = await webhookBody(c.req.raw);
   if (body === null) return c.json({ error: "payload too large" }, 413);
   if (!(await verifyIntercom((await supportCreds(c.env, repo)).intercomClientSecret, body, c.req.header("x-hub-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   let payload: unknown;
@@ -923,12 +922,6 @@ app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   if (!message) return c.json({ ok: true, ignored: true });
   return queueSupport(c, repo, message, body);
 });
-
-async function boundedBody(c: Context<AppEnv>): Promise<string | null> {
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return null;
-  const body = await c.req.text();
-  return body.length > 1048576 ? null : body;
-}
 
 async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
