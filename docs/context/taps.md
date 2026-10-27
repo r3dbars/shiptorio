@@ -42,3 +42,8 @@ cards and the Never chip counts. Read it at **/admin/taps** (admin only, same `A
 
 It's open source, so self-hosters own this data: it lives in their own D1, stores no player login (the repo is
 the only identity), redacts titles and reasons, keeps 90 days, and `TAPS_LOG=off` turns it off.
+
+Lifecycle follows `move_kind_rules`. The account export lists a factory's rows under `logs.taps`, using the
+same access rules as the rest of the factory export. Account deletion and factory erasure delete them. A repo
+rename, retention by repo id, and restore move them with the factory. The 90-day sweep is in addition to
+deletion and never replaces it.

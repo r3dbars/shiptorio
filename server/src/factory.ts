@@ -179,8 +179,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         thoughts: state?.brain?.thoughts ?? [],
         approvals: await this.ctx.storage.get<{kind: string; scope: string; at: number; actionId: string}[]>("approvalEvents") ?? [],
         stages: await this.ctx.storage.get<StageHistory[]>("stageHistory") ?? [],
+        // docs/context/taps.md: every card this factory dealt and what was tapped.
+        taps: await this.accountTaps(),
       },
     });
+  }
+
+  /** This factory's card_taps rows, under its repo name or its retained repo-id key. */
+  private async accountTaps(): Promise<unknown[]> {
+    const meta = await this.ctx.storage.get<Meta>("meta");
+    const keys = [...new Set([meta?.repo, await this.ctx.storage.get<string>("githubDataKey")].filter((k): k is string => !!k))];
+    const rows: unknown[] = [];
+    for (const key of keys) rows.push(...(await this.env.DB.prepare("SELECT * FROM card_taps WHERE repo = ? ORDER BY shown_at").bind(key).all()).results);
+    return rows;
   }
 
   async accountConnectionStatus() {
@@ -211,7 +222,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
       this.state = null; this.meta = null;
-      this.openMoves = null; this.deckBook = null; this.deckRules = null;
+      this.openMoves = null; this.deckBook = null; this.deckRules = null; this.tapsOpen = null; this.tapBriefCache = null;
       this.running.clear();
     });
   }
@@ -1291,6 +1302,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.env.DB.batch([
       this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(key, meta.repo),
       this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(key, meta.repo),
+      this.env.DB.prepare("UPDATE card_taps SET repo = ? WHERE repo = ?").bind(key, meta.repo),
       this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`archived:${key}:installation:${meta.installationId}:repo:${meta.repo}`, `installation:${meta.installationId}:repo:${meta.repo}`),
     ]);
     await this.accountPut("githubDataKey", key);
@@ -1305,6 +1317,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.env.DB.batch([
         this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
         this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
+        this.env.DB.prepare("UPDATE card_taps SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
       ]);
       const archivedScope = `archived:${retainedKey}:installation:${this.meta!.installationId}:repo:${this.meta!.repo}`;
       if (repo === this.meta!.repo && installationId === this.meta!.installationId) await this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`installation:${installationId}:repo:${repo}`, archivedScope).run();
@@ -3035,6 +3048,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (meta) await this.env.DB.batch([
           this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(dataKey!),
           this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(dataKey!),
+          this.env.DB.prepare("DELETE FROM card_taps WHERE repo = ?").bind(dataKey!),
           ...(ownsName ? [this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo)] : []),
         ]);
         if (meta && dataKey?.startsWith("repo:")) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`archived:${dataKey}:installation:${meta.installationId}:repo:${meta.repo}`).run();

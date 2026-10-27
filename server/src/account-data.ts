@@ -30,7 +30,7 @@ export interface AccountFactoryData {
   state: FactoryState | null;
   permits: PermitBook | null;
   research: FactoryState["research"] | null;
-  logs: {thoughts: NonNullable<FactoryState["brain"]>["thoughts"]; approvals: {kind: string; scope: string; at: number; actionId: string}[]; stages: {itemId: string; stage: string; enteredAt: number; exitedAt?: number}[]};
+  logs: {thoughts: NonNullable<FactoryState["brain"]>["thoughts"]; approvals: {kind: string; scope: string; at: number; actionId: string}[]; stages: {itemId: string; stage: string; enteredAt: number; exitedAt?: number}[]; taps?: Record<string, unknown>[]};
 }
 export async function accountRepos(env: Env, user: User): Promise<RepoRow[]> {
   const repos = await reposFor(env, user);
@@ -148,7 +148,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
       if (columns.results.some(c => c.name === "repo")) statements.push(env.DB.prepare("DELETE FROM webhook_deliveries WHERE repo = ?").bind(repo.full_name));
     }
     const dataKeys = [repo.full_name, ...(repo.repo_id ? [`repo:${repo.repo_id}`] : [])];
-    for (const dataKey of dataKeys) for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(dataKey));
+    for (const dataKey of dataKeys) for (const table of ["pull_requests", "move_kind_rules", "card_taps", "user_repos"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE repo = ?`).bind(dataKey));
     if (repo.repo_id) {
       statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope GLOB ?").bind(`archived:repo:${repo.repo_id}:installation:*`));
       statements.push(env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`installation:${repo.installation_id}:repo-id:${repo.repo_id}`));
