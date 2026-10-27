@@ -38,8 +38,10 @@ function artPages(): Plugin {
 export default defineConfig({
   plugins: [react(), artPages(), docsSite()],
   build: {
+    manifest: true,
     rollupOptions: {
       output: {
+        onlyExplicitManualChunks: true,
         // vendors in their own chunks: we deploy many times a day, and three + react don't change,
         // so a returning player only re-downloads the game code
         manualChunks(id) {

@@ -1,16 +1,30 @@
-import { initTelemetry } from "./telemetry";
-import { ErrorBoundary } from "./ErrorBoundary";
-import { buildoutOn, loadFeatureFlags } from "./flags";
-import { StrictMode, useEffect, useState } from "react";
-import { createRoot } from "react-dom/client";
-import { Judge } from "./judge/Judge";
-import { App } from "./App";
-import { Onboarding, type OnboardStep } from "./ui/Onboarding";
-import { sound } from "./sound/engine";
-import { SANDBOX_REPO, serverUp } from "./account";
+/** @jsxRuntime classic */
+/** @jsx h */
+import { installChunkReload } from "./chunkReload";
+import type { OnboardStep } from "./ui/Onboarding";
+import "./ui/onboarding.css";
 import "./iron.css";
 import "./styles.css";
 import "./foundry.css";
+
+installChunkReload();
+
+// Install recovery before fetching any vendor or game module. Await the selected
+// route before mounting: an initially suspended root cannot commit with a frozen clock.
+async function boot() {
+  const judgeRoute = /^\/judge\/?$/.test(location.pathname);
+  const [{ createElement: h, StrictMode, useEffect, useState }, { createRoot }, { ErrorBoundary }, { sound }] = await Promise.all([
+    import("react"), import("react-dom/client"), import("./ErrorBoundary"), import("./sound/engine"),
+  ]);
+  const [App, Onboarding, Judge, account] = await Promise.all([
+    judgeRoute ? (() => null) : import("./App").then(m => m.App),
+    judgeRoute ? (() => null) : import("./ui/Onboarding").then(m => m.Onboarding),
+    judgeRoute ? import("./judge/Judge").then(m => m.Judge) : (() => null),
+    judgeRoute ? null : import("./account"),
+  ]);
+  const { SANDBOX_REPO, serverUp } = account ?? { SANDBOX_REPO: "", serverUp: async () => false };
+  const initTelemetry = () => import("./telemetry").then(m => m.initTelemetry());
+  const loadFeatureFlags = () => import("./flags").then(m => m.loadFeatureFlags());
 
 sound.install();
 
@@ -59,8 +73,12 @@ const judge = location.pathname === "/judge" || location.pathname === "/judge/";
 // Only the map style survives (?world=shaft), so judges can watch the replay in the vertical shaft too.
 const judgeWorld = new URLSearchParams(location.search).get("world");
 if (judge) history.replaceState(null, "", `/judge?source=sim${judgeWorld && /^(shaft|iron|classic)$/.test(judgeWorld) ? `&world=${judgeWorld}` : ""}`);
-void Promise.all(judge ? [] : [initTelemetry(), loadFeatureFlags()]).then(() => createRoot(document.getElementById("root")!).render(
+await Promise.all(judge ? [] : [initTelemetry(), loadFeatureFlags()]);
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary><Root /></ErrorBoundary>
   </StrictMode>,
-));
+);
+
+}
+void boot();
