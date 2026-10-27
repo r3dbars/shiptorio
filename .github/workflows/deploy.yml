@@ -30,6 +30,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      - name: Install Linux runner verification boundary
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap
+          # Match CI: run real runner isolation fixtures before any Cloudflare mutation.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun test
       # Capture the active version BEFORE mutation, not whichever version is second later.
       # Refuse split traffic: rollback restores exactly one known 100% version.
