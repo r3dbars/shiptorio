@@ -42,6 +42,12 @@ export function testUserRoutes(app: Hono<any>): void {
     const testPath = url.pathname === "/test/users" || url.pathname === "/test/login";
     const session = await readSessionDetails(env.SESSION_SECRET, c.req.header("cookie") ?? null);
     const negative = (session?.ref?.uid ?? 0) < 0;
+    // Optional UI discovery must stay quiet on ordinary local/staging builds. It reveals no
+    // identities and cannot mint a session; production still has no test discovery endpoint.
+    if (!negative && !testUsersEnabled(env, url) && c.req.method === "GET" && url.pathname === "/test/users" && url.searchParams.get("format") === "json" && (local(url) || url.origin === "https://shiptorio.dev")) {
+      c.header("Cache-Control", "no-store");
+      return c.json({ personas: [] });
+    }
     if ((testPath || negative) && !testUsersEnabled(env, url)) return c.json({ error: "Test accounts are disabled here" }, 404);
     if (testPath || negative) {
       const transport = secureTransport(c.req.raw);
