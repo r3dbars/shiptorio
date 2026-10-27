@@ -79,3 +79,23 @@ test("fixture personas have real shared-schema ships and a failed CI decision", 
   expect(blocked.items[0].inspection?.stages[0].state).toBe("rework");
   expect(blocked.items[0].scars?.[0].station).toBe("ci");
 });
+test("disabled discovery is empty locally, while production test URLs stay unavailable", async () => {
+  const f = fixture(), env = { ...f.env, TEST_USERS: "off" };
+  expect(await (await f.app.request("http://localhost:8787/test/users?format=json", {}, env)).json()).toEqual({ personas: [] });
+  expect((await f.app.request("https://shiptorio.com/test/users?format=json", {}, env)).status).toBe(404);
+  expect(f.calls()).toBe(0);
+});
+test("local factory needs a keyed capability service and never routes a different repo", async () => {
+  const f = fixture(); await seedTestUser(f.env, "test-midgame");
+  const cookie = (await createSession(f.env, { id: personaId("test-midgame"), login: "test-midgame" }, "test")).split(";")[0] + "; " + await preview();
+  const key = "a".repeat(64); let handshakes = 0;
+  const env = { ...f.env, TEST_FACTORY_KEY: key, TEST_FACTORY: { fetch: async (url: string, init: RequestInit) => {
+    expect(url).toBe("http://test-fixture.invalid/ready");
+    expect(new Headers(init.headers).get("x-shiptorio-test-hop")).toBe(key);
+    handshakes++; return new Response(null, { status: 204 });
+  } } };
+  expect((await f.app.request("http://localhost:8787/api/repos/test-fixture/test-midgame/factory", { headers: { cookie } }, env)).status).toBe(200);
+  expect(handshakes).toBe(1); expect(f.calls()).toBe(1);
+  expect((await f.app.request("http://localhost:8787/api/repos/r3dbars/shiptorio/factory", { headers: { cookie } }, env)).status).toBe(403);
+  expect(handshakes).toBe(1); expect(f.calls()).toBe(1);
+});
