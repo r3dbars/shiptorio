@@ -838,4 +838,29 @@ app.all("*", async (c) => {
 });
 
 export { app }; // Unwrapped Hono app for route tests.
-export default Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app.fetch });
+const wrapped = Sentry.withSentry((env: Env) => sentryOptions(env), { fetch: app.fetch });
+
+// The password form is the front door, and Free-plan Workers stop a request at 10ms of CPU. /access skips the
+// app's per-request stack (Sentry scope, KV-backed telemetry, account lookup) and runs only what it needs:
+// HTTPS redirect, the per-IP sign-in budget, the gate itself, then the same security headers.
+export async function accessFastPath(request: Request, env: Env): Promise<Response | null> {
+  if (new URL(request.url).pathname !== "/access" || signupMode(env) !== "password") return null;
+  let response = secureTransport(request);
+  const budget = response ? null : requestBudget(request, "/access");
+  if (budget) {
+    const result = await rateLimit(env, ipSubject(request), budget);
+    if (!result.allowed) response = Response.json({ error: "too many requests" }, { status: 429, headers: { "Retry-After": String(result.retryAfter) } });
+  }
+  response ??= await previewAccess(request, env);
+  if (!response) return null; // local dev login: the full app handles it
+  response = new Response(response.body, response);
+  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN))) response.headers.set(key, value);
+  console.log(JSON.stringify({ level: "info", event: "http.request", method: request.method, path: "/access", status: response.status, ts: new Date().toISOString() }));
+  return response;
+}
+
+export default {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
+    return await accessFastPath(request, env) ?? wrapped.fetch!(request as never, env, ctx as ExecutionContext);
+  },
+} satisfies ExportedHandler<Env>;
