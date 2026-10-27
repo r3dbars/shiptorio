@@ -96,6 +96,22 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Deploy saves the active Worker version before mutation, rolls back on deploy or
   smoke failure, verifies recovery, and leaves a red job with error annotations
   and a summary. Manual branch deploys share the production concurrency lock.
-- Local regression probes pass. Live deliberately broken branch rollback drill
-  is pending; see scripts/smoke/README.md. No data/schema rollback is claimed.
+- Implementation [#250](https://github.com/r3dbars/shiptorio/pull/250) merged after CI
+  and stranger-path checks passed. Local validation: 656 tests passed, 2 platform
+  skips; workspace + test typechecks, build, 24 playtest cases (306 decisions) passed.
+- Healthy production [Deploy 40428675804](https://github.com/r3dbars/shiptorio/actions/runs/40428675804)
+  passed every smoke at `dc2843715157e0835c52019db00cccb16537718d`.
+- **Live rollback proved**, 2026-10-26 7:52 PM CT: temporary branch
+  `codex/deploy-smoke-drill`, commit `bd4bd76d4ebc6814a64d748311c8fe5a2a73e175`,
+  deliberately returned 503 for Cloudflare GET /access. [Deploy 40428959075](https://github.com/r3dbars/shiptorio/actions/runs/40428959075)
+  deployed bad Worker version `8ab17ba2-93fa-45fb-8749-b72db215a017`, failed smoke
+  with “GET /access: expected 200, got 503”, then automatically ran Wrangler rollback
+  to captured version `e06a9ca5-cda0-4097-912a-112034233b87` at 100% traffic.
+  Cloudflare's active-version check and all restored-site smoke probes passed at
+  `dc28437`; the job remained **failed**, with an error annotation and summary.
+  Failure detected 00:52:28Z; restored smoke passed 00:52:32Z (about four seconds).
+  The fault branch was never merged and was deleted after the drill.
+- See scripts/smoke/README.md for local use and repeating the drill. No data/schema
+  rollback is claimed; cancellation/timeout cannot guarantee automatic recovery.
+
 | Stranger E2E: browser runner pairing | in progress | Full browser journey exposed Chromium submitting the device approval form with opaque Origin under no-referrer, rejected by the same-origin guard. Pairing page now uses same-origin referrer policy; foreign and missing origins remain rejected. Day 4 runner checkpoint. |

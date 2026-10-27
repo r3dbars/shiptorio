@@ -9,6 +9,7 @@ bun scripts/smoke/live.ts http://localhost:8787 "$(git rev-parse HEAD)"
 ```
 
 Requires APP_PASSWORD, SESSION_SECRET and GitHub App configuration on the target.
+For local Wrangler, configure BUILD_SHA to match the expected SHA argument.
 The probe sends no credentials and never follows the GitHub redirect. It verifies
 GET /access (200 + password form), wrong-password POST /access (401), GET
 /auth/login (HTTPS github.com redirect), exact /api/version SHA, public landing,
@@ -34,3 +35,8 @@ main's non-cancelling deployment concurrency group. Use only for an authorized d
 3. Confirm Deploy succeeds, Live smoke fails, rollback restores the saved version,
    the restored smoke passes, and the overall run is red. Record the Actions run
    and version IDs in docs/context/threads.md. Never merge the broken branch.
+
+Verified on production in [Deploy 40428959075](https://github.com/r3dbars/shiptorio/actions/runs/40428959075):
+a real branch returned 503 on GET /access, automatic rollback restored the saved
+version, every restored smoke passed, and the job stayed red. Full receipt:
+[docs/context/threads.md](../../docs/context/threads.md#deploy-smoke--automatic-rollback-codex-2026-10-26).
