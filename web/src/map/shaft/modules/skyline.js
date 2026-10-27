@@ -2,8 +2,8 @@
 // on canvas in the Black Iron pixel style (sooty blocks, sawtooth sheds, chimneys with ember tops, gantry cranes,
 // water towers, gasometers, rows of lit windows), each one quad that follows the orthographic camera at its own
 // fraction (far 0.92, mid 0.8, near 0.62) with its texture wrapping sideways, so a drag or a zoom never finds an
-// edge. Each band fades down into the haze, the far ones palest. The near band carries the old city's landmarks
-// (pithead headframe, cooling tower, gantry crane, gasometer, the two tall chimneys) as its near ring.
+// edge. Each band fades down into the haze, the far ones palest. The old city's landmarks (pithead headframe,
+// cooling tower, gantry crane, gasometer, the two tall chimneys) become the near ring, painted into the near band.
 //
 // Cost: 3 draw calls, 0 lights, 0 blended layers (cut-out pixels, opaque pass). Windows dim with the sky
 // (scene.backgroundIntensity), beacons pulse slowly and hold still when the kit says calm.
@@ -136,38 +136,35 @@ function paint(B) {
   return buf;
 }
 
-// pithead headframe + winding wheel, cooling tower, gantry crane with a beacon, gasometer, two tall smoking stacks.
-// Spread over the tile so one set sits either side of the shaft in the stack view.
+// The near ring: the old city's landmarks (pithead headframe, cooling tower, gantry crane, gasometer, the two tall
+// stacks flanking the shaft) painted where they stood, plus echoes of the same kinds further out.
 function landmarks(B, set, rect, dark, hi, base) {
   const W = B.W, m = [0x22, 0x14, 0x0e], ml = [0x3a, 0x26, 0x1a], red = [0xff, 0x3a, 0x20];
-  const at = (x) => Math.round(W / 2 + x / B.px); // root-ish x at the stack view -> tile px
-  // headframe (left, x -40): two raked legs, a back strut, cross braces, the sheave wheel on top
-  { const x = at(-42), top = base - 140, h = base - top;
+  const at = (x) => Math.round(W / 2 + x / B.px); // root x at the stack view -> tile px
+  // headframe: two raked legs, a back strut, cross braces, the sheave wheel on top
+  for (const hx of [-42, -150, 118]) { const x = at(hx), top = base - 140, h = base - top;
     for (let y = top + 8; y < base; y++) { const k = (y - top) / h; set(x - 4 - k * 6, y, m); set(x - 3 - k * 6, y, m); set(x + 4 + k * 6, y, m); set(x + 3 + k * 6, y, m); if ((y - top) % 7 === 0) rect(x - 4 - k * 6, y, 8 + k * 12, 1, m); }
     for (let y = top + 10; y < base; y++) set(x + 6 + (y - top) * 0.45, y, m);
     rect(x - 6, top + 6, 13, 3, m);
     for (let a = 0; a < 40; a++) { const t = (a / 40) * Math.PI * 2; set(x + Math.cos(t) * 6, top + 1 + Math.sin(t) * 5, ml); }
     for (let i = -5; i <= 5; i++) { set(x + i, top + 1, ml); set(x, top + 1 + i * 0.8, ml); }
     set(x, top - 5, red, A_BEACON); }
-  // cooling tower (left, x -62): hyperboloid, rim lit, steam lip
-  { const x = at(-64), top = base - 92;
+  // cooling tower: hyperboloid, rim lit
+  for (const cx of [-64, -96, 176]) { const x = at(cx), top = base - 92;
     for (let y = top; y < base; y++) { const k = (y - top) / (base - top), w = Math.round(12 - 5 * Math.sin(Math.min(1, k * 1.4) * Math.PI * 0.75) + k * 6); rect(x - w, y, w * 2, 1, y === top ? hi : ml); set(x - w, y, hi); } }
-  // twin tall stacks flanking the shaft (x -30 / +30)
-  for (const sx of [-30, 31]) { const x = at(sx), top = base - 178; rect(x, top, 4, base - top, m); rect(x, top, 1, base - top, ml); rect(x - 1, top, 6, 3, [0x16, 0x0e, 0x0a]); for (let y = top + 8; y < base; y += 9) rect(x, y, 4, 1, [0x16, 0x0e, 0x0a]); set(x + 1, top - 1, [0xff, 0x8a, 0x2a], A_WIN); set(x + 2, top - 1, [0xff, 0xb0, 0x50], A_WIN); }
-  // gantry crane (right, x +44): two legs, a long girder, the trolley, beacon
+  // a tall stack
+  for (const sx of [-30, 31, -122, 150]) { const x = at(sx), top = base - 178; rect(x, top, 4, base - top, m); rect(x, top, 1, base - top, ml); rect(x - 1, top, 6, 3, [0x16, 0x0e, 0x0a]); for (let y = top + 8; y < base; y += 9) rect(x, y, 4, 1, [0x16, 0x0e, 0x0a]); set(x + 1, top - 1, [0xff, 0x8a, 0x2a], A_WIN); set(x + 2, top - 1, [0xff, 0xb0, 0x50], A_WIN); }
+  // gasometer: a drum inside its guide frame
+  // gantry crane by the shaft: two legs, a long girder, the trolley, beacon
   { const x = at(44), top = base - 110;
     for (let y = top; y < base; y++) { rect(x - 10, y, 2, 1, m); rect(x + 10, y, 2, 1, m); if ((y - top) % 6 === 0) { set(x - 9, y + 1, m); set(x + 11, y + 1, m); } }
     rect(x - 14, top - 3, 40, 3, m); for (let i = -14; i < 26; i += 3) set(x + i, top - 4, ml);
     rect(x + 14, top, 5, 4, ml); for (let y = top + 4; y < top + 24; y++) set(x + 16, y, ml);
     set(x - 9, top - 6, red, A_BEACON); }
-  // gasometer (right, x +62): a drum inside its guide frame
-  { const x = at(64), top = base - 66;
+  for (const gx of [64, -178, 92]) { const x = at(gx), top = base - 66;
     rect(x - 14, top + 10, 28, base - top - 10, ml); rect(x - 14, top + 10, 1, base - top - 10, hi);
     for (let i = -15; i <= 15; i += 5) for (let y = top; y < base; y++) set(x + i, y, m);
     for (const y of [top, top + 12, top + 24]) rect(x - 15, y, 31, 1, m); }
-  // and a second, smaller ring further out so the far edges of the tile aren't bare
-  { const x = at(-150), top = base - 120; for (let y = top; y < base; y++) { const k = (y - top) / (base - top); set(x - 3 - k * 5, y, m); set(x + 3 + k * 5, y, m); if ((y - top) % 7 === 0) rect(x - 3 - k * 5, y, 6 + k * 10, 1, m); } rect(x - 5, top, 11, 3, m); set(x, top - 4, red, A_BEACON); }
-  { const x = at(170), top = base - 150; rect(x, top, 4, base - top, m); rect(x, top, 1, base - top, ml); set(x + 1, top - 1, [0xff, 0x8a, 0x2a], A_WIN); }
 }
 
 const VS = `
@@ -234,6 +231,10 @@ export default function install(IRON) {
       };
       return m;
     });
+    // the old 3D landmarks (city-old.js keeps them under the flag) stood on the old city's blocks and float with
+    // nothing under them now; the near band paints them instead, at no extra draw calls
+    const ring = root.getObjectByName('city-landmarks');
+    if (ring) { ring.traverse((o) => o.geometry && o.geometry.dispose()); ring.removeFromParent(); }
     return { update() {}, layers };
   }, 0.5);
 }
