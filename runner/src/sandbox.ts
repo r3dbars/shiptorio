@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-export interface SandboxResult { code: number; out: string; err: string }
+export interface SandboxResult { code: number; out: string; err: string; timedOut?: boolean }
 export interface CheckSandbox {
   run(args: string[], cwd?: string, options?: { install?: boolean; timeout?: number }): Promise<SandboxResult>;
   close(): Promise<void>;
@@ -85,10 +85,11 @@ ${install || agent ? `(allow network-outbound (literal "/private/var/run/mDNSRes
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
       const child = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile(!!options.install), ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
-      const timer = setTimeout(stop, options.timeout ?? 180000);
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);
       try {
         const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-        return { code, out, err };
+        return { code, out, err, timedOut };
       } finally { clearTimeout(timer); stop(); }
     },
     async close() { closed = true; await rm(privateRoot, { recursive: true, force: true }); },

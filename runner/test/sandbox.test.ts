@@ -87,5 +87,7 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
     await Bun.sleep(650);
     expect(await Bun.file(join(work, "descendant-marker")).exists()).toBe(false);
     await expect(sandbox.run([process.execPath, "-e", ""], root)).rejects.toThrow("escapes");
+    const timed = await sandbox.run([process.execPath, "-e", "setInterval(()=>{},1000)"], work, { timeout: 30 });
+    expect(timed.timedOut).toBe(true); expect(timed.code).not.toBe(0);
   } finally { await sandbox.close(); await rm(root, { recursive: true, force: true }); }
 });

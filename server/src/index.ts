@@ -626,11 +626,12 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   const identity = c.get("runner");
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
-  let raw: { harnesses?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
   if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
-  await f.heartbeatRunner(identity.pairId, raw.harnesses); return c.json({ ok: true });
+  if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
+  await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {

@@ -124,6 +124,9 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-26: Humans are the bottleneck in the agentic loop. Shiptorio always points at it, and a swipe
   check-in (8 to 12 cards, right = do it, left = later, down = never + why) lets you push the whole system
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
+- 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
+  RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
+  pipeline config, and the gauntlet can be added to but never bypassed. Spec: `docs/BUILD-MODE.md`.
 - 2026-10-27: Plan locked through Nov 4: prove the loop with real clean ships on Testing + one real autonomy
   level-up, nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1, park build
   mode / pricing / empire / new mines. Codex on reliability prompts only. See "Current focus through Nov 4".
