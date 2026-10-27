@@ -276,6 +276,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (changed) await this.accountPut("stageHistory", history.filter(h => h.exitedAt === undefined || h.exitedAt > now - 86400000).slice(-4000));
     const presenceFresh = !!presence?.harnesses.length && now - presence.seenAt < 20000;
+    if (!presenceFresh && !jobs.some(j => j.status === "running")) {
+      const power = syncRunnerPower(s.power, []);
+      if (JSON.stringify(power) !== JSON.stringify(s.power)) { s.power = power; this.broadcast({ type: "patch", patch: { power } }); }
+    }
     const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar" && p.kind !== "geothermal") };
     const derived = deriveBottleneck(telemetryState, { now, history, jobs, powered: this.env.HOSTED_SPARK_ASSEMBLER === "1" || !!presence?.harnesses.length && now - presence.seenAt < 20000 || jobs.some(j => j.status === "running") });
     s.bottleneck = derived.bottleneck;
@@ -574,7 +578,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.accountPut("runnerPresence", { harnesses, authRequired, seenAt: Date.now() });
     await this.load();
     if (this.state) {
-      const power = syncRunnerPower(this.state.power, harnesses);
+      const power = syncRunnerPower(this.state.power, harnesses, authRequired);
       if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
     }
     if (authRequired !== undefined && this.state) {
@@ -617,7 +621,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.ctx.storage.delete("runnerPair");
     await this.ctx.storage.delete("runnerPresence");
     await this.load();
-    if (this.state) await this.patch({ power: this.state.power.filter(p => !p.id.startsWith("solar-")) });
+    if (this.state) await this.patch({ power: syncRunnerPower(this.state.power, []) });
   }
   async isRunnerPaired(pairId: string): Promise<boolean> {
     return await this.ctx.storage.get("runnerPair") === pairId;

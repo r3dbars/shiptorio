@@ -41,6 +41,17 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
 
 describe("Factory lifecycle", () => {
+  it("broadcasts both provider plants from heartbeats before any claim, and marks logout offline", async () => {
+    const f = fixture();
+    const pair = await f.factory.pairRunner();
+    await f.factory.heartbeatRunner(pair, ["codex", "claude_code"], []);
+    expect(f.saved().power.filter(p => p.kind === "solar").map(p => p.name)).toEqual(["Codex", "Claude Code"]);
+    expect(f.events.some((e: any) => e.type === "patch" && e.patch.power?.length)).toBe(true);
+    await f.factory.heartbeatRunner(pair, ["claude_code"], ["codex"]);
+    expect(f.saved().power.find(p => p.id === "solar-codex")?.online).toBe(false);
+    expect(f.saved().power.find(p => p.id === "solar-claude_code")?.online).toBe(true);
+  });
+
   it("publishes Codex/Claude sign-in cards on heartbeat, keeps them during builds, and clears them after reauth", async () => {
     const f = fixture([item({ state: "working" })], { SPARK_DISABLED: "1" });
     await f.factory.activateRunner("pair");
@@ -146,16 +157,20 @@ describe("Factory lifecycle", () => {
       expect((await f.factory.runnerJobs())[0].plan).toContain("regression test");
       expect(f.saved().brain?.thoughts.some(t => t.decision === "plan" && t.by === "spark")).toBe(true);
       await expect(f.factory.claimRunner("wrong-pair", ["codex"])).rejects.toThrow("revoked");
-      expect(await f.factory.claimRunner(pair, ["claude_code"])).toBeNull();
-      const claimed = await Promise.all([f.factory.claimRunner(pair, ["codex"]), f.factory.claimRunner(pair, ["codex"])]);
+      expect(await f.factory.claimRunner(pair, [])).toBeNull();
+      const claimed = await Promise.all([f.factory.claimRunner(pair, ["claude_code"]), f.factory.claimRunner(pair, ["claude_code"])]);
       expect(claimed.filter(Boolean)).toHaveLength(1);
       const assigned = claimed.find(Boolean)!;
       expect(assigned.token).toBe("fake-install-token");
+      expect(assigned.harness).toBe("claude_code");
+      expect(assigned.plan).toBe((await f.factory.runnerJobs())[0].plan);
+      expect(f.saved().machines.find(m => m.id === "runner-claude_code")?.powerId).toBe("solar-claude_code");
       const realNow = Date.now;
       try {
         // A claim whose response was lost: the same idle runner asking again gets the same job back.
         Date.now = () => realNow() + 60_000;
-        expect((await f.factory.claimRunner(pair, ["codex"]))?.lease).toBe(assigned.lease);
+        expect(await f.factory.claimRunner(pair, ["codex"])).toBeNull(); // never switch a running lease
+        expect((await f.factory.claimRunner(pair, ["claude_code"]))?.lease).toBe(assigned.lease);
       } finally { Date.now = realNow; }
       expect(f.saved().items[0].state).toBe("working");
       expect(f.saved().deck?.some(m => m.options.some(o => o.actions.some(a => a.tool === "approve_runner_job")))).toBe(false);

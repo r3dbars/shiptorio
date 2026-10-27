@@ -9,7 +9,7 @@ export const subscriptionArgs = (h: Subscription, login = false): string[] =>
 export async function prepareAgentHome(root: string): Promise<string> {
   await mkdir(root, { recursive: true, mode: 0o700 });
   const home = resolve(await realpath(root), ".agent-home");
-  for (const path of [home, resolve(home, ".codex"), resolve(home, ".claude")]) {
+  for (const path of [home, resolve(home, ".codex"), resolve(home, ".claude"), resolve(home, ".claude/tmp")]) {
     await mkdir(path, { recursive: true, mode: 0o700 });
     if (!(await lstat(path)).isDirectory() || await realpath(path) !== path) throw new Error("Agent home must not be a symlink");
     await chmod(path, 0o700);

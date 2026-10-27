@@ -204,8 +204,8 @@ export const POWER = {
   pair: "pair the runner",
   pairTitle: "Run ~/.local/bin/shiptorio-runner pair on your machine to plug it in",
   slots: [
-    { harness: "claude_code", name: "Claude" },
-    { harness: "codex", name: "ChatGPT" },
+    { harness: "claude_code", name: "Claude Code" },
+    { harness: "codex", name: "Codex" },
   ] as const,
 };
 

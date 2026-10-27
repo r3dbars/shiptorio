@@ -184,16 +184,16 @@ function panelFor(id: string, state: FactoryState, jobs: Map<string, string> = n
     const stats: [string, string][] = mine
       ? [
           ["Cost", mine.cost],
-          ["Headroom", mine.online ? pct(mine.level) : "offline"],
+          [mine.kind === "solar" ? "Availability" : "Headroom", mine.kind === "solar" ? (!mine.online ? "offline" : mine.busy ? "busy" : "ready") : mine.online ? pct(mine.level) : "offline"],
           [mine.kind === "steam" ? "Decisions" : "Jobs this session", String(mine.jobs)],
         ]
-      : ledger.map((r): [string, string] => [`${r.name} · ${r.kind === "geothermal" ? "free" : r.kind === "solar" ? "your plan" : "planner"}`, `${r.online ? pct(r.level) : "offline"} · ${r.jobs} ${r.kind === "steam" ? "calls" : "jobs"}`]);
+      : ledger.map((r): [string, string] => [`${r.name} · ${r.kind === "geothermal" ? "free" : r.kind === "solar" ? "your plan" : "planner"}`, `${r.kind === "solar" ? (!r.online ? "offline" : r.busy ? "busy" : "ready") : r.online ? pct(r.level) : "offline"} · ${r.jobs} ${r.kind === "steam" ? "calls" : "jobs"}`]);
     const low = state.power.find((p) => p.kind !== "steam" && p.level < 0.4);
     const feeds = m ? state.machines.filter((x) => x.powerId === m.id || (m.type === "steam" && x.type === "splitter")) : [];
     const geo = mine?.kind === "geothermal";
     return {
       copy: geo ? GEO_COPY : POWER_COPY,
-      title: m ? (geo ? `${mine.name} · geothermal` : PANEL.plant(m.type)) : undefined,
+      title: m ? (geo ? `${mine.name} · geothermal` : mine?.kind === "solar" ? mine.name : PANEL.plant(m.type)) : undefined,
       stats: [...stats, ...(feeds.length ? [[PANEL.stats.powers, feeds.map((f) => nameOf(f, state)).join(", ")] as [string, string]] : [])],
       machineId: m?.id,
       last: geo

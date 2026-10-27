@@ -4,8 +4,8 @@ import type { RunnerJob } from "./runner-job";
 type Harness = RunnerJob["harness"];
 const managed = new Set(["power-codex", "power-claude_code", "solar-codex", "solar-claude_code", "geo-local"]);
 /** Keep each known subscription visible when disconnected, without inventing usage quota. */
-export function syncRunnerPower(power: PowerSource[], harnesses: Harness[]): PowerSource[] {
-  const live = runnerPower([...new Set(harnesses)]);
+export function syncRunnerPower(power: PowerSource[], harnesses: Harness[], signedOut: Harness[] = []): PowerSource[] {
+  const live = runnerPower([...new Set([...harnesses, ...signedOut])]).map(p => ({ ...p, online: harnesses.some(h => p.id === (h === "local" ? "geo-local" : `solar-${h}`)) }));
   return [...power.filter(p => !managed.has(p.id)),
     ...power.filter(p => managed.has(p.id) && !p.id.startsWith("power-") && !live.some(l => l.id === p.id)).map(p => ({ ...p, online: false })), ...live];
 }
