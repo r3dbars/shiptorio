@@ -52,10 +52,53 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   };
   const saved = () => data.get("state") as FactoryState;
   const undoId = () => events.filter((e): e is Extract<ServerToWeb, { type: "log" }> => e.type === "log" && !!e.actionId).at(-1)!.actionId!;
-  return { factory, reload, send, checkin, data, saved, rules, events, undoId };
+  return { factory, reload, send, checkin, data, saved, rules, events, undoId, socket };
 }
 
 describe("durable live check-in decisions", () => {
+  it("returns an authorized handshake while another session frame authorization is held", async () => {
+    const f = fixture([]);
+    await f.factory.exportState();
+    const oldHash = "f".repeat(64);
+    const attachment = f.socket.deserializeAttachment() as { user: { sessionHash: string } };
+    attachment.user.sessionHash = oldHash;
+    f.socket.serializeAttachment(attachment);
+    const internal = f.factory as unknown as { env: { DB: { prepare(sql: string): any } }; broadcast(value: unknown): Promise<void>; broadcastQueue: Promise<void> };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    internal.env.DB.prepare = (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith("SELECT u.id, u.login FROM sessions")) return statement;
+      return { ...statement, bind: (...args: unknown[]) => {
+        const bound = statement.bind(...args);
+        return { ...bound, first: async () => { if (args[0] === oldHash) { started.resolve(); await release.promise; return null; } return bound.first(); } };
+      } };
+    };
+    const prior = (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair;
+    const frames: ServerToWeb[] = [];
+    const freshSocket = authorizedSocket(raw => frames.push(JSON.parse(raw)));
+    (globalThis as unknown as { WebSocketPair: unknown }).WebSocketPair = class { 0 = {}; 1 = freshSocket; };
+    const queued = internal.broadcast({ type: "patch", patch: { tick: 9 } });
+    await started.promise;
+    let opening: Promise<Response> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      opening = f.factory.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
+      const response = await Promise.race([opening, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(Error("Handshake waited on unrelated browser delivery")), 1000); })]);
+      expect(response.status).toBe(101);
+      expect(frames.some(frame => frame.type === "snapshot" && frame.state.repo === "r3dbars/demo")).toBe(true);
+      expect(f.events).toEqual([]); // The old session has not completed authorization.
+    } finally {
+      clearTimeout(timer);
+      release.resolve();
+      await opening?.catch(() => {});
+      await queued;
+      await internal.broadcastQueue;
+      (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair = prior;
+    }
+    expect(f.events).toEqual([]); // Old session denial still prevents queued data delivery.
+  });
+
   it("defers until the next check-in, retains counts across restart, and escalates the third defer", async () => {
     const f = fixture([card("defer")]);
     await f.checkin();
