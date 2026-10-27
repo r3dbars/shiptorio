@@ -4,6 +4,9 @@
 // aren't looking at is still culled), per part or machine. Things that move are marked by their module with
 // K.dyn(object) (see CONTRACT.md); they and everything under them stay live. verifyDyn() is the dev check
 // that a module marked everything that moves.
+// Floors (ART-PASS.md, floors.ts): a piece tagged userData.floor (on itself or any ancestor under its part) merges
+// only with pieces of the same floor, and the merged mesh keeps the tag, so I.floorParts(id) can hide or build a
+// floor after the bake. Movers keep their own tag.
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -69,15 +72,24 @@ export interface BakeInfo {
 export function bakeShaft(I: Iron, root: THREE.Group): BakeInfo {
   const t0 = performance.now();
   root.updateMatrixWorld(true);
-  const groups = new Map<string, { anchor: THREE.Object3D; meshes: THREE.Mesh[] }>();
+  const groups = new Map<string, { anchor: THREE.Object3D; meshes: THREE.Mesh[]; floor?: string }>();
   const wp = new THREE.Vector3();
   let before = 0;
   root.traverse((o) => (o as THREE.Mesh).isMesh && o.visible && before++);
-  const walk = (o: THREE.Object3D, anchor: THREE.Object3D, region: boolean) => {
+  const floors = new Map<string, Set<THREE.Object3D>>();
+  const tag = (o: THREE.Object3D, floor: string | undefined) => {
+    if (!floor) return;
+    if (!floors.has(floor)) floors.set(floor, new Set());
+    floors.get(floor)!.add(o);
+  };
+  const walk = (o: THREE.Object3D, anchor: THREE.Object3D, region: boolean, floor?: string) => {
     for (const c of o.children) {
       if (!c.visible) continue; // hidden now might show later: leave it alone
+      const fl = (c.userData.floor as string | undefined) ?? floor;
       if (isDyn(c)) {
-        walk(c, c, false); // a moving part: its static children merge into it
+        // a moving part: its static children merge into it (a tagged mover is one of its floor's parts as a whole)
+        if (fl && fl !== floor) tag(c, fl);
+        walk(c, c, false, fl);
         continue;
       }
       if (mergeable(c) && !c.children.length) {
@@ -90,19 +102,22 @@ export function bakeShaft(I: Iron, root: THREE.Group): BakeInfo {
           root.worldToLocal(wp);
           cell = cellOf(wp);
         }
-        const key = `${anchor.uuid}|${mt.uuid}|${c.castShadow}|${c.receiveShadow}|${cell}`;
+        const key = `${anchor.uuid}|${mt.uuid}|${c.castShadow}|${c.receiveShadow}|${cell}|${fl ?? ""}`;
         const g = groups.get(key);
         if (g) g.meshes.push(c);
-        else groups.set(key, { anchor, meshes: [c] });
-      }
-      walk(c, anchor, region);
+        else groups.set(key, { anchor, meshes: [c], floor: fl });
+      } else if (fl && fl !== floor) tag(c, fl); // a tagged group, or a piece that can't merge (instanced, sprites...)
+      walk(c, anchor, region, fl);
     }
   };
-  for (const a of anchorsOf(root)) walk(a, a, a.name.startsWith("part:"));
+  for (const a of anchorsOf(root)) walk(a, a, a.name.startsWith("part:"), a.userData.floor as string | undefined);
   let merged = 0;
   const rel = new THREE.Matrix4();
-  for (const { anchor, meshes } of groups.values()) {
-    if (meshes.length < 2) continue;
+  for (const { anchor, meshes, floor } of groups.values()) {
+    if (meshes.length < 2) {
+      if (floor) tag(meshes[0], floor); // left as it is
+      continue;
+    }
     const inv = anchor.matrixWorld.clone().invert();
     const geo = mergeGeometries(meshes.map((m) => prepare(m, rel.multiplyMatrices(inv, m.matrixWorld))));
     if (!geo) continue;
@@ -111,6 +126,10 @@ export function bakeShaft(I: Iron, root: THREE.Group): BakeInfo {
     out.castShadow = meshes[0].castShadow;
     out.receiveShadow = meshes[0].receiveShadow;
     out.name = "baked";
+    if (floor) {
+      out.userData.floor = floor;
+      tag(out, floor);
+    }
     anchor.add(out);
     // hidden and emptied: code that reads their world position (spawn points) still works, nothing draws them
     for (const m of meshes) {
@@ -122,7 +141,11 @@ export function bakeShaft(I: Iron, root: THREE.Group): BakeInfo {
   }
   let after = 0;
   root.traverse((o) => (o as THREE.Mesh).isMesh && o.visible && after++);
-  void I;
+  // keep only the top-most tagged object in each chain (hiding it hides what's under it); merged meshes hang off the
+  // part's anchor, so they stay in the list on their own
+  for (const set of floors.values())
+    for (const o of [...set]) for (let p = o.parent; p; p = p.parent) if (set.has(p)) { set.delete(o); break; }
+  I.floorParts = (id: string) => [...(floors.get(id) ?? [])];
   return { ms: Math.round(performance.now() - t0), meshesBefore: before, merged, meshesAfter: after };
 }
 

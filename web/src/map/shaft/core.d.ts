@@ -122,6 +122,9 @@ export interface Iron {
   step(t: number, dt: number): void;
   setDriver(d: Driver | null): void;
   on(ev: string, fn: (d: any) => void): void; // eslint-disable-line @typescript-eslint/no-explicit-any
+  emit(ev: string, d?: unknown): void;
+  /** after the bake: the top-level objects of one floor (merged meshes + movers tagged userData.floor), see bake.ts */
+  floorParts?(id: string): THREE.Object3D[];
   resolve(id: string): void;
   stall(id: string): void;
   spawnItem(src: string, o?: { ref?: string; num?: number; title?: string; kind?: ItemKind; attempts?: number }): IronItem | null;
