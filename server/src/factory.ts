@@ -42,11 +42,9 @@ import {
   suggestResearch,
   techById,
   TECHS,
-  type Belt,
   type FactoryState,
   type FunnelWindow,
   type Item,
-  type Machine,
   type Move,
   type Patch,
   type ServerToWeb,
@@ -63,6 +61,7 @@ import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest,
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { initialFactoryState } from "./factory-initialization";
+import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import type { SparkStep, Toolbox } from "./spark-tools";
@@ -2666,7 +2665,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.refreshDecisions(); return;
     }
-    switch (msg.type) {
+    const inventory = inventoryCommand(s, msg, () => crypto.randomUUID().slice(0, 6));
+    if (inventory.handled) {
+      if (inventory.stop) return;
+      if (inventory.patch) await this.patch(inventory.patch);
+    } else switch (msg.type) {
       case "send_reply":
         await this.sendSupportReply(playerTap(msg.ticketId, msg.draftHash, playerLogin(auth)));
         await this.refreshDecisions();
@@ -2712,53 +2715,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         else if (msg.kind === "sentry" || msg.kind === "posthog") await this.disconnectMine(msg.kind);
         else if (msg.kind === "email") await this.disconnectSupport();
         else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
-        break;
-      }
-      case "place_machine": {
-        const m: Machine = {
-          id: `${msg.machineType}-${crypto.randomUUID().slice(0, 6)}`,
-          type: msg.machineType,
-          x: msg.x,
-          y: msg.y,
-          district: msg.district,
-          harness: msg.harness,
-          powerId: msg.harness === "spark" ? "steam-spark" : undefined,
-          tier: 1,
-          state: "idle",
-        };
-        await this.patch({ machines: [m] });
-        break;
-      }
-      case "remove_machine":
-        if (s.machines.some((m) => m.id === msg.id && m.state === "working")) break;
-        if (s.stations?.some((st) => st.machineId === msg.id)) break; // gauntlet stations stay on the line
-        await this.patch({
-          removed: [
-            { kind: "machine", id: msg.id },
-            ...s.belts.filter((b) => b.from === msg.id || b.to === msg.id).map((b) => ({ kind: "belt" as const, id: b.id })),
-          ],
-        });
-        break;
-      case "connect_belt": {
-        if (!s.machines.some((m) => m.id === msg.from) || !s.machines.some((m) => m.id === msg.to)) return;
-        const b: Belt = { id: `belt-${crypto.randomUUID().slice(0, 6)}`, from: msg.from, to: msg.to, carries: msg.carries };
-        await this.patch({ belts: [b] });
-        break;
-      }
-      case "move_machine": {
-        const m = s.machines.find((x) => x.id === msg.id);
-        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
-        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
-        break;
-      }
-      case "set_harness": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
-        break;
-      }
-      case "set_module": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m) await this.patch({ machines: [{ ...m, module: msg.module }] });
         break;
       }
       case "route_item": {
