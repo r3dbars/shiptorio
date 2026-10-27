@@ -230,6 +230,7 @@ export const SETTINGS = {
   soundOn: "ON",
   soundOff: "OFF",
   music: "Music",
+  musicVolume: "Music volume",
   musicOn: "MUSIC ON",
   musicOff: "MUSIC OFF",
   volume: "Volume",
