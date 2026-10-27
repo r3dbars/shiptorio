@@ -574,7 +574,8 @@ const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + 
 
 export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
-  const tickMs = sc.intro ? 700 : TICK_MS;
+  // The public judge story promises 100 ticks in 90 seconds; ordinary play stays slower.
+  const tickMs = name === "judge" ? 900 : sc.intro ? 700 : TICK_MS;
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
   if (repo) s.repo = repo;

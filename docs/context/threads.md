@@ -356,3 +356,9 @@ renewing from the independent heartbeat; preserving revocation and saved work.
 - First batch [#362](https://github.com/r3dbars/shiptorio/pull/362): #351 (`775d152`), #350 (`98be03e`), #352 (`4446c59`) and #353 (`e23ab13`) passed individual check/selfhost/Stranger and were squash-integrated into `release/2026-10-27-runner`. These are integration results, not production release claims.
 
 - Batch #362 also integrates #360 (overnight recovery) and this log. The combined runtime at `87ce41e` passed local full check: 993 passed, two existing platform skips, zero failures, plus types and builds. Final batch CI and production deployment remain pending.
+# Judge duration regression
+
+Codex: preserve the advertised 90-second public judge replay after ordinary sandbox
+ticks were slowed to 1.4 seconds. The unchanged iPhone end-to-end test caught the
+first tick failing to advance at 900 ms; only judge cadence returns to 900 ms.
+
