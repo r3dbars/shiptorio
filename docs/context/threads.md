@@ -401,4 +401,4 @@ complete evidence. No production runtime or visual baselines change.
 
 ### Codex — CI wall time and flake investigation (2026-10-27)
 
-- Measured the latest 50 CI and Stranger runs; preserving required `check`, `selfhost`, and `stranger` contexts, draft skips, manual inputs, and all test inventories. Cache package/browser downloads, isolate parallel Bun files, and overlap independent checks. Timing and root-cause evidence will be recorded in the PR before readiness.
+- Measured the latest 50 CI and Stranger runs; preserving required `check`, `selfhost`, and `stranger` contexts, draft skips, manual inputs, and all test inventories. Cache package/browser downloads, isolate parallel Bun files, and overlap independent checks. Bun test inventory is unchanged (943 cases in 148 files on this head; existing platform skips preserved). Fix replay clock polling and anonymous-response attribution; freeze only screenshot frames. Explicit 100Hz CPU profiling reduced a reproduced 5271ms load tick p95 to 2639ms with all 1020 ticks / 5000 deliveries and unchanged budgets; five hosted repeats remain required before readiness.
