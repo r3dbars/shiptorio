@@ -26,7 +26,7 @@ export const SIGNAL_KINDS: Record<SignalSource, readonly string[]> = {
   repo: ["prs_stale", "issues_untriaged", "no_tests", "big_prs", "backlog_empty", "ship_rate_drop", "prs_waiting_on_you", "branches_stale", "backlog_growing", "slow_merge", "prs_dropped", "approve_queue", "repo_missing"],
   ci: ["ci_slow", "ci_flaky", "ci_red_main", "ci_queue", "ci_blocking", "ci_missing"],
   sentry: ["errors_piling", "error_spike", "regression", "errors_unowned"],
-  posthog: ["usage_flat", "funnel_drop", "no_users", "feature_unused", "no_analytics"],
+  posthog: ["usage_flat", "usage_falling", "funnel_drop", "funnel_leak", "no_users", "growth_stall", "feature_unused", "no_analytics"],
   feedback: ["feedback_unanswered", "feedback_thin", "same_complaint"],
   goals: ["goal_stalled", "goal_missing", "goal_off_track"],
   taps: ["card_ignored", "later_streak", "never_reason"],
