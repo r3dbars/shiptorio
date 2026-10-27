@@ -1,5 +1,13 @@
 # Decisions and open items
 
+- 2026-10-26: Runner plan approval binds the validated selected card to its durable
+  job, not the transient top card. Concurrent deck refreshes cannot silently drop
+  a tap or remove an unrelated card; the lock rechecks job/card/repo binding and
+  the current issue revision. Authenticated WebSocket regressions reproduce both
+  yield points and reject a changed issue or rebound job. This is local race proof,
+  not attribution for any particular production tap.
+
+
 Running log of what's been decided on Shiptorio and what's still waiting. Newest at the top
 of each section. If you decide something, add it here in the same PR.
 

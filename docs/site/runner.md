@@ -98,3 +98,6 @@ their checkout. That service has a separate install under
 `~/Library/Application Support/Shiptorio` and a launch agent at
 `~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
 files to uninstall the legacy service.
+
+Approving a plan stays bound to that exact issue and plan even if another card moves to
+the top of the deck. If the issue changes before approval, request a fresh plan.
