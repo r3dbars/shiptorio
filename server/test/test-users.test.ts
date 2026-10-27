@@ -43,12 +43,15 @@ test("normal negative-ID sessions persist progress and test seeds are idempotent
 test("negative sessions cannot hit real repos, connectors, runner or admin before provider work", async () => {
   const f = fixture(); await seedTestUser(f.env, "test-midgame");
   const cookie = (await createSession(f.env, { id: personaId("test-midgame"), login: "test-midgame" }, "test")).split(";")[0] + "; " + await preview();
-  for (const path of ["/api/repos/r3dbars/shiptorio/factory", "/api/repos/test-fixture/test-midgame/runner/pair", "/connect/sentry?repo=x/y", "/admin", "/api/runner/x/y/claim", "/api/account/delete"]) {
+  for (const path of ["/api/repos/r3dbars/shiptorio/factory", "/api/repos/test-fixture/test-midgame/runner/pair", "/connect/sentry?repo=x/y", "/admin", "/api/runner/x/y/claim", "/api/account/delete", "/auth/login"]) {
     expect((await f.app.request(`http://localhost:8787${path}`, { headers: { cookie } }, f.env)).status).toBe(403);
   }
   expect(f.calls()).toBe(0);
   const unavailable = await f.app.request("http://localhost:8787/api/repos/test-fixture/test-midgame/factory", { headers: { cookie } }, f.env);
   expect(unavailable.status).toBe(503); expect(f.calls()).toBe(0);
+  const me = await f.app.request("http://localhost:8787/api/me", { headers: { cookie } }, f.env);
+  expect((await me.json()).installUrl).toBe("/test/install");
+  expect((await f.app.request("http://localhost:8787/test/install", { headers: { cookie } }, f.env)).status).toBe(503);
   const production = await f.app.request("https://shiptorio.com/api/me", { headers: { cookie } }, { ...f.env, PUBLIC_URL: "https://shiptorio.com" });
   expect(production.status).toBe(404); expect(f.calls()).toBe(0);
 });

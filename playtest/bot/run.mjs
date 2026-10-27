@@ -74,7 +74,7 @@ try {
       const repo = page.getByRole("button", { name: new RegExp(`test-fixture/${persona}`) });
       const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
-      const checkin = page.getByRole("button", { name: /^Check in:/ });
+      const checkin = page.getByRole("button", { name: /^Check in/i });
       const menu = page.getByRole("button", { name: /^Menu:/ });
       if (await visible(launch)) {
         await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
@@ -89,6 +89,7 @@ try {
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
         await repo.first().waitFor({ state: "visible", timeout: 60000 });
       } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
+      else if (/Factory job budget reached/i.test(text) && await visible(later)) { await later.first().click(); await capture("later-busy-plan"); }
       else if (await visible(go)) { await go.first().click(); await capture("continue"); }
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
       else if (await visible(checkin) && await checkin.first().isEnabled()) { await checkin.first().click(); await capture("open-check-in"); }
