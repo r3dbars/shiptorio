@@ -77,3 +77,18 @@ test("Wrangler resource ID extraction supports JSON and TOML and fails closed on
   expect(resourceId(`{"id":"${kv}"}`, "kv")).toBe(kv);
   expect(() => resourceId("created resource (no ID)", "d1")).toThrow();
 });
+
+test("GitHub App ID stays unset until the other credentials have uploaded", async () => {
+  const { io, calls } = harness(), state = fresh();
+  // A resumed PEM upload has already completed; no file prompt should be needed.
+  state.secrets = ["GITHUB_APP_PRIVATE_KEY"];
+  const real = io.wrangler;
+  io.wrangler = async (...args) => { if (args[0].includes("GITHUB_WEBHOOK_SECRET")) throw new Error("Upload failed"); return real(...args); };
+  await expect(configureSecrets(state, io, true)).rejects.toThrow("Upload failed");
+  expect(calls.some(c => c.args.includes("GITHUB_APP_ID"))).toBe(false);
+  expect(state.secrets).not.toContain("GITHUB_APP_ID");
+  io.wrangler = real;
+  calls.length = 0;
+  await configureSecrets(state, io, true);
+  expect(calls.map(c => c.args[2])).toEqual(["GITHUB_WEBHOOK_SECRET", "GITHUB_APP_ID"]);
+});
