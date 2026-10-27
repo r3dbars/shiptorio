@@ -8,7 +8,7 @@ import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget"
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
-import { redact } from "./redact";
+import { redact, redactText } from "./redact";
 import { Redactor } from "./redact";
 
 import { repoAccess, requireUser, validRepo } from "./authorization";
@@ -2082,7 +2082,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
-        const context = (await Promise.all(referencedFiles(files).map(async path => ({ path, content: (await fileContent(token, this.meta!.repo, path, headSha).catch(() => null))?.slice(0, 6000) }))))
+        const context = (await Promise.all(referencedFiles(files).map(async path => {
+          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(() => null);
+          return { path, content: content === null ? undefined : redactText(content).slice(0, 6000) };
+        })))
           .filter((c): c is { path: string; content: string } => typeof c.content === "string");
         // The reviewer can read, list and search the repo at the PR head, the issue thread and CI before it rules.
         const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(() => files.map(f => f.filename)), { headSha, diff: async () => diffText(files) });

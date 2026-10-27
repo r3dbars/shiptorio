@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { pathAllowed, validatePlan } from "./injection-policy";
-import { redactText } from "./redact";
+import { redact, redactText } from "./redact";
 import { SparkError, sparkJson, type SparkEnv, type Task } from "./spark";
 
 export interface Toolbox {
@@ -51,11 +51,14 @@ export interface ToolArgs { path?: string; prefix?: string; query?: string }
 /** Runs one read tool. Returns undefined when this toolbox can't serve it, so the loop can say so. */
 export async function runReadTool(box: Toolbox, tool: ReadTool, args: ToolArgs, cache = new Map<string, string | null>()): Promise<string | undefined> {
   const read = async (path: string) => {
-    if (!cache.has(path)) cache.set(path, await box.read(path).catch(() => null));
+    if (!cache.has(path)) {
+      const content = await box.read(path).catch(() => null);
+      cache.set(path, content === null ? null : redactText(content));
+    }
     return cache.get(path)!;
   };
   const safe = box.paths.filter(pathAllowed);
-  const out = (text: string | undefined, cap: number) => text === undefined ? undefined : redactText(text.slice(0, cap));
+  const out = (text: string | undefined, cap: number) => text === undefined ? undefined : redactText(text).slice(0, cap);
   switch (tool) {
     case "read_file": {
       const path = (args.path ?? "").replace(/^\.?\//, "");
@@ -151,13 +154,16 @@ export interface PlanOptions {
  * player will approve the scope) files Spark itself found and read. Everything it sees is untrusted evidence.
  */
 export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: string[], source: Toolbox | ((path: string) => Promise<string | null>), record: (step: SparkStep) => Promise<void>, opts: PlanOptions = {}): Promise<{ plan: string; files: string[]; heeded: string[] }> {
+  // Parallel task fields (rework, title, player feedback) must obey the same boundary as observations.
+  // History is newest-last; the generic log redactor's first-200 array cap must not discard recent scars.
+  task = { ...redact(task), scars: task.scars?.map(scar => redact(scar)) };
   if (!allowedPaths.length || !allowedPaths.every(pathAllowed)) throw new SparkError("Unsafe planning paths");
   const box: Toolbox = typeof source === "function" ? { paths: allowedPaths, read: source } : source;
   // Approved paths may name a new doc that isn't in the tree yet; reading it says so.
   const withApproved: Toolbox = { ...box, paths: [...new Set([...box.paths, ...allowedPaths])], issue: () => JSON.stringify(task) };
   const tools = availableTools(withApproved);
   // The issue is always the starting evidence, so Spark spends no turn (and no round trip) fetching it.
-  const observations: Observation[] = [{ tool: "read_issue", result: redactText(JSON.stringify(task).slice(0, 8000)) }];
+  const observations: Observation[] = [{ tool: "read_issue", result: redactText(JSON.stringify(task)).slice(0, 8000) }];
   const cache = new Map<string, string | null>();
   const seen = new Set<string>(["read_issue"]);
   const readFiles = new Set<string>();
@@ -244,9 +250,11 @@ export const REVIEW_TURNS = 6;
  * `context` is files already pulled for it (docs that name code); they start as observations.
  */
 export async function reviewWithTools(env: SparkEnv, task: { title: string; body: string; builder: string }, diff: string, box: Toolbox, context: { path: string; content: string }[] = [], record: (step: SparkStep) => Promise<void> = async () => {}): Promise<ToolVerdict> {
+  task = redact(task);
+  diff = redactText(diff);
   const tools: ReadTool[] = availableTools(box).filter(t => t !== "read_pr");
-  const observations: Observation[] = context.map(c => ({ tool: "read_file", args: c.path, result: redactText(c.content.slice(0, FILE_CHARS)) }));
-  const cache = new Map<string, string | null>(context.map(c => [c.path, c.content]));
+  const observations: Observation[] = context.map(c => ({ tool: "read_file", args: c.path, result: redactText(c.content).slice(0, FILE_CHARS) }));
+  const cache = new Map<string, string | null>(context.map(c => [c.path, redactText(c.content)]));
   const steps: SparkStep[] = [];
   const note = async (s: SparkStep) => { steps.push(s); await record(s); };
   for (let turn = 0; turn < REVIEW_TURNS; turn++) {

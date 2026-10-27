@@ -1,7 +1,7 @@
 import { sparkTestEnv } from "./budget-fixture";
 import { afterEach, describe, expect, it } from "bun:test";
 import { compact, planLocalTask, reviewWithTools, runReadTool, type Toolbox } from "../src/spark-tools";
-import { factoryBrief, signalsBrief } from "../src/spark-context";
+import { factoryBrief, signalsBrief, issueComments, ciReport } from "../src/spark-context";
 import type { FactoryState, Item } from "@shiptorio/shared";
 
 // The r3dbars/Testing shop, as the two live review misses saw it (Testing #12 and #13).
@@ -14,6 +14,7 @@ const repo: Record<string, string> = {
   "src/config.ts": "export const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';\n",
 };
 const box = (extra: Partial<Toolbox> = {}): Toolbox => ({ paths: Object.keys(repo), read: async p => repo[p] ?? null, ...extra });
+const syntheticPem = `-----BEGIN PRIVATE KEY-----\n${"SYNTHETICKEY".repeat(100)}\n-----END PRIVATE KEY-----`;
 
 // Every test that fakes Spark puts the real fetch back, so the stub can't leak into other test files.
 const realFetch = globalThis.fetch;
@@ -30,6 +31,31 @@ function spark(script: unknown[]) {
 }
 
 describe("read tools", () => {
+  it("redacts complete source before file and search result truncation", async () => {
+    const source = `${"x".repeat(9900)}\n${syntheticPem}`;
+    const boundary = box({ paths: ["src/config.ts"], read: async () => source });
+    const file = await runReadTool(boundary, "read_file", { path: "src/config.ts" });
+    expect(file).not.toContain("PRIVATE KEY");
+    expect(file).not.toContain("SYNTHETICKEY");
+    expect(file).toContain("[REDACTED]");
+    expect(file!.length).toBeLessThanOrEqual(10000);
+    expect(await runReadTool(boundary, "search_code", { query: "SYNTHETICKEY" })).toContain("No matches");
+    expect(await runReadTool(boundary, "search_code", { query: "PRIVATE KEY" })).toContain("No matches");
+  });
+
+  it("redacts complete comment and CI fields before their short summaries", async () => {
+    globalThis.fetch = (async () => Response.json([{ user: { login: "someone" }, body: `${"x".repeat(550)} ${syntheticPem}` }])) as unknown as typeof fetch;
+    const comments = await issueComments("fixture", "owner/repo", 1);
+    expect(comments).not.toContain("PRIVATE KEY");
+    expect(comments).not.toContain("SYNTHETICKEY");
+    expect(comments).toContain("[REDACTED]");
+    globalThis.fetch = (async () => Response.json({ check_runs: [{ id: 1, name: "check", status: "completed", conclusion: "success", output: { title: `${"x".repeat(70)} ${syntheticPem}` } }] })) as unknown as typeof fetch;
+    const ci = await ciReport("fixture", "owner/repo", "head");
+    expect(ci).not.toContain("PRIVATE KEY");
+    expect(ci).not.toContain("SYNTHETICKEY");
+    expect(ci).toContain("[REDACTED]");
+  });
+
   it("never read secret paths, and redact secrets inside readable files", async () => {
     expect(await runReadTool(box(), "read_file", { path: "server/.dev.vars" })).toContain("not readable");
     expect(await runReadTool(box(), "read_file", { path: "../etc/passwd" })).toContain("not readable");
@@ -67,6 +93,26 @@ describe("read tools", () => {
 });
 
 describe("AI review as a tool loop", () => {
+  it("sanitizes raw issue fields and diff as well as review observations", async () => {
+    const sent = spark([{ verdict: "pass", reason: "No blocking problem", findings: [] }]);
+    await reviewWithTools(sparkTestEnv(), { title: syntheticPem, body: `${"x".repeat(3950)} ${syntheticPem}`, builder: "Codex" }, `+ordinary\n${syntheticPem}`, box());
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+    expect(sent[0]).toContain("[REDACTED]");
+  });
+
+  it("redacts complete prefetched context before observations and cached search reads", async () => {
+    const source = `${"x".repeat(9900)}\n${syntheticPem}`;
+    const sent = spark([
+      { tool: "search_code", query: "PRIVATE", reason: "Check source" },
+      { verdict: "pass", reason: "No blocking problem", findings: [] },
+    ]);
+    await reviewWithTools(sparkTestEnv(), { title: "x", body: "", builder: "Codex" }, "+ordinary", box({ paths: ["src/config.ts"] }), [{ path: "src/config.ts", content: source }]);
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+    expect(sent[1]).toContain("No matches");
+  });
+
   it("catches Testing #13: a doc's '$50 or more' against code that says > 50", async () => {
     const diff = "--- docs/SHIPPING.md (added)\n+Orders of $50 or more ship free.";
     const sent = spark([
@@ -101,6 +147,33 @@ describe("AI review as a tool loop", () => {
 });
 
 describe("planner tools", () => {
+  it("redacts the complete initial issue before its observation cap", async () => {
+    const sent = spark([{ tool: "read_file", path: "README.md", reason: "Read" }, { tool: "assign_job", reason: "Fix", plan: "Update the README.", acceptance: ["README is accurate"], files: ["README.md"] }]);
+    await planLocalTask(sparkTestEnv(), { title: "x", body: `${"x".repeat(7850)} ${syntheticPem}`, district: "/" }, ["README.md"], box(), async () => {});
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+  });
+
+  it("sanitizes parallel rework and feedback fields before their shorter caps", async () => {
+    const sent = spark([{ tool: "read_file", path: "README.md", reason: "Read" }, { tool: "assign_job", reason: "Fix", plan: "Update the README.", acceptance: ["README is accurate"], files: ["README.md"] }]);
+    await planLocalTask(sparkTestEnv(), { title: syntheticPem, body: "Ordinary issue", district: "/", failure: `${"x".repeat(1450)} ${syntheticPem}`, scars: [{ station: "review", reason: `${"x".repeat(250)} ${syntheticPem}`, strike: 1 }], playerFeedback: syntheticPem }, ["README.md"], box(), async () => {});
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+  });
+
+  it("keeps the newest scars in long histories while sanitizing their complete reasons", async () => {
+    const sent = spark([{ tool: "read_file", path: "README.md", reason: "Read" }, { tool: "assign_job", reason: "Fix", plan: "Update the README.", acceptance: ["README is accurate"], files: ["README.md"] }]);
+    const scars = Array.from({ length: 201 }, (_, i) => ({ station: "review", reason: i === 200 ? `LATEST SCAR ${"x".repeat(240)} ${syntheticPem}` : `Earlier scar ${i}`, strike: i + 1 }));
+    await planLocalTask(sparkTestEnv(), { title: "x", body: "Ordinary issue", district: "/", scars }, ["README.md"], box(), async () => {});
+    const payload = JSON.parse(JSON.parse(sent[0].split("\n")[1]));
+    expect(payload.rework.scars).toHaveLength(3);
+    expect(payload.rework.scars[0]).toBe("review: Earlier scar 198");
+    expect(payload.rework.scars[2]).toContain("LATEST SCAR");
+    expect(payload.rework.scars[2]).toContain("[REDACTED]");
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+  });
+
   const found = [
     { tool: "read_issue", reason: "Understand it" },
     { tool: "search_code", query: "argv", reason: "Find where the coupon is read" },
@@ -147,6 +220,16 @@ describe("factory context", () => {
     expect(brief).toContain("free shipping off by one");
     expect(brief).toContain("\"cleanStreak\":3");
     expect(brief).toContain("never propose lint cards");
+  });
+
+  it("redacts full scar and signal fields before short context summaries", () => {
+    const s = structuredClone(state);
+    s.items[1].scars![0].reason = `${"x".repeat(100)} ${syntheticPem}`;
+    s.items[2].title = `${"x".repeat(80)} ${syntheticPem}`;
+    expect(factoryBrief(s, s.items[0], undefined, "")).not.toContain("PRIVATE KEY");
+    expect(factoryBrief(s, s.items[0], undefined, "")).not.toContain("SYNTHETICKEY");
+    expect(signalsBrief(s, s.items[0])).not.toContain("PRIVATE KEY");
+    expect(signalsBrief(s, s.items[0])).not.toContain("SYNTHETICKEY");
   });
 
   it("read_signals ties Sentry and support to the work, without customer addresses", () => {
