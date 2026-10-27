@@ -234,6 +234,8 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
 - `web/src/ui/Attention.tsx`: the tray. One card at a time (steer, then approve, then the top idea), Continue /
   Later / Details, swipe right or left, the 4-second "why later?" chips, and "+ N approve · N suggested · Check in".
 - Check-in deck: Continue / Later only; the never reasons move into Details as "Or tell the planner".
+- One queue (Justin, 01:54): the tray card is the deck's top card; tapping it opens the deck. The Activity tray is
+  history only (no asks), and there's no separate "Check in · N cards" row.
 - Pings: only approve/steer, after 30 / 10 min (counted from first sight), max one an hour, never 10 pm to 8 am.
 - No sound for suggestions; badges toast only within 10 s of your own tap (the rest wait in the medal sheet);
   "Needs you" on the floor card counts approve + steer only.
