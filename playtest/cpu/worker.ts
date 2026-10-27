@@ -126,7 +126,7 @@ export default class CpuProbe extends WorkerEntrypoint<FixtureEnv> {
       if (raw.action === "prepare") {
         if (!Number.isSafeInteger(raw.until)) return { ok: false, code: "cpu_probe_denied" };
         await provider.cpuPrepare(raw.runId, Number(raw.until));
-        return { ok: true, action: "prepare" };
+        return { ok: true, action: "prepare", objectId: env.FACTORY.idFromName(`repo:${CPU_REPO_ID}`).toString() };
       }
       if (raw.action === "end") { await provider.cpuEnd(raw.runId); return { ok: true, action: "end" }; }
       if (raw.action === "status") return target(env).cpuStatus(raw.runId);
