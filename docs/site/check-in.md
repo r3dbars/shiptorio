@@ -44,6 +44,8 @@ If nothing needs a card, it shows the bottleneck and a button to open that stati
 
 When more than one card is waiting, a **Check in** chip appears. Open it and you get a deck of up to 12 cards, ranked. Swipe through them and walk away.
 
+While your local runner is planning or handling an approved build, the general build-bottleneck reminder stays quiet. Plan approvals, connection problems, failed checks and Launch still get their own cards.
+
 ![The check-in deck](/docs/img/checkin.png)
 
 | Gesture | Button | Key | What happens |
