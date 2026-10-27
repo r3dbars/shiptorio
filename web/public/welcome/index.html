@@ -58,6 +58,10 @@ h1{margin:0;line-height:0}
 h1 img{width:min(600px,82vw);height:auto;image-rendering:pixelated;filter:drop-shadow(0 4px 0 #000)}
 .say{margin:18px 0 0;font:400 clamp(16px,1.6vw,20px)/1.4 var(--mono);color:var(--ink);text-shadow:0 2px 0 #000,0 0 12px #000}
 
+.walkthrough{display:inline-flex;align-items:center;justify-content:center;min-height:48px;max-width:100%;margin-top:20px;padding:12px 16px;border:2px solid var(--amber);background:rgba(14,10,8,.92);color:var(--amber);font:700 11px/1.5 var(--pixel);letter-spacing:.06em;text-transform:uppercase;text-decoration:none}
+.walkthrough:hover{background:var(--amber);color:var(--on-amber)}
+.walkthrough-note{margin:8px 0 0;color:var(--dim);font-size:12px;text-shadow:0 1px 0 #000}
+
 .bottom{position:relative;z-index:1;margin-top:auto;width:100%;max-width:520px;padding:0 16px max(20px,env(safe-area-inset-bottom));text-align:center}
 form{display:flex;gap:8px}
 input[type=email]{flex:1 1 auto;min-width:0;min-height:48px;padding:0 14px;border:2px solid var(--line);border-radius:0;background:rgba(30,24,20,.92);color:var(--ink);font:400 16px var(--mono);caret-color:var(--amber);box-shadow:inset 0 3px 0 rgba(0,0,0,.5)}
@@ -98,6 +102,8 @@ button.go[disabled]{opacity:.65;cursor:progress}
   <div class="top">
     <h1><img src="/brand/wordmark.svg" width="594" height="100" alt="Shiptorio"></h1>
     <p class="say">Your repo is a factory. <span>Teach it to run itself.</span></p>
+    <a class="walkthrough" href="/judge" aria-describedby="walkthrough-note">Try the 90-second walkthrough</a>
+    <p class="walkthrough-note" id="walkthrough-note">No sign-in required · simulated factory</p>
   </div>
 
   <div class="art">
