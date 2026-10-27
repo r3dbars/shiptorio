@@ -68,7 +68,7 @@ export function approveQueueSignal(state: Pick<FactoryState, "items" | "deck" | 
   return {
     id: signalId("repo", "approve_queue"), source: "repo", kind: "approve_queue", confidence: 1, observedAt: now, freshUntil: now + 15 * 60_000,
     title: `${plural(waits.length, "card")} waiting on your OK (${cards.length} to approve, ${pad.length} to launch), oldest ${ago(oldest)}.`,
-    severity: clamp(0.4 + 0.1 * waits.length + oldest / (12 * HOUR)),
+    severity: clamp(Math.min(0.8, 0.4 + 0.1 * waits.length + oldest / (12 * HOUR))), // one tap away, but never louder than a crash
     metric: { value: waits.length, unit: "items" },
     evidence: waits.slice(0, 5).map(w => ({ label: w.label.slice(0, 120), ...(w.url ? { url: w.url } : {}) })),
   };
@@ -91,7 +91,7 @@ export function repoSignals(snap: RepoSnapshot, options: RepoSignalOptions = {})
     const oldest = now - ms(onYou[0].created_at);
     push("prs_waiting_on_you", {
       title: `${plural(onYou.length, "PR")} ${onYou.length === 1 ? "is" : "are"} waiting on your review, oldest for ${ago(oldest)}.`,
-      severity: 0.45 + 0.08 * onYou.length + oldest / (4 * DAY),
+      severity: Math.min(0.8, 0.45 + 0.08 * onYou.length + oldest / (4 * DAY)), // a crash or red main still outranks a review
       metric: { value: onYou.length, unit: "prs" },
       evidence: prEvidence(onYou),
     });

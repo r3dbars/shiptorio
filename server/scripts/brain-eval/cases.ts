@@ -10,6 +10,7 @@ import { signalId, type BottleneckArea, type BrainSignal, type SignalSource } fr
 import { deriveCiSignals, type WorkflowRun } from "../../src/signals/ci";
 import clogged from "../../test/fixtures/ci/clogged-runs.json";
 import { analyzeUsage, fakeUsage, type FakeUsageScenario, type ItemLike } from "../../src/signals/posthog";
+import { repoCases } from "./repo-cases";
 
 export interface EvalCase {
   id: string;
@@ -424,4 +425,6 @@ export const CASES: EvalCase[] = [
     expect: { area: "users", signal: "posthog:growth_stall:repo" }, plays: ["get_first_users"], unlock: /users|people|share|post|launch|tell|customer|grow/i,
     why: "The product works for the people it has; the bottleneck is getting more of them.",
   },
+  // Repo flow, read through the real collector.
+  ...repoCases(now => hum.map(s => s(now))),
 ];
