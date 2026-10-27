@@ -39,7 +39,10 @@ import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
-import { attentionOn } from "./flags";
+import { attentionOn, buildoutOn } from "./flags";
+import { Buildout, useFreeLook } from "./ui/Buildout";
+import { installBuildSound } from "./sound/build";
+import { LOOK, stepFrom } from "./buildout/journey";
 import { useComeback } from "./ui/Comeback";
 import { etas } from "./ui/eta";
 
@@ -123,6 +126,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
+  // Build as you go (?buildout=1): nothing exists until you build it, one card guides each build, and the
+  // counters and free camera wait until "Look around" after the first rocket (ui/Buildout.tsx).
+  const buildout = !intro && buildoutOn();
+  const [free, lookAround] = useFreeLook();
+  // "Look around" frees it only once every build is done, so a fresh factory starts in the dark again
+  const guided = buildout && !(free && !!state && stepFrom(state).id === LOOK);
+  useEffect(() => (buildout ? installBuildSound() : undefined), [buildout]);
   // Play first, sign in later: the sim on a real server is the demo shop new players start in, and signing
   // in with GitHub is the unlock that brings their own repo (the floor card's chip, then a card after a rocket).
   const [server, setServer] = useState(false);
@@ -489,14 +499,15 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           empire={!intro && sheet === "empire"}
           summary={factorySummary(state)}
           lapse={intro ? null : back.lapse}
-          still={intro}
+          still={intro || guided}
         />
         <SoundCaptions />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
-        {intro && <div className="tour-vignette" aria-hidden="true" />}
+        {(intro || guided) && <div className="tour-vignette" aria-hidden="true" />}
+        {guided && state && <Buildout state={state} live={cfg.kind === "live"} repo={cfg.kind === "live" ? cfg.repo : undefined} free={free} send={send} onLookAround={lookAround} />}
         {intro && tourly.top}
         {intro && tourly.card}
-        {!intro && (<>
+        {!intro && !guided && (<>
 
         <div className="hudtop" ref={hv.refs.top as Ref<HTMLDivElement>}>
           <FloorCard
