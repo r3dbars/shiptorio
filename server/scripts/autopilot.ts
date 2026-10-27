@@ -29,6 +29,9 @@ const record = async (kind: string, data: Record<string, unknown>) => {
 };
 
 const acted = new Map<string, number>(), skipped = new Set<string>(), thoughts = new Set<string>();
+// Every plan tap spends one of the owner's daily runs; a plan that keeps failing would burn them all.
+const MAX_PLANS_PER_ITEM = Number(process.env.AUTOPILOT_MAX_PLANS || 3);
+const plans = new Map<string, number>();
 let cards: Move[] = [];
 let ws: WebSocket | null = null;
 const deadline = Date.now() + minutes * 60_000;
@@ -54,6 +57,14 @@ async function tap() {
     if ("skip" in pick) {
       if (!skipped.has(card.id)) { skipped.add(card.id); await record("skip", { card: card.title, itemId: card.itemId, why: pick.skip }); }
       continue;
+    }
+    if (pick.why === "plan_runner_job" && card.itemId) {
+      const tries = plans.get(card.itemId) ?? 0;
+      if (tries >= MAX_PLANS_PER_ITEM) {
+        if (!skipped.has(card.id)) { skipped.add(card.id); await record("skip", { card: card.title, itemId: card.itemId, why: `planned ${tries} times already; leaving it for a human` }); }
+        continue;
+      }
+      plans.set(card.itemId, tries + 1);
     }
     acted.set(card.id, Date.now());
     await record(dry ? "would_tap" : "tap", { card: card.title, itemId: card.itemId, option: pick.optionId, why: pick.why, url: card.url });
