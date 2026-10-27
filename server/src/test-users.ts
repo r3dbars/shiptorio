@@ -1,7 +1,8 @@
 // Opt-in test accounts. Never grants authority over a real repository.
 import type { Hono } from "hono";
 import { createSession, currentUser, endSession, saveReach, upsertUser } from "./accounts";
-import { makeSessionCookie, readSessionDetails } from "./session";
+import { readSessionDetails } from "./session";
+import { previewAccess, secureTransport } from "./access";
 import { emptyProgress } from "@shiptorio/shared";
 
 export const TEST_PERSONAS = ["test-newbie", "test-guest", "test-midgame", "test-broke", "test-blocked"] as const;
@@ -50,9 +51,17 @@ export function testUserRoutes(app: Hono<any>): void {
     const session = await readSessionDetails(env.SESSION_SECRET, c.req.header("cookie") ?? null);
     const negative = (session?.ref?.uid ?? 0) < 0;
     if ((testPath || negative) && !testUsersEnabled(env, url)) return c.json({ error: "Test accounts are disabled here" }, 404);
+    if (testPath || negative) {
+      const transport = secureTransport(c.req.raw);
+      if (transport) return transport;
+      const gated = await previewAccess(c.req.raw, env);
+      if (gated) return gated;
+    }
     if (testPath) {
       if (c.req.method !== "GET") return c.json({ error: "GET required" }, 405);
       c.header("Cache-Control", "no-store");
+      c.header("X-Content-Type-Options", "nosniff");
+      c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
       if (url.pathname === "/test/users") return url.searchParams.get("format") === "json" ? c.json({ personas: TEST_PERSONAS }) : c.html(`<!doctype html><html><meta name="viewport" content="width=device-width"><title>Shiptorio test accounts</title><body>${testerLinks(env, url)}</body></html>`);
       const p = url.searchParams.get("as") as TestPersona;
       if (!TEST_PERSONAS.includes(p)) return c.json({ error: "Unknown test persona" }, 400);
@@ -63,7 +72,6 @@ export function testUserRoutes(app: Hono<any>): void {
         await seedTestUser(env, p);
         c.header("Set-Cookie", await createSession(env, { id: personaId(p), login: p }, c.req.header("user-agent") ?? null), { append: true });
       }
-      if (env.APP_PASSWORD) c.header("Set-Cookie", (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).replace("shiptorio_session=", "shiptorio_access="), { append: true });
       return c.redirect(p === "test-guest" ? "/?source=sim&scenario=first-run" : "/?source=live&onboard=repo", 303);
     }
     if (!negative) return next();

@@ -22,17 +22,25 @@ try {
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 } });
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
     const page = await context.newPage();
+    page.setDefaultTimeout(10000);
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
     page.on("console", msg => { if (msg.type() === "error") failures.push(`Console: ${msg.text()}`); });
     page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
     let lastChange = Date.now(), previous = "", number = 0;
     const capture = async label => {
       const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
-      await page.screenshot({ path: join(out, file) }); steps.push({ width, label, file, url: page.url() });
+      await page.screenshot({ path: join(out, file), animations: "disabled", timeout: 15000 }); steps.push({ width, label, file, url: page.url() });
     };
+    await page.goto(`${url.origin}/test/login?as=${persona}`);
+    if (await page.getByLabel("Password", { exact: true }).count()) {
+      const password = local ? "isolated-bot-preview" : process.env.SHIPTORIO_TEST_PASSWORD;
+      if (!password) throw new Error("Staging preview password is required in SHIPTORIO_TEST_PASSWORD");
+      await page.getByLabel("Password", { exact: true }).fill(password);
+      await page.getByRole("button", { name: "Enter the factory", exact: true }).click();
+    }
     const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
-    if (fixture) await fixture.seed();
+    if (fixture) { console.log("Seeding isolated persona"); await fixture.seed(); console.log("Persona seeded"); }
     await capture("signed-in");
     const deadline = Date.now() + Number(option("--duration", "90")) * 1000;
     while (Date.now() < deadline) {
@@ -49,7 +57,11 @@ try {
       if (await visible(launch)) {
         await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
-      else if (await visible(repo)) { await repo.first().click(); await capture("open-repo"); }
+      else if (await visible(repo)) {
+        if (fixture) await fixture.startRunner((await context.cookies()).map(c => `${c.name}=${c.value}`).join("; "));
+        await repo.first().click(); await capture("open-repo");
+        await page.keyboard.press("Escape");
+      }
       else if (fixture && await visible(install)) {
         const next = context.waitForEvent("page"); await install.first().click(); const tab = await next;
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
@@ -61,9 +73,9 @@ try {
     await capture("final"); await context.close();
   }
   if (fixture?.stub.state.unexpected.length) failures.push(...fixture.stub.state.unexpected.map(p => `Unexpected provider request: ${p}`));
+  if (fixture?.runnerErrors.length) failures.push(...fixture.runnerErrors);
 } catch (error) { failures.push(String(error)); }
 finally {
-  await browser?.close(); await fixture?.dispose();
   const unique = [...new Set(failures)];
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
   const report = { persona, origin: url.origin, fixture: local, steps, failures: unique, fingerprint, passed: !unique.length };
@@ -71,4 +83,6 @@ finally {
   await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
   console.log(JSON.stringify({ report: join(out, "report.md"), failures: unique.length, fingerprint }));
   if (unique.length) process.exitCode = 1;
+  await browser?.close();
+  if (fixture) await Promise.race([fixture.dispose(), new Promise(resolve => setTimeout(resolve, 5000))]);
 }
