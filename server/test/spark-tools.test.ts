@@ -40,12 +40,12 @@ describe("read tools", () => {
   });
 
   it("redacts complete comment and CI fields before their short summaries", async () => {
-    globalThis.fetch = (async () => Response.json([{ user: { login: "someone" }, body: `${"x".repeat(550)} ${syntheticPem}` }])) as typeof fetch;
+    globalThis.fetch = (async () => Response.json([{ user: { login: "someone" }, body: `${"x".repeat(550)} ${syntheticPem}` }])) as unknown as typeof fetch;
     const comments = await issueComments("fixture", "owner/repo", 1);
     expect(comments).not.toContain("PRIVATE KEY");
     expect(comments).not.toContain("SYNTHETICKEY");
     expect(comments).toContain("[REDACTED]");
-    globalThis.fetch = (async () => Response.json({ check_runs: [{ id: 1, name: "check", status: "completed", conclusion: "success", output: { title: `${"x".repeat(70)} ${syntheticPem}` } }] })) as typeof fetch;
+    globalThis.fetch = (async () => Response.json({ check_runs: [{ id: 1, name: "check", status: "completed", conclusion: "success", output: { title: `${"x".repeat(70)} ${syntheticPem}` } }] })) as unknown as typeof fetch;
     const ci = await ciReport("fixture", "owner/repo", "head");
     expect(ci).not.toContain("PRIVATE KEY");
     expect(ci).not.toContain("SYNTHETICKEY");
