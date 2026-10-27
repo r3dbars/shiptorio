@@ -1,4 +1,5 @@
 import { signupAllowed } from "./signup";
+import { testIdentityAllowed } from "./test-users-policy";
 // Shared adapter over accounts.ts. HTTP, browser sockets and runner grants use one revocable session.
 import { currentUser } from './accounts';
 import { isAllowed, readSessionDetails } from './session';
@@ -6,6 +7,7 @@ import { gh, installationToken, repoInstallationId, type AppCredentials } from '
 export interface AccessUser { id: number; login: string; expiresAt: number; sessionHash: string }
 export interface AuthorizationEnv extends AppCredentials {
   SESSION_SECRET: string; ALLOWED_LOGINS: string; DB: D1Database; CACHE?: KVNamespace;
+  TEST_USERS?: string; PUBLIC_URL?: string;
 }
 export async function requireUser(request: Request, env: AuthorizationEnv): Promise<AccessUser | null> {
   const session = await readSessionDetails(env.SESSION_SECRET, request.headers.get('cookie'));
@@ -23,6 +25,7 @@ export const validRepo = (repo: string) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.
 const ACCESS_TTL = 5 * 60 * 1000;
 export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read", throwOnLookupError = false): Promise<number | null> {
   const repo = name.toLowerCase();
+  if (user.id < 0 && (!testIdentityAllowed(env, user.id, user.login) || repo !== `test-fixture/${user.login}`)) return null;
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
   if (!Number.isSafeInteger(user.id) || !/^[a-f0-9]{64}$/.test(user.sessionHash ?? '')) return null;
   const sessionUser = await env.DB.prepare('SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?').bind(user.sessionHash, user.id, Date.now()).first<{ id: number; login: string }>();
