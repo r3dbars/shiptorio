@@ -80,3 +80,22 @@ explicit Launch. Do not implement the issue outside that runner path.
 - PR #249 deployed green as 40f65897c3b9291afa4c0da6e510bb4468e2483e;
   Deploy https://github.com/r3dbars/shiptorio/actions/runs/40427939355 succeeded
   and the live version matched. No issue #170 build or Launch has happened yet.
+
+## First actual build attempt
+
+- Justin reported approving #170. The server still showed awaiting_approval;
+  Root reconnected the real browser and retried that same authorized approval
+  through Activity → Build #170 → Approve and build with Codex.
+- The game then logged "Plan approved" and "Local codex took the plan", and
+  job555799a7-3ae2-49a4-8e35-c85e668c2253 entered running. This establishes
+  the actual game-to-runner transition; it does not prove the original tap landed.
+- Codex authenticated and attempted the two approved file edits, but its file-edit
+  tool failed. It exited zero with no changes; the supervisor rejected the empty
+  patch and opened no PR. The model's final message correctly reported no checks.
+- Disposable one-file probes reproduce the same edit failure in Documents and
+  the system temporary directory. The outer sandbox can write a canary, and the
+  same Codex binary's direct apply-patch helper writes successfully under that
+  boundary. Explicit checkout directory flags do not fix Codex exec's edit path.
+  Diagnosing that path while preserving isolation and the exact issue scope.
+- Separately, PR #262 has deterministic regressions for a selected-card approval
+  race. The race is proven; it is not established as the cause of Justin's tap.
