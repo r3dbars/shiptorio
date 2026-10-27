@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
 const credentialVersion = async () => {
-  const versions = await Promise.all([".codex/auth.json", ".claude/.credentials.json", ".claude.json"].map(async file => {
+  const versions = await Promise.all([".codex/auth.json", ".claude/.credentials.json", ".claude/.claude.json", ".claude/.shiptorio-login", ".claude.json"].map(async file => {
     try { const info = await lstat(resolve(authHome, file)); return `${file}:${info.mtimeMs}:${info.size}`; } catch { return `${file}:missing`; }
   }));
   return versions.join("|");
@@ -69,6 +69,8 @@ async function loginHarness(h: Job["harness"]) {
   console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
   const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
+  // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
+  if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
 if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{4,5}$/.test(base)) throw new Error("Unsupported Shiptorio origin");

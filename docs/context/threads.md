@@ -212,3 +212,11 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - No manual deploy or Cloudflare resource changes. Production recovery remains untested;
   migration 0013 must run through the existing deployment workflow. No historical run
   counters were reset or refunded.
+## Claude runner login and two subscription plants (Codex, 2026-10-26)
+
+- Checkpoint: Oct 29 local runner / Oct 30 power routing. Branch `codex/claude-runner-power`; based on current main including #235 and runner recovery #259.
+- Claude subscription login explicitly uses its canonical private `.agent-home/.claude` via `CLAUDE_CONFIG_DIR`, shared by login, status, doctor and sandbox execution. Claude temp files are isolated too; the macOS agent profile can read only the system timezone database needed to avoid an ICU/Intl startup spin; no personal agent homes or inherited API keys are exposed. A successful login wakes the expired-auth guard even when credentials live only in Keychain.
+- Recheck sign-ins before each assignment. Use Spark's preferred subscription when free, otherwise another signed-in subscription runs the unchanged approved plan/scope. Retain the one-build supervisor and original provider on recovery; never downgrade a subscription assignment to geothermal.
+- Heartbeats publish separate Codex / Claude Code plants before the first job, update logout/offline state, and clear stale/revoked plants. Power sheet shows availability rather than an invented remaining subscription quota. Crosses into `web/` only for this requested Power sheet behavior; no shared schema change.
+- **Justin must reinstall the runner bundle after merge** (standalone installer or legacy `runner:service install`). Existing running helpers do not update with the website. Sign into Claude using the installed runner's real data root; macOS Keychain identity depends on that path. The PR includes the reinstall paste.
+- Tests cover CLI login → stored status → sandbox execution with a provider fixture, separate provider dispatch / unchanged lease recovery, heartbeat patches, and rendered Power sheet on desktop/iPhone 14/Pixel 7. Real native CLI probes are separate from authenticated build proof; Justin's dedicated provider sign-in and a real Claude-produced PR remain acceptance steps.

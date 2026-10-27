@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freeSubscriptions, prepareAgentHome, subscriptionSignedIn } from "../src/subscriptions";
-import { agentEnvironment } from "../src/policy";
+import { harnessArgs, agentEnvironment } from "../src/policy";
 import { checkSandbox } from "../src/sandbox";
 
 test("Claude CLI login → status → sandbox uses the same private config outside job workspaces", async () => {
@@ -14,9 +14,9 @@ test("Claude CLI login → status → sandbox uses the same private config outsi
 [ "$CLAUDE_CONFIG_DIR" = "$HOME/.claude" ] || exit 8
 [ -z "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN$SHIPTORIO_RUNNER_TOKEN" ] || exit 9
 case "$1 $2" in
-"auth login") [ "$3" = "--claudeai" ] || exit 7; printf 'dedicated-login' > "$CLAUDE_CONFIG_DIR/login" ;;
+"auth login") [ -d "$CLAUDE_CODE_TMPDIR" ] || exit 6; [ "$3" = "--claudeai" ] || exit 7; printf 'dedicated-login' > "$CLAUDE_CONFIG_DIR/login" ;;
 "auth status") if [ -f "$CLAUDE_CONFIG_DIR/login" ]; then printf '{"loggedIn":true}'; else printf '{"loggedIn":false}'; exit 1; fi ;;
-*) [ -f "$CLAUDE_CONFIG_DIR/login" ] && printf 'sandbox-signed-in' ;;
+*) [ -d "$CLAUDE_CODE_TMPDIR" ] || exit 6; [ "$CLAUDE_CODE_TMPDIR" != "/tmp/claude-501" ] || exit 5; [ -f "$CLAUDE_CONFIG_DIR/login" ] && printf 'sandbox-signed-in' ;;
 esac
 `;
     await Bun.write(executable, fixture); await chmod(executable, 0o700);
@@ -27,6 +27,7 @@ esac
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     expect({ code, err }).toEqual({ code: 0, err: "" }); expect(out).toContain("signed in for Shiptorio");
     expect(await subscriptionSignedIn("claude_code", executable, home)).toBe(true);
+    expect(await Bun.file(join(home, ".claude/.shiptorio-login")).exists()).toBe(true);
     expect((await stat(join(home, ".claude"))).mode & 0o777).toBe(0o700);
     const work = join(root, ".work/job"); await mkdir(work, { recursive: true });
     const sandbox = await checkSandbox(work, { home, executable });
@@ -57,3 +58,23 @@ test("each job refreshes sign-in, skips busy agents, and recovers after login or
   signed.delete("claude_code"); expect(await ready()).toEqual([]);
   busy.clear(); expect(await ready()).toEqual(["codex"]);
 });
+
+// No account is used: the real CLI must reject a fresh, signed-out home promptly.
+// This catches macOS startup stalls a shell fixture cannot reproduce (timezone ICU, #235).
+test.skipIf(process.platform !== "darwin" || !Bun.which("claude"))("native Claude reaches its auth error inside the macOS agent sandbox without spending tokens", async () => {
+  const root = await mkdtemp(join(tmpdir(), "shiptorio-native-claude-"));
+  const home = await prepareAgentHome(root), work = join(root, "job"), executable = Bun.which("claude")!;
+  await mkdir(work);
+  let boundary: Awaited<ReturnType<typeof checkSandbox>> | undefined;
+  try {
+    expect(await subscriptionSignedIn("claude_code", executable, home)).toBe(false);
+    boundary = await checkSandbox(work, { home, executable });
+    const result = await boundary.run([executable, ...harnessArgs("claude_code", "Return OK without using any tools.")], work, { timeout: 10000 });
+    expect(result.timedOut).toBe(false);
+    expect(result.code).toBe(1);
+    const reply = JSON.parse(result.out);
+    expect(reply.is_error).toBe(true);
+    expect(reply.result).toMatch(/not logged in|login/i);
+    expect(reply.total_cost_usd).toBe(0);
+  } finally { await boundary?.close(); await rm(root, { recursive: true, force: true }); }
+}, 30000);
