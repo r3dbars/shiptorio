@@ -111,3 +111,26 @@ no `login`, so the client treats it like signed out. In the sandbox the progress
 (`progressProfile(..., sandbox)`), which syncs through `GET/PUT /api/me/progress` like a signed-in profile; if
 there's no guest session the pull fails and nothing is pushed. `savePref` also sends on a bare visit and in the
 demo shop. `/auth/callback` moves the guest save onto the account (account progress wins).
+
+## Sample guests
+
+After the existing preview gate, the first unsigned `GET /api/me` creates a signed
+`shiptorio_guest` cookie (HttpOnly, Secure, SameSite=Lax, 30 days) and one `guests` row.
+It returns `guest: true`, `allowed: false`, no install URL and no GitHub/API calls.
+The guest is not a `User` and cannot use live repos, connect sources, pair a runner,
+or ask Spark to run work. Those requests return `github_signin_required` with
+“Sign in with GitHub to use your own repo.” The browser continues using the sample factory.
+
+`GET`/`PUT /api/me/progress` and `PUT /api/me/prefs` use the same schemas and bounded
+save formats for guests. `GET /api/account/export` and `POST /api/account/delete`
+(`confirm=delete`) export/delete only that browser's guest save. The cookie and
+server row must both be valid; no request parameter can select another guest.
+
+Guest creation uses the existing IP budget and a separate ten-per-hour creation cap.
+Reads touch `last_seen_at` at most every six hours; successful saves touch it immediately.
+The daily Worker cron removes rows unseen for 30 days. No extra Cloudflare resource is needed.
+
+On an admitted GitHub callback, one D1 transaction imports guest progress/preferences
+only if the account has no progress, preserves existing preference keys, and removes the
+guest row. Existing account progress wins over all guest data. Repeated/concurrent callbacks
+cannot import the save twice. Pending accounts retain the guest until admission.

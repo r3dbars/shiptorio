@@ -29,6 +29,7 @@ export function configuration(s: State) {
     compatibility_date: "2026-10-01", compatibility_flags: ["nodejs_compat"],
     workers_dev: true, preview_urls: false,
     assets: { directory: "../web/dist", binding: "ASSETS", run_worker_first: true },
+    triggers: { crons: ["17 4 * * *"] },
     durable_objects: { bindings: [{ name: "FACTORY", class_name: "Factory" }] },
     migrations: [{ tag: "v1", new_sqlite_classes: ["Factory"] }],
     d1_databases: s.databaseId ? [{ binding: "DB", database_name: s.name, database_id: s.databaseId, migrations_dir: "migrations" }] : [],

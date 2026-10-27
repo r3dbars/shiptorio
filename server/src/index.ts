@@ -321,7 +321,10 @@ app.get("/api/me", async (c) => {
       if (!await admit(c.env, await ipScope(c.req.raw, "guest-create"), 10, 3600000, "guest creation flood")) return c.json({ error: "too many requests" }, 429);
       guest = await createGuest(c.env);
       c.header("Set-Cookie", await guestCookie(c.env, guest.id));
-    } else if (await touchGuest(c.env, guest)) c.header("Set-Cookie", await guestCookie(c.env, guest.id));
+    } else {
+      await touchGuest(c.env, guest);
+      c.header("Set-Cookie", await guestCookie(c.env, guest.id));
+    }
     return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null });
   }
   const view = await readAdminView(c.env,c.req.raw);

@@ -121,3 +121,9 @@ or the whole installation. Limits include usage already spent; zero stops new wo
 Factory reset requires confirmation and refuses active builds/open PR work.
 Verification and the Launch/permit gate always apply, including administrator work.
 The preview password remains enabled.
+
+### Sample-save retention
+
+The generated Worker configuration includes a daily scheduled cleanup for anonymous sample
+saves. Guests still need the preview password while it is enabled. Guest saves expire after
+30 days without activity; they cannot access repositories, integrations or local agents.
