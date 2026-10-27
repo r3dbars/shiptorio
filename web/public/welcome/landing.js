@@ -17,30 +17,29 @@
       .then(function () { button.disabled = false; });
   });
 
-  // The loop loads after the page does, so it never slows the first paint. Phones get a lighter cut
-  // and wait for the first scroll or tap, so nobody pays 1MB of video just for opening the page.
-  var video = document.getElementById("loop"), toggle = document.getElementById("toggle"), reel = document.getElementById("reel");
-  // the nameplate reads like a machine chip: IDLE on the poster, WORKING while the loop runs
-  var show = function (on) { reel.className = "state" + (on ? " working" : ""); reel.firstChild.nodeValue = on ? "Working " : "Idle "; toggle.textContent = on ? "Pause" : "Play"; };
+  // The still paints first. The quiet loop of the same view fades in after load, never under
+  // reduced motion or Save-Data. Phones get the tall cut.
+  var video = document.getElementById("loop"), toggle = document.getElementById("toggle");
+  var PLAY = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1h2v1h2v1h2v1h2v1h1v2h-1v1h-2v1h-2v1h-2v1h-2z"/></svg>';
+  var PAUSE = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1h3v10h-3zM7 1h3v10h-3z"/></svg>';
+  var show = function (on) { toggle.innerHTML = on ? PAUSE : PLAY; toggle.setAttribute("aria-label", on ? "Pause the factory" : "Play the factory"); };
   var still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
-  var phone = matchMedia("(max-width: 759px)").matches, started = false;
-  var start = function (play) {
+  var started = false;
+  var start = function () {
     if (started) return;
     started = true;
-    video.src = phone ? "/welcome/loop-640.mp4" : "/welcome/loop.mp4";
+    video.src = matchMedia("(max-width: 759px)").matches ? "/welcome/hero-phone.mp4" : "/welcome/hero.mp4";
     video.addEventListener("playing", function () { video.classList.add("on"); show(true); });
     video.addEventListener("pause", function () { show(false); });
-    if (!play) return;
     video.play().catch(function () { show(false); });
   };
   toggle.hidden = false;
-  toggle.textContent = "Play";
+  show(false);
   toggle.addEventListener("click", function () {
-    if (!started) return start(true);
+    if (!started) return start();
     if (video.paused) video.play(); else video.pause();
   });
   if (still) return;
-  var go = function () { setTimeout(function () { start(true); }, 300); };
-  if (phone) ["scroll", "touchstart", "pointerdown", "keydown"].forEach(function (e) { addEventListener(e, function () { start(true); }, { once: true, passive: true }); });
-  else if (document.readyState === "complete") go(); else addEventListener("load", go);
+  var go = function () { setTimeout(start, 300); };
+  if (document.readyState === "complete") go(); else addEventListener("load", go);
 })();
