@@ -26,6 +26,7 @@ import { tapsRoutes } from "./taps-admin";
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
+import { starterIssue } from "./starterIssue";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
@@ -251,6 +252,7 @@ app.use("*", async (c, next) => {
 });
 
 app.route("/", ops);
+app.route("/", starterIssue);
 
 // ---------- auth + setup ----------
 
