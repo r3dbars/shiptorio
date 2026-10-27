@@ -40,7 +40,7 @@ test("long Details preserves every review paragraph and sends only the explicitl
     expect(review.querySelector("a")?.getAttribute("href")).toBe(longPlan.url!);
     expect(review.contains(footer)).toBe(false);
     expect(review.getAttribute("tabindex")).toBe("0");
-    expect(review.getAttribute("aria-label")).toBeTruthy();
+    expect(review.getAttribute("aria-label")).toBe("Plan details");
     expect(dialog.querySelector(".ci-details-head .ci-title")?.textContent).toBe(longPlan.title);
     expect(sent).toEqual([]); // opening and reading never approves
     const choices = [...footer.querySelectorAll<HTMLButtonElement>("button")];
