@@ -69,6 +69,9 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       await expect(action.first(), `${id} has an action`).toBeVisible();
       await expect(card).toBeVisible();
       await shot(`${n}-${id}-card.png`);
+      // Hold controls must advertise their consent gesture; a bare click cancels the hold.
+      if (await card.getAttribute('data-trigger') === 'hold')
+        await expect(action.first(), `${id} advertises a real hold`).toHaveAttribute('data-buildout-action', 'hold');
       const kind = await action.first().getAttribute('data-buildout-action'); // hold, tap or continue
       if (kind === 'hold') await hold(page, info, action.first(), async () => await started() || await next());
       else await action.first().click();

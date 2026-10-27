@@ -104,7 +104,7 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
       className={`bo-hold${red ? " red" : ""}${p > 0 ? " down" : ""}${armed ? " armed" : ""}`}
       style={{ "--p": p } as React.CSSProperties}
       aria-label={armed ? `Press again: ${label}` : `Hold to ${label.toLowerCase()}`}
-      data-buildout-action=""
+      data-buildout-action="hold"
       onPointerDown={(e) => {
         if (!e.isPrimary || e.button !== 0) return;
         e.currentTarget.setPointerCapture?.(e.pointerId);
