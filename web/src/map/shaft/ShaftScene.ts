@@ -33,6 +33,7 @@ import { makeLayout, MINES } from "./layout";
 import { cartAt, clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
 import { ShaftStage, type ShaftView } from "./stage";
 import { Trophies } from "./trophies";
+import { TrustLamps } from "./trust";
 
 // the mockup's art was tuned without color management (three r128); the engine's lights are patched to match
 THREE.ColorManagement.enabled = false;
@@ -101,6 +102,7 @@ export class ShaftScene {
   // build as you go (?buildout=1): what's built stands, the rest is gone, and the camera is the director's
   private readonly bo: Buildout | null;
   private director: Director | null = null;
+  private readonly trust = new TrustLamps(); // trust in levels up the launch lift's tower
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -196,6 +198,7 @@ export class ShaftScene {
     this.driver?.sync(state);
     if (this.I) this.trophies.sync(this.I, state);
     if (this.I) this.clogs.set(this.I, clogOf(state), this.reduceMotion);
+    this.trust.sync(state);
     this.hud.read(state, this.sp!);
     if (!this.bo) this.light(state);
     // every build done: free look (director.ts never touches the camera again)
@@ -387,6 +390,7 @@ export class ShaftScene {
     this.trophies.dispose();
     this.clogs.dispose();
     this.bo?.dispose();
+    this.trust.dispose();
     this.hud.dispose();
     this.said.remove();
     this.renderer.dispose();
@@ -436,6 +440,8 @@ export class ShaftScene {
     this.clogs.reset();
     this.clogs.scene = stage.scene;
     stage.root.add(this.clogs.group);
+    this.trust.reset();
+    stage.root.add(this.trust.group);
     if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
@@ -482,6 +488,7 @@ export class ShaftScene {
     this.hud.clear();
     this.trophies.group.removeFromParent(); // its meshes outlive the shaft; I.dispose frees what's under the root
     this.clogs.group.removeFromParent();
+    this.trust.group.removeFromParent();
     if (this.I) this.I.dispose();
     this.stage?.dispose();
     this.I = null;
