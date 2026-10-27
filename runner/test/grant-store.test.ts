@@ -167,6 +167,8 @@ test("permanent rejection is durable without deleting evidence, and a fresh pair
     const [stopped] = await loadConnections(root, env(original));
     expect(stopped.rejected).toEqual({code: "runner_pair_revoked", at: now});
     expect(stopped.token).toBe(original.token);
+    await persistRenewal(root, original, await grant(now + 120000));
+    expect((await loadConnections(root, env(await grant(now + 180000))))[0]).toEqual(stopped);
     const fresh = await grant(now + 120000, {pairId: "fresh-pair"});
     await savePairing(fresh, root);
     // A delayed old response cannot stop the newly paired machine.

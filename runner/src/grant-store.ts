@@ -15,6 +15,8 @@ function grant(pair: Pairing) {
 }
 function latest(current: Pairing, candidate: Pairing) {
   const a = grant(current), b = grant(candidate);
+  // A late renewal (or environment copy) must not undo a confirmed rejection.
+  if (a.binding === b.binding && current.rejected) return current;
   return a.binding === b.binding && b.expires > a.expires ? candidate : current;
 }
 export async function loadConnections(root: string, env: { SHIPTORIO_REPO?: string; SHIPTORIO_RUNNER_TOKEN?: string }) {

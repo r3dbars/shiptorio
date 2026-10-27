@@ -71,3 +71,16 @@ test("only explicit permanent grant failures stop a connection; generic 401 and 
     expect(await runnerResponseError(response, "fixture/repo", "heartbeat")).not.toBeInstanceOf(RunnerGrantRejected);
   }
 });
+
+
+test("a grant at its approving session ceiling does not renew on every heartbeat", async () => {
+  const now = 1700000000000, ceiling = now + 6 * 3600_000;
+  const token = btoa(JSON.stringify({user:{expiresAt:ceiling}})) + ".scheduling-fixture";
+  const pair = {repo:"fixture/repo", token, expires:ceiling};
+  let beats = 0, renewals = 0;
+  for (let i = 0; i < 20; i++) await maintainConnection(pair, {now:()=>now+i*5000,
+    renew: async()=>{renewals++;}, heartbeat:async()=>{beats++;}});
+  expect(beats).toBe(20);
+  expect(renewals).toBe(0);
+  expect(renewalDue({...pair, expires:now+3600_000},now)).toBe(true);
+});

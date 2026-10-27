@@ -166,7 +166,10 @@ app.use("*", async (c, next) => {
       if (expired && expired.repo === `${match![1]}/${match![2]}`.toLowerCase()) await (await factory(c.env, expired.repo)).rejectRunnerGrant(expired.pairId, "runner_grant_expired", expired.expires);
       return c.json({error:'runner authentication required', code: expired ? 'runner_grant_expired' : 'runner_grant_invalid'},401);
     }
-    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo, "write")) {
+    let allowed: boolean;
+    try { allowed = !!identity.user && await signupAllowed(c.env, identity.user.login) && !!await repoAccess(c.env, identity.user, identity.repo, "write", true); }
+    catch { c.header("Retry-After", "60"); return c.json({error: "Repository access check temporarily unavailable"}, 503); }
+    if (!allowed) {
       await (await factory(c.env, identity.repo)).rejectRunnerGrant(identity.pairId, "runner_access_revoked");
       return c.json({error:'repository access denied', code:'runner_access_revoked'},403);
     }

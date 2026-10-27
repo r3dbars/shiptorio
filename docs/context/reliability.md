@@ -59,3 +59,11 @@ Runner status exposes `needsRepair`, `repairReason`, and `repairCommand` without
 a credential. Revocation clears presence; new pairing clears repair status. Stored grant
 expiry also makes an expired offline machine's need to re-pair visible without waiting for
 another request. An older expired token cannot overwrite a newer grant's healthy status.
+
+
+Permission lookup failures remain fail-closed without becoming permanent connection
+rejections. The runner opts into `repoAccess` propagating upstream errors; all other
+callers keep its existing deny-on-error behavior. A failed/limited GitHub lookup returns
+503 with a retry delay, not a revoked-grant code. Known revoked permission or pairing
+still denies access. A late renewal cannot clear a persisted rejection, and renewal is
+skipped when a grant has already reached its approving browser session's expiry.
