@@ -27,6 +27,7 @@
     "spark:check": "bun server/scripts/spark-check.ts",
     "spark:loop": "bun server/scripts/spark-loop-check.ts",
     "spark:eval": "bun server/scripts/spark-eval.ts",
+    "brain:eval": "bun server/scripts/brain-eval.ts",
     "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts",
     "test:fast": "bun run typecheck && bun run typecheck:tests && bun test && bun run playtest --check",
     "test:e2e": "playwright test",

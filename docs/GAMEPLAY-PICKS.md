@@ -28,6 +28,19 @@ These combine recorded answers for the build plan; they are not additional expli
 - **Sound:** the author's proposed combination places steam-and-iron accents over the earlier hum base.
   The recorded answers remain Steam and iron (round 3) and Soft foundry hum (round 1).
 
+## Build as you go (Justin, 2026-10-27 20:06)
+
+Justin liked the dimmed tour (#357) on the local preview and asked for it to be the start: a fixed-ish camera,
+buildings that don't exist until you build them, each build a 5 to 8 second animated construction that bursts with
+electricity and stamps itself done, and a guided first issue followed issue → plan → build → checks → launch.
+
+- **Unbuilt means gone.** This supersedes the "faint silhouettes" half of r4-tease above: no silhouettes, only the
+  next site gets a chalk outline and stakes.
+- **The three repairs are builds 1, 2 and 4** (pry the tunnel, light the boiler, re-rail the cart), inside eight
+  builds that follow the first issue. r4-open, r3-firstrun (floors light as builds land) and r4-firstpick stand.
+- Free look and the two counters come after the first rocket, from one "Look around" card.
+- Behind `?buildout=1` until Justin plays it. Steps, triggers and hooks: `web/src/buildout/CONTRACT.md`.
+
 ## Round 4: the start of the game (14:28)
 
 | # | Question | Pick |
@@ -107,7 +120,7 @@ Next, in small PRs straight to main through the merge queue:
 2. Tap a machine: the name tag grows into the callout; tags only on tap or hover (r2-callout, tap, labels).
 3. Phone: snap to floors and open parked on what needs you; desktop: card beside the shaft (phone-nav, home, r2-desk).
 4. The factory grows: a permanent lamp per ship on the floor that built it; big celebration once, small after (r4-reward, ship).
-5. Trust lamps in levels up the lift tower (r3-trust, trust).
+5. Trust lamps in levels up the lift tower (r3-trust, trust). Built: `web/src/map/shaft/trust.ts`, four levels of five beside the launch lift.
 6. The first run: dark foundry, one lit tunnel, floors light as repairs land, smallest safe first issue, watch the cart (r4-open, r3-firstrun, r4-firstpick, r4-wait, firstissue).
 7. Repairs: tap the broken thing, hold to pry, quick swoop to what opened; next broken thing glows, the rest faint (implementation interpretation above; repairhow, r3-repair, r3-fly, r4-tease, r4-next).
 8. After the last card: show the next repair with real numbers (r4-onemore).
