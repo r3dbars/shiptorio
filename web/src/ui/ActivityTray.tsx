@@ -38,9 +38,10 @@ interface Props {
   header: ReactNode; // repo + connection status
   stats?: ReactNode;
   settings: ReactNode;
+  historyOnly?: boolean; // docs/ATTENTION.md: asks live in the Needs you tray only; this is what happened
 }
 
-export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onCheckin, onClose, header, stats, settings }: Props) {
+export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onCheckin, onClose, header, stats, settings, historyOnly }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const toggle = (id: string) => setOpen((v) => (v === id ? null : id));
   const ready = pad.filter((i) => i.state === "on_pad");
@@ -60,77 +61,81 @@ export function ActivityTray({ deck, pad, log, live, send, onShow, onLaunch, onC
           </button>
         </div>
 
-        <h3>{ACTIVITY.yourMove}</h3>
-        {onCheckin && deck.length > 1 && (
-          <button type="button" className="btn rec tray-checkin" onClick={onCheckin}>
-            {ACTIVITY.checkin(deck.length)}
-          </button>
-        )}
-        {deck.length === 0 && ready.length === 0 && <p className="tray-empty">{ACTIVITY.nothing}</p>}
-        {deck.map((m) => {
-          const id = `m:${m.id}`;
-          const on = open === id;
-          return (
-            <div key={id} className={`tcard todo${on ? " on" : ""}`}>
-              <button type="button" className="tcard-head" aria-expanded={on} onClick={() => toggle(id)}>
-                <span className="tdot warn"><Icon name="star" size={14} /></span>
-                <span className="tt">
-                  {m.title}
-                  {m.stage && <code>{STAGE_LABEL[m.stage]}</code>}
-                </span>
+        {!historyOnly && (
+          <>
+            <h3>{ACTIVITY.yourMove}</h3>
+            {onCheckin && deck.length > 1 && (
+              <button type="button" className="btn rec tray-checkin" onClick={onCheckin}>
+                {ACTIVITY.checkin(deck.length)}
               </button>
-              {on && (
-                <div className="tmore">
-                  <p>{m.why}</p>
-                  <div className="tbtns">
-                    {m.options.map((o) => (
-                      <button key={o.id} type="button" className={o.recommended ? "btn rec" : "btn"} onClick={() => send({ type: "choose_move", moveId: m.id, optionId: o.id })}>
-                        {o.label}
-                        {o.recommended && <span className="sugg">{WORDS.suggested}</span>}
-                      </button>
-                    ))}
-                  </div>
-                  {m.focus && (
-                    <button type="button" className="btn ghost" onClick={() => onShow(m.focus!)}>
-                      {ACTIVITY.showOnMap}
-                    </button>
+            )}
+            {deck.length === 0 && ready.length === 0 && <p className="tray-empty">{ACTIVITY.nothing}</p>}
+            {deck.map((m) => {
+              const id = `m:${m.id}`;
+              const on = open === id;
+              return (
+                <div key={id} className={`tcard todo${on ? " on" : ""}`}>
+                  <button type="button" className="tcard-head" aria-expanded={on} onClick={() => toggle(id)}>
+                    <span className="tdot warn"><Icon name="star" size={14} /></span>
+                    <span className="tt">
+                      {m.title}
+                      {m.stage && <code>{STAGE_LABEL[m.stage]}</code>}
+                    </span>
+                  </button>
+                  {on && (
+                    <div className="tmore">
+                      <p>{m.why}</p>
+                      <div className="tbtns">
+                        {m.options.map((o) => (
+                          <button key={o.id} type="button" className={o.recommended ? "btn rec" : "btn"} onClick={() => send({ type: "choose_move", moveId: m.id, optionId: o.id })}>
+                            {o.label}
+                            {o.recommended && <span className="sugg">{WORDS.suggested}</span>}
+                          </button>
+                        ))}
+                      </div>
+                      {m.focus && (
+                        <button type="button" className="btn ghost" onClick={() => onShow(m.focus!)}>
+                          {ACTIVITY.showOnMap}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-        {ready.map((i) => {
-          const id = `p:${i.id}`;
-          const on = open === id;
-          return (
-            <div key={id} className={`tcard todo${on ? " on" : ""}`}>
-              <button type="button" className="tcard-head" aria-expanded={on} onClick={() => toggle(id)}>
-                <span className="tdot warn"><Icon name="rocket" size={14} /></span>
-                <span className="tt">
-                  {ACTIVITY.launchRow(`#${i.prNumber}`, i.title)}
-                  {i.district && <code>{i.district}</code>}
-                </span>
-              </button>
-              {on && (
-                <div className="tmore">
-                  <p>{ACTIVITY.launchWhy}</p>
-                  <div className="tbtns">
-                    <button type="button" className="btn rec" onClick={() => onLaunch(i)}>
-                      {ACTIVITY.launch}
-                    </button>
-                    {i.prUrl && (
-                      <a className="btn" href={i.prUrl} target="_blank" rel="noreferrer">
-                        {WORDS.openPr}
-                      </a>
-                    )}
-                  </div>
+              );
+            })}
+            {ready.map((i) => {
+              const id = `p:${i.id}`;
+              const on = open === id;
+              return (
+                <div key={id} className={`tcard todo${on ? " on" : ""}`}>
+                  <button type="button" className="tcard-head" aria-expanded={on} onClick={() => toggle(id)}>
+                    <span className="tdot warn"><Icon name="rocket" size={14} /></span>
+                    <span className="tt">
+                      {ACTIVITY.launchRow(`#${i.prNumber}`, i.title)}
+                      {i.district && <code>{i.district}</code>}
+                    </span>
+                  </button>
+                  {on && (
+                    <div className="tmore">
+                      <p>{ACTIVITY.launchWhy}</p>
+                      <div className="tbtns">
+                        <button type="button" className="btn rec" onClick={() => onLaunch(i)}>
+                          {ACTIVITY.launch}
+                        </button>
+                        {i.prUrl && (
+                          <a className="btn" href={i.prUrl} target="_blank" rel="noreferrer">
+                            {WORDS.openPr}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
 
+          </>
+        )}
         <h3>{ACTIVITY.feed}</h3>
         {feed.length === 0 && <p className="tray-empty">{ACTIVITY.feedEmpty}</p>}
         {feed.map((l, n) => {

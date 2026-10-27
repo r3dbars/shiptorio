@@ -96,7 +96,8 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) 
           setDx(0);
           if (d > SWIPE_PX) go(shown);
           else if (d < -SWIPE_PX) later(shown);
-          else if (Math.abs(d) < 6) setOpen((v) => !v);
+          // One queue: tapping the card opens the deck when more is waiting, else its details.
+          else if (Math.abs(d) < 6) { if (onCheckin && deck.length > 1) onCheckin(); else setOpen((v) => !v); }
         }}
         onPointerCancel={() => { drag.current = null; setDx(0); }}
         title={ATTENTION.swipeHint}
