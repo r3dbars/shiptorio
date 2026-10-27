@@ -233,6 +233,9 @@ test("a reused warm fade captures current original appearance and restores its o
   orig.emissive.setHex(0x102030);
   orig.opacity = 0.6;
   orig.map = new THREE.Texture();
+  orig.onBeforeCompile = () => {};
+  orig.customProgramCacheKey = () => "updated-original";
+  const beforeVersion = twin.version;
   orig.needsUpdate = true;
   const fade = construct(holder, { reduced: true });
   expect(mesh.material).toBe(twin); // reuse retains the warmed material/program
@@ -240,6 +243,9 @@ test("a reused warm fade captures current original appearance and restores its o
   expect(twin.color.getHex()).toBe(orig.color.getHex());
   expect(twin.emissive.getHex()).toBe(orig.emissive.getHex());
   expect(twin.map).toBe(orig.map);
+  expect(twin.onBeforeCompile).toBe(orig.onBeforeCompile);
+  expect(twin.customProgramCacheKey).toBe(orig.customProgramCacheKey);
+  expect(twin.version).toBeGreaterThan(beforeVersion);
   expect(twin.opacity).toBeCloseTo(0.3, 5);
   expect(twin.transparent).toBe(true);
   fade.finish();
