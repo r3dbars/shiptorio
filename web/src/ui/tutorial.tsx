@@ -105,7 +105,8 @@ export function lessonFocus(state: FactoryState | null, lessonId?: string): stri
 const DWELL_MS = 6000; // a lesson stays up at least this long before the next one can replace it
 
 // on = this run teaches. Off, everything is visible and no lessons fire.
-export function useTutorial(state: FactoryState | null, on: boolean) {
+// hold = something else has the floor (a rocket's celebration, a badge toast): the next lesson waits its turn.
+export function useTutorial(state: FactoryState | null, on: boolean, hold = false) {
   const [done, setDone] = useState<string[]>(() => (on ? [] : LESSONS.map((l) => l.id)));
   const [open, setOpen] = useState<string | null>(null);
   const [settled, setSettled] = useState(true); // the open lesson has been up long enough
@@ -119,11 +120,11 @@ export function useTutorial(state: FactoryState | null, on: boolean) {
   // The next lesson fires once its moment arrives, and only after the one before it.
   const next = LESSONS.find((l) => !done.includes(l.id));
   useEffect(() => {
-    if (!on || !state || !next || !settled || !next.when(state)) return;
+    if (!on || !state || !next || !settled || hold || !next.when(state)) return;
     setOpen(next.id);
     setSettled(false);
     setDone((d) => [...d, next.id]);
-  }, [on, state, next, settled]);
+  }, [on, state, next, settled, hold]);
 
   const shown = useMemo(() => {
     if (!on || !next) return new Set<HudPart>(ALL);
