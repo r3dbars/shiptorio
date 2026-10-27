@@ -31,6 +31,7 @@ const pw = await import(process.env.PLAYWRIGHT_MODULE || "@playwright/test");
 const chromium = pw.chromium ?? pw.default.chromium;
 
 const PORT = Number(process.env.STRANGER_PORT || 8799);
+const UI_TIMEOUT = 60000; // CI renders the 3D map in software; bound UI waits separately from factory work.
 const origin = `http://localhost:${PORT}`;
 const PASSWORD = "stranger-preview";
 const WEBHOOK_SECRET = "stub-webhook-secret";
@@ -84,7 +85,7 @@ if (process.env.STRANGER_SETUP_URL !== "0") stub.state.setupUrl = `${origin}/git
 // 2. The stranger: a fresh browser profile, phone-ish laptop window, github.com answered by the stub.
 browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-await context.tracing.start({ screenshots: true, snapshots: true });
+await context.tracing.start({ screenshots: false, snapshots: true });
 await context.route("https://github.com/**", (route) => stub.browser(route));
 // Playwright can't intercept a redirect hop, so the Worker's 302 to github.com becomes a fresh navigation.
 await context.route(`${origin}/auth/login*`, async (route) => {
@@ -94,7 +95,7 @@ await context.route(`${origin}/auth/login*`, async (route) => {
   const cookies = res.headersArray().filter((h) => h.name.toLowerCase() === "set-cookie").map((h) => h.value);
   await route.fulfill({ status: 200, contentType: "text/html", headers: { "set-cookie": cookies.join("\n") }, body: `<script>location.href=${JSON.stringify(to)}</script>` });
 });
-context.setDefaultTimeout(30000);
+context.setDefaultTimeout(UI_TIMEOUT);
 const page = await context.newPage();
 const consoleErrors = [];
 const expectedAnonymousErrors = [];
@@ -149,7 +150,7 @@ async function api(path, body, token) {
 async function clickMove(name) {
   const card = await until(`decision option ${name}`, () => factoryState.deck?.find(m => m.options.some(o => name.test(o.label))));
   if (factoryState.move?.id === card.id) {
-    await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: 45000 });
+    await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: UI_TIMEOUT });
     return;
   }
   await page.getByRole("button", { name: /^Activity, / }).click();
@@ -186,17 +187,17 @@ try {
     await page.waitForURL((u) => u.pathname === "/" && !u.search.includes("check"));
   });
   await step("welcome tour shows, then skip", async () => {
-    await page.getByRole("button", { name: "Skip" }).click({ timeout: 20000 });
+    await page.getByRole("button", { name: "Skip" }).click({ timeout: UI_TIMEOUT });
   });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
-    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: 25000 }); // the sandbox map loads first and CI runners are slow
-    await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: 10000 });
-    await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: UI_TIMEOUT }); // the sandbox map loads first and CI runners are slow
+    await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: UI_TIMEOUT });
+    await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: UI_TIMEOUT });
     signedIn = true;
   });
   await step("no repos yet: install the App", async () => {
     const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
-    await install.waitFor({ timeout: 10000 });
+    await install.waitFor({ timeout: UI_TIMEOUT });
     // GitHub opens in a new tab; the Shiptorio tab keeps waiting for the repo
     const [github] = await Promise.all([context.waitForEvent("page"), install.click()]);
     await github.getByRole("button", { name: "Install" }).click();
@@ -205,16 +206,16 @@ try {
     await github.close();
   });
   await step("back in Shiptorio, repo is listed by itself", async () => {
-    await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: 45000 });
+    await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: UI_TIMEOUT });
   });
   await step("open the factory", async () => {
     await page.getByRole("button", { name: new RegExp(stub.state.repo) }).click();
-    await page.waitForURL((u) => u.searchParams.get("repo") === stub.state.repo, { timeout: 10000 });
+    await page.waitForURL((u) => u.searchParams.get("repo") === stub.state.repo, { timeout: UI_TIMEOUT });
     // the live map is up when the floor card (top-left HUD) shows and the factory has its folders
-    await page.locator(".floorcard").waitFor({ timeout: 30000 });
+    await page.locator(".floorcard").waitFor({ timeout: UI_TIMEOUT });
   });
   await step("real factory work reaches the agent handoff", async () => {
-    await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: 20000 });
+    await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: UI_TIMEOUT });
     // A sheet opened by URL alone is insufficient: real signed-install backlog must reach the browser.
     await new Promise((resolve, reject) => {
       const poll = setInterval(() => { if (sawFactoryWork) { clearInterval(poll); clearTimeout(deadline); resolve(); } }, 25);
@@ -225,7 +226,7 @@ try {
   await step("the agent handoff reaches Power, not a dead end", async () => {
     // Current onboarding opens Power immediately on a first repo; older flows use the suggested card.
     if (!report.powerOpenedAutomatically) await page.getByRole("button", { name: /connect a local agent/i }).click();
-    await page.getByRole("region", { name: "Power", exact: true }).waitFor({ timeout: 5000 });
+    await page.getByRole("region", { name: "Power", exact: true }).waitFor({ timeout: UI_TIMEOUT });
   });
   await step("signed issue arrives once, even on delivery retry", async () => {
     await stub.issueArrives();
@@ -238,7 +239,7 @@ try {
     const pairing = await context.newPage();
     await pairing.goto(device.verificationUri);
     await pairing.getByLabel("Repository (owner/name)").fill(stub.state.repo);
-    const [approval] = await Promise.all([pairing.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/runner/pair", { timeout: 10000 }), pairing.getByRole("button", { name: "Connect this repo" }).click()]);
+    const [approval] = await Promise.all([pairing.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/runner/pair", { timeout: UI_TIMEOUT }), pairing.getByRole("button", { name: "Connect this repo" }).click()]);
     assert.equal(approval.ok(), true, `Pair approval: ${approval.status()} ${await approval.text()} request=${JSON.stringify({ origin: await approval.request().headerValue("origin") })}`);
     await pairing.getByText("Machine approved", { exact: true }).waitFor();
     await pairing.close();
