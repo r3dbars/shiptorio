@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { freeSubscriptions, prepareAgentHome, subscriptionSignedIn } from "../src/subscriptions";
+import { freeSubscriptions, prepareAgentHome, subscriptionSignedIn, subscriptionCredentialVersion } from "../src/subscriptions";
 import { harnessArgs, agentEnvironment } from "../src/policy";
 import { checkSandbox } from "../src/sandbox";
 
@@ -78,3 +78,18 @@ test.skipIf(process.platform !== "darwin" || !Bun.which("claude"))("native Claud
     expect(reply.total_cost_usd).toBe(0);
   } finally { await boundary?.close(); await rm(root, { recursive: true, force: true }); }
 }, 30000);
+
+test("Claude reauthentication clears its auth guard without resetting a failed Codex login", async () => {
+  const root = await mkdtemp(join(tmpdir(), "shiptorio-auth-version-"));
+  try {
+    const home = await prepareAgentHome(root);
+    const codex = await subscriptionCredentialVersion("codex", home), claude = await subscriptionCredentialVersion("claude_code", home);
+    // Routine Claude metadata writes must not make a revoked cached login usable.
+    await Bun.write(join(home, ".claude/.claude.json"), "{}");
+    expect(await subscriptionCredentialVersion("claude_code", home)).toBe(claude);
+    await Bun.write(join(home, ".claude/.shiptorio-login"), "successful-keychain-login");
+    expect(await subscriptionCredentialVersion("claude_code", home)).not.toBe(claude);
+    expect(await subscriptionCredentialVersion("codex", home)).toBe(codex);
+    expect(await subscriptionSignedIn("claude_code", join(root, "missing-cli"), home)).toBe(false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

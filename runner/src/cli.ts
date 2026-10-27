@@ -1,4 +1,4 @@
-import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn } from "./subscriptions";
+import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -14,12 +14,6 @@ import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type S
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
-const credentialVersion = async () => {
-  const versions = await Promise.all([".codex/auth.json", ".claude/.credentials.json", ".claude/.claude.json", ".claude/.shiptorio-login", ".claude.json"].map(async file => {
-    try { const info = await lstat(resolve(authHome, file)); return `${file}:${info.mtimeMs}:${info.size}`; } catch { return `${file}:missing`; }
-  }));
-  return versions.join("|");
-};
 class SignInExpired extends Error {}
 import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
@@ -214,7 +208,7 @@ async function execute(job: Job, pair: Pairing) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
           if (authExpired(result.err + "\n" + result.out)) {
-            blocked.add(job.harness); authFailures.reject(job.harness, await credentialVersion());
+            blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome));
             throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
           }
           if (result.timedOut || agentOffline(result.err + "\n" + result.out)) throw new TypeError("Agent connection interrupted or timed out; saved build will resume");
@@ -226,7 +220,7 @@ async function execute(job: Job, pair: Pairing) {
       // Preserve local evidence; never forward raw agent output to the server/browser.
       await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
       if (job.harness === "claude_code" && JSON.parse(output).is_error) {
-        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await credentialVersion()); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
+        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await subscriptionCredentialVersion(job.harness, authHome)); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
         if (agentOffline(output)) throw new TypeError("Agent connection interrupted; saved build will resume");
         throw new Error("Claude reported an agent error");
       }
@@ -308,7 +302,7 @@ if (action === "retry") {
   const refreshAuth = async () => {
     const next: Job["harness"][] = [];
     for (const h of available) {
-      if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await credentialVersion())) { next.push(h); if (h !== "local") blocked.delete(h); }
+      if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await subscriptionCredentialVersion(h, authHome))) { next.push(h); if (h !== "local") blocked.delete(h); }
       else if (h !== "local") blocked.add(h);
     }
     return next;

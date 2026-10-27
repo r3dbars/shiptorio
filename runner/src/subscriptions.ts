@@ -17,7 +17,9 @@ export async function prepareAgentHome(root: string): Promise<string> {
   return home;
 }
 export async function subscriptionSignedIn(h: Subscription, executable: string, home: string): Promise<boolean> {
-  const child = Bun.spawn([executable, ...subscriptionArgs(h)], { cwd: home, env: agentEnvironment(process.env, home), stdout: "pipe", stderr: "pipe" });
+  let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
+  try { child = Bun.spawn([executable, ...subscriptionArgs(h)], { cwd: home, env: agentEnvironment(process.env, home), stdin: "ignore", stdout: "pipe", stderr: "pipe" }); }
+  catch { return false; }
   const timer = setTimeout(() => child.kill(), 10000);
   try {
     const [out, , code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
@@ -31,4 +33,13 @@ export async function subscriptionSignedIn(h: Subscription, executable: string, 
 export async function freeSubscriptions(installed: Subscription[], signedIn: (h: Subscription) => Promise<boolean>, busy: ReadonlySet<Subscription> = new Set()): Promise<Subscription[]> {
   const statuses = await Promise.all(installed.map(async h => !busy.has(h) && await signedIn(h)));
   return installed.filter((_, i) => statuses[i]);
+}
+
+/** Only credentials or an explicit successful login clear a provider's cached auth failure. */
+export async function subscriptionCredentialVersion(h: Subscription, home: string): Promise<string> {
+  const files = h === "codex" ? [".codex/auth.json"] : [".claude/.credentials.json", ".claude/.shiptorio-login"];
+  return (await Promise.all(files.map(async file => {
+    try { const info = await lstat(resolve(home, file)); return `${file}:${info.mtimeMs}:${info.size}`; }
+    catch { return `${file}:missing`; }
+  }))).join("|");
 }

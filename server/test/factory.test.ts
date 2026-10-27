@@ -285,7 +285,7 @@ describe("Factory lifecycle", () => {
       expect((await closed.g.factory.runnerJobs())[0].status).toBe("failed");
       expect(await closed.g.factory.claimRunner(closed.pairing, ["codex"])).toBeNull();
     } finally { globalThis.fetch = originalFetch; }
-  });
+  }, 20000); // Multiple complete planning/recovery flows; allow loaded macOS hosts to finish mock cleanup.
   it("durably queues delivery work and folds it before acknowledgment", async () => {
     const f = fixture();
     const payload = { action: "opened", repository: { full_name: "r3dbars/demo" }, installation: { id: 1 }, issue: { number: 9, title: "Broken checkout", body: "Customer context", html_url: "https://github.com/r3dbars/demo/issues/9", user: { login: "example-user" }, updated_at: "2026-10-26T12:00:00Z" } };
