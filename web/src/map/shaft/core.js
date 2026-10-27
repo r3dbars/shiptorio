@@ -646,7 +646,7 @@ export function createIron(opts) {
       if (!it) { it = M.take('in'); t0 = 0; v = null; if (it) { it.follow(hold); M.setState('WORKING', it.label() + ' ' + (o.verb || 'checking')); } else M.setState('IDLE', o.idle || 'waiting for PRs'); }
       else {
         t0 += dt;
-        if (t0 > (o.dur || 2.5) && !v) { v = M.judge(it); if (v) { if (v.pass) { if (o.final) it.setKind('pass'); else it.flash(0x46ff8a); M.pass(it); } else { it.setKind('reject'); M.reject(it, v.reason); } } }
+        if (t0 > (o.dur || 2.5) && !v) { v = M.judge(it); if (v) { if (v.pass) { if (M.last) it.setKind('pass'); else it.flash(0x46ff8a); M.pass(it); } else { it.setKind('reject'); M.reject(it, v.reason); } } }
         if (v && t0 > (o.dur || 2.5) + 0.8 && M.give(it, v.pass ? 'pass' : 'reject')) { it = null; v = null; }
       }
       eye.scale.setScalar(it ? 1 + Math.sin(t * 8) * 0.15 : 0.7);
