@@ -68,12 +68,14 @@ try {
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
       const launch = page.locator("button.alaunch");
-      const go = page.locator(".acard button.ago");
-      const later = page.locator(".acard button.alater");
+      const go = page.locator(".acard button.ago, button.ci-act.do");
+      const later = page.locator(".acard button.alater, button.ci-act.later");
       const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
       const repo = page.getByRole("button", { name: new RegExp(`test-fixture/${persona}`) });
       const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
+      const checkin = page.getByRole("button", { name: /^Check in:/ });
+      const menu = page.getByRole("button", { name: /^Menu:/ });
       if (await visible(launch)) {
         await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
@@ -89,6 +91,8 @@ try {
       } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
       else if (await visible(go)) { await go.first().click(); await capture("continue"); }
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
+      else if (await visible(checkin) && await checkin.first().isEnabled()) { await checkin.first().click(); await capture("open-check-in"); }
+      else if (await visible(menu) && await menu.first().getAttribute("aria-expanded") === "false") { await menu.first().click(); await capture("open-menu"); }
       else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
       await page.waitForTimeout(1000);
     }
