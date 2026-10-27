@@ -1,3 +1,4 @@
+import { gauntletPolicy } from "./gauntlet-fixture";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
@@ -12,20 +13,23 @@ const { Factory } = await import("../src/factory");
 const head = "a".repeat(40);
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 type Mode = "passed" | "pending" | "failed" | "unavailable";
-async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; files: (names: string[], changeHead?: boolean) => void; merges: () => number; launch: () => Promise<void>; autoLaunch: () => Promise<void> }) => Promise<void>) {
+async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; files: (names: string[], changeHead?: boolean) => void; merges: () => number; launch: () => Promise<void>; autoLaunch: () => Promise<void>; duringFiles: (fn: () => Promise<void>) => void; station: () => Promise<void>; putItem: (item: Item) => Promise<void> }) => Promise<void>) {
   let mode: Mode = "passed", current = head, merges = 0;
   let names = ["docs/README.md"], changeDuringFiles = false;
+  let duringFiles: (() => Promise<void>) | undefined;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
+      const policy = gauntletPolicy(url); if (policy) return policy;
     if (url.endsWith("/access_tokens")) return Response.json({ token: "fake-token" });
-    if (url.endsWith("/pulls/99")) return Response.json({ head: { sha: current }, merged: false });
+    if (url.endsWith("/pulls/99")) return Response.json({ base: { ref: "main", sha: "base" }, head: { sha: current }, merged: false });
     if (url.includes("/pulls/99/files?")) {
+      const hook = duringFiles; duringFiles = undefined; if (hook) await hook();
       if (changeDuringFiles) current = "b".repeat(40);
       return Response.json(names.map(filename => ({ filename, status: "modified", patch: "+safe" })));
     }
     if (url.endsWith("/pulls/99/merge")) { merges++; return Response.json({ merged: true }); }
-    if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: mode === "pending" ? "in_progress" : "completed", conclusion: mode === "failed" ? "failure" : "success" }] });
+    if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: mode === "pending" ? "in_progress" : "completed", conclusion: mode === "failed" ? "failure" : "success" }] });
     if (url.includes("/status?")) return mode === "unavailable" ? new Response("forbidden", { status: 403 }) : Response.json({ total_count: 0, statuses: [] });
     throw new Error(`Unexpected request ${init?.method ?? "GET"} ${url}`);
   }) as typeof fetch;
@@ -50,7 +54,7 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
       await factory.exportState();
       await (factory as unknown as { launch(item: Item, by: "autonomy"): Promise<void> }).launch(saved().items[0], "autonomy");
     };
-    await run({ factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, files: (next, change = false) => { names = next; changeDuringFiles = change; }, merges: () => merges, launch, autoLaunch });
+    await run({ factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, files: (next, change = false) => { names = next; changeDuringFiles = change; }, merges: () => merges, launch, autoLaunch, duringFiles: fn => { duringFiles = fn; }, station: () => (factory as unknown as { runGauntlet(): Promise<void> }).runGauntlet(), putItem: async item => { await factory.exportState(); await (factory as unknown as { patch(p: { items: Item[] }): Promise<void> }).patch({ items: [item] }); } });
   } finally { globalThis.fetch = original; }
 }
 
@@ -120,5 +124,50 @@ it("automatic launch requires a stable current diff and still permits unchanged 
   await fixture(async f => {
     await f.autoLaunch();
     expect(f.merges()).toBe(1);
+  });
+});
+
+
+it("a same-head CI rerun cannot reuse an in-flight station result", async () => {
+  await fixture(async f => {
+    await f.putItem(setStage({ ...f.saved().items[0], state: "inspecting", inspection: freshInspection(head) }, "ci", "passed", "green"));
+    f.duringFiles(async () => {
+      // Simulate the replacement inspection produced by a pending→green same-head rerun.
+      // Do not nest GitHub calls inside its serialized fetch queue.
+      await f.putItem(setStage({ ...f.saved().items[0], state: "inspecting", inspection: freshInspection(head) }, "ci", "passed", "rerun green"));
+    });
+    await f.station();
+    expect(f.saved().items[0].inspection?.stages.find(s => s.gate === "verify")?.state).toBe("pending");
+    expect(f.saved().items[0].state).toBe("inspecting");
+    expect(f.merges()).toBe(0);
+  });
+});
+it("a force-push while station files load cannot stamp proof on the previous head", async () => {
+  await fixture(async f => {
+    await f.putItem(setStage({ ...f.saved().items[0], state: "inspecting", inspection: freshInspection(head) }, "ci", "passed", "green"));
+    f.files(["docs/README.md"], true);
+    await f.station();
+    expect(f.saved().items[0].inspection?.stages.find(s => s.gate === "verify")?.state).toBe("pending");
+    expect(f.merges()).toBe(0);
+  });
+});
+it("reconciliation without an event SHA restarts checks on a changed head", async () => {
+  await fixture(async f => {
+    f.currentHead("b".repeat(40));
+    await f.factory.onCheckSuite([99], true, "refresh");
+    expect(f.saved().items[0].inspection?.headSha).toBe("b".repeat(40));
+    expect(f.saved().items[0].inspection?.stages.find(s => s.gate === "verify")?.state).toBe("pending");
+    expect(f.saved().items[0].state).toBe("inspecting");
+  });
+});
+
+it("a persisted passed flag without every station receipt cannot offer Launch", async () => {
+  await fixture(async f => {
+    const item = f.saved().items[0];
+    item.inspection!.stages = item.inspection!.stages.filter(stage => stage.gate !== "verify");
+    await f.putItem(item);
+    await f.factory.alarm();
+    expect(f.saved().deck?.some(move => move.itemId === item.id && move.options.some(option => option.id === "launch"))).toBe(false);
+    expect(f.merges()).toBe(0);
   });
 });
