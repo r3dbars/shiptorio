@@ -1,5 +1,11 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+
+## Give Spark tools and full understanding (Claude, 2026-10-27)
+
+- Owns Spark's tool layer: `server/src/spark-tools.ts` (toolbox, planner loop, review loop) and `spark-context.ts` (what the tools see). The "Make Meta Muse Spark central" thread keeps the audit (docs/context/spark-audit.md); this thread owns the planner and review prompts.
+- Planner: 8 turns over 9 read-only tools; review: 6 turns, reads the repo at the PR head. Acceptance cases: Testing #12 (`--coupon` vs `argv[2]`) and #13 (`$50 or more` vs `> 50`).
+
 ## Claude private Keychain persistence (Codex, 2026-10-26)
 
 - Live Testing #2 acceptance found a gap after #274: the isolated HOME had no `Library/Preferences` or default Keychain. Claude saved account metadata, but a new status process had no credential; neither a fake provider nor a signed-out native startup test proved persistence.
@@ -7,6 +13,17 @@
 - Real macOS test: create a non-secret credential through the isolated default store, read it in a second process and inside the agent sandbox, lock/unlock/restart, verify the personal default is unchanged, and verify the agent cannot read the unlock password. Focused subscription/native tests and runner typecheck pass; full Linux CI gates merge to avoid duplicate heavy local runs.
 - Runner bundle reinstall is required; PR includes the paste. Testing #2 still needs actual Claude sign-in and a real PR receipt. Justin authorized the allowance 21 → 22 for one attempt only; no build attempt has been submitted by this chat yet.
 
+## Codex: Testing real-loop acceptance (2026-10-26)
+
+Real Spark and the local Codex runner opened [Testing #12](https://github.com/r3dbars/Testing/pull/12)
+for issue #5. CI, docs verify and AI review passed, but executing the README coupon example
+on the exact PR head found an ignored flag; the run published a genuine failing manual status.
+Testing #13 also completed a real docs-only Spark/local Codex run. Both PRs remained open and
+unmerged in the read-only 2026-10-27 11:53 UTC recheck. The earlier Actions billing block and
+local deployment handoff are historical: Shiptorio Deploy40498676438 succeeded at61ef296.
+The receipt does not certify current runner/process state or a completed rework and in-game
+Launch. No factory PR was merged directly by this documentation run.
+[Evidence and remaining proof](testing-live-acceptance.md).
 
 ## Stranger E2E: latest status (2026-10-26)
 
@@ -49,6 +66,7 @@ is the only copy agents outside it (Codex) can see.
 
 | Thread | State | What it did / produced |
 | --- | --- | --- |
+| Design the core gameplay mechanics | waiting on Justin's A/B picks | `docs/GAMEPLAY.md`: core loop, six verbs (phone + desk), world vs UI rule, abandoned-foundry first run, repair-and-unlock ladder tied to real outcomes, 24 A/B decisions. Playbook https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8, A/B picks https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR. Also VISION.md "Current focus" now = great player experience first (Justin 10:50); judge mode frozen as is. |
 | Design a calm attention system for players | v1 behind flag | `docs/ATTENTION.md` (PR #268). One Needs you tray, three kinds (approve / steer / suggested, `attentionOf` in shared), every card is Continue or Later, Continue streaks steer deck ranking + planner feedback. Behind flag `attention` (off by default; try `?attention=1`). Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb |
 | Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README) |
 | Review Justin's Cloudflare account | done | Surveyed the account before setup. Nothing Shiptorio yet, R2 not enabled |
@@ -152,6 +170,17 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - [PR #275](https://github.com/r3dbars/shiptorio/pull/275), branch `codex/runner-edit-doctor`: add an explicit real subscription edit probe, proving exact file bytes and untouched canaries in a disposable checkout. Basic doctor stays inference-free.
 - Integrates the merged supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
 - Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. The full `doctor --edit codex` command reported PASS for Codex auth, sandbox, pairing and actual edit; it correctly exited nonzero for the separate missing Claude sign-in/sandbox. Integrated runner tests: 45 passed, 2 platform skips. Full `bun run check` passed after integration (726 tests, 2 platform skips; all workspace typechecks and production/web/standalone-runner build). CI/merge outcome is on PR #275.
+
+## Codex: self-host runner origin and live pairing (2026-10-26)
+
+- `codex/selfhost-runner-origin` fixes the Power panel install command to use the current origin and pass it to the shell side of the pipeline. The installer downloads that origin's bundle, saves its endpoint for later invocations, and rejects cross-server reuse of existing pairings. The CLI accepts self-hosted HTTPS origins and loopback-only HTTP.
+- Preserves the concurrently merged single-use join-code command: join arguments stay on the shell side of the same-origin installer pipeline; focused join-code and legacy device-pairing tests both pass.
+- Narrow `web/` lane exception: `RunnerConnection.tsx` and its command helper, needed to correct the self-host setup defect; no layout/art changes or shared protocol changes.
+- [PR #293](https://github.com/r3dbars/shiptorio/pull/293). Focused installation/update/pairing, saved-origin, cross-server refusal, HTTPS/loopback and shell-quoting tests passed; CI and stranger checks passed for the implementation.
+- Live acceptance on a fresh clone at `3c99157`: temporary Worker `shiptorio-selfhost-test-c78b8e`; the rendered Power command and install/manifest/bundle downloads all used its workers.dev origin. A real GitHub App and OAuth session, installed only on the disposable same-name repo, authorized the browser device-pairing flow. The downloaded runner saved a 0600 pairing; the real Worker accepted heartbeat and empty job polling (200), refused a different repo (401), and the UI showed online. A fresh `once` launch without SHIPTORIO_URL retained the origin/token; cross-server reinstall failed before network activity.
+- Pairing-only fixture: a synthetic local agent reports readiness; no real provider sign-in or agent build is claimed. All state and binaries used dedicated temporary directories, preserving the installed runner. Browser page identity/content, empty error/warning log, Power interaction and command/online screenshots were checked. Final combined version at `dd319f8` also passed the real one-paste join flow: its consumed code returns 410, and the installed bundle matches the deployment manifest. Cleanup is verified: token revoked (401), App/installation/repo deleted, temporary Worker/D1/KV/DO removed, isolated runner/token files deleted. No existing Worker was deployed or reconfigured.
+- Merge blocked by GitHub Actions account billing: final-head jobs refused to start before any steps ([run 40440466519](https://github.com/r3dbars/shiptorio/actions/runs/40440466519)); previous implementation checks were green before the required one-paste integration rebase. Final focused install/pairing/join/origin/docs tests and runner/web typechecks passed locally. PR remains open until final CI can run; no checks were bypassed.
+- Justin requested no existing Worker changes. Once green, the authorized squash merge must carry a workflow-skip marker so the main push does not trigger production Deploy. No repository deployment settings were changed.
 
 ## Codex (outside the Claude project)
 
@@ -303,4 +332,4 @@ The rejected production saves left all original account limits intact.
 
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
-Small existing-behavior fixes only, one PR each; protected work excluded. Progress, unresolved findings and verification receipts: [papercuts.md](papercuts.md).
+Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).

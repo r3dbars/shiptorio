@@ -46,11 +46,11 @@ Researched checks (like the Secret scanner) slot in right after CI. See [Researc
 
 ## AI review
 
-**Tag: second opinion.** A hostile reviewer reads the PR diff and looks for what tests miss: the wrong approach, swallowed errors, security holes, scope creep.
+**Tag: second opinion.** A hostile reviewer reads the PR diff and can inspect the repository at the PR head, issue discussion, CI, factory history and related signals. It looks for what tests miss: the wrong approach, swallowed errors, security holes and scope creep.
 
 - The reviewer is **Meta Muse Spark**, not the agent that built the PR, so the builder never grades its own work.
-- It answers pass or rework, with up to five findings.
-- The verdict is posted as a comment on the PR: "AI review passed" or "AI review sent this back".
+- It has up to six turns to read and answer pass or rework, with up to five findings. Commands and examples added by the diff must be checked against the code they run.
+- The verdict is posted as a comment on the PR: "AI review passed" or "AI review sent this back". When it used read tools, the comment includes a collapsed **How it checked** list.
 
 ## Merge gate
 
