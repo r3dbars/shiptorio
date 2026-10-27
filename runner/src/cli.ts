@@ -105,6 +105,7 @@ if (process.argv[2] === "doctor") {
     },
     pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
+      if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Claude Code private Keychain unavailable; sandbox probe was not run.");
       const dir = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-"));
       let boundary: CheckSandbox | undefined;
       try {
