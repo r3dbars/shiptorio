@@ -203,7 +203,25 @@ export function Buildout({ state, live, repo, free, send, onLookAround }: Buildo
   );
 }
 
+// The first rocket's SHIPPED! card (ShipCelebration.tsx) has its moment first: Look around waits until it's gone.
+function useAfterShip() {
+  const [clear, setClear] = useState(false);
+  useEffect(() => {
+    const t0 = performance.now();
+    const t = window.setInterval(() => {
+      // a short grace for the celebration to mount, then wait out its card (it's ~10 s, or a tap closes it)
+      if (performance.now() - t0 > 1500 && !document.querySelector(".ship-cel")) {
+        setClear(true);
+        window.clearInterval(t);
+      }
+    }, 300);
+    return () => window.clearInterval(t);
+  }, []);
+  return clear;
+}
+
 function LookAround({ onGo }: { onGo: () => void }) {
+  if (!useAfterShip()) return null;
   return (
     <section className="card bo-card bo-look" role="region" aria-label={BUILDOUT.label} data-buildout-card="">
       <div className="bo-body">

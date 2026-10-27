@@ -493,7 +493,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
-          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding ? pings : undefined}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding && !guided ? pings : undefined}
           cosmetics={cosmeticsOf(prog.p, progressing)}
 
           satellites={intro ? undefined : satellites}
