@@ -92,7 +92,7 @@ SMOG_TOP -46                 the smog sea's top
 ```
 `radius(y)` (half-width), `front(y)` (front face z), `inside(x, y)`, `profile(n)` → `[y, r, z]` samples. The old keel
 went down to about y −33; the new rock reaches −36 and the engine + beam to ~−44, so with the flag on the ALL view
-(frame.ts) frames down to about −42.
+(frame.ts) frames down to about −45.
 
 ## Floors (floors.ts, bake.ts)
 ```

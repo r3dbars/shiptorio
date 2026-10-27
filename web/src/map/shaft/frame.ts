@@ -37,8 +37,8 @@ const PRESETS: Record<FloorView, Preset> = {
 };
 
 // the floating city (?artpass=1, ART-PASS.md): the ALL view reaches down past the rock's tip to the aether engine's
-// cage (keel-shape.js TIP y -36, the cage to about -40), so the island reads as floating
-if (artPass()) PRESETS.stack = { at: [0, -3.1, -8.4], h: 77, w: 42, phone: { at: [0, -3.1, -8.4], h: 88 } };
+// cage and finial (keel-shape.js TIP y -36, the engine to about -43), so the island reads as floating
+if (artPass()) PRESETS.stack = { at: [0, -5.7, -8.4], h: 81, w: 42, phone: { at: [0, -5.7, -8.4], h: 92 } };
 
 export const isFloorView = (v: string): v is FloorView => v in PRESETS;
 
