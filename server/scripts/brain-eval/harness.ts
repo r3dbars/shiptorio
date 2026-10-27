@@ -5,7 +5,8 @@
 // does, minus the DO: same memory, same throttle, same rule fallback, same model call.
 
 import { Database } from "bun:sqlite";
-import { SIGNAL_KINDS, signalWeight, type BottleneckArea } from "@shiptorio/shared";
+import * as shared from "@shiptorio/shared";
+import { SIGNAL_KINDS, signalWeight, type BottleneckArea, type BrainSignal } from "@shiptorio/shared";
 import { emptyMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory, type DiagnoseBrief, type ModelDiagnosis } from "../../src/diagnose";
 import { measuredCost, NANO_USD, type TokenUsage } from "../../src/spend";
 import type { SparkEnv } from "../../src/spark";
@@ -32,8 +33,13 @@ export interface Decision {
   fellBack?: string;
 }
 
+// The factory tilts signals by the player's goals before diagnosing (#387). Until that lands the tilt is a no-op.
+type Tilt = (signals: readonly BrainSignal[], goals: unknown) => BrainSignal[];
+const tiltByGoals = (shared as unknown as { tiltByGoals?: Tilt }).tiltByGoals;
+export const goalTilt = (c: EvalCase, signals: BrainSignal[]): BrainSignal[] => c.goals && tiltByGoals ? tiltByGoals(signals, { ...c.goals, at: T0 }) : signals;
+
 async function decide(c: EvalCase, memory: BrainMemory, now: number, think?: Think): Promise<Decision> {
-  const r = await runDiagnose({ signals: c.signals(now), memory, now, goal: c.goal, playerFeedback: "", budget: null, ctx: { repo: "acme/shop" }, think });
+  const r = await runDiagnose({ signals: goalTilt(c, c.signals(now)), memory, now, goal: c.goal, playerFeedback: "", budget: null, ctx: { repo: "acme/shop" }, think });
   const { bottleneck: b, unlock: u, reason } = r.diagnosis;
   return {
     area: b?.area ?? null, signalId: b?.signalIds[0], play: u?.play, by: b?.by, reason,
@@ -85,6 +91,21 @@ export function memoryBudget(): Pick<SparkEnv, "DB" | "budgetAccount"> {
   };
 }
 
+type StubBrief = { signals: { id: string; weight: number; title: string; plays: { play: string }[] }[]; observations: unknown[] };
+/** Digs the diagnose brief out of the user message, whatever envelope the injection policy wraps it in. */
+function briefFrom(user: string): StubBrief {
+  const tryJson = (t: string): unknown => { try { return JSON.parse(t); } catch { return undefined; } };
+  for (const line of [user, ...user.split("\n")]) {
+    let v = tryJson(line.trim());
+    if (typeof v === "string") v = tryJson(v);
+    if (v && typeof v === "object" && Array.isArray((v as StubBrief).signals)) return v as StubBrief;
+  }
+  const start = user.indexOf('{"goal"');
+  const v = start === -1 ? undefined : tryJson(user.slice(start, user.lastIndexOf("}") + 1));
+  if (v && typeof v === "object") return v as StubBrief;
+  throw new Error(`stub can't find the brief in: ${user.slice(0, 120)}`);
+}
+
 /**
  * A fake Meta endpoint that plays a weight-following model: it reads the heaviest signal, then names it with
  * its first play. It proves the plumbing (prompt → JSON → schema → diagnosis → grade → cost) without a key.
@@ -97,8 +118,7 @@ export function stubSpark(): { env: SparkEnv; restore: () => void } {
     if (!url.startsWith("https://stub.meta.local/")) return real(input as RequestInfo, init);
     const body = JSON.parse(String(init?.body)) as { messages: { role: string; content: string }[] };
     const user = body.messages.find(m => m.role === "user")!.content;
-    // The brief sits inside the untrusted-data envelope as a JSON string of a JSON object.
-    const brief = JSON.parse(JSON.parse(user.split("\n")[1])) as { signals: { id: string; weight: number; title: string; plays: { play: string }[] }[]; observations: unknown[] };
+    const brief = briefFrom(user);
     const top = [...brief.signals].sort((a, b) => b.weight - a.weight || a.id.localeCompare(b.id))[0];
     const reply = brief.observations.length === 0
       ? { tool: "read_signal", signalId: top.id, reason: "Reading the heaviest signal first." }
@@ -210,7 +230,7 @@ export function summarize(mode: string, model: string, cases: CaseResult[]): Rep
 }
 
 /** A case is ready once every kind it uses is in the contract; until then it waits on `needs`. */
-export const ready = (c: EvalCase): boolean => c.signals(T0).every(s => SIGNAL_KINDS[s.source].includes(s.kind));
+export const ready = (c: EvalCase): boolean => c.signals(T0).every(s => SIGNAL_KINDS[s.source].includes(s.kind)) && (!c.goals || !!tiltByGoals);
 
 /** Runs every case (or the ones named) through one mode. `think` undefined = the rule fallback alone. */
 export async function evaluate(opts: { mode: string; model: string; think?: Think; only?: string[] }): Promise<Report> {

@@ -12,6 +12,8 @@ export interface EvalCase {
   id: string;
   title: string; // the situation in one line, for the report
   goal?: string; // what the player said they're after, in their words
+  /** The player's picked goals (shared/src/goals.ts, #387). The factory tilts signals by them before diagnosing. */
+  goals?: { picks: string[]; by: "player" | "inferred" };
   signals: (now: number) => BrainSignal[];
   /** The bottleneck a sharp lead would name; null = nothing worth a card. */
   expect: { area: BottleneckArea | null; signal?: string };
@@ -345,5 +347,24 @@ export const CASES: EvalCase[] = [
       sig("factory", "queue_jam", 0.6, "3 items waiting at AI review; oldest 6 h.", ["3 items at AI review", "Oldest wait 6 h"], { scope: "review" })),
     expect: { area: "ship", signal: "factory:queue_jam:review" }, alsoOk: ["feedback"], unlock: /review|jam|clear|line|inspect/i,
     why: "A jam on the line beats a quiet inbox: unstick what's already built first.",
+  },
+  // From the goals thread (#387): the factory tilts severities by the player's goals before the brain ranks.
+  {
+    id: "goal-tilts-users", title: "Goal is first users: flat usage (0.4) vs piling errors (0.5)",
+    goal: "First users", goals: { picks: ["first_users"], by: "player" }, needs: "#387",
+    signals: humBut(
+      sig("posthog", "usage_flat", 0.4, "6 people a day, flat for a month.", ["DAU 6, last month 6"]),
+      sig("sentry", "errors_piling", 0.5, "40 open errors; 12 users hit one this week.", ["40 unresolved, 300 events/24h"])),
+    expect: { area: "users", signal: "posthog:usage_flat:repo" }, unlock: /users|people|launch|post|share|front/i,
+    why: "Tilted by the goal, usage weighs 0.6 and beats errors at 0.5.",
+  },
+  {
+    id: "goal-fire-still-wins", title: "Goal is first users, but main is red",
+    goal: "First users", goals: { picks: ["first_users"], by: "player" }, needs: "#387",
+    signals: humBut(
+      sig("posthog", "usage_flat", 0.4, "6 people a day, flat for a month.", ["DAU 6, last month 6"]),
+      sig("ci", "ci_red_main", 0.9, "Main has been red for 7 hours; nothing can merge.", ["Run #4901 failed: auth.test.ts"])),
+    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, unlock: /main|green|fix|revert|auth/i,
+    why: "A goal tilts the pick at most 1.5x; a real fire still wins.",
   },
 ];

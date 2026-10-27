@@ -63,6 +63,7 @@ describe("brain eval grading", () => {
     const stub = stubSpark(); restore = stub.restore;
     const r = await evaluate({ mode: "stub", model: "stub", think: sparkThink(stub.env), only: ["error-spike", "nothing-wrong", "loud-vs-stuck"] });
     const spike = r.cases.find(c => c.id === "error-spike")!;
+    expect(spike.fellBack).toBeUndefined(); // if this fails, the stub no longer speaks the model's reply shape
     expect(spike.got.by).toBe("spark");
     expect(spike.exact).toBe(true);
     expect(spike.playHit).toBe(true);

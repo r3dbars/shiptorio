@@ -182,7 +182,8 @@ export const SCENARIOS = {
   brain: {
     districts: SHOP_DISTRICTS,
     harness: "claude_code",
-    ores: [], // the cards are the show; ore would deal launch cards that jump the brain's
+    // One late ore, once the brain has dealt its cards: an earlier one's launch card would jump the brain's.
+    ores: [{ at: 45, title: "Clarify the shipping FAQ", kind: "cleanup", district: "docs" }],
     brain: {
       quiet: "Everything's under the bar: CI 6 min, 8 quiet errors, inbox clear. Staying quiet.",
       beats: [
