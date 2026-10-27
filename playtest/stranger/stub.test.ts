@@ -1,5 +1,18 @@
 import { expect, test } from "bun:test";
 import { githubStub } from "./github-stub.mjs";
+import { sparkStub } from "./spark-stub.mjs";
+
+test("stranger Spark fixture distinguishes tool-based review from planning", async () => {
+  const stub = sparkStub();
+  const reply = await stub.outbound(new Request("https://fixture.meta/chat/completions", { method: "POST", body: JSON.stringify({ messages: [
+    { role: "developer", content: "You are Muse Spark at Shiptorio's AI review station, a hostile reviewer. Choose ONE tool per turn." },
+    { role: "user", content: "UNTRUSTED_DATA_BEGIN\n{}\nUNTRUSTED_DATA_END" },
+  ] }) }));
+  const result = await reply.json();
+  expect(JSON.parse(result.choices[0].message.content)).toMatchObject({ tool: "verdict", verdict: "pass" });
+  expect(stub.calls).toEqual(["review"]);
+  expect(stub.unexpected).toEqual([]);
+});
 test("stranger GitHub permission fixture grants only the installed repo/user with its installation token", async () => {
   const stub = githubStub({ origin: "http://localhost:8799", webhookSecret: "test", worker: async () => new Response() });
   const permission = `https://api.github.com/repos/${stub.state.repo}/collaborators/${stub.state.user.login}/permission`;

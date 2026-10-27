@@ -94,7 +94,7 @@ test("admin budget usage requires a live operator session and includes daily lim
   expect((await get(env, "/admin?format=json", player)).status).toBe(403);
   const response = await get(env, "/admin?format=json", operator);
   expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ limits: { calls: 200, tokens: 500000, jobs: 1 }, usage: [] });
+  expect(await response.json()).toMatchObject({ limits: { calls: 400, tokens: 1000000, jobs: 1 }, usage: [] });
   await env.DB.prepare("DELETE FROM sessions").run();
   expect((await get(env, "/admin", operator)).status).toBe(403);
 });
