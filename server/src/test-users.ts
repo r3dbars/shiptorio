@@ -6,6 +6,7 @@ import { previewAccess, secureTransport } from "./access";
 import { emptyProgress } from "@shiptorio/shared";
 import { admit, ipScope } from "./signup";
 import type { Env } from "./index";
+import { delegateTestRequest, ISOLATED_TEST_CONTEXT } from "./test-delegation";
 import { TEST_PERSONAS, type TestPersona, localTestHost as local, personaId, personaRepo, testUsersEnabled } from "./test-users-policy";
 export { TEST_PERSONAS, personaId, personaRepo, testUsersEnabled } from "./test-users-policy";
 
@@ -82,19 +83,22 @@ export function testUserRoutes(app: Hono<any>): void {
     const user = await currentUser(env, c.req.header("cookie") ?? null);
     const p = user?.login as TestPersona;
     if (!user || !TEST_PERSONAS.includes(p) || user.id !== personaId(p)) return c.json({ error: "Invalid test identity" }, 403);
+    // Set only by the private fixture entrypoint after verifying a scoped delegation.
+    if ((env as TestUsersEnv & { [ISOLATED_TEST_CONTEXT]?: boolean })[ISOLATED_TEST_CONTEXT]) return next();
     if (url.pathname === "/api/flags" && !["GET", "HEAD"].includes(c.req.method)) return c.json({ error: "Test account operation is not permitted" }, 403);
     if (url.pathname === "/api/me") return c.json({ login: user.login, allowed: true, admin: false, guest: false, prefs: await readPrefs(env, user), installUrl: "/test/install" });
     if (url.pathname === "/test/install") {
       c.header("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
       if (!["GET", "POST"].includes(c.req.method) || c.req.method === "POST" && c.req.header("origin") !== url.origin) return c.json({ error: "Invalid test install request" }, 403);
-      if (!env.TEST_FACTORY) return c.json({ error: "Isolated GitHub fixture is unavailable; no real installation was created" }, 503);
+      if (!env.TEST_FACTORY || (env.TEST_FACTORY_KEY?.length ?? 0) < 32) return c.json({ error: "Isolated GitHub fixture is unavailable; no real installation was created" }, 503);
       if (local(url) && (env.TEST_FACTORY_KEY?.length ?? 0) >= 32) {
         return env.TEST_FACTORY.fetch(`http://test-fixture.invalid/install${url.search}`, { method: c.req.method, headers: { "x-shiptorio-test-hop": env.TEST_FACTORY_KEY! } });
       }
-      return env.TEST_FACTORY.fetch(c.req.raw);
+      return env.TEST_FACTORY.fetch(await delegateTestRequest(c.req.raw, user, env.TEST_FACTORY_KEY ?? ""));
     }
     const repo = personaRepo(p);
     if (url.pathname === "/api/repos") {
+      if (!local(url) && env.TEST_FACTORY && (env.TEST_FACTORY_KEY?.length ?? 0) >= 32) return env.TEST_FACTORY.fetch(await delegateTestRequest(c.req.raw, user, env.TEST_FACTORY_KEY ?? ""));
       const owned = await env.DB.prepare("SELECT installation_id FROM user_repos WHERE user_id=? AND repo=?").bind(user.id, repo).first<{ installation_id: number }>();
       return c.json({ repos: owned ? [{ full_name: repo, fullName: repo, default_branch: "main", installation_id: owned.installation_id, blurb: "Isolated GitHub fixture" }] : [] });
     }
@@ -110,12 +114,8 @@ export function testUserRoutes(app: Hono<any>): void {
         if (ready?.status === 204) return next();
         return c.json({ error: "Local fixture boundary is unavailable" }, 503);
       }
-      if (env.TEST_FACTORY) {
-        const headers = new Headers();
-        for (const name of ["cookie", "content-type", "origin", "upgrade", "sec-websocket-key", "sec-websocket-version"]) {
-          const value = c.req.header(name); if (value) headers.set(name, value);
-        }
-        return env.TEST_FACTORY.fetch(new Request(c.req.url, { method: c.req.method, headers, body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body, redirect: "manual" }));
+      if (env.TEST_FACTORY && (env.TEST_FACTORY_KEY?.length ?? 0) >= 32) {
+        return env.TEST_FACTORY.fetch(await delegateTestRequest(c.req.raw, user, env.TEST_FACTORY_KEY ?? ""));
       }
       return c.json({ error: "Isolated test factory is unavailable; no real provider request was made" }, 503);
     }

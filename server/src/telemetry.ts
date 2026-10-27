@@ -11,6 +11,8 @@ export interface LogEntry extends Trace { level: 'info' | 'warn' | 'error'; ts: 
 interface Context { trace: Trace; env: TelemetryEnv; waitUntil: (task: Promise<unknown>) => void }
 const context = new AsyncLocalStorage<Context>();
 export const currentTrace = () => context.getStore()?.trace;
+/** Private fixture entrypoints use this to route outbound traffic; ordinary deployments never call it. */
+export const currentTestEnvironment = () => context.getStore()?.env;
 export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['waitUntil'], run: () => T): T {
   return context.run({ trace, env, waitUntil }, () => Sentry.withScope(() => {
     Sentry.setTag('requestId', trace.requestId);
