@@ -1,3 +1,9 @@
+---
+title: Test players and the player bot
+description: Isolated player accounts and browser testing without touching real repositories.
+section: Reference
+order: 30
+---
 # Test players and the player bot
 
 Test accounts are opt-in: `TEST_USERS=on`, on loopback or exactly `https://shiptorio.dev`, with a matching `PUBLIC_URL`. They cannot be enabled on shiptorio.com. The normal preview password gate remains on the real app.

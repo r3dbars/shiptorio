@@ -4,6 +4,8 @@ import { createSession, currentUser, endSession, saveReach, upsertUser } from ".
 import { readSessionDetails } from "./session";
 import { previewAccess, secureTransport } from "./access";
 import { emptyProgress } from "@shiptorio/shared";
+import { admit, ipScope } from "./signup";
+import type { Env } from "./index";
 
 export const TEST_PERSONAS = ["test-newbie", "test-guest", "test-midgame", "test-broke", "test-blocked"] as const;
 export type TestPersona = typeof TEST_PERSONAS[number];
@@ -32,7 +34,7 @@ export async function seedTestUser(env: TestUsersEnv, p: TestPersona): Promise<v
   // INSERT OR IGNORE preserves the player's test progress across logins.
   const progress = { ...emptyProgress(), ...(p === "test-midgame" ? { xp: 60, streak: 3, best: 3 } : {}) };
   await env.DB.batch([
-    env.DB.prepare("INSERT OR IGNORE INTO signup_allowlist(login,enabled,approved_by,factories,repos,runs_daily,updated_at) VALUES (?,1,'test-fixture',1,1,?,?)").bind(p, p === "test-broke" ? 0 : 20, now),
+    env.DB.prepare("INSERT OR IGNORE INTO signup_allowlist(login,enabled,approved_by,factories,repos,runs_daily,spark_calls_daily,spark_tokens_daily,updated_at) VALUES (?,1,'test-fixture',1,1,?,?,?,?)").bind(p, p === "test-broke" ? 0 : 20, p === "test-broke" ? 0 : null, p === "test-broke" ? 0 : null, now),
     env.DB.prepare("INSERT OR IGNORE INTO user_progress(user_id,value,updated_at) VALUES (?,?,?)").bind(id, JSON.stringify(progress), now),
   ]);
   if (p !== "test-newbie") {
@@ -63,6 +65,7 @@ export function testUserRoutes(app: Hono<any>): void {
       c.header("X-Content-Type-Options", "nosniff");
       c.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
       if (url.pathname === "/test/users") return url.searchParams.get("format") === "json" ? c.json({ personas: TEST_PERSONAS }) : c.html(`<!doctype html><html><meta name="viewport" content="width=device-width"><title>Shiptorio test accounts</title><body>${testerLinks(env, url)}</body></html>`);
+      if (!await admit(env as Env, await ipScope(c.req.raw, "test-login"), 20, 60000, "test sign-in flood")) return c.json({ error: "Try again later" }, 429);
       const p = url.searchParams.get("as") as TestPersona;
       if (!TEST_PERSONAS.includes(p)) return c.json({ error: "Unknown test persona" }, 400);
       if (p === "test-guest") {
