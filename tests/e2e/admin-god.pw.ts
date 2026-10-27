@@ -14,7 +14,7 @@ test('admin page and in-game God panel show audited read-only controls',async({p
  await page.goto('/admin');
  await expect(page.getByRole('heading',{name:'God controls',exact:true})).toBeVisible();
  await expect(page.locator('#god-user')).toContainText('fixture');
- await page.screenshot({path:join(output,`admin-${width}.png`)});
+ await page.screenshot({animations:'disabled',path:join(output,`admin-${width}.png`)});
  await page.locator('#god-repo').selectOption(repo);
  await page.getByRole('button',{name:'Review action',exact:true}).click();
  await expect(page.locator('#god-review')).toContainText('view');
@@ -25,9 +25,9 @@ test('admin page and in-game God panel show audited read-only controls',async({p
  await page.getByRole('button',{name:/Menu|Tools/i}).first().click();
  await page.getByRole('button',{name:'God',exact:true}).click();
  const panel=page.getByRole('region',{name:'God controls'});
- await expect(panel).toBeVisible();await expect(panel).toContainText('Read-only');
+ await expect(panel).toBeVisible();await expect(panel).toHaveCSS('opacity','1');await expect(panel).toContainText('Read-only');
  const bounds=await panel.boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(0);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width);
- await page.screenshot({path:join(output,`god-panel-${width}.png`)});
+ await page.screenshot({animations:'disabled',path:join(output,`god-panel-${width}.png`)});
  await panel.getByRole('combobox',{name:'Action',exact:true}).selectOption('write-mode');
  await panel.getByRole('button',{name:'Review action',exact:true}).click();
  await expect(panel.getByRole('region',{name:'Confirm admin action'})).toContainText('write-mode');

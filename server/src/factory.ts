@@ -890,11 +890,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async claimRunner(pairId: string, harnesses: RunnerJob["harness"][]) {
-    await this.load();
-    if (await adminPaused(this.env.DB,this.meta?.repo)) return null;
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
+      if (await adminPaused(this.env.DB,this.meta?.repo ?? (await this.ctx.storage.get<Meta>("meta"))?.repo)) return null;
       const running = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const expired = [...running.values()].filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now());
       for (const old of expired) {
