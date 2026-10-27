@@ -36,8 +36,9 @@ export async function linuxSandbox(work: string, agent?: { home: string; executa
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
       const child = Bun.spawn([Bun.which("bwrap")!, "--die-with-parent", "--new-session", "--unshare-all", ...(options.install || agent ? ["--share-net"] : []), "--cap-drop", "ALL", ...visible, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", directory, directory, "--bind", root, root, ...(agent ? ["--bind", home, home] : []), "--chdir", location, "--", ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
-      const timer = setTimeout(stop, options.timeout ?? 180000);
-      try { const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]); return { code, out, err }; }
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);
+      try { const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]); return { code, out, err, timedOut }; }
       finally { clearTimeout(timer); stop(); }
     },
     async close() { closed = true; await rm(root, { recursive: true, force: true }); },
