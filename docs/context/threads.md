@@ -31,6 +31,28 @@ is the only copy agents outside it (Codex) can see.
 | Grow the factory across many repos | PR open | The empire, behind `?empire=1` (remembered; `?empire=0` off). Every other repo you connect floats as a satellite island beyond the main one, tied by a sky rail with crates (`web/src/map/empire.ts`: real island, districts and launch pad, flattened to ~25 draw calls, no shadows). Island chip in the top bar opens the overview: camera pulls back over every island, sheet rolls up shipped, weighted Automated %, waiting on you, and the most stuck island; tap an island to sail there (`web/src/ui/Empire.tsx`). `IslandSummary` + `rollup` in `shared/src/empire.ts`; `GET /api/empire` asks each repo's Factory `summary()` (player's own repos via `reposFor`). Sim shows shiptorio, testing, transcripted |
 | Always show a next move after rockets | PR open | #105 follow-up. `web/src/ui/whatsNext.ts`: when no Next Move card is open, one clear move is always picked from state (launch, check in, stuck station, research, connect a mine, near permit, place a builder, the line, grow) and shown in the Next Move slot, live and sim. Sim planner keeps dealing moves after scripted ore runs out (connect a mine, then "pull 3 more open issues"). Check: `node web/scripts/next-move-check.mjs` (10 rockets, card within 2s each) |
 
+## Codex: public judge replay (2026-10-26)
+
+- Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
+  90-second, explicitly labeled simulation; query parameters cannot select a live repo.
+- Story: Sentry checkout crash + linked inbox report + GitHub docs issue → foreman plan → subscription
+  assembler → CI / verify rejection + scar / rework / independent review → docs permit card → automatic
+  docs rocket → human checkout merge rocket → approved reply → earned Advisor-to-Floor unlock.
+  The permit can be clicked or the simulated player grants it around 65 seconds. Replay resets the run.
+- UI uses `iron.css`, copy in `copy.ts`. No files under `web/src/map/` change: only the public
+  `FactoryMap` props, `useFactory` protocol, and existing sound/ship events drive the presentation.
+  This request explicitly authorizes the otherwise frontend-owned judge surface and sim fixture.
+- Server explicitly serves the app shell for `/judge` and `/judge/`, plus public content-hashed build
+  JS/CSS and already-public fonts/brand files. APIs, factory websockets, source maps, setup and private
+  app routes keep their existing gates. Judge boot skips telemetry/flags and makes no API calls.
+- Verification: `SHIPTORIO_TEST_PORT=8809 bun run test:e2e tests/e2e/judge.pw.ts` runs the full paced story
+  at desktop, iPhone and Pixel sizes, including passive playback, interactive permit, scar, three green
+  receipts, two actual ship events, 112 simulated users unblocked, Floor and replay reset. The optional
+  test port avoids collisions with other agents; default remains 8799. Gate tests: `server/test/judge.test.ts`.
+- PR: [#254](https://github.com/r3dbars/shiptorio/pull/254), branch `codex/judge-mode`.
+  Local `bun run test:fast`: 662 passed, 2 platform skips; 26 playtest cases / 332 decisions, no findings.
+  These are simulated outcomes, not proof of live AI/provider execution.
+
 ## PRs at a glance
 
 Rule since 18:44 UTC: every agent merges its own PR once CI is green, then checks the Deploy run (AGENTS.md).
@@ -126,24 +148,3 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Pricing source, checked 2026-10-26: https://dev.meta.ai/docs/pricing-rate-limits — $1.25/M input, $0.15/M cached input, $4.25/M output. These are estimates, not invoices. No historical backfill: old account totals cannot recover per-factory token splits.
 - Validation: full fast suite passes (662 passed, 2 skipped), all workspace/test typechecks, build, and 24 playtest cases / 306 decisions. Playwright budget flow passes on desktop, iPhone 14 and Pixel 7; admin table refresh renders without console errors in a local authenticated SQLite fixture. No paid API request was made for validation.
 - Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
-## Codex: public judge replay (2026-10-26)
-
-- Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
-  90-second, explicitly labeled simulation; query parameters cannot select a live repo.
-- Story: Sentry checkout crash + linked inbox report + GitHub docs issue → foreman plan → subscription
-  assembler → CI / verify rejection + scar / rework / independent review → docs permit card → automatic
-  docs rocket → human checkout merge rocket → approved reply → earned Advisor-to-Floor unlock.
-  The permit can be clicked or the simulated player grants it around 65 seconds. Replay resets the run.
-- UI uses `iron.css`, copy in `copy.ts`. No files under `web/src/map/` change: only the public
-  `FactoryMap` props, `useFactory` protocol, and existing sound/ship events drive the presentation.
-  This request explicitly authorizes the otherwise frontend-owned judge surface and sim fixture.
-- Server explicitly serves the app shell for `/judge` and `/judge/`, plus public content-hashed build
-  JS/CSS and already-public fonts/brand files. APIs, factory websockets, source maps, setup and private
-  app routes keep their existing gates. Judge boot skips telemetry/flags and makes no API calls.
-- Verification: `SHIPTORIO_TEST_PORT=8809 bun run test:e2e tests/e2e/judge.pw.ts` runs the full paced story
-  at desktop, iPhone and Pixel sizes, including passive playback, interactive permit, scar, three green
-  receipts, two actual ship events, 112 simulated users unblocked, Floor and replay reset. The optional
-  test port avoids collisions with other agents; default remains 8799. Gate tests: `server/test/judge.test.ts`.
-- PR: [#254](https://github.com/r3dbars/shiptorio/pull/254), branch `codex/judge-mode`.
-  Local `bun run test:fast`: 662 passed, 2 platform skips; 26 playtest cases / 332 decisions, no findings.
-  These are simulated outcomes, not proof of live AI/provider execution.

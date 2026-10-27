@@ -12,11 +12,13 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   // Intentionally hostile query cannot turn the public route into a live factory.
   const response = await page.goto('/judge?source=live&repo=private/repo&autolaunch=1');
   expect(response?.status()).toBe(200);
+  expect((await page.request.head('/judge')).status()).toBe(200);
   await expect(page).toHaveURL(/\/judge\?source=sim$/);
   await expect(page).toHaveTitle(/Shiptorio/);
   await expect(page.getByRole('heading', { name: 'A factory that ships fixes' })).toBeVisible();
   expect(await page.context().cookies()).toEqual([]);
-  await page.getByRole('button', { name: 'Play the 90-second story' }).click();
+  await page.getByRole('button', { name: 'Play the 90-second story' }).focus();
+  await page.keyboard.press('Enter');
   const story = page.getByRole('region', { name: 'Judge story', exact: true });
   await expect(story).toHaveAttribute('data-beat', '1');
   await expect(page.getByTestId('judge-item-github_issue')).toContainText('Clarify the shipping FAQ');
