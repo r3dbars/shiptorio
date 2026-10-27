@@ -125,8 +125,8 @@ export const CASES: EvalCase[] = [
   },
   {
     id: "usage-drop", title: "Daily users fell 55% week over week, no new errors",
-    signals: humBut(sig("posthog", "usage_flat", 0.65, "Daily users fell from 410 to 180 this week.", ["DAU 180, last week 410", "Signups 9 (was 58)"], { metric: { value: 180, baseline: 410, unit: "users" } })),
-    expect: { area: "users", signal: "posthog:usage_flat:repo" }, alsoOk: ["feedback"], unlock: /drop|funnel|why|churn|onboard|signup|ask|interview|retention|fell/i,
+    signals: humBut(sig("posthog", "usage_falling", 0.65, "Daily users fell from 410 to 180 this week.", ["DAU 180, last week 410", "Signups 9 (was 58)"], { metric: { value: 180, baseline: 410, unit: "users" } })),
+    expect: { area: "users", signal: "posthog:usage_falling:repo" }, alsoOk: ["feedback"], unlock: /drop|funnel|why|churn|onboard|signup|ask|interview|retention|fell/i,
     why: "Something made people stop coming back; find out what before building more.",
   },
   {
