@@ -5,7 +5,7 @@ import { localBudget } from "./local-budget";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { gameMaster, judgePermit, pickFiles, planLocalTask, triage, type SparkStep } from "../src/spark";
-import { diffText, referencedFiles, reviewDiff } from "../src/gauntlet";
+import { diffText, referencedFiles, reviewDiff, type ReviewVerdict } from "../src/gauntlet";
 
 const env = { ...localBudget(), META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: process.env.SPARK_MODEL, SPARK_BASE_URL: process.env.SPARK_BASE_URL };
 if (!env.META_API_KEY) { console.error("set META_API_KEY first"); process.exit(1); }
@@ -25,6 +25,15 @@ if (!paths.includes("src/index.ts")) { console.error(`${root} doesn't look like 
 const issue = { title: "README setup steps use npm instead of bun", body: "The Setup section says npm install / npm start. This repo uses bun. Update the setup steps.", district: "/" };
 const badDiff = diffText([{ filename: "README.md", status: "modified", patch: "@@ -9,9 +9,17 @@\n ## Setup\n \n+Install dependencies and run the app through its source entry file:\n+\n+```sh\n+bun install\n+bun run src/index.ts\n+```\n+\n+Optionally, pass a coupon code:\n+\n ```sh\n-npm install\n-npm start\n+bun run src/index.ts --coupon SAVE10\n ```" }]);
 const goodDiff = diffText([{ filename: "README.md", status: "modified", patch: "@@ -9,9 +9,13 @@\n ## Setup\n \n ```sh\n-npm install\n-npm start\n+bun install\n+bun run src/index.ts\n+bun run src/index.ts SAVE10   # optional coupon code\n ```" }]);
+// Testing #13: a new docs/SHIPPING.md says "$50 or more ships free", but src/cart.ts only ships free above $50
+// (open bug #2). A reviewer that reads the code should flag the mismatch.
+const shippingDiff = diffText([{ filename: "docs/SHIPPING.md", status: "added", patch: "@@ -0,0 +1,3 @@\n+# Shipping\n+\n+Shipping costs $5.99. Orders totaling $50 or more after discounts ship free. An empty cart ships free." }]);
+// The toolbox (when this checkout has one, PR #314) lets review and planning read and search the whole testbed.
+const box = { paths, read, issue: () => JSON.stringify(issue) };
+const tools = await import("../src/spark-tools" as string).catch(() => null) as { planLocalTask?: typeof planLocalTask } | null;
+const plan: typeof planLocalTask = (env, task, allowed, _read, record) => (tools?.planLocalTask ? tools.planLocalTask(env, task, allowed, box as never, record) : planLocalTask(env, task, allowed, read, record));
+const review = (task: { title: string; body: string; builder: string }, diff: string, ctx: { path: string; content: string }[]) =>
+  (reviewDiff as unknown as (...a: unknown[]) => Promise<ReviewVerdict>)(env, task, diff, ctx, box);
 const context = async (diff: string) => (await Promise.all(referencedFiles([{ filename: "README.md", status: "modified", patch: diff }]).map(async path => ({ path, content: (await read(path))?.slice(0, 6000) ?? "" })))).filter(c => c.content);
 
 type Row = { step: string; ok: boolean; ms: number; detail: string };
@@ -41,14 +50,16 @@ let scope: string[] = [];
 await step("scope", async () => (scope = await pickFiles(env, { ...issue }, paths)),
   f => [f.includes("README.md"), f.join(", ")]);
 const steps: SparkStep[] = [];
-await step("plan (tool loop)", () => planLocalTask(env, issue, scope.length ? scope : ["README.md", "package.json"], read, async s => { steps.push(s); }),
+await step("plan (tool loop)", () => plan(env, issue, scope.length ? scope : ["README.md", "package.json"], read, async s => { steps.push(s); }),
   a => [a.files.includes("README.md") && steps.filter(s => s.tool !== "assign_job").length >= 2, `${steps.map(s => s.tool).join(" → ")} | edits ${a.files.join(", ")}`]);
-await step("review catches broken example", async () => reviewDiff(env, { ...issue, builder: "Codex" }, badDiff, await context(badDiff)),
+await step("review catches broken example", async () => review({ ...issue, builder: "Codex" }, badDiff, await context(badDiff)),
   v => [v.verdict === "rework", `${v.verdict}: ${v.reason}`]);
-await step("review passes a working example", async () => reviewDiff(env, { ...issue, builder: "Codex" }, goodDiff, await context(goodDiff)),
+await step("review passes a working example", async () => review({ ...issue, builder: "Codex" }, goodDiff, await context(goodDiff)),
   v => [v.verdict === "pass", `${v.verdict}: ${v.reason}`]);
+await step("review flags doc vs code (#13)", async () => review({ title: "Docs: write down the shipping rule", body: "Record the free-shipping rule in docs/SHIPPING.md.", builder: "Codex" }, shippingDiff, []),
+  v => [v.verdict === "rework" || /more than|strictly|>=?|over \$?50|5000|exactly \$?50/i.test(`${v.reason} ${v.findings.join(" ")}`), `${v.verdict}: ${v.reason}`]);
 const rework: SparkStep[] = [];
-await step("rework re-plan", () => planLocalTask(env, { ...issue, failure: "AI review: the README example passes --coupon, but src/index.ts reads the coupon from process.argv[2].", scars: [{ station: "review", reason: "README example `--coupon SAVE10` doesn't work against src/index.ts", strike: 1 }] }, ["README.md", "src/index.ts"], read, async s => { rework.push(s); }),
+await step("rework re-plan", () => plan(env, { ...issue, failure: "AI review: the README example passes --coupon, but src/index.ts reads the coupon from process.argv[2].", scars: [{ station: "review", reason: "README example `--coupon SAVE10` doesn't work against src/index.ts", strike: 1 }] }, ["README.md", "src/index.ts"], read, async s => { rework.push(s); }),
   a => [/argv|positional|--coupon/i.test(a.plan), `${rework.map(s => s.tool).join(" → ")} | ${a.plan.split("\n")[0].slice(0, 160)}`]);
 await step("permit judgement", () => judgePermit(env, { lane: "docs", streak: 5, need: 5, ships: [{ title: "Use bun in setup docs" }, { title: "Document shipping rules" }], openRisks: [] }),
   p => [typeof p.recommend === "boolean" && !!p.why, `${p.recommend ? "grant" : "hold"}: ${p.why}`]);
