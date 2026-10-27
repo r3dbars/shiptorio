@@ -1724,6 +1724,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const onPad = s.items.find((i) => i.state === "on_pad");
   if (onPad) askToLaunch(onPad);
   if (sc.checkin) later(TICK_MS, dealCheckIn);
+  // a player who already has rockets but no goal gets the goal card soon after they come back, like the live tick
+  if ((sc.rockets ?? 0) > 0) later(TICK_MS * 4, offerGoal);
   if (sc.onboard) later(TICK_MS, scan);
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, tickMs);
