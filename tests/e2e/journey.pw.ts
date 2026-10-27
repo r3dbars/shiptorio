@@ -1,11 +1,20 @@
 import { createHmac } from 'node:crypto';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 import { assertWire } from '../contract/assert-wire';
 
 test('intro → sign in → repo → approve → PR → gauntlet → launch → rocket', async ({ page }, info) => {
   // Freeze Date only: the foundry's shift clock is visible in card baselines,
   // while timers and the actual journey must continue normally.
-  await page.clock.setFixedTime(new Date('2026-10-27T12:00:00Z'));
+  const fixedTime = new Date('2026-10-27T12:00:00Z');
+  await page.clock.setFixedTime(fixedTime);
+  const screenshot = async (target: Locator, name: string) => {
+    // Stop WebGL animation work during UI-only capture on software-rendered CI.
+    // Reapply fixed Date after OAuth document navigation before each 1ms pause.
+    await page.clock.setFixedTime(fixedTime);
+    await page.clock.pauseAt(new Date(fixedTime.getTime() + 1));
+    try { await expect(target).toHaveScreenshot(name); }
+    finally { await page.clock.resume(); await page.clock.setFixedTime(fixedTime); }
+  };
   const repo = `fixture/${info.project.name}`;
   let signedIn = false;
   const errors: string[] = [], wireErrors: string[] = [], messages: any[] = [];
@@ -46,7 +55,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await page.getByRole('button', { name: 'Skip', exact: true }).click();
   const welcome = page.getByRole('region', { name: 'Welcome to Shiptorio' });
   await expect(welcome).toBeVisible();
-  await expect(welcome).toHaveScreenshot('sign-in.png');
+  await screenshot(welcome, 'sign-in.png');
   // OAuth navigates to a new document before it discovers the signed-in repos.
   // Assert that real response before giving the rendered repo its own UI wait.
   const discovery = page.waitForResponse(response => new URL(response.url()).pathname === '/api/repos' && response.status() === 200);
@@ -74,7 +83,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json()).length).toBe(1);
   await post(`/__test/${repo}/tick`);
   await expect(card).toContainText('Approve');
-  await expect(card).toHaveScreenshot('approve-plan.png');
+  await screenshot(card, 'approve-plan.png');
   await card.getByRole('button', { name: /Approve and build/ }).click();
   await expect.poll(async () => (await (await page.request.get(`/api/repos/${repo}/runner/jobs`)).json())[0]?.status).toBe('ready');
   const { job } = await post(`/api/runner/${repo}/claim`, { harnesses: ['codex'] }, token);
@@ -84,7 +93,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   for (let i = 0; i < 3; i++) await post(`/__test/${repo}/tick`);
   await expect(card).toContainText('Launch #99');
   await expect(card).toContainText('CI, the verify bay and AI review all passed');
-  await expect(card).toHaveScreenshot('launch-card.png');
+  await screenshot(card, 'launch-card.png');
   await page.evaluate(() => {
     (window as any).__ships = [];
     window.addEventListener('shiptorio:ship', e => (window as any).__ships.push((e as CustomEvent).detail));
