@@ -6,13 +6,12 @@ async function ownerSession(page: Page, context: BrowserContext, baseURL: string
   }));
 }
 async function saveNativeQuota(admin: Page, baseURL: string) {
+  await expect(admin.locator('meta[name="viewport"]')).toHaveAttribute('content', 'width=device-width, initial-scale=1');
   const runInput = admin.getByRole('spinbutton', { name: 'Runs/day (UTC)', exact: true });
   await expect(runInput).toHaveValue('20');
   await runInput.fill('25');
   const saved = admin.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/admin/signup');
-  // Native keyboard activation also works in mobile popups, where Chromium's
-  // visual viewport can disagree with pointer coordinates after input scrolling.
-  await admin.getByRole('button', { name: 'Save access and quotas', exact: true }).press('Enter');
+  await admin.getByRole('button', { name: 'Save access and quotas', exact: true }).click();
   const response = await saved;
   expect(response.status(), await response.text()).toBe(200);
   expect(response.request().headers().origin).toBe(new URL(baseURL).origin);
