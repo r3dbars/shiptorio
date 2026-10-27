@@ -210,3 +210,22 @@ explicit Launch. Do not implement the issue outside that runner path.
   control is investigating the runtime separately, preserving the OS boundary.
 - #170 still has no PR and no Launch. GitHub Actions budget approval is pending,
   so required CI and production Deploy cannot complete even after local recovery.
+
+## Bounded runtime controls: no certified replacement
+
+- Unchanged shared/test/progression.test.ts reproduces the Bun1.4.4/macOS27
+  trap inside the unchanged verification boundary; outside it all12 tests pass.
+  Bun1.4.3 also traps and1.4.2 exits137. TZ=UTC does not resolve1.4.4.
+- Disposable Bun1.3.10 passes the focused12 tests/53 assertions inside the same
+  boundary, but cannot parse lockfileVersion2 for frozen dependency installation.
+  With dependencies prepared frozen by1.4.4, its one full unchanged-base suite
+  reports756 passed,35 failed,3 skipped without a panic. The failures involve
+  trusted harness fixtures requiring explicit /tmp paths, a local server or
+  other resources intentionally unavailable inside the untrusted-job boundary.
+- This does not certify1.3.10 as a runner replacement. No sandbox widening,
+  lockfile rewrite, global runtime/service change, test-assertion relaxation or
+  crash-report upload occurred. The live job/pairing were untouched. A safe
+  verification-recipe/runtime solution remains required before a real #170 PR.
+- PR monitor still has no eligible current-head green PRs; Actions billing
+  remains blocked. Live402a1b94 was released by the branding owner, whose
+  separate smoke evidence does not turn the failed Deploy workflow green.
