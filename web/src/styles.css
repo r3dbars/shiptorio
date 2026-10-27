@@ -1301,7 +1301,7 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 
 /* Spark owner meter uses the same iron plate and brass controls as the HUD. */
 .spark-spend { cursor: pointer; color: var(--iron-amber); }
-.spend-warning { position: fixed; top: 90px; left: 16px; width: min(340px, calc(100vw - 32px)); z-index: 5; padding: 14px; border-color: var(--iron-amber); }
+.spend-warning { position: fixed; top: calc(20px + var(--top-h, 80px) + var(--sat)); left: 16px; width: min(340px, calc(100vw - 32px)); z-index: 5; padding: 14px; border-color: var(--iron-amber); }
 .spend-warning p, .spend-panel p { margin: 8px 0; font-size: 12px; }
 .spend-panel { border-bottom: 1px solid var(--iron-amber); padding-bottom: 14px; margin-bottom: 14px; }
 .spend-panel input { width: 100%; padding: 8px; background: var(--panel); color: inherit; border: 1px solid var(--iron-amber); }

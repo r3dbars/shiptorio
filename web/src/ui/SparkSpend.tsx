@@ -18,19 +18,21 @@ function useSpend(repo?: string) {
       } catch { if (active) setError("Spend refresh unavailable"); }
     };
     void refresh();
+    const changed = () => void refresh();
+    window.addEventListener("shiptorio:budget-updated", changed);
     const timer = setInterval(() => { if (!document.hidden) void refresh(); }, 15000);
-    return () => { active = false; clearInterval(timer); };
+    return () => { active = false; clearInterval(timer); window.removeEventListener("shiptorio:budget-updated", changed); };
   }, [repo]);
   return { spend, setSpend, error, setError };
 }
-export function SparkSpendChip({ repo, onOpen }: { repo?: string; onOpen: () => void }) {
+export function SparkSpendChip({ repo, onOpen, expanded }: { repo?: string; expanded?: boolean; onOpen: () => void }) {
   const { spend, error } = useSpend(repo);
   if (!spend) return null;
   return <>
     <button className="chip spark-spend" onClick={onOpen} title={error || spend.explanation} aria-label={`Planner spend: $${spend.estimatedUsd.toFixed(4)} of $${spend.dailyBudgetUsd.toFixed(2)} today. ${spend.status}`}>
       <span>~${spend.estimatedUsd.toFixed(2)}<small>Planner / ${spend.dailyBudgetUsd.toFixed(2)}</small></span>
     </button>
-    {spend.status !== "ok" && <aside className="card spend-warning" role="status">
+    {!expanded && spend.status !== "ok" && <aside className="card spend-warning" role="status">
       <b>{spend.status === "stopped" ? "Thinking budget reached" : "Thinking budget at 80%"}</b>
       <p>{spend.explanation}</p><button className="credit-btn" onClick={onOpen}>Review daily budget</button>
     </aside>}
@@ -53,6 +55,7 @@ export function SparkSpendPanel({ repo }: { repo?: string }) {
         const response = await fetch(endpoint(repo), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dailyBudgetUsd }) });
         if (!response.ok) throw new Error("Budget could not be saved. Try again.");
         setSpend(await response.json()); setError("");
+        window.dispatchEvent(new Event("shiptorio:budget-updated"));
       } catch (e) { setError(e instanceof Error ? e.message : "Budget could not be saved"); }
       finally { setSaving(false); }
     }}>

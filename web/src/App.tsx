@@ -464,7 +464,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             repo={state?.repo}
             showKey={show("line")}
             extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" ? (<>
-              <SparkSpendChip repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
+              <SparkSpendChip expanded={sheet === "thinks"} repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
               {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             </>) : undefined}

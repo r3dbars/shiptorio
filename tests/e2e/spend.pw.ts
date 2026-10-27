@@ -7,7 +7,7 @@ test('owner spend chip → thinking panel → saved hard stop → resume; 80% wa
   await page.request.post(`/__test/${repo}/seed?ore=0`);
   const session = await (await page.request.post('/__test/session')).json();
   await context.addCookies(session.cookie.split('; ').map((entry: string) => {
-    const i = entry.indexOf('='); return { name: entry.slice(0, i), value: entry.slice(i + 1), url: 'http://localhost:8799' };
+    const i = entry.indexOf('='); return { name: entry.slice(0, i), value: entry.slice(i + 1), url: String(info.project.use.baseURL) };
   }));
   await page.goto(`/?source=live&repo=${repo}&tour=0`);
   await expect(page).toHaveTitle(/Shiptorio/i);
