@@ -12,11 +12,11 @@ export interface EditProbeContext {
 }
 /** Run the production assembler on synthetic source; require exact bytes, not a self-report. */
 export async function probeAssemblerEdit(assemble: (context: EditProbeContext) => Promise<void>) {
-  const root = await mkdtemp(join(tmpdir(), "shiptorio-edit-doctor-"));
-  const work = join(root, "checkout"), canary = join(root, "outside-canary.txt");
+  const container = await mkdtemp(join(tmpdir(), "shiptorio-edit-doctor-"));
+  const root = join(container, "job"), work = join(root, "checkout"), canary = join(container, "outside-canary.txt");
   let verification: CheckSandbox | undefined;
   try {
-    await mkdir(work);
+    await mkdir(work, { recursive: true });
     await Bun.write(join(work, "example.ts"), before);
     await Bun.write(join(work, "unapproved.ts"), "export const keep = true;\n");
     await Bun.write(canary, "outside stays unchanged\n");
@@ -35,5 +35,5 @@ export async function probeAssemblerEdit(assemble: (context: EditProbeContext) =
     if (changed.code || untracked.code || changed.out.trim() !== "example.ts" || untracked.out.trim()) throw new Error("Edit probe exceeded its approved scope");
     // Keep the filesystem proof explicit. A successful agent process without these bytes fails doctor.
     return { edited: "example.ts", before, after };
-  } finally { await verification?.close(); await rm(root, { recursive: true, force: true }); }
+  } finally { await verification?.close(); await rm(container, { recursive: true, force: true }); }
 }

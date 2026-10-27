@@ -122,7 +122,7 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 
 - Branch `codex/runner-edit-doctor`: add an explicit real subscription edit probe, proving exact file bytes and untouched canaries in a disposable checkout. Basic doctor stays inference-free.
 - Integrates the active supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
-- Fixture tests reject no-op success, extra/unapproved edits and provider failure; public runner documentation describes the probe and nested Seatbelt failure. Production wiring and real provider proof are in progress.
+- Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. Full command/integration validation is in progress.
 
 ## Codex (outside the Claude project)
 

@@ -22,5 +22,5 @@ osTest("edit doctor rejects modified unapproved files and extra files", async ()
 osTest("edit doctor cleans its fixture after provider failures", async () => {
   let fixture = "";
   await expect(probeAssemblerEdit(async context => { fixture = context.root; throw new Error("provider unavailable"); })).rejects.toThrow("provider unavailable");
-  expect(await Bun.file(`${fixture}/outside-canary.txt`).exists()).toBe(false);
+  expect(await Bun.file(`${fixture}/checkout/example.ts`).exists()).toBe(false);
 });
