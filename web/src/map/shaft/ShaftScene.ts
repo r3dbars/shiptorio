@@ -415,6 +415,7 @@ export class ShaftScene {
       bo.afterBake();
       this.director = new Director(stage, layout, { reduceMotion: this.reduceMotion });
       if (!bo.step && !bo.busy) this.director.unlock();
+      else bo.repark();
     }
     if (this.firstRun.level < 0 && this.state) this.firstRun.set(bo ? bo.litFloors : litFloors(this.state), this.reduceMotion); // the first look: no swoop
     this.firstRun.patch(stage.root, !!bo && !bo.complete);
@@ -453,6 +454,7 @@ export class ShaftScene {
           this.renderer.shadowMap.needsUpdate = true;
           stage.render(this.renderer);
           this.hud.place(this.W, this.H);
+          this.quietChips();
           return { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles };
         },
       };

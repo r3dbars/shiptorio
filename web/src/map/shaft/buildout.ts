@@ -75,8 +75,23 @@ function extras(step: StepId, L: Layout): { stations: string[]; paths: string[] 
   if (step === "planner") return { stations: plants(L.planner.id).map((s) => s.id), paths: names.filter((n) => n === "feed-0") };
   if (step === "checks")
     return { stations: L.checks.map((s) => s.id), paths: names.filter((n) => n === "ci-feed" || /^(lane|drop)-/.test(n) || n === "rework" || n === "rw-drop" || n === "rw-in") };
-  if (step === "launch") return { stations: [], paths: names.filter((n) => n === "to-lift" || /^(to-gate|to-pad|gate-)/.test(n)) };
+  if (step === "launch") return { stations: L.pad ? [L.pad.id] : [], paths: names.filter((n) => n === "to-lift" || /^(to-gate|to-pad|gate-)/.test(n)) };
   return { stations: [], paths: [] };
+}
+
+/** The machines a step raises where the player can see them (journey.resolve, plus the pad: its type is "launch"). */
+export function sitesOf(step: StepId, L: Layout): { stations: string[]; mines: string[] } {
+  const r = resolve(stepById(step).reveals, L);
+  const stations = [...r.stations];
+  if (stepById(step).reveals.some((p) => "station" in p && p.station === "pad") && L.pad && !stations.includes(L.pad.id)) stations.push(L.pad.id);
+  return { stations, mines: r.mines };
+}
+
+/** Where the camera parks for a step (journey.cameraFor, plus the pad). */
+export function cameraOf(step: StepId, L: Layout): string[] {
+  const target = cameraFor(stepById(step), L);
+  if (!target.length && stepById(step).camera && "station" in stepById(step).camera && L.pad) return [L.pad.id];
+  return target;
 }
 
 /** Which step raises each station, path and mine of this layout (anything left over: null). */
@@ -207,7 +222,7 @@ export class Buildout {
   private lights: { l: THREE.Light; station: string }[] = [];
   private readonly hiddenStations = new Set<string>();
   private chalk: THREE.Group | null = null;
-  private chalkMat = new THREE.MeshBasicMaterial({ color: 0xf4ead8, transparent: true, opacity: 0.5, depthWrite: false, fog: false });
+  private chalkMat = new THREE.MeshBasicMaterial({ color: 0xf4ead8, transparent: true, opacity: 0.85, depthWrite: false, fog: false });
   private stakeMat = new THREE.MeshBasicMaterial({ color: 0x5a3f26, fog: false });
 
   /** rise per piece slot, 0 (gone) to 1 (all there), four to a vec4: firstRun.ts uploads it */
@@ -256,6 +271,10 @@ export class Buildout {
     for (const st of I.stationList) {
       if (this.standing(this.owners.stations.get(st.id) ?? null)) continue;
       this.hiddenStations.add(st.id);
+      // an unbuilt machine doesn't run (no smoke, no sparks out of thin air)
+      const inst = (st as unknown as { inst: { update: (t: number, dt: number) => void } }).inst;
+      const run = inst.update;
+      inst.update = (t, dt) => void (this.hiddenStations.has(st.id) || run.call(inst, t, dt));
       // children hidden through the bake (it leaves hidden things alone), then the holder itself
       for (const c of st.holder.children) (c.userData.boWas = c.visible), (c.visible = false);
     }
@@ -484,11 +503,17 @@ export class Buildout {
 
   private parkOn(id: StepId | null) {
     if (!id || !this.L) return;
-    const target = cameraFor(stepById(id), this.L);
+    const target = cameraOf(id, this.L);
     const key = target.join(",");
     if (key === this.parked || !target.length) return;
     this.parked = key;
     this.hooks.park(target);
+  }
+
+  /** A new camera (a new shaft): park it where the journey is. */
+  repark() {
+    this.parked = "";
+    this.parkOn(this.moment?.step ?? this.next);
   }
 
   /** a tap: skip ahead to the burst (the payoff always plays) */
@@ -502,7 +527,7 @@ export class Buildout {
   /** every frame (and every manual advance) */
   tick(t: number, dt: number) {
     if (this.chalk) {
-      const glow = this.moment?.phase === "chalk" ? 0.55 + 0.4 * Math.min(1, this.moment.t / CHALK_S) : this.reduced ? 0.5 : 0.42 + 0.12 * Math.sin(t * 2.2);
+      const glow = this.moment?.phase === "chalk" ? 0.85 + 0.15 * Math.min(1, this.moment.t / CHALK_S) : this.reduced ? 0.8 : 0.72 + 0.14 * Math.sin(t * 2.2);
       this.chalkMat.opacity = glow;
     }
     const mo = this.moment;
@@ -573,7 +598,7 @@ export class Buildout {
     mo.phase = "burst";
     mo.t = 0;
     // the machine the camera's on bursts; a step that raised none (the tunnel) crackles at its site
-    const cam = cameraFor(stepById(mo.step), L);
+    const cam = cameraOf(mo.step, L);
     let target: THREE.Object3D | undefined = cam.map((k) => I.stations[k]?.holder).find((h) => h && mo.holders.includes(h));
     if (!target) {
       mo.anchor = new THREE.Group();
@@ -581,30 +606,21 @@ export class Buildout {
       this.root!.add(mo.anchor);
       target = mo.anchor;
     }
-    const plant = this.feederOf(target, L);
-    mo.burst = burst(target, { first: true, reduced: this.reduced, from: plant });
+    // burst.ts finds the cable feeding a machine from its station:<id> name
+    mo.burst = burst(target, { first: true, reduced: this.reduced });
     emitBuild({ id: mo.step, phase: "burst", first: true });
     this.hooks.poke();
-  }
-
-  // the plant that powers a machine, in the machine's parent frame (the root)
-  private feederOf(target: THREE.Object3D, L: Layout): THREE.Vector3 | undefined {
-    const id = target.name.startsWith("station:") ? target.name.slice(8) : "";
-    const plant = id && L.stations.find((s) => s.power && ((s.def as { feeds?: string[] }).feeds ?? []).includes(id) && this.standing(this.owners!.stations.get(s.id) ?? null));
-    return plant ? new THREE.Vector3(plant.x, plant.y + 1.5, plant.z) : undefined;
   }
 
   // ---------- the chalk outline on the next site ----------
 
   private siteOf(step: StepId): THREE.Vector3 {
     const L = this.L!;
-    const r = resolve(stepById(step).reveals, L);
+    const r = sitesOf(step, L);
     const st = r.stations.map((id) => L.stations.find((s) => s.id === id)).find(Boolean);
     if (st) return new THREE.Vector3(st.x, st.y + 1, st.z);
     const m = r.mines[0] && MINES[r.mines[0]];
-    if (m) return new THREE.Vector3(m.x, m.y + 0.8, LEDGE_Z + 0.6);
-    const p = r.paths.map((n) => L.paths.find((x) => x.name === n)).find(Boolean);
-    return p ? new THREE.Vector3(...p.pts[0]) : new THREE.Vector3();
+    return m ? new THREE.Vector3(m.x, m.y + 0.8, LEDGE_Z + 0.6) : new THREE.Vector3();
   }
 
   /** where the pool of light sits (root coords) and how wide, or null for none */
@@ -626,7 +642,7 @@ export class Buildout {
     this.clearChalk();
     if (!step || !this.root || !this.L || this.moment?.phase === "construct" || this.moment?.phase === "burst" || this.moment?.phase === "payoff") return;
     const L = this.L;
-    const r = resolve(stepById(step).reveals, L);
+    const r = sitesOf(step, L);
     const g = new THREE.Group();
     g.name = "buildout-chalk";
     g.userData.noBake = true;
@@ -652,7 +668,7 @@ export class Buildout {
       e.rotation.y = (side * Math.PI) / 2;
       for (let s = -half + gap; s < half - gap; s += dash + gap) {
         const len = Math.min(dash, half - gap - s);
-        const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.03, 0.09), this.chalkMat);
+        const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.03, 0.15), this.chalkMat);
         m.position.set(s + len / 2, 0, half);
         e.add(m);
       }
@@ -668,7 +684,7 @@ export class Buildout {
     }
     // a chalk cross where the machine's heart goes
     for (const a of [Math.PI / 4, -Math.PI / 4]) {
-      const x = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.03, 0.08), this.chalkMat);
+      const x = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.03, 0.13), this.chalkMat);
       x.rotation.y = a;
       g.add(x);
     }
@@ -682,7 +698,7 @@ export class Buildout {
     g.position.set(m.x, m.y, MINE_FACE_Z + 0.07);
     const w = 3.4, h = 2.8;
     const bar = (len: number, x: number, y: number, rot: number) => {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(len, 0.09, 0.03), this.chalkMat);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, 0.03), this.chalkMat);
       b.position.set(x, y, 0);
       b.rotation.z = rot;
       g.add(b);
