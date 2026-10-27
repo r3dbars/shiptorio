@@ -100,3 +100,34 @@ and spread rather than manufacturing a pooled p95 or confidence interval.
 to hosted acceptance. Root reviews source/config/metric completeness and assigns the
 finite exclusive lease before any remote fixture action. GraphQL read capability was
 verified read-only for existing private practice telemetry; no A/B run has occurred.
+
+## Remote caller review proposal — held, not implemented
+
+No approved remote caller has been verified. The restored gateway forwards ordinary
+`fetch` delegations; it cannot invoke this private `probe` RPC as-is. A lease alone is
+insufficient. The local-only test driver is not a deployment target and must not be
+published. Do not add a public CPU route, replay the signed delegation as a metric
+invocation, or enable request logs to get around this gap.
+
+Root may select an already approved private service caller if one exists. Otherwise,
+a concrete headerless alternative for review is a **staging-only scheduled caller**:
+keep the gateway's existing `fetch` implementation/gate unchanged; its scheduled
+handler reads one root-written, expiring, bounded operation manifest from existing
+staging KV, then invokes `TEST_FACTORY.probe()` through the existing private binding.
+It records only operation/source/time/count/known-status summaries. A single-flight
+manifest state/receipt prevents replay, stops on any failure/expiry and restores no
+state silently. The caller runs identical code throughout A/B and its staging CPU
+is excluded from private-backend/Factory metrics. There is no existing staging cron
+in the frozen configuration, so this alternative requires root's **separate code,
+cron configuration and scoped KV-write review/grant**. Those changes are not part
+of the current adapter and are not implicitly authorized.
+
+Propose a small **10-minute pilot lease first**, after caller review: baseline only,
+5 excluded warmups + 20 measured per operation (100 total workload invocations),
+then exact source/version/object-specific GraphQL checks and restore. Stop if RPC
+invocations cannot be isolated/count-reconciled or alarm CPU is unavailable. Pilot
+results establish metric viability, not the 30% target. No candidate deploy or full
+ABBA run follows automatically. Only after pilot success, root may grant a separate
+bounded ABBA window, with 50 warmups + 250 measured per operation/block as above and
+an explicit request/cost cap. Missed counts, sampling or inadequate time remain
+unproven. No new log ingestion is needed for either phase.
