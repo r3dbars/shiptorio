@@ -52,3 +52,12 @@ Music starts after a gesture; its switch and separate volume are in Settings.
 “Up from the Mine”, its original synthesized instruments and generated audio are
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/); see
 [the music inventory](web/public/music/LICENSES.md). There are no sampled audio assets.
+
+## License
+
+[MIT](LICENSE). Fonts are SIL OFL 1.1 (license files sit next to them) and the music is CC0.
+
+Shiptorio is a fan-inspired project and isn't affiliated with or endorsed by Wube Software or Factorio.
+All game art is original.
+
+Found a security issue? See [SECURITY.md](SECURITY.md).
