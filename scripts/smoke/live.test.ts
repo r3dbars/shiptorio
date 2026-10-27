@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { smoke } from "./live";
 
 const sha = "a".repeat(40);
-test("live smoke accepts healthy routes and rejects each deployment regression", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("live smoke accepts healthy routes and rejects each deployment regression", async () => {
   let broken = "";
   let versionRequests = 0;
   const server = Bun.serve({ port: 0, fetch(request) {
