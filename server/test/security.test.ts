@@ -219,3 +219,24 @@ describe("durable per-IP and per-user rate limits", () => {
     }
   });
 });
+
+
+it("wrapped and fast-path preview gates retain the nonce policy for their only inline script", async () => {
+  const { accessFastPath } = await import("../src/index");
+  const responses = [
+    await app.fetch(request("/runner/pair"), baseEnv() as never),
+    await accessFastPath(request("/access"), baseEnv() as never),
+  ];
+  for (const response of responses) {
+    expect(response).not.toBeNull();
+    const html = await response!.text();
+    const nonce = html.match(/<script nonce="([^"]+)"/)?.[1];
+    expect(nonce).toBeTruthy();
+    const policy = response!.headers.get("content-security-policy")!;
+    expect(policy).toContain(`script-src 'nonce-${nonce}'`);
+    expect(policy).toContain("default-src 'none'");
+    expect(policy).toContain("form-action 'self'");
+    expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(response!.headers.get("x-content-type-options")).toBe("nosniff");
+  }
+});
