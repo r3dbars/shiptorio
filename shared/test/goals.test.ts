@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { BrainSignal, FactoryState, GOAL_MOVE_ID, goalContext, goalMove, goalsFromPick, goalText, goalWeight, inferGoals, WebToServer, type Goals } from "../src/index";
+import { BrainSignal, FactoryState, GOAL_MOVE_ID, goalContext, goalMove, goalsFromPick, goalText, goalWeight, inferGoals, tiltByGoals, WebToServer, type Goals } from "../src/index";
 
 const player = (picks: Goals["picks"]): Goals => ({ picks, by: "player", at: 0 });
 
@@ -47,9 +47,17 @@ describe("the goal card", () => {
 describe("goals for the brain", () => {
   it("tilts the areas the goal cares about, less for a guess", () => {
     expect(goalWeight(undefined, "quality")).toBe(1);
-    expect(goalWeight(player(["fewer_bugs"]), "quality")).toBe(2);
-    expect(goalWeight({ ...player(["fewer_bugs"]), by: "inferred" }, "quality")).toBe(1.5);
+    expect(goalWeight(player(["fewer_bugs"]), "quality")).toBe(1.5);
+    expect(goalWeight({ ...player(["fewer_bugs"]), by: "inferred" }, "quality")).toBe(1.25);
     expect(goalWeight(player(["fewer_bugs"]), "users")).toBe(1);
+  });
+
+  it("tilts signals toward the goal without burying a real fire", () => {
+    const sig = (source: "sentry" | "ci" | "posthog" | "goals", severity: number) => ({ source, severity });
+    const out = tiltByGoals([sig("posthog", 0.4), sig("sentry", 0.5), sig("ci", 0.9), sig("goals", 0.3)], player(["first_users"]));
+    expect(out.map((s) => s.severity)).toEqual([0.6, 0.5, 0.9, 0.3]);
+    expect(tiltByGoals([sig("posthog", 0.8)], player(["grow_usage"]))[0].severity).toBe(1);
+    expect(tiltByGoals([sig("posthog", 0.4)], undefined)[0].severity).toBe(0.4);
   });
 
   it("gives the planner a sentence and the brain a context", () => {

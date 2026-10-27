@@ -8,7 +8,7 @@
 // Pure, so the sim and the live server deal the same card and the brain gets the same context.
 import { z } from "zod";
 import type { FactoryState, Move } from "./model";
-import type { BottleneckArea } from "./signals";
+import { DEFAULT_AREA, type BottleneckArea, type BrainSignal } from "./signals";
 
 export const GoalId = z.enum(["fewer_bugs", "ship_faster", "first_users", "answer_users", "grow_usage"]);
 export type GoalId = z.infer<typeof GoalId>;
@@ -119,7 +119,7 @@ export function goalText(goals: Goals | undefined): string | undefined {
 }
 
 /**
- * How much a bottleneck area counts for this player: 1 with no goal, up to 2 when it serves their top goal
+ * How much a bottleneck area counts for this player: 1 with no goal, up to 1.5 when it serves their top goal
  * (half that lift for a guess they haven't confirmed). The brain multiplies a signal's weight by this, so
  * goals tilt the pick without hiding a real fire.
  */
@@ -127,7 +127,20 @@ export function goalWeight(goals: Goals | undefined, area: BottleneckArea): numb
   if (!goals) return 1;
   const trust = goals.by === "player" ? 1 : 0.5;
   const rank = goals.picks.findIndex((id) => GOALS[id].areas.includes(area));
-  return rank === -1 ? 1 : 1 + trust * (rank === 0 ? 1 : rank === 1 ? 0.5 : 0.25);
+  return rank === -1 ? 1 : 1 + trust * (rank === 0 ? 0.5 : rank === 1 ? 0.25 : 0.1);
+}
+
+/**
+ * Signals tilted by the player's goals before the brain ranks them: severity times goalWeight for the signal's
+ * area, capped at 1. A goal lifts a faint signal it cares about past a louder one it doesn't, but at most 1.5x,
+ * so a real fire elsewhere still wins. Goal signals themselves (source "goals") are never tilted.
+ */
+export function tiltByGoals<T extends Pick<BrainSignal, "source" | "severity">>(signals: readonly T[], goals: Goals | undefined): T[] {
+  if (!goals) return [...signals];
+  return signals.map((s) => {
+    const w = s.source === "goals" ? 1 : goalWeight(goals, DEFAULT_AREA[s.source]);
+    return w === 1 ? s : { ...s, severity: Math.min(1, Number((s.severity * w).toFixed(3))) };
+  });
 }
 
 /** The goals as context for the bottleneck brain: who set them, in order, and what they weigh up. */

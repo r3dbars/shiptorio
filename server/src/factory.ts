@@ -67,6 +67,7 @@ import {
   goalMove,
   goalsFromPick,
   goalText,
+  tiltByGoals,
   inferGoals,
   type GoalGuess,
   type Goals,
@@ -439,7 +440,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const budget = await this.brainBudget();
       const permits = await this.ctx.storage.get<PermitBook>("permits");
       const result = await runDiagnose({
-        signals: cache.signals, memory: before, now, goal: s.goal, playerFeedback: feedback, ctx: { repo: meta.repo }, budget,
+        signals: tiltByGoals(cache.signals, s.goals), memory: before, now, goal: s.goal, playerFeedback: feedback, ctx: { repo: meta.repo }, budget,
         think: sparkConfigured(this.env) ? brief => this.think("diagnose", { title: `${brief.signals.length} ${brief.signals.length === 1 ? "signal" : "signals"}, heaviest: ${brief.signals[0]?.title ?? "none"}`, target: derived.bottleneck?.stationId },
           () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }),
           out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
