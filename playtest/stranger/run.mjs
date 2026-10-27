@@ -105,9 +105,17 @@ await page.clock.install();
 // Evidence captures need a stable frame, not an actively rendering 3D loop.
 // Resume ordinary time after every capture, including failure paths.
 async function capture(path) {
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1));
-  try { await page.screenshot({ path }); }
-  finally { await page.clock.resume(); }
+  const now = Date.now();
+  // Freeze Date before pausing: a date read over the protocol can already be in
+  // the past by the time pauseAt reaches a busy renderer.
+  await page.clock.setFixedTime(now);
+  try {
+    await page.clock.pauseAt(now + 1);
+    await page.screenshot({ path });
+  } finally {
+    await page.clock.resume();
+    await page.clock.setSystemTime(Date.now());
+  }
 }
 const consoleErrors = [];
 const expectedAnonymousErrors = [];

@@ -33,7 +33,7 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
       // floor's cadence can change; polling a frozen clock can never make progress.
       // fastForward fires an interval once, preserving every intermediate beat.
       await expect.poll(async () => {
-        await page.clock.fastForward(1000);
+        await page.clock.fastForward(2000);
         return Number(await progress.getAttribute('value'));
       }).toBeGreaterThan(tick);
     }
