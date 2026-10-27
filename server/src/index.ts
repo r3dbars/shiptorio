@@ -1,5 +1,6 @@
+import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
-import { budgetAccount } from "./budget";
+import { budgetAccount, budgetLimits } from "./budget";
 import { byRepoId, repositoryFactory } from "./repository";
 import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
@@ -649,6 +650,16 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   const parsed = RunnerReceipt.safeParse(JSON.parse(body));
   if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
   return c.json(await (await factory(c.env, identity.repo)).finishRunner(identity.pairId, parsed.data));
+});
+
+// Quota telemetry shares normal authenticated repository access; no provider calls or mutations.
+app.get("/api/repos/:owner/:repo/limits", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const f = await factory(c.env, repo);
+  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, c.get("user")), f.runnerJobs(), f.planningRetries()]);
+  const active = jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length;
+  c.header("Cache-Control", "no-store");
+  return c.json({ ...status, retries, quotas: [...status.quotas, quota("jobs", "Concurrent jobs", active, budgetLimits(c.env).jobs, null, null)] });
 });
 
 // Spend belongs to the stable payer, rather than every collaborator with map access.
