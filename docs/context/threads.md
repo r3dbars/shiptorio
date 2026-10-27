@@ -50,8 +50,8 @@ is the only copy agents outside it (Codex) can see.
 | Thread | State | What it did / produced |
 | --- | --- | --- |
 | Design a calm attention system for players | v1 behind flag | `docs/ATTENTION.md` (PR #268). One Needs you tray, three kinds (approve / steer / suggested, `attentionOf` in shared), every card is Continue or Later, Continue streaks steer deck ranking + planner feedback. Behind flag `attention` (off by default; try `?attention=1`). Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb |
-| Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README). Other repos: transcripted, transcripted-webapp, redbars, pipread, BetterFeedback |
-| Review Justin's Cloudflare account | done | Surveyed the account: Workers `transcripted-feedback`, `stack99-relay`, `r3dbar-subscribe`, `redbars` (don't touch). Nothing Shiptorio yet. R2 not enabled |
+| Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README) |
+| Review Justin's Cloudflare account | done | Surveyed the account before setup. Nothing Shiptorio yet, R2 not enabled |
 | Build Shiptorio on Cloudflare for the hackathon | working | PR #1 (merged): Cloudflare Worker + GitHub App + D1/KV, reshaped into `shared/` `server/` `web/` bun workspaces, Spark client, issue → Spark → PR first cut, Three.js pixel map + `?source=sim`. Created D1 `shiptorio` + KV `shiptorio-cache`. Rebuilt the repo handoff doc as PR #5 (merged: PLAN.md, docs/ARCHITECTURE.md, docs/ART.md, briefs/, both prototypes). Now porting the Pixel Prototype art into `web/` (draft PR #8: shader, models, scene rebuilt, prototype-style HUD as of 16:53) |
 | Find the Shiptorio Claude doc | done | Found the plan doc and made the repo handoff doc (the local `~/omni/shiptorio` files, which were on Justin's other computer) |
 | Design Shiptorio's first-time signup experience | PR #84 | Welcome intro after sign-in (verify, then automate), two worlds (Check in / Build) with a first read after the scan, field guide. Mockup: `docs/onboarding-mockup.html` |
@@ -300,3 +300,7 @@ admin popup in quota browser tests with the real authenticated form and persiste
 save/reload checks, passing on desktop and iPhone. Public FAQ now explains quotas and
 recovery. PR #284 carries the deployment and live stop/recovery verification receipt.
 The rejected production saves left all original account limits intact.
+
+## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
+
+Small existing-behavior fixes only, one PR each; protected work excluded. Progress, unresolved findings and verification receipts: [papercuts.md](papercuts.md).

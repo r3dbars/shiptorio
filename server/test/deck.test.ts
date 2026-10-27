@@ -30,6 +30,14 @@ describe("live check-in deck", () => {
     expect(joined[0].title).toBe("Latest");
     expect(buildDeck(s, Array.from({ length: 20 }, (_, i) => move(String(i))), { now })).toHaveLength(12);
   });
+  it("never pushes a fresh merge-gate card out of a full deck of long-waiting issues", () => {
+    const waiting = Array.from({ length: 14 }, (_, i) => item(`old${i}`));
+    const s = state([...waiting, item("pr", { state: "on_pad", prNumber: 1, updatedAt: now }), item("scarred", { state: "rejected", prNumber: 2, updatedAt: now })]);
+    const rework = move("rework", { stage: "inspect", kind: "review", itemId: "scarred", options: [{ id: "overrule", label: "Overrule", recommended: false, actions: [{ tool: "request_merge", args: { pr: 2 }, reason: "Player call" }] }] });
+    const deck = buildDeck(s, [...waiting.map(i => move(i.id, { itemId: i.id, kind: "build" })), ship(), rework], { now });
+    expect(deck).toHaveLength(12);
+    expect(deck.map(m => m.id)).toEqual(expect.arrayContaining(["ship", "rework"]));
+  });
   it.each(["ci", "verify", "ai"])("locks launch when %s has not passed, ignoring forged green card stamps", gate => {
     const s = state([item("pr", { state: "on_pad", machineId: "gate-1", prNumber: 1, inspection: { headSha: "a".repeat(40), state: "pending", humanApproved: false, stages: stages(gate) } })]);
     const input = ship(); input.evidence = [{ station: "Fake", ok: true }];

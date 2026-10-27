@@ -64,7 +64,7 @@ export const STATE_WORD: Record<Item["state"], string> = {
 // ---------- the map ----------
 
 export const MAP = {
-  captionTitle: "The factory must grow",
+  captionTitle: "A little play. A lot shipped.",
   captionSub: "drag to pan · pinch or scroll to zoom",
   /** The ping on the thing that needs you, by where the work is stuck. */
   ping: {
@@ -572,6 +572,12 @@ export const RUNNER = {
   lastSeen: (when: string) => `Last seen ${when}`,
   lastJob: (what: string, id: string) => `Last job: ${what} · ${id}`,
   runThis: "Run this on your computer, then compare the pairing code in your browser:",
+  pasteThis: "Paste this into a terminal on your computer. That's the whole setup:",
+  waiting: "Waiting for your computer…",
+  signIn: "Connected. Sign in to Claude Code or Codex in that terminal to finish.",
+  copy: "Copy",
+  copied: "Copied",
+  joinNote: "macOS · Linux · Windows via WSL2. Works once, for 10 minutes. Keep the terminal open. The planner asks before any build starts.",
   platforms: "macOS · Linux · Windows via WSL2. Keep the terminal open. The planner asks before any build starts.",
   more: "Add a repo, troubleshoot or uninstall",
   addRepo: ["Already installed? Run ", " to add this repo. One runner serves all paired repos."] as const,
@@ -794,7 +800,7 @@ export const ONBOARD = {
   label: "Welcome to Shiptorio",
   steps: ["WELCOME", "SIGN IN", "PICK A REPO", "PLAY"],
   brand: "SHIPTORIO",
-  tagline: "The factory must grow.",
+  tagline: "A little play. A lot shipped.",
   hello: "Let's build your factory. Your factory is one codebase. We start small: one machine, one fix, one rocket, and each piece shows up when you need it.",
   signIn: "SIGN IN WITH GITHUB",
   replay: "Watch the intro again",
@@ -968,7 +974,7 @@ export const JUDGE = {
   rockets: "Rockets", users: "Users unblocked", autonomy: "Autonomy", floor: "Floor", advisor: "Advisor",
   done: "Story complete. Two launches. One stronger factory.",
   beats: [
-    { title: "The factory must grow", text: "Your codebase becomes a factory. Customer signals are ore. Your subscriptions power the machines." },
+    { title: "A little play. A lot shipped.", text: "Your codebase becomes a factory. Customer signals are ore. Your subscriptions power the machines." },
     { title: "Three signals, one floor", text: "Sentry reports a checkout crash affecting 112 users. An inbox report joins the same problem. A GitHub docs issue enters its own lane." },
     { title: "The planner picks the next move", text: "The foreman ranks the crash first, links the customer report, and plans a guarded total plus an empty-cart regression test. You approve the plan." },
     { title: "Build, prove, rework", text: "Your Claude Code assembler builds the PR. CI checks it, the verify bay reproduces the bug, and a separate reviewer attacks the fix. Failed proof goes back with a scar." },

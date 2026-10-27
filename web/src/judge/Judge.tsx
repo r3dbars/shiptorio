@@ -57,10 +57,20 @@ function JudgeRun({ replay }: { replay: () => void }) {
   const workFocus = state?.stations?.some(s => s.id === at) ? at : `m:${at}`;
   const focus = beat === 1 ? "m:ore-sentry" : beat === 2 ? "m:steam-spark" : beat === 3 ? workFocus : beat === 4 ? "gate-1" : beat === 5 || beat === 6 ? "m:launch-pad" : null;
   useFactorySound(state, focus);
+  // The header measures itself into --top-h, so the shaft's floor buttons sit under it rather than on its sound row.
+  const header = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = header.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const host = el.parentElement;
+    const ro = new ResizeObserver(() => host?.style.setProperty("--top-h", `${el.offsetHeight}px`));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const stations = state?.stations?.filter(s => ["ci", "verify", "review"].includes(s.kind)) ?? [];
   return <>
     <FactoryMap state={state} focus={focus} wide={36} lift={0.12} summary={chapter.text} />
-    <header className="judge-header iron-plate">
+    <header ref={header} className="judge-header iron-plate">
       <Wordmark width={148} />
       <span className="iron-eyebrow">{JUDGE.badge}</span>
       <SoundControl />

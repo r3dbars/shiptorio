@@ -6,7 +6,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const { chromium } = createRequire(import.meta.url)("playwright");
+const { chromium } = createRequire(import.meta.url)("@playwright/test");
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, "out");
 mkdirSync(out, { recursive: true });

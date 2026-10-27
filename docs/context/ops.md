@@ -70,7 +70,7 @@ bunx wrangler secret put META_API_KEY --env staging --cwd server
 ```
 
 The initial staging access/session secrets were generated locally, sent directly to
-Cloudflare and retained only in `/Users/redbars/.config/shiptorio/staging.env` (outside git,
+Cloudflare and retained only in `~/.config/shiptorio/staging.env` (outside git,
 mode 0600; parent directory 0700). They are unique to staging. GitHub/Spark secrets are intentionally not
 copied. Open `/setup` behind the preview gate to create a separate staging App,
 then set its returned secrets with `--env staging`; the setup page's generic commands

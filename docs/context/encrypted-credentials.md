@@ -16,7 +16,7 @@ secret fallback. Overrides are limited to the legacy owner factory, default
 Initial setup command (no key material is printed or saved to a file):
 
 ```sh
-cd /Users/redbars/shiptorio/server
+cd shiptorio/server
 openssl rand -base64 32 | bunx wrangler secret put CRED_MASTER_KEY --name shiptorio --env=""
 ```
 

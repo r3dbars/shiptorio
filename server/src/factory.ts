@@ -1,3 +1,4 @@
+import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
@@ -24,7 +25,7 @@ import { handleLifecycle, lifecycleEvents, RETENTION_MS } from "./github-lifecyc
 import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
-import { pollDevice, type DeviceRecord } from "./device-pairing";
+import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
 import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
@@ -219,7 +220,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -562,6 +563,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.accountPut("device", { secret, expires } satisfies DeviceRecord);
       await this.accountAlarm(expires);
       return true;
+    });
+  }
+  async startJoin(record: JoinRecord) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.ctx.storage.get("join")) return false;
+      await this.accountPut("join", record);
+      await this.accountAlarm(record.expires);
+      return true;
+    });
+  }
+  /** Burns the join code on first use, whatever happens next. */
+  async takeJoin(): Promise<JoinRecord | null> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const record = await this.ctx.storage.get<JoinRecord & { used?: boolean }>("join");
+      if (!record || record.used) return null;
+      await this.accountPut("join", { ...record, used: true });
+      return record.expires > Date.now() ? record : null;
     });
   }
   async approveDevice(approved: NonNullable<DeviceRecord["approved"]>) {
@@ -2509,7 +2527,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.login }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
   }
 
   private async socketFetch(request: Request): Promise<Response> {
@@ -2531,14 +2549,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
-    await this.broadcastQueue;
+    // The initial snapshot was authorized above. Other sockets may still be
+    // revalidating queued frames; they must not hold this handshake open.
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    let auth: { login?: string } | null = null;
+    let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
-    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
     });
   }
@@ -2811,7 +2830,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async alarm(): Promise<void> {
     try { await this.assertAccountActive(); } catch (error) { if (this.accountErased) return; throw error; }
-    if (await this.ctx.storage.get("device") || await this.ctx.storage.get("deviceRate")) { await this.ctx.storage.deleteAll(); return; }
+    if (await this.ctx.storage.get("device") || await this.ctx.storage.get("deviceRate") || await this.ctx.storage.get("join")) { await this.ctx.storage.deleteAll(); return; }
     if (await this.ctx.storage.get("migratedTo")) { await this.ctx.storage.deleteAlarm(); return; }
     const lifecycle = await this.ctx.storage.get<{ deleteAt?: number }>("githubLifecycle");
     if (lifecycle) {
