@@ -710,7 +710,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (job.needsApproval) {
         const candidates = [...new Set([...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)])].filter(runnerPathAllowed);
         job.allowedPaths = await this.think("scope", { title: item.title, itemId: item.id }, () => pickFiles(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars }, candidates),
-          files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }));
+          files => ({ outcome: files.length ? `Scoped to ${files.join(", ")}` : "No safe files found", reason: `Picked ${files.length} of ${candidates.length} repo planning candidates to inspect before proposing writable scope.` }))
+          .then(files => files.filter(runnerPathAllowed));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
       const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,

@@ -76,6 +76,9 @@ permission stay deterministic so the automation earned by playing is provable.
     After a failure it backs off 1, 2, 4, 8, then 15 minutes, and it stops at half the daily calls or tokens. Spark also
     can't switch a card's suggested option to a do-nothing "Later" when the card has a real next step, which stalled
     autopilot on Plan cards.
+11. Docs issues that need a new file (CHANGELOG.md, docs/SHIPPING.md) failed scoping, because the file pick only
+    accepted existing paths. Spark can now propose up to two new `.md` files at the repo root or directly in `docs/`.
+    They still pass the runner path rules, and the player still approves the scope on the Build card.
 
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.
