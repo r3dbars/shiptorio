@@ -1,6 +1,18 @@
-# Issue #170 live acceptance
+# Issue #170 live acceptance — partial evidence record
 
-Goal: the real Sentry assignment-status defect in r3dbars/shiptorio passes through
+Status: **historical checkpoint recorded; end-to-end acceptance incomplete**.
+
+Read-only recheck at **2026-10-27 11:53 UTC**: [issue #170](https://github.com/r3dbars/shiptorio/issues/170)
+is still open. The successful [Deploy run 40498676438](https://github.com/r3dbars/shiptorio/actions/runs/40498676438)
+and `https://shiptorio.com/api/version` both identify `61ef296c44ca4a4b22ac1e0a4a92513eff521b92`.
+Actions now runs on the public repository; the billing/startup block described below is historical.
+This release receipt does not establish a successful #170 build, PR, Launch or rocket.
+
+The sections below are chronological field notes from the earlier attempts. Their process/session IDs,
+quota readings, pending-job states and runtime observations describe those checkpoints, not current
+operating instructions. No live runner or factory mutation was made for this documentation recheck.
+
+Acceptance target: the real Sentry assignment-status defect in r3dbars/shiptorio passes through
 Spark planning, Justin's in-game approval, local Codex, a real PR, the gauntlet and
 explicit Launch. Do not implement the issue outside that runner path.
 
@@ -226,6 +238,18 @@ explicit Launch. Do not implement the issue outside that runner path.
   lockfile rewrite, global runtime/service change, test-assertion relaxation or
   crash-report upload occurred. The live job/pairing were untouched. A safe
   verification-recipe/runtime solution remains required before a real #170 PR.
-- PR monitor still has no eligible current-head green PRs; Actions billing
-  remains blocked. Live402a1b94 was released by the branding owner, whose
+- At that checkpoint the PR monitor had no eligible current-head green PRs and
+  Actions billing was blocked. Live402a1b94 was released by the branding owner, whose
   separate smoke evidence does not turn the failed Deploy workflow green.
+
+## Acceptance still to prove
+
+1. Reconcile the current issue and runner state, obtain a fresh Spark plan for the approved two-file scope,
+   and approve it through the actual game.
+2. Observe real local Codex execution and supervised checks, including tests that fail on the base commit
+   and pass on the proposed head, without weakening the scope, secret or OS-boundary policies.
+3. Verify a real #170 PR and its current-head CI, verify-bay proof and AI review receipts.
+4. Use the in-game Launch card, then verify the merge, issue closure, factory rocket and deployed result.
+
+The historical runtime experiments above are evidence of failed or bounded attempts, not approval to
+replace the runtime, widen the sandbox or resume a process using an old PID/session handle.
