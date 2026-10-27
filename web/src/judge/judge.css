@@ -27,3 +27,14 @@
   .judge-caption p { margin: 8px 0; }
   .judge-welcome { padding: 24px; }
 }
+/* Rivet helpers load with the shared theme; keep overlay positioning more specific. */
+.judge .judge-welcome { position: absolute; }
+.judge .judge-caption { position: absolute; }
+@media (max-width: 600px) {
+  .judge-header { display: grid; grid-template-columns: 1fr auto auto; }
+  .judge-header .iron-eyebrow { grid-column: 1 / -1; grid-row: 2; }
+  .judge-header .sound { grid-column: 1 / -1; grid-row: 3; justify-content: center; }
+  .judge-header .judge-time { grid-column: 2; grid-row: 1; }
+  .judge-header > button { grid-column: 3; grid-row: 1; }
+  .judge .judge-caption { max-height: calc(100% - 168px); }
+}
