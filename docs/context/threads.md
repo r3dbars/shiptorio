@@ -125,15 +125,11 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - Implemented: per-repository capped reconnect backoff, private lease-bound recovery journal, automatic completion receipt retry, explicit subscription sign-in cards, and doctor auth/sandbox/pairing probes. Builds still require player approval; expired/revoked leases never resume automatically. No deployment requested.
 - Focused macOS validation: 54 tests passed, including real sandbox/publication tests and card lifecycle through Factory reload; HTTP polling smoke also passed with dropped requests and an expired fake sign-in. Added immutable patch recovery, automatic receipt replay even when claim is empty, and cached-auth failure latching. Local full validation after rebase: `bun run test:fast` passed (671 tests, 2 platform skips; 24 playtest cases / 306 decisions / no findings), plus `bun run build`. Includes real macOS sandbox/publication probes and a doctor subprocess test. PR checks and merge result are on the linked PR. Merge gate: CI and stranger-path checks green on the exact head; native GitHub auto-merge is disabled, so the chat performs that gate.
 
-## Game music (Codex, PR #263)
+## Real assembler edit doctor (Codex, 2026-10-26)
 
-Original composed foundry theme in `web/src/sound/foundryScore.ts`, opt-in via `?music=2`.
-Built at Justin's request as a scoped web-lane exception: 16-bar low strings/harmonium
-motif, celesta climb, piston/metal groove, blocked brass and three-bar launch fanfare.
-Lazy procedural instruments avoid stems/download/decode budgets; CC0 music inventory.
-Separate persisted music volume, bar-boundary hysteresis/equal-power arrangement changes,
-quality=2 voice reduction, and state/voice diagnostics. Existing music remains default.
-Justin approved squash merge after green CI and deployment verification; the new music stays behind `?music=2`. Audition and browser evidence are linked from the PR.
+- [PR #275](https://github.com/r3dbars/shiptorio/pull/275), branch `codex/runner-edit-doctor`: add an explicit real subscription edit probe, proving exact file bytes and untouched canaries in a disposable checkout. Basic doctor stays inference-free.
+- Integrates the merged supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
+- Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. The full `doctor --edit codex` command reported PASS for Codex auth, sandbox, pairing and actual edit; it correctly exited nonzero for the separate missing Claude sign-in/sandbox. Integrated runner tests: 45 passed, 2 platform skips. Full `bun run check` passed after integration (726 tests, 2 platform skips; all workspace typechecks and production/web/standalone-runner build). CI/merge outcome is on PR #275.
 
 ## Codex (outside the Claude project)
 
@@ -142,6 +138,7 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | PR | What | State |
 | --- | --- | --- |
 | #13 | Private preview (password gate), hardened issue → Spark → PR → inspector/rework loop, bounded alarm jobs, stale-check handling | merged. Supersedes #4's fixes |
+| Game music | PR #263; merge authorized after green CI | Original 16-bar foundry score, activity layers, blocked brass and launch fanfare; separate persisted music volume, CC0, no audio downloads/decoded stems. Desktop/phone controls and two 65s recordings verified. **Keep behind `?music=2`**; existing score stays default. Code: `web/src/sound/foundryScore.ts`; evidence: `docs/evidence/music/`. |
 | #19, #21 | Auto-deploy of `main` verified, `/api/version` shows the live SHA, shiptorio.com + shiptorio.dev live | merged |
 | #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
 | Add real user accounts and sign-in | working | D1 `users`/`sessions`/`user_installations`/`user_repos`/`user_prefs` (migration 0004), revocable sessions, repo membership on every factory route, per-repo Sentry/PostHog keys + per-repo Sentry webhook, `requireUser` helper. Password gate stays in front. Next: web install link + prefs sync |

@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Shiptorio: your repo is a factory that learns to run itself</title>
-<meta name="description" content="Shiptorio turns your codebase into a factory game. Bugs and requests are ore, AI agents are the machines, and every rocket is a real merged pull request. Verify, then automate, until you stop being the bottleneck.">
+<title>Shiptorio</title>
+<meta name="description" content="Your repo is a factory. Teach it to run itself. Shiptorio turns your codebase into a factory game where every rocket is a real merged pull request.">
 <link rel="canonical" href="https://shiptorio.com/">
 <meta name="theme-color" content="#0b0806">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://shiptorio.com/">
-<meta property="og:title" content="Shiptorio: the factory must grow">
-<meta property="og:description" content="Your repo as a factory game. Every rocket is a real merged PR. Verify, then automate, until it runs itself.">
+<meta property="og:title" content="Shiptorio">
+<meta property="og:description" content="Your repo is a factory. Teach it to run itself.">
 <meta property="og:image" content="https://shiptorio.com/brand/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -23,296 +23,103 @@
 <link rel="manifest" href="/brand/manifest.webmanifest">
 <link rel="preload" href="/fonts/silkscreen-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" as="image" href="/welcome/poster.webp" imagesrcset="/welcome/poster-640.webp 640w, /welcome/poster-960.webp 960w, /welcome/poster.webp 1280w" imagesizes="(min-width: 960px) 620px, 100vw" fetchpriority="high">
+<link rel="preload" as="image" href="/welcome/hero.webp" imagesrcset="/welcome/hero-1024.webp 1024w, /welcome/hero.webp 1600w" imagesizes="100vw" media="(min-width: 760px)" fetchpriority="high">
+<link rel="preload" as="image" href="/welcome/hero-phone.webp" media="(max-width: 759px)" fetchpriority="high">
 <style>
-/* Black Iron (docs/art/IRON-STYLE.md). Same tokens as web/src/iron.css, inlined: this page ships no app CSS. */
-@font-face{font-family:"Silkscreen";font-weight:400;font-display:swap;src:url(/fonts/silkscreen-400.woff2) format("woff2")}
+/* Black Iron (docs/art/IRON-STYLE.md), tokens inlined from web/src/iron.css. The page is the title, one line, the art. */
 @font-face{font-family:"Silkscreen";font-weight:700;font-display:swap;src:url(/fonts/silkscreen-700.woff2) format("woff2")}
 @font-face{font-family:"JetBrains Mono";font-weight:400 700;font-display:swap;src:url(/fonts/jetbrains-mono.woff2) format("woff2")}
 :root{
-  --bg:#0b0806;--soot:#1e1814;--panel:rgba(14,10,8,.92);--panel-solid:#140e0a;--plate:#2a211b;--line:#5a4434;--line-hi:#8a6a4c;
-  --ink:#f4ead8;--dim:#b8a48a;--amber:#ffb020;--amber-hi:#ffc24a;--on-amber:#140c02;--ok:#46e07a;--bad:#ff4a32;--idle:#8fa2c8;
-  --focus:#6fb2ff;--brass:#d0a24e;--copper:#c06a3a;--rust:#8a3a20;--aether:#7af0d8;--furnace:#ff7a2a;
+  --bg:#0b0806;--soot:#1e1814;--line:#5a4434;--line-hi:#8a6a4c;--ink:#f4ead8;--dim:#b8a48a;
+  --amber:#ffb020;--amber-hi:#ffc24a;--on-amber:#140c02;--ok:#46e07a;--focus:#6fb2ff;--aether:#7af0d8;
   --pixel:"Silkscreen","Courier New",monospace;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-  --plate-shadow:inset 0 2px 0 rgba(255,220,170,.06),inset 0 -3px 0 rgba(0,0,0,.35);
-  --caution:repeating-linear-gradient(-45deg,var(--amber) 0 6px,var(--on-amber) 6px 12px);
-  --rivets:linear-gradient(var(--brass),var(--brass)) top left/4px 4px no-repeat,linear-gradient(var(--brass),var(--brass)) top right/4px 4px no-repeat,linear-gradient(var(--brass),var(--brass)) bottom left/4px 4px no-repeat,linear-gradient(var(--brass),var(--brass)) bottom right/4px 4px no-repeat;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
-body{margin:0;color:var(--ink);font:400 16px/1.6 var(--mono);background:radial-gradient(140% 900px at 50% 100%,#3a1a0c 0,rgba(11,8,6,0) 70%) var(--bg)}
-/* furnace sky behind the hero, cooling to soot further down */
-.sky{background:linear-gradient(180deg,#1c120c 0,#3a1c0e 340px,#5a2a12 620px,#2a150b 900px,var(--bg) 1180px)}
+html{-webkit-text-size-adjust:100%;background:var(--bg)}
+body{margin:0;min-height:100vh;min-height:100svh;color:var(--ink);font:400 16px/1.5 var(--mono);background:var(--bg)}
 a{color:var(--aether);text-underline-offset:3px}
 a:hover{color:#a8fff0}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
-.wrap{max-width:1160px;margin:0 auto;padding:0 16px}
-@media (min-width:760px){.wrap{padding:0 24px}}
-.skip{position:absolute;left:-999px;top:8px;background:var(--amber);color:var(--on-amber);padding:10px 14px;font:700 12px/1 var(--pixel);letter-spacing:.06em;text-transform:uppercase;z-index:9;border:2px solid #000}
-.skip:focus{left:8px}
-.eyebrow{font:400 11px/1.3 var(--pixel);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:0 0 12px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-/* plates */
-.plate{position:relative;background:var(--panel);border:2px solid var(--line);outline:2px solid #000;box-shadow:var(--plate-shadow)}
-.rivets::before{content:"";position:absolute;inset:5px;pointer-events:none;background:var(--rivets);filter:drop-shadow(1px 1px 0 #3a2410);z-index:2}
+main{position:relative;display:flex;flex-direction:column;align-items:center;min-height:100vh;min-height:100svh;overflow:hidden}
+/* the art: the real Black Iron line, full bleed */
+.art{position:absolute;inset:0;z-index:0}
+.art img,.art video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 60%;image-rendering:pixelated;display:block}
+.art video{opacity:0;transition:opacity .4s}
+.art video.on{opacity:1}
+/* soot falls over the top and bottom so the words sit on dark */
+.art::after{content:"";position:absolute;inset:0;background:
+  linear-gradient(180deg,rgba(11,8,6,.94) 0,rgba(11,8,6,.78) 22%,rgba(11,8,6,0) 46%,rgba(11,8,6,0) 72%,rgba(11,8,6,.9) 100%)}
 
-/* buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:52px;padding:0 20px;border:2px solid #000;background:var(--amber);color:var(--on-amber);font:700 13px/1 var(--pixel);letter-spacing:.08em;text-transform:uppercase;text-decoration:none;cursor:pointer;box-shadow:inset 0 -4px 0 rgba(0,0,0,.28),inset 0 2px 0 rgba(255,255,255,.25);border-radius:0}
-.btn:hover{background:var(--amber-hi);color:var(--on-amber)}
-.btn:active{transform:translateY(1px);box-shadow:none}
-.btn[disabled]{opacity:.65;cursor:progress}
-.btn2{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;background:var(--plate);color:var(--ink);border:2px solid var(--line);font:400 12px/1 var(--pixel);letter-spacing:.08em;text-transform:uppercase;text-decoration:none;cursor:pointer;box-shadow:inset 0 -2px 0 rgba(0,0,0,.4);border-radius:0}
-.btn2:hover{border-color:var(--line-hi);color:var(--ink)}
-.btn2:active{transform:translateY(1px);box-shadow:none}
+.top{position:relative;z-index:1;text-align:center;padding:clamp(40px,9vh,96px) 16px 0}
+h1{margin:0;line-height:0}
+h1 img{width:min(600px,82vw);height:auto;image-rendering:pixelated;filter:drop-shadow(0 4px 0 #000)}
+.say{margin:18px 0 0;font:400 clamp(16px,1.6vw,20px)/1.4 var(--mono);color:var(--ink);text-shadow:0 2px 0 #000,0 0 12px #000}
 
-/* top bar: a riveted strip bolted to the sky */
-header.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0}
-.brand{display:inline-flex;align-items:center;line-height:0;text-decoration:none}
-.brand img{height:26px;width:auto;image-rendering:pixelated}
-@media (min-width:760px){.brand img{height:50px}}
-
-/* hero */
-.hero{display:grid;gap:28px;padding:16px 0 44px;align-items:center}
-@media (min-width:960px){.hero{grid-template-columns:minmax(0,1fr) minmax(0,1.32fr);gap:44px;padding:40px 0 72px}}
-h1{font:700 clamp(26px,4.2vw,44px)/1.12 var(--pixel);letter-spacing:.04em;text-transform:uppercase;margin:0 0 18px;color:var(--ink);text-shadow:0 3px 0 #000}
-h1 em{display:block;font-style:normal;color:var(--amber)}
-.lede{color:var(--dim);font-size:16px;margin:0 0 24px;max-width:34em}
-.lede b{color:var(--ink);font-weight:600}
-@media (min-width:760px){.lede{font-size:17px}}
-
-/* waitlist: an input well and the amber lever */
-form.join{display:flex;flex-wrap:wrap;gap:10px;max-width:540px}
-form.join label{position:absolute;left:-9999px}
-form.join input[type=email]{flex:1 1 230px;min-width:0;min-height:52px;padding:0 14px;border:2px solid var(--line);border-radius:0;background:var(--soot);color:var(--ink);font:400 16px var(--mono);caret-color:var(--amber);box-shadow:inset 0 3px 0 rgba(0,0,0,.5)}
-form.join input[type=email]:hover{border-color:var(--line-hi)}
-form.join input::placeholder{color:#9a8872}
-form.join .btn{flex:0 0 auto}
-@media (max-width:480px){form.join .btn{flex:1 1 100%}}
+.bottom{position:relative;z-index:1;margin-top:auto;width:100%;max-width:520px;padding:0 16px max(20px,env(safe-area-inset-bottom));text-align:center}
+form{display:flex;gap:8px}
+input[type=email]{flex:1 1 auto;min-width:0;min-height:48px;padding:0 14px;border:2px solid var(--line);border-radius:0;background:rgba(30,24,20,.92);color:var(--ink);font:400 16px var(--mono);caret-color:var(--amber);box-shadow:inset 0 3px 0 rgba(0,0,0,.5)}
+input[type=email]:hover{border-color:var(--line-hi)}
+input::placeholder{color:#9a8872}
+button.go{flex:none;min-height:48px;padding:0 18px;border:2px solid #000;border-radius:0;background:var(--amber);color:var(--on-amber);font:700 12px/1 var(--pixel);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;box-shadow:inset 0 -4px 0 rgba(0,0,0,.28),inset 0 2px 0 rgba(255,255,255,.25)}
+button.go:hover{background:var(--amber-hi)}
+button.go:active{transform:translateY(1px);box-shadow:none}
+button.go[disabled]{opacity:.65;cursor:progress}
 .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
-.note{min-height:1.6em;margin:10px 0 0;font-size:15px;color:var(--dim)}
+.note{min-height:1.5em;margin:8px 0 0;font-size:14px;color:var(--dim);text-shadow:0 1px 0 #000}
 .note.ok{color:var(--ok)}.note.err{color:#ff8a78}
-.enter{margin:12px 0 0;font-size:15px;color:var(--dim)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:10px 0 0;font:700 10px/1.4 var(--pixel);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.foot a{color:var(--ink)}
+.foot a:hover{color:var(--amber-hi)}
 
-/* the screen: the real game in a riveted frame with a nameplate */
-.screen{padding:0}
-.screen .plateHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px 8px 14px;border-bottom:2px solid var(--line);background:var(--panel-solid)}
-.state{display:inline-flex;align-items:center;gap:8px;font:700 11px/1 var(--pixel);letter-spacing:.08em;text-transform:uppercase;color:var(--idle)}
-.state::before{content:"";width:8px;height:8px;flex:none;background:currentColor}
-.state.working{color:var(--ok)}
-.state.working::before{animation:blink .9s steps(1) infinite}
-.state.blocked{color:var(--amber)}
-.state.blocked::before{background:var(--bad);animation:blink .4s steps(1) infinite}
-.state small{font:400 11px/1 var(--pixel);color:var(--dim);letter-spacing:.06em}
-@media (max-width:480px){.state .lg{display:none}}
-.view{position:relative;aspect-ratio:16/9;background:#1c120c;overflow:hidden}
-.view img,.view video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;image-rendering:pixelated}
-.view video{opacity:0;transition:opacity .3s steps(3)}
-.view video.on{opacity:1}
-.screen .btn2{min-height:36px;padding:0 12px;font-size:11px;position:relative}
-.screen .btn2::after{content:"";position:absolute;inset:-6px -4px}
-.journey{display:flex;flex-wrap:wrap;gap:6px 0;margin:0;padding:10px 12px;list-style:none;border-top:2px solid var(--line);background:var(--panel-solid);font:400 10px/1.4 var(--pixel);letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
-.journey li{display:flex;align-items:center}
-.journey li+li::before{content:"";width:14px;height:2px;margin:0 8px;background:var(--brass)}
-.journey li.rw{color:var(--amber)}
+/* pause for the loop (WCAG 2.2.2): small, out of the way */
+#toggle{position:absolute;z-index:2;right:max(12px,env(safe-area-inset-right));top:12px;width:36px;height:36px;padding:0;border:2px solid var(--line);border-radius:0;background:rgba(14,10,8,.8);color:var(--dim);cursor:pointer;display:grid;place-items:center}
+#toggle:hover{color:var(--ink);border-color:var(--line-hi)}
+#toggle svg{width:12px;height:12px;fill:currentColor}
 
-/* belt divider: ore riding a pixel conveyor */
-.belt{height:22px;margin:0;border-top:2px solid #000;border-bottom:2px solid #000;background:
-  linear-gradient(90deg,transparent 0 18px,#ff4a3a 18px 28px,transparent 28px 64px,#ffb040 64px 74px,transparent 74px 104px,#5aa8ff 104px 114px,transparent 114px 140px) 0 5px/140px 8px repeat-x,
-  repeating-linear-gradient(90deg,#2a211b 0 10px,#3a2c22 10px 12px);
-  animation:belt 1.6s steps(8) infinite}
-@keyframes belt{to{background-position:140px 5px,12px 0}}
-
-/* sections */
-section{padding:56px 0}
-h2{font:700 clamp(20px,3vw,30px)/1.2 var(--pixel);letter-spacing:.05em;text-transform:uppercase;margin:0 0 12px;text-shadow:0 2px 0 #000}
-h2 em{font-style:normal;color:var(--amber)}
-.sub{color:var(--dim);margin:0 0 28px;max-width:44em}
-
-/* the line: four stations */
-.cards{display:grid;gap:18px;margin:0;padding:0;list-style:none}
-@media (min-width:640px){.cards{grid-template-columns:repeat(2,1fr)}}
-@media (min-width:1040px){.cards{grid-template-columns:repeat(4,1fr)}}
-.card{display:flex;flex-direction:column}
-.card figure{position:relative;margin:0;border-bottom:2px solid var(--line);aspect-ratio:8/5;background:#1c120c;overflow:hidden}
-.card img{display:block;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
-.card .tag{position:absolute;left:8px;bottom:8px;background:var(--panel);border:2px solid #000;padding:5px 7px;font:700 10px/1 var(--pixel);letter-spacing:.06em;text-transform:uppercase;color:var(--aether)}
-.card div.txt{padding:14px 16px 18px}
-.step{display:block;font:400 11px/1 var(--pixel);letter-spacing:.14em;text-transform:uppercase;color:var(--brass);margin:0 0 8px}
-.card h3{font:700 15px/1.3 var(--pixel);letter-spacing:.05em;text-transform:uppercase;margin:0 0 8px}
-.card p{margin:0;color:var(--dim);font-size:14px;line-height:1.6}
-
-/* machine states */
-.states{display:grid;gap:16px;margin:0;padding:0;list-style:none}
-@media (min-width:760px){.states{grid-template-columns:repeat(3,1fr)}}
-.chip{padding:14px 16px 16px}
-.chip.idle{border-color:var(--line)}
-.chip.working{border-color:#2f7a46}
-.chip.blocked{border-color:var(--amber);animation:ping 1s infinite}
-.chip .name{display:block;font:700 11px/1.2 var(--pixel);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);margin:0 0 8px}
-.chip .state{margin:0 0 10px}
-.chip .det{display:block;font-size:13px;color:var(--dim);margin:0 0 10px}
-.chip .det b{font:700 11px/1 var(--pixel);letter-spacing:.04em;color:var(--ink)}
-.chip p{margin:0;font-size:14px;color:var(--ink)}
-.chip .lever{display:inline-block;margin:12px 0 0;background:var(--amber);color:var(--on-amber);border:2px solid #000;padding:7px 10px;font:700 10px/1 var(--pixel);letter-spacing:.08em}
-.chip.blocked::after{content:"";position:absolute;left:0;right:0;top:-2px;height:6px;background:var(--caution)}
-@keyframes ping{0%,100%{box-shadow:var(--plate-shadow),0 0 0 0 rgba(255,176,32,.7)}50%{box-shadow:var(--plate-shadow),0 0 0 8px rgba(255,176,32,0)}}
-@keyframes blink{50%{opacity:.25}}
-
-/* why: the big plate and the trust ladder */
-.big{padding:26px 18px}
-@media (min-width:760px){.big{padding:40px 44px}}
-.big p{color:var(--dim);max-width:46em;margin:0 0 14px}
-.big p b{color:var(--ink);font-weight:600}
-.ladder{list-style:none;margin:26px 0 0;padding:0;display:grid;gap:12px;counter-reset:rung}
-@media (min-width:760px){.ladder{grid-template-columns:repeat(4,1fr)}}
-.ladder li{position:relative;background:var(--panel-solid);border:2px solid var(--line);padding:14px 14px 16px;box-shadow:inset 0 4px 0 var(--c,var(--amber)),var(--plate-shadow);counter-increment:rung}
-.ladder li::before{content:"0" counter(rung);display:block;font:400 10px/1 var(--pixel);letter-spacing:.14em;color:var(--c);margin:4px 0 8px}
-.ladder b{display:block;font:700 13px/1.3 var(--pixel);letter-spacing:.05em;text-transform:uppercase;margin:0 0 6px}
-.ladder span{color:var(--dim);font-size:14px}
-
-.cta{display:grid;gap:20px;align-items:center;padding:26px 18px}
-@media (min-width:760px){.cta{grid-template-columns:1fr auto;padding:34px 40px}}
-.cta p{margin:0;color:var(--dim)}
-
-footer{padding:28px 0 44px;color:var(--dim);font-size:14px;border-top:2px solid var(--line);margin-top:28px}
-footer .row{display:flex;flex-wrap:wrap;gap:14px 24px;justify-content:space-between;align-items:center}
-footer img{height:25px;width:auto;image-rendering:pixelated;display:block}
-.credit{font:400 11px/1.4 var(--pixel);letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
-
-@media (prefers-reduced-motion:reduce){
-  .belt,.state::before,.chip.blocked{animation:none!important}
-  .view video{transition:none}
+/* phones: words on top, the art fills the middle, the form under it */
+@media (max-width:759px){
+  .art{position:relative;inset:auto;order:2;width:100%;flex:1 1 auto;min-height:300px;margin:20px 0 16px}
+  .art img,.art video{object-position:50% 50%}
+  .art::after{background:linear-gradient(180deg,var(--bg) 0,rgba(11,8,6,0) 14%,rgba(11,8,6,0) 82%,var(--bg) 100%)}
+  .top{order:1;padding-top:max(36px,env(safe-area-inset-top))}
+  .bottom{order:3;margin-top:auto}
+  form{flex-direction:column}
+  .say span{display:block}
+  #toggle{top:auto;bottom:10px}
 }
+@media (prefers-reduced-motion:reduce){.art video{transition:none}}
 </style>
 </head>
 <body>
-<a class="skip" href="#join">Skip to the waitlist</a>
-<div class="sky">
-<div class="wrap">
-  <header class="bar">
-    <a class="brand" href="/" aria-label="Shiptorio home"><img src="/brand/wordmark.svg" width="297" height="50" alt="Shiptorio"></a>
-    <a class="btn2" href="/access?next=%2F">Sign in</a>
-  </header>
+<main>
+  <div class="top">
+    <h1><img src="/brand/wordmark.svg" width="594" height="100" alt="Shiptorio"></h1>
+    <p class="say">Your repo is a factory. <span>Teach it to run itself.</span></p>
+  </div>
 
-  <main>
-    <div class="hero">
-      <div>
-        <p class="eyebrow">Cogworks · private preview</p>
-        <h1>Your repo is a factory. <em>Teach it to run itself.</em></h1>
-        <p class="lede">Shiptorio turns your codebase into a factory game. <b>Bugs and requests are ore, AI agents are the machines, and every rocket is a real merged pull request.</b> You play by deciding. The factory learns to need you less.</p>
-        <form class="join" id="join" action="/api/waitlist" method="post" novalidate>
-          <label for="email">Email address</label>
-          <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@yourstartup.com" maxlength="254" required>
-          <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
-          <button class="btn" type="submit">Join the waitlist</button>
-        </form>
-        <p class="note" id="note" role="status" aria-live="polite"></p>
-        <p class="enter">Early access is invite only. Have the password? <a href="/access?next=%2F">Enter the factory</a>.</p>
-      </div>
-      <div class="screen plate rivets">
-        <div class="plateHead">
-          <span class="state" id="reel">Idle <small>· real game<span class="lg">, 30s loop</span></small></span>
-          <button type="button" class="btn2" id="toggle" hidden>Play</button>
-        </div>
-        <div class="view">
-          <img src="/welcome/poster.webp" srcset="/welcome/poster-640.webp 640w, /welcome/poster-960.webp 960w, /welcome/poster.webp 1280w" sizes="(min-width: 960px) 620px, 100vw" width="1280" height="720" alt="The Shiptorio factory line in pixel art: a riveted iron deck with an assembler, an aether review dome and a rocket pad above mine shafts under the island" fetchpriority="high">
-          <video id="loop" muted loop playsinline preload="none" width="1280" height="720" aria-label="30 seconds of a Shiptorio factory: work is mined under the island, rides the ore lift, gets built into a pull request, passes review and launches as a rocket"></video>
-        </div>
-        <ol class="journey" aria-label="The route every piece of work takes">
-          <li>Mine</li><li>Ore lift</li><li>Assembler</li><li>Review</li><li>Launch</li><li class="rw">Rework</li>
-        </ol>
-      </div>
-    </div>
-  </main>
-</div>
-</div>
+  <div class="art">
+    <picture>
+      <source media="(max-width: 759px)" srcset="/welcome/hero-phone.webp" width="600" height="800">
+      <img src="/welcome/hero.webp" srcset="/welcome/hero-1024.webp 1024w, /welcome/hero.webp 1600w" sizes="100vw" width="1600" height="900" alt="The Shiptorio factory in pixel art: a clockwork assembler, an aether review dome and a rocket on its launch pad, on an iron deck under smokestacks" fetchpriority="high">
+    </picture>
+    <video id="loop" muted loop playsinline preload="none" aria-hidden="true"></video>
+    <button type="button" id="toggle" hidden aria-label="Pause the factory"></button>
+  </div>
 
-<div class="belt" aria-hidden="true"></div>
-
-<div class="wrap">
-  <section aria-labelledby="how">
-    <p class="eyebrow">The line</p>
-    <h2 id="how">How it plays</h2>
-    <p class="sub">Connect a GitHub repo and it becomes a floating island. Everything on it is real work happening in your repo, moving from station to station.</p>
-    <ol class="cards">
-      <li class="card plate">
-        <figure><img src="/welcome/step-ore.webp" width="720" height="450" loading="lazy" decoding="async" alt="Under the island: three mine shafts marked Sentry, GitHub and Inbox, with ore carts on a rail heading to the ore lift"><span class="tag" aria-hidden="true">Underside</span></figure>
-        <div class="txt"><span class="step">01 · Mine</span><h3>Feedback is ore</h3><p>GitHub issues, Sentry errors and customer emails get mined under the island and ride the ore lift up to the line.</p></div>
-      </li>
-      <li class="card plate">
-        <figure><img src="/welcome/step-build.webp" width="720" height="450" loading="lazy" decoding="async" alt="The clockwork assembler punching cards for an issue while more work waits on the belt from the ore lift"><span class="tag" aria-hidden="true">Assembler</span></figure>
-        <div class="txt"><span class="step">02 · Build</span><h3>Agents build the fix</h3><p>The assembler turns each issue into a pull request. Your Claude and ChatGPT sign-ins power the machines.</p></div>
-      </li>
-      <li class="card plate">
-        <figure><img src="/welcome/step-follow.webp" width="720" height="450" loading="lazy" decoding="async" alt="Follow work mode: the camera rides with one item through the review dome, with a bar naming the item and what is happening to it"><span class="tag" aria-hidden="true">Follow work</span></figure>
-        <div class="txt"><span class="step">03 · Review</span><h3>Every PR runs the gauntlet</h3><p>CI, AI review and your checks split passes from rejects. Rejects climb the rework line back with a note. Follow any item end to end.</p></div>
-      </li>
-      <li class="card plate">
-        <figure><img src="/welcome/step-launch.webp" width="720" height="450" loading="lazy" decoding="async" alt="A rocket lifting off the iron launch pad between tesla coils as a pull request merges"><span class="tag" aria-hidden="true">Launch pad</span></figure>
-        <div class="txt"><span class="step">04 · Launch</span><h3>A rocket is a merged PR</h3><p>Launch merges the pull request for real. Then the bottleneck moves, and there is a next move waiting.</p></div>
-      </li>
-    </ol>
-  </section>
-
-  <section aria-labelledby="loop-h">
-    <p class="eyebrow">The loop</p>
-    <h2 id="loop-h">Every machine says <em>what it needs</em></h2>
-    <p class="sub">No dashboards to dig through. Each station is idle, working or waiting on you, and the amber ones are the game.</p>
-    <ul class="states">
-      <li class="chip plate idle">
-        <span class="name">Iron launch pad</span>
-        <span class="state">Idle</span>
-        <span class="det">pad clear, waiting for a PR</span>
-        <p>Nothing for you to do. Work is on its way.</p>
-      </li>
-      <li class="chip plate working">
-        <span class="name">Clockwork assembler</span>
-        <span class="state working">Working</span>
-        <span class="det"><b>#142</b> · punching cards</span>
-        <p>An agent is on it. Watch it move or follow it.</p>
-      </li>
-      <li class="chip plate blocked">
-        <span class="name">Aether splitter</span>
-        <span class="state blocked">Needs you</span>
-        <span class="det"><b>#148</b> unclear: which API version?</span>
-        <p>One question, one call. Clean calls earn trust, so less turns amber next time.</p>
-        <span class="lever" aria-hidden="true">Resolve</span>
-      </li>
-    </ul>
-  </section>
-
-  <section aria-labelledby="why">
-    <div class="big plate rivets">
-      <p class="eyebrow">Why it exists</p>
-      <h2 id="why">You're the bottleneck. <em>That's the game.</em></h2>
-      <p>AI writes the code now. What slows shipping is a person deciding what to build, what to check, and what it has to prove. Shiptorio makes those calls visible and fast, then pushes you further: <b>add more checks, verify everything, and let each clean ship earn trust.</b> Verify, then automate. Over time the factory runs more and more of itself.</p>
-      <ol class="ladder" aria-label="How autonomy is earned">
-        <li style="--c:var(--idle)"><b>Ask first</b><span>Day one, nothing ships without your yes.</span></li>
-        <li style="--c:var(--amber)"><b>Quick check-ins</b><span>Swipe through a short deck of next moves.</span></li>
-        <li style="--c:var(--ok)"><b>Launch permits</b><span>Clean ships earn a district the right to launch alone.</span></li>
-        <li style="--c:var(--aether)"><b>Lights out</b><span>The factory runs itself. You watch it grow.</span></li>
-      </ol>
-    </div>
-  </section>
-
-  <section aria-labelledby="cta">
-    <div class="cta plate rivets">
-      <div>
-        <h2 id="cta">Build a factory that ships</h2>
-        <p>Shiptorio is in private preview for solo founders and tiny teams. Join the waitlist and we'll send an invite when there's room on the island.</p>
-      </div>
-      <a class="btn" href="#join">Get on the waitlist</a>
-    </div>
-  </section>
-
-  <footer>
-    <div class="row">
-      <img src="/brand/wordmark.svg" width="297" height="50" alt="Shiptorio">
-      <span class="credit">The factory must grow · powered by Meta Muse Spark</span>
-    </div>
-  </footer>
-</div>
+  <div class="bottom">
+    <form id="join" action="/api/waitlist" method="post" novalidate>
+      <label class="sr" for="email">Email address</label>
+      <input id="email" name="email" type="email" inputmode="email" autocomplete="email" placeholder="you@yourstartup.com" maxlength="254" required>
+      <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+      <button class="go" type="submit">Get an invite</button>
+    </form>
+    <p class="note" id="note" role="status" aria-live="polite"></p>
+    <p class="foot"><a href="/access?next=%2F">Sign in</a><span>powered by Meta Muse Spark</span></p>
+  </div>
+</main>
 <script src="/welcome/landing.js" defer></script>
 </body>
 </html>

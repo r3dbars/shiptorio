@@ -248,3 +248,21 @@ describe("runner approval survives concurrent deck selection changes", () => {
     expect((f.data.get("openMoves") as Move[]).some(m => m.id === approval.id)).toBe(false);
   });
 });
+
+describe("real runner proposals survive a deck full of passive source alerts", () => {
+  for (const status of ["none", "failed", "awaiting_approval"] as const) it(`keeps the ${status} job path reachable without changing its state`, async () => {
+    const now = Date.now();
+    const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the real regression", district: "/", state: "queued" as const, attempts: 0, updatedAt: now };
+    const alerts = Array.from({ length: 12 }, (_, n) => card(`source-alert-${n}`, { kind: "unblock", stage: "intake", createdAt: now - 4 * 60 * 60_000, options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] }));
+    const f = fixture(alerts, { items: [item] });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: now });
+    const job = { id: "job-58", itemId: item.id, repo: "r3dbars/demo", status, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-job-58", baseSha: "a".repeat(40), plan: "Fix the scoped regression and prove it", approvalMoveId: "approval-58" };
+    if (status !== "none") f.data.set("runnerJob:job-58", structuredClone(job));
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const tool = status === "awaiting_approval" ? "approve_runner_job" : "plan_runner_job";
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.some(move => move.itemId === item.id && move.options.some(option => option.actions.some(action => action.tool === tool)))).toBe(true);
+    if (status !== "none") expect(f.data.get("runnerJob:job-58")).toEqual(job);
+    else expect(await f.factory.runnerJobs()).toEqual([]);
+  });
+});

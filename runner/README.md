@@ -34,6 +34,7 @@ Subscription sign-ins must be made inside WSL, not on the Windows host.
 ```sh
 ~/.local/bin/shiptorio-runner login codex # or login claude: dedicated provider sign-in
 ~/.local/bin/shiptorio-runner doctor   # check auth, real OS/agent sandboxes (#235), and server pairing
+~/.local/bin/shiptorio-runner doctor --edit codex # one real subscription edit in a disposable fixture
 ~/.local/bin/shiptorio-runner watch    # resume after closing the terminal
 ~/.local/bin/shiptorio-runner pair     # add another repo, without stopping watch
 ~/.local/bin/shiptorio-runner uninstall
@@ -99,15 +100,27 @@ An unavailable/expired Codex or Claude login produces an in-game **Sign in again
 with `shiptorio-runner login codex` or `shiptorio-runner login claude`. The watcher stays
 alive and stops offering that harness until login is restored. A provider reporting a
 revoked token stays blocked even if its cached login status says signed in; a changed
-local credential file clears the block. Restart watch after signing in if a provider uses
-only the OS keychain. Sandbox failures and ordinary test failures do not become sign-in
+local credential file clears the block. A successful dedicated Claude login also clears
+a Keychain-only auth block. Sandbox failures and ordinary test failures do not become sign-in
 errors. Raw provider output stays in redacted local logs.
 
 `doctor` prints PASS/FAIL for each installed harness, the verification sandbox, each agent
 sandbox (CLI startup/auth status, macOS preferences and HTTPS access), and every pairing.
-It checks all categories even when one fails, exits nonzero if any check fails, and never
-claims a job or runs paid inference. Pairing failures distinguish a missing/expired local
-token from an unreachable server or rejected credential in the printed recovery steps.
+It checks all categories even when one fails and exits nonzero if any check fails. Basic
+doctor never claims a job or runs inference; it explicitly reports the file edit as untested.
+Pairing failures distinguish a missing/expired local token from an unreachable server or rejected credential in the printed recovery steps.
+
+`shiptorio-runner doctor --edit codex` additionally uses one small subscription request
+to run the same Codex assembler as production jobs in a disposable repository. It verifies
+an exact `example.ts` edit, unchanged unapproved/outside canaries and the complete git
+scope. A successful agent process without the edit fails. The fixture is removed afterward.
+This does not approve, claim or publish a factory job. Other auth/pairing failures still
+make the overall command fail even when `edit:codex` passes.
+
+Codex stays read-only inside the unchanged outer OS sandbox and proposes structured
+replacements. The credential-free supervisor applies only exact approved regular-file
+matches after the agent exits. This avoids nested macOS Seatbelt application failures;
+the supervisor's existing scope, verification, frozen-patch and publication gates remain.
 
 ## Claude Code and Codex power
 

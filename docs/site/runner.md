@@ -80,6 +80,30 @@ recovering job keeps its original provider. Local models keep their guarded rout
   from a checkout to the legacy service, sign in again using the service's data root.
   Your usual Claude home stays separate.
 
+## Check a real file edit
+
+Basic `shiptorio-runner doctor` checks sign-in, OS sandbox startup and pairing. It does
+not spend subscription inference or prove the assembler can change a file. Run the
+explicit edit probe when startup passes but a build produces no changes:
+
+```sh
+shiptorio-runner doctor --edit codex
+```
+
+The probe uses your dedicated Shiptorio sign-in and one small subscription inference
+request. It creates a disposable repository and asks the production assembler to change
+one constant in `example.ts`. Doctor checks the exact resulting bytes, the untouched
+unapproved file and outside canary, and the final git scope. A successful process with
+no actual edit fails. The fixture is removed afterward; the probe never claims a factory
+job, touches its pairing, commits a product change or publishes a branch.
+
+macOS rejects Codex applying a second Seatbelt profile inside the runner's existing OS
+sandbox. The runner preserves that outer boundary and Codex's read-only mode: Codex
+returns structured edit proposals, and the trusted supervisor applies only exact matches
+within the approved files. The same verification and publication gates still run. Do not
+bypass either sandbox or expose your normal home or credentials to work around an edit
+failure.
+
 ## What your agent can and can't touch
 
 Jobs run in an isolated checkout. The runner publishes only the approved file scope,
@@ -118,3 +142,6 @@ files to uninstall the legacy service.
 
 Approving a plan stays bound to that exact issue and plan even if another card moves to
 the top of the deck. If the issue changes before approval, request a fresh plan.
+
+If old source alerts fill the check-in, one existing build or plan-approval card stays
+reachable. This only makes the decision visible; it does not approve a plan or start work.
