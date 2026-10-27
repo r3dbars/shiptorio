@@ -83,6 +83,22 @@ describe("live check-in deck", () => {
     expect(verify.focus).toBe("verify-1");
     expect(buildDeck(s, [move("verify", { focus: "verify-1" })], { now })).toHaveLength(1);
   });
+  it("says what the queue holds now on a carried bottleneck card, and stays quiet while a local agent builds", () => {
+    const s = state([item("a"), item("b")]);
+    s.bottleneck = { stage: "build", wip: 2, ageMs: 60_000, throughputPerHour: 0, valueAtRisk: 10, summary: "2 items waiting on a local agent. Oldest wait: 1 min." };
+    const first = buildDeck(s, [], { now })[0];
+    expect(first.title).toStartWith("2 items");
+    s.bottleneck = { ...s.bottleneck, wip: 1, summary: "1 item waiting on a local agent. Oldest wait: 4 min." };
+    const carried = buildDeck(s, [], { now: now + 180_000, impliedMove: first })[0];
+    expect(carried).toMatchObject({ id: first.id, createdAt: first.createdAt, title: "1 item waiting on a local agent. Oldest wait: 4 min." });
+    expect(carried.why).toStartWith("1 item is");
+    // The player's Launch card leads, not "waiting on a local agent" while the agent is busy on the last approved plan.
+    const pad = state([item("a"), item("pr", { state: "on_pad", prNumber: 1, updatedAt: now })]);
+    pad.bottleneck = s.bottleneck;
+    expect(buildDeck(pad, [ship()], { now, impliedMove: first, buildMoving: true }).map(m => m.id)).toEqual(["ship"]);
+    pad.bottleneck = { ...s.bottleneck, stage: "inspect", stationId: "verify-1" };
+    expect(buildDeck(pad, [], { now, buildMoving: true })).toHaveLength(1);
+  });
   it("respects persisted scoped class rules and deferred ids including an implied card", () => {
     const s = state([item("i")]);
     const proposal = move("build", { kind: "build", itemId: "i" });

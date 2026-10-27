@@ -40,6 +40,7 @@ import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, S
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn } from "./flags";
+import { useComeback } from "./ui/Comeback";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -130,6 +131,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
+  // Coming back after hours away: a few seconds of what really shipped meanwhile, then the launch waiting on you.
+  const [reduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+  const back = useComeback(state, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", !intro && !tour.on, reduced);
   // which plant built each item this session, for the power sheet's job counts
   const powerJobs = useRef(new Map<string, string>());
   if (state) powerJobs.current = notePowerJobs(powerJobs.current, state);
@@ -153,6 +157,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const pickKey = (id: string) =>
     state?.stations?.some((st) => st.id === id) || id === "rework" || id.includes(":") ? id : state?.districts.some((d) => d.name === id) ? `d:${id}` : `m:${id}`;
   const focusKey = focus && pickKey(focus);
+  const parkKey = back.park?.focus ? pickKey(back.park.focus) : null; // r4-pull: the comeback lands on the launch waiting
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   const [supportReview, setSupportReview] = useState<string | null>(null);
   const sendCard = (message: WebToServer) => {
@@ -176,6 +181,15 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progressing, !!state, deck.length > 0]);
   const [sheet, setSheet] = useState<Sheet | null>(() => (new URLSearchParams(location.search).has("thinks") ? "thinks" : null));
+
+  // the comeback parks on a waiting launch with its card up (the tray's), not under the check-in deck; opening
+  // anything else lets the camera go
+  useEffect(() => {
+    if (back.park) setCheckin(false);
+  }, [back.park?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (panel || checkin || sheet) back.release();
+  }, [panel, checkin, sheet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // after research, fly to the new station as soon as it's on the line
   const [landing, setLanding] = useState<string | null>(null);
@@ -270,7 +284,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // Calm: "Waiting on you" counts only what's parked on you (approve + steer), never ideas.
   const needs = calm ? deck.filter((m) => attentionOf(m) !== "suggest").length : waiting + blocked.length;
   if (show("line")) counts.push({ key: "need", label: F.needs, value: needs, tone: "need", title: F.needsTitle });
-  if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
+  if (show("score")) counts.push({ key: "ship", label: F.shipped, value: back.shipped(metrics?.rockets ?? shipped), tone: "ship", title: HUD.shippedTitle });
   // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
   const extras: Count[] = [];
   if (autonomy?.launches) {
@@ -457,17 +471,18 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         <FactoryMap
           state={state}
           onPick={pickOnMap}
-          focus={intro ? tourly.cam.focus : (focusKey ?? panel)}
+          focus={intro ? tourly.cam.focus : (focusKey ?? panel ?? parkKey)}
           wide={intro ? tourly.cam.wide : null}
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
-          pings={intro ? (tourly.ping ? pings : undefined) : show("line") ? pings : undefined}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding ? pings : undefined}
           cosmetics={cosmeticsOf(prog.p, progressing)}
 
           satellites={intro ? undefined : satellites}
           empire={!intro && sheet === "empire"}
           summary={factorySummary(state)}
+          lapse={intro ? null : back.lapse}
         />
         <SoundCaptions />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
@@ -574,7 +589,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <AchievementsSheet earned={ach.earned} state={state} streak={prog.p.best} onClose={() => setSheet(null)} />
         ) : sheet === "guide" ? (
           <FieldGuide met={met} onClose={() => setSheet(null)} />
-        ) : checkin ? (
+        ) : checkin && !back.holding ? (
           <Suspense fallback={null}>
             <CheckIn
               deck={deck}
@@ -711,12 +726,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             )}
           </section>
-        ) : (
+        ) : back.holding ? null : (
           <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
             {calm ? (
               <AttentionTray
                 deck={deck}
                 send={sendCard}
+                first={back.park?.id}
                 onPower={cfg.kind === "live" ? () => setSheet("power") : undefined}
                 onCheckin={world !== "checkin" && show("checkin") && !checkin ? () => setCheckin(true) : undefined}
                 quiet={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null}
@@ -786,6 +802,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </nav>
         )}
+
+        {back.overlay}
 
         <AchievementToast toast={ach.toast} onDismiss={ach.dismiss} onOpen={() => { setCheckin(false); setSheet("achievements"); }} />
 
