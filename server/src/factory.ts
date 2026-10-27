@@ -2543,7 +2543,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
-    await this.broadcastQueue;
+    // The initial snapshot was authorized above. Other sockets may still be
+    // revalidating queued frames; they must not hold this handshake open.
     return new Response(null, { status: 101, webSocket: client });
   }
 
