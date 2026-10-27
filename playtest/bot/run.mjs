@@ -13,7 +13,8 @@ if (!(url.origin === "https://shiptorio.dev" || ["localhost", "127.0.0.1"].inclu
 const out = resolve(option("--out", `playtest/out/${new Date().toISOString().replace(/[:.]/g, "-")}-${persona}`));
 await mkdir(out, { recursive: true });
 const local = ["localhost", "127.0.0.1"].includes(url.hostname);
-const steps = [], failures = [];
+const steps = [], failures = [], frictions = [];
+const friction = text => { if (!frictions.includes(text)) frictions.push(text); };
 let observedLaunch = false;
 let fixture, browser, lastPage;
 try {
@@ -90,11 +91,11 @@ try {
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
         await repo.first().waitFor({ state: "visible", timeout: 60000 });
       } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
-      else if (/Factory job budget reached/i.test(text) && await visible(later)) { await later.first().click(); await capture("later-busy-plan"); }
+      else if (/Factory job budget reached/i.test(text) && await visible(later)) { friction(`${width}px: suggested plan hit the active-job budget; used Later to reach other work`); await later.first().click(); await capture("later-busy-plan"); }
       else if (await visible(go)) { await go.first().click(); await capture("continue"); }
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
-      else if (await visible(checkin) && await checkin.first().isEnabled()) { await checkin.first().click(); await capture("open-check-in"); }
-      else if (await visible(menu) && await menu.first().getAttribute("aria-expanded") === "false") { await menu.first().click(); await capture("open-menu"); }
+      else if (await visible(checkin) && await checkin.first().isEnabled()) { friction(`${width}px: no direct card action was visible; opened Check in to find waiting work`); await checkin.first().click(); await capture("open-check-in"); }
+      else if (await visible(menu) && await menu.first().getAttribute("aria-expanded") === "false") { friction(`${width}px: opened Menu to find the next player action`); await menu.first().click(); await capture("open-menu"); }
       else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
       await page.waitForTimeout(1000);
     }
@@ -116,9 +117,9 @@ finally {
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
   const report = { persona, origin: url.origin, fixture: local, fixturePRs: fixture?.stub.state.pulls.length ?? null,
     fixtureMerges: fixture?.stub.state.merges.length ?? null, observedLaunch, receiptAttached: fixture?.stub.state.pulls.some(pr => pr.body?.includes("shiptorio-proof:")) ?? false,
-    steps, failures: unique, fingerprint, passed: !unique.length };
+    steps, frictions, failures: unique, fingerprint, passed: !unique.length };
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
-  await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
+  await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n## Extra steps observed\n\n${frictions.length ? frictions.map(f => `- ${f}`).join("\n") : "None."}\n\n## Screenshots\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
   console.log(JSON.stringify({ report: join(out, "report.md"), failures: unique.length, fingerprint }));
   if (unique.length) process.exitCode = 1;
   await browser?.close();
