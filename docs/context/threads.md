@@ -399,6 +399,8 @@ assertion and180s testdeadline. Nine serial desktop cases overran the12min job
 as the failed report printed, so only the wholejob budget is18min to retain
 complete evidence. No production runtime or visual baselines change.
 
-### Codex — CI wall time and flake investigation (2026-10-27)
+### Codex — CI throughput and frozen-batch gates (2026-10-27)
 
-- Measured the latest 50 CI and Stranger runs; preserving required `check`, `selfhost`, and `stranger` contexts, draft skips, manual inputs, and all test inventories. Cache package/browser downloads, isolate parallel Bun files, and overlap independent checks. Bun test inventory is unchanged (943 cases in 148 files on this head; existing platform skips preserved). Fix replay clock polling and anonymous-response attribution; freeze only screenshot frames. Explicit 100Hz CPU profiling reduced a reproduced 5271ms load tick p95 to 2639ms with all 1020 ticks / 5000 deliveries and unchanged budgets; five hosted repeats remain required before readiness.
+- PR #370 caches dependencies/browsers, overlaps isolated Bun files and independent checks, fixes replay clock / anonymous-response / card readiness races, uses WebGL-only SwiftShader, and reports 100Hz load profiling under unchanged budgets. Unit inventories match before/after (949 cases); all 24 browser cases and 16 Stranger stages remain.
+- Per root coordination: feature PRs target the next integration branch and run fast checks; an owner-authored same-repo `release/*` PR to `main` automatically runs every suite once frozen/ready. Factory candidates always run full suites. Required `check` aggregates all applicable jobs; direct feature-to-main and diagnostic-only receipts fail closed. No branch-protection edits or automatic merge rights.
+- Root owns the next integration target and helper-policy switch after the current release. Five-run acceptance is pending; unfinished diagnostic runs were canceled at root's request to free runners. #362 remains untouched; the isolated config flag fix is separately owned by root's #394.

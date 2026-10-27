@@ -1,20 +1,74 @@
 name: Stranger E2E
 on:
   pull_request:
-    branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 permissions:
   contents: read
+  pull-requests: read
 concurrency:
   group: stranger-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   stranger:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.draft == false && (github.base_ref == 'main' || github.event.pull_request.user.type == 'Bot' || github.event.pull_request.user.login == 'shiptorio[bot]' || startsWith(github.head_ref, 'shiptorio/')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Require a frozen release or factory candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUIRE_FULL: 'true'
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.parse, urllib.request
+
+          def factory(pr):
+              return pr.get('user', {}).get('type') == 'Bot' or pr.get('user', {}).get('login') == 'shiptorio[bot]' or pr.get('head', {}).get('ref', '').startswith('shiptorio/')
+
+          def batch(pr, repo):
+              owner = repo.split('/')[0]
+              return (pr.get('base', {}).get('ref') == 'main'
+                      and pr.get('head', {}).get('repo', {}).get('full_name') == repo
+                      and pr.get('head', {}).get('ref', '').startswith('release/')
+                      and pr.get('user', {}).get('login') == owner
+                      and pr.get('user', {}).get('type') == 'User')
+
+          # Admission regressions: a label, fork, branch name or bot cannot impersonate
+          # the owner's release batch. Factory/bot candidates instead keep the FULL suite.
+          fixture = {'base': {'ref': 'main'}, 'head': {'ref': 'release/test', 'repo': {'full_name': 'owner/repo'}}, 'user': {'login': 'owner', 'type': 'User'}}
+          assert batch(fixture, 'owner/repo')
+          for change in [{'user': {'login': 'shiptorio[bot]', 'type': 'Bot'}}, {'user': {'login': 'stranger', 'type': 'User'}}, {'head': {'ref': 'release/test', 'repo': {'full_name': 'stranger/fork'}}}, {'head': {'ref': 'feature/test', 'repo': {'full_name': 'owner/repo'}}}, {'base': {'ref': 'release/test'}}]:
+              assert not batch({**fixture, **change}, 'owner/repo')
+          assert not batch({**fixture, 'user': {'login': 'stranger', 'type': 'User'}, 'labels': [{'name': 'release-batch'}]}, 'owner/repo')
+          assert factory({**fixture, 'user': {'login': 'shiptorio[bot]', 'type': 'Bot'}})
+          assert factory({**fixture, 'head': {'ref': 'shiptorio/job'}})
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          event = json.load(open(os.environ['GITHUB_EVENT_PATH']))
+          manual = os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch'
+          prs = [event['pull_request']] if not manual else []
+          if manual:
+              query = urllib.parse.urlencode({'state': 'open', 'head': repo.split('/')[0] + ':' + os.environ['GITHUB_REF_NAME'], 'per_page': 100})
+              request = urllib.request.Request(os.environ['GITHUB_API_URL'] + '/repos/' + repo + '/pulls?' + query, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  prs = [pr for pr in json.load(response) if pr.get('head', {}).get('sha') == os.environ['GITHUB_SHA']]
+          inputs = event.get('inputs') or {}
+          diagnostic = manual and (bool(inputs.get('browser_grep')) or str(inputs.get('update_baselines', 'false')).lower() == 'true')
+          protected_main = manual and os.environ['GITHUB_REF'] == 'refs/heads/main' and os.environ['GITHUB_ACTOR'] == repo.split('/')[0]
+          eligible = protected_main or any(batch(pr, repo) or factory(pr) for pr in prs)
+          full = eligible and not diagnostic
+          targets_main = protected_main or any(pr.get('base', {}).get('ref') == 'main' for pr in prs)
+          admit = full or (bool(prs) and not targets_main and not diagnostic)
+          reason = ('Full frozen-batch/factory verification' if full else 'Explicit browser diagnostic; not a release receipt' if diagnostic else 'Fast integration-branch verification' if admit else 'Direct feature merges to main are blocked: target the next integration branch, then freeze an owner-authored same-repo release/* PR to main')
+          outputs = {'full': full, 'browser': full or diagnostic, 'load': full, 'admit': admit}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for key, value in outputs.items():
+                  print(key + '=' + str(value).lower(), file=output)
+          print(reason)
+          if os.environ.get('REQUIRE_FULL') == 'true' and not full:
+              raise SystemExit('Stranger release gate refused: ' + reason)
+          PY
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
