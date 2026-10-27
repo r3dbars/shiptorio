@@ -967,7 +967,7 @@ export const JUDGE = {
   title: "A factory that ships fixes",
   intro: "Follow a checkout crash from customer signal to verified fix in about 90 seconds. The replay runs itself; you can try the launch permit card along the way.",
   disclosure: "Scripted simulation. No live AI calls, GitHub changes, or customer messages.",
-  credit: "Powered by Meta Muse Spark",
+  credit: CREDIT,
   play: "Play the 90-second story", replay: "Replay", docs: "Explore the docs",
   captionLabel: "Judge story", progress: "Story progress", inputs: "Simulation inputs", results: "Simulation results",
   permitTitle: "Docs launch permit", permitText: "Low-risk docs earned trust through clean reviews. Allow docs to launch after every required check passes. Checkout still waits for a human.",
@@ -985,7 +985,7 @@ export const JUDGE = {
     { title: "Trust comes with receipts", text: "The repaired PR clears CI, proof, and independent review. The merge gate still needs you. A narrow docs permit can remove a routine bottleneck." },
     { title: "A permit launches the docs", text: "The docs PR passed its checks and launches under its permit. The high-risk checkout fix stays at the human merge gate." },
     { title: "Merge means liftoff", text: "The simulated player merges the verified checkout fix. A rocket launches, Sentry clears, and 112 users are unblocked." },
-    { title: "Autonomy is earned", text: "The customer reply is approved. Two accepted suggestions unlock Floor: the foreman can route and tune work. Launch permits stay scoped to their district." },
+    { title: "Autonomy is earned", text: "The customer reply is approved. Two accepted suggestions unlock Floor: the foreman can route and tune work. Launch permits stay scoped to their folder." },
     { title: "More trust. More factory.", text: "Signals became plans, plans became verified PRs, and merges became rockets. In a connected factory these are real changes. The more you play, the more it can run itself." },
   ],
 } as const;

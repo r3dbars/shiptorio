@@ -25,7 +25,7 @@ import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./gith
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
 import { isAllowed } from "./session";
-import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
 import { joinWaitlist } from "./waitlist";
 import { judgePage, landingPage, publicFile } from "./landing";
 
@@ -176,7 +176,11 @@ app.use("*", async (c, next) => {
   if (open === "judge") return judgePage(c.req.raw, c.env.ASSETS);
   if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
   if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
-  if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
+  if (open === "file") {
+    const response = await publicFile(c.req.raw, c.env.ASSETS);
+    if (isJudgeAsset(c.req.path)) response.headers.set("Cache-Control", browserCacheControl(c.req.raw, response.status));
+    return response;
+  }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
   const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) return denied;
