@@ -107,3 +107,7 @@ screenshots and the database/socket/API diagnostics identify the first broken bo
 The first added browser pairing step reproduced a real bug: `no-referrer` makes Chromium send opaque
 `Origin: null` for the approval form. PR #252 narrows the pairing-page policy to `same-origin`, while
 retaining exact-origin CSRF checks. Tests exercise the real form without an injected Origin header.
+
+The no-browser-errors assertion also caught the preview gate nonce being overwritten in both its fast
+and middleware paths. PR #260 preserves that server-generated nonce in the script rule while retaining
+all other global CSP directives. The fixture completes merge/rocket without relaxing the error assertion.
