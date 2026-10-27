@@ -398,3 +398,7 @@ shaft replay relied on real timers and missed scar1 within60s. Drive its same
 assertion and180s testdeadline. Nine serial desktop cases overran the12min job
 as the failed report printed, so only the wholejob budget is18min to retain
 complete evidence. No production runtime or visual baselines change.
+
+### Codex — CI wall time and flake investigation (2026-10-27)
+
+- Measured the latest 50 CI and Stranger runs; preserving required `check`, `selfhost`, and `stranger` contexts, draft skips, manual inputs, and all test inventories. Cache package/browser downloads, isolate parallel Bun files, and overlap independent checks. Timing and root-cause evidence will be recorded in the PR before readiness.

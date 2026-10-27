@@ -14,8 +14,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck && bun test && bun run build
+      - name: Verify staging
+        run: |
+          bun run typecheck > "$RUNNER_TEMP/types.log" 2>&1 & types=$!
+          bun test --parallel=2 > "$RUNNER_TEMP/tests.log" 2>&1 & tests=$!
+          bun run build > "$RUNNER_TEMP/build.log" 2>&1 & build=$!
+          status=0
+          for pid in "$types" "$tests" "$build"; do
+            wait "$pid" || status=1
+          done
+          cat "$RUNNER_TEMP/"{types,tests,build}.log
+          exit "$status"
       - name: Deploy isolated staging
         working-directory: server
         run: |

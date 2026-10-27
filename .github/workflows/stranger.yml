@@ -2,6 +2,7 @@ name: Stranger E2E
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,11 +11,20 @@ concurrency:
   cancel-in-progress: true
 jobs:
   stranger:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Cache Bun packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -30,6 +40,11 @@ jobs:
           sudo sed -Ei '\|^https?://azure[.]archive[.]ubuntu[.]com/ubuntu/([[:space:]].*)?$|d' "$mirrors"
           ! grep -q 'azure.archive.ubuntu.com' "$mirrors"
           cat "$mirrors"
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
       - run: bun x playwright install chromium
       - name: Check browser libraries
         run: |
