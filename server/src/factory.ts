@@ -59,11 +59,20 @@ import {
   summarizeIsland,
   type IslandSummary,
   type AutonomyLevel,
+  GOAL_MOVE_ID,
+  GOALS,
+  GOAL_IDS,
+  goalMove,
+  goalsFromPick,
+  goalText,
+  inferGoals,
+  type GoalGuess,
+  type Goals,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import type { SparkStep, Toolbox } from "./spark-tools";
 import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
@@ -124,6 +133,13 @@ interface Meta {
   repo: string;
   installationId: number;
 }
+
+/** deckBook.yes is keyed "kind|scope"; the goals collector wants Continues by kind. */
+const rollUpYes = (yes?: Record<string, number>) => {
+  const out: Record<string, number> = {};
+  for (const [key, n] of Object.entries(yes ?? {})) out[key.split("|")[0]] = (out[key.split("|")[0]] ?? 0) + n;
+  return out;
+};
 
 class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
@@ -374,6 +390,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
         storage: { get: key => this.ctx.storage.get(key) },
         githubToken: () => token ??= installationToken(this.env, meta.installationId),
+        publicUrl: this.publicUrl(), yes: rollUpYes(this.deckBook?.yes),
         posthogCreds: async () => await this.ctx.storage.get<boolean>("posthogLinked") ? postHogCreds(this.env, this.credentialScope(), this.redactor) : {},
       }, await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
       for (const e of errors) this.log("warn", `Couldn't read ${e.source} signals: ${e.error.slice(0, 200)}`);
@@ -432,6 +449,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const action = option.actions[0];
     if (action?.tool === "connect_source" && (action.args.kind === "sentry" || action.args.kind === "posthog")) await this.connectMine(action.args.kind);
     else if (action?.tool === "inspect_bottleneck") this.log("info", card.why);
+    else if (action?.tool === "ask_goal") { await this.publishGauntletMove(null); await this.offerGoalMove(true); }
     await this.recordApproval(card.kind ?? "unblock", moveScope(card, this.state!));
     await this.tapBrainCard(card.id.slice(7), "continue");
     return true;
@@ -1914,6 +1932,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.goal !== undefined) s.goal = p.goal;
+    if (p.goals) s.goals = p.goals;
     if (p.sources) s.sources = p.sources;
     if (p.experiments) s.experiments = p.experiments;
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
@@ -2678,6 +2697,86 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return true;
   }
 
+  // ---------- player goals (shared/src/goals.ts) ----------
+
+  /**
+   * After the first rocket, guess what the player wants from the README and their taps, keep the guess on the state
+   * so the brain can weigh by it, and ask once on one card. A player pick ends it; Later parks it like any card.
+   */
+  private async offerGoalMove(revisit = false): Promise<void> {
+    const s = this.state;
+    if (!s || !this.meta || (!revisit && s.goals?.by === "player") || (s.metrics?.rockets ?? 0) < 1) return;
+    await this.decisionData();
+    if (this.openMoves!.some(m => m.id === GOAL_MOVE_ID)) return;
+    const guesses = await this.guessGoals();
+    const top = guesses[0];
+    if (top && s.goals?.by !== "player" && s.goals?.picks[0] !== top.id) await this.patch({ goals: { picks: guesses.slice(0, 3).map(g => g.id), by: "inferred", at: Date.now(), why: top.why }, goal: goalText({ picks: guesses.slice(0, 3).map(g => g.id), by: "inferred", at: Date.now() }) });
+    const move = goalMove(s, revisit ? undefined : s.goals, guesses, Date.now());
+    // Dropped cards come back no sooner than three days later, so a "not now" never turns into a nag.
+    const offeredAt = await this.ctx.storage.get<number>("goalOfferedAt") ?? 0;
+    if (!move || (!revisit && Date.now() - offeredAt < 3 * 86400000)) return;
+    await this.accountPut("goalOfferedAt", Date.now());
+    await this.publishGauntletMove(move);
+  }
+
+  /** README words + Continue taps + plugged-in sources, then Spark reorders. Cached until the taps or README change. */
+  private async guessGoals(): Promise<GoalGuess[]> {
+    const s = this.state!;
+    let readme = await this.ctx.storage.get<string>("goalReadme");
+    if (readme === undefined) {
+      readme = "";
+      try { readme = await fileContent(await installationToken(this.env, this.meta!.installationId), this.meta!.repo, "README.md", s.baseBranch) ?? ""; } catch { /* no README is fine */ }
+      await this.accountPut("goalReadme", readme.slice(0, 12000));
+    }
+    const yes: Record<string, number> = {};
+    for (const [key, n] of Object.entries(this.deckBook!.yes ?? {})) { const kind = key.split("|")[0]; yes[kind] = (yes[kind] ?? 0) + n; }
+    const sources = (s.sources ?? []).filter(x => x.state === "connected").map(x => x.kind);
+    const rule = inferGoals({ readme, yes, sources, rockets: s.metrics?.rockets });
+    const key = JSON.stringify([readme.length, yes, sources]);
+    const cached = await this.ctx.storage.get<{ key: string; guesses: GoalGuess[] }>("goalGuess");
+    if (cached?.key === key) return cached.guesses;
+    let guesses = rule;
+    if (!sparkConfigured(this.env)) {
+      await this.note({ decision: "goal", by: "fallback", ms: 0, title: "What the player wants", outcome: `Guessed ${GOALS[rule[0].id].label}`, reason: "No Meta API key, so README words and your taps made the guess.", model: "goal rule" });
+    } else {
+      try {
+        guesses = await this.think("goal", { title: "What the player wants", target: "factory" }, () => readGoals(this.sparkEnv(), { readme, guesses: rule, goals: GOAL_IDS.map(id => ({ id, label: GOALS[id].label })) }),
+          g => ({ outcome: `Guessed ${GOALS[g[0].id].label}`, reason: g[0].why || "Read the README and your past calls." }));
+      } catch { guesses = rule; }
+    }
+    await this.accountPut("goalGuess", { key, guesses });
+    return guesses;
+  }
+
+  /**
+   * The goal card, and the brain's set_a_goal / revisit_goal unlocks, whose Continue carries `ask_goal`: that deals
+   * the goal card right away. Returns false for every other move.
+   */
+  private async chooseGoalMove(moveId: string, optionId: string): Promise<boolean> {
+    const move = this.state!.move;
+    const asks = move?.id === moveId && move.options.find(o => o.id === optionId)?.actions[0]?.tool === "ask_goal";
+    if (asks) {
+      await this.publishGauntletMove(null);
+      await this.offerGoalMove(true);
+      return true;
+    }
+    if (!move || move.id !== moveId || moveId !== GOAL_MOVE_ID) return false;
+    const option = move.options.find(o => o.id === optionId);
+    await this.publishGauntletMove(null);
+    const goals = goalsFromPick(option?.actions[0]?.args.picks, Date.now(), this.state!.metrics?.rockets);
+    if (goals) await this.setGoals(goals, "card");
+    return true;
+  }
+
+  private async setGoals(goals: Goals, by: "card" | "menu"): Promise<void> {
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(m => m.id !== GOAL_MOVE_ID);
+    await this.patch({ goals, goal: goalText(goals) });
+    const text = `Goal set: ${goals.picks.map(id => GOALS[id].label).join(", ")}. The factory hunts for what blocks it.`;
+    this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_goals", approvedBy: "player", reason: by === "card" ? "You picked it on the goal card." : "You changed it in Make it yours." });
+    await this.refreshDecisions();
+  }
+
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
@@ -2775,7 +2874,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("warn", "Run the missing checks before launching.");
       } else {
         const before = JSON.stringify(await this.runnerJobs());
-        const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
+        const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) {
@@ -2803,6 +2902,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       case "set_goal":
         await this.patch({ goal: msg.text });
         break;
+      case "set_goals": {
+        const goals = goalsFromPick(msg.picks, Date.now(), s.metrics?.rockets);
+        if (goals) await this.setGoals(goals, "menu");
+        break;
+      }
       case "research":
         await this.research(msg.tech, "tree");
         break;
@@ -3128,6 +3232,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.guard("offerGauntletMove", () => this.offerGauntletMove());
     await this.guard("offerPermitMove", () => this.offerPermitMove());
     await this.guard("offerLevelMove", () => this.offerLevelMove());
+    await this.guard("offerGoalMove", () => this.offerGoalMove());
     await this.guard("offerResearchMove", () => this.offerResearchMove());
     await this.guard("offerRunnerPlan", () => this.offerRunnerPlan());
     await this.guard("runLevel", () => this.runLevel());

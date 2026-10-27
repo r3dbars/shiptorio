@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { HoldingBack } from "./signals";
+import { GoalId, Goals } from "./goals";
 import {
   Actor,
   Autonomy,
@@ -41,6 +42,7 @@ export const Patch = z.object({
   trust: z.number().optional(),
   tick: z.number().int().optional(),
   goal: z.string().optional(),
+  goals: Goals.optional(),
   bottleneck: Bottleneck.nullable().optional(),
   holdingBack: HoldingBack.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
@@ -110,6 +112,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
+  // Pick goals (shared/src/goals.ts) from Make it yours, most important first.
+  z.object({ type: z.literal("set_goals"), picks: z.array(GoalId).min(1).max(3) }),
   // A station panel button. stationId is a Station id, or "rework" / a power source id for those panels.
   z.object({ type: z.literal("station_action"), stationId: z.string(), action: z.string() }),
   z.object({ type: z.literal("connect_source"), kind: SourceKind }),

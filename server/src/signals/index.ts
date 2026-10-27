@@ -9,6 +9,10 @@ import type { StageMetrics } from "../bottleneck";
 import type { FactoryEnv } from "../factory";
 import type { postHogCreds } from "../sources/creds";
 import { repoCollector } from "./repo";
+import { feedbackCollector } from "./feedback";
+import { postHogCollector } from "./posthog";
+import { SENTRY_PULSES_KEY, sentryCollector, type SentryPulse } from "./sentry";
+import { goalsCollector } from "./goals";
 import { ciCollector, kvCiCache } from "./ci";
 
 /** What every collector gets. Read-only: collectors look, they never change the factory. */
@@ -20,6 +24,10 @@ export interface SignalContext {
   jam: { bottleneck: Bottleneck | null; stages: StageMetrics[] };
   /** Read-only view of the factory's own storage (e.g. the Sentry pulse log). */
   storage: { get<T>(key: string): Promise<T | undefined> };
+  /** Where the player connects a mine, e.g. https://shiptorio.com (the factory's public URL). */
+  publicUrl?: string;
+  /** Continue taps rolled up by card kind (deckBook.yes keys are "kind|scope"). */
+  yes?: Record<string, number>;
   /** The linked PostHog credentials ({} when not linked). Factory-private, so it's a thunk. */
   posthogCreds?: () => ReturnType<typeof postHogCreds>;
   /** A GitHub installation token for the repo, when the factory has one. Memoized: call it freely. */
@@ -35,6 +43,7 @@ export function bind<C>(collector: SignalCollector<C>, toCtx: (ctx: SignalContex
   return { source: collector.source, everyMs: collector.everyMs, read: async (ctx, now) => collector.read(await toCtx(ctx), now) };
 }
 
+const DAY = 86_400_000;
 const minutes = (ms: number) => ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))} min` : `${Math.round(ms / 3_600_000)} h`;
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
 
@@ -69,6 +78,10 @@ export const factoryCollector: Collector = {
 export const COLLECTORS: Collector[] = [
   factoryCollector,
   bind(repoCollector, c => ({ repo: c.repo, token: c.githubToken, env: c.env, state: c.state })),
+  bind(feedbackCollector, async c => ({ repo: c.repo ?? c.state.repo, token: c.githubToken ? await c.githubToken().catch(() => undefined) : undefined, tickets: c.state.support, shipped: c.state.items.filter(i => i.state === "launched" && i.updatedAt > Date.now() - 14 * DAY).length })),
+  bind(postHogCollector, async c => ({ creds: c.posthogCreds ? await c.posthogCreds() : {}, fake: c.env.FAKE_POSTHOG === "1", items: c.state.items, connectUrl: `${c.publicUrl ?? "https://shiptorio.com"}/connect/posthog` })),
+  bind(sentryCollector, async c => ({ items: c.state.items, pulses: await c.storage.get<SentryPulse[]>(SENTRY_PULSES_KEY), connected: !!await c.storage.get<boolean>("sentryLinked"), connectUrl: `${c.publicUrl ?? "https://shiptorio.com"}/connect/sentry` })),
+  bind(goalsCollector, c => ({ state: c.state, yes: c.yes })),
   bind(ciCollector, async c => ({ repo: c.repo ?? c.state.repo, defaultBranch: c.state.baseBranch, token: c.githubToken ? await c.githubToken() : undefined, cache: kvCiCache(c.env.CACHE) })),
 ];
 
