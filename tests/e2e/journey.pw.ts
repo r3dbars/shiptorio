@@ -164,6 +164,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     await expect.poll(() => messages.some(m => m.type === 'patch' && m.patch.items?.some((i: any) => i.state === 'launched' && i.prNumber === 99))).toBe(true);
     await expect.poll(() => page.evaluate(() => (window as any).__ships.some((s: any) => s.prNumber === 99))).toBe(true);
     await expect(page.locator('.ship-cel').first()).toBeVisible();
+    await info.attach('launch-consent', { body: JSON.stringify({ input: touch ? 'touch' : 'mouse', earlyReleaseMs: 200, choicesBefore: before, choicesAfter: choices.length }), contentType: 'application/json' });
   } finally {
     clearInterval(heartbeatTimer);
     await heartbeatPending;
@@ -172,7 +173,6 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   expect(wireErrors).toEqual([]);
   expect(errors).toEqual([]);
   await info.attach('wire-trace', { body: JSON.stringify(messages, null, 2), contentType: 'application/json' });
-  await info.attach('launch-consent', { body: JSON.stringify({ input: touch ? 'touch' : 'mouse', earlyReleaseMs: 200, choicesBefore: before, choicesAfter: choices.length }), contentType: 'application/json' });
 });
 
 test('sim rework scenario renders and responds', async ({ page }) => {
