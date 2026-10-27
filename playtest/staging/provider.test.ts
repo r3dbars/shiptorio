@@ -81,3 +81,78 @@ test("fixture runner refuses jobs outside the fixed fixture diff scope",async()=
   const f=setup();f.job.allowedPaths.push("server/src/index.ts");await f.runtime.fetch(f.request("http://fixture.internal/start","POST",{cookie:await f.cookie()}));await f.runtime.alarm();
   expect(f.calls.some(c=>c.action==="finish")).toBe(false);expect((await f.storage.get<any>("fixture")).runner.error).toContain("could not advance");
 });
+
+test("fixture reset is POST-only, bound to its persona, and clears completed state for another run",async()=>{
+  const f=setup();const cookie=await f.cookie();await f.runtime.fetch(f.request("http://fixture.internal/start","POST",{cookie}));await f.runtime.alarm();
+  expect((await f.runtime.fetch(f.request("http://fixture.internal/reset"))).status).toBe(405);
+  expect((await f.runtime.fetch(f.request("http://fixture.internal/reset","POST",{},"test-blocked"))).status).toBe(403);
+  expect((await f.runtime.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(200);
+  const saved=await f.storage.get<any>("fixture");expect(saved.persona).toBe("test-midgame");expect(saved.github.repo).toBe(personaRepo("test-midgame"));expect(saved.runner).toBeUndefined();expect(saved.github.branches).toEqual({});expect(saved.github.checks).toBe("pending");expect(f.storage.alarm).toBeNull();
+  expect((await f.runtime.fetch(f.request("https://api.github.com/user"))).status).toBe(409);
+  const restored=new FixtureRuntime(f.storage as any,f.env,f.worker);
+  expect((await restored.fetch(f.request("https://api.github.com/user"))).status).toBe(409);
+  expect((await restored.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(200);
+  expect((await restored.fetch(f.request("http://fixture.internal/resume"))).status).toBe(405);
+  expect((await restored.fetch(f.request("http://fixture.internal/resume","POST",{},"test-blocked"))).status).toBe(403);
+  expect((await restored.fetch(f.request("http://fixture.internal/resume","POST"))).status).toBe(200);
+  await restored.fetch(f.request("http://fixture.internal/start","POST",{cookie}));await restored.alarm();expect(f.calls.filter(c=>c.action==="finish")).toHaveLength(2);
+});
+test("newbie reset removes the old installation and permits the normal install again",async()=>{
+  const f=setup("test-newbie");await f.runtime.fetch(f.request("http://fixture.internal/install?confirm=1","POST"));
+  expect((await f.runtime.fetch(f.request("http://fixture.internal/reset","POST"))).ok).toBe(true);
+  expect((await f.storage.get<any>("fixture")).github.installation).toBeNull();
+  await f.runtime.fetch(f.request("http://fixture.internal/resume","POST"));
+  await f.runtime.fetch(f.request("http://fixture.internal/install?confirm=1","POST"));expect(f.events).toEqual(["installation","installation"]);
+});
+test("fixture reset refuses a pending unexpired receipt even after eviction",async()=>{
+  const f=setup();await f.runtime.fetch(f.request("http://fixture.internal/start","POST",{cookie:await f.cookie()}));
+  const saved=await f.storage.get<any>("fixture");saved.runner.pending={jobId:f.job.id,lease:"pending"};await f.storage.put("fixture",saved);
+  const restored=new FixtureRuntime(f.storage as any,f.env,f.worker);
+  expect((await restored.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(409);
+  expect((await f.storage.get<any>("fixture")).runner.pending).toEqual(saved.runner.pending);
+});
+test("fixture reset cannot race an in-flight claim",async()=>{
+  const f=setup();let entered!:()=>void,release!:()=>void;const waiting=new Promise<void>(r=>entered=r),held=new Promise<void>(r=>release=r);
+  const runtime=new FixtureRuntime(f.storage as any,f.env,async request=>{if(new URL(request.url).pathname.endsWith("/claim")){entered();await held;}return f.worker(request);});
+  await runtime.fetch(f.request("http://fixture.internal/start","POST",{cookie:await f.cookie()}));const ticking=runtime.alarm();await waiting;
+  expect((await runtime.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(409);release();await ticking;
+  expect((await runtime.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(200);expect((await f.storage.get<any>("fixture")).runner).toBeUndefined();
+});
+
+test("fixture reset waits for installation webhook callback completion",async()=>{
+  const f=setup("test-newbie");let entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(r=>entered=r),held=new Promise<void>(r=>release=r);
+  const runtime=new FixtureRuntime(f.storage as any,f.env,async request=>{if(new URL(request.url).pathname==="/webhooks/github"){entered();await held;}return f.worker(request);});
+  const installing=runtime.fetch(f.request("http://fixture.internal/install?confirm=1","POST"));await waiting;
+  expect((await runtime.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(409);
+  release();expect((await installing).status).toBe(302);
+  expect((await runtime.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(200);
+});
+
+test("fixture status reports durable reset lock only to its exact persona",async()=>{
+  const f=setup();const status=()=>f.runtime.fetch(f.request("http://fixture.internal/status"));
+  expect(await (await status()).json()).toEqual({resetLocked:false});
+  await f.runtime.fetch(f.request("http://fixture.internal/reset","POST"));
+  expect(await (await status()).json()).toEqual({resetLocked:true});
+  const restored=new FixtureRuntime(f.storage as any,f.env,f.worker);
+  expect(await (await restored.fetch(f.request("http://fixture.internal/status"))).json()).toEqual({resetLocked:true});
+  expect((await restored.fetch(f.request("http://fixture.internal/status","GET",undefined,"test-blocked"))).status).toBe(403);
+  await restored.fetch(f.request("http://fixture.internal/resume","POST"));
+  expect(await (await restored.fetch(f.request("http://fixture.internal/status"))).json()).toEqual({resetLocked:false});
+});
+
+test("outer request leases survive eviction and block reset until released or expired",async()=>{
+  const f=setup();const entered=await f.runtime.fetch(f.request("http://fixture.internal/enter","POST"));
+  const {leaseId}=await entered.json() as {leaseId:string};expect(leaseId).toMatch(/^[a-f0-9-]{36}$/);
+  const restored=new FixtureRuntime(f.storage as any,f.env,f.worker);
+  expect((await restored.fetch(f.request("http://fixture.internal/reset","POST"))).status).toBe(409);
+  expect((await restored.fetch(f.request("http://fixture.internal/exit","POST",{leaseId},"test-blocked"))).status).toBe(403);
+  expect((await restored.fetch(f.request("http://fixture.internal/exit","POST",{leaseId:"invalid"}))).status).toBe(400);
+  expect((await restored.fetch(f.request("http://fixture.internal/exit","POST",{leaseId}))).ok).toBe(true);
+  expect((await restored.fetch(f.request("http://fixture.internal/reset","POST"))).ok).toBe(true);
+  expect((await restored.fetch(f.request("http://fixture.internal/enter","POST"))).status).toBe(409);
+  await restored.fetch(f.request("http://fixture.internal/resume","POST"));
+  const second=await restored.fetch(f.request("http://fixture.internal/enter","POST"));const next=await second.json() as {leaseId:string};
+  const saved=await f.storage.get<any>("fixture");expect(saved.requestLeases[next.leaseId]).toBeLessThanOrEqual(Date.now()+300000);saved.requestLeases[next.leaseId]=Date.now()-1;await f.storage.put("fixture",saved);
+  const expired=new FixtureRuntime(f.storage as any,f.env,f.worker);expect((await expired.fetch(f.request("http://fixture.internal/reset","POST"))).ok).toBe(true);
+});
