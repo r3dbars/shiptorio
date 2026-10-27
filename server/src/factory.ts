@@ -1,5 +1,6 @@
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
+import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
 import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
@@ -2897,9 +2898,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.accountPut(key, clock);
     }
-    for (const [key, expiry] of await this.ctx.storage.list<number>({ prefix: "done:delivery:" })) {
-      if (expiry <= now) await this.ctx.storage.delete(key);
-    }
+    await pruneExpiredDeliveryMarkers(this.ctx.storage, now);
   }
 
   /** Repair missed webhooks without ever issuing a merge. Reuse the normal gated transitions. */

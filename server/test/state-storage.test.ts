@@ -128,3 +128,15 @@ it("pins storage API calls for a 129-chunk snapshot", async () => {
   expect(f.batchSizes).toEqual([128, 1]);
   expect([...f.rows.keys()]).toEqual(["state"]);
 });
+
+it("rolls back a failed later chunk batch, then a retry can read it", async () => {
+  const f = stateStorage();
+  const large = migrateFactoryState({...original, goal: "x".repeat(16000 * 128)});
+  f.fail("stateChunk:000128");
+  await expect(saveFactoryState(f.storage, large)).rejects.toThrow("disk failure");
+  expect([...f.rows.keys()]).toEqual(["state"]);
+  expect(f.rows.get("state")).toEqual(original);
+  f.fail();
+  await saveFactoryState(f.storage, large);
+  expect(await loadFactoryState(f.storage)).toEqual(large);
+});
