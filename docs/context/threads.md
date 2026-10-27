@@ -362,3 +362,10 @@ Codex: preserve the advertised 90-second public judge replay after ordinary sand
 ticks were slowed to 1.4 seconds. The unchanged iPhone end-to-end test caught the
 first tick failing to advance at 900 ms; only judge cadence returns to 900 ms.
 
+
+## Preserve owner AI limits during deploy
+
+Codex: the operational production-owner upsert replaced raised call/token limits
+with NULL on every deploy. Preserve existing values, including explicit zero; a
+new owner row still uses normal defaults. Regression executes the actual deploy SQL
+twice and checks raised, zero and fresh-row cases. No usage ledger is reset.
