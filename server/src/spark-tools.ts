@@ -125,6 +125,8 @@ export function compact(observations: Observation[], budget = OBSERVATION_CHARS)
 }
 
 const argOf = (a: ToolArgs) => a.path ?? a.prefix ?? a.query;
+/** What alreadyRead shows: "issue" and bare file paths, as before the toolbox, then "tool arg" for the rest. */
+const readLabel = (key: string) => key === "read_issue" ? "issue" : key.startsWith("read_file ") ? key.slice(10) : key;
 
 // ---------- the planner: read around, then assign the job ----------
 
@@ -184,7 +186,7 @@ export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: str
       "No other tools, commands, deploys, merges or messages are permitted; assign_job only proposes a plan the backend and the player approve. " +
       "playerFeedback lists card classes the player told the factory to stop proposing and corrections from their wrong-call swipes: shape the plan around them, and in assign_job list heeded, one short line per past call that changed this plan (empty when none applied). " +
       `Response JSON: {tool, reason, path?, prefix?, query?, plan?, acceptance?, files?, heeded?}. ${left === 1 ? "This is your last turn: assign_job or ask_player." : `You have ${left} turns left; finish with assign_job or ask_player.`}`,
-      JSON.stringify({ title: task.title, district: task.district, ...(rework ? { rework } : {}), approvedPaths: allowedPaths, turnsRemaining: left, alreadyRead: [...seen], playerFeedback: task.playerFeedback ?? "none", observations: compact(observations) }), "medium");
+      JSON.stringify({ title: task.title, district: task.district, ...(rework ? { rework } : {}), approvedPaths: allowedPaths, turnsRemaining: left, alreadyRead: [...seen].map(readLabel), playerFeedback: task.playerFeedback ?? "none", observations: compact(observations) }), "medium");
     if (!out.reason.trim()) throw new SparkError("Spark tool needs a reason");
     const reason = out.reason.trim().slice(0, 1000);
     if (out.tool === "assign_job") {
@@ -229,7 +231,7 @@ export interface ToolVerdict { verdict: "pass" | "rework"; reason: string; findi
 
 // A reply that skips straight to {verdict, reason, findings} is a verdict turn: the model ruled without looking.
 const reviewTurn = z.preprocess(v => v && typeof v === "object" && !("tool" in v) && "verdict" in v ? { ...v, tool: "verdict" } : v, z.object({
-  tool: z.enum([...READ_TOOLS, "verdict"]),
+  tool: z.string().max(60), // an unknown tool gets told what exists instead of failing the review
   reason: z.string().max(1000),
   path: z.string().max(200).optional(), prefix: z.string().max(200).optional(), query: z.string().max(200).optional(),
   verdict: z.enum(["pass", "rework"]).optional(), findings: z.array(z.string().max(1000)).max(10).optional(),

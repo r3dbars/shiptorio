@@ -83,6 +83,13 @@ describe("AI review as a tool loop", () => {
     expect(sent[0]).toContain("process.argv[2]");
   });
 
+  it("an unknown tool gets told what exists instead of failing the review", async () => {
+    const sent = spark([{ tool: "assign_job", reason: "wrong loop" }, { tool: "verdict", verdict: "pass", reason: "Fine", findings: [] }]);
+    const v = await reviewWithTools(sparkTestEnv(), { title: "x", body: "", builder: "Codex" }, "+x", box());
+    expect(v.verdict).toBe("pass");
+    expect(sent[1]).toContain("assign_job isn't available here");
+  });
+
   it("must rule before it runs out of turns", async () => {
     spark(Array(10).fill({ tool: "list_files", prefix: "", reason: "look" }));
     await expect(reviewWithTools(sparkTestEnv(), { title: "x", body: "", builder: "Codex" }, "+x", box())).rejects.toThrow("without a verdict");
