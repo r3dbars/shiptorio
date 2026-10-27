@@ -10,6 +10,8 @@ import { join, resolve } from 'node:path';
 import { chromium, devices } from '@playwright/test';
 
 const STEPS = ['tunnel', 'boiler', 'builder', 'issue', 'planner', 'build', 'checks', 'launch'];
+const AUTO = new Set(['build', 'checks']);
+const NO_PIECES = new Set(['issue', 'build']); // may move on without a build moment
 const VIEWS = [
   { name: 'desktop-1440', options: { viewport: { width: 1440, height: 900 } } },
   { name: 'phone-390', options: { ...devices['iPhone 14'], deviceScaleFactor: 2 } },
@@ -57,17 +59,22 @@ async function walk(browser, base, view) {
   for (const [i, id] of STEPS.entries()) {
     const n = String(i + 1).padStart(2, '0');
     await until(async () => (await root.getAttribute('data-step')) === id, 60_000, `step ${id}`);
-    if (!(await has(id, 'start')) && await action.isVisible().catch(() => false)) {
+    const moved = async () => (await root.getAttribute('data-step')) !== id;
+    if (!AUTO.has(id) && !(await has(id, 'start')) && await action.isVisible().catch(() => false)) {
       await sleep(400);
       await shot(`${n}-${id}-card.png`);
       if ((await action.getAttribute('data-buildout-action')) === 'hold') {
         const box = await action.boundingBox();
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
-        await until(() => has(id, 'start'), 6_000, `${id} hold`).finally(() => page.mouse.up());
+        await until(async () => await has(id, 'start') || await moved(), 6_000, `${id} hold`).finally(() => page.mouse.up());
       } else await action.click();
     }
-    await until(() => has(id, 'start'), 60_000, `${id} start`);
+    if (NO_PIECES.has(id)) {
+      await until(async () => await has(id, 'start') || await moved(), 90_000, `${id} moves on`);
+      if (!(await has(id, 'start'))) { await shot(`${n}-${id}-after.png`); console.log(`${view.name}: ${id} passed`); continue; }
+    }
+    await until(() => has(id, 'start'), 90_000, `${id} start`);
     await sleep(view.options.reducedMotion ? 400 : 2500);
     await shot(`${n}-${id}-construct.png`);
     await until(() => has(id, 'done'), 20_000, `${id} done`);

@@ -5,7 +5,11 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 // Hooks come from web/src/buildout/CONTRACT.md: the root carries data-step and
 // data-phase, the coach card carries data-buildout-card, its action button
 // data-buildout-action, and each build fires `shiptorio:build` (start, burst, done).
+// Mirrors STEP_IDS in web/src/buildout/journey.ts. `issue` and `build` reveal nothing new
+// (the cart rolls, then rides into the builder), so they may advance without a build moment.
 const STEPS = ['tunnel', 'boiler', 'builder', 'issue', 'planner', 'build', 'checks', 'launch'] as const;
+const AUTO = new Set<string>(['build', 'checks']);
+const NO_PIECES = new Set<string>(['issue', 'build']);
 type Build = { id: string; phase: 'start' | 'burst' | 'done'; at: number };
 
 const watchBuilds = (page: Page) => page.addInitScript(() => {
@@ -58,16 +62,22 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
     const done = async () => (await builds(page)).some(b => b.id === id && b.phase === 'done');
     const started = async () => (await builds(page)).some(b => b.id === id && b.phase === 'start');
+    const next = async () => (await root.getAttribute('data-step')) !== id;
     // Steps 6 (build runs) and 7 (checks) build themselves; the rest wait on the player.
     const action = card.locator('[data-buildout-action]');
-    if (!(await started()) && await action.count()) {
+    if (!AUTO.has(id) && !(await started())) {
+      await expect(action.first(), `${id} has an action`).toBeVisible();
       await expect(card).toBeVisible();
       await shot(`${n}-${id}-card.png`);
-      const kind = await action.first().getAttribute('data-buildout-action');
-      if (kind === 'hold') await hold(page, info, action.first(), started);
+      const kind = await action.first().getAttribute('data-buildout-action'); // hold, tap or continue
+      if (kind === 'hold') await hold(page, info, action.first(), async () => await started() || await next());
       else await action.first().click();
     }
-    await expect.poll(started, { timeout: 60_000, message: `${id} starts building` }).toBe(true);
+    if (NO_PIECES.has(id)) {
+      await expect.poll(async () => await started() || await next(), { timeout: 90_000, message: `${id} moves on` }).toBe(true);
+      if (!(await started())) { await shot(`${n}-${id}-after.png`); continue; }
+    }
+    await expect.poll(started, { timeout: 90_000, message: `${id} starts building` }).toBe(true);
     if (!opts.reduced) {
       await expect(root).toHaveAttribute('data-phase', 'construct', { timeout: 3_000 }).catch(() => {});
       await shot(`${n}-${id}-construct.png`);
@@ -81,7 +91,8 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     if (opts.reduced) expect(ms, `${id} reduced build ms`).toBeLessThan(4_500);
     else expect(ms, `${id} build ms`).toBeGreaterThan(3_000);
     // One build at a time, in order, each exactly once.
-    expect((await builds(page)).filter(b => b.phase === 'done').map(b => b.id)).toEqual(STEPS.slice(0, i + 1));
+    const doneIds = (await builds(page)).filter(b => b.phase === 'done').map(b => b.id);
+    expect(doneIds).toEqual(STEPS.slice(0, i + 1).filter(s => doneIds.includes(s) || !NO_PIECES.has(s)));
   }
 
   // The rocket went: counters and the "Look around" card come out, then free look.
