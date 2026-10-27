@@ -109,8 +109,6 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
 }
 
 test.describe('build as you go', () => {
-  // 1440 (desktop) and 390 (iphone-14); pixel-7 adds nothing the phone run doesn't.
-  test.beforeEach(({}, info) => test.skip(info.project.name === 'pixel-7', 'covered by iphone-14'));
   test.setTimeout(360_000);
 
   test('dark to rocket, one build at a time', async ({ page }, info) => {
