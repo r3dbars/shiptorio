@@ -62,7 +62,7 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
 | Piece | Files | Signals / output |
 |---|---|---|
 | CI | `server/src/signals/ci.ts` | `ci_slow`, `ci_flaky`, `ci_red_main`, `ci_queue`, `ci_missing` |
-| Sentry | `server/src/signals/sentry.ts` | `errors_piling`, `error_spike`, `regression`, `errors_unowned` |
+| Sentry | `server/src/signals/sentry.ts` (hourly pulse log kept by `Factory.handleSentry`) | `errors_piling`, `error_spike`, `regression`, `errors_unowned`, `sentry_missing` |
 | PostHog | `server/src/signals/posthog.ts` | `usage_flat`, `funnel_drop`, `no_users`, `feature_unused`, `no_analytics` |
 | Feedback | `server/src/signals/feedback.ts` | `feedback_unanswered`, `feedback_thin`, `same_complaint` |
 | Repo flow | `server/src/signals/repo.ts`, `factory.ts` | `prs_stale`, `issues_untriaged`, `no_tests`, `big_prs`, `backlog_empty`, `ship_rate_drop`; `factory:*` from bottleneck.ts |
