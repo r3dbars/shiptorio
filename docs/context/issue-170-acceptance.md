@@ -99,3 +99,23 @@ explicit Launch. Do not implement the issue outside that runner path.
   Diagnosing that path while preserving isolation and the exact issue scope.
 - Separately, PR #262 has deterministic regressions for a selected-card approval
   race. The race is proven; it is not established as the cause of Justin's tap.
+
+## Secure Codex interoperability fix
+
+- A direct nested `codex sandbox` probe reproduced `sandbox_apply: Operation not
+  permitted` (exit71). The same Codex workspace-write edit succeeds without the
+  outer wrapper. Resolving the executable symlink, explicit checkout flags and
+  the streaming patch feature did not fix the nested case.
+- An externally sandboxed Codex fixture can edit successfully, but removing the
+  inner policy would broaden effective dedicated-home/job-root/network access.
+  That shortcut is not the production fix.
+- PR #272 instead keeps both OS isolation and Codex read-only mode: Codex emits a
+  strict edit proposal; the supervisor closes the agent boundary, validates the
+  proposal, and applies unique exact replacements only in the approved scope.
+  Existing scope/secret/frozen-content/check/proof/publication guards remain.
+- Actual production-export compatibility probe passed: real Codex accepted the
+  Zod-generated schema, returned edits without changing the tracked fixture, then
+  `parseCodexEdits` and `applyCodexEdits` applied answer1 → answer2 in the separate
+  verification sandbox. No #170 implementation was written outside the game.
+- Independent bounded security review found no material blocker. #272 still
+  needs full check, current-head CI, merge and deployment before the real retry.
