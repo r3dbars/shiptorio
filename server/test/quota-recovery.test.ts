@@ -89,6 +89,16 @@ test("three failed plans consume zero run quota, back off across restarts, and c
   expect(retry.retryAt).toBe((Math.floor(Date.now() / 86400000) + 1) * 86400000);
 });
 
+test("legacy hosted scoping failures also preserve run quota and wait behind the persisted cooldown", async () => {
+  const { f, env, data } = await fixture();
+  env.META_API_KEY = "test-only";
+  await f.usage(); // loads the real factory state without contacting providers
+  await (f as unknown as { runSparkJob(itemId: string, machineId: string): Promise<void> }).runSparkJob('gh-1', 'assembler-1');
+  expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
+  expect((data.get('state') as FactoryState).items[0]).toMatchObject({ state: 'queued', attempts: 0 });
+  expect(data.get('planningRetry:gh-1')).toMatchObject({ failures: 1 });
+});
+
 test("approved ready jobs wait for capacity and dispatch charges exactly once, including a lost claim", async () => {
   const { f, env, data } = await fixture();
   const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });

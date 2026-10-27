@@ -2842,6 +2842,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
 
     for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
+      if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       const jobs = await this.runnerJobs();
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "ready", "running", "awaiting_approval"].includes(j.status)).length >= budgetLimits(this.env).jobs) continue;
@@ -2867,10 +2868,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       {
         const account = (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login;
-        if (!account || !await runQuota(this.env as never,account)) { this.log('warn','Daily run quota reached; builds paused.',item.id); break; }
+        if (!account) break;
+        const quota = await runQuotaStatus(this.env, account);
+        if (quota.used >= quota.limit) break;
       }
       await this.patch({
-        items: [{ ...item, state: "working", machineId: m.id, attempts: item.attempts + 1, updatedAt: now }],
+        items: [{ ...item, state: "working", machineId: m.id, updatedAt: now }],
         machines: [{ ...m, state: "working" }],
       });
       this.running.add(item.id);
@@ -2920,6 +2923,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const s = this.state!;
     const get = () => s.items.find((i) => i.id === itemId)!;
     const machine = () => s.machines.find((m) => m.id === machineId);
+    let buildStarted = false;
     try {
       if (!sparkConfigured(this.env)) throw new Error("The planner has no power: META_API_KEY isn't set");
       if (!this.meta) throw new Error("factory has no repo");
@@ -2937,6 +2941,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await Promise.all(wanted.map(async (path) => ({ path, content: await fileContent(token, this.meta!.repo, path, ref) })))
       ).filter((f): f is { path: string; content: string } => f.content !== null);
 
+      // Scoping is planning; charge only when the legacy hosted assembler actually starts writing.
+      const account = await this.runAccount();
+      if (!account || !await runQuota(this.env as never, account)) throw new Error("Daily run quota reached; builds paused until 00:00 UTC or a limit increase");
+      buildStarted = true;
+      await this.ctx.storage.delete(`planningRetry:${itemId}`);
+      await this.patch({ items: [{ ...get(), attempts: get().attempts + 1, updatedAt: Date.now() }] });
       this.log("info", `Assembler ${machineId} is writing a fix`, itemId);
       const fix = await writeFix(this.sparkEnv(), task, files);
       const bad = fix.changes.find((c) => !SAFE_PATH.test(c.path));
@@ -2965,8 +2975,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       this.log("success", `PR #${prNumber} is on the belt to the inspector`, itemId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (!buildStarted) {
+        const key = `planningRetry:${itemId}`;
+        await this.accountPut(key, planningFailure(await this.ctx.storage.get<PlanningRetry>(key), msg));
+      }
       await this.patch({
-        items: [{ ...get(), state: "rejected", failure: msg, updatedAt: Date.now() }],
+        items: [{ ...get(), state: buildStarted ? "rejected" : "queued", failure: msg, updatedAt: Date.now() }],
         machines: machine() ? [{ ...machine()!, state: "idle" }] : [],
       });
       this.log("error", `Assembler ${machineId} failed: ${msg}`, itemId);
