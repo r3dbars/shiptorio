@@ -5,6 +5,7 @@ import { FactoryScene, type Cosmetics, type Ping } from "./scene";
 import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
+import { releaseAction } from "./gesture";
 
 // What FactoryMap asks of a map. The shaft (shaft/ShaftScene.ts, the map) and the island (scene.ts, ?world=iron) both do it.
 type MapScene = Pick<
@@ -89,16 +90,17 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     // A press that barely moves is a tap (or click) on whatever is under it.
     const pts = new Map<number, { x: number; y: number }>();
     let moved = 0;
+    let multi = false; // a second finger joined this gesture
     let pinch = 0; // last distance between two fingers
     const mid = () => {
       const [a, b] = [...pts.values()];
       return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
     };
     const down = (e: PointerEvent) => {
-      if (pts.size === 0) moved = 0;
+      if (pts.size === 0) (moved = 0), (multi = false);
       pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       canvas.setPointerCapture(e.pointerId);
-      if (pts.size === 2) pinch = mid().d;
+      if (pts.size === 2) (pinch = mid().d), (multi = true);
     };
     const move = (e: PointerEvent) => {
       const p = pts.get(e.pointerId);
@@ -124,10 +126,11 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       pinch = after.d;
     };
     const up = (e: PointerEvent) => {
-      if (pts.size === 1 && pts.has(e.pointerId) && moved < 8 && e.type === "pointerup") {
+      const act = releaseAction({ last: pts.size === 1 && pts.has(e.pointerId), moved, multi, cancelled: e.type !== "pointerup" });
+      if (act === "pick") {
         const id = scene.pick(e.clientX, e.clientY, canvas.getBoundingClientRect());
         if (id) pickRef.current?.(id);
-      } else if (pts.size === 1 && pts.has(e.pointerId) && e.type === "pointerup") scene.settle?.();
+      } else if (act === "settle") scene.settle?.();
       pts.delete(e.pointerId);
       pinch = pts.size === 2 ? mid().d : 0;
     };

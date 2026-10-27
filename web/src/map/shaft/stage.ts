@@ -18,6 +18,25 @@ export type ShaftView = "stack" | "mine" | "build" | "checks" | "launch" | "line
 // the floors a phone settles on after a drag, bottom to top (Justin's pick: snap to floors)
 const SNAP_FLOORS: FloorView[] = ["mine", "build", "checks", "launch"];
 
+/** the snap floor whose framed middle sits closest to root height y on a W x H screen */
+export function nearestFloorAt(y: number, W: number, H: number): FloorView {
+  let best: FloorView = "build", d = Infinity;
+  for (const v of SNAP_FLOORS) {
+    const dd = Math.abs(floorFrame(v, W, H).at[1] - y);
+    if (dd < d) (d = dd), (best = v);
+  }
+  return best;
+}
+
+/**
+ * The floor a drag that ends at root height y, showing h of the shaft, settles on: the nearest one, but only when
+ * the view is already about one floor tall. Zoomed out on the whole shaft (or in close) the view stays put.
+ */
+export function snapFloorAt(y: number, h: number, W: number, H: number): FloorView | null {
+  const v = nearestFloorAt(y, W, H);
+  return Math.abs(Math.log(h / floorFrame(v, W, H).h)) <= Math.log(1.35) ? v : null;
+}
+
 export class ShaftStage {
   readonly scene = new THREE.Scene();
   readonly root = new THREE.Group();
@@ -148,15 +167,9 @@ export class ShaftStage {
     this.viewH += (this.viewGoal - this.viewH) * k;
   }
 
-  /** the work floor whose middle is closest to the middle of the screen (phone snap-to-floors) */
-  nearestFloor(): FloorView {
-    const y = this.root.worldToLocal(this.tgt.clone()).y;
-    let best: FloorView = "build", d = Infinity;
-    for (const v of SNAP_FLOORS) {
-      const dd = Math.abs(floorFrame(v, this.W, this.H).at[1] - y);
-      if (dd < d) (d = dd), (best = v);
-    }
-    return best;
+  /** the floor a phone drag settles on, or null to stay put (snapFloorAt) */
+  snapFloor(): FloorView | null {
+    return snapFloorAt(this.root.worldToLocal(this.tgt.clone()).y, this.viewH * this.zoom, this.W, this.H);
   }
 
   /** drag the view by screen pixels */
