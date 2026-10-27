@@ -28,7 +28,7 @@ afconvert -f m4af -d aac@44100 -b 80000 /tmp/shiptorio-music/foundry-preview.wav
   iPhone battery/CPU measurement. Runtime music decoded PCM is 0 bytes (no stems).
 - Offline audition peak 0.486, RMS 0.0956 (~-20.4 dBFS); no digital clipping.
   These are sample statistics, not an integrated LUFS or perceptual listening claim.
-- Built v2 chunk: 7.31 KB raw / 2.89 KB gzip; no runtime media payload. The service worker
+- Built v2 chunk: 7.60 KB raw / 2.96 KB gzip; no runtime media payload. The service worker
   caches that hashed chunk on demand, with no precache request.
 
 Validation: `bun run check` green after final code rebase (696 pass, 2 platform
