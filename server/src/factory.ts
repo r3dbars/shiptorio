@@ -486,39 +486,46 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
-  private async chooseRunnerMove(moveId: string, optionId: string): Promise<void> {
-    const move = this.state?.move;
-    if (!move || move.id !== moveId || !move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
+  private async resolveRunnerMove(move: Move): Promise<void> {
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(card => card.id !== move.id);
+    await this.refreshDecisions();
+  }
+
+  private async chooseRunnerMove(move: Move, optionId: string): Promise<void> {
+    const moveId = move.id;
+    if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
     const item = this.state!.items.find(i => i.id === move.itemId);
     if (!item || item.prNumber && item.state !== "rejected" || !["ore", "queued", "rejected"].includes(item.state)) return;
-    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.status === "awaiting_approval");
+    const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo === this.meta?.repo && j.status === "awaiting_approval");
     if (job) {
       await this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
-        if (!stored || stored.status !== "awaiting_approval" || this.state?.move?.id !== moveId) return;
-        if (stored.inputRevision !== await workRevision(item)) {
+        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return;
+        const currentItem = this.state?.items.find(i => i.id === stored.itemId);
+        if (!currentItem || currentItem.prNumber && currentItem.state !== "rejected" || !["ore", "queued", "rejected"].includes(currentItem.state)) return;
+        if (stored.inputRevision !== await workRevision(currentItem)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.accountPut(`runnerJob:${stored.id}`, stored);
-          await this.publishRunnerMove(null);
+          await this.resolveRunnerMove(move);
           this.log("warn", stored.error, item.id);
           return;
         }
         if (optionId === "approve") { stored.status = "ready"; stored.approvedAt = Date.now(); }
-        else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); }
+        else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${currentItem.id}`, currentItem.updatedAt); }
         else return;
         await this.accountPut(`runnerJob:${stored.id}`, stored);
-        await this.publishRunnerMove(null);
-        await this.refreshDecisions();
+        await this.resolveRunnerMove(move);
         this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: "player", reason: "Decision from the game", itemId: item.id });
       });
       return;
     }
-    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.publishRunnerMove(null); await this.refreshDecisions(); return; }
+    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
     if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true });
-      await this.publishRunnerMove(null);
+      await this.resolveRunnerMove(move);
       this.log("info", "Reading the issue and code to prepare your plan. No build has started.", item.id);
     } catch { this.log("warn", "This work is already queued or has changed. Refresh to see its latest state.", item.id); }
   }
@@ -2276,7 +2283,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       s.move = card;
       const before = JSON.stringify(await this.runnerJobs());
       const handled = await this.choosePermitMove(card.id, tap.optionId) || await this.chooseGauntletMove(card.id, tap.optionId);
-      if (!handled) await this.chooseRunnerMove(card.id, tap.optionId);
+      if (!handled) await this.chooseRunnerMove(card, tap.optionId);
       const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
       await this.refreshDecisions();
       if (!consumed) continue;
@@ -2510,7 +2517,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else {
         const before = JSON.stringify(await this.runnerJobs());
         const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
-        if (!handled) await this.chooseRunnerMove(msg.moveId, msg.optionId);
+        if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
       }

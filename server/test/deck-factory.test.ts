@@ -204,7 +204,7 @@ describe("durable live check-in decisions", () => {
 });
 
 describe("runner approval survives concurrent deck selection changes", () => {
-  for (const boundary of ["before-handler", "inside-lock"] as const) it(`binds the selected plan at ${boundary} and preserves unrelated cards`, async () => {
+  for (const boundary of ["before-handler", "inside-lock", "revised-item", "rebound-job"] as const) it(`binds the selected plan at ${boundary} and preserves unrelated cards`, async () => {
     const { issueRevision } = await import("../src/runner-job");
     const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "A scoped fix", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
     const other = card("unrelated", { kind: "unblock", stage: "intake" });
@@ -219,10 +219,22 @@ describe("runner approval survives concurrent deck selection changes", () => {
       internal.runnerJobs = async () => { const jobs = await original(); if (!changed) { changed = true; internal.state.move = other; } return jobs; };
     } else {
       const original = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
-      internal.ctx.blockConcurrencyWhile = fn => original(async () => { internal.state.move = other; return fn(); });
+      internal.ctx.blockConcurrencyWhile = fn => original(async () => {
+        internal.state.move = other;
+        if (boundary === "revised-item") internal.state.items = [{ ...item, title: "Changed since the player saw the plan" }];
+        if (boundary === "rebound-job") f.data.set("runnerJob:job-58", { ...(f.data.get("runnerJob:job-58") as object), approvalMoveId: "a-different-plan" });
+        return fn();
+      });
     }
     await f.send({ type: "choose_move", moveId: approval.id, optionId: "approve" });
-    expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "ready", approvedAt: expect.any(Number), allowedPaths: ["server/src/engine.ts"] });
+    if (boundary === "revised-item") {
+      expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "failed", error: "Issue changed; request a fresh plan." });
+      expect(f.data.get("runnerJob:job-58")).not.toHaveProperty("approvedAt");
+    } else if (boundary === "rebound-job") {
+      expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "awaiting_approval", approvalMoveId: "a-different-plan" });
+      expect(f.data.get("runnerJob:job-58")).not.toHaveProperty("approvedAt");
+      return;
+    } else expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "ready", approvedAt: expect.any(Number), allowedPaths: ["server/src/engine.ts"] });
     expect((f.data.get("openMoves") as Move[]).some(m => m.id === other.id)).toBe(true);
     expect((f.data.get("openMoves") as Move[]).some(m => m.id === approval.id)).toBe(false);
   });
