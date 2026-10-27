@@ -40,6 +40,9 @@ export function testUserRoutes(app: Hono<any>): void {
   app.use("*", async (c, next) => {
     const env = c.env as TestUsersEnv, url = new URL(c.req.url);
     const testPath = url.pathname === "/test/users" || url.pathname === "/test/login";
+    // Production pays no extra cookie-HMAC cost. The shared account/access policy still
+    // rejects reserved negative IDs, including old sockets and runner credentials.
+    if (env.TEST_USERS !== "on" && !testPath) return next();
     const session = await readSessionDetails(env.SESSION_SECRET, c.req.header("cookie") ?? null);
     const negative = (session?.ref?.uid ?? 0) < 0;
     // Optional UI discovery must stay quiet on ordinary local/staging builds. It reveals no
