@@ -182,7 +182,14 @@ export interface ReviewVerdict { verdict: "pass" | "rework"; reason: string; fin
 interface PrFile { filename: string; status: string; patch?: string }
 
 export async function prFiles(token: string, repo: string, pr: number): Promise<PrFile[]> {
-  return gh<PrFile[]>(`/repos/${repo}/pulls/${pr}/files?per_page=100`, token);
+  const path = `/repos/${repo}/pulls/${pr}/files?per_page=100`;
+  const files = await gh<PrFile[]>(path, token);
+  // A full first page does not establish a complete diff. Keep inspection
+  // bounded, but refuse large PRs instead of silently approving unseen files.
+  if (files.length === 100 && (await gh<PrFile[]>(`${path}&page=2`, token)).length) {
+    throw new Error("PR exceeds the 100-file inspection limit; complete diff review required");
+  }
+  return files;
 }
 
 export function diffText(files: PrFile[], limit = 24000): string {
