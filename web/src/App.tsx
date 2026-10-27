@@ -483,6 +483,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           empire={!intro && sheet === "empire"}
           summary={factorySummary(state)}
           lapse={intro ? null : back.lapse}
+          still={intro}
         />
         <SoundCaptions />
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />

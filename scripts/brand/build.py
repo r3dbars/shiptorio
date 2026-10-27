@@ -43,19 +43,22 @@ letter_shapes = {
 'I': ('M0 0H62V28H49V152H62V180H0V152H13V28H0Z',62),
 'P': ('M0 0H84L102 18V90L84 108H34V180H0Z M34 30V78H67V30Z',102),
 'T': ('M0 0H108V32H71V180H37V32H0Z',108),
-'O': ('M18 0H87L105 18V162L87 180H18L0 162V18Z M34 30V150H71V30Z',105),
+# Both O's are the brand hexagon, cut as a letter (Justin, 2026-10-27: the O's should match).
+'O': ('M60 0 120 30V150L60 180 0 150V30Z M60 32 32 46V134L60 148 88 134V46Z',120),
 'R': ('M0 0H84L102 18V89L84 107H73L109 180H70L37 108H34V180H0Z M34 30V78H67V30Z',109),
 }
-paths=[]; x=26
-for char in 'SHIPTORI':
+paths=[]; x=26; last_o=0
+for char in 'SHIPTORIO':
     path,w=letter_shapes[char]
     paths.append(f'<path d="{path}" fill-rule="evenodd" clip-rule="evenodd" transform="translate({x} 26)"/>')
+    if char=='O': last_o=x
     x+=w+18
+x-=18
 letters=''.join(paths)
 # Pipes behind the title, with collars; all geometry scales with the SVG.
 pipes=''
 for y in [88,152]:
-    pipes+=f'<path d="M20 {y+10}v-10H{x+40}" fill="none" stroke="#28180f" stroke-width="10"/><path d="M20 {y+10}v-10H{x+40}" fill="none" stroke="#a15f32" stroke-width="5"/><path d="M21 {y+10}v-11H{x+40}" fill="none" stroke="#e4a66a" stroke-width="1"/>'
+    pipes+=f'<path d="M20 {y+10}v-10H{x+30}" fill="none" stroke="#28180f" stroke-width="10"/><path d="M20 {y+10}v-10H{x+30}" fill="none" stroke="#a15f32" stroke-width="5"/><path d="M21 {y+10}v-11H{x+30}" fill="none" stroke="#e4a66a" stroke-width="1"/>'
     for cx in range(50,int(x),73):
         pipes+=f'<rect x="{cx}" y="{y-5}" width="5" height="10" rx="1" fill="url(#edge)"/>'
 # Fine deterministic metal speckling clipped inside letters; no raster textures or model assets.
@@ -65,8 +68,9 @@ rivets=''
 for cx in range(37,int(x)-7,26):
     for cy in [40,195]:
         rivets+=f'<circle cx="{cx}" cy="{cy}" r="2.4" fill="#6b4628"/><circle cx="{cx-.4}" cy="{cy-.6}" r="1.4" fill="#ffe5ae"/>'
-word=f'{pipes}<defs><clipPath id="letters">{letters}</clipPath></defs><g fill="#351c0c" stroke="#130c08" stroke-width="7" transform="translate(0 7)">{letters}</g><g fill="url(#face)" stroke="#785026" stroke-width="7" stroke-linejoin="bevel">{letters}</g><g fill="none" stroke="#ffebba" stroke-width="1.1">{letters}</g><g clip-path="url(#letters)">{specks}{rivets}</g><g transform="translate({x-3:.1f} 12) scale(.95)">{mark}</g>'
-width=round(x+208)
+word=f'{pipes}<defs><clipPath id="letters">{letters}</clipPath></defs><g fill="#351c0c" stroke="#130c08" stroke-width="7" transform="translate(0 7)">{letters}</g><g fill="url(#face)" stroke="#785026" stroke-width="7" stroke-linejoin="bevel">{letters}</g><g fill="none" stroke="#ffebba" stroke-width="1.1">{letters}</g><g clip-path="url(#letters)">{specks}{rivets}</g><path d="M60 32 32 46V134L60 148 88 134V46Z" transform="translate({last_o} 26)" fill="url(#enamel)"/><g transform="translate({last_o+5} 60) scale(.5)" opacity=".75">{rocket}</g>'
+# the last O carries a small rocket in its window, quiet enough that the word still reads first
+width=round(x+26)
 (OUT/'wordmark.svg').write_text(svg(word,f'0 0 {width} 240','Shiptorio'))
 for size,name in [(16,'favicon-16.png'),(32,'favicon-32.png'),(180,'apple-touch-icon.png'),(192,'icon-192.png'),(512,'icon-512.png')]:
     cairosvg.svg2png(bytestring=svg(flat).encode(),write_to=str(OUT/name),output_width=size,output_height=size)
