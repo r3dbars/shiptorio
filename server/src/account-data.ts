@@ -21,8 +21,8 @@ export async function accountFactory(env: Env, repo: string) {
 /** Only personal installation owners can erase shared repository data. Membership is insufficient. */
 export async function ownedRepos(env: Env, user: User): Promise<(RepoRow & {repo_id?: number | null})[]> {
   if (user.dev) throw new Error("Account deletion is unavailable for the local development identity");
-  return (await env.DB.prepare("SELECT r.* FROM repos r JOIN installations i ON i.id = r.installation_id WHERE lower(i.account_login) = ? ORDER BY r.full_name")
-    .bind(user.login.toLowerCase()).all<RepoRow & {repo_id?: number | null}>()).results;
+  return (await env.DB.prepare("SELECT r.* FROM repos r JOIN installations i ON i.id = r.installation_id WHERE i.account_id = ? AND i.account_type = 'User' ORDER BY r.full_name")
+    .bind(user.id).all<RepoRow & {repo_id?: number | null}>()).results;
 }
 
 export interface AccountFactoryData {
@@ -55,7 +55,7 @@ async function retainedActivity(env: Env, user: User, repos: RepoRow[]) {
     const entries = await kvJSON<Record<string, unknown>>(env, page.keys.map(k => k.name));
     for (const {name} of page.keys) {
       const entry = entries.get(name);
-      if (entry && (entry.userId === user.login || entry.userId === String(user.id) || names.has(String(entry.repo).toLowerCase()))) logs.push(entry);
+      if (entry && (entry.userId === String(user.id) || names.has(String(entry.repo).toLowerCase()))) logs.push(entry);
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
@@ -88,10 +88,10 @@ async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[],
     for (const { name } of page.keys) {
       if (name.startsWith("ops:")) {
         const entry = operational.get(name);
-        if (entry && (entry.userId?.toLowerCase() === login.toLowerCase() || entry.userId === String(userId) || names.has(entry.repo?.toLowerCase() ?? ""))) keys.add(name);
+        if (entry && (entry.userId === String(userId) || names.has(entry.repo?.toLowerCase() ?? ""))) keys.add(name);
       }
       if ([...names].some(repo => name === `cred:sentry:${repo}` || name === `cred:posthog:${repo}` || name.includes(`:${repo}:`) || name.endsWith(`:${repo}`))
-        || name.startsWith(`access:v1:${login.toLowerCase()}:`) || name.startsWith("access:v2:") && name.endsWith(`:${userId}`)) keys.add(name);
+        || name.startsWith("access:v2:") && name.endsWith(`:${userId}`)) keys.add(name);
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
@@ -112,7 +112,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   const expected = repos.map(r => r.full_name.toLowerCase()).sort();
   if (JSON.stringify([...new Set(confirmations)].sort()) !== JSON.stringify(expected)) throw new Error("Type every owned repository name exactly to confirm deletion");
   // The archive goes only to the requesting browser, never into a retained server backup.
-  const installs = await env.DB.prepare("SELECT id FROM installations WHERE lower(account_login) = ?").bind(user.login.toLowerCase()).all<{id: number}>();
+  const installs = await env.DB.prepare("SELECT id FROM installations WHERE account_id = ? AND account_type = 'User'").bind(user.id).all<{id: number}>();
   const archive = await exportAccount(env, user);
   // Revoked GitHub reach must not prevent an owner from archiving their own stored data.
   for (const repo of repos) if (!archive.factories.some(f => f.repo === repo.full_name)) archive.factories.push({repo: repo.full_name, data: JSON.parse(await (await accountFactory(env, repo.full_name)).exportAccountData()) as AccountFactoryData});
@@ -161,7 +161,6 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
     statements.push(env.DB.prepare("DELETE FROM user_installations WHERE installation_id = ?").bind(id));
     statements.push(env.DB.prepare("DELETE FROM installations WHERE id = ?").bind(id));
   }
-  if (tables.has("credentials")) statements.push(env.DB.prepare("DELETE FROM credentials WHERE lower(updated_by) = ?").bind(user.login.toLowerCase()));
   for (const table of ["sessions", "user_prefs", "user_repos", "user_installations"]) statements.push(env.DB.prepare(`DELETE FROM ${table} WHERE user_id = ?`).bind(user.id));
   if (tables.has("user_progress")) statements.push(env.DB.prepare("DELETE FROM user_progress WHERE user_id = ?").bind(user.id));
   statements.push(env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id));

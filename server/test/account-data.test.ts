@@ -59,7 +59,7 @@ async function fixture() {
   const aliceCookie = await signedInCookie(env, "alice", ["alice/app", "org/shared"], 11);
   const aliceSecond = (await createSession(env, {id: 11, login: "alice"}, "other-browser")).split(";")[0];
   const bobCookie = await signedInCookie(env, "bob", ["bob/app", "alice/app"], 22);
-  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (1, 'alice'), (2, 'bob'), (3, 'org')").run();
+  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login, account_id, account_type) VALUES (1, 'alice', 11, 'User'), (2, 'bob', 22, 'User'), (3, 'org', 33, 'Organization')").run();
   await DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES ('alice/app', 1), ('bob/app', 2), ('org/shared', 3)").run();
   await DB.prepare("INSERT OR REPLACE INTO user_installations (user_id, installation_id, account_login) VALUES (11, 1, 'alice'), (11, 3, 'org'), (22, 2, 'bob')").run();
   await DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('alice/app', 1, 'Fix', 'open'), ('bob/app', 2, 'Other', 'open')").run();
@@ -73,6 +73,26 @@ async function fixture() {
 }
 
 describe("account data controls", () => {
+  it("does not grant a recycled login retained export or deletion rights", async () => {
+    const {env, user, objects} = await fixture();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 11").run();
+    await env.DB.prepare("UPDATE installations SET account_id = 99 WHERE id = 1").run();
+    expect(await ownedRepos(env, user)).toEqual([]);
+    expect((await exportAccount(env, user)).factories).toEqual([]);
+    await expect(deleteAccount(env, user, ["alice/app"])).rejects.toThrow("exactly");
+    expect(objects.get("alice/app")!.data.size).toBeGreaterThan(0);
+    expect(await factoryDeleted(env.DB, "alice/app")).toBe(false);
+  });
+  it("retains verified numeric ownership after a rename and fails closed for legacy and org rows", async () => {
+    const {env, user} = await fixture();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 11").run();
+    await env.DB.prepare("UPDATE installations SET account_login = 'old-login' WHERE id = 1").run();
+    expect((await exportAccount(env, user)).factories.map(f => f.repo)).toEqual(["alice/app"]);
+    for (const sql of ["UPDATE installations SET account_id = NULL WHERE id = 1", "UPDATE installations SET account_id = 11, account_type = 'Organization' WHERE id = 1"]) {
+      await env.DB.prepare(sql).run(); expect(await ownedRepos(env, user)).toEqual([]);
+    }
+  });
+
   it("exports visible factory items, permits, research and saved logs, without raw runner jobs/credentials", async () => {
     const {env, user} = await fixture();
     const result = await exportAccount(env, user);
