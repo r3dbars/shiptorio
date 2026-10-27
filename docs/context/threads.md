@@ -154,4 +154,4 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 
 - Branch `codex/runner-resilience`, based on current main after pull/rebase; checkpoint: Oct 29 local runner.
 - In progress: per-repository capped reconnect backoff, private lease-bound recovery journal, automatic completion receipt retry, explicit subscription sign-in cards, and doctor auth/sandbox/pairing probes. Builds still require player approval; expired/revoked leases never resume automatically. No deployment requested.
-- Tests and PR validation follow in the next checkpoint.
+- Focused macOS validation: 54 tests passed, including real sandbox/publication tests and card lifecycle through Factory reload; HTTP polling smoke also passed with dropped requests and an expired fake sign-in. Added immutable patch recovery, automatic receipt replay even when claim is empty, and cached-auth failure latching. Full CI/PR validation pending.

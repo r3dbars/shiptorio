@@ -564,6 +564,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (authRequired !== undefined && await this.load()) {
       await this.decisionData();
       const ids = authRequired.map(h => `runner-auth:${h}`);
+      const current = this.openMoves!.filter(m => m.id.startsWith("runner-auth:")).map(m => m.id);
+      if (ids.length === current.length && ids.every(id => current.includes(id))) return;
       this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("runner-auth:") || ids.includes(m.id));
       for (const h of authRequired) if (!this.openMoves.some(m => m.id === `runner-auth:${h}`)) this.openMoves.push(runnerAuthMove(h));
       await this.refreshDecisions();
@@ -824,6 +826,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       return { prUrl: job.prUrl }; // lost acknowledgment
     }
+    if (job.status === "failed" && !receipt.ok && job.pairId === pairId && job.lease === receipt.lease) return { status: "failed" };
     if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
     const item = this.state.items.find(i => i.id === job.itemId)!;
     if (!receipt.ok) {

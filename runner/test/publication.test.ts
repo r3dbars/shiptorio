@@ -35,6 +35,9 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
     expect(await Bun.file(join(commit.directory, "value.ts")).text()).toBe("export const value = 2;\n");
     expect(await git(commit.directory, "rev-list", "--count", `${base}..${commit.sha}`)).toBe("1");
     expect(await git(commit.directory, "diff", "--name-only", `${base}..${commit.sha}`)).toBe("value.ts");
+    // Reconstructing after an unknown push outcome must produce exactly the same commit.
+    const retry = await prepareApprovedCommit({ sourceUrl: source, baseSha: base, allowedPaths: ["value.ts"] }, files, "fresh-publication-token");
+    try { expect(retry.sha).toBe(commit.sha); } finally { await retry.close(); }
     expect(await Bun.file(marker).exists()).toBe(false);
     expect(await Bun.file(join(commit.directory, ".git", "config")).text()).not.toContain("hooksPath");
   } finally { await commit?.close(); await sandbox?.close(); await rm(root, { recursive: true, force: true }); }

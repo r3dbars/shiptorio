@@ -8,10 +8,17 @@ import { assemblerContext, snapshotApproved, publishApproved } from "./publicati
 import { runnerHome, loadPairings, savePairing, pairMachine, type Pairing } from "./pairing";
 
 
-import { Backoff, recoverWorkspace, retryable } from "./recovery";
-import { authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
+import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
+const authFailures = new AuthFailures();
+const credentialVersion = async () => {
+  const versions = await Promise.all([".codex/auth.json", ".claude/.credentials.json", ".claude.json"].map(async file => {
+    try { const info = await lstat(resolve(authHome, file)); return `${file}:${info.mtimeMs}:${info.size}`; } catch { return `${file}:missing`; }
+  }));
+  return versions.join("|");
+};
 class SignInExpired extends Error {}
 import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
@@ -66,17 +73,22 @@ if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^htt
 if (process.argv[2] === "doctor") {
   await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
   const checks = await diagnose({ harnesses: available, pairs: await connections(), auth: signedInHarness,
-    pairing: pair => api(pair, "heartbeat", { harnesses: [] }),
+    pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
       const dir = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-"));
       let boundary: CheckSandbox | undefined;
       try {
         boundary = await checkSandbox(dir, h ? { home: authHome, executable: harnessPath(h)! } : undefined);
-        // Exercise managed preferences and HTTPS inside the exact agent boundary (#235), without inference.
-        const probe = h ? [harnessPath(h)!, "--version"] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
+        // Exercise CLI startup, managed preferences and HTTPS inside the agent boundary (#235), without inference.
+        const probe = h ? [harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
         const result = await boundary.run(probe, dir, { timeout: 30000 });
-        if (result.code) { console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
+        if (result.code && !(h && authExpired(result.err + result.out))) { console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
         if (h) {
+          if (process.platform === "darwin") {
+            const preferences = await boundary.run(["/usr/bin/defaults", "read", "NSGlobalDomain"], dir, { timeout: 10000 });
+            // An empty preference domain is valid; Seatbelt/config sync failures are not.
+            if (/not permitted|failed to synchronize|sandbox.*deny/i.test(preferences.err)) throw Error("Managed preferences unavailable in sandbox");
+          }
           const network = await boundary.run([process.execPath, "--no-env-file", "-e", 'await fetch("https://shiptorio.com/api/version",{signal:AbortSignal.timeout(10000)});console.log("HTTPS OK")'], dir, { timeout: 15000 });
           if (network.code) { console.error(redactText(network.err.slice(-2000))); throw Error("Sandbox HTTPS probe failed"); }
         }
@@ -166,46 +178,48 @@ async function execute(job: Job, pair: Pairing) {
     // Fresh clone contains tracked files only: no primary checkout secrets, hooks or local edits.
     const source = resolve(jobRoot, "source.git");
     if (!workspace.state.initialized) {
-    await rm(source, { recursive: true, force: true }); await rm(work, { recursive: true, force: true });
-    await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "clone", "--bare", "--", `https://github.com/${job.repo}.git`, source], jobRoot, gitEnv);
-    await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
-    await workspace.checkpoint("initialized");
+      await rm(source, { recursive: true, force: true }); await rm(work, { recursive: true, force: true });
+      await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "clone", "--bare", "--", `https://github.com/${job.repo}.git`, source], jobRoot, gitEnv);
+      await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
+      await workspace.checkpoint("initialized");
     }
     const boundary = await checkSandbox(jobRoot);
     sandbox = { run: (args, cwd = work, options) => boundary.run(args, cwd, options), close: () => boundary.close() };
     await checked(["git", "checkout", "--detach", job.baseSha]);
     let output = "";
     if (!workspace.state.agentDone) {
-    if (job.harness === "local") {
-      // Geothermal: the model only returns text; the runner writes approved files, then the same supervisor runs.
-      console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
-      output = JSON.stringify(await runLocalAssembler(job, work, local!));
-    } else {
-      const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
-      console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
-      const executable = harnessPath(job.harness);
-      if (!executable) throw new Error("Assigned harness is unavailable");
-      agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-      const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
-      if (result.code) {
-        // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
-        console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
-        if (authExpired(result.err + "\n" + result.out)) {
-          blocked.add(job.harness);
-          throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
+      if (job.harness === "local") {
+        // Geothermal: the model only returns text; the runner writes approved files, then the same supervisor runs.
+        console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
+        output = JSON.stringify(await runLocalAssembler(job, work, local!));
+      } else {
+        const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
+        console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
+        const executable = harnessPath(job.harness);
+        if (!executable) throw new Error("Assigned harness is unavailable");
+        agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
+        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
+        if (result.code) {
+          // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
+          console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
+          if (authExpired(result.err + "\n" + result.out)) {
+            blocked.add(job.harness); authFailures.reject(job.harness, await credentialVersion());
+            throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}. The build is saved while its lease remains valid.`);
+          }
+          if (result.timedOut || agentOffline(result.err + "\n" + result.out)) throw new TypeError("Agent connection interrupted or timed out; saved build will resume");
+          throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
         }
-        throw new Error(`Agent failed (${result.code}); see the runner log for the agent's error`);
+        output = result.out;
+        await agentSandbox.close(); agentSandbox = undefined;
       }
-      output = result.out;
-      await agentSandbox.close(); agentSandbox = undefined;
-    }
-    // Preserve local evidence; never forward raw agent output to the server/browser.
-    await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
-    if (job.harness === "claude_code" && JSON.parse(output).is_error) {
-      if (authExpired(output)) { blocked.add(job.harness); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
-      throw new Error("Claude reported an agent error");
-    }
-    await workspace.checkpoint("agentDone");
+      // Preserve local evidence; never forward raw agent output to the server/browser.
+      await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
+      if (job.harness === "claude_code" && JSON.parse(output).is_error) {
+        if (authExpired(output)) { blocked.add(job.harness); authFailures.reject(job.harness, await credentialVersion()); throw new SignInExpired(`Sign-in expired: ${loginCommand(job.harness)}`); }
+        if (agentOffline(output)) throw new TypeError("Agent connection interrupted; saved build will resume");
+        throw new Error("Claude reported an agent error");
+      }
+      await workspace.checkpoint("agentDone");
     }
     if (await checked(["git", "rev-parse", "HEAD"]) !== job.baseSha) throw new Error("Agent changed checkout history");
     const paths = [...new Set(((await checked(["git", "diff", "HEAD", "--name-only", "--no-ext-diff"])) + "\n" + (await checked(["git", "ls-files", "--others", "--exclude-standard"]))).split("\n").filter(Boolean))];
@@ -216,6 +230,7 @@ async function execute(job: Job, pair: Pairing) {
     const diff = await checked(["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"]);
     validateChanges(paths, job.allowedPaths, diff);
     const frozen = await snapshotApproved(sandbox, paths);
+    await workspace.freeze(frozen);
     const manifest = await sandbox.run([process.execPath, "--no-env-file", "-e", 'console.log(JSON.stringify(Object.keys((await Bun.file("package.json").json()).scripts ?? {})))'], work);
     if (manifest.code) throw new Error("Cannot read repository scripts");
     const scripts = JSON.parse(manifest.out) as string[];
@@ -281,12 +296,13 @@ if (action === "retry") {
   const refreshAuth = async () => {
     const next: Job["harness"][] = [];
     for (const h of available) {
-      if (await signedInHarness(h)) { next.push(h); if (h !== "local") blocked.delete(h); }
+      if (h === "local" ? await signedInHarness(h) : authFailures.ready(h, await signedInHarness(h), await credentialVersion())) { next.push(h); if (h !== "local") blocked.delete(h); }
       else if (h !== "local") blocked.add(h);
     }
     return next;
   };
   let ready = await refreshAuth();
+  for (const pair of pairs) await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
   const heartbeat = setInterval(async () => {
     if (heartbeatBusy) return;
     heartbeatBusy = true;
@@ -299,6 +315,7 @@ if (action === "retry") {
         catch (error) { retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
       }
     }
+    catch (error) { console.error(error instanceof Error ? error.message : "Heartbeat failed"); }
     finally { heartbeatBusy = false; }
   }, 5000);
   try {
@@ -308,6 +325,7 @@ if (action === "retry") {
         if (!retry.ready()) continue;
         try {
           await renewPairing(pair);
+          await replayReceipts(root, pair.repo, receipt => api(pair, "finish", receipt));
           const { job } = await api(pair, "claim", { harnesses: ready });
           if (job) await execute(job, pair); else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
           retry.reset();

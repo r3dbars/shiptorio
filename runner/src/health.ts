@@ -4,7 +4,10 @@ import type { Pairing } from "./pairing";
 export type Subscription = Exclude<Job["harness"], "local">;
 export function authExpired(output: string): boolean {
   // Positive provider evidence only: configd/Seatbelt/network errors are not sign-in errors.
-  return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key)/i.test(output);
+  return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key)/i.test(output);
+}
+export function agentOffline(output: string): boolean {
+  return /connection (?:reset|refused|closed)|network (?:unreachable|error)|stream (?:disconnected|closed)|(?:request|connect|connection) timed? ?out|unable to connect|error sending request|dns (?:error|lookup failed)/i.test(output);
 }
 export const loginCommand = (h: Subscription) => `shiptorio-runner login ${h === "codex" ? "codex" : "claude"}`;
 export interface Diagnostic { check: string; ok: boolean; detail: string }
@@ -33,4 +36,14 @@ export async function diagnose(options: {
     await options.pairing(pair);
   }, "Pairing expired/revoked or server unreachable. Check the network, then run shiptorio-runner pair if needed.");
   return results;
+}
+
+/** A cached CLI status may still say logged in after a refresh token was revoked. */
+export class AuthFailures {
+  private failed = new Map<Subscription, string>();
+  reject(h: Subscription, credentialVersion: string) { this.failed.set(h, credentialVersion); }
+  ready(h: Subscription, status: boolean, credentialVersion: string) {
+    if (!status || this.failed.get(h) === credentialVersion) return false;
+    this.failed.delete(h); return true;
+  }
 }
