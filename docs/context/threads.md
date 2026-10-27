@@ -49,6 +49,7 @@ is the only copy agents outside it (Codex) can see.
 
 | Thread | State | What it did / produced |
 | --- | --- | --- |
+| Design the core gameplay mechanics | waiting on Justin's A/B picks | `docs/GAMEPLAY.md`: core loop, six verbs (phone + desk), world vs UI rule, abandoned-foundry first run, repair-and-unlock ladder tied to real outcomes, 24 A/B decisions. Playbook https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8, A/B picks https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR. Also VISION.md "Current focus" now = great player experience first (Justin 10:50); judge mode frozen as is. |
 | Design a calm attention system for players | v1 behind flag | `docs/ATTENTION.md` (PR #268). One Needs you tray, three kinds (approve / steer / suggested, `attentionOf` in shared), every card is Continue or Later, Continue streaks steer deck ranking + planner feedback. Behind flag `attention` (off by default; try `?attention=1`). Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb |
 | Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README) |
 | Review Justin's Cloudflare account | done | Surveyed the account before setup. Nothing Shiptorio yet, R2 not enabled |
