@@ -74,10 +74,23 @@ and lets you leave, no fake speed-up.
 
 ## DOM hooks (slice 6 renders them, slice 10 tests them)
 
-- A root element with `data-buildout` and `data-step="<id>"` that always reflects `stepFrom(state).id`, plus
-  `data-phase="chalk|construct|burst|payoff|done"` while a build plays.
+- A root element with `data-buildout` and `data-step="<id>"`. The step shown is the first step whose build hasn't fired
+  `done` yet, never ahead of `stepFrom(state).id`: the sim and a real factory can run ahead of the art (the guided issue
+  can reach the pad while the planner is still rising), and the card waits for the scene so every build plays in order.
+  Steps that reveal nothing (`issue`, `build`) count as built as soon as `stepFrom` passes them.
+- `data-phase="chalk|construct|burst|payoff|done"` while a build plays, driven by the scene's `shiptorio:build` events
+  (start, then `phaseAt` from that moment until `burst`; `burst`; `done`), never by the card's own clock. Builds are timed
+  on frames, so on a slow device a build takes longer than 7 s of wall time.
 - The coach card: `role="region"`, accessible name "Build", attribute `data-buildout-card`. Its main action button carries
-  `data-buildout-action` (hold or tap). Later on the left, Continue on the right.
+  `data-buildout-action="<trigger>"` (`hold`, `tap` or `continue`). Later on the left, Continue on the right.
+- Slice 6 also mounts `<BuildStamp />` (slice 4) next to the card, behind the flag.
+
+## Demo shop vs your own repo
+
+`station_action("buildout", step)` is sim-only (slice 7); the live server has no handler and must not get one for
+pretend builds. On a real repo every step completes from real state: the tunnel when you pick the repo, the boiler when
+your runner pairs, the builder when its assembler appears, the issue when the picked or starter issue arrives, and
+the launch through `launch_pr` (the in-game Launch is the only merge path, never a link out to GitHub).
 
 ## Slices and the files they own
 
