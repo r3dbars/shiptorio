@@ -19,7 +19,7 @@ export interface Play {
   path?: string; // under https://github.com/<repo>/
 }
 
-const gh = (repo: string | undefined, path: string) => repo && /^[\w.-]+\/[\w.-]+$/.test(repo) ? `https://github.com/${repo}/${path}` : undefined;
+const gh = (repo: string | undefined, path: string) => repo && /^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(repo) && !repo.includes("..") ? `https://github.com/${repo}/${path}` : undefined;
 const inspect = (s: BrainSignal) => ({ tool: "inspect_bottleneck", args: { signalId: s.id } });
 const connect = (kind: string) => () => ({ tool: "connect_source", args: { kind } });
 
