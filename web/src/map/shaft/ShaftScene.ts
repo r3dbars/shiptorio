@@ -553,11 +553,12 @@ export class ShaftScene {
       this.tier = this.governor.tier;
       stage.finish.setBloomTaps(this.tier === 0 ? 12 : this.tier === 1 ? 8 : 0);
     }
-    const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
+    const elapsed = Math.max(0, (now - this.last) / 1000);
+    const dt = Math.min(0.05, elapsed);
     this.last = now;
     this.t += dt;
     I.step(this.t, dt);
-    this.buildStep(dt);
+    this.buildStep(dt, elapsed);
     stage.camStep(dt);
     this.firstRun.step(this.t, dt, this.reduceMotion);
     this.clogs.step(this.t, dt, this.reduceMotion);
@@ -570,10 +571,11 @@ export class ShaftScene {
   };
 
   // Build as you go, each frame: the build playing, the pool of light on the next site, the director's camera.
-  private buildStep(dt: number) {
+  private buildStep(dt: number, buildElapsed = dt) {
     const bo = this.bo;
     if (!bo) return;
-    bo.tick(this.t, dt);
+    // Construction follows elapsed time; the camera and movement keep the physics clamp.
+    bo.tick(this.t, buildElapsed);
     this.firstRun.spotAt(bo.spot());
     this.director?.step(this.t, dt);
     if (bo.busy) this.governor.poke();
