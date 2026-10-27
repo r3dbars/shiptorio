@@ -41,3 +41,18 @@ test("provider connection drops preserve a build; ordinary code failures remain 
   for (const output of ["error sending request", "stream disconnected before completion", "Connection reset by peer", "Network unreachable", "connection timed out"]) expect(agentOffline(output)).toBe(true);
   expect(agentOffline("Unit tests failed: expected true")).toBe(false);
 });
+
+test("doctor CLI reports every category and a failing exit code without pairing or inference", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { resolve } = await import("node:path");
+  const root = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-test-"));
+  try {
+    const child = Bun.spawn([process.execPath, "runner/src/cli.ts", "doctor"], {
+      cwd: resolve(import.meta.dir, "../.."), env: { PATH: "/usr/bin:/bin", SHIPTORIO_RUNNER_ROOT: root }, stdout: "pipe", stderr: "pipe",
+    });
+    const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+    expect(code).toBe(1); expect(out).toContain("FAIL auth:"); expect(out).toContain("sandbox:verification:"); expect(out).toContain("FAIL pairing:");
+    expect(out + err).not.toContain("Waiting for your approval");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

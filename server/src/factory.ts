@@ -442,7 +442,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async clearRunnerMove(): Promise<void> {
-    if (this.state?.move?.stage === "resources") await this.publishDecision(null);
+    if (this.state?.move?.stage === "resources" && !this.state.move.id.startsWith("runner-auth:")) await this.publishDecision(null);
   }
 
   private async publishRunnerMove(move: Move | null) { await this.publishDecision(move); }

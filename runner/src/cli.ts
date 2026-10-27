@@ -8,7 +8,7 @@ import { assemblerContext, snapshotApproved, publishApproved } from "./publicati
 import { runnerHome, loadPairings, savePairing, pairMachine, type Pairing } from "./pairing";
 
 
-import { Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
+import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
 import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
@@ -39,9 +39,11 @@ if (process.argv[2] === "paths") {
 }
 async function command(args: string[], cwd: string, env = cleanEnv, timeout = 120000): Promise<string> {
   const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe" });
-  const timer = setTimeout(() => p.kill(), timeout);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; p.kill(); }, timeout);
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   clearTimeout(timer);
+  if (code !== 0 && (timedOut || agentOffline(err + out))) throw new TypeError("Runner connection interrupted or timed out; retrying with saved work");
   if (code !== 0) throw new Error(`Command ${args[0].split("/").at(-1)} ${args[1]} failed (${code}): ${(err || out).slice(-2000)}`);
   return out.trim();
 }
@@ -168,7 +170,8 @@ async function execute(job: Job, pair: Pairing) {
   let agentSandbox: CheckSandbox | undefined;
   const checked = async (args: string[], install = false): Promise<string> => {
     if (!sandbox) throw new Error("Verification sandbox not prepared");
-    const result = await sandbox.run(args, work, { install });
+    if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
+    const result = await sandbox.run(args, work, { install, timeout: Math.min(180000, job.deadline - Date.now()) });
     if (result.code) throw new Error(`Sandboxed ${args[0].split("/").at(-1)} ${args[1]} failed (${result.code}): ${(result.err || result.out).slice(-2000)}`);
     return result.out.trim();
   };
@@ -198,7 +201,7 @@ async function execute(job: Job, pair: Pairing) {
         const executable = harnessPath(job.harness);
         if (!executable) throw new Error("Assigned harness is unavailable");
         agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: 15 * 60 * 1000 });
+        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now())) });
         if (result.code) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
@@ -250,18 +253,19 @@ async function execute(job: Job, pair: Pairing) {
     if (JSON.stringify(await snapshotApproved(sandbox, paths)) !== JSON.stringify(frozen)) throw new Error("Checks changed approved files");
     // Publication is rebuilt from a fresh trusted clone; hostile hooks/config never see credentials.
     // Publication/installation can fail offline. Keep the workspace and rerun all checks on recovery.
+    if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     let sha: string;
     try { sha = await publishApproved(job, frozen); } catch (error) { preserve = true; throw error; }
     summary = `Changed files: ${paths.join(", ")} (approved: ${job.allowedPaths.join(", ")}). Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
-    await Bun.write(resolve(root, ".work", `${job.id}.receipt.json`), JSON.stringify(receipt), { mode: 0o600 });
+    await atomicJson(receiptFile, receipt);
     console.log(JSON.stringify(await api(pair, "finish", receipt)));
     completed = true;
   } catch (error) {
     preserve ||= retryable(error) || error instanceof SignInExpired || await Bun.file(receiptFile).exists();
     if (!preserve) {
       const receipt = { jobId: job.id, lease: job.lease, ok: false, summary: "Local runner stopped; inspect local evidence and approve another attempt.", checks: [] };
-      await Bun.write(receiptFile, JSON.stringify(receipt), { mode: 0o600 });
+      await atomicJson(receiptFile, receipt);
       try { await api(pair, "finish", receipt); completed = true; } catch { preserve = true; }
     }
     throw error;

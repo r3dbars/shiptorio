@@ -23,6 +23,12 @@ export class Backoff {
   reset() { this.failures = 0; this.until = 0; }
 }
 
+export async function atomicJson(path: string, value: unknown) {
+  const temporary = `${path}.${crypto.randomUUID()}`;
+  await Bun.write(temporary, JSON.stringify(value), { mode: 0o600 });
+  await chmod(temporary, 0o600); await rename(temporary, path);
+}
+
 // Journal stays outside the agent-visible job root. Never persist installation tokens.
 const identity = (job: Job) => JSON.stringify([job.id, job.repo, job.lease, job.baseSha, job.branch, job.harness, job.plan, job.allowedPaths, job.deadline, job.reworkPr, job.verifyBaseSha, job.prTestFiles]);
 export async function recoverWorkspace(root: string, job: Job) {
@@ -43,9 +49,7 @@ export async function recoverWorkspace(root: string, job: Job) {
   const expected = resolve(root, ".work");
   if (!directory.startsWith(expected + "/" + job.id + "-") || resolve(directory, "..") !== expected || await realpath(directory) !== directory || !(await lstat(directory)).isDirectory()) throw new Error("Unsafe recovery workspace");
   const save = async () => {
-    const temporary = `${path}.${crypto.randomUUID()}`;
-    await Bun.write(temporary, JSON.stringify(state), { mode: 0o600 });
-    await chmod(temporary, 0o600); await rename(temporary, path);
+    await atomicJson(path, state);
   };
   await save();
   return { directory, work: resolve(directory, "checkout"), state,
@@ -54,7 +58,7 @@ export async function recoverWorkspace(root: string, job: Job) {
       if (state.frozen && JSON.stringify(state.frozen) !== JSON.stringify(files)) throw new Error("Checks changed approved files before recovery");
       state.frozen = files; await save();
     },
-    close: async () => { await rm(directory, { recursive: true, force: true }); await rm(path, { force: true }); },
+    close: async () => { await rm(path, { force: true }); await rm(directory, { recursive: true, force: true }); },
   };
 }
 

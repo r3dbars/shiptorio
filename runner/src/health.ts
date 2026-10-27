@@ -7,7 +7,7 @@ export function authExpired(output: string): boolean {
   return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key)/i.test(output);
 }
 export function agentOffline(output: string): boolean {
-  return /connection (?:reset|refused|closed)|network (?:unreachable|error)|stream (?:disconnected|closed)|(?:request|connect|connection) timed? ?out|unable to connect|error sending request|dns (?:error|lookup failed)/i.test(output);
+  return /connection (?:reset|refused|closed)|network (?:unreachable|error)|stream (?:disconnected|closed)|(?:request|connect|connection) timed? ?out|unable to connect|could not resolve (?:host|proxy)|failed to connect|error sending request|dns (?:error|lookup failed)/i.test(output);
 }
 export const loginCommand = (h: Subscription) => `shiptorio-runner login ${h === "codex" ? "codex" : "claude"}`;
 export interface Diagnostic { check: string; ok: boolean; detail: string }
