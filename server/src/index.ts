@@ -39,7 +39,7 @@ import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
-import { webhookBody } from "./webhook-body";
+import { boundedBody, webhookBody } from "./webhook-body";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
@@ -258,8 +258,8 @@ app.get("/auth/login", (c) => signupMode(c.env) === 'password' ? login(new URL(c
 app.post('/auth/login', async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
-  const raw = await c.req.text();
-  if (raw.length>4096) return c.text('Too large',413);
+  const raw = await boundedBody(c.req.raw, 4096);
+  if (raw === null) return c.text('Too large',413);
   const form = new URLSearchParams(raw);
   if (!await turnstile(c.req.raw,c.env,form,'signin')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
   const response = await login(new URL(c.req.url),c.env);
@@ -272,8 +272,8 @@ app.get('/waitlist',c => signupPage(c.env));
 app.post('/waitlist',async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'waitlist'),5,3600000,'waitlist flood')) return c.text('Try again later',429);
-  const raw = await c.req.text();
-  if (raw.length>4096) return c.text('Too large',413);
+  const raw = await boundedBody(c.req.raw, 4096);
+  if (raw === null) return c.text('Too large',413);
   const form=new URLSearchParams(raw),email=(form.get('email')||'').trim().toLowerCase();
   if (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return signupPage(c.env,'Enter a valid email.',400);
   if (!await turnstile(c.req.raw,c.env,form,'waitlist')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
@@ -491,8 +491,8 @@ app.post("/api/runner-device/start", async c => {
   return c.json({ code, secret, expires, interval: 3, verificationUri: `${publicUrl(new URL(c.req.url), c.env)}/runner/pair?code=${code}` });
 });
 app.post("/api/runner-device/poll", async c => {
-  const raw = await c.req.text();
-  if (raw.length > 512) return c.json({ error: "too large" }, 413);
+  const raw = await boundedBody(c.req.raw, 512);
+  if (raw === null) return c.json({ error: "too large" }, 413);
   let body: { code?: string; secret?: string };
   try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (typeof body?.code !== "string" || !CODE_RE.test(body.code) || typeof body.secret !== "string" || body.secret.length !== 72) return c.json({ error: "invalid device" }, 400);
@@ -501,8 +501,8 @@ app.post("/api/runner-device/poll", async c => {
 // One-paste setup: the runner trades the join code from its install command for a repo credential.
 // The code is burned on first use, and the account's write access is checked again here, not just when it was minted.
 app.post("/api/runner-device/join", async c => {
-  const raw = await c.req.text();
-  if (raw.length > 256) return c.json({ error: "too large" }, 413);
+  const raw = await boundedBody(c.req.raw, 256);
+  if (raw === null) return c.json({ error: "too large" }, 413);
   let body: { join?: string };
   try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const fail = async () => {

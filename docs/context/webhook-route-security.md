@@ -86,3 +86,35 @@ allowed; the regression traverses the actual guard, returns 401 for a bad signat
 and 202 for a valid one. Only the final enqueue sink is stubbed. This proves the
 HTTP-to-RPC guard path in password mode, not durable support processing or the
 protected waitlist gate. The streaming fix and RPC fix remain separate commits.
+
+
+## Formal route audit and follow-up public body fix
+
+The Standard scoped source audit at `276bfab14c48a9261f5c39bd51fa424f263df601`
+(scan `ab9488a0-e18b-4ddb-9a8a-1ec867a277a2`) generated its canonical report,
+threat model and explicit route inventory. All declared HTTP routes and the
+browser socket boundary were mapped; 38 of 73 `server/src` files were fully
+security-audited, with 35 partial/unaudited files and Factory slices listed.
+This is partial directory coverage, not all-server or all-flow verification.
+
+It identified one additional medium resource-exhaustion finding: public device
+poll/join, the landing waitlist, the preview form, and waitlist-mode sign-in/forms
+fully read request bodies before their small length checks. The follow-up commit
+uses the same streaming reader with route-specific byte ceilings (256/512/2048/4096),
+including direct helper and access-fast-path callers. Existing parser, signed-form
+proof, Origin, approval, one-use exchange and admission checks remain in place;
+webhooks retain their 1 MiB default and exact decoded signing text. No new polling
+quotas or global body parsing were added.
+
+Before: all 12 stream/multibyte regressions failed; ASCII streams reached all eight
+chunks before rejection and excess UTF-8 bytes could pass the character check.
+After: each route cancels at the second crossing chunk with 413. Exact boundaries,
+split UTF-8, URL form plus/percent decoding, duplicate fields and direct waitlist
+submissions are covered. Independent source-only patch review found no actionable
+surviving bypass or regression. Existing pairing, one-use exchange, privacy-header
+form proof and provider-HMAC suites remain the legitimate controls. The sealed
+report remains pinned to its pre-fix head; it is not rewritten as a later receipt.
+
+Protected `auth.ts`, `session.ts` and `signup.ts` remain unchanged. The known
+waitlist support/Intercom signup-page interception remains with its owner; this
+follow-up does not claim whole Task6 closure or end-to-end support availability.
