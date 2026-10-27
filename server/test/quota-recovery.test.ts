@@ -41,7 +41,7 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
   const bucket = Math.floor(Date.now() / 86400000);
   await env.DB.prepare("INSERT INTO signup_counters VALUES('runs:owner',?,16,?)").bind(bucket, (bucket + 2) * 86400000).run();
   const account = await budgetAccount(env.DB, "owner/repo");
-  await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,160,400000)').bind(account, new Date().toISOString().slice(0, 10)).run();
+  await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,320,800000)').bind(account, new Date().toISOString().slice(0, 10)).run();
   env.ADMIN_LOGINS = "admin";
   const status = await quotaStatus(env, "owner/repo", { id: 1, login: "admin" });
   expect(status.quotas.filter(q => ['runs','spark-calls','spark-tokens'].includes(q.id)).map(q => q.status)).toEqual(['warning','warning','warning']);
