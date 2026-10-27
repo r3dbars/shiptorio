@@ -29,9 +29,13 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   const advanceTo = async (target: number) => {
     while (Number(await progress.getAttribute('value')) < target) {
       const tick = Number(await progress.getAttribute('value'));
-      // One 900ms interval per step; skip redundant WebGL animation frames.
-      await page.clock.fastForward(900);
-      await expect.poll(async () => Number(await progress.getAttribute('value'))).toBeGreaterThan(tick);
+      // Advance virtual time while waiting for an observed simulation tick. The
+      // floor's cadence can change; polling a frozen clock can never make progress.
+      // fastForward fires an interval once, preserving every intermediate beat.
+      await expect.poll(async () => {
+        await page.clock.fastForward(1000);
+        return Number(await progress.getAttribute('value'));
+      }).toBeGreaterThan(tick);
     }
   };
   await advanceTo(6);

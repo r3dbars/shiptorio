@@ -83,7 +83,11 @@ for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sor
 if (process.env.STRANGER_SETUP_URL !== "0") stub.state.setupUrl = `${origin}/github/installed`;
 
 // 2. The stranger: a fresh browser profile, phone-ish laptop window, github.com answered by the stub.
-browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+browser = await chromium.launch({
+  ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  // Match the browser suite's explicit software WebGL backend on GPU-less CI.
+  args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"],
+});
 context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await context.tracing.start({ screenshots: false, snapshots: true });
 await context.route("https://github.com/**", (route) => stub.browser(route));
@@ -97,8 +101,19 @@ await context.route(`${origin}/auth/login*`, async (route) => {
 });
 context.setDefaultTimeout(UI_TIMEOUT);
 const page = await context.newPage();
+await page.clock.install();
+// Evidence captures need a stable frame, not an actively rendering 3D loop.
+// Resume ordinary time after every capture, including failure paths.
+async function capture(path) {
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1));
+  try { await page.screenshot({ path }); }
+  finally { await page.clock.resume(); }
+}
 const consoleErrors = [];
 const expectedAnonymousErrors = [];
+const anonymousRequests = new WeakSet();
+const anonymous401s = new Map();
+const console401s = [];
 let signedIn = false;
 const consoleWarnings = [];
 const socketMessages = [];
@@ -128,11 +143,15 @@ page.on("websocket", socket => {
   socket.on("close", () => socketMessages.push({ type: "socket-closed" }));
 });
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
-page.on("console", (m) => { if (m.type() === "error") { if (!signedIn && /401/.test(m.text())) expectedAnonymousErrors.push(m.text()); else consoleErrors.push(`${m.text()} at ${JSON.stringify(m.location())}`); } if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
+page.on("console", (m) => { if (m.type() === "error") { if (/401/.test(m.text()) && new URL(m.location().url || origin).origin === origin && ["/api/repos", "/api/me/prefs"].includes(new URL(m.location().url || origin).pathname)) console401s.push(m);
+    else consoleErrors.push(`${m.text()} at ${JSON.stringify(m.location())}`); } if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
 const apiErrors = [];
 let repoPolls = 0;
-page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/repos") repoPolls++; });
-page.on("response", (r) => { if (r.url().includes("/api/") && r.status() >= 400) { const path = new URL(r.url()).pathname; if (!signedIn && r.status() === 401 && path === "/api/repos") expectedAnonymousErrors.push(`401 ${path}`); else apiErrors.push(`${r.status()} ${path}`); } });
+page.on("request", (r) => { if (!signedIn) anonymousRequests.add(r); if (new URL(r.url()).pathname === "/api/repos") repoPolls++; });
+page.on("response", (r) => { if (r.url().includes("/api/") && r.status() >= 400) { const path = new URL(r.url()).pathname; if (anonymousRequests.has(r.request()) && r.status() === 401 && ["/api/repos", "/api/me/prefs"].includes(path)) {
+      expectedAnonymousErrors.push(`401 ${path}`);
+      anonymous401s.set(r.url(), (anonymous401s.get(r.url()) ?? 0) + 1);
+    } else apiErrors.push(`${r.status()} ${path}`); } });
 
 const steps = [];
 const report = {};
@@ -155,8 +174,9 @@ async function clickMove(name) {
     const acard = page.locator(".acard").filter({ hasText: card.title });
     for (let i = 0; i < 20 && !await acard.count(); i++) {
       const later = page.locator(".acard").filter({ hasNotText: card.title }).locator(".alater");
+      const before = await page.locator(".acard .att").allTextContents();
       if (await later.count()) await later.first().click({ timeout: UI_TIMEOUT });
-      await page.waitForTimeout(1000);
+      await until("next decision card", async () => JSON.stringify(await page.locator(".acard .att").allTextContents()) !== JSON.stringify(before));
     }
     const go = acard.getByRole("button", { name });
     if (!await go.count()) await acard.locator(".atog").click({ timeout: UI_TIMEOUT });
@@ -185,14 +205,14 @@ async function step(name, fn) {
     await fn();
     steps.push({ name, ms: Date.now() - start, ok: true });
     console.log(`PASS ${name}`);
-    await page.screenshot({ path: join(out, `${String(steps.length).padStart(2, "0")}-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
+    await capture(join(out, `${String(steps.length).padStart(2, "0")}-${name.replace(/\W+/g, "-")}.png`)).catch(() => {});
   } catch (error) {
     // Keep the whole failure: the first line alone loses an assertion's actual/expected and its source line.
     const detail = { message: String(error?.message ?? error), stack: error?.stack, actual: scalar(error?.actual), expected: scalar(error?.expected), operator: error?.operator };
     const state = { deck: factoryState?.deck?.map(m => ({ id: m.id, title: m.title, options: m.options?.map(o => o.label) })), move: factoryState?.move?.id, pulls: stub.state.pulls.length, merges: stub.state.merges.length, cards: await page.locator(".acard .att").allTextContents().catch(() => []) };
     steps.push({ name, ms: Date.now() - start, ok: false, error: String(error).split("\n")[0], detail, state });
     console.error(`FAIL ${name}\n${detail.stack ?? detail.message}\nactual: ${JSON.stringify(detail.actual)}\nexpected: ${JSON.stringify(detail.expected)}\nstate: ${JSON.stringify(state)}`);
-    await page.screenshot({ path: join(out, `FAIL-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
+    await capture(join(out, `FAIL-${name.replace(/\W+/g, "-")}.png`)).catch(() => {});
     throw error;
   }
 }
@@ -332,8 +352,9 @@ try {
     const launchCard = page.locator(".acard").filter({ hasText: card.title });
     for (let i = 0; i < 20 && !await launchCard.count(); i++) {
       const later = page.locator(".acard").filter({ hasNotText: card.title }).locator(".alater");
+      const before = await page.locator(".acard .att").allTextContents();
       if (await later.count()) await later.first().click({ timeout: UI_TIMEOUT });
-      await page.waitForTimeout(1000);
+      await until("next launch card", async () => JSON.stringify(await page.locator(".acard .att").allTextContents()) !== JSON.stringify(before));
     }
     const red = launchCard.getByRole("button", { name: /^Hold to launch: / });
     const box = await red.boundingBox({ timeout: UI_TIMEOUT });
@@ -358,6 +379,14 @@ try {
     assert.deepEqual(spark.unexpected, []);
     assert.deepEqual(apiErrors, []);
     assert.deepEqual(runnerErrors, []);
+    // Pair resource-console errors with actual anonymous responses. Request phase
+    // is recorded at dispatch, so late responses cannot be misclassified at login.
+    for (const message of console401s) {
+      const url = message.location().url;
+      const remaining = anonymous401s.get(url) ?? 0;
+      if (remaining) anonymous401s.set(url, remaining - 1);
+      else consoleErrors.push(`${message.text()} at ${JSON.stringify(message.location())}`);
+    }
     assert.deepEqual(consoleErrors, []);
     for (const kind of ["triage", "scope", "plan", "review"]) assert.ok(spark.calls.includes(kind), kind);
   });
