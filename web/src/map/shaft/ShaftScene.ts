@@ -22,6 +22,7 @@ import { ShaftHud } from "./hud";
 import { makeLayout, MINES } from "./layout";
 import { cartAt, clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
 import { ShaftStage, type ShaftView } from "./stage";
+import { Trophies } from "./trophies";
 
 // the mockup's art was tuned without color management (three r128); the engine's lights are patched to match
 THREE.ColorManagement.enabled = false;
@@ -69,6 +70,7 @@ export class ShaftScene {
   private home: { view: ShaftView; id: string | null } | null = null;
   private view: { view: ShaftView; id: string | null } = { view: "stack", id: null };
   private readonly ray = new THREE.Raycaster();
+  private readonly trophies = new Trophies(); // a green lamp per shipped PR, by the assembler that built it
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -143,6 +145,7 @@ export class ShaftScene {
     if (!this.sp || sp.key !== this.sp.key) this.rebuild(sp);
     else this.sp = sp;
     this.driver?.sync(state);
+    if (this.I) this.trophies.sync(this.I, state);
     this.hud.read(state, this.sp!);
   }
 
@@ -258,6 +261,7 @@ export class ShaftScene {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.teardown();
+    this.trophies.dispose();
     this.hud.dispose();
     this.renderer.dispose();
   }
@@ -286,6 +290,8 @@ export class ShaftScene {
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
     bakeShaft(I, stage.root);
+    this.trophies.reset();
+    stage.root.add(this.trophies.group);
     if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
@@ -318,6 +324,7 @@ export class ShaftScene {
 
   private teardown() {
     this.hud.clear();
+    this.trophies.group.removeFromParent(); // its meshes outlive the shaft; I.dispose frees what's under the root
     if (this.I) this.I.dispose();
     this.stage?.dispose();
     this.I = null;
