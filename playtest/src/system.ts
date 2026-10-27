@@ -2,6 +2,7 @@ import { FactoryState, ServerToWeb, type Move, type ServerToWeb as Message, type
 import { connectSim, SCENARIOS, type ScenarioName } from "../../web/src/sim/engine";
 import { applyPatch } from "../../web/src/store";
 import { BEATS, introCanAct, introCommand, introDone, introNextReady } from "../../web/src/ui/IntroTour";
+import { stepFrom } from "../../web/src/buildout/journey";
 
 export interface Finding { id: string; severity: "P1" | "P2"; title: string; scenario: string; step: number; repro: string; expected: string; actual: string; owner: string }
 export interface GuidedResult { steps: string[]; actions: string[]; completed: boolean; verifiedRework: boolean; sentryOre: boolean; automatedLaunches: number }
@@ -139,6 +140,15 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
             introAt++; introEnteredAt = -1; introActed = false;
           } else if (introAt === BEATS.length - 1 && current.autonomy?.level === "lights_out" && guided.verifiedRework && guided.sentryOre && guided.automatedLaunches > 0) guided.completed = true;
         } else {
+        // build as you go: the coach card's command for the step you're on (ui/Buildout.tsx), sent twice like a double tap
+        const build = scenario === "buildout" ? buildoutCommand(current) : null;
+        if (build) {
+          source.send(build); clock.flush();
+          const receipt = JSON.stringify(state);
+          source.send(build); clock.flush();
+          if (receipt !== JSON.stringify(state)) finding("double-build", "P1", "A repeated build changed the factory twice", "The same build command is idempotent", JSON.stringify(build));
+          result.decisions++;
+        }
         const move = current.move ?? current.deck?.[0];
         if (move) {
           const firstSeen = seenMoves.get(move.id) ?? step;
@@ -169,6 +179,14 @@ export function runCase(scenario: ScenarioName, seed = 71, mode: CaseResult["mod
   finally { source?.close(); clock.restore(); }
   result.states = [...states].sort(); result.tools = [...tools].sort();
   return result;
+}
+
+function buildoutCommand(s: FactoryState): WebToServer | null {
+  const { id } = stepFrom(s);
+  if (id === "tunnel") return { type: "connect_source", kind: "github" };
+  if (id === "boiler" || id === "builder" || id === "issue" || id === "planner") return { type: "station_action", stationId: "buildout", action: id };
+  const pad = s.items.find(i => i.state === "on_pad");
+  return id === "launch" && pad ? { type: "launch_pr", itemId: pad.id } : null;
 }
 
 export function runSuite(seed = 71, scenarios = Object.keys(SCENARIOS) as ScenarioName[]): CaseResult[] {

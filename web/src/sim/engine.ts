@@ -5,6 +5,7 @@
 // voice, asks before building (autonomy starts at Advisor), puts the bottleneck on the
 // Next Move card, and keeps the HUD metrics. Spark never writes code; the assemblers do.
 
+import { STARTER_ISSUE, type StepId } from "../buildout/journey";
 import { ghostSpots } from "../map/ghosts";
 import { actionLabel } from "../ui/stationCopy";
 import { mineUnlocked } from "../ui/whatsNext";
@@ -127,6 +128,7 @@ interface Scenario {
   checkin?: boolean; // deal a full check-in deck on start (docs/PRODUCT.md "Check-in")
   onboard?: boolean; // first run from the start: Spark scans the repo, then proposes the starter factory
   intro?: boolean; // the welcome tour (ui/IntroTour.tsx): fast and quiet, and the tour cues each beat
+  buildout?: boolean; // build as you go (?buildout=1): empty rock, every piece built by the player, one guided issue
   permits?: string[]; // lanes that start with a launch permit
   science?: FactoryState["science"]; // packs already shipped, so the research tree has something to spend
   rockets?: number; // PRs already shipped
@@ -510,6 +512,16 @@ export const SCENARIOS = {
     intro: true,
     ores: [],
   },
+  // Build as you go (docs/GAMEPLAY-PICKS.md, web/src/buildout/CONTRACT.md). Nothing exists until the player builds it
+  // with station_action("buildout", step), and one guided issue rides the line as it goes up: plan, wait for
+  // Continue, build, CI, wait for the pad, wait for the hold. The coach card does the asking, so no moves
+  // until the first rocket; after that it's the normal demo shop.
+  buildout: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    buildout: true,
+    ores: [],
+  },
 } satisfies Record<string, Scenario>;
 
 // The tour's ore, round and round: mostly docs, so a docs permit visibly drains the pile.
@@ -539,6 +551,16 @@ const INTRO_SENTRY: Omit<Ore, "at">[] = [
 const INTRO_PILE = 6; // before docs can ship alone, the merge gate holds at most this many
 
 export type ScenarioName = keyof typeof SCENARIOS;
+
+// Build as you go (web/src/buildout/CONTRACT.md): the steps the sim builds, in journey order. Building one builds
+// anything missing before it, so a skipped beat never strands the line. The coach card (ui/Buildout.tsx) sends
+// connect_source github for the tunnel, station_action("buildout", step) for boiler, builder, issue and planner (the
+// plan's Continue), and launch_pr for the hold. "checks" builds itself when the guided PR opens, the launch pad when
+// it passes CI. station_action("buildout", "all") skips ahead to the whole starter line.
+type BuildoutStep = Exclude<StepId, "build">;
+const BUILDOUT_ORDER: BuildoutStep[] = ["tunnel", "boiler", "builder", "issue", "planner", "checks", "launch"];
+const BUILDOUT_ISSUE = { number: 1, title: STARTER_ISSUE.title, kind: "cleanup", district: "docs" } as const;
+const BUILDOUT_PLAN = ["Read the README and package scripts", 'Add a "Run it locally" section: install, env, dev server', "Check the commands run on a clean clone"];
 
 const SOLAR_NAME: Partial<Record<Harness, string>> = { claude_code: "Claude", codex: "ChatGPT" };
 const GEO_PLANT = "geo-local"; // the runner's local model, same id the live server uses
@@ -624,7 +646,7 @@ function initialState(sc: Scenario): FactoryState {
   // Onboarding starts on bare rock: Spark's steam plant and the issue deposit. The scan raises the districts
   // and the starter factory is built only when the player says yes.
   const starter = sc.onboard ? machines.filter((m) => m.type === "ore_deposit" || m.type === "steam") : machines;
-  return {
+  const state: FactoryState = {
     repo: sc.districts ? "sim/demo-shop" : "sim/shiptorio",
     baseBranch: "main",
     districts: sc.onboard ? [] : districts,
@@ -654,6 +676,9 @@ function initialState(sc: Scenario): FactoryState {
     // A brand-new factory has caught nothing yet, so its first second doesn't hand out "Caught it".
     stations: [...GAUNTLET, ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: sc.onboard ? 0 : g.caught, actions: g.actions })),
   };
+  // Build as you go starts on nothing at all: no rock, no power, no stations. Every piece is the player's build.
+  if (sc.buildout) Object.assign(state, { districts: [], machines: [], belts: [], power: [], stations: [], autonomy: { ...state.autonomy!, next: { ...state.autonomy!.next!, have: 0 } } });
+  return state;
 }
 
 // How many ticks an item spends in each step.
@@ -672,7 +697,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const s = initialState(sc);
   if (repo) s.repo = repo;
   // Ore ticks count from here. Onboarding holds the ore until the starter factory stands.
-  let clock0 = sc.onboard ? Infinity : 0;
+  let clock0 = sc.onboard || sc.buildout ? Infinity : 0;
+  // the build-out's first run: from empty rock to the first rocket. clock0 starts at that launch.
+  const guided = () => !!sc.buildout && clock0 === Infinity;
   let closed = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
   const later = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
@@ -797,7 +824,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     emit({ type: "deck", deck: s.deck });
   };
   const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void): string => {
-    if (sc.intro) return ""; // the tour's own cards do the asking
+    if (sc.intro || guided()) return ""; // the tour's (or the build-out coach's) own cards do the asking
     const m: Move = { ...move, id: `move-${++seq}`, createdAt: Date.now() };
     onChoose.set(m.id, then);
     if (s.move) pending.push(m);
@@ -1116,7 +1143,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           apply({ items: [{ ...next, state: "queued" }] });
           log("info", `Splitter sorted "${item.title}" → ${item.district}`, item.id);
           routeItem(item);
-          if (asks.has(item.id)) {
+          if (guided() && item.id === byTitle.get(BUILDOUT_ISSUE.title) && !built.has("planner")) {
+            held.add(item.id);
+            spark({ tool: "plan", text: `Plan for #${BUILDOUT_ISSUE.number}: ${BUILDOUT_PLAN.length} steps. Waiting on your Continue`, reason: BUILDOUT_PLAN.join("; ") }, { itemId: item.id, target: "splitter-1" });
+          } else if (asks.has(item.id)) {
             held.add(item.id);
             askToBuild(item);
           }
@@ -1139,6 +1169,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         case "working": {
           const prNumber = item.prNumber ?? ++pr;
           builtBy.set(item.id, item.machineId);
+          if (sc.buildout) buildStep("checks"); // the CI station rises when the first PR opens
           apply({
             items: [{ ...next, state: "inspecting", machineId: GAUNTLET[0].id, prNumber, prUrl: `https://github.com/${s.repo}/pull/${prNumber}` }],
             machines: setMachine(item.machineId, "idle"),
@@ -1172,8 +1203,9 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
             apply({ items: [{ ...next, machineId: nextSt.id }] });
             log("info", `PR #${item.prNumber} passed ${st.name}, on to the ${lc(nextSt.name)}`, item.id);
           } else {
+            if (sc.buildout) buildStep("launch"); // the merge gate and pad rise for the first PR that clears the line
             apply({ items: [{ ...next, state: "on_pad", machineId: "gate-1", failure: undefined }] });
-            stat("gate-1").lastLog = { who: "Gate", text: `#${item.prNumber} is ready. CI green, verified, review approved.`, ok: true };
+            stat("gate-1").lastLog = { who: "Gate", text: `#${item.prNumber} is ready. ${line.some((g) => g.kind === "verify") ? "CI green, verified, review approved." : "CI green."}`, ok: true };
             log("success", `PR #${item.prNumber} cleared the gauntlet. Waiting at the merge gate.`, item.id);
             if (!autoLaunch) askToLaunch(next);
           }
@@ -1266,10 +1298,13 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const checks = researchedChecks(s)
       .filter((id) => s.machines.some((m) => m.id === checkStationId(id)))
       .map((id): StationDef => ({ id: checkStationId(id), kind: "custom", name: techById(id)!.name, caught: 0, actions: [] }));
-    return [GAUNTLET[0], ...checks, ...GAUNTLET.slice(1)];
+    const all = [GAUNTLET[0], ...checks, ...GAUNTLET.slice(1)];
+    // build-out: only the stations the player has built are on the line
+    return sc.buildout ? all.filter((g) => s.machines.some((m) => m.id === g.id)) : all;
   }
   function stationsNow(): Station[] {
-    return [...lineNow(), ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => {
+    const orbit = !sc.buildout || s.machines.some((m) => m.id === ORBIT.id) ? [ORBIT] : [];
+    return [...lineNow(), ...orbit, ...(sc.growth ? [MEASURE] : [])].map((g) => {
       const v = stat(g.id);
       const here = g.kind === "measure" ? s.items.filter((i) => s.experiments?.some((e) => e.itemId === i.id && e.state === "measuring")) : g.kind === "orbit" ? s.items.filter((i) => watching.has(i.id)) : s.items.filter((i) => i.machineId === g.id && (i.state === "inspecting" || i.state === "on_pad"));
       const oldest = Math.max(0, ...here.map((i) => s.tick - (since.get(i.id) ?? s.tick)));
@@ -1282,7 +1317,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         wip: here.length,
         oldestWaitMs: here.length ? oldest * TICK_MS : undefined,
         passRate: runs ? v.passed / runs : undefined,
-        caughtThisWeek: g.caught + (v.caught ?? 0),
+        caughtThisWeek: (sc.buildout ? 0 : g.caught) + (v.caught ?? 0),
         lastLog: v.lastLog,
         actions: g.actions,
       };
@@ -1329,6 +1364,68 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     }
   };
 
+  // ---------- build as you go (?buildout=1) ----------
+
+  // What each build puts on the floor, taken from the full starter line so ids and spots match every other scenario.
+  const full = initialState({ ...sc, buildout: false });
+  const piece = (id: string) => full.machines.find((m) => m.id === id)!;
+  const BUILDS: Record<BuildoutStep, { machines: string[]; belts: [string, string][]; line: string }> = {
+    tunnel: { machines: ["ore-issues"], belts: [], line: "GitHub tunnel open. Work comes up from your repo here" },
+    boiler: { machines: ["steam-spark", `solar-${sc.harness ?? "claude_code"}`], belts: [], line: "Boiler lit. Your AI is the power" },
+    builder: { machines: ["assembler-1"], belts: [], line: "Builder online. It writes the code, using your AI" },
+    // the planner desk rises as the ore reaches it, so the plan is on the card before Continue
+    issue: { machines: ["splitter-1"], belts: [["ore-issues", "splitter-1"], ["splitter-1", "assembler-1"]], line: `Issue #${BUILDOUT_ISSUE.number} is on the cart: ${BUILDOUT_ISSUE.title}` },
+    planner: { machines: [], belts: [], line: `Plan approved. Building #${BUILDOUT_ISSUE.number} now` },
+    checks: { machines: ["ci-1"], belts: [["assembler-1", "ci-1"]], line: "Checks online. Every change passes them before it ships" },
+    launch: { machines: ["gate-1", "launch-pad"], belts: [["ci-1", "gate-1"], ["gate-1", "launch-pad"]], line: "Launch pad ready. Hold to launch" },
+  };
+  const built = new Set<BuildoutStep>();
+  const buildStep = (step: BuildoutStep) => {
+    if (built.has(step)) return;
+    // anything before it goes up first, so the order always holds
+    for (const before of BUILDOUT_ORDER.slice(0, BUILDOUT_ORDER.indexOf(step))) buildStep(before);
+    built.add(step);
+    const b = BUILDS[step];
+    const machines = b.machines.filter((id) => !s.machines.some((m) => m.id === id)).map(piece);
+    const belts = b.belts.filter(([from, to]) => !s.belts.some((x) => x.from === from && x.to === to)).map(([from, to]): Belt => ({ id: `belt-${from}-${to}`, from, to }));
+    if (step === "tunnel") {
+      // the repo is plugged in: its folders rise, and the github source reads connected (journey.ts tunnel.done)
+      s.sources = [...(s.sources ?? []).filter((x) => x.kind !== "github"), { kind: "github", state: "connected", detail: `${s.repo} (sim)`, eventsToday: 0, setup: { steps: [] } }];
+      apply({ districts: full.districts });
+      emit({ type: "patch", patch: { sources: s.sources } });
+    }
+    if (step === "boiler") {
+      s.power = full.power;
+      emit({ type: "patch", patch: { power: s.power } });
+    }
+    apply({ machines, belts });
+    if (step === "issue") {
+      arrive({ at: 0, ...BUILDOUT_ISSUE }, Date.now());
+      const id = byTitle.get(BUILDOUT_ISSUE.title)!;
+      const it = s.items.find((i) => i.id === id)!;
+      apply({ items: [{ ...it, url: `https://github.com/${s.repo}/issues/${BUILDOUT_ISSUE.number}`, body: BUILDOUT_PLAN.map((p, n) => `${n + 1}. ${p}`).join("\n") }] });
+    }
+    if (step === "planner") {
+      // the plan's Continue: the guided issue goes to the builder
+      // (a Continue that beats the ore to the desk counts too: the ore case won't hold it)
+      const id = byTitle.get(BUILDOUT_ISSUE.title);
+      if (id) held.delete(id);
+      spark({ tool: "start_job", text: b.line, reason: "you said continue" }, { itemId: id, target: "assembler-1", approvedBy: "player" });
+      approvedAsIs();
+      return;
+    }
+    log("success", b.line);
+  };
+  const buildout = (action: string) => {
+    if ((BUILDOUT_ORDER as string[]).includes(action)) return buildStep(action as BuildoutStep);
+    if (action === "all") {
+      // skip ahead (the repo swap, a dev shortcut): the whole starter line, plugged in, and the guided run ends
+      BUILDOUT_ORDER.forEach(buildStep);
+      apply({ machines: full.machines.filter((m) => !s.machines.some((x) => x.id === m.id)), belts: full.belts.filter((b) => !s.belts.some((x) => x.from === b.from && x.to === b.to)) });
+      if (guided()) clock0 = s.tick;
+    }
+  };
+
   // A comeback in orbit: scar it, send it back for a fresh PR, take the lane's launch permit away.
   const comeBack = (id: string) => {
     trips.delete(id);
@@ -1366,6 +1463,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     });
     if (s.brain?.score?.open.includes(item.id)) score((sc) => ({ ...sc, shipped: sc.shipped + 1, open: sc.open.filter((x) => x !== item.id) }));
     log("success", `Rocket launched: PR #${item.prNumber} merged`, item.id);
+    if (guided()) {
+      clock0 = s.tick; // the first run is done: free look, counters, and the planner deals cards from here
+      log("success", "Your factory shipped its first PR. Look around");
+    }
     // any card still asking about this PR is answered now; a stale "Launch #N" would strand the player (#105)
     for (const m of [s.move, ...pending].filter((x) => x?.itemId === item.id)) {
       onChoose.delete(m!.id);
@@ -1684,6 +1785,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // taking the job on, logged with undo, the way a real station action would be queued.
   const stationAction = (stationId: string, action: string) => {
     if (sc.intro && stationId === "intro") return introCue(action);
+    if (sc.buildout && stationId === "buildout") return buildout(action);
     const def = [...lineNow(), ORBIT].find((g) => g.id === stationId);
     const machine = s.machines.find((m) => m.id === stationId);
     const label = def?.actions.find((a) => a.id === action)?.label ?? actionLabel(action) ?? action;
@@ -1924,6 +2026,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   };
 
   function connectMine(kind: string) {
+          if (sc.buildout && kind === "github") return buildStep("tunnel");
           // sim: the empty mine fills in where the map showed it, and feeds the splitter
           if (kind !== "sentry" && kind !== "posthog" && kind !== "email") return;
           const id = kind === "email" ? "ore-inbox" : `ore-${kind}`;
@@ -1953,7 +2056,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, tickMs);
 
-  return {
+  const src: Source = {
     send(msg: WebToServer) {
       if (closed) return;
       switch (msg.type) {
@@ -2064,4 +2167,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       onStatus("offline");
     },
   };
+  // build-out e2e and screenshots (tests/e2e/buildout.pw.ts): drive the demo shop without the coach card
+  if (sc.buildout && typeof window !== "undefined") (window as unknown as { __shipSim?: Source }).__shipSim = src;
+  return src;
 }
