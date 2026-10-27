@@ -17,6 +17,7 @@ async function digest(request: Request) {
 export function delegatedPath(request: Request, persona: TestPersona) {
   const url = new URL(request.url), path = url.pathname;
   if (url.origin !== "https://shiptorio.dev") return false;
+  if (path === "/test/reset") return request.method === "POST" && !url.search;
   if (path === "/api/repos" || path === "/test/install") return ["GET", "POST"].includes(request.method);
   if (["/api/setup/status", "/api/sources"].includes(path)) return request.method === "GET" && url.searchParams.get("repo") === personaRepo(persona);
   const root = `/api/repos/${personaRepo(persona)}/`;

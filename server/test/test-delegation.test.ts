@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { delegateTestRequest, verifyTestDelegation } from "../src/test-delegation";
-const key = "k".repeat(64), user = { id: -9001, login: "test-newbie" };
+const key = "k".repeat(64), user = { id: -9001, login: "test-newbie" as const };
 const path = "https://shiptorio.dev/api/repos/test-fixture/test-newbie/action";
 test("delegation strips browser credentials and binds method, path, body, identity and expiry", async () => {
   const req = await delegateTestRequest(new Request(path, { method: "POST", headers: { cookie: "private", authorization: "Bearer private", origin: "https://shiptorio.dev", "content-type": "application/json" }, body: '{"go":1}' }), user, key, 1000);
