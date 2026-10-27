@@ -5,11 +5,11 @@
 
 import { createHmac } from "node:crypto";
 
-export function githubStub({ origin, webhookSecret, worker }) {
+export function githubStub({ origin, webhookSecret, worker, user, repo, repoId }) {
   const state = {
-    user: { id: 4242001, login: "fresh-stranger", name: "Fresh Stranger", avatar_url: null },
-    repo: "fresh-stranger/lemonade-stand",
-    repoId: 4242999, // stable numeric identity supplied by actual GitHub repository responses/webhooks
+    user: user ?? { id: 4242001, login: "fresh-stranger", name: "Fresh Stranger", avatar_url: null },
+    repo: repo ?? "fresh-stranger/lemonade-stand",
+    repoId: repoId ?? 4242999, // stable numeric identity supplied by actual GitHub repository responses/webhooks
     installation: null, // set when the stranger clicks Install on the fake GitHub page
     calls: [],
     unexpected: [],
