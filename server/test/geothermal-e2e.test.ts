@@ -27,7 +27,7 @@ const git = async (cwd: string, ...args: string[]) => {
 
 // Issue → offer (geothermal recommended) → plan → route (planner + guard) → approve → claim as
 // local → a fake Ollama writes the fix in a real git checkout → receipt → server opens the PR.
-test("geothermal end to end: a docs fix built by a local model becomes a PR", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("geothermal end to end: a docs fix built by a local model becomes a PR", async () => {
   const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
   const originalFetch = globalThis.fetch;

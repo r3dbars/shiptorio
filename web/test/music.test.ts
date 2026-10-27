@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { fileURLToPath } from 'node:url';
 import {
   arpNotes, bottleneckTension, CADENCE, CALM, catchTension, CATCH_FADE_MS, chordFor, ease, intensityFor,
   layerCount, layersFor, padCutoff, STEPS_PER_BAR, TENSE, tensionFor, type MusicInput,
@@ -197,7 +198,7 @@ describe('original foundry composition', () => {
     }
   });
   test('asset inventory and payload stay within phone budgets', () => {
-    const dir = new URL('../public/music/',import.meta.url).pathname;
+    const dir = fileURLToPath(new URL('../public/music/',import.meta.url));
     const license = readFileSync(join(dir,'LICENSES.md'),'utf8');
     const files = readdirSync(dir,{recursive:true}).map(String).filter(f=>statSync(join(dir,f)).isFile() && f!=='LICENSES.md');
     let total=0;
