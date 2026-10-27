@@ -1,6 +1,6 @@
 // The real HoldLaunch component in a DOM, on a fake clock: what the button says and does must follow the
 // controller exactly. Globals are put back afterwards so other test files keep their window-less world.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { HoldClock } from "../src/ui/holdLaunch";
 
@@ -55,11 +55,12 @@ async function mount(clock: HoldClock, card = "launch:7") {
   const { act } = React;
   const { createRoot } = await import("react-dom/client");
   const { HoldLaunch } = await import("../src/ui/Attention");
+  const { SoundCaptions } = await import("../src/ui/SoundCaptions");
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
   const launched: string[] = [];
-  const render = (c: string) => act(() => root.render(<HoldLaunch card={c} label="Launch #7: webhook tests" clock={clock} onLaunch={(id) => launched.push(id)} />));
+  const render = (c: string) => act(() => root.render(<><HoldLaunch card={c} label="Launch #7: webhook tests" clock={clock} onLaunch={(id) => launched.push(id)} /><SoundCaptions /></>));
   await render(card);
   const button = () => host.querySelector("button.alaunch") as HTMLButtonElement;
   const fire = (ev: Event) => act(() => { button().dispatchEvent(ev); });
@@ -68,6 +69,7 @@ async function mount(clock: HoldClock, card = "launch:7") {
     render,
     button,
     label: () => button().getAttribute("aria-label") ?? "",
+    caption: () => host.querySelector('[aria-label="Sound captions"]')?.textContent ?? "",
     act,
     ax: () => fire(new MouseEvent("click", { bubbles: true, detail: 0 })),
     key: (type: "keydown" | "keyup") => fire(new KeyboardEvent(type, { key: " ", bubbles: true })),
@@ -126,4 +128,54 @@ test("a full keyboard hold launches once and only after the ring fills", async (
   await b.ax(); // the click a browser fires after the key is not a second launch
   expect(b.launched).toEqual(["launch:7"]);
   await b.unmount();
+});
+
+
+test("a real full hold plays exactly four countdown clanks and submits one request", async () => {
+  const { sound } = await import("../src/sound/engine");
+  const tick = spyOn(sound, "holdTick");
+  const play = spyOn(sound, "play");
+  const { clock, to } = fakeClock();
+  const b = await mount(clock);
+  try {
+    await b.key("keydown");
+    await b.act(() => to(800));
+    await b.key("keyup");
+    await b.ax();
+    expect(tick.mock.calls.map(([i]) => i)).toEqual([0, 1, 2, 3]);
+    expect(play.mock.calls.filter(([s]) => s === "hold_go")).toHaveLength(1);
+    expect(play.mock.calls.filter(([s]) => s === "hold_cancel")).toHaveLength(0);
+    expect(b.launched).toEqual(["launch:7"]);
+  } finally { await b.unmount(); tick.mockRestore(); play.mockRestore(); }
+});
+
+test("cancel then re-arm resets the countdown and captions distinguish requests from launches", async () => {
+  const { sound } = await import("../src/sound/engine");
+  const tick = spyOn(sound, "holdTick");
+  const play = spyOn(sound, "play");
+  const { clock, to } = fakeClock();
+  const b = await mount(clock);
+  const captionsSettle = () => b.act(() => new Promise<void>((done) => setTimeout(done, 5)));
+  try {
+    await b.key("keydown");
+    await captionsSettle();
+    expect(b.caption()).toBe("Launch hold started");
+    await b.act(() => to(160));
+    await b.key("keyup");
+    await captionsSettle();
+    expect(b.caption()).toBe("Launch hold cancelled");
+    expect(b.launched).toEqual([]);
+    expect(tick.mock.calls.map(([i]) => i)).toEqual([0]);
+    tick.mockClear();
+    await b.key("keydown");
+    await captionsSettle();
+    expect(b.caption()).toBe("Launch hold started");
+    await b.act(() => to(960));
+    await captionsSettle();
+    expect(tick.mock.calls.map(([i]) => i)).toEqual([0, 1, 2, 3]);
+    expect(b.caption()).toBe("Launch requested");
+    expect(play.mock.calls.filter(([s]) => s === "hold_cancel")).toHaveLength(1);
+    expect(play.mock.calls.filter(([s]) => s === "hold_go")).toHaveLength(1);
+    expect(b.launched).toEqual(["launch:7"]);
+  } finally { await b.unmount(); tick.mockRestore(); play.mockRestore(); }
 });

@@ -124,7 +124,9 @@ failure.
 
 ## What your agent can and can't touch
 
-Jobs run in an isolated checkout. The runner publishes only the approved file scope,
+Jobs fetch only the approved revision and, for rework, its regression-proof base rather
+than downloading the repository’s full history. Jobs run in an isolated checkout.
+The runner publishes only the approved file scope,
 then opens a pull request. It never pushes to the default branch. The OS sandbox
 keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
@@ -173,3 +175,15 @@ bundles could finish the browser step without a default Keychain to persist the
 credential. Reinstall the runner and repeat `login claude` once. Wait for the Terminal
 message `claude_code: installed and signed in for Shiptorio`. Your personal Claude
 credentials and macOS Keychain stay separate.
+
+### Sleeping, reconnecting and expired pairing
+
+The helper retries temporary network failures with backoff, including after the computer
+sleeps. It renews its connection while watching and during a build. A connection grant lasts
+up to seven days and never extends past the browser session that approved it.
+
+If Shiptorio explicitly reports a revoked or expired grant, the helper stops using that
+connection and tells you to run `shiptorio-runner pair`. Saved builds and receipts stay on
+your computer. A fresh pairing replaces the stopped connection. The factory's runner status
+also reports when re-pairing is needed; a generic network error or unclassified 401 alone
+does not erase or stop the saved pairing.

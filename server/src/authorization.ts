@@ -21,7 +21,7 @@ export const validRepo = (repo: string) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.
 // GitHub collaborator checks are reused for 5 minutes. Idle runners re-checked every minute and drained the App's
 // hourly API bucket. D1 is checked even on cache hits: uninstall/removal revokes all users immediately.
 const ACCESS_TTL = 5 * 60 * 1000;
-export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read"): Promise<number | null> {
+export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read", throwOnLookupError = false): Promise<number | null> {
   const repo = name.toLowerCase();
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
   if (!Number.isSafeInteger(user.id) || !/^[a-f0-9]{64}$/.test(user.sessionHash ?? '')) return null;
@@ -40,7 +40,10 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
     // These three facts are independent after the repo lookup. Read them in one D1
     // roundtrip on every request/frame; no authorization result is cached here.
     const results = await env.DB.batch<Relationship>(checks);
-    if (results.length !== checks.length || results.some((result: { success?: boolean }) => result.success === false)) return null;
+    if (results.length !== checks.length || results.some((result: { success?: boolean }) => result.success === false)) {
+      if (throwOnLookupError) throw new Error('Repository membership lookup unavailable');
+      return null;
+    }
     [installed, membership, userInstallation] = results.map(result => result.results?.[0]);
   } else {
     // Lightweight D1 adapters can retain the original sequential read behavior.
@@ -59,9 +62,10 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
     if (await repoInstallationId(env, repo) !== row.installation_id) return null;
     const token = await installationToken(env, row.installation_id);
     const result = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
+    if (throwOnLookupError && (!Number.isSafeInteger(result.user?.id) || typeof result.permission !== "string")) throw new Error("Repository permission lookup unavailable");
     const permissions = authority === "write" ? ['write', 'maintain', 'admin'] : ['read', 'triage', 'write', 'maintain', 'admin'];
     if (result.user?.id !== user.id || !permissions.includes(result.permission)) return null;
     await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + ACCESS_TTL }), { expirationTtl: ACCESS_TTL / 1000 }).catch(() => {});
     return row.installation_id;
-  } catch { return null; } // API errors and suspended/uninstalled Apps fail closed.
+  } catch (error) { if (throwOnLookupError) throw error; return null; } // Deny every caller; runners distinguish unavailable from confirmed revocation.
 }

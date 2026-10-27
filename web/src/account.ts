@@ -37,6 +37,8 @@ export function isGuestPlay(repo: string | undefined, me: Me | null): boolean {
 export type PrefKey = "intro" | "guideSeen" | "achievements"; // achievements: web/src/ui/Achievements.tsx reads and merges its own
 
 const LOCAL: Record<Exclude<PrefKey, "achievements">, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };
+let accountReadOnly = false;
+export const setAccountReadOnly = (value:boolean) => { accountReadOnly = value; };
 // Live sends as the signed-in player. A bare visit (the tour before the demo shop) or the demo shop itself
 // sends only for a guest session (server: guests), so its prefs are kept at sign-in; signed out with no guest
 // session sends nothing (a 401 helps nobody). Other sim scenarios stay local.
@@ -60,6 +62,7 @@ export function seedPrefs(prefs: Partial<Record<PrefKey, string>> | undefined) {
 }
 
 export function savePref(key: PrefKey, value: string) {
+  if (accountReadOnly) return;
   void sendsPrefs().then((ok) => {
     if (ok) fetch("/api/me/prefs", { method: "PUT", body: JSON.stringify({ [key]: value }) }).catch(() => {});
   });

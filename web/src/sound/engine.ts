@@ -36,12 +36,23 @@ export type Sfx =
   | "achievement"
   | "beat"
   | "beat_done"
-  | "finale";
+  | "finale"
+  | "hold_start"
+  | Accent
+  | SteamSfx;
 
 import { SCAPES, type Focus } from "./scapes";
 import { MusicPlayer } from "./musicPlayer";
 import type { MusicInput } from "./music";
 import type { FoundryPlayer } from "./foundryPlayer";
+import { ACCENT_RECIPE, type Accent } from "./accents";
+import { SteamKit, type MachineMood, type SteamSfx } from "./steamIron";
+
+// Justin's soundboard picks took over these older chiptune effects (sound/steamIron.ts).
+const STEAM_FOR: Partial<Record<Sfx, SteamSfx>> = { ore: "ore_pour", shipped: "merged", level_up: "unlock", verify_caught: "caught_ram", ci_buzz: "caught", ai_fail: "caught" };
+// Your own taps and presses play straight to the speakers, never muffled by a close-up.
+const UI_SFX = new Set<Sfx>(["tap_planner", "tap_assembler", "tap_checks", "tap_gate", "tap_pad", "tap_rocket", "tap_orbit", "tap_mine", "tap_lift", "card_go", "card_later", "hold_cancel", "hold_go", "repair_pry", "repair_boiler", "repair_cart"]);
+const STEAM = new Set<Sfx>([...UI_SFX, "unlock", "merged", "caught", "caught_ram", "ore_pour"]);
 
 export const SFX_EVENT = "shiptorio:sfx";
 export interface SfxEvent {
@@ -78,6 +89,10 @@ class SoundEngine {
   private musicInput: MusicInput = { moving: 0, working: 0, stationsBusy: 0, rejected: 0 };
   private focus: Focus | null = null;
   private scapeStop: (() => void) | null = null;
+  private kit: SteamKit | null = null;
+  private steamBus: { ui: GainNode; floor: GainNode; near: GainNode } | null = null;
+  private mood: MachineMood | null = null;
+  private moodStop: (() => void) | null = null;
   private step = 0;
   private noiseBuf: AudioBuffer | null = null;
   private hum: GainNode | null = null;
@@ -85,6 +100,7 @@ class SoundEngine {
   private stationsBusy = 0;
   private workTimer: number | undefined;
   private workRate = 0; // working machines
+  private lastClank = 0;
   private humLevel = 0; // 0..1, how busy the belts are
   private last = new Map<Sfx, number>();
   private listeners = new Set<() => void>();
@@ -101,7 +117,9 @@ class SoundEngine {
     window.addEventListener("keydown", unlock, true);
     // UI clicks on any button or link
     document.addEventListener("click", (e) => {
-      if ((e.target as Element | null)?.closest?.("button, a, input[type=range]")) this.play("click");
+      // buttons with their own sound (card Continue / Later, the launch hold) say data-sfx and skip the generic click
+      const hit = (e.target as Element | null)?.closest?.("button, a, input[type=range]");
+      if (hit && !hit.closest("[data-sfx], .alaunch")) this.play("click");
     }, true);
     window.addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "m" && !(e.target instanceof HTMLInputElement) && !e.metaKey && !e.ctrlKey) this.set({ muted: !this.settings.muted });
@@ -141,6 +159,10 @@ class SoundEngine {
     const d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     this.noiseBuf = buf;
+    // the steam & iron kit is quieter per voice than the chiptune squares, so it gets a little lift
+    const lift = (to: AudioNode) => { const g = ctx.createGain(); g.gain.value = 1.6; g.connect(to); return g; };
+    this.steamBus = { ui: lift(this.master), floor: lift(this.floor), near: lift(this.near) };
+    this.kit = new SteamKit(ctx, buf, this.steamBus.floor);
     this.startHum();
     this.workTimer = window.setInterval(() => this.workTick(), 260);
     window.setInterval(() => this.scapeTick(), 125);
@@ -309,13 +331,17 @@ class SoundEngine {
 
   private workTick() {
     if (!this.live || this.workRate <= 0) return;
-    // more assemblers → denser clanking, capped so it stays a texture
-    if (Math.random() > Math.min(0.85, 0.35 + this.workRate * 0.15)) return;
+    // more assemblers → denser clanking, capped so it stays a texture: a soft clank every second or two, never a
+    // drum roll (it was up to ~3 a second, Justin's playtest 2026-10-27)
+    const now = performance.now();
+    if (now - this.lastClank < 900) return;
+    if (Math.random() > Math.min(0.5, 0.2 + this.workRate * 0.1)) return;
+    this.lastClank = now;
     this.out = this.floor!;
     const t = this.ctx!.currentTime + Math.random() * 0.05;
     const pitch = [196, 220, 247, 294][Math.floor(Math.random() * 4)];
-    this.tone({ f: pitch, dur: 0.05, type: "square", vol: 0.05, at: t });
-    this.noise({ dur: 0.04, vol: 0.06, hp: 2000, at: t });
+    this.tone({ f: pitch, dur: 0.05, type: "square", vol: 0.035, at: t });
+    this.noise({ dur: 0.04, vol: 0.04, hp: 2000, at: t });
   }
 
   // Ship streak: one rising note per ship in the streak (capped), each a half step higher, so a run sounds like it's building.
@@ -343,7 +369,8 @@ class SoundEngine {
     this.floorLp.frequency.setTargetAtTime(f ? 650 : 18000, t, f ? 0.25 : 0.4);
     this.floor.gain.setTargetAtTime(f ? 0.35 : 1, t, f ? 0.25 : 0.4);
     this.musicBus?.gain.setTargetAtTime(f ? 0.45 : 1, t, f ? 0.25 : 0.4);
-    if (same) return;
+    if (same) return this.setMood(f?.mood ?? null);
+    this.setMood(null);
     // fade the old scape out, then start the new one
     const old = this.scapeStop;
     this.scapeStop = null;
@@ -354,13 +381,22 @@ class SoundEngine {
       this.out = this.near!;
       this.scapeStop = SCAPES[f.kind].start?.(this, this.near!) ?? (() => {});
       this.near!.gain.setTargetAtTime(1.6, this.ctx.currentTime, 0.3);
+      this.setMood(f.mood ?? null);
     }, old ? 300 : 0);
+  }
+  // The close-up's state layer (working / stuck / rework / idle) on top of the machine's own scape.
+  private setMood(m: MachineMood | null) {
+    if (m === this.mood) return;
+    this.mood = m;
+    this.moodStop?.();
+    this.moodStop = m && this.kit && this.steamBus ? this.kit.moodBed(m, this.steamBus.near) : null;
   }
 
   // Keep the busy level fresh without restarting the scape.
   updateFocus(f: Focus | null) {
     if (!f || !this.focus || f.kind !== this.focus.kind || f.key !== this.focus.key) return this.setFocus(f);
     this.focus = f;
+    if (this.scapeStop) this.setMood(f.mood ?? null);
   }
 
   focusKey() {
@@ -370,7 +406,9 @@ class SoundEngine {
   private scapeTick() {
     if (!this.live || !this.focus || !this.scapeStop) return;
     this.out = this.near!;
-    SCAPES[this.focus.kind].step?.(this, this.near!, this.step++, this.focus);
+    SCAPES[this.focus.kind].step?.(this, this.near!, this.step, this.focus);
+    if (this.mood && this.kit && this.steamBus) this.kit.moodStep(this.mood, this.step, this.ctx!.currentTime + 0.02, this.steamBus.near);
+    this.step++;
   }
 
   get now() {
@@ -448,6 +486,12 @@ class SoundEngine {
   private out!: AudioNode;
 
   // near: this sound belongs to the thing you're focused on, so it plays up close, unmuffled
+  // The hold-to-launch countdown: tick i of 4 as the ring fills (Countdown clank, soundboard take B).
+  holdTick(i: number) {
+    // Meaningful hold feedback follows the same caption path even when audio is muted.
+    if (i === 0) window.dispatchEvent(new CustomEvent<SfxEvent>(SFX_EVENT, { detail: { sfx: "hold_start", delayMs: 0 } }));
+    if (this.live && this.kit && this.steamBus) this.kit.holdTick(i, this.ctx!.currentTime, this.steamBus.ui);
+  }
   play(s: Sfx, delay = 0, near = false) {
     // captions hear every sound, even muted or before the first click (ui/SoundCaptions.tsx)
     window.dispatchEvent(new CustomEvent<SfxEvent>(SFX_EVENT, { detail: { sfx: s, delayMs: delay * 1000 } }));
@@ -457,13 +501,14 @@ class SoundEngine {
     if (now - (this.last.get(s) ?? 0) < MIN_GAP_MS) return;
     this.last.set(s, now);
     let t = this.ctx!.currentTime + delay;
+    const steam = STEAM_FOR[s] ?? (STEAM.has(s) ? (s as SteamSfx) : null);
+    if (steam && this.kit && this.steamBus) {
+      this.kit.play(steam, t, UI_SFX.has(s) ? this.steamBus.ui : this.out === this.near ? this.steamBus.near : this.steamBus.floor);
+      return;
+    }
     switch (s) {
       case "click":
         this.tone({ f: 1320, dur: 0.035, vol: 0.08, at: t });
-        break;
-      case "ore": // a chunk of ore drops onto the deposit
-        this.tone({ f: 880, to: 1175, dur: 0.07, type: "triangle", vol: 0.12, at: t });
-        this.tone({ f: 1175, dur: 0.09, type: "triangle", vol: 0.1, at: t + 0.06 });
         break;
       case "place": // building thunk
         this.tone({ f: 140, to: 60, dur: 0.18, type: "square", vol: 0.22, at: t });
@@ -495,9 +540,6 @@ class SoundEngine {
       case "ai_pass": // little sparkle arpeggio
         [784, 988, 1175, 1568].forEach((f, i) => this.tone({ f, dur: 0.07, type: "triangle", vol: 0.09, at: t + i * 0.045 }));
         break;
-      case "ai_fail":
-        this.tone({ f: 330, to: 220, dur: 0.2, type: "triangle", vol: 0.12, at: t });
-        break;
       case "rework": // a heavy clunk as it drops onto the rework belt, then it rattles away
         this.tone({ f: 110, to: 45, dur: 0.22, type: "square", vol: 0.22, at: t });
         this.noise({ dur: 0.1, vol: 0.22, lp: 700, at: t });
@@ -511,10 +553,8 @@ class SoundEngine {
         this.tone({ f: 660, dur: 0.05, vol: 0.08, at: t + 0.12 });
         break;
       case "launch": {
-        // 3 · 2 · 1 countdown over the rocket's oxygen vent hissing, then the clamps let go, the deluge water
-        // rushes, and the engine lights. The roar opens up as it throttles, then closes down as it climbs away.
-        [0, 0.22, 0.44].forEach((d) => this.tone({ f: 880, dur: 0.09, vol: 0.12, at: t + d }));
-        this.tone({ f: 1760, dur: 0.18, vol: 0.13, at: t + 0.66 });
+        // The countdown already clanked under your thumb (hold_tick), so this is the oxygen vent hissing, then the
+        // clamps let go, the deluge water rushes, and the engine lights. The roar opens up, then closes as it climbs away.
         this.noise({ dur: 0.75, vol: 0.05, hp: 3500, at: t, attack: 0.25 });
         const ign = t + 0.7;
         for (let i = 0; i < 4; i++) {
@@ -547,33 +587,6 @@ class SoundEngine {
         this.tone({ f: 160, to: 80, dur: 0.08, vol: 0.25, at: t });
         this.tone({ f: 220, to: 880, dur: 0.45, type: "sawtooth", vol: 0.07, at: t + 0.05, attack: 0.1 });
         this.tone({ f: 1320, dur: 0.08, type: "triangle", vol: 0.1, at: t + 0.5 });
-        break;
-      case "shipped": {
-        // the "you shipped it" fanfare: a quick climbing arpeggio into a big held major chord with sparkles
-        [523, 659, 784, 1047].forEach((f, i) => {
-          this.tone({ f, dur: 0.11, vol: 0.13, at: t + i * 0.07 });
-          this.tone({ f: f / 2, dur: 0.11, type: "triangle", vol: 0.1, at: t + i * 0.07 });
-        });
-        const hold = t + 0.3;
-        for (const [f, type] of [[523, "square"], [659, "square"], [784, "triangle"], [1047, "triangle"], [262, "triangle"]] as const) {
-          this.tone({ f, dur: 1.1, type, vol: type === "square" ? 0.07 : 0.1, at: hold, attack: 0.01 });
-        }
-        this.noise({ dur: 0.08, vol: 0.18, lp: 1200, at: hold }); // a little drum hit under the chord
-        this.tone({ f: 130, to: 60, dur: 0.18, type: "sine", vol: 0.3, at: hold });
-        for (let i = 0; i < 6; i++) this.tone({ f: [2093, 2637, 3136, 4186][i % 4], dur: 0.12, type: "sine", vol: 0.05, at: hold + 0.15 + i * 0.09 });
-        break;
-      }
-      case "ci_buzz": // CI failed: the inspector's harsh reject buzzer, two blasts
-        for (const d of [0, 0.28]) {
-          this.tone({ f: 110, dur: 0.22, type: "sawtooth", vol: 0.16, at: t + d });
-          this.tone({ f: 116, dur: 0.22, type: "square", vol: 0.1, at: t + d });
-        }
-        break;
-      case "verify_caught": // verify bay caught a bad fix: klaxon whoop, then the ram slams it back
-        for (const d of [0, 0.3]) this.tone({ f: 440, to: 880, dur: 0.26, type: "square", vol: 0.1, at: t + d });
-        this.noise({ dur: 0.3, vol: 0.3, lp: 600, sweepTo: 120, at: t + 0.62, rate: 0.5 });
-        this.tone({ f: 80, to: 38, dur: 0.32, vol: 0.3, at: t + 0.62 });
-        this.tone({ f: 1568, dur: 0.06, type: "triangle", vol: 0.08, at: t + 1.0 }); // "gotcha" tick
         break;
       case "review_stamp": // AI review approves: a solid rubber stamp, then a warm two-note OK
         this.noise({ dur: 0.06, vol: 0.32, lp: 900, at: t });
@@ -637,10 +650,6 @@ class SoundEngine {
         this.tone({ f: 330, to: 80, dur: 0.6, type: "square", vol: 0.05, at: t });
         this.noise({ dur: 0.08, vol: 0.15, lp: 600, at: t + 0.6 });
         break;
-      case "level_up": // autonomy level up: a big climbing run into a held chord
-        [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => this.tone({ f, dur: 0.1, vol: 0.09, at: t + i * 0.06 }));
-        for (const f of [523, 784, 1047, 1319]) this.tone({ f, dur: 1.2, type: "triangle", vol: 0.07, at: t + 0.4 });
-        break;
       case "achievement": // an achievement unlocked: a coin-bright double chime, a sparkle run, a warm held fifth
         this.tone({ f: 70, to: 50, dur: 0.2, type: "sine", vol: 0.25, at: t });
         this.tone({ f: 988, dur: 0.08, type: "square", vol: 0.07, at: t });
@@ -660,6 +669,14 @@ class SoundEngine {
       case "finale": // intro's last beat: lights out, the whole factory hums in harmony
         for (const [f, v] of [[131, 0.08], [196, 0.06], [262, 0.06], [330, 0.05], [392, 0.04]] as const) this.tone({ f, dur: 3, type: "triangle", vol: v, at: t, attack: 0.8 });
         for (let i = 0; i < 6; i++) this.tone({ f: [1047, 1319, 1568, 2093][i % 4], dur: 0.3, type: "sine", vol: 0.04, at: t + 0.8 + i * 0.25 });
+        break;
+      case "steam_hiss": // steam and iron accents over the hum (sound/accents.ts)
+      case "iron_clank":
+      case "launch_iron":
+        for (const v of ACCENT_RECIPE[s]) {
+          if (v.k === "tone") this.tone({ ...v, at: t + v.at });
+          else this.noise({ ...v, at: t + v.at });
+        }
         break;
       case "think": // Spark is thinking: a soft data warble
         for (let i = 0; i < 4; i++) this.tone({ f: 600 + Math.random() * 900, dur: 0.04, type: "triangle", vol: 0.05, at: t + i * 0.05 });

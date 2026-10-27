@@ -1,9 +1,10 @@
+import { GodControls } from "./ui/GodControls";
 import { QuotaCard } from "./ui/QuotaCard";
 import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
-import { SANDBOX_REPO, savePref, serverUp, signInUrl, whoAmI, isGuestPlay } from "./account";
+import { SANDBOX_REPO, savePref, serverUp, setAccountReadOnly, signInUrl, whoAmI, isGuestPlay } from "./account";
 import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
@@ -41,6 +42,7 @@ import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn } from "./flags";
 import { useComeback } from "./ui/Comeback";
+import { etas } from "./ui/eta";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -54,7 +56,7 @@ const SLOTS = POWER.slots;
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". Everyone starts on the map; the toggle switches any time.
 type World = "checkin" | "build";
-type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
+type Sheet = "god" | "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
 const WORLD_KEY = "shiptorio:world";
 const TOOLS_AT = 5; // rockets before Make it yours and Place show up on their own
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
@@ -115,7 +117,14 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
+  const [admin, setAdmin] = useState(false);
+  const [viewing, setViewing] = useState<{login:string;writable:boolean}|null>(null);
+  const [viewReady,setViewReady]=useState(cfg.kind!=="live");
+  useEffect(()=>{if(cfg.kind!=="live")return;let active=true;fetch('/api/me').then(r=>r.ok?r.json():null).then(d=>{if(active){setAdmin(d?.admin===true);setViewing(d?.viewingAs??null);setAccountReadOnly(!!d?.viewingAs);setViewReady(true)}}).catch(()=>{});return()=>{active=false;setAccountReadOnly(false)}},[cfg.kind]);
   const { state, log, status, send: sendRaw } = useFactory(cfg);
+  useEffect(() => {
+    if (state) etas.observe(state, Date.now()); // learns real stage times for the cart callout's wait
+  }, [state]);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
@@ -134,7 +143,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
   // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
   const lastTap = useRef(0);
-  const ach = useAchievements(state, cfg.kind === "live", intro || (attentionOn() && Date.now() - lastTap.current > 10_000), sendRaw, achLink, progressProfile(cfg.kind, login));
+  const ach = useAchievements(!viewReady || viewing ? null : state, cfg.kind === "live" && viewReady && !viewing, intro || (attentionOn() && Date.now() - lastTap.current > 10_000), sendRaw, achLink, progressProfile(cfg.kind, login));
   const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -181,8 +190,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
-  const profile = progressProfile(cfg.kind, login, guest);
-  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
+  const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login, guest);
+  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on && viewReady, !!viewing);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
   const nudge = useBottleneckNudge(deck, progressing, calm);
@@ -217,6 +226,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (intro) return tourly.pick(k);
     if (k?.startsWith("island:")) return void (location.href = empire.hrefFor(k.slice(7)));
     if (k?.startsWith("src:")) {
+      sound.play("tap_mine"); // an empty mine opens a sheet, not a close-up, so it gets its tap here
       setSource(k.slice(4));
       setCheckin(false);
     } else setPanel(k);
@@ -244,6 +254,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // The default screen is the map, one card and two counters (Justin, 2026-10-27: "still a ton of shit just in my
   // face"). Every other tool waits behind one Menu button, and stays out while a sheet or the tray it opened is up.
   const [menu, setMenu] = useState(false);
+
   const toolsOut = menu || !!sheet || tray;
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
@@ -267,20 +278,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     return { key, title, code: item ? codePath(item.district) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
-  const narrow = typeof window !== "undefined" && window.innerWidth <= 560; // phones get fewer tags
-  // Quiet tags on every other busy machine, naming the code it's working in, so the whole line reads as your codebase.
-  const pings = useMemo(() => {
-    if (!state) return [];
-    const out: Ping[] = ping ? [ping] : [];
-    for (const i of state.items) {
-      const word = i.machineId ? MAP.busy[i.state] : undefined;
-      const key = i.machineId && pickKey(i.machineId);
-      if (!word || !key || out.some((p) => p.key === key)) continue;
-      out.push({ key, title: word, code: codePath(i.district), quiet: true });
-      if (out.length >= (narrow ? 3 : 5)) break;
-    }
-    return out;
-  }, [state, ping, narrow]);
+  // One marker on the map, on the one thing that needs you. Busy machines used to get a quiet tag each, and with
+  // five of them talking at once the floor read like a casino (Justin's playtest, 2026-10-27): the motion says
+  // what's busy, and a tap on any machine names it.
+  const pings = useMemo<Ping[]>(() => (ping ? [ping] : []), [ping]);
   // Each thing waiting on you counts once: a PR on the pad that already has its own card isn't counted twice.
   const carded = new Set(deck.map((m) => m.itemId).filter(Boolean));
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad" && !carded.has(i.id)).length;
@@ -392,7 +393,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   keys.current = { launch, build, show, intro };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
       else if (k === "t") setSheet((v) => (v === "status" ? null : "status"));
@@ -578,6 +579,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </div>
 
+        {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
           <section className="card coachcard" aria-label={HUD.tour}>
             <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? WORDS.yourRepo} onDismiss={tour.dismiss} onSkip={tour.skip} />
@@ -586,6 +588,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         {brief.show && progressing && !checkin && !sheet ? (
           <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
+        ) : sheet === "god" && admin ? (
+          <GodControls onClose={()=>setSheet(null)} />
         ) : sheet === "progress" ? (
           <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
         ) : source && state ? (
@@ -777,6 +781,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           )}
           <div className="row">
             <span className="eyebrow" aria-hidden="true">{HUD.dock.tools}</span>
+            {admin && <button type="button" className="tbtn" aria-pressed={sheet === "god"} onClick={()=>toggleSheet("god")}>God</button>}
             {/* Tools show up when they're needed, never as dead buttons waiting to unlock (2026-10-27). */}
             {show("line") && (
               <button type="button" className="tbtn" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")}>

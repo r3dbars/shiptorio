@@ -84,3 +84,31 @@ no `login`, so the client treats it like signed out. In the sandbox the progress
 (`progressProfile(..., sandbox)`), which syncs through `GET/PUT /api/me/progress` like a signed-in profile; if
 there's no guest session the pull fails and nothing is pushed. `savePref` also sends on a bare visit and in the
 demo shop. `/auth/callback` moves the guest save onto the account (account progress wins).
+
+## Audited administrator controls
+
+Only explicit `ADMIN_LOGINS` entries are administrators (`configuredAdmin`); `*`
+never grants this role. `/api/me` reports `admin: true` for those sessions. `/admin`
+and Menu → God expose the same same-origin POST controls at `/admin/god`.
+Every control and every write performed through an admin view records an
+`admin_audit` row; `/admin` displays the newest 50.
+
+“View as player” keeps the operator's identity and uses a one-hour, HttpOnly,
+session-bound view of the selected player's installed factory. The default is
+read-only, including websocket actions. Write mode requires a separate reviewed
+action. Each request/frame rechecks the operator session, configured role and
+immutable target membership. Leaving the view revokes it. Non-admin repository
+access checks are unchanged; connector credentials are not exposed by view mode.
+
+Fast-forward removes scheduling waits, not CI, regression proof, third-strike
+holds, leases or Launch approval. Factory reset refuses active builds and open
+PR work and preserves installation/connection identity. Autonomy controls affect
+the selected user's shared factory; they do not grant lane launch permits. Profile
+grants/resets replace the selected player's stored progress and unlocks; stale
+browser progress cannot overwrite an administrator change until it reloads.
+
+Run/Spark amounts are daily ceilings, including usage already spent. Setting zero
+stops new work; usage history is retained. Dollar limits apply to factories billed
+to that user. The repo/global kill switch stops new Spark calls and runner handout;
+it does not interrupt a local process that already received a job or erase its
+receipt. Resume is explicit. All merges still require the normal Launch/permit path.
