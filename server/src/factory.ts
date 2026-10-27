@@ -154,6 +154,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private batchingDecisions = false;
+  private activeBrowserMoves = 0;
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
@@ -262,7 +263,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if(action !== 'reset-factory') throw new Error('Unknown control');
     await this.ctx.blockConcurrencyWhile(async()=>{
       const jobs=await this.runnerJobs();
-      if(this.running.size || jobs.some(j=>j.status==='running'||j.status==='planning') || this.state!.items.some(i=>i.prNumber&&i.state!=='launched')) throw new Error('Active work must finish first');
+      if(this.running.size || this.batchingDecisions || this.initializing || this.activeBrowserMoves || jobs.some(j=>j.status==='running'||j.status==='planning') || this.state!.items.some(i=>i.prNumber&&i.state!=='launched')) throw new Error('Active work must finish first');
       for(const [key] of await this.ctx.storage.list()) {
         if(/^(runnerJob:|planningRetry:|delivery:)/.test(key)||['permits','openMoves','deckBook','approvalEvents','stageHistory','support','research','researchOffered','sparkResearch','posthogTraffic','pendingReviewComments','reconcileAt','reconcileCursor','runnerLastJobId','supportSeen'].includes(key)) await this.ctx.storage.delete(key);
       }
@@ -2642,7 +2643,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
     return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
-      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
+      this.activeBrowserMoves++;
+      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { this.activeBrowserMoves--; await this.broadcastQueue; }
     });
   }
 
