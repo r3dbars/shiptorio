@@ -58,3 +58,11 @@ test("?clog= previews any area, and ?clog=0 turns it off", () => {
   expect(clogOf(jam, "0")).toBeNull();
   expect(clogOf(jam, "bogus")?.id).toStartWith("factory:");
 });
+
+test("the brain's pick wins over the queue jam, and a faint one stays quiet", () => {
+  const jam = { ...state({ wip: 9, ageMs: 9e6 }) } as FactoryState & { holdingBack?: unknown };
+  jam.holdingBack = { id: "sentry:errors_piling:repo", area: "quality", signalIds: ["sentry:errors_piling:repo"], severity: 0.8 };
+  expect(clogOf(jam, null)).toEqual({ id: "sentry:errors_piling:repo", area: "quality", signal: "sentry:errors_piling:repo", severity: 0.8 });
+  jam.holdingBack = { id: "ci:ci_slow:repo", area: "speed", signalIds: ["ci:ci_slow:repo"], severity: 0.1 };
+  expect(clogOf(jam, null)).toBeNull();
+});

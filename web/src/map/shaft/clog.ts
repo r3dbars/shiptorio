@@ -48,6 +48,13 @@ export function clogOf(state: FactoryState, preview: string | null = previewPara
     const [area, sev] = preview.split(":");
     if (AREAS.has(area)) return { id: `preview:${area}`, area: area as ClogArea, severity: clamp(Number(sev ?? 0.7) || 0.7) };
   }
+  // the brain's pick (FactoryState.holdingBack, #388), read structurally so this works on either side of that merge;
+  // null there means the brain is quiet or off, and the queue jam below still speaks
+  const hb = (state as { holdingBack?: { id: string; area: ClogArea; signalIds: string[]; severity: number } | null }).holdingBack;
+  if (hb && AREAS.has(hb.area)) {
+    const severity = clamp(hb.severity);
+    return severity < SHOW_AT ? null : { id: hb.id, area: hb.area, signal: hb.signalIds[0], severity };
+  }
   const b = state.bottleneck;
   if (!b) return null;
   const area = STAGE_AREA[b.stage];
