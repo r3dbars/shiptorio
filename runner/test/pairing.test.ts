@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { joinMachine, loadPairings, removePairing, savePairing } from "../src/pairing";
+import { joinMachine, loadPairings, pairMachine, removePairing, savePairing } from "../src/pairing";
 test("adding, renewing and revoking one repo preserves the other; credentials are owner-only", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "shiptorio-pair-"));
   try {
@@ -33,4 +33,30 @@ test("one-paste join trades the install command's code for a saved pairing; a sp
     await expect(joinMachine(`http://localhost:${server.port}`, "abc", root)).rejects.toThrow("cut off");
     expect(seen).toEqual([good, "b".repeat(48)]);
   } finally { server.stop(true); await rm(root, { recursive: true, force: true }); }
+});
+
+test("browser pairing keeps waiting through a dropped connection or a busy server instead of burning the code", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "shiptorio-device-"));
+  let polls = 0;
+  const server = Bun.serve({ port: 0, async fetch(req) {
+    const base = new URL(req.url).origin;
+    if (new URL(req.url).pathname.endsWith("/start")) return Response.json({ code: "AAAA-BBBB-CCCC", secret: "s", expires: Date.now() + 60000, verificationUri: `${base}/runner/pair?code=AAAA-BBBB-CCCC` });
+    polls++;
+    if (polls === 1) return Response.json({ error: "busy" }, { status: 503 });
+    if (polls === 2) return Response.json({ status: "pending" });
+    return Response.json({ status: "approved", repo: "you/repo", token: "cred", expires: Date.now() + 3600000 });
+  } });
+  const path = process.env.PATH, realFetch = globalThis.fetch;
+  let dropped = false;
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (!dropped && String(url).endsWith("/poll")) { dropped = true; throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }); }
+    return realFetch(url, init);
+  }) as typeof fetch;
+  process.env.PATH = "";
+  try {
+    await pairMachine(`http://localhost:${server.port}`, root, 5);
+    expect(dropped).toBe(true);
+    expect(polls).toBe(3);
+    expect((await loadPairings(root)).map(p => p.token)).toEqual(["cred"]);
+  } finally { globalThis.fetch = realFetch; process.env.PATH = path; server.stop(true); await rm(root, { recursive: true, force: true }); }
 });
