@@ -535,7 +535,8 @@ function initialState(sc: Scenario): FactoryState {
     sources: mines.length || sc.support ? [...mines.map((kind) => ({ kind, state: "connected" as const, detail: `${kind === "sentry" ? "Sentry" : "PostHog"} connected (sim)`, eventsToday: 0, setup: { steps: [] } })), ...(sc.support ? [{ kind: "email" as const, state: "connected" as const, detail: "Support mine connected (sim)", eventsToday: 0, setup: { steps: [] } }] : [])] : undefined,
     support: sc.support ? [] : undefined,
     experiments: sc.growth ? [] : undefined,
-    stations: [...GAUNTLET, ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: g.caught, actions: g.actions })),
+    // A brand-new factory has caught nothing yet, so its first second doesn't hand out "Caught it".
+    stations: [...GAUNTLET, ORBIT, ...(sc.growth ? [MEASURE] : [])].map((g) => ({ id: g.id, kind: g.kind, name: g.name, machineId: g.id, wip: 0, caughtThisWeek: sc.onboard ? 0 : g.caught, actions: g.actions })),
   };
 }
 

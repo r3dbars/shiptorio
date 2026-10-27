@@ -167,19 +167,6 @@ export const HUD = {
   },
 };
 
-/** The first-run fork: which world to start in. */
-export const FORK = {
-  label: "First read",
-  kicker: (repo: string) => `First read · ${repo}`,
-  bottleneck: (summary: string) => `Your bottleneck right now: ${summary}.`,
-  scanned: (n: number) => `${n} folders scanned. Now let's find what's stuck.`,
-  checkin: "Show me what's stuck",
-  checkinSub: "Suggested · clear what waits on you, two minutes at a time",
-  factory: "Run the factory",
-  factorySub: "Lay down your own line and ship a fix",
-  switch: "You can switch any time.",
-};
-
 export const LINE = {
   title: "The line",
   onPad: "On the pad",

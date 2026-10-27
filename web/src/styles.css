@@ -862,10 +862,6 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .gitem.lock b, .gitem.lock b svg { color: var(--iron-dim); }
 
 /* Two worlds (App.tsx): the Check in / Build lens and the first read after the scan */
-.firstread h2 { margin: 0; font: 700 20px/1.2 var(--pixel); text-wrap: balance; }
-.firstread .opts { display: flex; flex-direction: column; gap: 8px; }
-.firstread .btn { flex-direction: column; align-items: flex-start; text-align: left; }
-.firstread .btn small { font-weight: 400; font-size: 13px; opacity: 0.8; }
 
 .guide-btn.new { border-color: var(--amber); color: var(--amber); }
 .guide-btn[aria-pressed="true"] { border-color: var(--amber); }
