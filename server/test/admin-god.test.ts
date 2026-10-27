@@ -9,7 +9,7 @@ mock.module('cloudflare:workers',()=>({DurableObject:class{ctx:unknown;env:unkno
 const {testApp:app}=await import('./app-fixture');
 async function fixture(){
  const calls:unknown[]=[];
- const env={DB:testD1(),SESSION_SECRET:'admin-god-test',ALLOWED_LOGINS:'operator,player,outsider',ADMIN_LOGINS:'operator',SIGNUP_GATE_MODE:'waitlist',CACHE:{list:async()=>({keys:[]}),put:async()=>{},get:async()=>null},FACTORY:{idFromName:(id:string)=>id,get:()=>({adminControl:async(...args:unknown[])=>calls.push(args),debugSnapshot:async()=>null,ensure:async()=>{},securityLimit:async()=>({allowed:true,retryAfter:0})})}};
+ const env={DB:testD1(),SESSION_SECRET:'admin-god-test',GITHUB_APP_ID:'1',GITHUB_APP_PRIVATE_KEY:'fixture-no-provider-call',ALLOWED_LOGINS:'operator,player,outsider',ADMIN_LOGINS:'operator',SIGNUP_GATE_MODE:'waitlist',CACHE:{list:async()=>({keys:[]}),put:async()=>{},get:async()=>null},FACTORY:{idFromName:(id:string)=>id,get:()=>({adminControl:async(...args:unknown[])=>calls.push(args),debugSnapshot:async()=>null,ensure:async()=>{},securityLimit:async()=>({allowed:true,retryAfter:0})})}};
  const owner=await signedInCookie(env,'operator',[],1),player=await signedInCookie(env,'player',['fixture/repo'],2),outsider=await signedInCookie(env,'outsider',[],3);
  return {env,owner,player,outsider,calls};
 }
@@ -59,4 +59,48 @@ it('scoped kill switch stops Spark before reserving a paid call, global stop cov
  expect(await adminPaused(env.DB,'other/repo')).toBe(false);
  await post(env,owner,{action:'pause',paused:true});expect(await adminPaused(env.DB,'other/repo')).toBe(true);
  await post(env,owner,{action:'pause',paused:false});expect(await adminPaused(env.DB,'other/repo')).toBe(false);expect(await adminPaused(env.DB,'fixture/repo')).toBe(true);
+});
+
+it('Factory controls preserve verification and refuse active work; kill switch blocks real claim handler',async()=>{
+ const {Factory}=await import('../src/factory');const {starterLine}=await import('../src/engine');
+ const env=(await fixture()).env;
+ const initial={repo:'fixture/repo',baseBranch:'main',districts:[],...starterLine(),items:[],science:{red:2,green:0,grey:0,blue:0},trust:.5,tick:7};
+ const data=new Map<string,unknown>([['state',initial],['meta',{repo:'fixture/repo',installationId:1}],['planningRetry:gh-2',{day:new Date().toISOString().slice(0,10),failures:3,retryAt:Date.now()+60000,reason:'stalled'}],['runnerPair','keep-pair'],['githubRepoId',100]]);
+ let alarm=0;
+ const storage={get:async(k:string)=>structuredClone(data.get(k)),put:async(k:string,v:unknown)=>{data.set(k,structuredClone(v))},delete:async(k:string)=>data.delete(k),list:async(o?:{prefix?:string})=>new Map([...data].filter(([k])=>k.startsWith(o?.prefix??''))),getAlarm:async()=>alarm,setAlarm:async(n:number)=>{alarm=n},transaction:async(fn:(tx:unknown)=>unknown)=>fn(storage)};
+ const f=new Factory({storage,blockConcurrencyWhile:(fn:()=>unknown)=>fn(),getWebSockets:()=>[],waitUntil:()=>{}} as never,env as never);
+ await f.adminControl('fast-forward',{});
+ expect((data.get('planningRetry:gh-2') as any).failures).toBe(3);expect((data.get('planningRetry:gh-2') as any).retryAt).toBe(0);expect(alarm).toBeGreaterThan(0);
+ await env.DB.prepare("INSERT INTO admin_controls VALUES ('fixture/repo',1)").run();
+ expect(await f.claimRunner('keep-pair',['codex'])).toBeNull();
+ data.set('runnerJob:busy',{id:'busy',status:'running'});await expect(f.adminControl('reset-factory',{})).rejects.toThrow('Active work');data.delete('runnerJob:busy');
+ await f.adminControl('autonomy',{level:'build'});expect((data.get('permits') as any).ladder.level).toBe('build');expect((data.get('permits') as any).lanes).toEqual({});
+ await f.adminControl('reset-factory',{});expect((data.get('state') as any).science.red).toBe(0);expect(data.get('runnerPair')).toBe('keep-pair');expect(data.get('meta')).toEqual({repo:'fixture/repo',installationId:1});expect(data.has('permits')).toBe(false);
+ await expect(f.adminControl('launch',{})).rejects.toThrow('Unknown control');
+});
+
+it('administrator progress reset cannot be overwritten by a stale client',async()=>{
+ const {env,owner,player}=await fixture();await post(env,owner,{action:'progress',user:'player',reset:true});
+ const put=(version?:string)=>app.fetch(new Request(url+'/api/me/progress',{method:'PUT',headers:{cookie:player,origin:url,...version&&{'x-progress-reset':version}},body:JSON.stringify({...emptyProgress(),xp:999})}),env);
+ expect((await put()).status).toBe(409);expect((await put('0')).status).toBe(409);expect((await put('1')).status).toBe(200);
+});
+
+it('the real websocket handler blocks view writes until an audited toggle, then audits each move and rechecks role',async()=>{
+ const {Factory}=await import('../src/factory');const {starterLine}=await import('../src/engine');const {browserSocketEpoch}=await import('../src/browser-socket');const {requireUser}=await import('../src/authorization');
+ const {env,owner}=await fixture();const response=await post(env,owner,actions[0]);const cookie=owner+'; '+response.headers.get('set-cookie')!.split(';')[0];
+ const view=(await readAdminView(env,new Request(url,{headers:{cookie}})))!;
+ const user=(await requireUser(new Request(url,{headers:{cookie}}),env as never))!;
+ const state={repo:'fixture/repo',baseBranch:'main',districts:[],...starterLine(),items:[],science:{red:0,green:0,grey:0,blue:0},trust:.5,tick:0};
+ const data=new Map<string,unknown>([['state',state],['meta',{repo:'fixture/repo',installationId:1}],['githubRepoId',100]]);
+ const storage={get:async(k:string)=>structuredClone(data.get(k)),put:async(k:string,v:unknown)=>{data.set(k,structuredClone(v))},delete:async(k:string)=>data.delete(k),list:async(o?:{prefix?:string})=>new Map([...data].filter(([k])=>k.startsWith(o?.prefix??''))),getAlarm:async()=>null,setAlarm:async()=>{},transaction:async(fn:(tx:unknown)=>unknown)=>fn(storage)};
+ const f=new Factory({storage,blockConcurrencyWhile:(fn:()=>unknown)=>fn(),getWebSockets:()=>[],waitUntil:()=>{}} as never,env as never);
+ const messages:unknown[]=[];
+ const auth={login:'operator',userId:1,user,sessionHash:user.sessionHash,expiresAt:Date.now()+60000,issuedAt:Date.now(),epoch:await browserSocketEpoch(env),repo:'fixture/repo',adminView:view.idHash};
+ const ws={deserializeAttachment:()=>auth,send:(raw:string)=>messages.push(JSON.parse(raw)),close:()=>{}} as unknown as WebSocket;
+ const move=JSON.stringify({type:'set_goal',text:'support check'});
+ await f.webSocketMessage(ws,move);expect((data.get('state') as any).goal).toBeUndefined();expect(messages).toContainEqual(expect.objectContaining({text:expect.stringContaining('read-only')}));
+ expect((await post(env,cookie,{action:'write-mode',enabled:true})).status).toBe(200);
+ await f.webSocketMessage(ws,move);expect((data.get('state') as any).goal).toBe('support check');
+ expect((await env.DB.prepare("SELECT count(*) n FROM admin_audit WHERE action='view-write'").first<{n:number}>())!.n).toBe(1);
+ env.ADMIN_LOGINS='';await f.webSocketMessage(ws,JSON.stringify({type:'set_goal',text:'should not apply'}));expect((data.get('state') as any).goal).toBe('support check');
 });

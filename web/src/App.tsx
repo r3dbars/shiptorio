@@ -564,7 +564,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </div>
 
-        {viewing && <div className="card" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
+        {viewing && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
           <section className="card coachcard" aria-label={HUD.tour}>
             <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? WORDS.yourRepo} onDismiss={tour.dismiss} onSkip={tour.skip} />

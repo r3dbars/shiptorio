@@ -47,7 +47,7 @@ import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { installationToken } from "./github";
 import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
-import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
+import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
@@ -286,7 +286,7 @@ app.get("/api/me", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
   const view = await readAdminView(c.env,c.req.raw);
-  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
+  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -318,9 +318,9 @@ app.put("/api/me/progress", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
   if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
-  const reset=await c.env.DB.prepare('SELECT version FROM admin_progress_resets WHERE user_id=?').bind(user.id).first<{version:number}>();
-  if(reset && String(reset.version)!==c.req.header('x-progress-reset')) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
-  if (!(await writeProgress(c.env, user, text))) return c.json({ error: "invalid progress" }, 400);
+  if (!validProgress(text)) return c.json({error:'invalid progress'},400);
+  const version=Number(c.req.header('x-progress-reset') ?? '0');
+  if (!(await writeProgress(c.env, user, text, Date.now(), version))) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
   return c.json({ ok: true });
 });
 
@@ -715,7 +715,9 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
 app.get("/api/repos/:owner/:repo/limits", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   const f = await factory(c.env, repo);
-  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, c.get("user")), f.runnerJobs(), f.planningRetries()]);
+  const view = await readAdminView(c.env,c.req.raw);
+  const viewer = view ? {id:view.userId,login:view.login} : c.get("user");
+  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, viewer, !!view), f.runnerJobs(), f.planningRetries()]);
   const active = jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length;
   c.header("Cache-Control", "no-store");
   return c.json({ ...status, retries, quotas: [...status.quotas, quota("jobs", "Concurrent jobs", active, budgetLimits(c.env).jobs, null, null)] });
@@ -724,6 +726,8 @@ app.get("/api/repos/:owner/:repo/limits", async c => {
 // Spend belongs to the stable payer, rather than every collaborator with map access.
 app.on(["GET", "POST"], "/api/repos/:owner/:repo/spend", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const view = await readAdminView(c.env,c.req.raw);
+  if(c.req.method === 'GET' && view?.repo === repo) return c.json(await factorySpend(c.env.DB,repo));
   if (await budgetAccount(c.env.DB, repo) !== `user:${c.get("user").id}`) return c.json({ error: "budget owner required" }, 403);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
@@ -760,7 +764,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = await factory(c.env, repo);
-  if (c.env.GITHUB_APP_ID) {
+  if (c.env.GITHUB_APP_ID && !await readAdminView(c.env,c.req.raw)) {
     const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }

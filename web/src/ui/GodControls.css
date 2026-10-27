@@ -1,0 +1,9 @@
+.god-controls .god-body { display:grid; gap:12px; padding-top:12px; }
+.god-controls p { margin:0; }
+.god-controls form { min-width:0; }
+.god-controls label { display:grid; gap:6px; min-width:0; }
+.god-controls input,.god-controls select,.god-controls textarea { box-sizing:border-box; width:100%; max-width:100%; min-height:44px; padding:8px; color:var(--iron-ink); background:var(--iron-plate); border:2px solid var(--iron-line); font:inherit; }
+.god-controls :focus-visible { outline:3px solid var(--iron-amber); outline-offset:2px; }
+.god-controls section[aria-label="Confirm admin action"] { display:grid; gap:8px; border:2px solid var(--iron-amber); padding:12px; overflow-wrap:anywhere; }
+.god-controls details p { margin-top:10px; overflow-wrap:anywhere; }
+.god-view-banner { position:absolute; z-index:7; left:12px; top:calc(var(--top-h,120px) + 76px + var(--sat)); max-width:calc(100% - 24px); padding:8px 12px; color:var(--iron-ink); background:var(--iron-panel); border:2px solid var(--iron-amber); font:14px/1.4 var(--iron-mono); pointer-events:none; }

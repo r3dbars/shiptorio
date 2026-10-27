@@ -264,7 +264,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const jobs=await this.runnerJobs();
       if(this.running.size || jobs.some(j=>j.status==='running'||j.status==='planning') || this.state!.items.some(i=>i.prNumber&&i.state!=='launched')) throw new Error('Active work must finish first');
       for(const [key] of await this.ctx.storage.list()) {
-        if(/^(runnerJob:|planningRetry:|delivery:)/.test(key)||['permits','openMoves','deckBook','approvalEvents','stageHistory','support','research'].includes(key)) await this.ctx.storage.delete(key);
+        if(/^(runnerJob:|planningRetry:|delivery:)/.test(key)||['permits','openMoves','deckBook','approvalEvents','stageHistory','support','research','researchOffered','sparkResearch','posthogTraffic','pendingReviewComments','reconcileAt','reconcileCursor','runnerLastJobId','supportSeen'].includes(key)) await this.ctx.storage.delete(key);
       }
       await this.env.DB.prepare('DELETE FROM move_kind_rules WHERE repo=?').bind(this.meta!.repo).run();
       this.openMoves=null;this.deckBook=null;this.deckRules=null;

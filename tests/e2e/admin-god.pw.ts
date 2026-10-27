@@ -1,0 +1,36 @@
+import {test,expect} from '@playwright/test';
+import {mkdir} from 'node:fs/promises';
+import {join} from 'node:path';
+
+test('admin page and in-game God panel show audited read-only controls',async({page,context},info)=>{
+ const repo=`fixture/god-${info.project.name}`;
+ const width=info.project.name==='desktop'?1280:390;
+ await page.setViewportSize({width,height:width===390?844:900});
+ await page.request.post(`/__test/${repo}/seed?ore=0`);
+ const session=await(await page.request.post('/__test/session')).json();
+ await context.addCookies(session.cookie.split('; ').map((entry:string)=>{const i=entry.indexOf('=');return {name:entry.slice(0,i),value:entry.slice(i+1),url:info.project.use.baseURL as string}}));
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});page.on('response',r=>{if(r.status()>=400)errors.push(r.status()+' '+r.url())});
+ const output=process.env.ADMIN_SCREENSHOTS||info.outputDir;await mkdir(output,{recursive:true});
+ await page.goto('/admin');
+ await expect(page.getByRole('heading',{name:'God controls',exact:true})).toBeVisible();
+ await expect(page.locator('#god-user')).toContainText('fixture');
+ await page.screenshot({path:join(output,`admin-${width}.png`)});
+ await page.locator('#god-repo').selectOption(repo);
+ await page.getByRole('button',{name:'Review action',exact:true}).click();
+ await expect(page.locator('#god-review')).toContainText('view');
+ await page.getByRole('button',{name:'Apply this action',exact:true}).click();
+ await expect(page).toHaveURL(new RegExp('source=live'));
+ await expect(page.getByText('Viewing as fixture · Read-only',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/Menu|Tools/i}).first().click();
+ await page.getByRole('button',{name:'God',exact:true}).click();
+ const panel=page.getByRole('region',{name:'God controls'});
+ await expect(panel).toBeVisible();await expect(panel).toContainText('Read-only');
+ const bounds=await panel.boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(0);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width);
+ await page.screenshot({path:join(output,`god-panel-${width}.png`)});
+ await panel.getByRole('combobox',{name:'Action',exact:true}).selectOption('write-mode');
+ await panel.getByRole('button',{name:'Review action',exact:true}).click();
+ await expect(panel.getByRole('region',{name:'Confirm admin action'})).toContainText('write-mode');
+ await panel.getByRole('button',{name:'Cancel',exact:true}).click();
+ await expect(panel.getByRole('region',{name:'Confirm admin action'})).toHaveCount(0);
+ expect(errors).toEqual([]);
+});
