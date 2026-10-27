@@ -115,3 +115,14 @@ Next, in small PRs straight to main through the merge queue:
 10. Cart Rush/Park from its callout (r3-rush, touchwork; needs a server action).
 11. Steam-and-iron sound accents over the hum (implementation interpretation above; r3-sound, sound).
 12. Earned controls: autonomy and new mines arrive as cards (r4-grow, autonomy).
+
+## Round 5 (2026-10-27, Suggested options: the picks didn't save, so these ship until Justin says otherwise)
+
+| Question | Pick | Where |
+|---|---|---|
+| A quiet station's tag (r5-quiet) | B: what it's waiting on (NEXT UP / WAITING ON YOU / READY) | #346 |
+| Lamp rows full (r5-lamps) | A: every 10 lamps fold into a brass banner with the count | `web/src/map/shaft/trophies.ts` |
+| Getting a second builder (r5-second) | A: a Suggested card, "Add a second builder?", once 3 PRs waited on the one builder; Go bolts one in | sim (`?scenario=pileup`); live needs a second runner job slot first |
+| Failed twice (r5-rework) | A: a red Steer card, "#88 failed twice", with the reason and Try again | `server/src/gauntlet.ts` `reworkMove` |
+| Time to launch (r5-eta) | B: only in the cart's callout, "About 6 min to launch", learned from real stage times | `web/src/ui/eta.ts` |
+| A third counter (r5-counter) | A: keep two | no change |

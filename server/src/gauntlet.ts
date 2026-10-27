@@ -305,10 +305,13 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
   const scar = item.scars?.at(-1);
   const check = scar?.check ? techById(scar.check) : undefined;
   const station = check?.name ?? GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";
+  // a second fail is a Steer (shared/src/attention.ts): say so plainly, with the reason (Justin's pick r5-rework A)
+  const fails = item.scars?.length ?? 0;
+  const again = fails >= 2;
   return {
     id: crypto.randomUUID(),
-    title: `${station} sent #${item.prNumber} back`,
-    why: item.failure ?? "A check failed.",
+    title: again ? `#${item.prNumber} failed ${fails === 2 ? "twice" : `${fails} times`}` : `${station} sent #${item.prNumber} back`,
+    why: again ? `${station}: ${scar?.reason ?? item.failure ?? "a check failed"}` : (item.failure ?? "A check failed."),
     stage: "inspect",
     kind: "review",
     itemId: item.id,
@@ -316,7 +319,7 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
     focus: check ? checkStationId(check.id) : GAUNTLET.find((g) => g.kind === scar?.station)?.id,
     createdAt: now,
     options: [
-      ...(canRework(item) ? [{ id: `rework-${harness}`, label: `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
+      ...(canRework(item) ? [{ id: `rework-${harness}`, label: again ? "Try again" : `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
       { id: "later", label: "Look later", recommended: !canRework(item), actions: [] },
       { id: "overrule", label: "Overrule and launch", recommended: false, actions: [{ tool: "request_merge", args: { pr: item.prNumber, overrule: true }, reason: "The player is the merge gate." }] },
     ],

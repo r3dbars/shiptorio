@@ -387,6 +387,7 @@ export class ShaftScene {
           this.firstRun.step(this.t, sec, this.reduceMotion);
         },
         firstRun: this.firstRun,
+        trophies: this.trophies,
         view: (v: ShaftView, id?: string) => (this.setView(v, id ?? null, true), this.applyBias()),
         render: () => {
           this.renderer.info.reset();

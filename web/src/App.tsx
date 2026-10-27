@@ -42,6 +42,7 @@ import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn } from "./flags";
 import { useComeback } from "./ui/Comeback";
+import { etas } from "./ui/eta";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -121,6 +122,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const [viewReady,setViewReady]=useState(cfg.kind!=="live");
   useEffect(()=>{if(cfg.kind!=="live")return;let active=true;fetch('/api/me').then(r=>r.ok?r.json():null).then(d=>{if(active){setAdmin(d?.admin===true);setViewing(d?.viewingAs??null);setAccountReadOnly(!!d?.viewingAs);setViewReady(true)}}).catch(()=>{});return()=>{active=false;setAccountReadOnly(false)}},[cfg.kind]);
   const { state, log, status, send: sendRaw } = useFactory(cfg);
+  useEffect(() => {
+    if (state) etas.observe(state, Date.now()); // learns real stage times for the cart callout's wait
+  }, [state]);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
