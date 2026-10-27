@@ -1,3 +1,4 @@
+import { accountIdentity } from "./account-identity";
 import { purgeInstallationTokens } from "./github";
 import { repoAccess, type AccessUser } from "./authorization";
 import { securityObjectName } from "./rate-limit";
@@ -55,7 +56,7 @@ async function retainedActivity(env: Env, user: User, repos: RepoRow[]) {
     const entries = await kvJSON<Record<string, unknown>>(env, page.keys.map(k => k.name));
     for (const {name} of page.keys) {
       const entry = entries.get(name);
-      if (entry && (entry.userId === String(user.id) || names.has(String(entry.repo).toLowerCase()))) logs.push(entry);
+      if (entry && (entry.userId === accountIdentity(user.id) || names.has(String(entry.repo).toLowerCase()))) logs.push(entry);
     }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
@@ -76,7 +77,7 @@ export async function exportAccount(env: Env, user: User) {
   return { profile, installations, progress, activity, format: "shiptorio-account-v1", exportedAt: new Date().toISOString(), user: { id: user.id, login: user.login }, preferences: prefs.results, factories };
 }
 
-async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[], login: string, userId: number): Promise<void> {
+async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[], userId: number): Promise<void> {
   const names = new Set(repos.map(r => r.full_name.toLowerCase()));
   const keys = new Set<string>(repos.flatMap(r => [`cred:sentry:${r.full_name.toLowerCase()}`, `cred:posthog:${r.full_name.toLowerCase()}`, `cred:support:${r.full_name.toLowerCase()}`]));
   for (const repo of repos) if (repo.repo_id) keys.add(`cred:support:${repo.installation_id}:${repo.repo_id}`);
@@ -88,7 +89,7 @@ async function purgeKV(env: Env, repos: (RepoRow & {repo_id?: number | null})[],
     for (const { name } of page.keys) {
       if (name.startsWith("ops:")) {
         const entry = operational.get(name);
-        if (entry && (entry.userId === String(userId) || names.has(entry.repo?.toLowerCase() ?? ""))) keys.add(name);
+        if (entry && (entry.userId === accountIdentity(userId) || names.has(entry.repo?.toLowerCase() ?? ""))) keys.add(name);
       }
       if ([...names].some(repo => name === `cred:sentry:${repo}` || name === `cred:posthog:${repo}` || name.includes(`:${repo}:`) || name.endsWith(`:${repo}`))
         || name.startsWith("access:v2:") && name.endsWith(`:${userId}`)) keys.add(name);
@@ -133,7 +134,7 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
     // Lifecycle migration leaves a frozen legacy pointer; erase that object as well.
     await env.FACTORY.get(env.FACTORY.idFromName(repo.full_name.toLowerCase())).eraseAccountData();
   }
-  await purgeKV(env, repos, user.login, user.id);
+  await purgeKV(env, repos, user.id);
   for (const subject of [`user:${user.id}`, `user:${user.login.toLowerCase()}`]) {
     await env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).eraseAccountData();
   }

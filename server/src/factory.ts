@@ -1,3 +1,4 @@
+import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
@@ -2521,7 +2522,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : String(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
   }
 
   private async socketFetch(request: Request): Promise<Response> {
@@ -2551,7 +2552,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
-    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : String(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
       try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
     });
   }

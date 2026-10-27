@@ -1,3 +1,4 @@
+import { accountIdentity } from "./account-identity";
 import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
 import { budgetAccount, budgetLimits } from "./budget";
@@ -109,7 +110,7 @@ app.use("*", async (c, next) => {
   return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
     c.header("X-Request-ID", trace.requestId);
     const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
-    if (user) { trace.userId = String(user.id); Sentry.setUser({ id: String(user.id) }); }
+    if (user) { trace.userId = accountIdentity(user.id); Sentry.setUser({ id: accountIdentity(user.id) }); }
     await next();
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);

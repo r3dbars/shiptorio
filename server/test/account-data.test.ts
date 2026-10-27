@@ -154,16 +154,19 @@ describe("account data controls", () => {
   });
   it("exports and purges both repo and global operational log copies, preserving other users", async () => {
     const {env, user, kv} = await fixture();
-    kv.set("ops:events:all:alice", JSON.stringify({userId: "11", repo: "org/shared", event: "saved"}));
+    kv.set("ops:events:all:alice", JSON.stringify({userId: "github:user:11", repo: "org/shared", event: "saved"}));
     kv.set("ops:events:repo:alice/app:copy", JSON.stringify({repo: "alice/app", event: "saved"}));
     kv.set("ops:events:all:bob", JSON.stringify({userId: "bob", repo: "bob/app", event: "keep"}));
+    kv.set("ops:events:all:numeric-legacy", JSON.stringify({userId: "11", repo: "private/foreign", event: "foreign-numeric-login"}));
     const archive = await exportAccount(env, user);
+    expect(archive.activity.some(e => e.event === "foreign-numeric-login")).toBe(false);
     expect(archive.activity.some(e => e.event === "saved")).toBe(true);
     expect(archive.activity.some(e => e.event === "keep")).toBe(false);
     await deleteAccount(env, user, ["alice/app"]);
     expect(kv.has("ops:events:all:alice")).toBe(false);
     expect(kv.has("ops:events:repo:alice/app:copy")).toBe(false);
     expect(kv.has("ops:events:all:bob")).toBe(true);
+    expect(kv.has("ops:events:all:numeric-legacy")).toBe(true);
   });
   it("an in-flight operational log cannot recreate user keys after deletion", async () => {
     const {env, user, kv} = await fixture();
@@ -174,7 +177,7 @@ describe("account data controls", () => {
     const original = env.CACHE.put.bind(env.CACHE);
     env.CACHE.put = (async (key: string, value: string) => { if (key.startsWith("ops:")) {started(); await gate;} return original(key, value); }) as typeof env.CACHE.put;
     const tasks: Promise<unknown>[] = [];
-    inTrace({requestId: "delete-race", userId: "alice", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
+    inTrace({requestId: "delete-race", userId: "github:user:11", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
     await writing;
     await deleteAccount(env, user, ["alice/app"]);
     release();
