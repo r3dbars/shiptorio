@@ -302,7 +302,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
                   </div>
                   <div className="ci-title">{m.title}</div>
                   <p className="ci-why">{m.why}</p>
-                  {because(m) && <p className="why-line"><b>{THINKS.why}</b> {because(m)}</p>}
+                  {zoomed && because(m) && <p className="why-line"><b>{THINKS.why}</b> {because(m)}</p>}
                   {m.evidence && (
                     <div className="ci-stamps">
                       {m.evidence.map((e) => (

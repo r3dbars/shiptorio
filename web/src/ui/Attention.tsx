@@ -43,6 +43,7 @@ interface Props {
 
 export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: Props) {
   const [open, setOpen] = useState(false);
+  const [thinking, setThinking] = useState(false); // the one-line why, shown only when asked
   const [asking, setAsking] = useState<Move | null>(null); // a Later held for a moment so the player can say why
   const [gone, setGone] = useState<string | null>(null);
   const card = (first && first !== gone && deck.find((m) => m.id === first)) || trayCard(deck);
@@ -50,7 +51,7 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: 
   const drag = useRef<{ x: number; id: number } | null>(null);
   const [dx, setDx] = useState(0);
 
-  useEffect(() => setOpen(false), [card?.id]);
+  useEffect(() => { setOpen(false); setThinking(false); }, [card?.id]);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   const settle = (move: Move, why: Why) => {
@@ -116,10 +117,13 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: 
         </div>
         <span className="att">{shown.title}</span>
         <span className="aw">{shown.why}</span>
-        {shown.because && <span className="abc">{shown.because}</span>}
+        {why && (
+          <button type="button" className={`awhy${thinking ? " on" : ""}`} aria-expanded={thinking} onClick={() => setThinking((v) => !v)}>
+            {thinking ? <><b>{THINKS.why}</b> {why}</> : ATTENTION.whyAsk}
+          </button>
+        )}
         {open && (
           <div className="amore">
-            {why && why !== shown.because && <p>{why}</p>}
             {!!shown.plan?.length && (
               <details className="nm-plan" open>
                 <summary>{NEXT_MOVE.plan}</summary>

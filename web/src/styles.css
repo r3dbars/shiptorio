@@ -1328,7 +1328,9 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .acard .atop span { color: var(--dim); font-weight: 400; }
 .acard .att { font: 700 13px/1.3 var(--mono); color: var(--iron-ink); }
 .acard .aw { font-size: 11px; line-height: 1.35; color: var(--dim); }
-.acard .abc { font-size: 11px; line-height: 1.35; color: var(--iron-aether); }
+.acard button.awhy { align-self: flex-start; padding: 2px 0; border: 0; font-family: inherit; font-size: 11px; font-weight: 400; line-height: 1.35; letter-spacing: 0; text-transform: none; color: var(--iron-aether); text-align: left; text-decoration: underline dotted; text-underline-offset: 3px; }
+.acard button.awhy.on { text-decoration: none; font-size: 12px; color: var(--iron-ink); }
+.acard button.awhy.on b { color: var(--iron-aether); font-weight: 700; }
 .acard .amore { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; font-size: 12px; max-height: min(40vh, 320px); overflow-y: auto; }
 .acard .amore p { margin: 0; }
 .acard .amore a { color: var(--iron-aether); }

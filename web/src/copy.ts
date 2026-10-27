@@ -1008,6 +1008,8 @@ export const ATTENTION = {
   later: "Later",
   details: "Details",
   hide: "Hide",
+  /** Tap to see the planner's one plain reason for this card. */
+  whyAsk: "Why?",
   others: "Other options",
   swipeHint: "Swipe right to continue, left for later",
   laterAsk: "Why later? (optional)",
