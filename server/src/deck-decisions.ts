@@ -8,7 +8,11 @@ export function moveKey(move: Move): string {
 export interface DeckRule { kind: string; scope: string; actionId: string }
 export interface DeckDecision { key: string; move: Move; count: number; deferred?: boolean; dismissed?: boolean }
 export interface DeckUndo { id: string; expiresAt: number; key: string; before?: DeckDecision; rule?: DeckRule; noteId?: string }
-export interface DeckBook { decisions: Record<string, DeckDecision>; notes: { id: string; text: string }[]; undos: DeckUndo[] }
+export interface DeckBook {
+  decisions: Record<string, DeckDecision>; notes: { id: string; text: string }[]; undos: DeckUndo[];
+  /** docs/ATTENTION.md: the player's Continues in a row per card class (`kind|scope`). A Later or a never resets it. */
+  yes?: Record<string, number>;
+}
 export const emptyDeckBook = (): DeckBook => ({ decisions: {}, notes: [], undos: [] });
 export function thirdDefer(move: Move): Move {
   return { ...move, id: `${move.id}:deferred`, title: 'Never, or let the factory decide?', why: `You have set aside “${move.title}” three times. Choose what should happen to this kind of decision.`, kind: 'automate', options: [
@@ -21,6 +25,14 @@ export function deferCard(book: DeckBook, move: Move): void {
   const key = moveKey(move), prior = book.decisions[key];
   book.decisions[key] = { key, move, count: (prior?.count ?? 0) + 1, deferred: true };
 }
+export const yesKey = (kind: string, scope: string) => `${kind}|${scope}`;
+export function noteYes(book: DeckBook, kind: string, scope: string): number {
+  const key = yesKey(kind, scope), yes = book.yes ?? (book.yes = {});
+  return (yes[key] = (yes[key] ?? 0) + 1);
+}
+export function resetYes(book: DeckBook, kind: string, scope: string): void {
+  if (book.yes) delete book.yes[yesKey(kind, scope)];
+}
 export function beginCheckin(book: DeckBook): void {
   for (const decision of Object.values(book.decisions)) decision.deferred = false;
 }
@@ -29,5 +41,6 @@ export function suppressed(book: DeckBook, move: Move): boolean {
   return !!(decision?.deferred || decision?.dismissed);
 }
 export function plannerFeedback(book: DeckBook, rules: readonly DeckRule[]): string {
-  return JSON.stringify({ excludedMoveClasses: rules.map(({ kind, scope }) => ({ kind, scope })), playerCorrections: book.notes.slice(-20).map(n => n.text) });
+  const yesStreaks = Object.entries(book.yes ?? {}).filter(([, n]) => n >= 2).map(([key, streak]) => { const [kind, scope] = key.split("|"); return { kind, scope, streak }; });
+  return JSON.stringify({ excludedMoveClasses: rules.map(({ kind, scope }) => ({ kind, scope })), playerCorrections: book.notes.slice(-20).map(n => n.text), ...(yesStreaks.length ? { playerYesStreaks: yesStreaks } : {}) });
 }

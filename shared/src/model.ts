@@ -268,6 +268,7 @@ export const Move = z.object({
   locked: z.boolean().optional(), // not proven yet: swipe right runs the recommended option, never a merge
   plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
   because: z.string().optional(), // one plain sentence on why the suggested option is the right call
+  attention: z.enum(["approve", "steer", "suggest"]).optional(), // docs/ATTENTION.md: approve = parked on a yes, steer = stuck, suggest = an idea
 });
 export type Move = z.infer<typeof Move>;
 
