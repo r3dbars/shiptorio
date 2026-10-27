@@ -11,6 +11,8 @@ import { GEO_EXPLAINER, powerLedger } from "./powerLedger";
 import { GEO_COPY, MACHINE_COPY, POWER_COPY, POWER_TYPES, researchedCopy, REWORK_COPY, STATION_COPY, type PanelCopy } from "./stationCopy";
 import { HARNESS_NAME, PANEL, STATE_WORD, WORDS } from "../copy";
 import { Icon } from "./icons";
+import { planFromState } from "../map/shaft/plan";
+import { lineOrder, parkedIn, quietWord, workOnLine, WORDS as WAIT } from "../map/shaft/waiting";
 
 function fmtWait(ms?: number) {
   if (ms === undefined) return "–";
@@ -238,6 +240,16 @@ interface Props {
   live?: boolean; // live factories have no station_action handler yet, so their action buttons stay hidden
 }
 
+// what a quiet machine is waiting on: the next real item up the line, or you (null: nothing is coming)
+function quietIn(state: FactoryState, id: string) {
+  const sid = id.replace(/^m:/, "");
+  const { plan } = planFromState(state);
+  const order = lineOrder(plan);
+  const at = order.get(sid);
+  if (at === undefined) return null;
+  return quietWord(at, workOnLine(state.items, plan, order), parkedIn(state, plan), sid);
+}
+
 export function StationPanel({ id, state, log, send, onClose, jobs, live }: Props) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -255,6 +267,8 @@ export function StationPanel({ id, state, log, send, onClose, jobs, live }: Prop
   const recent = log.filter(p.match).slice(-4).reverse();
   // IDLE / WORKING / BLOCKED, the Black Iron state words (docs/art/IRON-STYLE.md §6)
   const machine = hot ? "BLOCKED" : p.now?.length ? "WORKING" : "IDLE";
+  const quiet = machine === "IDLE" ? quietIn(state, id) : null;
+  const word = quiet ? `${quiet.word === WAIT.you ? PANEL.quiet.you : PANEL.quiet.next} · ${quiet.det}` : PANEL.machine[machine];
   return (
     <section className={`card stationpanel${hot ? " hot" : ""}`} aria-label={p.title ?? p.copy.name}>
       <div className="sp-head">
@@ -268,7 +282,7 @@ export function StationPanel({ id, state, log, send, onClose, jobs, live }: Prop
         <span className={`sp-tag ${color}`}>{tag}</span>
         {hot && <span className="sp-tag red">{PANEL.bottleneck}</span>}
       </div>
-      <span className="iron-state sp-state" data-s={machine}>{PANEL.machine[machine]}</span>
+      <span className="iron-state sp-state" data-s={machine}>{word}</span>
       {p.copy.what && <p className="sp-what">{p.copy.what}</p>}
       <dl className="sp-stats">
         {p.stats.map(([k, v]) => (
