@@ -27,6 +27,9 @@ test('admin page and in-game God panel show audited read-only controls',async({p
  await page.getByRole('button',{name:'God',exact:true}).click();
  const panel=page.getByRole('region',{name:'God controls'});
  await expect(panel).toBeVisible();await expect(panel).toHaveCSS('opacity','1');await expect(panel).toContainText('Read-only');
+ await panel.getByRole('combobox',{name:'Action',exact:true}).focus();
+ await page.keyboard.press('a');
+ await expect(panel).toBeVisible();
  const bounds=await panel.boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(0);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width);
  await page.screenshot({animations:'disabled',path:join(output,`god-panel-${width}.png`)});
  await panel.getByRole('combobox',{name:'Action',exact:true}).selectOption('write-mode');
