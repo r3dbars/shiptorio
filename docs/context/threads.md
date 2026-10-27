@@ -63,6 +63,10 @@ is the only copy agents outside it (Codex) can see.
 
 ## Codex: public judge replay (2026-10-26)
 
+- Landing-page follow-up: a Black Iron “Try the 90-second walkthrough” link below the tagline goes
+  directly to `/judge`, labeled “No sign-in required · simulated factory”. Requested frontend-lane
+  change, limited to `web/public/welcome/index.html`; no map, auth or simulator changes.
+
 - Goal: `/judge` is a no-login, public exception to the preview/signup gate. Play starts a roughly
   90-second, explicitly labeled simulation; query parameters cannot select a live repo.
 - Story: Sentry checkout crash + linked inbox report + GitHub docs issue → foreman plan → subscription
