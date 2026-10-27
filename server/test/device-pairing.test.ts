@@ -83,3 +83,60 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     expect(record.approved).toBeUndefined(); expect(record.secret).toBe(await secretHash(d.secret));
   } finally { globalThis.fetch = original; }
 }, 30000);
+
+test("one-paste join: minted by a signed-in writer, single use, ten minutes, bound to one repo", async () => {
+  const key = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", key.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
+  const stores = new Map<string, Map<string, any>>(), instances = new Map<string, InstanceType<typeof Factory>>();
+  const env = { ASSETS: { fetch: async () => new Response("") }, ...browserEnv, GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB: testD1(), FACTORY: { idFromName: (s: string) => s, get(name: string) {
+    if (!instances.has(name)) {
+      const data = new Map<string, any>(); stores.set(name, data);
+      let serial: Promise<unknown> = Promise.resolve();
+      const ctx = { waitUntil() {}, storage: { transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(this); }, get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); }, delete: async (key: string) => data.delete(key), list: async ({ prefix }: { prefix: string }) => new Map([...data].filter(([key]) => key.startsWith(prefix))), setAlarm: async () => {}, deleteAlarm: async () => {}, deleteAll: async () => data.clear() }, blockConcurrencyWhile(fn: () => Promise<unknown>) { const result = serial.then(fn); serial = result.catch(() => {}); return result; } };
+      const f = new Factory(ctx as never, env as never); f.ensure = async () => {};
+      instances.set(name, f);
+    }
+    return instances.get(name)!;
+  } } };
+  const original = globalThis.fetch;
+  let permission = "write";
+  globalThis.fetch = (async (input: any) => {
+    const url = String(input);
+    if (url.endsWith("/access_tokens")) return Response.json({ token: "install-token", expires_at: new Date(Date.now() + 3600000).toISOString() });
+    if (url.includes("/collaborators/test-player/permission")) return Response.json({ permission, user: { id: 77 } });
+    if (/\/repos\/you\/[^/]+\/installation$/.test(url)) return Response.json({ id: 1 });
+    throw new Error(`Unexpected network ${url}`);
+  }) as typeof fetch;
+  const request = (path: string, init: RequestInit = {}) => app.fetch(new Request(`https://shiptorio.com${path}`, init), env as never);
+  try {
+    const cookies = await signedInCookie(env, "test-player", ["you/repo"], 77) + "; " + (await makeSessionCookie(`${browserEnv.SESSION_SECRET}:${browserEnv.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
+    await env.DB.prepare("UPDATE repos SET repo_id = 101").run();
+    await env.DB.prepare("UPDATE installations SET permissions = ? WHERE id = 1").bind(JSON.stringify({ metadata: "read", contents: "write", issues: "write", pull_requests: "write", checks: "read" })).run();
+    const mint = (origin = "https://shiptorio.com") => request("/api/repos/you/repo/runner/join", { method: "POST", headers: { cookie: cookies, origin } });
+    const redeem = (join: string) => request("/api/runner-device/join", { method: "POST", body: JSON.stringify({ join }) });
+    expect((await request("/api/repos/you/repo/runner/join", { method: "POST", headers: { origin: "https://shiptorio.com" } })).status).not.toBe(200);
+    expect((await mint("https://evil.test")).status).toBe(403);
+    const minted = await mint(); expect(minted.status).toBe(200);
+    const { join, expires } = await minted.json() as { join: string; expires: number };
+    expect(join).toMatch(/^[a-f0-9]{48}$/); expect(expires - Date.now()).toBeLessThanOrEqual(10 * 60_000);
+    // Only a hash of the code is kept server side.
+    expect([...stores.keys()].some((name) => name.includes(join))).toBe(false);
+    expect((await redeem("0".repeat(48))).status).toBe(410);
+    expect((await redeem("not-a-code")).status).toBe(410);
+    const paired = await redeem(join); expect(paired.status).toBe(200);
+    const result = await paired.json() as { repo: string; token: string };
+    expect(result.repo).toBe("you/repo");
+    const claims = await readRunnerToken(browserEnv.SESSION_SECRET, result.token);
+    expect(claims?.repo).toBe("you/repo"); expect(await instances.get("repo:101")!.isRunnerPaired(claims!.pairId)).toBe(true);
+    expect((await redeem(join)).status).toBe(410); // burned
+    // Expired: minted, then left past ten minutes.
+    const stale = await (await mint()).json() as { join: string };
+    const record = [...stores.entries()].find(([name, data]) => name.startsWith("device:join:") && data.get("join") && !data.get("join").used)!;
+    record[1].set("join", { ...record[1].get("join"), expires: Date.now() - 1 });
+    expect((await redeem(stale.join)).status).toBe(410);
+    // Access is checked again at redeem time: a writer demoted after minting can't pair.
+    const demoted = await (await mint()).json() as { join: string };
+    permission = "read"; expect((await redeem(demoted.join)).status).toBe(403); permission = "write";
+    expect((await redeem(demoted.join)).status).toBe(410);
+  } finally { globalThis.fetch = original; }
+}, 30000);

@@ -4,27 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Shiptorio</title>
-<meta name="description" content="Your repo is a factory. Teach it to run itself. Shiptorio turns your codebase into a factory game where every rocket is a real merged pull request.">
+<meta name="description" content="A little play. A lot shipped. Shiptorio turns your codebase into a factory game where every rocket is a real merged pull request.">
 <link rel="canonical" href="https://shiptorio.com/">
 <meta name="theme-color" content="#0b0806">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://shiptorio.com/">
 <meta property="og:title" content="Shiptorio">
-<meta property="og:description" content="Your repo is a factory. Teach it to run itself.">
+<meta property="og:description" content="A little play. A lot shipped.">
 <meta property="og:image" content="https://shiptorio.com/brand/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://shiptorio.com/brand/og.png">
-<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png">
-<link rel="icon" href="/brand/favicon-16.png" sizes="16x16" type="image/png">
-<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="icon" href="/brand/favicon.svg?v=foundry-s3" type="image/svg+xml">
+<link rel="icon" href="/brand/favicon-32.png?v=foundry-s3" sizes="32x32" type="image/png">
+<link rel="icon" href="/brand/favicon-16.png?v=foundry-s3" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png?v=foundry-s3">
 <link rel="manifest" href="/brand/manifest.webmanifest">
 <link rel="preload" href="/fonts/silkscreen-700.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/jetbrains-mono.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" as="image" href="/welcome/hero.webp" imagesrcset="/welcome/hero-1024.webp 1024w, /welcome/hero.webp 1600w" imagesizes="100vw" media="(min-width: 760px)" fetchpriority="high">
 <link rel="preload" as="image" href="/welcome/hero-phone.webp" media="(max-width: 759px)" fetchpriority="high">
+<link rel="stylesheet" href="/brand/foundry.css">
 <style>
 /* Black Iron (docs/art/IRON-STYLE.md), tokens inlined from web/src/iron.css. The page is the title, one line, the art. */
 @font-face{font-family:"Silkscreen";font-weight:700;font-display:swap;src:url(/fonts/silkscreen-700.woff2) format("woff2")}
@@ -32,7 +33,7 @@
 :root{
   --bg:#0b0806;--soot:#1e1814;--line:#5a4434;--line-hi:#8a6a4c;--ink:#f4ead8;--dim:#b8a48a;
   --amber:#ffb020;--amber-hi:#ffc24a;--on-amber:#140c02;--ok:#46e07a;--focus:#6fb2ff;--aether:#7af0d8;
-  --pixel:"Silkscreen","Courier New",monospace;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --pixel:var(--foundry-label);--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -55,7 +56,7 @@ main{position:relative;display:flex;flex-direction:column;align-items:center;min
 
 .top{position:relative;z-index:1;text-align:center;padding:clamp(40px,9vh,96px) 16px 0}
 h1{margin:0;line-height:0}
-h1 img{width:min(600px,82vw);height:auto;image-rendering:pixelated;filter:drop-shadow(0 4px 0 #000)}
+h1 img{width:min(900px,88vw);height:auto;image-rendering:auto;filter:drop-shadow(0 6px 12px #000)}
 .say{margin:18px 0 0;font:400 clamp(16px,1.6vw,20px)/1.4 var(--mono);color:var(--ink);text-shadow:0 2px 0 #000,0 0 12px #000}
 
 .walkthrough{display:inline-flex;align-items:center;justify-content:center;min-height:48px;max-width:100%;margin-top:20px;padding:12px 16px;border:2px solid var(--amber);background:rgba(14,10,8,.92);color:var(--amber);font:700 11px/1.5 var(--pixel);letter-spacing:.06em;text-transform:uppercase;text-decoration:none}
@@ -95,13 +96,14 @@ button.go[disabled]{opacity:.65;cursor:progress}
   #toggle{top:auto;bottom:10px}
 }
 @media (prefers-reduced-motion:reduce){.art video{transition:none}}
+.say{font:400 clamp(20px,2.3vw,29px)/1.4 Georgia,serif;letter-spacing:.045em}.walkthrough,button.go{font-size:14px;border-radius:3px}.top{padding-top:clamp(36px,6vh,64px)}
 </style>
 </head>
 <body>
 <main>
   <div class="top">
-    <h1><img src="/brand/wordmark.svg" width="594" height="100" alt="Shiptorio"></h1>
-    <p class="say">Your repo is a factory. <span>Teach it to run itself.</span></p>
+    <h1><img src="/brand/wordmark.svg?v=foundry-s3" width="1132" height="240" alt="Shiptorio"></h1>
+    <p class="say foundry-tagline">A little play. A lot shipped.</p>
     <a class="walkthrough" href="/judge" aria-describedby="walkthrough-note">Try the 90-second walkthrough</a>
     <p class="walkthrough-note" id="walkthrough-note">No sign-in required · simulated factory</p>
   </div>

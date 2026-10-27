@@ -121,7 +121,11 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
     if (candidate) { const move = enrichMove(candidate, state); if (allowed(move)) byId.set(move.id, move); }
   }
   const ranked = [...byId.values()].sort((a, b) => deckScore(b, state, now, options.yes) - deckScore(a, state, now, options.yes) || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  const visible = ranked.slice(0, 12);
+  // A PR at the merge gate (launch or sent back) is scored on minutes since its last change, so a fresh one
+  // loses to issues that have waited all day. Keep every such card in the 12, in rank order.
+  const gate = ranked.filter(m => m.itemId && m.options.some(o => o.actions.some(a => a.tool === "request_merge")));
+  const keep = new Set([...gate, ...ranked.filter(m => !gate.includes(m)).slice(0, Math.max(0, 12 - gate.length))]);
+  const visible = ranked.filter(m => keep.has(m)).slice(0, 12);
   const runnerDecision = (move: Move, tool: string) => {
     const item = state.items.find(i => i.id === move.itemId);
     return move.stage === "build" && item?.source === "github_issue" && /^gh-\d+$/.test(item.id)
