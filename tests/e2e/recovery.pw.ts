@@ -1,5 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// Exercise native GPU recovery on macOS; Linux CI uses the configured software GPU.
+if (process.platform === 'darwin') test.use({ launchOptions: { args: ['--use-angle=metal', '--enable-webgl'] } });
+
 test.beforeEach(async ({ page }) => {
   expect((await page.request.post('/__test/access')).ok()).toBe(true);
 });
@@ -22,7 +25,7 @@ async function observeGpu(page: Page) {
           const draw = gl[key].bind(gl);
           gl[key] = (...a: any[]) => {
             draw(...a);
-            if (!gl.isContextLost()) (window as any).__gpu.draws++;
+            if (!gl.isContextLost() && gl.getParameter(gl.FRAMEBUFFER_BINDING) === null) (window as any).__gpu.draws++;
           };
         }
       }
@@ -70,18 +73,21 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       const before = await page.evaluate(() => (window as any).__gpu.draws);
       await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws)).toBeGreaterThan(before);
       await expect(page.locator('.crash')).toHaveCount(0);
+      await expect(page.locator('#map-summary')).toContainText('sim/shiptorio: 5 folders, 11 machines');
+      await page.locator('canvas.map').focus();
+      await page.keyboard.press('ArrowDown');
     });
 
-    test('forced render failure shows one Reload button and one telemetry event', async ({ page, baseURL }, info) => {
+    for (const failure of ['react', 'webgl'] as const) test(`${failure} render failure shows one Reload button and one telemetry event`, async ({ page, baseURL }, info) => {
       const events: any[] = [];
       await page.route('**/api/telemetry/config', route => route.fulfill({ json: { dsn: `${baseURL!.replace('://', '://public@')}/1`, release: 'recovery-test', userId: null, requestId: 'recovery' } }));
       await page.route('**/api/1/envelope/**', async route => {
         for (const line of (route.request().postData() ?? '').split('\n')) {
-          try { const event = JSON.parse(line); if (event.event_id && !event.type) events.push(event); } catch { /* envelope framing */ }
+          try { const event = JSON.parse(line); if (event.event_id && !event.sent_at && !event.type) events.push(event); } catch { /* envelope framing */ }
         }
         await route.fulfill({ json: {} });
       });
-      await page.addInitScript(() => {
+      if (failure === 'react') await page.addInitScript(() => {
         // The map hands asynchronous setup errors to React by throwing during render.
         const getContext = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: any[]) {
@@ -89,7 +95,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
           return (getContext as any).apply(this, args);
         } as typeof getContext;
       });
+      if (failure === 'webgl') await observeGpu(page);
       await page.goto('/?source=sim&world=shaft');
+      if (failure === 'webgl') {
+        await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 90000 }).toBeGreaterThan(0);
+        await page.evaluate(() => { (window as any).__gpu.gl.drawElements = () => { throw new Error('Forced GPU render failure'); }; });
+      }
       const crash = page.getByRole('alert');
       await expect(crash).toContainText('Boiler blew');
       await expect(crash.getByRole('button')).toHaveCount(1);
@@ -97,7 +108,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       await expect(crash).not.toContainText('Forced render');
       await expect.poll(() => events.length).toBe(1);
       expect(events[0].message).toBe('Game render failed');
-      expect(events[0].tags.reason).toBe('react_render');
+      expect(events[0].tags.reason).toBe(`${failure}_render`);
       await page.screenshot({ path: `/tmp/shiptorio-crash-${viewport.width}-${info.project.name}.png` });
       await info.attach(`crash-${viewport.width}`, { body: await page.screenshot(), contentType: 'image/png' });
       expect(events).toHaveLength(1);

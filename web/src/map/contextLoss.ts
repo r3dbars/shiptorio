@@ -1,4 +1,4 @@
-import { WebGLRenderer } from 'three';
+import { WebGLRenderer, type Object3D, type Mesh } from 'three';
 
 export const SCENE_REBUILD = 'shiptorio:scene-rebuild';
 export const RENDER_CRASH = 'shiptorio:render-crash';
@@ -13,6 +13,14 @@ export function guardRender(frame: () => void): () => void {
       window.dispatchEvent(new Event(RENDER_CRASH));
     }
   };
+}
+
+/** CPU-side geometry survives a loss; force material programs back through compilation. */
+export function restoreMaterials(root: Object3D) {
+  root.traverse(object => {
+    const material = (object as Mesh).material;
+    for (const entry of Array.isArray(material) ? material : material ? [material] : []) entry.needsUpdate = true;
+  });
 }
 
 /** Three rebuilds its renderer internals first; the owner then recreates GPU resources. */

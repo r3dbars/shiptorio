@@ -17,7 +17,7 @@ import type { FactoryState } from "@shiptorio/shared";
 
 import { buildoutOn } from "../../flags";
 import { submitWhenUnheld } from "../../ui/holdRender";
-import { guardRender, recoverContext } from "../contextLoss";
+import { guardRender, recoverContext, restoreMaterials } from "../contextLoss";
 import { perf } from "../perf";
 import { GpuSubmission } from "../gpu-submission";
 import { FrameGovernor } from "../quality";
@@ -120,7 +120,8 @@ export class ShaftScene {
     this.loop = guardRender(this.loop);
     this.renderer = recoverContext(canvas, () => {
       if (this.disposed || !this.state) return;
-      if (this.sp) this.rebuild(this.sp);
+      if (this.stage) restoreMaterials(this.stage.scene);
+      this.renderer.shadowMap.needsUpdate = true;
       this.update(this.state);
       this.governor.poke();
       this.stage?.render(this.renderer);
