@@ -193,7 +193,7 @@ change shipped. The preview is playable in simulator mode. Real repo execution s
 needs the GitHub App and the subscription runner/Foreman work specified in PRODUCT.md.
 
 Local backend handoff, Oct 26: Justin moved backend ownership from the cloud Codex chat to
-the local checkout at `/Users/redbars/Documents/Codex/2026-10-26/review-the-official-meta-global-ai/shiptorio`.
+the owner's local checkout.
 He authorized deploying **only Shiptorio** and using `shiptorio.com` and `shiptorio.dev`.
 The site must require a private preview password. First checkpoint is GitHub issue →
 Spark → real PR → current-commit CI inspection/rework → human merge → rocket.
@@ -216,7 +216,7 @@ The connection and automatic deployment checkpoints above supersede that initial
 | 16:3x | **Lanes:** Claude Code + Justin own `web/`. Codex (cloud) owns `server/` + `runner/`. `shared/` changes go in their own PR both lanes see. | Justin |
 | 16:1x | **Stack = Cloudflare**, not the plan doc's Fly.io + Neon ("that is where I have the .com"). One Worker `shiptorio`, Hono, Durable Objects, D1, KV, GitHub App. | Justin |
 | 16:1x | Created D1 `shiptorio` (id `153f63dc-f65f-4c02-a0b1-6c78b7d6aa08`, schema 0001 applied) and KV `shiptorio-cache` (id `c9d7c44e1c304a2b9a285049ee1e3408`). Not deployed. | Claude, OK'd by Justin |
-| 16:0x | Never touch the other Workers on the account: `transcripted-feedback`, `stack99-relay`, `r3dbar-subscribe`, `redbars`. | Justin |
+| 16:0x | Never touch any other Worker on the account; only `shiptorio` (and later `shiptorio-staging`) is ours. | Justin |
 | plan | Muse Spark (Meta API, `muse-spark-1.3` at `https://api.meta.ai/v1`) makes every factory decision. Claude Code / Codex are only assemblers. | Plan doc |
 | plan | Meta AI Developer Hackathon, Oct 26 – Nov 4 2026. **Submit by noon CT Wed Nov 4.** Fresh repo, only work done during the event. | Plan doc |
 
