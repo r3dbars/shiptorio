@@ -128,6 +128,13 @@ export class ShaftScene {
     this.hud.syncFloors("free");
   }
 
+  /** A drag ended. On a phone at normal zoom the view settles on the nearest floor instead of stopping between two. */
+  settle() {
+    const stage = this.stage;
+    if (!stage || this.view.view !== "free" || !stage.phone || stage.zoom < 0.8 || stage.zoom > 1.25) return;
+    this.setView(stage.nearestFloor(), null);
+  }
+
   update(state: FactoryState) {
     this.state = state;
     if (!this.fns) return; // the art is still loading: build once it's here

@@ -7,13 +7,16 @@ import * as THREE from "three";
 
 import type { Iron, IronItem, Layout } from "./core";
 import { FinishPass } from "./finish";
-import { floorFrame, followH, isFloorView, isPhone, stationFrame } from "./frame";
+import { floorFrame, followH, isFloorView, isPhone, stationFrame, type FloorView } from "./frame";
 
 export const YAW = Math.PI / 4;
 export const TILT = (30 * Math.PI) / 180;
 const D = 80;
 
 export type ShaftView = "stack" | "mine" | "build" | "checks" | "launch" | "line" | "station" | "follow" | "free";
+
+// the floors a phone settles on after a drag, bottom to top (Justin's pick: snap to floors)
+const SNAP_FLOORS: FloorView[] = ["mine", "build", "checks", "launch"];
 
 export class ShaftStage {
   readonly scene = new THREE.Scene();
@@ -143,6 +146,17 @@ export class ShaftStage {
     const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * (this.view === "follow" ? 3 : 5));
     this.tgt.lerp(this.tgtGoal, k);
     this.viewH += (this.viewGoal - this.viewH) * k;
+  }
+
+  /** the work floor whose middle is closest to the middle of the screen (phone snap-to-floors) */
+  nearestFloor(): FloorView {
+    const y = this.root.worldToLocal(this.tgt.clone()).y;
+    let best: FloorView = "build", d = Infinity;
+    for (const v of SNAP_FLOORS) {
+      const dd = Math.abs(floorFrame(v, this.W, this.H).at[1] - y);
+      if (dd < d) (d = dd), (best = v);
+    }
+    return best;
   }
 
   /** drag the view by screen pixels */

@@ -10,7 +10,7 @@ import type { SatelliteSpec } from "./empire";
 type MapScene = Pick<
   FactoryScene,
   "setSize" | "setLift" | "zoomBy" | "panBy" | "update" | "pick" | "hover" | "clearHover" | "setTeachingKeys" | "setShowAllLabels" | "setPings" | "focus" | "setSatellites" | "backToLine" | "empireView" | "overview" | "setCosmetics" | "dispose"
->;
+> & { settle?: () => void }; // the shaft snaps a phone drag to the nearest floor
 type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void) => MapScene;
 
 interface Props {
@@ -127,7 +127,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       if (pts.size === 1 && pts.has(e.pointerId) && moved < 8 && e.type === "pointerup") {
         const id = scene.pick(e.clientX, e.clientY, canvas.getBoundingClientRect());
         if (id) pickRef.current?.(id);
-      }
+      } else if (pts.size === 1 && pts.has(e.pointerId) && e.type === "pointerup") scene.settle?.();
       pts.delete(e.pointerId);
       pinch = pts.size === 2 ? mid().d : 0;
     };
