@@ -28,7 +28,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Install smoke Chromium
         timeout-minutes: 2
-        run: bun x playwright install --with-deps chromium
+        run: bun x playwright install --with-deps --no-shell chromium
       - name: Roll back Worker code (data is preserved)
         working-directory: server
         env:

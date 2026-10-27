@@ -40,7 +40,7 @@ jobs:
       # Install before mutation: setup failure must never leave a broken deployment live.
       - name: Install smoke Chromium
         timeout-minutes: 2
-        run: bun x playwright install --with-deps chromium
+        run: bun x playwright install --with-deps --no-shell chromium
       # Capture the active version BEFORE mutation, not whichever version is second later.
       # Refuse split traffic: rollback restores exactly one known 100% version.
       - name: Capture rollback target

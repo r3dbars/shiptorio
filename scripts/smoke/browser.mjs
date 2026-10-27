@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 
 export async function browserSmoke(base, out) {
   await mkdir(out, { recursive: true });
-  const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
+  const browser = await chromium.launch({ channel: 'chromium', args: ['--enable-unsafe-swiftshader'] });
   const results = [];
   try {
     // Parallel isolated contexts keep both viewports inside one 45-second budget.
@@ -18,15 +18,14 @@ export async function browserSmoke(base, out) {
       results.push(result);
       page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
       page.on('pageerror', error => errors.push(error.message));
-      page.setDefaultTimeout(15_000);
-      try {
-        const response = await page.goto(new URL('/judge', base).href, { waitUntil: 'domcontentloaded', timeout: 20_000 });
-        expect(response?.status()).toBe(200);
-        await page.locator('.judge-welcome button').click();
-        const canvas = page.locator('canvas.map');
-        await expect(canvas).toBeVisible();
-        await expect.poll(async () => {
-          result.pixels = await canvas.evaluate(canvas => new Promise(resolve => requestAnimationFrame(() => {
+      await page.addInitScript(() => {
+        // Read immediately after the app's frame callback, before WebGL discards
+        // its default non-preserved buffer. Never change context/render settings.
+        const frame = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = callback => frame(time => {
+          callback(time);
+          const canvas = document.querySelector('canvas.map');
+          if (!(canvas instanceof HTMLCanvasElement) || !canvas.width || !canvas.height) return;
             // Sample only the actual drawing buffer, never page text, plates or CSS background.
             const sample = document.createElement('canvas');
             sample.width = 96; sample.height = 96;
@@ -40,9 +39,20 @@ export async function browserSmoke(base, out) {
               if (a > 0 && Math.max(r, g, b) > 35) lit++;
               colors.add(`${r >> 4},${g >> 4},${b >> 4},${a > 0}`);
             }
-            resolve({ colors: colors.size, lit, total: 96 * 96 });
-          })));
-          return result.pixels.colors >= 12 && result.pixels.lit / result.pixels.total >= 0.01;
+          // Governor can skip a frame; retain the most recent actual draw.
+          if (colors.size > 1) window.__smokePixels = { colors: colors.size, lit, total: 96 * 96 };
+        });
+      });
+      page.setDefaultTimeout(15_000);
+      try {
+        const response = await page.goto(new URL('/judge', base).href, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+        expect(response?.status()).toBe(200);
+        await page.locator('.judge-welcome button').click();
+        const canvas = page.locator('canvas.map');
+        await expect(canvas).toBeVisible();
+        await expect.poll(async () => {
+          result.pixels = await page.evaluate(() => window.__smokePixels);
+          return !!result.pixels && result.pixels.colors >= 12 && result.pixels.lit / result.pixels.total >= 0.01;
         }, { timeout: 15_000, message: `${name}: shaft must draw varied, non-black pixels` }).toBe(true);
         // Observe several more frames for deferred runtime/console failures.
         await page.waitForTimeout(1500);
@@ -52,6 +62,7 @@ export async function browserSmoke(base, out) {
         result.failure = String(error);
       } finally {
         await page.screenshot({ path: resolve(out, `${name}.png`), timeout: 5000 }).catch(error => { result.screenshotError = String(error); result.ok = false; });
+        if (errors.length) result.ok = false;
         await context.close();
       }
     }));
