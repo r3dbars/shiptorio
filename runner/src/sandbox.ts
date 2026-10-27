@@ -46,7 +46,7 @@ export async function checkSandbox(work: string, agent?: { home: string; executa
     PATH: [dirname(git), bin, dirname(runtime), ...(nodeRuntime ? [dirname(nodeRuntime)] : []), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(":"),
     LANG: "en_US.UTF-8", TERM: "dumb", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1",
     BUN_INSTALL_CACHE_DIR: join(privateRoot, ".bun-cache"),
-    ...(agent ? { CODEX_HOME: join(home, ".codex") } : {}),
+    ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude") } : {}),
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
   };
   const profile = (install: boolean) => `(version 1)

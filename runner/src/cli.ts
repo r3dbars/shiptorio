@@ -1,3 +1,4 @@
+import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn } from "./subscriptions";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -26,11 +27,13 @@ import { redactText } from "../../server/src/redact";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
-const authHome = resolve(root, ".agent-home");
+const authHome = await prepareAgentHome(root);
 const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
 const localStatus = local ? await detectLocalModel(local) : null;
+const installedSubscriptions = (["codex", "claude_code"] as const).filter(h => harnessPath(h));
+const busySubscriptions = new Set<"codex" | "claude_code">();
 let available: Job["harness"][] = [...(["codex", "claude_code"] as const).filter(h => harnessPath(h)), ...(localStatus?.ok ? ["local" as const] : [])];
 
 if (process.argv[2] === "paths") {
@@ -58,16 +61,13 @@ if (process.argv[2] === "geothermal") {
 }
 async function signedInHarness(h: Job["harness"]) {
   if (h === "local") return localStatus?.ok === true;
-  try {
-
-    const output = await command([harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])], authHome, agentEnvironment(process.env, authHome), 10000);
-    return h === "codex" || JSON.parse(output).loggedIn === true;
-  } catch { return false; }
+  const executable = harnessPath(h);
+  return executable ? subscriptionSignedIn(h, executable, authHome) : false;
 }
 async function loginHarness(h: Job["harness"]) {
   if (h === "local") throw new Error("Local models do not need subscription login");
   console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
-  const child = Bun.spawn([harnessPath(h)!, ...(h === "codex" ? ["login"] : ["auth", "login"])], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+  const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   if (await child.exited || !await signedInHarness(h)) throw new Error("Agent sign-in did not finish. Run shiptorio-runner login codex (or claude) and try again.");
 }
 const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
@@ -82,7 +82,7 @@ if (process.argv[2] === "doctor") {
       try {
         boundary = await checkSandbox(dir, h ? { home: authHome, executable: harnessPath(h)! } : undefined);
         // Exercise CLI startup, managed preferences and HTTPS inside the agent boundary (#235), without inference.
-        const probe = h ? [harnessPath(h)!, ...(h === "codex" ? ["login", "status"] : ["auth", "status"])] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
+        const probe = h ? [harnessPath(h)!, ...subscriptionArgs(h)] : [process.execPath, "--no-env-file", "-e", "console.log('sandbox OK')"];
         const result = await boundary.run(probe, dir, { timeout: 30000 });
         if (result.code && !(h && authExpired(result.err + result.out))) { console.error(redactText(result.err.slice(-2000))); throw Error("Sandbox probe failed"); }
         if (h) {
@@ -336,8 +336,14 @@ if (action === "retry") {
         try {
           await renewPairing(pair);
           await replayReceipts(root, pair.repo, receipt => api(pair, "finish", receipt));
-          const { job } = await api(pair, "claim", { harnesses: ready });
-          if (job) await execute(job, pair); else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
+          ready = await refreshAuth();
+          const free = await freeSubscriptions(installedSubscriptions, async h => ready.includes(h), busySubscriptions);
+          const { job } = await api(pair, "claim", { harnesses: [...free, ...(ready.includes("local") ? ["local"] : [])] });
+          if (job) {
+            if (job.harness !== "local") busySubscriptions.add(job.harness);
+            try { await execute(job, pair); }
+            finally { if (job.harness !== "local") busySubscriptions.delete(job.harness); }
+          } else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
           retry.reset();
         } catch (error) {
           const delay = retry.fail();

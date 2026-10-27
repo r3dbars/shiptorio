@@ -1,5 +1,6 @@
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
+import { availableJobHarness, syncRunnerPower } from "./runner-power";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
 import { factorySpend } from "./spend";
@@ -60,7 +61,7 @@ import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
-import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
+import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
@@ -571,7 +572,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][], authRequired?: AuthHarness[]) {
     if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
     await this.accountPut("runnerPresence", { harnesses, authRequired, seenAt: Date.now() });
-    if (authRequired !== undefined && await this.load()) {
+    await this.load();
+    if (this.state) {
+      const power = syncRunnerPower(this.state.power, harnesses);
+      if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
+    }
+    if (authRequired !== undefined && this.state) {
       await this.decisionData();
       const ids = authRequired.map(h => `runner-auth:${h}`);
       const current = this.openMoves!.filter(m => m.id.startsWith("runner-auth:")).map(m => m.id);
@@ -805,15 +811,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const stranded = this.state?.items.filter(i => i.state === "working" && expired.some(j => j.itemId === i.id)) ?? [];
       if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) });
       await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
-      const localPower = runnerPower(harnesses);
-      if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
-        await this.patch({ power: [...this.state.power.filter(p => !["power-codex", "power-claude_code", ...localPower.map(p => p.id)].includes(p.id)), ...localPower] });
+      if (this.state) {
+        const power = syncRunnerPower(this.state.power, harnesses);
+        if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
       }
       await this.offerRunnerPlan();
       await this.refreshDecisions();
       await this.scheduleTick();
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
-      const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
+      const job = [...jobs.values()].find(j => j.status === "ready" && availableJobHarness(j.harness, harnesses));
       if (!job) return null;
       if (this.env.SPARK_DISABLED === "1" || this.running.size + [...jobs.values()].filter(j => j.status === "running").length >= budgetLimits(this.env).jobs) return null;
       const currentItem = this.state?.items.find(i => i.id === job.itemId);
@@ -827,6 +833,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (!account) return null;
       const quota = await runQuotaStatus(this.env, account);
       if (quota.used >= quota.limit || !await runQuota(this.env as never, account)) return null;
+      const selected = availableJobHarness(job.harness, harnesses)!;
+      if (selected !== job.harness) {
+        this.log("info", `${harnessLabel(job.harness)} is unavailable; ${harnessLabel(selected)} will execute the same approved plan.`, job.itemId);
+        job.route = `solar, ${harnessLabel(selected)}. Preferred subscription unavailable at dispatch.`;
+        job.harness = selected;
+      }
       await this.accountPut("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);

@@ -26,7 +26,7 @@ export async function linuxSandbox(work: string, agent?: { home: string; executa
     const binary = await realpath(agent.executable);
     visible.push("--ro-bind", await realpath(join(binary, "..")), await realpath(join(binary, "..")));
   }
-  const env = { ...(agent ? { CODEX_HOME: join(home, ".codex") } : {}), HOME: home, TMPDIR: temp, TMP: temp, TEMP: temp, PATH: `${bin}:/usr/bin:/bin`, LANG: "C.UTF-8", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1", BUN_INSTALL_CACHE_DIR: join(home, ".bun-cache"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
+  const env = { ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude") } : {}), HOME: home, TMPDIR: temp, TMP: temp, TEMP: temp, PATH: `${bin}:/usr/bin:/bin`, LANG: "C.UTF-8", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1", BUN_INSTALL_CACHE_DIR: join(home, ".bun-cache"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   let closed = false;
   return {
     async run(args, cwd = directory, options = {}) {
