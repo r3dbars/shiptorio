@@ -57,9 +57,15 @@ try {
         page.getByRole("button", { name: /Enter the factory/ }).click(),
       ]);
     }
-    const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
+    const preparingStaging = !local && persona !== "test-guest" && width === 390;
+    // Fixture reset is setup, before the real player mounts. Unmount the old picker so
+    // its inventory polling cannot race the deliberately locked reset boundary.
+    if (preparingStaging) await page.goto("about:blank");
+    const login = preparingStaging
+      ? await context.request.get(`${url.origin}/test/login?as=${persona}`, { maxRedirects: 0 })
+      : await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
-    if (!local && persona !== "test-guest" && width === 390) {
+    if (preparingStaging) {
       let reset;
       for (let attempt = 0; attempt < 15; attempt++) {
         const response = await context.request.post(`${url.origin}/test/reset`, { headers: { origin: url.origin } });
