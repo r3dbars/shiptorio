@@ -19,7 +19,7 @@ export interface HudHost {
 }
 
 // the game's fixed plates over the map (App.tsx): the floor card and icons, the needs tray, the ticker, the controls
-const PLATES = [".hudtop", ".needs-slot", ".ticker", ".ctrl"];
+const PLATES = [".hudtop", ".needs-slot", ".ticker", ".ctrl", ".judge-header", ".judge-caption"];
 
 const STATE_WORD: Record<string, string> = { IDLE: "IDLE", WORKING: "WORKING", BLOCKED: "NEEDS YOU" };
 const SHORT: Record<string, string> = {
