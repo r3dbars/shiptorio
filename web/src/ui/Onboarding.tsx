@@ -160,11 +160,13 @@ export function Onboarding({ live, step: initial, onDone, onPlay }: { live: bool
         setLogin(me.login);
         setInstallUrl(me.installUrl ?? null);
         seedPrefs(me.prefs);
+        // repos only for a real account: a guest (or nobody) gets the demo shop, and /api/repos would refuse them
+        if (me.login) loadRepos();
+        else setRepos((r) => r ?? []);
         if (me.login && step === "hello") setStep("repo");
         else if (!me.login && step === "hello") onPlay?.();
       })
       .catch(() => { setLogin(null); if (step === "hello") onPlay?.(); });
-    loadRepos();
   }, [live]);
 
   const loadRepos = () =>

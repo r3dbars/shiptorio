@@ -18,6 +18,22 @@ export function serverUp(): Promise<boolean> {
   return up;
 }
 
+/** Who /api/me says this browser is: a login when signed in, guest when it's a guest session. Asked once. */
+export interface Me { login: string | null; guest?: boolean }
+let me: Promise<Me | null> | null = null;
+export function whoAmI(): Promise<Me | null> {
+  me ??= fetch("/api/me", { cache: "no-store" })
+    .then((r) => (r.ok ? (r.json() as Promise<Me>) : null))
+    .catch(() => null);
+  return me;
+}
+
+/** Progress syncs to the guest session only for a signed-out guest playing the demo shop. A signed-in
+ *  player's sim play, or any other scenario, stays in the browser so it never lands on the real account. */
+export function isGuestPlay(repo: string | undefined, me: Me | null): boolean {
+  return repo === SANDBOX_REPO && !!me && !me.login;
+}
+
 export type PrefKey = "intro" | "guideSeen" | "achievements"; // achievements: web/src/ui/Achievements.tsx reads and merges its own
 
 const LOCAL: Record<Exclude<PrefKey, "achievements">, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };

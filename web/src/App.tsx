@@ -3,7 +3,7 @@ import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
-import { savePref, serverUp, signInUrl } from "./account";
+import { SANDBOX_REPO, savePref, serverUp, signInUrl, whoAmI, isGuestPlay } from "./account";
 import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
@@ -122,9 +122,14 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // Play first, sign in later: the sim on a real server is the demo shop new players start in, and signing
   // in with GitHub is the unlock that brings their own repo (the floor card's chip, then a card after a rocket).
   const [server, setServer] = useState(false);
+  // only a signed-out guest in the demo shop syncs progress to the guest session; a signed-in player's sim
+  // play, and every other scenario, stays in this browser so it never lands on the real account
+  const [guest, setGuest] = useState(false);
+  const demoShop = cfg.kind === "sim" && !intro && cfg.repo === SANDBOX_REPO;
   useEffect(() => {
     if (cfg.kind === "sim" && !intro) void serverUp().then(setServer);
-  }, [cfg.kind, intro]);
+    if (demoShop) void serverUp().then((up) => (up ? whoAmI() : null)).then((me) => setGuest(isGuestPlay(cfg.repo, me)));
+  }, [cfg.kind, intro, demoShop]);
   const sandbox = server && cfg.kind === "sim" && !intro;
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
   // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
@@ -176,7 +181,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
-  const profile = progressProfile(cfg.kind, login, sandbox);
+  const profile = progressProfile(cfg.kind, login, guest);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
