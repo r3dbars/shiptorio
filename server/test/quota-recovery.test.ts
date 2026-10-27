@@ -55,7 +55,7 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
 });
 
 test("one-tap admin link selects existing limits; saving raises Spark and run quotas immediately", async () => {
-  const { env, cookie } = await fixture();
+  const { env } = await fixture();
   env.ADMIN_LOGINS = 'admin';
   const adminCookie = await signedInCookie(env, 'admin', [], 3);
   await env.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at) VALUES('admin','admin',0)").run();
@@ -163,4 +163,12 @@ test("daily planning cap survives an elapsed timestamp and does not block anothe
   await expect(current.enqueueRunner({ ...input, itemId: 'gh-1' })).rejects.toThrow('Planning paused');
   expect(await current.enqueueRunner({ ...input, itemId: 'gh-2' })).toMatchObject({ status: 'planning' });
   expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
+});
+
+
+test("quota telemetry reports the configured owner floor and effective resource limits without a row", async () => {
+  const { env } = await fixture();
+  await env.DB.prepare("DELETE FROM signup_allowlist WHERE login='owner'").run();
+  const status = await quotaStatus(env, 'owner/repo', { id: 1, login: 'owner' });
+  expect(status.quotas.filter(q => ['runs', 'factories', 'repos'].includes(q.id)).map(q => q.limit)).toEqual([200, 99999, 99999]);
 });
