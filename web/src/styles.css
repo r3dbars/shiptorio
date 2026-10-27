@@ -237,6 +237,11 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 .ci-act.do { color: var(--dark); background: var(--green); border-color: #000; }
 .ci-act.do .k { color: var(--dark); }
 .ci-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 78%; overflow-y: auto; z-index: 3; gap: 8px; background: var(--iron-panel-solid); animation: sheet-up 0.14s ease-out both; }
+.ci-details { overflow: hidden; }
+.ci-details-head, .ci-options { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.ci-review { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
+.ci-review > * { flex-shrink: 0; }
+.ci-options { border-top: 2px solid var(--iron-line); padding-top: 8px; background: var(--iron-panel-solid); }
 .ci-sheet ol { margin: 0; padding-left: 18px; color: var(--dim); font-size: 13px; display: grid; gap: 4px; }
 .ci-close { align-self: flex-end; font: 400 10px var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--iron-plate); border: 2px solid var(--iron-line); padding: 7px 10px; cursor: pointer; }
 .ci-close:hover { border-color: var(--iron-line-hi); }
