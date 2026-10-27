@@ -1,5 +1,5 @@
 import { expect, it, spyOn } from "bun:test";
-import { inTrace, log } from "../src/telemetry";
+import { currentRedactor, inTrace, log } from "../src/telemetry";
 
 it("prepares environment secrets once per trace and isolates concurrent requests", async () => {
   const info = spyOn(console, "info").mockImplementation(() => {});
@@ -18,5 +18,20 @@ it("prepares environment secrets once per trace and isolates concurrent requests
     const rotated = inTrace({ requestId: "rotation" }, env("fixture-rotated") as never, () => {}, () => log("info", "fixture.event", { message: "fixture-rotated" }, { persist: false }));
     expect(rotated.message).toBe("[REDACTED]");
     expect(reads).toBe(3);
+  } finally { info.mockRestore(); }
+});
+
+it("shares registered request credentials with subsequent logs and drops them after the trace", () => {
+  const info = spyOn(console, "info").mockImplementation(() => {});
+  try {
+    expect(currentRedactor()).toBeUndefined();
+    inTrace({ requestId: "credential-scope" }, {}, () => {}, () => {
+      const redactor = currentRedactor()!;
+      redactor.register({ token: "fixture-decrypted-only" });
+      expect(log("info", "fixture.event", { message: "fixture-decrypted-only" }, { persist: false }).message).toBe("[REDACTED]");
+      inTrace({ requestId: "nested" }, {}, () => {}, () => expect(currentRedactor()).not.toBe(redactor));
+      expect(currentRedactor()).toBe(redactor);
+    });
+    expect(currentRedactor()).toBeUndefined();
   } finally { info.mockRestore(); }
 });

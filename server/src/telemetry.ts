@@ -11,6 +11,7 @@ export interface LogEntry extends Trace { level: 'info' | 'warn' | 'error'; ts: 
 interface Context { trace: Trace; redactor: Redactor; env: TelemetryEnv; waitUntil: (task: Promise<unknown>) => void }
 const context = new AsyncLocalStorage<Context>();
 export const currentTrace = () => context.getStore()?.trace;
+export const currentRedactor = () => context.getStore()?.redactor;
 export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['waitUntil'], run: () => T): T {
   return context.run({ trace, redactor: new Redactor(env), env, waitUntil }, () => Sentry.withScope(() => {
     Sentry.setTag('requestId', trace.requestId);

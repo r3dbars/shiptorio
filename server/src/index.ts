@@ -15,7 +15,7 @@ import { repoAccess, requireUser as resolveUser, validRepo } from "./authorizati
 
 import { Redactor } from "./redact";
 import * as Sentry from "@sentry/cloudflare";
-import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
+import { currentRedactor, currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
 import { adminRoutes } from "./admin";
 
 
@@ -820,7 +820,7 @@ async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   const installation = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
   if (!installation) return c.json({ error: "repository unavailable" }, 403);
   const scope = { repo, installationId: installation.installation_id, repoId: installation.repo_id };
-  const redactor = new Redactor(c.env);
+  const redactor = currentRedactor() ?? new Redactor(c.env);
   const { clientSecret } = await sentryCreds(c.env, scope, redactor);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   await markUsed(c.env, "sentry", scope);
