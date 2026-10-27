@@ -827,8 +827,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const users = item.customer?.usersAffected;
     propose(
       {
-        title: "Bottleneck: launch pad",
-        why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : `PR #${item.prNumber} passed the gauntlet: ${item.title}`,
+        title: `Launch #${item.prNumber}: ${item.title}`, // same card the live gauntlet deals (server/src/gauntlet.ts)
+        why: users ? `Merging #${item.prNumber} closes the crash hitting ${users} users.` : "Tested, proven and reviewed. Hold to launch it.",
         stage: "pad",
         kind: "ship",
         focus: "gate-1",
