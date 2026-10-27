@@ -139,14 +139,17 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
       && move.options.some(o => o.actions.some(a => a.tool === tool));
   };
   // A real plan awaiting consent must remain reachable. Otherwise reserve one existing
-  // build/retry proposal. This changes membership only; Spark still orders the capped deck.
+  // build/retry proposal in a non-merge slot. This changes membership only; Spark still orders the capped deck.
   const runner = ranked.find(move => runnerDecision(move, "approve_runner_job"))
     ?? ranked.find(move => runnerDecision(move, "plan_runner_job"));
   if (!runner || visible.some(move => move.id === runner.id)) return visible;
   const passive = [...visible].reverse().find(move => move.kind === "unblock" && !move.id.endsWith(":deferred")
     && move.options.length > 0 && move.options.every(o => o.id === "later" && o.actions.length === 0));
-  if (!passive) return visible; // never displace another executable decision or an escalation
-  const ids = new Set(visible.filter(move => move.id !== passive.id).map(move => move.id));
+  // Governance and other pending decisions may fill every slot too. Page out the
+  // lowest-ranked non-merge card, without answering, deleting or rewriting it.
+  const replace = passive ?? [...visible].reverse().find(move => !gate.includes(move));
+  if (!replace) return visible; // all twelve slots belong to merge-gate decisions
+  const ids = new Set(visible.filter(move => move.id !== replace.id).map(move => move.id));
   ids.add(runner.id);
   return ranked.filter(move => ids.has(move.id));
 }
