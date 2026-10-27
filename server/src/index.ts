@@ -22,6 +22,7 @@ import * as Sentry from "@sentry/cloudflare";
 import { currentRedactor, currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
 import { adminRoutes } from "./admin";
 import { tapsRoutes } from "./taps-admin";
+import { testUserRoutes } from "./test-users";
 
 
 import { Hono, type Context, type Next } from "hono";
@@ -75,6 +76,9 @@ export interface Env extends FactoryEnv, SignupEnv {
   BUILD_SHA?: string;
   GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
   ADMIN_LOGINS?: string;
+  TEST_USERS?: string;
+  TEST_FACTORY_KEY?: string;
+  TEST_FACTORY?: Fetcher;
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -100,6 +104,7 @@ const signedIn = (c: { env: Env; req: { header(name: string): string | undefined
 
 type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean } };
 const app = new Hono<AppEnv>();
+testUserRoutes(app);
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
