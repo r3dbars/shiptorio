@@ -1,8 +1,15 @@
 // Posts a correctly signed fake Sentry webhook to the local Worker.
 // bun run fake:sentry [issue.created|issue.resolved|error.created|event_alert.triggered] [issueId]
+// bun run fake:sentry trends  prints the bottleneck signals a fake Sentry floor raises (no Worker needed).
 import { fakeSentry } from "../src/sources/sentry";
+import { fakeSentryTrends, sentryTrends } from "../src/signals/sentry";
 
 const [event = "issue.created", issueId = "4501"] = process.argv.slice(2);
+if (event === "trends") {
+  const { items, pulses } = fakeSentryTrends();
+  for (const t of sentryTrends(items, { pulses })) console.log(`${t.severity.toFixed(2)} ${t.trend.padEnd(10)} ${t.title}\n     ${t.detail}\n     → ${t.unlock}\n     ${t.evidence.map((e) => e.url).join(" ")}`);
+  process.exit(0);
+}
 const secret = process.env.SENTRY_CLIENT_SECRET;
 if (!secret) throw new Error("Set SENTRY_CLIENT_SECRET in server/.dev.vars (any fake value) and restart `bun run dev`.");
 const body = JSON.stringify(fakeSentry(event, issueId));
