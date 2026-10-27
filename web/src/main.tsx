@@ -7,7 +7,7 @@ import { Judge } from "./judge/Judge";
 import { App } from "./App";
 import { Onboarding, type OnboardStep } from "./ui/Onboarding";
 import { sound } from "./sound/engine";
-import { serverUp } from "./account";
+import { SANDBOX_REPO, serverUp } from "./account";
 import "./iron.css";
 import "./styles.css";
 import "./foundry.css";
@@ -16,7 +16,7 @@ sound.install();
 
 // The demo shop a signed-out player plays in. Signing in with GitHub (the floor card's chip, or the card after
 // the first rocket) is the unlock that brings their own repo.
-const SANDBOX = "?source=sim&scenario=first-run&repo=you%2Fdemo-shop";
+const SANDBOX = `?source=sim&scenario=first-run&repo=${encodeURIComponent(SANDBOX_REPO)}`;
 
 // Play first, sign in later. A bare visit plays the welcome tour once, then drops a signed-out player
 // straight into the demo shop; a signed-in one goes to their repos. `?onboard=repo` resumes after the

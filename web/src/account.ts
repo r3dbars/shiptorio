@@ -2,6 +2,9 @@
 // localStorage stays the fast local copy; the server copy only matters in live mode, and every
 // call fails quietly so the sim, private windows and signed-out visits behave as before.
 
+/** The demo shop signed-out players start in (web/src/main.tsx). */
+export const SANDBOX_REPO = "you/demo-shop";
+
 /** Sign in with GitHub, then pick a repo. Where the sandbox's "Use your repo" goes. */
 export const signInUrl = () => `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
 
@@ -18,7 +21,12 @@ export function serverUp(): Promise<boolean> {
 export type PrefKey = "intro" | "guideSeen" | "achievements"; // achievements: web/src/ui/Achievements.tsx reads and merges its own
 
 const LOCAL: Record<Exclude<PrefKey, "achievements">, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };
-const live = () => new URLSearchParams(location.search).get("source") === "live";
+// Live, a bare visit (the tour before the demo shop), or the demo shop itself: a signed-out player's prefs go
+// to their guest session (server: guests), so they're kept when they sign in. Other sim scenarios stay local.
+const live = () => {
+  const q = new URLSearchParams(location.search);
+  return q.get("source") === "live" || !q.has("source") || (q.get("source") === "sim" && q.get("repo") === SANDBOX_REPO);
+};
 
 /** Copies the account's settings into this browser. Guide progress only moves forward. */
 export function seedPrefs(prefs: Partial<Record<PrefKey, string>> | undefined) {

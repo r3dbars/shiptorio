@@ -77,5 +77,10 @@ In the sandbox (`sandbox` in `App.tsx`: the sim with a real server behind it, `s
   own repo next" for two rockets, then steps aside.
 - Both go to `signInUrl()` = `/auth/login?next=/?onboard=repo&source=live`, the same GitHub OAuth as always.
 
-`?onboard=hello` still shows the old sign-in card. Guest sessions on the server (merging sandbox progress at
-`/auth/callback`) are separate work; the client only needs `/api/me` to keep returning no `login` for a guest.
+`?onboard=hello` still shows the old sign-in card.
+
+Guests (server side: PR #355): the bare visit's `/api/me` call is what creates the guest cookie, and a guest gets
+no `login`, so the client treats it like signed out. In the sandbox the progress profile is `guest`
+(`progressProfile(..., sandbox)`), which syncs through `GET/PUT /api/me/progress` like a signed-in profile; if
+there's no guest session the pull fails and nothing is pushed. `savePref` also sends on a bare visit and in the
+demo shop. `/auth/callback` moves the guest save onto the account (account progress wins).

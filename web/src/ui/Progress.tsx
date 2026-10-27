@@ -52,7 +52,9 @@ const store = {
 };
 
 /** ?progress=1 turns progression on for this browser (and remembers it); ?progress=0 turns it back off. */
-export const progressProfile = (kind: "sim" | "live", login?: string | null) => kind === "sim" ? "sim" : `github:${login?.toLowerCase() ?? "signed-out"}`;
+// guest: the demo shop with a server behind it. Its progress goes to the guest session and moves onto the
+// account at GitHub sign-in (account progress wins), so playing first never loses anything.
+export const progressProfile = (kind: "sim" | "live", login?: string | null, guest = false) => guest ? "guest" : kind === "sim" ? "sim" : `github:${login?.toLowerCase() ?? "signed-out"}`;
 
 export function progressOn(): boolean {
   const q = new URLSearchParams(location.search).get("progress");
@@ -90,7 +92,8 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
   }, [key]);
 
   // Signed in: progress follows you across devices. Pull once, merge, and push changes a few seconds later.
-  const synced = on && profile.startsWith("github:") && profile !== "github:signed-out";
+  // A guest syncs to its guest session the same way; with no guest session the pull fails and nothing is pushed.
+  const synced = on && (profile === "guest" || (profile.startsWith("github:") && profile !== "github:signed-out"));
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pull = useRef(false);
   const push = useCallback(() => {
