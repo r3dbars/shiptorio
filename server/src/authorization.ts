@@ -18,7 +18,9 @@ export async function requireUser(request: Request, env: AuthorizationEnv): Prom
 }
 
 export const validRepo = (repo: string) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && !repo.split('/').some(p => p === '.' || p === '..');
-// D1 is checked even on cache hits: uninstall/removal revokes all users immediately.
+// GitHub collaborator checks are reused for 5 minutes. Idle runners re-checked every minute and drained the App's
+// hourly API bucket. D1 is checked even on cache hits: uninstall/removal revokes all users immediately.
+const ACCESS_TTL = 5 * 60 * 1000;
 export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read"): Promise<number | null> {
   const repo = name.toLowerCase();
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
@@ -36,14 +38,14 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   // keys also make pre-upgrade read-only grants harmless for writers.
   const key = `access:v2:${authority === "write" ? "write:" : ""}${row.installation_id}:${repo}:${user.id}`;
   const cached = await env.CACHE?.get<{ expiresAt: number }>(key, 'json').catch(() => null);
-  if (cached && cached.expiresAt > Date.now() && cached.expiresAt <= Date.now() + 60000) return row.installation_id;
+  if (cached && cached.expiresAt > Date.now() && cached.expiresAt <= Date.now() + ACCESS_TTL) return row.installation_id;
   try {
     if (await repoInstallationId(env, repo) !== row.installation_id) return null;
     const token = await installationToken(env, row.installation_id);
     const result = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
     const permissions = authority === "write" ? ['write', 'maintain', 'admin'] : ['read', 'triage', 'write', 'maintain', 'admin'];
     if (result.user?.id !== user.id || !permissions.includes(result.permission)) return null;
-    await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }).catch(() => {});
+    await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + ACCESS_TTL }), { expirationTtl: ACCESS_TTL / 1000 }).catch(() => {});
     return row.installation_id;
   } catch { return null; } // API errors and suspended/uninstalled Apps fail closed.
 }

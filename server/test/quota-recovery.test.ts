@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { FactoryState } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { testD1, signedInCookie } from "./d1-fixture";
@@ -97,7 +97,11 @@ test("legacy hosted scoping failures also preserve run quota and wait behind the
   const { f, env, data } = await fixture();
   env.META_API_KEY = "test-only";
   await f.usage(); // loads the real factory state without contacting providers
-  await (f as unknown as { runSparkJob(itemId: string, machineId: string): Promise<void> }).runSparkJob('gh-1', 'assembler-1');
+  // The provider refuses the key. Never reach the real API: a transient network error there retried with
+  // backoff after this test ended and landed on other files' fetch mocks.
+  const provider = spyOn(globalThis, "fetch").mockImplementation((async () => new Response(null, { status: 401 })) as unknown as typeof fetch);
+  try { await (f as unknown as { runSparkJob(itemId: string, machineId: string): Promise<void> }).runSparkJob('gh-1', 'assembler-1'); }
+  finally { provider.mockRestore(); }
   expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
   expect((data.get('state') as FactoryState).items[0]).toMatchObject({ state: 'queued', attempts: 0 });
   expect(data.get('planningRetry:gh-1')).toMatchObject({ failures: 1 });
@@ -137,6 +141,28 @@ test("planning cooldowns increase, midnight clears the cap, and issue state cann
   expect(planningHold(three, three.retryAt - 1)).toEqual(three);
   expect(planningHold(three, three.retryAt)).toBeNull();
   expect(planningFailure(three, 'offline', three.retryAt).failures).toBe(1);
+});
+
+test("a GitHub rate limit pauses planning until GitHub's retry time without spending a daily try", () => {
+  const start = Date.parse('2026-10-27T03:00:00Z');
+  const limited = (at: number) => `GitHub rate limit; queued work retries after ${new Date(at).toISOString()}`;
+  const one = planningFailure(undefined, 'offline', start);
+  const paused = planningFailure(one, limited(start + 25 * 60000), start + 120000);
+  expect(paused.failures).toBe(1);
+  expect(paused.retryAt).toBe(start + 25 * 60000);
+  expect(planningHold(paused, start + 25 * 60000 - 1)).toEqual(paused);
+  expect(planningHold(paused, start + 25 * 60000)).toBeNull();
+  // A ledger written before this fix counted the rate limit as the third try; it only waits out the pause.
+  const legacy: PlanningRetry = { day: '2026-10-27', failures: 3, retryAt: Date.parse('2026-10-28T00:00:00Z'), reason: limited(start + 60000) };
+  expect(planningHold(legacy, start + 30000)).toEqual({ ...legacy, retryAt: start + 60000 });
+  expect(planningHold(legacy, start + 60000)).toBeNull();
+  expect(planningHold(legacy, start + 120000)).toBeNull();
+  // Invalid timestamps cannot turn a real daily cap into a free retry.
+  expect(planningHold({ ...legacy, reason: limited(start) + 'invalid' }, start + 120000)?.retryAt).toBe(legacy.retryAt);
+  expect(planningHold({ ...legacy, reason: 'offline' }, start + 120000)?.retryAt).toBe(legacy.retryAt);
+  const capped = planningFailure(planningFailure(paused, 'offline', start + 26 * 60000), 'offline', start + 30 * 60000);
+  expect(capped.failures).toBe(3);
+  expect(planningHold(capped, start + 60 * 60000)?.retryAt).toBe(Date.parse('2026-10-28T00:00:00Z'));
 });
 
 test("limits endpoint denies other repos, requires authentication, and returns no-store telemetry", async () => {
