@@ -1,5 +1,6 @@
+import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
-import { budgetAccount } from "./budget";
+import { budgetAccount, budgetLimits } from "./budget";
 import { byRepoId, repositoryFactory } from "./repository";
 import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
@@ -25,7 +26,7 @@ import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./gith
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
 import { isAllowed } from "./session";
-import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport, selfhostSetupAccess } from "./access";
 import { joinWaitlist } from "./waitlist";
 import { judgePage, landingPage, publicFile } from "./landing";
 
@@ -62,6 +63,7 @@ export interface Env extends FactoryEnv, SignupEnv {
   GITHUB_CLIENT_SECRET: string;
   SESSION_SECRET: string;
   APP_PASSWORD?: string;
+  SELFHOST_SETUP?: string; // opt-in owner-password bootstrap; disabled once GITHUB_APP_ID is set
   BUILD_SHA?: string;
   GITHUB_APP_SLUG?: string; // optional: skips the GET /app lookup for the install link
   ADMIN_LOGINS?: string;
@@ -161,7 +163,7 @@ app.use("*", async (c, next) => {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
       return c.json({error:'runner authentication required'},401);
     }
-    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo)) return c.json({error:'repository access denied'},403);
+    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo, "write")) return c.json({error:'repository access denied'},403);
     if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
       return c.json({error:'runner pairing revoked'},401);
@@ -210,13 +212,16 @@ app.use("*", async (c, next) => {
   if (path === "/setup" || path === "/setup/callback") {
     if (c.env.GITHUB_APP_ID) return c.notFound();
     const user = await resolveUser(c.req.raw, c.env);
-    if (!user) return c.json({ error: "login required" }, 401);
+    if (!user && !await selfhostSetupAccess(c.req.raw, c.env)) return c.json({ error: "login required" }, 401);
   }
   if (scoped) {
     const user = await resolveUser(c.req.raw, c.env);
     if (!user) return c.json({ error: "login required" }, 401);
     const repo = match ? `${match[1]}/${match[2]}` : c.req.query("repo") ?? "";
-    if (!validRepo(repo) || !await repoAccess(c.env, user, repo)) return c.json({ error: "repository access denied" }, 403);
+    // Connector pages may disclose an inbound bearer URL or activate a mine on
+    // GET; all connector management and repository mutations require writers.
+    const authority = path.startsWith("/connect/") || !["GET", "HEAD"].includes(c.req.method) ? "write" : "read";
+    if (!validRepo(repo) || !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
     if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
@@ -561,9 +566,14 @@ app.get("/api/repos", async (c) => {
 // The empire overview: one small summary per repo this player can reach (shared/src/empire.ts).
 // Repos never opened come back as ready: false; the map still draws them as islands.
 app.get("/api/empire", async (c) => {
-  const user = await signedIn(c);
+  const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.json({ error: "login required" }, 401);
-  const repos = (await reposFor(c.env, user)).slice(0, 24);
+  // Sign-in reach is only an inventory. Revalidate before even resolving a DO:
+  // collaborator revocation and upstream failures must hide the entire island.
+  const candidates = (await reposFor(c.env, user)).slice(0, 24);
+  const repos = (await Promise.all(candidates.map(async repo =>
+    await repoAccess(c.env, user, repo.full_name) ? repo : null,
+  ))).filter((repo): repo is NonNullable<typeof repo> => repo !== null);
   const islands = await Promise.all(repos.map(async (r): Promise<IslandSummary> => {
     const summary = await Promise.race([
       factory(c.env, r.full_name).then(f => f.summary()).catch(() => null),
@@ -648,6 +658,16 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   const parsed = RunnerReceipt.safeParse(JSON.parse(body));
   if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
   return c.json(await (await factory(c.env, identity.repo)).finishRunner(identity.pairId, parsed.data));
+});
+
+// Quota telemetry shares normal authenticated repository access; no provider calls or mutations.
+app.get("/api/repos/:owner/:repo/limits", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const f = await factory(c.env, repo);
+  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, c.get("user")), f.runnerJobs(), f.planningRetries()]);
+  const active = jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length;
+  c.header("Cache-Control", "no-store");
+  return c.json({ ...status, retries, quotas: [...status.quotas, quota("jobs", "Concurrent jobs", active, budgetLimits(c.env).jobs, null, null)] });
 });
 
 // Spend belongs to the stable payer, rather than every collaborator with map access.

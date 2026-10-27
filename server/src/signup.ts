@@ -15,6 +15,8 @@ export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist
 export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
 export const isAdmin = (env: Env, login: string) => isAllowed(env.ADMIN_LOGINS || 'r3dbars', login);
+// Only explicitly configured owner/admin identities get quota exemptions, never a wildcard.
+export const isQuotaOwner = (env: SignupEnv, login: string) => (env.ADMIN_LOGINS || 'r3dbars').split(',').some(owner => owner.trim().toLowerCase() === login.toLowerCase());
 export async function signupAllowed(env: {DB:D1Database;ALLOWED_LOGINS?:string}, login: string): Promise<boolean> {
   const row = await env.DB.prepare('SELECT enabled FROM signup_allowlist WHERE login = ?').bind(login.toLowerCase()).first<{enabled: number}>();
   return row ? row.enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", login);
@@ -78,6 +80,11 @@ export async function redeemInvite(env: Env, code: string, login: string): Promi
   return results[0].meta.changes === 1 && results[1].meta.changes === 1;
 }
 export async function resourceQuota(env: Env, login: string, kind: 'factory'|'repo', resource: string): Promise<boolean> {
+  if (isQuotaOwner(env, login)) {
+    // Still record ownership: run attribution, telemetry and account cleanup depend on this ledger.
+    await env.DB.prepare('INSERT OR IGNORE INTO signup_resources(login,kind,resource) VALUES (?,?,?)').bind(login.toLowerCase(),kind,resource.toLowerCase()).run();
+    return true;
+  }
   const caps = await env.DB.prepare('SELECT factories,repos FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{factories:number;repos:number}>();
   const cap = kind === 'factory' ? caps?.factories ?? 3 : caps?.repos ?? 3;
   const row = await env.DB.prepare(`INSERT OR IGNORE INTO signup_resources(login,kind,resource) SELECT ?,?,? WHERE
@@ -85,10 +92,16 @@ export async function resourceQuota(env: Env, login: string, kind: 'factory'|'re
   if (row) return true;
   return !!await env.DB.prepare('SELECT resource FROM signup_resources WHERE login=? AND kind=? AND resource=?').bind(login.toLowerCase(),kind,resource.toLowerCase()).first();
 }
+export async function runQuotaStatus(env: Pick<Env, 'DB' | 'ADMIN_LOGINS'>, login: string, now = Date.now()) {
+  const row = await env.DB.prepare('SELECT runs_daily FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{runs_daily:number}>();
+  const used = await env.DB.prepare('SELECT count FROM signup_counters WHERE scope=? AND bucket=?')
+    .bind(`runs:${login.toLowerCase()}`, Math.floor(now / 86400000)).first<{count:number}>();
+  return { used: used?.count ?? 0, limit: isQuotaOwner(env, login) ? Math.max(200, row?.runs_daily ?? 0) : row?.runs_daily ?? 20, resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
+}
 export async function runQuota(env: Env, login: string): Promise<boolean> {
   if (!await signupAllowed(env,login)) return false;
-  const row = await env.DB.prepare('SELECT runs_daily FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{runs_daily:number}>();
-  return admit(env,`runs:${login.toLowerCase()}`,row?.runs_daily ?? 20,86400000,'daily run quota');
+  const { limit } = await runQuotaStatus(env, login);
+  return admit(env,`runs:${login.toLowerCase()}`,limit,86400000,'daily run quota');
 }
 
 export async function adminSignup(request: Request, env: Env): Promise<Response> {
@@ -101,6 +114,7 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
     env.DB.prepare('DELETE FROM signup_invites WHERE digest IN (SELECT digest FROM signup_invites WHERE expires_at < ? LIMIT 100)').bind(Date.now()),
   ]);
   let message = '';
+  const selectedLogin = new URL(request.url).searchParams.get('login')?.toLowerCase() ?? '';
   if (request.method === 'POST') {
     if (request.headers.get('origin') !== new URL(request.url).origin) return new Response('Invalid origin',{status:403});
     const raw = await request.text();
@@ -112,9 +126,13 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
       message = `One-use invite (expires in 7 days; copy now): ${code}`;
     } else if (['approve','deny','limits'].includes(action || '') && githubLogin(target)) {
       const count = (field:string,fallback:number) => /^\d{1,5}$/.test(form.get(field) || '') ? Number(form.get(field)) : fallback;
+      const sparkCount = (field: string) => !form.has(field) || !form.get(field)?.trim() ? null : /^\d{1,9}$/.test(form.get(field)!) ? Number(form.get(field)) : NaN;
+      const calls = sparkCount('spark_calls'), tokens = sparkCount('spark_tokens');
+      if (Number.isNaN(calls) || Number.isNaN(tokens)) return new Response('Invalid Spark quota',{status:400});
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO signup_allowlist(login,enabled,approved_by,updated_at,factories,repos,runs_daily) VALUES (?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET enabled=excluded.enabled,approved_by=excluded.approved_by,updated_at=excluded.updated_at,factories=excluded.factories,repos=excluded.repos,runs_daily=excluded.runs_daily`).bind(target,action==='deny'?0:1,login,Date.now(),count('factories',3),count('repos',3),count('runs',20)),
         env.DB.prepare('UPDATE signup_waitlist SET status=?,updated_at=? WHERE identity=?').bind(action==='deny'?'denied':'approved',Date.now(),identity),
+        ...(form.has('spark_calls') && form.has('spark_tokens') ? [env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=?,spark_tokens_daily=? WHERE login=?').bind(calls,tokens,target)] : []),
       ]);
       message = `${target}: ${action==='deny'?'access revoked':'access approved'}`;
     } else return new Response('Choose a valid GitHub login',{status:400});
@@ -124,6 +142,7 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
     env.DB.prepare('SELECT * FROM signup_allowlist ORDER BY login LIMIT 200').all<Record<string,unknown>>(),
     env.DB.prepare('SELECT * FROM signup_abuse ORDER BY updated_at DESC LIMIT 100').all<Record<string,unknown>>(),
   ]);
+  const selected = allowlist.results.find(r => r.login === selectedLogin);
   const rows = waitlist.results.map(row=>`<li>${escape(String(row.identity))} (${escape(String(row.kind))}, ${escape(String(row.status))})<form method="post"><input type="hidden" name="identity" value="${escape(String(row.identity))}"><input name="login" aria-label="Verified GitHub login" placeholder="Verified GitHub login" value="${row.kind==='github'?escape(String(row.identity)):''}" required><button name="action" value="approve">Approve</button><button name="action" value="deny">Deny / revoke</button></form></li>`).join('');
-  return new Response(`<!doctype html><meta charset="utf-8"><title>Shiptorio admin — access</title><h1>Signup and abuse</h1><p>${escape(message)}</p><a href="/admin">Admin</a><p>Email approval requires Justin to verify the GitHub identity first.</p><h2>Waitlist</h2><ul>${rows}</ul><h2>Allowlist and quotas</h2><pre>${escape(JSON.stringify(allowlist.results,null,2))}</pre><form method="post"><input name="login" placeholder="GitHub login" required><label>Factories<input name="factories" type="number" min="0" max="99999" value="3"></label><label>Repos<input name="repos" type="number" min="0" max="99999" value="3"></label><label>Runs/day (UTC)<input name="runs" type="number" min="0" max="99999" value="20"></label><button name="action" value="limits">Save access and quotas</button><button name="action" value="deny">Revoke</button></form><form method="post"><button name="action" value="invite">Create one-use invite</button></form><h2>Abuse flags</h2><pre>${escape(JSON.stringify(abuse.results,null,2))}</pre>`,{headers});
+  return new Response(`<!doctype html><meta charset="utf-8"><title>Shiptorio admin — access</title><h1>Signup and abuse</h1><p>${escape(message)}</p><a href="/admin">Admin</a><p>Email approval requires Justin to verify the GitHub identity first.</p><h2>Waitlist</h2><ul>${rows}</ul><h2>Allowlist and quotas</h2><pre>${escape(JSON.stringify(allowlist.results,null,2))}</pre><form method="post"><input name="login" placeholder="GitHub login" value="${escape(selectedLogin)}" required><label>Factories<input name="factories" type="number" min="0" max="99999" value="${selected?.factories ?? 3}"></label><label>Repos<input name="repos" type="number" min="0" max="99999" value="${selected?.repos ?? 3}"></label><label>Runs/day (UTC)<input name="runs" type="number" min="0" max="99999" value="${selected?.runs_daily ?? 20}"></label><label>Spark calls/day (UTC; blank = Worker default)<input name="spark_calls" type="number" min="0" max="999999999" value="${selected?.spark_calls_daily ?? ''}"></label><label>Spark tokens/day (UTC; blank = Worker default)<input name="spark_tokens" type="number" min="0" max="999999999" value="${selected?.spark_tokens_daily ?? ''}"></label><button name="action" value="limits">Save access and quotas</button><button name="action" value="deny">Revoke</button></form><form method="post"><button name="action" value="invite">Create one-use invite</button></form><h2>Abuse flags</h2><pre>${escape(JSON.stringify(abuse.results,null,2))}</pre>`,{headers});
 }

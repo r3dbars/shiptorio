@@ -1,5 +1,20 @@
 # Decisions and open items
 
+- 2026-10-27: The 12-card cap reserves at most one existing eligible runner decision
+  when passive source alerts would hide it. Awaiting plan consent takes precedence
+  over a new planning proposal; only a passive unblock/Look later slot can be replaced.
+  Score order and Spark ordering remain intact, as do suppression, explicit escalation
+  and launch proof. This is visibility only, never approval or synthetic work.
+
+
+- 2026-10-26: Runner plan approval binds the validated selected card to its durable
+  job, not the transient top card. Concurrent deck refreshes cannot silently drop
+  a tap or remove an unrelated card; the lock rechecks job/card/repo binding and
+  the current issue revision. Authenticated WebSocket regressions reproduce both
+  yield points and reject a changed issue or rebound job. This is local race proof,
+  not attribution for any particular production tap.
+
+
 Running log of what's been decided on Shiptorio and what's still waiting. Newest at the top
 of each section. If you decide something, add it here in the same PR.
 
@@ -372,3 +387,19 @@ production config; provider key values, revocations and permissions are unchange
 - New Claude UI PRs #227 and draft #229 arrived after the backlog cleared; their
   active owner retains merge/deploy responsibility. They are not part of the
   release above. Preview/staging on shiptorio.dev was not changed or certified.
+
+
+### Codex supervised exact edits (2026-10-27)
+
+- Disposable probes isolated Codex CLI 0.162.1 file-tool failures to nested macOS
+  Seatbelt execution: plain inner workspace-write succeeded without the outer
+  boundary; named exact-path permissions, streaming events and canonical binary
+  paths did not repair nested edits. No production sandbox was relaxed.
+- Codex now retains the outer OS boundary and inner read-only mode, returning a
+  bounded schema-constrained edit proposal. After all agent children stop, the
+  credential-free verification sandbox applies unique exact replacements only
+  within the approved path list. Explicit new files must be absent; dirty trees,
+  malformed output, tool attempts, links and ambiguous matches fail closed.
+- Existing diff scope/secret checks, frozen files, sandboxed checks, regression
+  proof and fresh trusted publication still run afterward. This implementation
+  does not establish issue #170 acceptance or a real PR launch.

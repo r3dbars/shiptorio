@@ -202,3 +202,67 @@ describe("durable live check-in decisions", () => {
     } finally { globalThis.fetch = originalFetch; }
   });
 });
+
+describe("runner approval survives concurrent deck selection changes", () => {
+  for (const boundary of ["before-handler", "real-refresh", "inside-lock", "revised-item", "rebound-job"] as const) it(`binds the selected plan at ${boundary} and preserves unrelated cards`, async () => {
+    const { issueRevision } = await import("../src/runner-job");
+    const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "A scoped fix", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
+    const blocker = { ...item, id: "gh-59", title: "An older urgent queue item", value: 100 };
+    const other = card("unrelated", { kind: "unblock", stage: "intake", itemId: blocker.id });
+    const approval = card("approval-58", { kind: "build", stage: "build", itemId: item.id, options: [{ id: "approve", label: "Approve plan", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: "job-58" }, reason: "Player approves the scoped plan" }] }] });
+    const f = fixture([other, approval], { items: [item, blocker] });
+    f.data.set("runnerJob:job-58", { id: "job-58", repo: "r3dbars/demo", itemId: item.id, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-test", status: "awaiting_approval", approvalMoveId: approval.id,
+      inputRevision: await issueRevision(item.title, JSON.stringify({ body: item.body, failure: "", scars: [] })) });
+    await f.factory.debugSnapshot();
+    const internal = f.factory as unknown as { state: FactoryState; runnerJobs: typeof f.factory.runnerJobs; refreshDecisions(): Promise<void>; ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> } };
+    if (boundary === "before-handler" || boundary === "real-refresh") {
+      const original = internal.runnerJobs.bind(f.factory); let changed = false;
+      internal.runnerJobs = async () => {
+        const jobs = await original();
+        if (!changed) {
+          changed = true;
+          if (boundary === "real-refresh") { await internal.refreshDecisions(); expect(internal.state.move?.id).not.toBe(approval.id); }
+          else internal.state.move = other;
+        }
+        return jobs;
+      };
+    } else {
+      const original = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+      internal.ctx.blockConcurrencyWhile = fn => original(async () => {
+        internal.state.move = other;
+        if (boundary === "revised-item") internal.state.items = internal.state.items.map(current => current.id === item.id ? { ...current, title: "Changed since the player saw the plan" } : current);
+        if (boundary === "rebound-job") f.data.set("runnerJob:job-58", { ...(f.data.get("runnerJob:job-58") as object), approvalMoveId: "a-different-plan" });
+        return fn();
+      });
+    }
+    await f.send({ type: "choose_move", moveId: approval.id, optionId: "approve" });
+    if (boundary === "revised-item") {
+      expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "failed", error: "Issue changed; request a fresh plan." });
+      expect(f.data.get("runnerJob:job-58")).not.toHaveProperty("approvedAt");
+    } else if (boundary === "rebound-job") {
+      expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "awaiting_approval", approvalMoveId: "a-different-plan" });
+      expect(f.data.get("runnerJob:job-58")).not.toHaveProperty("approvedAt");
+      return;
+    } else expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "ready", approvedAt: expect.any(Number), allowedPaths: ["server/src/engine.ts"] });
+    expect((f.data.get("openMoves") as Move[]).some(m => m.id === other.id)).toBe(true);
+    expect((f.data.get("openMoves") as Move[]).some(m => m.id === approval.id)).toBe(false);
+  });
+});
+
+describe("real runner proposals survive a deck full of passive source alerts", () => {
+  for (const status of ["none", "failed", "awaiting_approval"] as const) it(`keeps the ${status} job path reachable without changing its state`, async () => {
+    const now = Date.now();
+    const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the real regression", district: "/", state: "queued" as const, attempts: 0, updatedAt: now };
+    const alerts = Array.from({ length: 12 }, (_, n) => card(`source-alert-${n}`, { kind: "unblock", stage: "intake", createdAt: now - 4 * 60 * 60_000, options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] }));
+    const f = fixture(alerts, { items: [item] });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: now });
+    const job = { id: "job-58", itemId: item.id, repo: "r3dbars/demo", status, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-job-58", baseSha: "a".repeat(40), plan: "Fix the scoped regression and prove it", approvalMoveId: "approval-58" };
+    if (status !== "none") f.data.set("runnerJob:job-58", structuredClone(job));
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const tool = status === "awaiting_approval" ? "approve_runner_job" : "plan_runner_job";
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.some(move => move.itemId === item.id && move.options.some(option => option.actions.some(action => action.tool === tool)))).toBe(true);
+    if (status !== "none") expect(f.data.get("runnerJob:job-58")).toEqual(job);
+    else expect(await f.factory.runnerJobs()).toEqual([]);
+  });
+});

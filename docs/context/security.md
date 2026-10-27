@@ -1,5 +1,69 @@
 # Security
 
+## Pre-hackathon security pass (2026-10-26)
+
+Reviewed every file under `server/src` at baseline
+`44942fdfa2431a3903de94f82e5db61dcbafbc86` (63 files), including every Hono
+route and the Factory websocket/runner boundaries. The subsequently added
+`runner-health.ts` display helper was also reviewed. This is source review plus
+deterministic regressions, not a production penetration test.
+
+### Confirmed findings
+
+Each finding has its own fix PR and regression test. PR links are the authority
+for merge and CI status; the summary below describes the final behavior.
+
+| Severity | Finding and impact | Fix and regression |
+| --- | --- | --- |
+| High | Read/triage collaborators inherited mutation authority and could pair a runner that receives a repository write token. | [#270](https://github.com/r3dbars/shiptorio/pull/270): require write/maintain/admin on repo HTTP mutations, all connector pages, every runner request and browser socket commands. `write-authority.test.ts` covers roles, old read-cache isolation, expired grants, provider failure and permission downgrades. |
+| Medium | Empire summaries trusted stale sign-in inventory and could disclose a formerly accessible factory. | [#267](https://github.com/r3dbars/shiptorio/pull/267): resolve a revocable session and reauthorize each repo before resolving or querying its Factory. `empire.test.ts` proves denied repos never reach the DO. |
+| Medium | Inspection read only the first 100 PR files, allowing unsafe files beyond that page to escape review. | [#271](https://github.com/r3dbars/shiptorio/pull/271): check a second page and fail closed above the supported 100-file limit. `inspection-pagination.test.ts` covers a hidden workflow file, exactly 100 files and upstream failure. |
+| Medium | Automatic launch could reuse a docs permit after the current PR changed to another lane. | [#273](https://github.com/r3dbars/shiptorio/pull/273): clear/recompute lane on new heads and recheck files, permit and stable head immediately before automatic merge. `merge-freshness.test.ts` covers changed lane, a head change during file retrieval and a valid docs launch. |
+
+### Requested boundaries checked
+
+- **Routes and ownership:** public auth/waitlist/legal/static routes have deliberate
+  public behavior; account data uses the caller's revocable session; repo reads
+  require membership, mutations require writer authority, and repo export also
+  checks owner identity. Device initiation/polling use an expiring random secret;
+  browser approval separately checks write permission. Admin signup, diagnostics
+  and flags have explicit operator controls, not arbitrary signed-in access.
+- **Factory isolation:** canonical repo lookup uses immutable repository identity;
+  HTTP authorization precedes DO access, socket attachments bind repo and session,
+  incoming commands and outgoing broadcasts reauthorize, runner capabilities bind
+  one repo/user/session, and connector credentials and webhook dedupe are scoped.
+- **GitHub and Sentry:** raw-body HMAC verification precedes parsing/dispatch.
+  Strict signature syntax and fixed 32-byte comparisons reject malformed input.
+  Sentry selects the target repo's credential; legacy delivery is explicitly
+  pinned. Signed issue/incident text remains untrusted evidence.
+- **Prompt injection:** Spark's planner schema permits only `read_issue`,
+  `read_file`, `assign_job`, and `ask_player`. Reads require exact approved paths;
+  independent path/plan/diff checks reject secret paths and forbidden changes.
+  There is no environment, shell, arbitrary HTTP or secret-reading tool. Prompt
+  delimiters alone are not the defense. Existing `injection.test.ts` exercises
+  hostile instructions and rejected tool/path requests. Hosted assembly also
+  validates paths before publication. Native runner confinement is a separate
+  boundary and was not re-audited here.
+- **Secrets in logs:** reviewed console, telemetry, model observations, persisted
+  activity and socket output paths. Redaction includes configured secrets and
+  scoped credentials; support bearer URLs are scrubbed. No additional confirmed
+  secret leak was found. Production secret values were not read or probed.
+
+### Validation and limits
+
+Each fix passed `bun run check` (workspace typechecks, tests, web build and runner
+bundle) locally. Each source PR must also have successful CI and Stranger E2E
+before merging. Browser/load jobs conditionally skipped by CI are not described
+as executed. The Stranger suite uses provider/runner fixtures; it is not a live
+Spark prompt-injection exercise or a real production runner-to-PR proof.
+
+Positive GitHub grants have a bounded 60-second cache, separately keyed for read
+and write authority; processed D1/session revocations override cached grants.
+Actual GitHub branch protections, production IAM/secrets and provider behavior
+were not independently verified. Installation tokens are repository-scoped, not
+branch-scoped, so external branch protection remains important. PRs exceeding
+100 changed files now require splitting before Shiptorio can inspect them.
+
 ## Access model
 
 Every live factory belongs to a canonical lowercase `owner/repo`. Preview access
@@ -16,7 +80,7 @@ No missing-row fallback discovers or enrolls repos during an access check. GitHu
 errors, suspension, unknown permissions and expired sessions fail closed. An
 installation token is only used internally; browser responses never contain it.
 
-Positive grants are cached under installation + repo + user in KV for 60 seconds.
+Positive grants are cached under installation + repo + user + authority in KV for 60 seconds. Read grants cannot satisfy writer checks.
 The value also contains an absolute expiry; eventual KV reads cannot extend it.
 Every check first queries D1 for the live session, `user_repos`,
 `user_installations` and the repo/installation rows, so a processed uninstall/removal overrides cached
@@ -33,9 +97,9 @@ state and checks current membership. A message containing another `repo` is refu
 before parsing player actions. Legacy sockets lack a repo attachment and close.
 Outgoing deliveries retain order while their authorization checks run.
 
-Runner pairing requires a permitted browser user. The resulting expiring bearer
+Runner pairing requires a permitted browser user with write, maintain or admin permission. The resulting expiring bearer
 capability includes that user, their session expiry, one repo and a pairing id.
-Claim, finish and renew verify repository access as that user; older unbound tokens
+Claim, finish, renew and heartbeat verify writer access as that user; older unbound tokens
 are refused and must be paired again. A token cannot target a different repo, or
 survive user expiry, allowlist removal or processed repo uninstall.
 
@@ -47,9 +111,9 @@ survive user expiry, allowlist removal or processed repo uninstall.
 | `/api/repos/:owner/:repo/*` | Shared authorization middleware before any DO RPC, including jobs, runner pairing, factory websocket and future repo endpoints |
 | `GET /api/repos/:owner/:repo/export` | Common repo authorization plus repository-owner check; export excludes runner leases/pairing credentials |
 | Factory websocket upgrade | Worker check plus independent DO session/preview/Origin/repo/membership check |
-| Factory websocket moves/broadcasts | Authenticated repo attachment and current membership; foreign repo messages close the socket |
-| `POST /api/runner/:owner/:repo/{claim,finish,renew}` | Signed repo capability, pairing user's access and session expiry; no preview-cookie bypass for other paths |
-| `GET/POST /connect/{sentry,posthog}?repo=...` | Explicit repo and current user access before status, credential lookup, save or mine activation; save also checks Origin |
+| Factory websocket moves/broadcasts | Authenticated repo attachment; moves require current writer authority, broadcasts require membership; foreign repo messages close the socket |
+| `POST /api/runner/:owner/:repo/{claim,finish,renew,heartbeat}` | Signed repo capability, pairing user's access and session expiry; no preview-cookie bypass for other paths |
+| `GET/POST /connect/{sentry,posthog}?repo=...` | Explicit repo and current writer access before status, credential lookup, save or mine activation; save also checks Origin |
 | `GET /api/sources?repo=...` | Explicit authorized repo; scoped source readiness |
 | `GET /api/setup/status?repo=...` | Explicit authorized repo; no anonymous global connector status |
 | `GET /api/me` | Only the caller's own session login/allowlist status |
@@ -60,9 +124,18 @@ survive user expiry, allowlist removal or processed repo uninstall.
 | `POST /webhooks/sentry/:owner/:repo` (also `?repo=...`) | No user cookie; installed target repo and its own Sentry signature secret; target query cannot select another tenant's secret |
 | Legacy `/webhooks/sentry` | Only the deployment's pinned/previously linked legacy repo; never first-reader assignment |
 | Static assets/SPA | Preview gate; static shell contains no live repo state. Unknown `/api/*` and `/connect/*` return 404 rather than the SPA |
-| `/admin`, `/api/admin/flags` | Accounts session plus explicit `ADMIN_LOGINS`; global/per-user feature flag administration only, no factory state |
+| `/admin/flags`, `/api/admin/flags` | Accounts session plus explicit `ADMIN_LOGINS`; global/per-user feature flag administration only, no factory state |
 | `/api/flags` | Effective flags for caller only; query parameters cannot select another user |
 | `/api/health` | Coarse D1/KV/health-probe status only; no repo state, credentials or names |
+| `GET /api/empire` | Revocable session and per-repo authorization before each Factory summary |
+| `/api/me/{prefs,progress}`, `/settings`, `/api/account/*` | Caller session only; account export, signout and deletion never accept another user identity |
+| `/api/runner-device/{start,poll}`, `/runner/pair` | Rate-limited random expiring device capability; signed-in browser with current writer permission approves a repo |
+| `/connect/support`, `/webhooks/support/:owner/:repo/:token` | Connector requires writer authority; intake requires the target repo's bearer token |
+| `/webhooks/intercom/:owner/:repo` | Target repo's configured signing secret verifies raw payload before intake |
+| `/auth/owner-session` | Timestamp-bound proof of SESSION_SECRET plus an existing allowed account; creates a revocable owner-script session |
+| `/admin/signup`, `POST /admin`, diagnostics `/admin/*` | Explicit operator authorization; diagnostics use the configured code-level operator policy, distinct from flag `ADMIN_LOGINS` |
+| `/api/telemetry/config` | Public client telemetry configuration; ingestion DSN is not a management credential |
+| `/waitlist`, `/privacy`, `/terms`, judge/docs/static routes, `/github/installed` | Public signup/content or redirect only; no factory data |
 | New data/debug routes | Repo routes inherit shared middleware; global data routes must explicitly authorize |
 
 Source credentials are scoped by canonical repo, with global deployment secrets

@@ -257,3 +257,19 @@ it('broadcast shares checks per session within a frame but rechecks revocation o
   expect(sessionChecks).toBe(4);
   expect(sent).toBe(200); expect(closed).toBe(200);
 });
+
+it('self-host first-install setup works through real middleware with only an owner preview cookie', async () => {
+  const f = fixture();
+  const preview = (await makeSessionCookie(`${secret}:${password}`, 'preview')).split(';')[0].replace('shiptorio_session=', 'shiptorio_access=');
+  const env = { ...f.env, GITHUB_APP_ID: '', SELFHOST_SETUP: '1' };
+  const request = (path: string, cookie = preview) => new Request(origin + path, { headers: { cookie } });
+  const setup = await app.fetch(request('/setup'), env);
+  expect(setup.status).toBe(200);
+  expect(await setup.text()).toContain('https://github.com/settings/apps/new');
+  expect(setup.headers.get('content-security-policy')).toContain("form-action 'self' https://github.com");
+  expect((await app.fetch(request('/setup/callback'), env)).status).toBe(400); // Reaches callback, missing one-time code.
+  expect((await app.fetch(request('/setup'), { ...env, SELFHOST_SETUP: '0' })).status).toBe(401);
+  expect((await app.fetch(request('/setup', ''), env)).status).toBe(401);
+  expect((await app.fetch(request('/api/repos'), env)).status).toBe(401);
+  for (const path of ['/setup', '/setup/callback']) expect((await app.fetch(request(path), { ...env, GITHUB_APP_ID: '123' })).status).toBe(404);
+});

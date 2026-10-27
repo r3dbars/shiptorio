@@ -1,6 +1,7 @@
-// The stranger dry run: a brand-new GitHub account goes from the front door to a live factory on the
+// The stranger E2E suite: a brand-new GitHub account goes from the front door to a live factory on the
 // real Worker (Miniflare, with D1, KV, the Factory DO and the built web app) and a pretend GitHub.
 // Every step is timed; the run fails on the first step a stranger couldn't get past.
+// GitHub, Spark and local build output are fixtures. No real credentials or remote writes.
 //
 //   bun run build && node playtest/stranger/run.mjs        (STRANGER_OUT=dir keeps screenshots + timings)
 //
@@ -13,6 +14,9 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
+import { sparkStub } from "./spark-stub.mjs";
 import { githubStub } from "./github-stub.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -23,10 +27,11 @@ mkdirSync(out, { recursive: true });
 const requireFromServer = createRequire(join(server, "package.json"));
 const wrangler = requireFromServer("wrangler");
 const { Miniflare, convertV4MiniflareOptions } = createRequire(requireFromServer.resolve("wrangler"))("miniflare");
-const pw = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
+const pw = await import(process.env.PLAYWRIGHT_MODULE || "@playwright/test");
 const chromium = pw.chromium ?? pw.default.chromium;
 
 const PORT = Number(process.env.STRANGER_PORT || 8799);
+const UI_TIMEOUT = 60000; // CI renders the 3D map in software; bound UI waits separately from factory work.
 const origin = `http://localhost:${PORT}`;
 const PASSWORD = "stranger-preview";
 const WEBHOOK_SECRET = "stub-webhook-secret";
@@ -37,7 +42,10 @@ execFileSync("npx", ["wrangler", "deploy", "--dry-run", "--outdir", bundle], { c
 
 const { workerOptions } = wrangler.unstable_getMiniflareWorkerOptions(join(server, "wrangler.jsonc"));
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
-let mf;
+let mf, browser, context, heartbeatTimer, heartbeatPending;
+const runnerErrors = [];
+try {
+const spark = sparkStub();
 const stub = githubStub({ origin, webhookSecret: WEBHOOK_SECRET, worker: (url, init) => mf.dispatchFetch(url, init) });
 // Only the bindings this Worker uses; the rest of wrangler's option bag is empty defaults.
 const { compatibilityDate, compatibilityFlags, kvNamespaces, d1Databases, durableObjects, assets } = workerOptions;
@@ -54,6 +62,8 @@ mf = new Miniflare(convertV4MiniflareOptions({ port: PORT, workers: [{
     ALLOWED_LOGINS: "fresh-stranger", // one explicitly approved fixture account; no wildcard signup bypass
     SESSION_SECRET: "stranger-session-secret-0123456789abcdef",
     APP_PASSWORD: PASSWORD,
+    META_API_KEY: "stub-meta-key",
+    SPARK_DAILY_TOKENS: "5000000",
     GITHUB_APP_ID: "1",
     GITHUB_APP_PRIVATE_KEY: privateKey,
     GITHUB_CLIENT_ID: "Iv1.stub",
@@ -61,7 +71,7 @@ mf = new Miniflare(convertV4MiniflareOptions({ port: PORT, workers: [{
     GITHUB_WEBHOOK_SECRET: WEBHOOK_SECRET,
     GITHUB_APP_SLUG: "shiptorio-stub",
   },
-  outboundService: (request) => stub.outbound(request),
+  outboundService: (request) => new URL(request.url).host === "api.meta.ai" ? spark.outbound(request) : stub.outbound(request),
 }] }));
 await mf.ready;
 const db = await mf.getD1Database("DB");
@@ -73,8 +83,9 @@ for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sor
 if (process.env.STRANGER_SETUP_URL !== "0") stub.state.setupUrl = `${origin}/github/installed`;
 
 // 2. The stranger: a fresh browser profile, phone-ish laptop window, github.com answered by the stub.
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
-const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+await context.tracing.start({ screenshots: false, snapshots: true });
 await context.route("https://github.com/**", (route) => stub.browser(route));
 // Playwright can't intercept a redirect hop, so the Worker's 302 to github.com becomes a fresh navigation.
 await context.route(`${origin}/auth/login*`, async (route) => {
@@ -84,30 +95,79 @@ await context.route(`${origin}/auth/login*`, async (route) => {
   const cookies = res.headersArray().filter((h) => h.name.toLowerCase() === "set-cookie").map((h) => h.value);
   await route.fulfill({ status: 200, contentType: "text/html", headers: { "set-cookie": cookies.join("\n") }, body: `<script>location.href=${JSON.stringify(to)}</script>` });
 });
+context.setDefaultTimeout(UI_TIMEOUT);
 const page = await context.newPage();
 const consoleErrors = [];
+const expectedAnonymousErrors = [];
+let signedIn = false;
 const consoleWarnings = [];
 const socketMessages = [];
 let sawFactoryWork = false;
+let factoryState = {};
 page.on("websocket", socket => {
-  socket.on("framereceived", frame => { try { const value = JSON.parse(String(frame.payload)); if (value.state?.items?.length || value.patch?.items?.length) sawFactoryWork = true; socketMessages.push({ type: value.type, text: value.text, itemCount: value.state?.items?.length ?? value.patch?.items?.length, move: value.state?.move?.title ?? value.move?.title }); } catch {} });
+  socket.on("framereceived", frame => {
+    try {
+      const value = JSON.parse(String(frame.payload));
+      if (value.type === "snapshot") factoryState = value.state;
+      if (value.type === "move") factoryState.move = value.move;
+      if (value.type === "move_resolved" && factoryState.move?.id === value.moveId) factoryState.move = null;
+      if (value.type === "deck") factoryState.deck = value.deck;
+      if (value.type === "patch") {
+        const { items, ...rest } = value.patch;
+        Object.assign(factoryState, rest);
+        if (items) {
+          const byId = new Map((factoryState.items ?? []).map(i => [i.id, i]));
+          for (const item of items) byId.set(item.id, item);
+          factoryState.items = [...byId.values()];
+        }
+      }
+      if (factoryState.items?.length) sawFactoryWork = true;
+      socketMessages.push({ type: value.type, text: value.text, itemCount: factoryState.items?.length, move: factoryState.move?.title });
+    } catch (error) { consoleErrors.push(`Invalid factory frame: ${error}`); }
+  });
   socket.on("close", () => socketMessages.push({ type: "socket-closed" }));
 });
 page.on("pageerror", (e) => consoleErrors.push(String(e)));
-page.on("console", (m) => { if (m.type() === "error") consoleErrors.push(m.text()); if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
+page.on("console", (m) => { if (m.type() === "error") { if (!signedIn && /401/.test(m.text())) expectedAnonymousErrors.push(m.text()); else consoleErrors.push(`${m.text()} at ${JSON.stringify(m.location())}`); } if (m.type() === "warning") consoleWarnings.push(m.text().slice(0, 2000)); });
 const apiErrors = [];
 let repoPolls = 0;
 page.on("request", (r) => { if (new URL(r.url()).pathname === "/api/repos") repoPolls++; });
-page.on("response", (r) => { if (r.url().includes("/api/") && r.status() >= 400) apiErrors.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+page.on("response", (r) => { if (r.url().includes("/api/") && r.status() >= 400) { const path = new URL(r.url()).pathname; if (!signedIn && r.status() === 401 && path === "/api/repos") expectedAnonymousErrors.push(`401 ${path}`); else apiErrors.push(`${r.status()} ${path}`); } });
 
 const steps = [];
 const report = {};
+const item = () => factoryState.items?.find(i => i.id === "gh-1");
+async function until(label, check, timeout = 45000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) { const result = await check(); if (result) return result; await delay(100); }
+  throw new Error(`Timed out: ${label}`);
+}
+async function api(path, body, token) {
+  const response = await context.request.post(origin + path, { data: body, headers: { origin, ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+  assert.equal(response.ok(), true, `${path}: ${response.status()} ${await response.text()}`);
+  return response.json();
+}
+async function clickMove(name) {
+  const card = await until(`decision option ${name}`, () => factoryState.deck?.find(m => m.options.some(o => name.test(o.label))));
+  if (factoryState.move?.id === card.id) {
+    await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: UI_TIMEOUT });
+    return;
+  }
+  await page.getByRole("button", { name: /^Activity, / }).click();
+  const tray = page.getByRole("complementary", { name: "Activity", exact: true });
+  const visibleCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: card.title }) });
+  await visibleCard.getByRole("button", { name: card.title }).click();
+  await visibleCard.getByRole("button", { name }).click();
+  await page.keyboard.press("Escape");
+}
+let runnerToken, job;
 const t0 = Date.now();
 async function step(name, fn) {
   const start = Date.now();
   try {
     await fn();
     steps.push({ name, ms: Date.now() - start, ok: true });
+    console.log(`PASS ${name}`);
     await page.screenshot({ path: join(out, `${String(steps.length).padStart(2, "0")}-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
   } catch (error) {
     steps.push({ name, ms: Date.now() - start, ok: false, error: String(error).split("\n")[0] });
@@ -121,22 +181,24 @@ try {
   await step("front door: preview password", async () => {
     await page.goto(origin + "/");
     // The front door is intentionally public; the private-entry link leads to the password gate.
-    if (await page.getByRole("link", { name: "Enter the factory", exact: true }).count()) await page.getByRole("link", { name: "Enter the factory", exact: true }).click();
+    const entry = page.getByRole("link", { name: /^(Sign in|Enter the factory)$/i });
+    if (await entry.count()) await entry.first().click();
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Enter the factory" }).click();
     await page.waitForURL((u) => u.pathname === "/" && !u.search.includes("check"));
   });
   await step("welcome tour shows, then skip", async () => {
-    await page.getByRole("button", { name: "Skip" }).click({ timeout: 20000 });
+    await page.getByRole("button", { name: "Skip" }).click({ timeout: UI_TIMEOUT });
   });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
-    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: 25000 }); // the sandbox map loads first and CI runners are slow
-    await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: 10000 });
-    await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: UI_TIMEOUT }); // the sandbox map loads first and CI runners are slow
+    await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: UI_TIMEOUT });
+    await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: UI_TIMEOUT });
+    signedIn = true;
   });
   await step("no repos yet: install the App", async () => {
     const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
-    await install.waitFor({ timeout: 10000 });
+    await install.waitFor({ timeout: UI_TIMEOUT });
     // GitHub opens in a new tab; the Shiptorio tab keeps waiting for the repo
     const [github] = await Promise.all([context.waitForEvent("page"), install.click()]);
     await github.getByRole("button", { name: "Install" }).click();
@@ -145,16 +207,16 @@ try {
     await github.close();
   });
   await step("back in Shiptorio, repo is listed by itself", async () => {
-    await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: 45000 });
+    await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: UI_TIMEOUT });
   });
   await step("open the factory", async () => {
     await page.getByRole("button", { name: new RegExp(stub.state.repo) }).click();
-    await page.waitForURL((u) => u.searchParams.get("repo") === stub.state.repo, { timeout: 10000 });
+    await page.waitForURL((u) => u.searchParams.get("repo") === stub.state.repo, { timeout: UI_TIMEOUT });
     // the live map is up when the floor card (top-left HUD) shows and the factory has its folders
-    await page.locator(".floorcard").waitFor({ timeout: 30000 });
+    await page.locator(".floorcard").waitFor({ timeout: UI_TIMEOUT });
   });
   await step("real factory work reaches the agent handoff", async () => {
-    await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: 20000 });
+    await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: UI_TIMEOUT });
     // A sheet opened by URL alone is insufficient: real signed-install backlog must reach the browser.
     await new Promise((resolve, reject) => {
       const poll = setInterval(() => { if (sawFactoryWork) { clearInterval(poll); clearTimeout(deadline); resolve(); } }, 25);
@@ -165,10 +227,106 @@ try {
   await step("the agent handoff reaches Power, not a dead end", async () => {
     // Current onboarding opens Power immediately on a first repo; older flows use the suggested card.
     if (!report.powerOpenedAutomatically) await page.getByRole("button", { name: /connect a local agent/i }).click();
-    await page.getByRole("region", { name: "Power", exact: true }).waitFor({ timeout: 5000 });
+    await page.getByRole("region", { name: "Power", exact: true }).waitFor({ timeout: UI_TIMEOUT });
   });
-  // Past here a stranger needs the runner on their own computer (Codex goal 11, PR #166) and a real
-  // Spark key, then the first rocket: see docs/context/new-user-path.md for what's left.
+  await step("signed issue arrives once, even on delivery retry", async () => {
+    await stub.issueArrives();
+    await until("signed issue delivery processed", async () => (await db.prepare("SELECT state FROM webhook_deliveries WHERE delivery_id = ?").bind("stranger-issue-1").first())?.state === "done");
+    await until("issue ore over live socket", () => item());
+    assert.equal(factoryState.items.filter(i => i.id === "gh-1").length, 1);
+  });
+  await step("pair a fixture runner through device approval", async () => {
+    const device = await api("/api/runner-device/start", {});
+    const pairing = await context.newPage();
+    await pairing.goto(device.verificationUri);
+    await pairing.getByLabel("Repository (owner/name)").fill(stub.state.repo);
+    const [approval] = await Promise.all([pairing.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/runner/pair", { timeout: UI_TIMEOUT }), pairing.getByRole("button", { name: "Connect this repo" }).click()]);
+    assert.equal(approval.ok(), true, `Pair approval: ${approval.status()} ${await approval.text()} request=${JSON.stringify({ origin: await approval.request().headerValue("origin") })}`);
+    await pairing.getByText("Machine approved", { exact: true }).waitFor();
+    await pairing.close();
+    const paired = await api("/api/runner-device/poll", { code: device.code, secret: device.secret });
+    runnerToken = paired.token;
+    assert.ok(runnerToken, "Device approval must deliver a runner token");
+    // A real idle runner keeps advertising presence while the player reads the plan.
+    // Slow software-rendered CI must not accidentally simulate an unplugged runner.
+    heartbeatTimer = setInterval(() => {
+      if (heartbeatPending) return;
+      heartbeatPending = api(`/api/runner/${stub.state.repo}/heartbeat`, { harnesses: ["codex"] }, runnerToken)
+        .catch(error => runnerErrors.push(String(error))).finally(() => { heartbeatPending = null; });
+    }, 10000);
+    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null);
+    // Return to the floor after the onboarding Power sheet.
+    await page.keyboard.press("Escape");
+  });
+  await step("Spark proposes a plan; no build before approval", async () => {
+    await clickMove(/Plan with Codex/i);
+    await until("Spark plan approval", () => factoryState.deck?.some(m => m.options?.some(o => o.id === "approve")));
+    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null);
+    assert.equal(stub.state.pulls.length, 0);
+    await clickMove(/Approve and build with Codex/i);
+    job = await until("approved runner job", async () => (await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job);
+    assert.equal(job.itemId, "gh-1");
+    assert.equal(job.baseSha, stub.state.baseSha);
+    assert.deepEqual(job.allowedPaths, ["src/cart.ts", "test/cart.test.ts"]);
+    assert.ok(job.steps.some(s => s.tool === "read_issue"));
+    assert.ok(job.steps.some(s => s.tool === "read_file"));
+    assert.ok(job.steps.some(s => s.tool === "assign_job"));
+  });
+  await step("runner publishes a PR with receipts on the approved head", async () => {
+    // Subscription CLI and GitHub git transport are external fixtures. Production finishRunner
+    // verifies branch/head, allowed diff, lease and proof before opening the PR itself.
+    stub.state.branches[job.branch] = stub.state.headSha;
+    const receipt = { jobId: job.id, lease: job.lease, ok: true, sha: stub.state.headSha, summary: "Applied SAVE10 with regression coverage.", checks: ["typecheck", "test", "build"], proof: { baseSha: job.baseSha, headSha: stub.state.headSha, failsOnBase: true, passesOnHead: true, command: "bun test test/cart.test.ts", logTail: "fixture: base fails, head passes" } };
+    const result = await api(`/api/runner/${stub.state.repo}/finish`, receipt, runnerToken);
+    assert.equal(result.prUrl, `https://github.com/${stub.state.repo}/pull/7`);
+    assert.equal(stub.state.pulls.length, 1);
+    assert.match(stub.state.pulls[0].body, /Closes #1/);
+    assert.match(stub.state.pulls[0].body, new RegExp(`shiptorio-proof:${stub.state.headSha}`));
+    await until("PR at CI inspector", () => item()?.state === "inspecting");
+    assert.equal(item().inspection.stages.find(s => s.gate === "ci").state, "pending");
+    assert.equal(stub.state.merges.length, 0);
+  });
+  await step("stale green CI cannot advance the current PR", async () => {
+    const delivery = await stub.completeChecks("success", stub.state.baseSha);
+    await until("stale CI delivery processed", async () => (await db.prepare("SELECT state FROM webhook_deliveries WHERE delivery_id = ?").bind(delivery).first())?.state === "done");
+    assert.equal(item().inspection.stages.find(s => s.gate === "ci").state, "pending");
+    assert.equal(stub.state.merges.length, 0);
+  });
+  await step("current-head CI, verify bay and Spark review pass", async () => {
+    await stub.completeChecks("success");
+    await until("all automated gauntlet stages", () => item()?.state === "on_pad");
+    for (const gate of ["ci", "verify", "ai"]) assert.equal(item().inspection.stages.find(s => s.gate === gate).state, "passed", gate);
+    assert.match(item().inspection.stages.find(s => s.gate === "verify").reason, /reproduced on base and passed on head/i);
+    assert.ok(spark.calls.includes("review"));
+    assert.ok(stub.state.comments.some(c => c.body?.includes("AI review passed")));
+    assert.equal(item().inspection.humanApproved, false);
+    assert.equal(stub.state.merges.length, 0);
+  });
+  await step("Launch card merges only after the player's click", async () => {
+    await until("Launch card over socket", () => factoryState.deck?.some(m => m.title.startsWith("Launch #7")));
+    const card = factoryState.deck.find(m => m.title.startsWith("Launch #7"));
+    assert.equal(card.evidence.length, 3);
+    assert.ok(card.evidence.every(stamp => stamp.ok));
+    await page.getByRole("button", { name: /^Activity, / }).click();
+    const tray = page.getByRole("complementary", { name: "Activity", exact: true });
+    const launchCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: /^Launch #7:/ }) });
+    await launchCard.getByRole("button", { name: /^Launch #7:/ }).click();
+    await launchCard.getByRole("button", { name: /^Launch #7(?!:)/ }).click();
+    await until("rocket launched", () => item()?.state === "launched");
+    assert.equal(stub.state.merges.length, 1);
+    assert.equal(stub.state.merges[0].sha, stub.state.headSha);
+    assert.equal(item().inspection.humanApproved, true);
+    assert.equal(item().inspection.stages.find(s => s.gate === "human").state, "passed");
+    report.finalItem = item();
+  });
+  await step("no silent provider fallback or browser errors", async () => {
+    assert.deepEqual(stub.state.unexpected, []);
+    assert.deepEqual(spark.unexpected, []);
+    assert.deepEqual(apiErrors, []);
+    assert.deepEqual(runnerErrors, []);
+    assert.deepEqual(consoleErrors, []);
+    for (const kind of ["triage", "scope", "plan", "review"]) assert.ok(spark.calls.includes(kind), kind);
+  });
 } catch (error) {
   failed = error;
   // what the server knew when the stranger got stuck
@@ -183,10 +341,15 @@ try {
   console.log(JSON.stringify({ db: report.db, page: report.page }, null, 1));
 }
 
-Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, apiErrors, repoPolls, githubCalls: stub.state.calls, out });
+Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, apiErrors, repoPolls, expectedAnonymousErrors, runnerErrors, githubCalls: stub.state.calls, sparkCalls: spark.calls, unexpected: stub.state.unexpected, sparkUnexpected: spark.unexpected, factoryState, out });
 writeFileSync(join(out, "timings.json"), JSON.stringify(report, null, 2));
 for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.name.padEnd(52)} ${(s.ms / 1000).toFixed(1)}s${s.error ? `  ${s.error}` : ""}`);
 console.log(`total ${(report.totalMs / 1000).toFixed(1)}s · screenshots and timings.json in ${out}`);
-await browser.close();
-await mf.dispose();
-process.exit(failed ? 1 : 0);
+process.exitCode = failed ? 1 : 0;
+} finally {
+  clearInterval(heartbeatTimer);
+  await heartbeatPending;
+  if (context) await context.tracing.stop({ path: join(out, "trace.zip") }).catch(() => {});
+  await browser?.close();
+  await mf?.dispose();
+}
