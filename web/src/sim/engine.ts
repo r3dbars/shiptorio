@@ -125,6 +125,20 @@ const SHOP_DISTRICTS: District[] = [
 const GROWTH_DISTRICTS: District[] = [...SHOP_DISTRICTS.slice(0, 3), { name: "landing", x: 22, y: 0, w: 5, h: 4, files: 18 }, { name: "docs", x: 29, y: 0, w: 3, h: 2, files: 6 }];
 
 export const SCENARIOS = {
+  // Judge replay uses the ordinary protocol and gauntlet; captions live outside the map.
+  judge: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    ores: [
+      { at: 2, title: "TypeError: cart.total is undefined", kind: "bug", district: "checkout", source: "sentry", users: 112,
+        ask: "Guard cart.total and prove coupon checkout works with an empty cart.",
+        failAt: "verify", failFirst: "Empty-cart checkout still crashes: reproduce before, prove after",
+        spark: [{ tool: "get_sentry_issue", text: "Sentry: checkout crash affects 112 users" }, { tool: "triage", text: "Checkout is the highest-value repair" }] },
+      { at: 4, title: "Email: checkout broke", kind: "bug", district: "checkout", source: "inbox", reporter: "dana@example.com",
+        linkTo: "TypeError: cart.total is undefined", spark: [{ tool: "get_feedback", text: "Inbox: Dana cannot check out" }] },
+      { at: 6, title: "Clarify the shipping FAQ", kind: "cleanup", district: "docs", source: "github_issue" },
+    ],
+  },
   "quiet-morning": {
     ores: [
       { at: 2, title: "Checkout button spins forever on Safari", kind: "bug", district: "web" },

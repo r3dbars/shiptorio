@@ -1,0 +1,29 @@
+.judge { position: fixed; inset: 0; background: var(--iron-sky); color: var(--iron-ink); font: 14px/1.5 var(--iron-mono); overflow: hidden; }
+.judge .iron-btn { min-height: 44px; }
+.judge-welcome { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100% - 32px)); padding: 28px; box-sizing: border-box; }
+.judge-welcome img { max-width: 100%; height: auto; }
+.judge-welcome h1 { margin: 20px 0; }
+.judge-credit, .judge-disclosure { color: var(--iron-dim); font-size: 12px; }
+.judge-header { position: absolute; inset: 12px 12px auto; display: flex; align-items: center; gap: 16px; padding: 8px 12px; }
+.judge-time { margin-left: auto; white-space: nowrap; }
+.judge-caption { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); box-sizing: border-box; width: min(720px, calc(100% - 32px)); padding: 18px 24px; max-height: calc(100% - 112px); overflow-y: auto; }
+.judge-caption progress { width: 100%; height: 8px; accent-color: var(--iron-amber); }
+.judge-caption h1 { margin: 12px 0; }
+.judge-permit { padding: 12px; border: 2px solid var(--iron-amber); background: var(--iron-soot); }
+.judge-permit h2 { font-size: 13px; }
+.judge-permit small { display: block; margin-top: 8px; color: var(--iron-dim); font-size: 12px; }
+.judge-stats { display: flex; flex-wrap: wrap; gap: 8px 18px; border-top: 2px solid var(--iron-line); padding-top: 10px; font-size: 12px; }
+.judge-stats b, .judge-evidence { color: var(--iron-amber); }
+.judge-receipts { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0; list-style: none; font-size: 12px; }
+.judge-receipts [data-passed="true"] { color: var(--iron-ok); }
+.judge a { color: var(--iron-aether); }
+.judge a:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .judge { font-size: 12px; }
+  .judge-header { inset: 8px 8px auto; gap: 8px; flex-wrap: wrap; padding: 8px; }
+  .judge-header .iron-eyebrow { order: 4; width: 100%; }
+  .judge-header img { width: 120px; height: auto; }
+  .judge-caption { bottom: 8px; width: calc(100% - 16px); padding: 12px; max-height: calc(100% - 128px); }
+  .judge-caption p { margin: 8px 0; }
+  .judge-welcome { padding: 24px; }
+}
