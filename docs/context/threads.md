@@ -248,3 +248,20 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Heartbeats publish separate Codex / Claude Code plants before the first job, update logout/offline state, and clear stale/revoked plants. Power sheet shows availability rather than an invented remaining subscription quota. Crosses into `web/` only for this requested Power sheet behavior; no shared schema change.
 - **Justin must reinstall the runner bundle after merge** (standalone installer or legacy `runner:service install`). Existing running helpers do not update with the website. Sign into Claude using the installed runner's real data root; macOS Keychain identity depends on that path. The PR includes the reinstall paste.
 - Validation: full fast suite passes after rebase (723 tests, 2 platform skips), workspace/test typechecks, build, 26 playtests / 332 decisions / no findings; Power sheet browser checks pass on desktop/iPhone 14/Pixel 7. CLI login → stored status → real sandbox uses a provider fixture; native Claude 2.1.310 separately reaches its expected signed-out error in the macOS sandbox with zero tokens. Provider dispatch, unchanged recovery leases and independent auth guards are covered. Justin's dedicated browser sign-in and a real Claude-produced PR remain acceptance steps. CI gates merge; repository auto-merge is disabled, so this chat merges the verified head after green checks.
+
+
+## Owner quota recovery (Codex, 2026-10-26)
+
+PR #281 fixes the Day 1 issue-to-PR checkpoint blocker: migration 0014 upserts `r3dbars`
+with 99999 factories/repos, 200 runs/day, inherited Worker Spark quotas, enabled access,
+and deletes only `runs:r3dbars` from the abuse ledger. Explicit `ADMIN_LOGINS` identities
+(default `r3dbars`) bypass resource caps and retain a 200-run floor even without a row;
+signup/repo authorization and explicit revocation still apply. Quota telemetry uses the
+same effective limits. The existing #269 failed-plan accounting stays in place: no build
+run until dispatch; per-issue backoff of 1m, 2m, then midnight UTC after three failures.
+The daily retry cap now also holds when a stored cooldown timestamp has elapsed.
+Regression tests cover absent/low/high owner limits, ordinary users, wildcard configuration,
+resource attribution, migration upsert/cleanup, zero-charge failed plans across restarts,
+and independent issue retry caps. Validation and merge are tracked in
+[PR #281](https://github.com/r3dbars/shiptorio/pull/281); its final verification comment
+links the successful Deploy run, including D1 migration application and live smoke.
