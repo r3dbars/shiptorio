@@ -35,7 +35,11 @@ async function pinPairingOrigin() {
 }
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
-const authHome = await prepareAgentHome(root);
+let claudeKeychainUnavailable = false;
+const authHome = await prepareAgentHome(root, () => {
+  claudeKeychainUnavailable = true;
+  console.error("Claude Code is unavailable: its private Keychain could not be unlocked. Codex can still run. Repair the private Keychain before signing in to Claude; credentials have been preserved.");
+});
 const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
@@ -68,11 +72,13 @@ if (process.argv[2] === "geothermal") {
   process.exit(0);
 }
 async function signedInHarness(h: Job["harness"]) {
+  if (h === "claude_code" && claudeKeychainUnavailable) return false;
   if (h === "local") return localStatus?.ok === true;
   const executable = harnessPath(h);
   return executable ? subscriptionSignedIn(h, executable, authHome) : false;
 }
 async function loginHarness(h: Job["harness"]) {
+  if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Repair the private Keychain before signing in to Claude; no personal Keychain fallback is allowed.");
   if (h === "local") throw new Error("Local models do not need subscription login");
   console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
   const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });

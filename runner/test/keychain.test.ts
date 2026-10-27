@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { agentEnvironment } from "../src/policy";
 import { prepareAgentHome } from "../src/subscriptions";
-import { prepareAgentKeychain } from "../src/keychain";
+import { KeychainUnavailable, prepareAgentKeychain } from "../src/keychain";
 import { checkSandbox } from "../src/sandbox";
 
 const run = async (args: string[], home?: string) => {
@@ -52,5 +52,47 @@ test.skipIf(process.platform !== "darwin")("Keychain setup refuses linked passwo
     await Bun.write(join(root, "outside"), "do-not-read"); await chmod(join(root, "outside"), 0o600);
     await symlink(join(root, "outside"), join(root, ".agent-keychain-password"));
     await expect(prepareAgentKeychain(home)).rejects.toThrow("links");
+    let degraded = false;
+    await expect(prepareAgentHome(root, () => { degraded = true; })).rejects.toThrow("links");
+    expect(degraded).toBe(false);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== "darwin")("unavailable Claude Keychain cannot block Codex login and cannot fall back for Claude", async () => {
+  const root = await mkdtemp(join(tmpdir(), "shiptorio-keychain-unavailable-"));
+  let home: string | undefined;
+  try {
+    home = await prepareAgentHome(root);
+    // Only corrupt this disposable fixture's saved password, preserving its store.
+    const password = join(root, ".agent-keychain-password");
+    const original = await readFile(password, "utf8");
+    await Bun.write(password, original[0] === "0" ? "1".repeat(64) : "0".repeat(64));
+    await expect(prepareAgentHome(root)).rejects.toBeInstanceOf(KeychainUnavailable);
+    const bin = join(root, "bin"); await mkdir(bin);
+    for (const name of ["codex", "claude"]) {
+      const executable = join(bin, name);
+      await Bun.write(executable, `#!/bin/sh\n[ "$HOME" = ${JSON.stringify(home)} ] || exit 9\n[ -z "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN$SHIPTORIO_RUNNER_TOKEN" ] || exit 8\nprintf 'dedicated-provider-called'\n`);
+      await chmod(executable, 0o700);
+    }
+    const invoke = async (provider: string) => {
+      const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), "login", provider], {
+        env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
+      });
+      const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      return { out, err, code };
+    };
+    const codex = await invoke("codex");
+    expect(codex.code).toBe(0);
+    expect(codex.out).toContain("dedicated-provider-called");
+    expect(codex.err).toContain("Claude Code is unavailable: its private Keychain could not be unlocked");
+    expect(codex.err).not.toContain(original);
+    const claude = await invoke("claude");
+    expect(claude.code).not.toBe(0);
+    expect(claude.out).not.toContain("dedicated-provider-called");
+    expect(claude.err).toContain("Repair the private Keychain before signing in to Claude");
+    expect(await readFile(password, "utf8")).not.toBe(original);
+  } finally {
+    if (home) await run(["delete-keychain", join(home, "Library/Keychains/shiptorio.keychain-db")], home).catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);
