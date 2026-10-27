@@ -553,6 +553,7 @@ export const THINKS = {
     support: "Read a customer message",
     route: "Picked the power plant",
     growth: "Picked an experiment",
+    diagnose: "Found what's holding you back",
   } as Record<ThoughtDecision, string>,
 };
 
