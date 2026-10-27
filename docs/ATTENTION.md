@@ -1,7 +1,7 @@
 # Attention: when Shiptorio is allowed to bug you
 
 > Status: **design draft, nothing built yet** (2026-10-27). Thread "Design a calm attention system for players".
-> Mockup: the Black Iron "Attention" artifact linked from that thread. Any build ships behind the `attention` flag first.
+> Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb (Black Iron, real map art). Any build ships behind the `attention` flag first.
 
 ## The problem
 
