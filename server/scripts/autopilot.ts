@@ -30,7 +30,10 @@ const record = async (kind: string, data: Record<string, unknown>) => {
 };
 
 const acted = new Map<string, number>(), skipped = new Set<string>(), thoughts = new Set<string>();
-// Every plan tap spends one of the owner's daily runs; a plan that keeps failing would burn them all.
+// Every plan that starts spends one of the owner's daily runs; a plan that keeps failing would burn them all.
+// Count plans the factory actually started (its log line), not taps: a tap refused because another job holds
+// the one job slot costs nothing and must not use up the item's tries.
+const PLAN_STARTED = "Reading the issue and code to prepare your plan.";
 const MAX_PLANS_PER_ITEM = Number(process.env.AUTOPILOT_MAX_PLANS || 3);
 const plans = new Map<string, number>();
 const held = new Set((process.env.AUTOPILOT_HOLD || "").split(",").map(s => s.trim()).filter(Boolean));
@@ -66,7 +69,6 @@ async function tap() {
         if (!skipped.has(card.id)) { skipped.add(card.id); await record("skip", { card: card.title, itemId: card.itemId, why: `planned ${tries} times already; leaving it for a human` }); }
         continue;
       }
-      plans.set(card.itemId, tries + 1);
     }
     acted.set(card.id, Date.now());
     await record(dry ? "would_tap" : "tap", { card: card.title, itemId: card.itemId, option: pick.optionId, why: pick.why, url: card.url });
@@ -84,7 +86,10 @@ async function connect() {
     if (msg.type === "snapshot") take(msg.state);
     else if (msg.type === "deck") cards = msg.deck;
     else if (msg.type === "move") cards = [msg.move, ...cards.filter(c => c.id !== msg.move.id)];
-    else if (msg.type === "log") void record("log", { level: msg.level, text: msg.text, itemId: msg.itemId, actor: msg.actor, tool: msg.tool, reason: msg.reason, approvedBy: msg.approvedBy });
+    else if (msg.type === "log") {
+      if (msg.itemId && msg.text.startsWith(PLAN_STARTED)) plans.set(msg.itemId, (plans.get(msg.itemId) ?? 0) + 1);
+      void record("log", { level: msg.level, text: msg.text, itemId: msg.itemId, actor: msg.actor, tool: msg.tool, reason: msg.reason, approvedBy: msg.approvedBy });
+    }
     else if (msg.type === "autonomy_unlocked") void record("unlock", { level: msg.level, district: msg.district, text: msg.text });
     else if (msg.type === "move_resolved") void record("resolved", { moveId: msg.moveId, optionId: msg.optionId, actor: msg.actor });
   };
