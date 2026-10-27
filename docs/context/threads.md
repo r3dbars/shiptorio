@@ -352,6 +352,8 @@ renewing from the independent heartbeat; preserving revocation and saved work.
 
 ## Codex merge helper
 
+- 2026-10-27: root queue release integrates #443 governance-slot fix, reviewed #442 pinned action updates and #376 check-only receipts. #170 fresh plan awaits Justin; UI #444 and factory #373 remain excluded. Exact combined checks and production deployment are required before release.
+
 - 2026-10-27 23:13 UTC: ready Claude heads inspected after root #438 deployed. #433 exact `dbf5df18300712090f452a1e126a902aaff77ea0` had no manual browser/load run; dispatched [40600771254](https://github.com/r3dbars/shiptorio/actions/runs/40600771254) once. Queued; not ready proof. One manual PR at a time. #427 remains under root hold for buildout acceptance coverage/rendering; no duplicate dispatch, no merges or retargets, no factory changes.
 
 Historical check-only dispatch receipt (heads below are superseded; queued was never counted as green):
