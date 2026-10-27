@@ -733,8 +733,9 @@ describe("Rush and Park from a cart's callout", () => {
     f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
     const offer = (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan.bind(f.factory);
     await offer();
-    const planned = () => (f.saved().deck ?? []).concat(f.saved().move ? [f.saved().move!] : []).filter((m) => m.title.startsWith("Plan")).map((m) => m.itemId);
-    expect(planned()[0]).toBe("gh-2");
-    expect(planned()).not.toContain("gh-3");
+    // the plans in the order they were offered (the deck re-ranks what it shows; this is the line's order)
+    const offered = (f.factory as unknown as { openMoves: { title: string; itemId?: string }[] }).openMoves;
+    const planned = offered.filter((m) => m.title.startsWith("Plan")).map((m) => m.itemId);
+    expect(planned).toEqual(["gh-2", "gh-1"]);
   });
 });
