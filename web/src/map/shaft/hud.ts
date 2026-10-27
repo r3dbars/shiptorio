@@ -243,12 +243,12 @@ export class ShaftHud {
       }
       const hot = t.s === "BLOCKED";
       const teaching = this.teaching.has(c.key);
-      // Quiet by default: a chip speaks up only when its machine has work in hand, is stuck, has a ping, or its mine
-      // has ore waiting. Idle ones come back when asked for (hover, keyboard on the map, selected, the tour), and
-      // as a faint name when the camera is down on one floor.
-      const busy = c.station ? hot || (t.s === "WORKING" && !!c.station.item) : t.s === "WORKING";
+      // Calm by default (Justin's playtest, 2026-10-27: "so many little labels popping up"): a busy machine shows
+      // its work by moving, not by talking. A chip speaks up only when its machine is stuck on you and there's no
+      // ping already saying so, or when asked for (hover, keyboard on the map, selected, the tour). Down on one
+      // floor, the machines there keep a faint name.
       const asked = teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected));
-      const loud = busy || pinged.has(c.key) || asked;
+      const loud = (hot && !pinged.size) || asked;
       const faint = !loud && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
       const shown = loud || faint;
       c.el.classList.toggle("faint", faint);
@@ -284,8 +284,8 @@ export class ShaftHud {
       p.c.el.style.transform = `translate(${Math.round(p.x - p.w / 2)}px,${Math.round(p.y - p.h / 2)}px)`;
     }
 
-    // item tags: wide screens, close enough to read
-    const tagsOn = !phone && stage.viewH * stage.zoom <= 40;
+    // item tags: wide screens, down on one floor and close enough to read (the whole shaft stays unlabeled)
+    const tagsOn = !phone && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
     const seen = new Set<IronItem>();
     if (tagsOn)
       for (const it of I.items) {

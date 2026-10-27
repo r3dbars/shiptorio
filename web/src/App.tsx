@@ -41,6 +41,7 @@ import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn } from "./flags";
 import { useComeback } from "./ui/Comeback";
+import { etas } from "./ui/eta";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -116,6 +117,9 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send: sendRaw } = useFactory(cfg);
+  useEffect(() => {
+    if (state) etas.observe(state, Date.now()); // learns real stage times for the cart callout's wait
+  }, [state]);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
@@ -255,20 +259,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     return { key, title, code: item ? codePath(item.district) : undefined, tone: item?.state === "on_pad" ? ("ok" as const) : ("warn" as const) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
-  const narrow = typeof window !== "undefined" && window.innerWidth <= 560; // phones get fewer tags
-  // Quiet tags on every other busy machine, naming the code it's working in, so the whole line reads as your codebase.
-  const pings = useMemo(() => {
-    if (!state) return [];
-    const out: Ping[] = ping ? [ping] : [];
-    for (const i of state.items) {
-      const word = i.machineId ? MAP.busy[i.state] : undefined;
-      const key = i.machineId && pickKey(i.machineId);
-      if (!word || !key || out.some((p) => p.key === key)) continue;
-      out.push({ key, title: word, code: codePath(i.district), quiet: true });
-      if (out.length >= (narrow ? 3 : 5)) break;
-    }
-    return out;
-  }, [state, ping, narrow]);
+  // One marker on the map, on the one thing that needs you. Busy machines used to get a quiet tag each, and with
+  // five of them talking at once the floor read like a casino (Justin's playtest, 2026-10-27): the motion says
+  // what's busy, and a tap on any machine names it.
+  const pings = useMemo<Ping[]>(() => (ping ? [ping] : []), [ping]);
   // Each thing waiting on you counts once: a PR on the pad that already has its own card isn't counted twice.
   const carded = new Set(deck.map((m) => m.itemId).filter(Boolean));
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad" && !carded.has(i.id)).length;

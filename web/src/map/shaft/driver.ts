@@ -15,9 +15,10 @@ const PASS: Verdict = { pass: true, reason: null };
 const REAL_STAGE: Record<Item["state"], number> = { ore: 0, queued: 1, working: 2, inspecting: 3, rejected: 3, passed: 4, on_pad: 4, launched: 5 };
 const UPSTREAM_CAP = 6; // lumps on their way up to the planner at once; the rest wait in the mine
 // how much faster an item rides and gets worked when the real factory is that many stages ahead of it: the demo sim
-// finishes a PR in seconds, the trip up the shaft takes about a minute at full speed
-const MAX_HURRY = 10;
-const catchUp = (gap: number) => Math.min(MAX_HURRY, Math.max(1, 1 + gap * 2.25));
+// finishes a PR in seconds, the trip up the shaft takes about a minute at full speed. Kept gentle: at 10x the line
+// raced and the whole floor felt frantic (Justin's playtest, 2026-10-27: "everything is going so fast")
+const MAX_HURRY = 4;
+const catchUp = (gap: number) => Math.min(MAX_HURRY, Math.max(1, 1 + gap * 1.25));
 const BLOCKING_KINDS = new Set(["ship", "build", "unblock"]);
 const BLOCKING_STAGES = new Set(["pad", "build", "power", "resources"]);
 const SORTED = 0x7af0d8; // the flash on a lump the planner has read (ore -> queued)

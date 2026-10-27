@@ -50,7 +50,7 @@ import {
 import type { Listener, Source, StatusListener } from "../source";
 import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
 
-const TICK_MS = 900;
+const TICK_MS = 1400; // a calm floor: one beat every 1.4s (was 0.9s, Justin's playtest 2026-10-27: "slow everything down")
 
 interface SparkLine {
   tool: string;
@@ -160,6 +160,18 @@ export const SCENARIOS = {
       { at: 6, title: "Add dark mode toggle", kind: "feature", district: "web", failAt: "review", failFirst: "swallows the theme load error instead of handling it" },
       { at: 11, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
       { at: 16, title: "Remove dead map cache code", kind: "cleanup", district: "server" },
+    ],
+  },
+  // A busy morning: issues land faster than one builder can take them, so work waits on it and a card offers a
+  // second builder (docs/GAMEPLAY-PICKS.md r5-second).
+  pileup: {
+    ores: [
+      { at: 2, title: "Coupon field rejects lowercase codes", kind: "bug", district: "web" },
+      { at: 3, title: "Order emails show the wrong currency", kind: "bug", district: "server" },
+      { at: 4, title: "Add a loading state to the cart drawer", kind: "feature", district: "web" },
+      { at: 5, title: "Missing tests for refund webhooks", kind: "tests", district: "server" },
+      { at: 6, title: "Remove the old promo banner", kind: "cleanup", district: "web" },
+      { at: 7, title: "Search ignores product tags", kind: "bug", district: "server" },
     ],
   },
   "rework-loop": {
@@ -574,7 +586,7 @@ const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + 
 
 export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
-  const tickMs = sc.intro ? 450 : TICK_MS;
+  const tickMs = sc.intro ? 700 : TICK_MS;
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
   if (repo) s.repo = repo;
@@ -1021,7 +1033,10 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           // the local model only takes what the planner routed to it; routed work waits for its own plant
           const want = routed.get(item.id);
           const a = s.machines.find((m) => m.type === "assembler" && m.state === "idle" && m.powerId && (want ? m.harness === want : m.harness !== "local"));
-          if (!a) continue;
+          if (!a) {
+            if (!want) offerBuilder(item.id);
+            continue;
+          }
           apply({ items: [{ ...next, state: "working", machineId: a.id, attempts: item.attempts + 1 }], machines: setMachine(a.id, "working") });
           log("info", `${a.id} picked up "${item.title}"`, item.id);
           planned(item.id);
@@ -1409,6 +1424,42 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       },
     );
   };
+
+  // ---------- a second builder (Justin's pick r5-second A) ----------
+
+  // Work piling up at the one builder is the first time the factory grows sideways: once 3 PRs have waited on it,
+  // a card asks. Continue bolts a second assembler in next to the first, on the same plant.
+  const waitedOnBuilder = new Set<string>();
+  let builderOffered = false;
+  function offerBuilder(itemId: string) {
+    const builders = s.machines.filter((m) => m.type === "assembler" && m.powerId && m.harness !== "local");
+    if (builderOffered || builders.length !== 1) return;
+    waitedOnBuilder.add(itemId);
+    if (waitedOnBuilder.size < 3) return;
+    builderOffered = true;
+    const first = builders[0];
+    propose(
+      {
+        title: "Add a second builder?",
+        attention: "suggest", // an idea: nothing is parked on it, so it never pings
+        why: `${waitedOnBuilder.size} PRs waited on the builder today. A second one next to it takes the next job while the first is busy.`,
+        stage: "build",
+        kind: "build",
+        focus: first.id,
+        grows: ["+1 ASSEMBLER"],
+        options: [
+          { id: "add", label: "Add a second builder", recommended: true, actions: [{ tool: "place_machine", args: { type: "assembler" }, reason: "work keeps waiting on one builder" }] },
+          { id: "later", label: "Not yet", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt !== "add") return;
+        const id = `${first.id}-2`;
+        apply({ machines: [{ ...first, id, y: first.y + 2, state: "idle" }] });
+        spark({ tool: "place_machine", text: "Second builder bolted in next to the first", reason: "you said yes" }, { target: id, approvedBy: "player" });
+      },
+    );
+  }
 
   // ---------- research (shared/src/research.ts) ----------
 
