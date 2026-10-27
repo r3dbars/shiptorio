@@ -211,8 +211,13 @@ try {
   await step("welcome tour shows, then skip", async () => {
     await page.getByRole("button", { name: "Skip" }).click({ timeout: UI_TIMEOUT });
   });
+  await step("play first: the demo shop, no sign-in", async () => {
+    await page.waitForURL((u) => u.searchParams.get("source") === "sim" && u.searchParams.get("repo") === "you/demo-shop", { timeout: UI_TIMEOUT });
+    await page.locator(".floorcard").waitFor({ timeout: UI_TIMEOUT });
+  });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
-    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: UI_TIMEOUT }); // the sandbox map loads first and CI runners are slow
+    // the floor card's "Use your repo" chip is the unlock; the sandbox map loads first and CI runners are slow
+    await page.getByRole("link", { name: /sign in with github/i }).first().click({ timeout: UI_TIMEOUT });
     await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: UI_TIMEOUT });
     await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: UI_TIMEOUT });
     signedIn = true;

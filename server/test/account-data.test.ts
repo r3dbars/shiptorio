@@ -64,6 +64,7 @@ async function fixture() {
   await DB.prepare("INSERT OR REPLACE INTO user_installations (user_id, installation_id, account_login) VALUES (11, 1, 'alice'), (11, 3, 'org'), (22, 2, 'bob')").run();
   await DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('alice/app', 1, 'Fix', 'open'), ('bob/app', 2, 'Other', 'open')").run();
   await DB.prepare("INSERT INTO move_kind_rules VALUES ('alice/app', 'test', '/', 'id', 1)").run();
+  for (const repo of ["alice/app", "bob/app"]) await DB.prepare("INSERT INTO card_taps (repo, card_id, kind, scope, title, by, shown_at) VALUES (?, 'card-1', 'verify', 'district:web', ?, 'rule', 1)").bind(repo, `Review ${repo}`).run();
   await DB.prepare("INSERT INTO user_prefs VALUES (11, 'intro', 'done', 1)").run();
   await DB.prepare("UPDATE user_repos SET installation_id = 3 WHERE repo = 'org/shared'").run();
   await DB.prepare("UPDATE user_repos SET installation_id = 2 WHERE repo = 'bob/app'").run();
@@ -93,6 +94,19 @@ describe("account data controls", () => {
     }
   });
 
+  it("exports card taps under the factory export's access rules, and never to an account without access", async () => {
+    const {env, kv, bobCookie} = await fixture();
+    const bob = await resolveUser(new Request("https://shiptorio.com", {headers: {cookie: bobCookie}}), env);
+    // A collaborator with live access exports the shared factory like the rest of its data; take that away.
+    expect(JSON.stringify(await exportAccount(env, bob!))).toContain("Review alice/app");
+    kv.delete("access:v2:1:alice/app:22");
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 22 AND repo = 'alice/app'").run();
+    const result = JSON.stringify(await exportAccount(env, bob!));
+    expect(result).toContain("Review bob/app");
+    expect(result).not.toContain("Review alice/app");
+    await expect(deleteAccount(env, bob!, ["alice/app"])).rejects.toThrow();
+    expect((await env.DB.prepare("SELECT repo FROM card_taps WHERE repo = 'alice/app'").all()).results).toHaveLength(1);
+  });
   it("exports visible factory items, permits, research and saved logs, without raw runner jobs/credentials", async () => {
     const {env, user} = await fixture();
     const result = await exportAccount(env, user);
@@ -100,6 +114,9 @@ describe("account data controls", () => {
     expect(result.factories[0].data.permits).toBeTruthy();
     expect(result.factories[0].data.research).toEqual({done: ["types"], spent: 0});
     expect(result.factories[0].data.logs.approvals).toEqual([{kind: "test", scope: "/", at: 1, actionId: "approval-1"}]);
+    // The owner's card tap log comes with the factory; another account's never does.
+    expect(result.factories[0].data.logs.taps).toEqual([expect.objectContaining({repo: "alice/app", card_id: "card-1", title: "Review alice/app"})]);
+    expect(JSON.stringify(result)).not.toContain("Review bob/app");
     expect(JSON.stringify(result)).not.toContain("DO-NOT-EXPORT");
     expect(JSON.stringify(result)).not.toContain("pair-secret");
   });
@@ -211,6 +228,7 @@ describe("account data controls", () => {
     if (!columns.results.some(c => c.name === "repo_id")) await env.DB.prepare("ALTER TABLE repos ADD COLUMN repo_id INTEGER").run();
     await env.DB.prepare("UPDATE repos SET repo_id = 101, archived_at = 1 WHERE full_name = 'alice/app'").run();
     await env.DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('repo:101', 77, 'Archived', 'closed')").run();
+    await env.DB.prepare("INSERT INTO card_taps (repo, card_id, kind, scope, title, by, shown_at) VALUES ('repo:101', 'retained', 'ship', 'district:/', 'Retained card', 'rule', 1)").run();
     await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, updated_at) VALUES ('archived:repo:101:installation:1:repo:alice/old-name', 'sentry', 'encrypted-archived', 1), ('installation:1:repo-id:101', 'posthog', 'encrypted-stable', 1)").run();
     await env.DB.prepare("DELETE FROM user_repos WHERE repo = 'alice/app'").run();
     const kv = (env.CACHE as unknown as {get(key: string): Promise<string|null>});
@@ -225,6 +243,7 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).factories[0].data.state?.items).toHaveLength(1);
     await deleteAccount(env, user, ["alice/app"]);
     expect(data.size).toBe(0); expect(legacy.data.size).toBe(0); expect(alarm).toBeNull();
+    expect((await env.DB.prepare("SELECT * FROM card_taps WHERE repo = 'repo:101'").all()).results).toEqual([]);
     expect(await kv.get("cred:support:1:101")).toBeNull();
     expect((await env.DB.prepare("SELECT * FROM pull_requests WHERE repo = 'repo:101'").all()).results).toEqual([]);
     expect((await env.DB.prepare("SELECT * FROM credentials WHERE scope GLOB 'archived:repo:101:*' OR scope = 'installation:1:repo-id:101'").all()).results).toEqual([]);
@@ -303,7 +322,8 @@ describe("account data controls", () => {
       const column = table === "users" ? "id" : "user_id";
       expect((await env.DB.prepare(`SELECT * FROM ${table} WHERE ${column} = 11`).all()).results).toEqual([]);
     }
-    for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) expect((await env.DB.prepare(`SELECT * FROM ${table} WHERE repo = 'alice/app'`).all()).results).toEqual([]);
+    for (const table of ["pull_requests", "move_kind_rules", "card_taps", "user_repos"]) expect((await env.DB.prepare(`SELECT * FROM ${table} WHERE repo = 'alice/app'`).all()).results).toEqual([]);
+    expect((await env.DB.prepare("SELECT repo FROM card_taps").all()).results).toEqual([{repo: "bob/app"}]);
     expect(await env.DB.prepare("SELECT * FROM repos WHERE full_name = 'alice/app'").first()).toBeNull();
     expect(await env.DB.prepare("SELECT * FROM installations WHERE id = 1").first()).toBeNull();
     expect(objects.get("alice/app")!.data.size).toBe(0);

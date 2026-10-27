@@ -4,6 +4,9 @@ export let introEnabled = true;
 export let attentionEnabled = true;
 const attentionParam = () => new URLSearchParams(location.search).get("attention");
 export const attentionOn = () => { const p = attentionParam(); return p === null ? attentionEnabled : p !== "0"; };
+/** Build as you go (web/src/buildout/CONTRACT.md): the first run starts dark and empty, every piece built in front of
+ * you. Off by default until Justin has played it; ?buildout=1 turns it on for that page load. */
+export const buildoutOn = () => new URLSearchParams(location.search).get("buildout") === "1";
 export async function loadFeatureFlags(): Promise<void> {
   // Explicit simulator URLs work offline and never depend on the backend.
   if (new URLSearchParams(location.search).get("source") === "sim") return;
