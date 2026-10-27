@@ -166,7 +166,7 @@ jobs:
     # Per-test 180s and individual assertion deadlines remain unchanged.
     timeout-minutes: 18
     # Each viewport keeps its serial fixture, without making all three 90s
-    # replays and visual checks compete with one job's 12-minute deadline.
+    # replays and visual checks compete within a single viewport's job.
     strategy:
       fail-fast: false
       matrix:
