@@ -14,7 +14,7 @@ const routes = [
 ] as const;
 async function env() {
   const DB = testD1();
-  await DB.prepare("INSERT INTO installations(id, account_login) VALUES (1, 'fixture')").run();
+  await DB.prepare("INSERT INTO installations(id, account_login, permissions) VALUES (1, 'fixture', '{}')").run();
   await DB.prepare("INSERT INTO repos(full_name, installation_id, repo_id) VALUES ('fixture/shop', 1, 501)").run();
   return { DB, CACHE: { get: async () => null }, GITHUB_WEBHOOK_SECRET: secret,
     SENTRY_REPO_ID: "501", SENTRY_INSTALLATION_ID: "1", SENTRY_CLIENT_SECRET: secret,
@@ -86,5 +86,41 @@ it("accepts the exact byte boundary and rejects signed malformed JSON before dis
     // Sentry ignores unsupported resources before parsing, so use its supported resource here.
     invalidHeaders["sentry-hook-resource"] = "issue";
     expect((await app.fetch(new Request(`https://shiptorio.com${path}`, { method: "POST", headers: invalidHeaders, body: malformed }), bindings)).status).toBe(400);
+  }
+});
+it("an invalid signature cannot poison a delivery marker, and pending deliveries remain retryable", async () => {
+  const { fakeGitHub } = await import("../src/sources/github");
+  const bindings = await env();
+  const payload = fakeGitHub();
+  payload.repository!.full_name = "fixture/shop";
+  const body = JSON.stringify(payload);
+  let attempts = 0;
+  const withFactory = { ...bindings, FACTORY: { idFromName: (name: string) => name, get: () => ({
+    enqueueGitHub: async () => { if (++attempts === 1) throw new Error("fixture enqueue unavailable"); },
+  }) } };
+  const good = "sha256=" + await signature(body, "SHA-256");
+  const send = (sig: string) => app.fetch(new Request("https://shiptorio.com/webhooks/github", {
+    method: "POST", headers: { "x-hub-signature-256": sig, "x-github-event": "issues", "x-github-delivery": "retry-fixture" }, body,
+  }), withFactory);
+  expect((await send("sha256=" + "0".repeat(64))).status).toBe(401);
+  expect(await bindings.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'github' AND delivery_id = 'retry-fixture'").first()).toBeNull();
+  expect((await send(good)).status).toBe(500); // enqueue failed after durable reservation
+  expect(await bindings.DB.prepare("SELECT state FROM webhook_deliveries WHERE source = 'github' AND delivery_id = 'retry-fixture'").first()).toEqual({ state: "pending" });
+  expect((await send(good)).status).toBe(202); // provider redelivery must recover it
+  await bindings.DB.prepare("UPDATE webhook_deliveries SET state = 'done' WHERE source = 'github' AND delivery_id = 'retry-fixture'").run();
+  const duplicate = await send(good);
+  expect(duplicate.status).toBe(200);
+  expect(await duplicate.json()).toEqual({ ok: true, duplicate: true });
+  expect(attempts).toBe(2);
+});
+it("anonymous callers cannot use public webhook or runner exceptions to open private APIs", async () => {
+  for (const mode of ["password", "waitlist"]) {
+    const bindings = { ...await env(), SIGNUP_GATE_MODE: mode, SESSION_SECRET: "boundary-session-fixture", APP_PASSWORD: "boundary-password-fixture" };
+    for (const path of ["/api/account/export", "/api/repos", "/api/empire", "/api/sources?repo=fixture/shop", "/api/setup/status?repo=fixture/shop", "/api/repos/fixture/shop/export", "/api/repos/fixture/shop/runner/jobs", "/api/repos/fixture/shop/limits"]) {
+      const response = await app.fetch(new Request(`https://shiptorio.com${path}`, {
+        headers: { authorization: "Bearer forged", "x-hub-signature-256": "sha256=" + "0".repeat(64) },
+      }), bindings);
+      expect({ mode, path, status: response.status }).toEqual({ mode, path, status: 401 });
+    }
   }
 });
