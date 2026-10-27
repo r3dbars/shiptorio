@@ -169,7 +169,7 @@ describe("Factory lifecycle", () => {
   });
 
   it("rejects expected planning limits without throwing through the object reset boundary", async () => {
-    for (const scenario of ["capacity", "duplicate", "scope", "missing", "cooldown", "spark-budget", "budget-owner"] as const) {
+    for (const scenario of ["capacity", "duplicate", "scope", "missing", "cooldown", "run-quota", "spark-budget", "budget-owner"] as const) {
       const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], scenario === "spark-budget" ? { SPARK_DAILY_CALLS: "0" } : {});
       await f.factory.activateRunner("pair");
       const internal = f.factory as unknown as { ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> }; usage(): Promise<unknown> };
@@ -178,8 +178,13 @@ describe("Factory lifecycle", () => {
       internal.ctx.blockConcurrencyWhile = fn => atomic(async () => { try { return await fn(); } catch (error) { resets++; throw error; } });
       if (scenario === "capacity" || scenario === "duplicate") f.data.set("runnerJob:existing", { id: "existing", itemId: scenario === "capacity" ? "gh-2" : "gh-1", status: "awaiting_approval", harness: "codex", allowedPaths: [] });
       if (scenario === "cooldown") f.data.set("planningRetry:gh-1", { day: new Date().toISOString().slice(0, 10), failures: 3, retryAt: Date.now() + 60000, reason: "Failed planning" });
+      if (scenario === "run-quota") {
+        const database = (f.factory as unknown as { env: { DB: { prepare(sql: string): any } } }).env.DB;
+        const prepare = database.prepare.bind(database);
+        database.prepare = sql => sql.startsWith("SELECT runs_daily") ? { bind: () => ({ first: async () => ({ runs_daily: 0 }) }) } : prepare(sql);
+      }
       if (scenario === "budget-owner") internal.usage = async () => { throw new BudgetError("Budget owner unavailable"); };
-      const expected = { capacity: "Factory job budget reached", duplicate: "active runner job", scope: "Unsafe approved path", missing: "not available", cooldown: "Planning paused", "spark-budget": "daily call/token budget", "budget-owner": "Budget owner unavailable" }[scenario];
+      const expected = { capacity: "Factory job budget reached", duplicate: "active runner job", scope: "Unsafe approved path", missing: "not available", cooldown: "Planning paused", "run-quota": "Daily run quota reached", "spark-budget": "daily call/token budget", "budget-owner": "Budget owner unavailable" }[scenario];
       const before = [...f.data.keys()].filter(key => key.startsWith("runnerJob:"));
       await expect(f.factory.enqueueRunner({ itemId: scenario === "missing" ? "gh-99" : "gh-1", harness: "codex", allowedPaths: scenario === "scope" ? [".github/workflows/escape.yml"] : ["src/a.ts"] })).rejects.toThrow(expected);
       expect(resets).toBe(0); // Cloudflare resets the DO if the callback throws.
