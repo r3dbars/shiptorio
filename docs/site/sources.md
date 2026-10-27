@@ -8,6 +8,8 @@ order: 2
 
 Every source of work is a **mine** on the map. More mines, more ore, a bigger factory. Mines only turn raw signals into ore. Spark decides what's real and what matters.
 
+Ore keeps its mine's color as it travels up the line. Pass and reject verdicts use their own glow colors. With reduced motion enabled, halos stay still and held work stays solid amber.
+
 | Mine | On the map | How it gets in | Status |
 | --- | --- | --- | --- |
 | GitHub issues | Crystals at the mine | GitHub App webhooks | Live |
