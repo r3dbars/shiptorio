@@ -562,9 +562,14 @@ app.get("/api/repos", async (c) => {
 // The empire overview: one small summary per repo this player can reach (shared/src/empire.ts).
 // Repos never opened come back as ready: false; the map still draws them as islands.
 app.get("/api/empire", async (c) => {
-  const user = await signedIn(c);
+  const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.json({ error: "login required" }, 401);
-  const repos = (await reposFor(c.env, user)).slice(0, 24);
+  // Sign-in reach is only an inventory. Revalidate before even resolving a DO:
+  // collaborator revocation and upstream failures must hide the entire island.
+  const candidates = (await reposFor(c.env, user)).slice(0, 24);
+  const repos = (await Promise.all(candidates.map(async repo =>
+    await repoAccess(c.env, user, repo.full_name) ? repo : null,
+  ))).filter((repo): repo is NonNullable<typeof repo> => repo !== null);
   const islands = await Promise.all(repos.map(async (r): Promise<IslandSummary> => {
     const summary = await Promise.race([
       factory(c.env, r.full_name).then(f => f.summary()).catch(() => null),
