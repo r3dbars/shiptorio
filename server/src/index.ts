@@ -41,7 +41,7 @@ import type { GitHubPayload } from "./sources/github";
 import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { installationToken } from "./github";
-import { CODE_RE, DEVICE_TTL, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
+import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
 import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 
@@ -153,7 +153,7 @@ app.get("/terms", c => c.html(legalPage("terms")));
 app.use("*", async (c, next) => {
   // Installer and device exchange have no browser cookies. Device approval still requires
   // the normal preview + user session and same-origin form submission below.
-  if (["/install.sh", "/runner.mjs", "/runner-manifest.json", "/api/runner-device/start", "/api/runner-device/poll"].includes(c.req.path)) {
+  if (["/install.sh", "/runner.mjs", "/runner-manifest.json", "/api/runner-device/start", "/api/runner-device/poll", "/api/runner-device/join"].includes(c.req.path)) {
     await next(); c.header("Cache-Control", "no-store"); return;
   }
   if (c.req.path.startsWith("/api/runner/")) {
@@ -462,6 +462,30 @@ app.post("/api/runner-device/poll", async c => {
   if (typeof body?.code !== "string" || !CODE_RE.test(body.code) || typeof body.secret !== "string" || body.secret.length !== 72) return c.json({ error: "invalid device" }, 400);
   return c.json(await device(c.env, body.code).pollDevice(await secretHash(body.secret)));
 });
+// One-paste setup: the runner trades the join code from its install command for a repo credential.
+// The code is burned on first use, and the account's write access is checked again here, not just when it was minted.
+app.post("/api/runner-device/join", async c => {
+  const raw = await c.req.text();
+  if (raw.length > 256) return c.json({ error: "too large" }, 413);
+  let body: { join?: string };
+  try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  const fail = async () => {
+    if (!await admit(c.env, await ipScope(c.req.raw, "pairing"), 10, 60000, "repeated failed runner joins")) return c.json({ error: "try again later" }, 429);
+    return c.json({ error: "This setup command expired or was already used. Copy a fresh one from Power." }, 410);
+  };
+  if (typeof body?.join !== "string" || !JOIN_RE.test(body.join)) return fail();
+  const record = await device(c.env, `join:${await secretHash(body.join)}`).takeJoin();
+  if (!record) return fail();
+  const installation = await signupAllowed(c.env, record.user.login) ? await deviceRepoAccess(c.env, record.user, record.repo) : null;
+  if (!installation) return c.json({ error: "repository access required" }, 403);
+  if (!await resourceQuota(c.env, record.user.login, "repo", record.repo) || !await resourceQuota(c.env, record.user.login, "factory", record.repo)) return c.json({ error: "repository/factory quota reached" }, 429);
+  const f = await factory(c.env, record.repo);
+  await f.ensure(record.repo, installation);
+  const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+  const token = await pairToken(c.env.SESSION_SECRET, { repo: record.repo, pairId, expires, user: record.user });
+  await f.activateRunner(pairId);
+  return c.json({ repo: record.repo, token, expires });
+});
 app.on(["GET", "POST"], "/runner/pair", async c => {
   const user = await resolveUser(c.req.raw, c.env);
   if (!user) return c.redirect(`/auth/login?next=${encodeURIComponent(new URL(c.req.url).pathname + new URL(c.req.url).search)}`);
@@ -601,6 +625,14 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "disconnect") {
     if (!await deviceRepoAccess(c.env, (await resolveUser(c.req.raw, c.env))!, repo)) return c.json({ error: "repository access required" }, 403);
     await f.revokeRunner(); return c.json({ ok: true });
+  }
+  if (c.req.param("action") === "join") {
+    const user = (await resolveUser(c.req.raw, c.env))!;
+    if (!await deviceRepoAccess(c.env, user, repo)) return c.json({ error: "repository access required" }, 403);
+    if (!await admit(c.env, `join:${user.id}`, 10, 600000, "repeated setup commands")) return c.json({ error: "setup throttled" }, 429);
+    const join = newJoinCode(), expires = Date.now() + DEVICE_TTL;
+    if (!await device(c.env, `join:${await secretHash(join)}`).startJoin({ repo, user, expires })) return c.json({ error: "Try again" }, 409);
+    return c.json({ join, expires });
   }
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
