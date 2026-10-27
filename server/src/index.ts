@@ -88,7 +88,7 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean } };
 const app = new Hono<AppEnv>();
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
   const user = await signedIn(c);
@@ -124,7 +124,8 @@ app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
   if (redirect) c.res = redirect;
   else await next();
-  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN))) c.header(key, value);
+  const gatePolicy = c.get("gateResponse") ? c.res.headers.get("Content-Security-Policy") ?? undefined : undefined;
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN, gatePolicy))) c.header(key, value);
 
 });
 
@@ -178,7 +179,7 @@ app.use("*", async (c, next) => {
   if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
   const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
-  if (denied) return denied;
+  if (denied) { c.set("gateResponse", true); return denied; }
   await next();
   // Docs are public static content; authenticated build assets retain their private immutable policy.
   c.header("Cache-Control", isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method) && c.res.ok
@@ -890,7 +891,8 @@ export async function accessFastPath(request: Request, env: Env): Promise<Respon
   if (!response) return null; // local dev login: the full app handles it
   response = new Response(response.body, response);
   response.headers.set("Cache-Control", "no-store");
-  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN))) response.headers.set(key, value);
+  const gatePolicy = response.headers.get("Content-Security-Policy") ?? undefined;
+  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN, gatePolicy))) response.headers.set(key, value);
   console.log(JSON.stringify({ level: "info", event: "http.request", method: request.method, path: "/access", status: response.status, ts: new Date().toISOString() }));
   return response;
 }
