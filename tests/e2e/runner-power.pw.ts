@@ -27,6 +27,7 @@ test('runner heartbeats show Claude Code and Codex as separate Power plants befo
   }
   await expect(power.locator('.lrow').filter({ hasText: /Codex|Claude Code/ })).toHaveCount(0);
   await power.locator(".plant.solar").first().scrollIntoViewIfNeeded();
+  await power.evaluate(el => { el.scrollLeft = 0; }); // Keep the phone evidence on the vertical scroll axis.
   await page.screenshot({ path: `/tmp/shiptorio-runner-power-${info.project.name}.png` });
   await post(`/api/runner/${repo}/heartbeat`, { harnesses: ['codex'], authRequired: ['claude_code'] }, token);
   await expect(power.locator('.plant').filter({ hasText: 'Claude Code' })).toContainText('offline');

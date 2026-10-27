@@ -31,7 +31,7 @@ esac
     expect((await stat(join(home, ".claude"))).mode & 0o777).toBe(0o700);
     const work = join(root, ".work/job"); await mkdir(work, { recursive: true });
     const sandbox = await checkSandbox(work, { home, executable });
-    try { const result = await sandbox.run([executable, "--print"], work); expect(result.code).toBe(0); expect(result.out).toBe("sandbox-signed-in"); }
+    try { const result = await sandbox.run([executable, "--print"], work); expect({ code: result.code, err: result.err }).toEqual({ code: 0, err: "" }); expect(result.out).toBe("sandbox-signed-in"); }
     finally { await sandbox.close(); }
     // A normal verification child must not inherit either provider's dedicated home.
     expect(agentEnvironment(env).CLAUDE_CONFIG_DIR).toBeUndefined();
