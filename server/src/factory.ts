@@ -1757,7 +1757,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research || p.experiments) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
-    await this.broadcast({ type: "patch", patch: p });
+    // Delivery revalidates browser membership over the network and may queue behind
+    // an earlier frame. Never hold an atomic runner mutation behind that I/O.
+    // broadcast preserves order and registers delivery with ctx.waitUntil.
+    this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();
   }
 
