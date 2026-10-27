@@ -71,7 +71,13 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   expect((await (await discovery).json()).repos).toContainEqual(expect.objectContaining({ fullName: repo }));
   await expect(page.getByRole('button', { name: repo })).toBeVisible();
   signedIn = true;
-  await page.getByRole('button', { name: repo }).click();
+  // The software-rendered desktop can delay committing the next document after
+  // its HTTP response. Observe that navigation explicitly, then independently
+  // require the correct URL and real factory snapshot below.
+  await Promise.all([
+    page.waitForURL(/source=live&repo=/, { waitUntil: 'commit', timeout: 60_000 }),
+    page.getByRole('button', { name: repo }).click(),
+  ]);
   await expect(page).toHaveURL(/source=live&repo=/);
   await expect.poll(() => messages.some(m => m.type === 'snapshot')).toBe(true);
   const issue = JSON.stringify({ action: 'opened', installation: { id: 1 }, repository: { id: repoId, full_name: repo, default_branch: 'main' }, issue: { number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', html_url: `https://github.com/${repo}/issues/1`, state: 'open', labels: [{ name: 'bug' }], user: { login: 'fixture' } } });
