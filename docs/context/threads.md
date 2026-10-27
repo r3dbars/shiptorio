@@ -178,3 +178,14 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - CI `selfhost` job uses a fresh clone with no Cloudflare credentials, builds assets/runner, applies local D1 migrations and runs real `wrangler deploy --dry-run`. Focused tests cover isolated config, forbidden Worker names, resume and failures.
 - Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
 - Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
+
+## Quota recovery (Codex, 2026-10-26)
+
+In progress on `codex/quota-recovery` (Day 1 loop reliability). Run charging moves from
+planning to dispatch; failed plans back off 1m/2m, capped at three failures per issue
+per UTC day. Persistent cooldowns survive factory restarts. The live Black Iron limits
+card reads authenticated telemetry for runs, Spark calls/tokens/dollars, connected
+resources and concurrent jobs, with reset times and admin quota links. Admin signup
+adds per-account call/token overrides (migration 0013); Spark remains the planner.
+Narrow `web/` change explicitly requested for this card; shared websocket contract unchanged.
+Validation and PR/merge evidence will follow before completion.

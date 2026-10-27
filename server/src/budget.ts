@@ -19,8 +19,18 @@ export async function budgetAccount(db: D1Database, repo: string): Promise<strin
   return `user:${row.user_id}`;
 }
 
+/** Account overrides are read on every reservation: raising a limit resumes without a restart. */
+export async function accountBudgetLimits(env: BudgetEnv, account: string) {
+  const caps = budgetLimits(env);
+  if (!account.startsWith("user:")) return caps;
+  const row = await env.DB!.prepare(`SELECT a.spark_calls_daily, a.spark_tokens_daily FROM users u
+    LEFT JOIN signup_allowlist a ON lower(a.login) = lower(u.login) WHERE u.id = ?`)
+    .bind(Number(account.slice(5))).first<{ spark_calls_daily: number | null; spark_tokens_daily: number | null }>();
+  return { ...caps, calls: row?.spark_calls_daily ?? caps.calls, tokens: row?.spark_tokens_daily ?? caps.tokens };
+}
+
 export async function reserveSpark(env: BudgetEnv, account: string, tokens: number) {
-  const caps = budgetLimits(env), day = utcDay();
+  const caps = await accountBudgetLimits(env, account), day = utcDay();
   if (!Number.isSafeInteger(tokens) || tokens <= 0) throw new BudgetError("Invalid token reservation");
   if (caps.disabled) throw new BudgetError("Spark budget: global kill switch is on");
   if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
@@ -41,7 +51,7 @@ export async function settleSpark(env: BudgetEnv, reservation: { account: string
 export async function budgetUsage(env: BudgetEnv, account: string) {
   const day = utcDay();
   const usage = await env.DB!.prepare("SELECT calls, tokens FROM spark_usage WHERE account = ? AND day = ?").bind(account, day).first<{ calls: number; tokens: number }>();
-  return { day, account, calls: usage?.calls ?? 0, tokens: usage?.tokens ?? 0, limits: budgetLimits(env) };
+  return { day, account, calls: usage?.calls ?? 0, tokens: usage?.tokens ?? 0, limits: await accountBudgetLimits(env, account) };
 }
 
 export async function budgetReport(env: BudgetEnv) {

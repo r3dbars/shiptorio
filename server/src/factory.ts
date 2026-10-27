@@ -1,9 +1,10 @@
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
+import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
 import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
-import { runQuota } from "./signup";
+import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
 import { redact } from "./redact";
@@ -217,7 +218,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -258,6 +259,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!this.state || !this.meta || this.batchingDecisions) return;
     await this.decisionData();
     const s = this.state, now = Date.now(), jobs = await this.runnerJobs();
+    const heldIssues = new Set((await this.planningRetries()).map(r => r.itemId));
     const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
     const history = await this.ctx.storage.get<StageHistory[]>("stageHistory") ?? [];
     let changed = false;
@@ -283,7 +285,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
-      if (proposing && item && (!runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
+      if (proposing && item && (heldIssues.has(item.id) || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
       const boundScars = move.options.flatMap(o => o.actions).find(a => typeof a.args.scarCount === "number")?.args.scarCount;
       if (proposing && item && boundScars !== undefined && boundScars !== (item.scars?.length ?? 0)) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
@@ -478,6 +480,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     for (const item of s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
+      if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
     const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
     const lead = small ? "local" : presence.harnesses.find(h => h !== "local") ?? presence.harnesses[0];
@@ -528,7 +531,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true });
       await this.resolveRunnerMove(move);
       this.log("info", "Reading the issue and code to prepare your plan. No build has started.", item.id);
-    } catch { this.log("warn", "This work is already queued or has changed. Refresh to see its latest state.", item.id); }
+    } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); }
   }
 
   async allowDeviceStart() {
@@ -620,6 +623,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.redactor.value([...jobs.values()].map(({ lease, ...job }) => job));
   }
 
+  private async runAccount(fallback?: string) {
+    return (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1")
+      .bind(this.meta!.repo.toLowerCase()).first<{login:string}>())?.login ?? fallback;
+  }
+
+  async planningRetries() {
+    const rows = await this.ctx.storage.list<PlanningRetry>({ prefix: "planningRetry:" });
+    return [...rows.entries()].flatMap(([key, retry]) => planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []);
+  }
+
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
@@ -637,13 +650,18 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         old.status = "failed";
       }
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
-      {
-        const account = requestedBy || (await this.env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(this.meta.repo.toLowerCase()).first<{login:string}>())?.login;
-        if (!account || !await runQuota(this.env as never,account)) throw new Error('Daily run quota reached or account unavailable');
-      }
+      const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
+      if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      const account = await this.runAccount(requestedBy);
+      if (!account) throw new Error("Run quota owner unavailable");
+      const quota = await runQuotaStatus(this.env, account);
+      if (quota.used >= quota.limit) throw new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      const usage = await this.usage();
+      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) throw new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
+
 
       const id = crypto.randomUUID();
-      const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning" };
+      const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
       if (currentTrace()) await this.accountPut(`trace:${item.id}`, currentTrace());
       await this.accountPut(`runnerJob:${id}`, job);
@@ -742,6 +760,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       job.allowedPaths = assignment.files;
       await this.routeRunnerJob(job, item);
       await this.planComment(token, job, item).catch(error => this.reliabilityFailure(`planComment:${item.id}`, error, item.id));
+      await this.ctx.storage.delete(`planningRetry:${job.itemId}`);
       job.status = job.needsApproval ? "awaiting_approval" : "ready";
       if (job.needsApproval) {
         const move = this.runnerApprovalMove(job, item);
@@ -754,7 +773,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch (e) {
       // Keep the cause on the job and in the log, so a failed plan says why instead of just failing.
       const why = e instanceof Error ? e.message.replace(/\s+/g, " ").slice(0, 240) : "unknown error";
-      job.status = "failed"; job.error = `Planning failed: ${why}. Check the setup, then approve a new try.`;
+      const key = `planningRetry:${job.itemId}`;
+      const retry = planningFailure(await this.ctx.storage.get<PlanningRetry>(key), why);
+      await this.accountPut(key, retry);
+      job.status = "failed"; job.error = `Planning failed: ${why}. Try ${retry.failures}/3. No build run charged. Retry after ${new Date(retry.retryAt).toISOString()}.`;
       await this.accountPut(`runnerJob:${job.id}`, job);
       this.log("error", job.error, job.itemId);
     }
@@ -800,6 +822,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.accountPut(`runnerJob:${job.id}`, job);
         return null;
       }
+      // Charge only a validated plan actually dispatched to the runner. Lost-claim recovery above never charges twice.
+      const account = job.runAccount ?? await this.runAccount();
+      if (!account || !await runQuota(this.env as never, account)) return null;
       await this.accountPut("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);
@@ -2866,6 +2891,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.accountAlarm(Date.now() + TICK_MS);
     else await this.save();
+    const retryAt = Math.min(...(await this.planningRetries()).map(r => r.retryAt));
+    const currentAlarm = await this.ctx.storage.getAlarm();
+    if (Number.isFinite(retryAt) && (currentAlarm == null || currentAlarm > retryAt)) await this.accountAlarm(retryAt);
     const poll = await this.ctx.storage.get<{ nextAt: number }>("posthogPoll");
     if (poll && (await this.ctx.storage.get<boolean>("posthogLinked"))) {
       const next = Math.max(Date.now() + TICK_MS, poll.nextAt);

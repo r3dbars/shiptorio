@@ -1,0 +1,9 @@
+.quota-card { position: fixed; z-index: 30; top: calc(var(--sat, 0px) + 108px); right: 16px; width: min(350px, calc(100vw - 32px)); max-height: 48dvh; overflow-y: auto; box-sizing: border-box; padding: 18px; font: 12px/1.5 var(--iron-mono); border-color: var(--iron-amber); pointer-events: auto; }
+.quota-card h2 { font-size: 13px; color: var(--iron-amber); }
+.quota-card section { border-top: 1px solid var(--iron-line); margin-top: 12px; padding-top: 10px; }
+.quota-card section[data-state="stopped"] strong { color: var(--iron-amber); }
+.quota-card p { margin: 5px 0 9px; overflow-wrap: anywhere; }
+.quota-card .iron-btn { display: inline-flex; align-items: center; text-decoration: none; margin-top: 3px; min-height: 40px; }
+.quota-card details { margin-top: 12px; color: var(--iron-dim); }
+.quota-card summary { cursor: pointer; min-height: 28px; }
+@media (max-width: 760px) { .quota-card { top: calc(var(--sat, 0px) + 68px); right: 12px; width: calc(100vw - 24px); max-height: 40dvh; padding: 14px; } }

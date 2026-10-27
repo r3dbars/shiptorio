@@ -11,6 +11,7 @@ export interface RunnerJob {
   allowedPaths: string[]; status: "planning" | "awaiting_approval" | "ready" | "running" | "completed" | "failed";
   steps?: { tool: string; reason: string; result: string; at: number }[];
   planningStarted?: boolean;
+  runAccount?: string; // account charged only when the runner claims this plan
   needsApproval?: boolean;
   approvalMoveId?: string;
   approvedAt?: number;

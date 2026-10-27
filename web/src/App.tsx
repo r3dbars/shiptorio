@@ -1,3 +1,4 @@
+import { QuotaCard } from "./ui/QuotaCard";
 import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
@@ -434,6 +435,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
   return (
     <div className={panel ? "app picked" : "app"}>
+      <QuotaCard repo={cfg.kind === "live" ? cfg.repo : undefined} onBudget={() => toggleSheet("thinks")} />
       <main className="floor" ref={hv.host as Ref<HTMLElement>}>
         {intro && <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>}
         <FactoryMap
