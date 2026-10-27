@@ -77,7 +77,7 @@ describe("Factory inventory command behavior", () => {
         expect(f.saved().machines.some(m => m.id === id)).toBe(true);
         expect(f.calls).toEqual(["schedule"]);
       } else {
-        expect(f.patches[0]?.removed).toEqual([{ kind: "machine", id }, ...connected.map(b => ({ kind: "belt", id: b.id }))]);
+        expect(f.patches[0]?.removed).toEqual([{ kind: "machine", id }, ...connected.map(b => ({ kind: "belt" as const, id: b.id }))]);
         expect(f.saved().machines.some(m => m.id === id)).toBe(false);
         expect(f.saved().belts.some(b => b.from === id || b.to === id)).toBe(false);
         expect(f.calls).toEqual(["patch", "schedule"]);
