@@ -347,7 +347,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
     const yes = await flagEnabled(this.env, "attention") ? this.deckBook!.yes : undefined;
-    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = this.applyGameMaster(ranked);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -374,7 +374,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   // ---------- game master: Spark ranks the deck and words the bottleneck card ----------
 
-  private gm: { key: string; call: GameMasterCall } | null = null;
+  private gm: { key: string; call: GameMasterCall; wip?: number } | null = null;
   private gmAsking: string | null = null;
   private gmLastAt = 0;
   private gmFails = 0;
@@ -396,7 +396,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // A "do nothing" pick would stall autopilot on a card that has a real next step; ranking the card lower already says "later".
       const stalls = !m.options.find(o => o.id === pick)?.actions.length && m.options.some(o => o.recommended && o.actions.length);
       if (pick && !m.locked && !stalls) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
-      if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
+      // Spark's words quote the pile size it saw; once the pile changes, the card's own up-to-date words stand.
+      if (m.id.startsWith("bottleneck:") && call.bottleneck && this.gm!.wip === this.state!.bottleneck?.wip) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
       // The why line only describes the option Spark picked, so a locked or overruled card keeps its own reason.
       if (call.because[m.id] && !m.locked && !(pick && stalls)) move = { ...move, because: call.because[m.id] };
       return move;
@@ -424,7 +425,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     void this.rankBudgetLeft().then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
       () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
-      .then(async call => { this.gm = { key, call }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
+      .then(async call => { this.gm = { key, call, wip: brief.bottleneck?.wip }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
       .catch(error => { this.gm = null; this.gmFails = Math.min(this.gmFails + 1, 4); this.log("error", `Game master failed: ${String(error)}`); })
       .finally(() => { if (this.gmAsking === key) this.gmAsking = null; });
   }
@@ -3008,6 +3009,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } catch (error) { await this.reliabilityFailure(`tick:${item.id}`, error, item.id); }
     }
 
+    if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
+      // The hosted assembler only stops here for want of a local agent. Once one is plugged in it isn't stuck,
+      // even after the queue empties, so the map stops saying "needs a look".
+      const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
+      const stale = s.machines.filter((m) => m.type === "assembler" && m.harness === "spark" && m.state === "blocked");
+      if (stale.length && presence?.harnesses.length && Date.now() - presence.seenAt < 20000) await this.patch({ machines: stale.map((m) => ({ ...m, state: "idle" as const })) });
+    }
     for (const item of lineOrder(s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS))) {
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       const jobs = await this.runnerJobs();
