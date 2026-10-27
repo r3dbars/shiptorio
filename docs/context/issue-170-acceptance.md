@@ -195,3 +195,18 @@ explicit Launch. Do not implement the issue outside that runner path.
 - Deploy40440046398 (#305) and40440013675 (#308) failed before execution;
   no Cloudflare deployment or rollback occurred. Live remains be3a81bc.
   Pending/red/draft PRs remain unmerged. This is not an all-green release.
+
+## Compiler feedback and runtime test failure
+
+- Exact-base replay identified TS2769 in the prior proposal: it expected an
+  Item.state named closed, which does not exist. Recorded precise feedback in
+  issuecomment-6432497144; no manual issue implementation or type widening.
+- Spark produced a new exact-two-file plan asserting only Signal.action.
+  Approved it through the actual game; jobf3391af8-9d27-4c04-9124-b6f4f77cb22d
+  ran real Codex and passed the security policy and supervised typecheck.
+- Its full sandboxed test process exited133 with SIGTRAP: Bun1.4.4 on macOS27
+  reported an internal crash after roughly68seconds, around progression tests.
+  This is not a passing suite or a published PR. A disposable unchanged-source
+  control is investigating the runtime separately, preserving the OS boundary.
+- #170 still has no PR and no Launch. GitHub Actions budget approval is pending,
+  so required CI and production Deploy cannot complete even after local recovery.
