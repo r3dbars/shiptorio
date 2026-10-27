@@ -91,7 +91,7 @@ test("bake keeps each floor apart and hands its parts back", () => {
   for (const id of ["mine", "checks", "launch"]) expect(stillDrawn(id)).toBe(true);
   // the stub build shows it again
   const run = buildFloor(I, "build");
-  expect(run.update(0.1)).toBe(true);
+  expect(run.update(60)).toBe(true);
   expect(stillDrawn("build")).toBe(true);
   // baking one more holder later (a machine that just rose) adds to the floors, it doesn't wipe them
   const holder = new THREE.Group();
