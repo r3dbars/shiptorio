@@ -404,3 +404,7 @@ complete evidence. No production runtime or visual baselines change.
 Added advisory CodeQL, grouped weekly dependency updates, private reporting/scope policy,
 and HTML response-header regression coverage preserving the preview nonce. Full-history
 secret-scan counts and validation receipts are recorded in the PR; see [security.md](security.md).
+
+## AI review eval (Codex, Oct 27, 2026)
+
+Day 2 gauntlet trust checkpoint: pinned 15 Testing patches (10 bad, 5 good), executable witnesses and a live production-reviewer harness. Results and limitations are generated in [EVAL.md](../EVAL.md) from raw receipts; no production reviewer changes.
