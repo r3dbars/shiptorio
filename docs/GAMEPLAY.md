@@ -4,7 +4,8 @@
 > marked. Playbook (full write-up on real shaft renders): https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8 ·
 > A/B picks: https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR. Justin's picks go in the table at the bottom.
 > Builds on VISION.md (principles 6, 10, 11), ATTENTION.md (one card, Continue / Later) and the new-player
-> walkthrough's unlock ladder.
+> walkthrough's unlock ladder. The complete approved rounds 1–4 and current rollout policy are in
+> [GAMEPLAY-PICKS.md](GAMEPLAY-PICKS.md), which supersedes earlier picks or rollout notes below where they differ.
 
 ## Core loop
 
@@ -111,7 +112,9 @@ with `r2-`); record each round here.
 | 23 | Phone layout | Card over map | Split screen | A | **A** |
 | 24 | Desktop layout | Same as phone | Side rail | A | neither, redo in round 2 |
 
-### Round 2 (open, 2026-10-27)
+### Round 2 (early option table, 2026-10-27)
+
+Final answers are recorded in [GAMEPLAY-PICKS.md](GAMEPLAY-PICKS.md); the S column below is the earlier suggestion.
 
 | # | Question | A | B | C | S | Justin |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -122,11 +125,13 @@ with `r2-`); record each round here.
 | r2-buttons | Later left / Continue right sizes | Big Continue, small Later | Equal halves | Continue as a tab | A | |
 | r2-callout | Callout shape | Plate to the side + line | Bubble with tail | The name tag grows | C | |
 
-## Build plan (behind the `play` flag)
+## Build plan (approved default rollout)
 
-Everything new ships behind one flag, `play`: server flag "play" or `?play=1` / `?play=0` (same pattern as
-`attention` in `web/src/flags.ts`). Justin looks at it in the real game before it goes default. Side-by-side phone
-(390) and desktop (1440) shots before each merge. Round 2 picks fill in the details for slices 1, 2, 6 and 10.
+Justin's later 12:37/14:28 direction in [GAMEPLAY-PICKS.md](GAMEPLAY-PICKS.md) supersedes the earlier
+`play`-flag plan: implement approved picks for everyone without a new play flag. Existing kill switches and
+the temporary `?attention=0` fallback remain applicable where implemented. This is design intent, not proof
+that the slices below are released. Keep side-by-side phone (390) and desktop (1440) shots before each merge.
+Round 2 picks fill in the details for slices 1, 2, 6 and 10.
 
 Seams: `hud.ts`, `frame.ts` and `shaft.css` in `web/src/map/shaft/` belong to the Black Iron thread; the rest of the
 shaft (modules, core items, driver, layout) to the map thread. Coordinate before touching them.

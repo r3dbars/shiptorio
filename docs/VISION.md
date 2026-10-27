@@ -97,7 +97,8 @@ follows this order:
 
 ## Gameplay picks (Justin, 2026-10-27)
 
-Round 1 of the A/B picks is in (`docs/GAMEPLAY.md` has all of them). The ones that shape everything:
+The full approved rounds 1–4 and rollout policy are in [GAMEPLAY-PICKS.md](GAMEPLAY-PICKS.md).
+[GAMEPLAY.md](GAMEPLAY.md) preserves the early design context; the following is the round-1 summary:
 
 - **Setup is play:** you start in an abandoned foundry; picking the repo, connecting your AI and picking the first
   issue are three repairs you watch happen. Locked parts are visible but broken (only the next one or two), you fix
@@ -109,7 +110,9 @@ Round 1 of the A/B picks is in (`docs/GAMEPLAY.md` has all of them). The ones th
 - **Feel:** first rocket gets the full camera cut, later ones a corner flash; caught bugs show as a scar on the work;
   a soft foundry hum is on by default.
 - **Refining:** gameplay is tuned through short A/B rounds on real game art that narrow in each time
-  (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR). New gameplay builds behind the `play` flag.
+  (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR). Justin's later 12:37/14:28 direction supersedes the earlier
+  `play`-flag rollout: approved picks are intended for everyone without a new play flag. Existing kill switches
+  and temporary `?attention=0` compatibility remain where implemented. These design records are not release receipts.
 
 ## The loop today
 

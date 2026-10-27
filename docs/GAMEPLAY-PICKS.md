@@ -1,9 +1,13 @@
 # Gameplay picks (Justin, 2026-10-27)
 
+> Status: **approved design decisions and future build plan**. This record does not establish implementation or release.
+
 Justin's answers from the A/B picks page (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR, answers in its `picks` db).
 Round 1 is written up with the reasoning in `docs/GAMEPLAY.md` (PR #322). This file is the full list, rounds 1 to 4,
-so the build has one place to check. Everything here ships to main for everyone, no flag (Justin, 12:37 and 14:28:
-"push and commit and merge all of these choices").
+so the build has one place to check. The approved rollout is for everyone, without a new `play` flag (Justin,
+12:37 and 14:28: "push and commit and merge all of these choices"). This supersedes the earlier play-flag plan
+in [GAMEPLAY.md](GAMEPLAY.md) and [VISION.md](VISION.md). Existing kill switches and the temporary
+`?attention=0` fallback remain applicable where implemented; this document changes no runtime flags.
 
 ## Rules that come out of the picks
 
@@ -12,7 +16,17 @@ so the build has one place to check. Everything here ships to main for everyone,
 - **Real outcomes only.** No currency, no fake decay, no fake waits. A ship grows the factory, a repair is one real action.
 - **The bottleneck drives what opens next.** The next broken thing lights up when your factory needs it, with real numbers.
 - **Launching is a big red button you hold** on the right of the card, with sound and a press-down.
-- **Sound:** steam and iron (round 3), on top of the soft foundry hum base from round 1.
+- **Sound choices:** steam and iron (round 3), and soft foundry hum (round 1); their proposed layering is an
+  implementation interpretation below.
+
+## Implementation interpretations
+
+These combine recorded answers for the build plan; they are not additional explicit A/B answers:
+
+- **r4-tease:** Justin picked A and noted that he likes B too. The author's proposed blend lights the next
+  broken thing and shows the rest as faint silhouettes, without a to-do list.
+- **Sound:** the author's proposed combination places steam-and-iron accents over the earlier hum base.
+  The recorded answers remain Steam and iron (round 3) and Soft foundry hum (round 1).
 
 ## Round 4: the start of the game (14:28)
 
@@ -24,7 +38,7 @@ so the build has one place to check. Everything here ships to main for everyone,
 | r4-wait | Your first PR is building. What do you do? | **A** Watch the cart ride floor by floor, with a small bar and "about 6 min"; ping when ready |
 | r4-reward | A PR ships. What do you get? | **B** The factory grows: each ship leaves a permanent lamp or banner on the floor that built it |
 | r4-next | When does the next part open up? | **B** When your bottleneck needs it |
-| r4-tease | How much of what's coming can you see? | **A**, and he likes B too. Blend: the next broken thing glows; everything past it is a faint silhouette, no to-do list |
+| r4-tease | How much of what's coming can you see? | **A**, with the note that he likes B too. The proposed blend is an implementation interpretation above |
 | r4-onemore | You clear the last card. Now what? | **C** Show the next repair, with real numbers |
 | r4-pull | What brings you back later? | **B** A launch is waiting ("#143 passed every check. Hold to launch.") |
 | r3-return | Back after a day away. What happens first? | **B** Time-lapse of the day, Shipped counter ticks up, tap to skip |
@@ -83,8 +97,9 @@ so the build has one place to check. Everything here ships to main for everyone,
 
 ## Build order
 
-Shipped or in review: the Needs you card on by default, Later left / Continue tab right, peeking edges, the big red
-hold-to-launch mushroom button (#331).
+At this documentation checkpoint, #331 is **in review**: the Needs you card on by default, Later left / Continue
+tab right, peeking edges and the big red hold-to-launch mushroom button. No release is claimed; verify its merge,
+Deploy and live-version receipt before calling these changes shipped.
 
 Next, in small PRs straight to main through the merge queue:
 
@@ -94,9 +109,9 @@ Next, in small PRs straight to main through the merge queue:
 4. The factory grows: a permanent lamp per ship on the floor that built it; big celebration once, small after (r4-reward, ship).
 5. Trust lamps in levels up the lift tower (r3-trust, trust).
 6. The first run: dark foundry, one lit tunnel, floors light as repairs land, smallest safe first issue, watch the cart (r4-open, r3-firstrun, r4-firstpick, r4-wait, firstissue).
-7. Repairs: tap the broken thing, hold to pry, quick swoop to what opened; next broken thing glows, the rest faint (repairhow, r3-repair, r3-fly, r4-tease, r4-next).
+7. Repairs: tap the broken thing, hold to pry, quick swoop to what opened; next broken thing glows, the rest faint (implementation interpretation above; repairhow, r3-repair, r3-fly, r4-tease, r4-next).
 8. After the last card: show the next repair with real numbers (r4-onemore).
 9. Coming back: time-lapse of the day; pings only for a launch waiting (r3-return, r4-pull).
 10. Cart Rush/Park from its callout (r3-rush, touchwork; needs a server action).
-11. Steam-and-iron sound accents over the hum (r3-sound).
+11. Steam-and-iron sound accents over the hum (implementation interpretation above; r3-sound, sound).
 12. Earned controls: autonomy and new mines arrive as cards (r4-grow, autonomy).
