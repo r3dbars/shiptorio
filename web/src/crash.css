@@ -16,3 +16,4 @@
 @keyframes crash-shake { 50% { transform: rotate(6deg); } }
 @media (max-width: 420px) { .crash-body { grid-template-columns: 1fr; } .crash-gauge { width: 56px; height: 56px; } }
 @media (prefers-reduced-motion: reduce) { .crash-needle { animation: none; } }
+.crash .iron-btn:focus-visible { outline: 3px solid var(--iron-ink); outline-offset: 4px; }

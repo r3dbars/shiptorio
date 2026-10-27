@@ -17,6 +17,7 @@ import type { FactoryState } from "@shiptorio/shared";
 
 import { buildoutOn } from "../../flags";
 import { submitWhenUnheld } from "../../ui/holdRender";
+import { recoverContext } from "../contextLoss";
 import { perf } from "../perf";
 import { GpuSubmission } from "../gpu-submission";
 import { FrameGovernor } from "../quality";
@@ -116,7 +117,13 @@ export class ShaftScene {
     labelRoot: HTMLElement,
     private readonly onPick?: (id: string) => void,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+    this.renderer = recoverContext(canvas, () => {
+      if (this.disposed || !this.state) return;
+      if (this.sp) this.rebuild(this.sp);
+      this.update(this.state);
+      this.governor.poke();
+      this.stage?.render(this.renderer);
+    });
     this.gpu = new GpuSubmission(this.renderer.getContext(), canvas);
     perf.submissions(this.gpu.stats());
     this.renderer.setPixelRatio(1);

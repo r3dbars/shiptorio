@@ -35,3 +35,8 @@ export function socketDisconnected(repo: string, code: number, wasClean: boolean
   Sentry.addBreadcrumb({ category: 'websocket', level: 'warning', message: 'Factory disconnected', data: { repo, code, wasClean } });
   if (!wasClean || code !== 1000) Sentry.captureMessage('Factory websocket disconnected', { level: 'warning', tags: { repo }, extra: { code, wasClean, requestId } });
 }
+
+// Fixed reasons avoid sending source text, credentials, or a player's data in crash messages.
+export function renderCrashed(reason: 'react_render' | 'webgl_render') {
+  Sentry.captureMessage('Game render failed', { level: 'error', tags: { reason }, extra: { requestId } });
+}
