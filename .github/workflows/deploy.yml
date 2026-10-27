@@ -58,7 +58,17 @@ jobs:
           echo "Rollback target: $previous ($commit)"
       - name: Deploy
         id: deploy
-        run: bun run deploy
+        # Deliberate production-only asset fault for the authorized drill. NEVER MERGE.
+        run: |
+          bun run build
+          python3 - <<'DRILL'
+          from pathlib import Path
+          entries = list(Path('web/dist/assets').glob('index-*.js'))
+          assert entries, 'No built entry found: refuse a drill without a fault'
+          for entry in entries:
+              entry.write_text('throw new Error("browser rollback drill: deliberately broken entry");')
+          DRILL
+          bun run --filter './server' deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
