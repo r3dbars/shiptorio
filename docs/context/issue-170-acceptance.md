@@ -49,3 +49,16 @@ explicit Launch. Do not implement the issue outside that runner path.
 - PR #246's linear JSON repair is separately deployed. Recheck runner endpoints
   after the redactor release before claiming the live-loop blocker resolved.
   Human approval, local build, real PR, gauntlet, Launch and rocket remain pending.
+
+## Bounded recovery check after #247
+
+- PR #247 merged as 147802b54b6622a77f3f22a85f25c22547d2ffb7. Deploy
+  https://github.com/r3dbars/shiptorio/actions/runs/40426191464 is green and
+  `/api/version` returned that exact code SHA.
+- Authenticated runner/status, runner/jobs and a fresh factory snapshot now
+  succeed. The fresh #170 job remains `awaiting_approval`.
+- A current-source isolated runner single-pass claim succeeded with "no approved
+  Spark job is ready"; no build or approval occurred. This proves bounded request
+  recovery after both performance fixes, not sustained load or a shipped issue.
+- No Cloudflare billing change was made. Defer any paid upgrade decision while
+  checking this recovery; extra CPU headroom is separate from code correctness.
