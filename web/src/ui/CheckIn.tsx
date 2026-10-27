@@ -400,7 +400,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
             </button>
             <div className="ci-title small">{top.title}</div>
           </div>
-          <div className="ci-review">
+          <div className="ci-review" role="region" aria-label={CHECKIN.onYes} tabIndex={0}>
             {top.plan && (
               <>
                 <div className="ci-sec">{CHECKIN.onYes}</div>
