@@ -369,3 +369,10 @@ delayed committing/booting it by about 29.5 seconds. Observe navigation commit
 explicitly, then retain URL, live snapshot, approval, PR, gauntlet and launch
 assertions. This is test synchronization, not a claim of improved product speed.
 
+
+## Preserve owner AI limits during deploy
+
+Codex: the operational production-owner upsert replaced raised call/token limits
+with NULL on every deploy. Preserve existing values, including explicit zero; a
+new owner row still uses normal defaults. Regression executes the actual deploy SQL
+twice and checks raised, zero and fresh-row cases. No usage ledger is reset.
