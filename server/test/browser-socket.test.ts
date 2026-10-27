@@ -83,3 +83,12 @@ it("browser transport cursors persist across hibernation and snapshots do not ad
   expect(browserHeartbeat(ws, '{"type":"launch_pr"}')).toBe(false);
   expect(sent).toEqual(["pong"]);
 });
+
+it("allocates ordered cursors before delivery and fences a concurrent snapshot", async () => {
+  const { BrowserFrames } = await import("../src/browser-socket");
+  const data = new Map<string, unknown>();
+  const storage = { get: async (key: string) => data.get(key), put: async (key: string, value: unknown) => { data.set(key, value); } } as Pick<DurableObjectStorage, "get" | "put">;
+  const frames = new BrowserFrames(storage);
+  const out = await Promise.all([frames.frame({ type: "patch" }), frames.frame({ type: "snapshot" }, false), frames.frame({ type: "patch" })]);
+  expect(out.map(raw => JSON.parse(raw).seq)).toEqual([1, 1, 2]);
+});

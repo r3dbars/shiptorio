@@ -66,3 +66,14 @@ export function browserHeartbeat(ws: Pick<WebSocket, "send">, raw: string | Arra
   ws.send("pong");
   return true;
 }
+
+// Sequence allocation must not queue behind another player's authorization I/O.
+export class BrowserFrames {
+  private queue: Promise<unknown> = Promise.resolve();
+  constructor(private storage: Pick<DurableObjectStorage, "get" | "put">) {}
+  frame(message: object, advance = true): Promise<string> {
+    const frame = this.queue.then(() => browserFrame(this.storage, message, advance));
+    this.queue = frame.catch(() => {});
+    return frame;
+  }
+}

@@ -75,7 +75,7 @@ describe("Factory lifecycle", () => {
     for (const goal of ["  Ship checkout fixes\nwithout regressions  ", "g".repeat(200), ""]) {
       f.events.length = 0;
       await f.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "set_goal", text: goal }));
-      expect(f.events).toContainEqual({ type: "patch", patch: { goal } });
+      expect(f.events).toContainEqual(expect.objectContaining({ type: "patch", patch: { goal } }));
       expect(f.saved().goal).toBe(goal);
       // A fresh instance must read the durable value, not the previous instance's cache.
       const reloaded = f.reload() as unknown as { load(): Promise<FactoryState | null> };

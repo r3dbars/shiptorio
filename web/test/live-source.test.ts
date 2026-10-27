@@ -1,8 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ServerToWeb } from "@shiptorio/shared";
 import { FactoryState } from "@shiptorio/shared";
-import { starterLine } from "../../../server/src/engine";
-import { connectLive } from "./live";
+import { connectLive } from "../src/source/live";
 
 // Run the real transport against a controllable network/clock. No browser sessions,
 // factory jobs or real timers escape a test, including when an assertion throws.
@@ -33,7 +32,7 @@ function harness() {
     close() { this.closeCalls++; this.readyState = 3; this.onclose?.(); }
   }
   const win = new EventTarget();
-  const doc = Object.assign(new EventTarget(), { visibilityState: "visible", body: { append() {} }, createElement: () => ({ setAttribute() {}, textContent: "", style: { cssText: "" }, remove() {} }) });
+  const doc = Object.assign(new EventTarget(), { visibilityState: "visible", body: { appendChild() {} }, createElement: () => ({ setAttribute() {}, textContent: "", style: { cssText: "" }, remove() {} }) });
   const values = { window: win, document: doc, WebSocket: Socket, location: { protocol: "https:", host: "shiptorio.com" }, setTimeout: (run: () => void, delay: number) => schedule(run, delay), clearTimeout: clear, setInterval: (run: () => void, delay: number) => schedule(run, delay, true), clearInterval: clear };
   for (const key of keys) Object.defineProperty(globalThis, key, { value: values[key], writable: true, configurable: true });
   const messages: ServerToWeb[] = [], statuses: string[] = [];
@@ -61,7 +60,7 @@ function harness() {
     },
   };
 }
-const snapshot = JSON.stringify({ type: "snapshot", seq: 0, state: FactoryState.parse({ repo: "r3dbars/shiptorio", baseBranch: "main", districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 }) });
+const snapshot = JSON.stringify({ type: "snapshot", seq: 0, state: FactoryState.parse({ repo: "r3dbars/shiptorio", baseBranch: "main", districts: [], machines: [], belts: [], power: [], items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0 }) });
 const { seq: _seq, ...snapshotMessage } = JSON.parse(snapshot);
 const sync = (socket: { message(data: unknown): void }) => socket.message(snapshot);
 const log = JSON.stringify({ type: "log", level: "info", text: "Current factory", at: 1 });

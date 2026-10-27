@@ -1,5 +1,5 @@
 import { socketDisconnected } from "../telemetry";
-import { ServerToWeb } from "@shiptorio/shared";
+import { parseLiveMessage } from "./schemas";
 import type { Listener, Source, StatusListener } from ".";
 
 const HEARTBEAT_MS = 15_000;
@@ -25,7 +25,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       notice.setAttribute("role", "status");
       notice.textContent = "Reconnecting…";
       notice.style.cssText = "position:fixed;bottom:12px;left:12px;z-index:1000;padding:6px 10px;border-radius:6px;background:#1b2448;color:#c9b48a;font:12px monospace;pointer-events:none";
-      document.body.append(notice);
+      document.body.appendChild(notice);
     }, NOTICE_MS);
   };
   const ready = () => {
@@ -72,17 +72,17 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       if (!current() || typeof e.data !== "string") return;
       if (e.data === "pong") {
         if (!synced) return;
+        clearTimeout(heartbeat);
         clearTimeout(deadline);
         heartbeat = setTimeout(() => ping(socket), HEARTBEAT_MS);
         return;
       }
       let value: unknown;
       try { value = JSON.parse(e.data); } catch { return; }
-      const parsed = ServerToWeb.safeParse(value);
-      if (!parsed.success) { console.warn("bad message from server", parsed.error); return; }
-      const seq = (value as { seq?: unknown }).seq;
-      if (seq !== undefined && (!Number.isSafeInteger(seq) || (seq as number) < 0)) return;
-      const msg = parsed.data;
+      let parsed: ReturnType<typeof parseLiveMessage>;
+      try { parsed = parseLiveMessage(value); }
+      catch (error) { console.warn("bad message from server", error); return; }
+      const { seq, ...msg } = parsed;
       if (!synced) {
         if (msg.type !== "snapshot") return;
         // A new socket explicitly requests a full snapshot via the upgrade. Equal

@@ -31,7 +31,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
       if (raw.type === 'choose_move') choices.push({ moveId: raw.moveId, optionId: raw.optionId });
     });
     ws.on('framereceived', ({ payload }) => {
-    if (typeof payload !== 'string') return;
+    if (typeof payload !== 'string' || payload === 'pong') return;
     const raw = JSON.parse(payload);
     try { assertWire(raw); } catch (e) { wireErrors.push(String(e)); }
     messages.push(raw);

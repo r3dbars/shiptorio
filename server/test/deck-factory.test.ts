@@ -40,7 +40,8 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   }; } }; } };
   const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
   let exclusive: Promise<unknown> = Promise.resolve();
-  const ctx = { storage, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
+  const background: Promise<unknown>[] = [];
+  const ctx = { storage, waitUntil: (task: Promise<unknown>) => { background.push(task); }, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
   const reload = () => new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) }) as never);
   const factory = reload();
   const send = (value: unknown, instance = factory) => instance.webSocketMessage(authorizedSocket(), JSON.stringify(value));
@@ -52,6 +53,7 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
       expect(response.status).toBe(101);
       // These scenarios start after initial deck frames reach the browser, which
       // is now intentionally later than the handshake response.
+      await Promise.all(background);
       await (instance as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
     }
     finally { (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair = prior; }
