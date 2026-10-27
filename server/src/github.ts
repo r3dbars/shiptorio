@@ -2,6 +2,8 @@ import { githubCooldown, RateLimitError } from "./rate-limit";
 import { observedFetch } from "./telemetry";
 import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./sources/credential-crypto";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
+import { GitHubReadCache } from "./github-cache";
+import { githubLease } from "./github-concurrency";
 
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, TRUST_LABEL, trustedAuthor, type GitHubIssue, type GitHubPayload } from "./sources/github";
@@ -118,7 +120,7 @@ const queues = new Map<string, Promise<unknown>>();
 const queued = new Map<string, number>();
 const contexts = new Map<string, { db: D1Database; scope: string }>();
 const cooldowns = new Map<string, { next: number; failures: number }>();
-const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
+const readCache = new GitHubReadCache();
 async function credentialKey(token: string) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -131,7 +133,10 @@ export async function registerGithubCredential(token: string, db: D1Database, sc
   boundedSet(contexts, await credentialKey(token), { db, scope });
 }
 async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
+  const key = await credentialKey(token), context = contexts.get(key), owner = tokenOwners.get(key);
+  // Permission-scoped and replacement tokens still consume the same installation budget.
+  // D1 shares spacing/cooldowns across isolates; this queue caps in-flight calls to one per isolate.
+  const scope = context?.scope ?? (owner ? `github:installation:${owner.installationId}` : key);
   if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
   queued.set(scope, (queued.get(scope) ?? 0) + 1);
   const previous = queues.get(scope) ?? Promise.resolve();
@@ -156,25 +161,42 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
       const latest = await context.db.prepare("SELECT next_at FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number }>();
       if (latest && latest.next_at > Date.now() + 5000) throw new RateLimitError(latest.next_at);
     }
-    const cacheKey = `${key}:${path}`;
-    const cached = (init.method ?? "GET") === "GET" ? etags.get(cacheKey) : undefined;
     const headers = new Headers({ accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": UA, "x-github-api-version": "2022-11-28" });
     if (init.body) headers.set("content-type", "application/json");
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-    if (cached && cached.expires > Date.now()) headers.set("if-none-match", cached.etag);
-    const res = await observedFetch("github", API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
-    const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
-    const next = githubCooldown(res, Date.now(), state.failures, secondary);
-    const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
-    boundedSet(cooldowns, scope, { next, failures });
-    if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
-    if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
-    if (res.status === 304 && cached) return structuredClone(cached.value) as T;
-    if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
-    if (res.status === 204) return undefined as T;
-    const value = await res.json();
-    if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
-    return value as T;
+    // Callers cannot switch the credential after its access boundary was checked.
+    headers.set("authorization", `Bearer ${token}`);
+    const cacheable = (init.method ?? "GET").toUpperCase() === "GET" && !init.body && !headers.has("if-none-match") && !headers.has("if-modified-since") && !headers.has("range") && !/\bno-store\b/i.test(headers.get("cache-control") ?? "");
+    const identity = owner ? JSON.stringify([owner.env.GITHUB_APP_ID, owner.installationId, owner.version, owner.scope]) : scope;
+    const cacheKey = cacheable ? await readCache.key(key, identity, path, headers) : undefined;
+    const cached = cacheKey ? await readCache.get(cacheKey, owner?.env) : undefined;
+    if (cached) headers.set("if-none-match", cached.etag);
+    const lease = context && scope.startsWith("github:installation:") ? await githubLease(context.db, scope) : undefined;
+    try {
+      // Slow D1 acquisition must not let the API request outlive its lease.
+      const remaining = lease ? Math.min(20000, lease.expiresAt - Date.now() - 1000) : 20000;
+      if (remaining <= 0) throw new RateLimitError(Date.now() + 1000);
+      const timeout = AbortSignal.timeout(remaining);
+      const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+      const res = await observedFetch("github", API + path, { ...init, signal, headers });
+      const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
+      const next = githubCooldown(res, Date.now(), state.failures, secondary);
+      const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
+      boundedSet(cooldowns, scope, { next, failures });
+      if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
+      if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
+      if (res.status === 304 && cached && cached.expires > Date.now()) return structuredClone(cached.value) as T;
+      // Never serve stale data on errors, including revoked access disguised as 404.
+      if (cacheKey) await readCache.delete(cacheKey, owner?.env);
+      if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
+      if (res.status === 204) return undefined as T;
+      const value = await res.json();
+      if (cacheKey && res.status === 200 && res.headers.has("etag") && !/\bno-store\b/i.test(res.headers.get("cache-control") ?? "") && res.headers.get("vary") !== "*") await readCache.put(cacheKey, res.headers.get("etag")!, value, owner?.env);
+      return value as T;
+    } finally {
+      // Keep the API outcome if release storage is unavailable; the lease expires.
+      try { await lease?.release(); } catch { /* bounded crash recovery */ }
+    }
   });
   queues.set(scope, request);
   try { return await request; } finally {
@@ -445,7 +467,7 @@ export async function commitToBranch(
         method: "POST",
         body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
       });
-    });
+    }, { shouldRetry: error => !(error instanceof RateLimitError) });
   }
   return commit.sha;
 }
@@ -464,7 +486,7 @@ export async function openPullRequest(
     );
     if (existing[0]) return existing[0];
     return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
-  });
+  }, { shouldRetry: error => !(error instanceof RateLimitError) });
 }
 
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */
