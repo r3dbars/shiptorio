@@ -1,5 +1,5 @@
 import { sparkTestEnv } from "./budget-fixture";
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { compact, planLocalTask, reviewWithTools, runReadTool, type Toolbox } from "../src/spark-tools";
 import { factoryBrief, signalsBrief } from "../src/spark-context";
 import type { FactoryState, Item } from "@shiptorio/shared";
@@ -14,6 +14,10 @@ const repo: Record<string, string> = {
   "src/config.ts": "export const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';\n",
 };
 const box = (extra: Partial<Toolbox> = {}): Toolbox => ({ paths: Object.keys(repo), read: async p => repo[p] ?? null, ...extra });
+
+// Every test that fakes Spark puts the real fetch back, so the stub can't leak into other test files.
+const realFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = realFetch; });
 
 /** Fake Spark: replays a script and keeps every user payload it was sent. */
 function spark(script: unknown[]) {
