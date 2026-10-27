@@ -23,4 +23,4 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => { 
 const run = async (args: string[]) => { const p = child = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' }); if (await p.exited) throw new Error(args.join(' ')); };
 await run(['bun', 'run', 'build']);
 await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
-await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', port, '--inspector-port', '9249']);
+await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', port, '--inspector-port', '0']);
