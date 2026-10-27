@@ -278,3 +278,17 @@ resource attribution, migration upsert/cleanup, zero-charge failed plans across 
 and independent issue retry caps. Validation and merge are tracked in
 [PR #281](https://github.com/r3dbars/shiptorio/pull/281); its final verification comment
 links the successful Deploy run, including D1 migration application and live smoke.
+
+## Live quota admin form recovery (Codex, 2026-10-26)
+
+Follow-up [PR #284](https://github.com/r3dbars/shiptorio/pull/284) to #269 on `codex/quota-admin-origin`: verified Deploy run 40432397609
+succeeded and production SHA `6c7bca1` includes its merge. The real
+r3dbars/shiptorio card showed 20/21 runs and correctly linked to the prefilled owner
+admin page. Native Save returned 403 `invalid origin`; no quota change persisted.
+The global `no-referrer` policy makes Chromium's native form Origin opaque, as with
+the already-fixed pairing form. Use `same-origin` only on `/admin/signup` as well;
+retain exact Origin/CSRF checks and hide off-site referrers. Replace the mocked
+admin popup in quota browser tests with the real authenticated form and persisted
+save/reload checks, passing on desktop and iPhone. Public FAQ now explains quotas and
+recovery. PR #284 carries the deployment and live stop/recovery verification receipt.
+The rejected production saves left all original account limits intact.

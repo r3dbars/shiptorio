@@ -36,9 +36,9 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
     "Content-Security-Policy": csp,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    // Chromium turns form Origin opaque under no-referrer. Pairing needs its exact
-    // same-origin POST header; same-origin still hides the device code off-site.
-    "Referrer-Policy": url.pathname === "/runner/pair" ? "same-origin" : "no-referrer",
+    // Chromium turns native form Origin opaque under no-referrer. Pairing and quota
+    // admin forms need their exact same-origin POST header; off-site referrers stay hidden.
+    "Referrer-Policy": ["/runner/pair", "/admin/signup"].includes(url.pathname) ? "same-origin" : "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     ...(url.protocol === "https:" ? { "Strict-Transport-Security": "max-age=31536000" } : {}),
   };
