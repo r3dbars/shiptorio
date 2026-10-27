@@ -74,8 +74,15 @@ header, nor after retention expires. No captured-delivery exposure was establish
 Changing ledger identities/retention requires a coordinated compatibility change;
 this PR does not claim to remediate that separate boundary.
 
-Two availability observations went to root without editing protected/other-owner
-code: waitlist mode blocks support/Intercom before their machine credentials;
-`Factory.observedCall`'s RPC allowlist omits `enqueueSupport`, although the Worker
-uses the observed RPC proxy for that method. Existing test adapters expose every
-stub method and do not prove that real allowlist path.
+The protected waitlist signup gate still blocks support/Intercom before their
+machine credentials; the reproduction returns a 200 HTML signup page before the
+webhook handler. Root owns that handoff, so end-to-end support availability in
+waitlist mode remains unverified.
+
+Root approved a separate one-token allowlist fix after the route test reproduced
+`Unknown factory RPC`: valid Intercom HMAC → Worker queueSupport → actual
+Factory.observedCall → 500, with no queue dispatch. `enqueueSupport` is now explicitly
+allowed; the regression traverses the actual guard, returns 401 for a bad signature,
+and 202 for a valid one. Only the final enqueue sink is stubbed. This proves the
+HTTP-to-RPC guard path in password mode, not durable support processing or the
+protected waitlist gate. The streaming fix and RPC fix remain separate commits.
