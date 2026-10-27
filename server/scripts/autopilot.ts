@@ -6,6 +6,7 @@
 //
 //   SHIPTORIO_REPO=r3dbars/testing bun run autopilot            # 120 minutes
 //   AUTOPILOT_MINUTES=30 AUTOPILOT_DRY=1 bun run autopilot      # watch only, tap nothing
+//   AUTOPILOT_HOLD=gh-7,gh-9 bun run autopilot                   # never launch these items
 import { mkdir, appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { FactoryState, Move, ServerToWeb } from "@shiptorio/shared";
@@ -32,6 +33,7 @@ const acted = new Map<string, number>(), skipped = new Set<string>(), thoughts =
 // Every plan tap spends one of the owner's daily runs; a plan that keeps failing would burn them all.
 const MAX_PLANS_PER_ITEM = Number(process.env.AUTOPILOT_MAX_PLANS || 3);
 const plans = new Map<string, number>();
+const held = new Set((process.env.AUTOPILOT_HOLD || "").split(",").map(s => s.trim()).filter(Boolean));
 let cards: Move[] = [];
 let ws: WebSocket | null = null;
 const deadline = Date.now() + minutes * 60_000;
@@ -53,7 +55,7 @@ async function tap() {
     // A tap the server ignored (stale card) gets one more try after three minutes.
     const last = acted.get(card.id);
     if (last && Date.now() - last < 180_000) continue;
-    const pick = allowedTap(card);
+    const pick = allowedTap(card, held);
     if ("skip" in pick) {
       if (!skipped.has(card.id)) { skipped.add(card.id); await record("skip", { card: card.title, itemId: card.itemId, why: pick.skip }); }
       continue;
@@ -90,7 +92,7 @@ async function connect() {
   await new Promise<void>((ok, fail) => { socket.onopen = () => ok(); socket.onerror = () => fail(new Error("socket error")); });
 }
 
-await record("start", { repo, base, minutes, dry });
+await record("start", { repo, base, minutes, dry, held: [...held] });
 while (Date.now() < deadline) {
   try {
     // Reconnect every two minutes for a fresh snapshot instead of applying patches.
