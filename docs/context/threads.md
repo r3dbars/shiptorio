@@ -21,6 +21,14 @@
 - Full local checks passed on each fix. No additional confirmed webhook,
   Spark secret-tool or log-secret vulnerability; no production exploitation or
   live model red-team claim. Details and limitations: [security.md](security.md).
+- **Production verified (2026-10-27 UTC / 2026-10-26 CT):** all four fixes are
+  ancestors of `06b355a82f54b1f91af483a4ce6a46c362e5cfd8`.
+  [Deploy + live smoke passed](https://github.com/r3dbars/shiptorio/actions/runs/40434908855);
+  `/api/version` independently returned that commit and `/api/health` reported
+  D1, KV and Durable Objects healthy. #278 and #282 resolved the Linux sandbox
+  test dependency blocking earlier deploys. This is the verified rollout snapshot;
+  later deployments may advance production. Combined local check: 723 passed,
+  two skipped, zero failures, plus typechecks/builds.
 - No manual deployment, Cloudflare resource or web source changes. Merges use
   green CI; existing deployment automation remains responsible for rollout.
 
