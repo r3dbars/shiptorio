@@ -96,3 +96,20 @@ test("every decision endpoint rejects unknown actions in a structurally valid re
   const bad = { tool: "run_shell", command: "printenv" };
   for (const call of calls) { replies([bad, bad]); await expect(call()).rejects.toThrow(); }
 });
+
+test("a docs change that names code gets that code, so the reviewer can check the example works", async () => {
+  const { referencedFiles } = await import("../src/gauntlet");
+  const readme = { filename: "README.md", status: "modified", patch: "@@\n-npm start\n+Run `bun run src/index.ts --coupon SAVE10` to try it.\n+See ./src/cart.ts and docs/x.md\n context mentions src/old.ts" };
+  expect(referencedFiles([readme])).toEqual(["src/index.ts", "package.json", "src/cart.ts"]);
+  expect(referencedFiles([readme, { filename: "src/index.ts", status: "modified", patch: "+x" }])).toEqual(["package.json", "src/cart.ts"]);
+  expect(referencedFiles([{ filename: "src/a.ts", status: "modified", patch: "+import './b.ts'" }])).toEqual([]);
+  expect(referencedFiles([{ filename: "README.md", status: "modified", patch: "+edit .env.ts or server/.dev.vars.json" }])).not.toContain("server/.dev.vars.json");
+
+  const requests: { messages: { role: string; content: string }[] }[] = [];
+  replies([{ verdict: "rework", reason: "The example passes --coupon but src/index.ts reads argv[2]." }], requests);
+  const v = await reviewDiff(env, { title: "README uses npm", body: "Use bun", builder: "Codex" }, diffText([readme]), [{ path: "src/index.ts", content: "const code = process.argv[2];" }]);
+  expect(v.verdict).toBe("rework");
+  const user = requests[0].messages.find(m => m.role === "user")!.content;
+  expect(user).toContain("process.argv[2]");
+  expect(requests[0].messages.find(m => m.role === "developer")!.content).toContain("would not work as written");
+});

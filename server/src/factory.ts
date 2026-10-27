@@ -63,7 +63,7 @@ import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
@@ -2027,7 +2027,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!v.passed) await this.noteRework(now);
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
-        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files)),
+        // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
+        const context = (await Promise.all(referencedFiles(files).map(async path => ({ path, content: (await fileContent(token, this.meta!.repo, path, headSha).catch(() => null))?.slice(0, 6000) }))))
+          .filter((c): c is { path: string; content: string } => typeof c.content === "string");
+        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = currentInLane();
         if (!now) return;
