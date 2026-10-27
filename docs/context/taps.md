@@ -5,7 +5,7 @@ how to make this feel really, really good." This is the log and the eval for tha
 
 ## What gets logged
 
-One row in D1 `card_taps` per card the factory deals (migration `0016_card_taps.sql`, `server/src/taps.ts`):
+One row in D1 `card_taps` per card the factory deals (migration `0017_card_taps.sql`, `server/src/taps.ts`):
 
 | Field | What |
 |---|---|
