@@ -10,7 +10,7 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
   const source = join(root, "source"), work = join(root, "hostile"), marker = join(root, "hook-fired");
   await mkdir(source);
   const git = async (cwd: string, ...args: string[]) => {
-    const p = Bun.spawn(["git", ...args], { cwd, env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" }, stdout: "pipe", stderr: "pipe" });
+    const p = Bun.spawn(["git", ...args], { cwd, env: { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_AUTHOR_DATE: "2026-10-26T01:02:03Z", GIT_COMMITTER_DATE: "2026-10-26T01:02:03Z" }, stdout: "pipe", stderr: "pipe" });
     const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
     if (code) throw new Error(err); return out.trim();
   };
@@ -37,7 +37,7 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
     expect(await git(commit.directory, "diff", "--name-only", `${base}..${commit.sha}`)).toBe("value.ts");
     // Reconstructing after an unknown push outcome must produce exactly the same commit.
     const retry = await prepareApprovedCommit({ sourceUrl: source, baseSha: base, allowedPaths: ["value.ts"] }, files, "fresh-publication-token");
-    try { expect(retry.sha).toBe(commit.sha); } finally { await retry.close(); }
+    try { expect(retry.sha).toBe(commit.sha); expect(await git(commit.directory, "show", "-s", "--format=%ct", commit.sha)).toBe(await git(source, "show", "-s", "--format=%ct", base)); } finally { await retry.close(); }
     expect(await Bun.file(marker).exists()).toBe(false);
     expect(await Bun.file(join(commit.directory, ".git", "config")).text()).not.toContain("hooksPath");
   } finally { await commit?.close(); await sandbox?.close(); await rm(root, { recursive: true, force: true }); }

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { AuthFailures, agentOffline, authExpired, diagnose } from "../src/health";
 
 test("Codex and Claude expired sign-ins are recognized without blaming sandbox/network failures", () => {
-  for (const output of ["Your session has expired. Please log in", "OAuth token revoked", "401 Unauthorized", "authentication_required", "Not logged in · Please run claude auth login", '{"is_error":true,"result":"Invalid API key · Please run /login"}']) expect(authExpired(output)).toBe(true);
+  for (const output of ["Your session has expired. Please log in", "OAuth token revoked", "Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.", "401 Unauthorized", "authentication_required", "Not logged in · Please run claude auth login", '{"is_error":true,"result":"Invalid API key · Please run /login"}']) expect(authExpired(output)).toBe(true);
   for (const output of ["Failed to synchronize managed preferences", "workspace routing discovery failed", "sandbox-exec: operation not permitted", "fetch failed: connection reset", "typecheck exited 1"]) expect(authExpired(output)).toBe(false);
 });
 
