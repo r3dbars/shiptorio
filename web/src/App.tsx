@@ -41,6 +41,7 @@ import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn, buildoutOn } from "./flags";
 import { Buildout, useFreeLook } from "./ui/Buildout";
+import { BuildStamp } from "./ui/BuildStamp";
 import { installBuildSound } from "./sound/build";
 import { LOOK, stepFrom } from "./buildout/journey";
 import { useComeback } from "./ui/Comeback";
@@ -505,6 +506,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
         {(intro || guided) && <div className="tour-vignette" aria-hidden="true" />}
         {guided && state && <Buildout state={state} live={cfg.kind === "live"} repo={cfg.kind === "live" ? cfg.repo : undefined} free={free} send={send} onLookAround={lookAround} />}
+        {guided && <BuildStamp />}
         {intro && tourly.top}
         {intro && tourly.card}
         {!intro && !guided && (<>

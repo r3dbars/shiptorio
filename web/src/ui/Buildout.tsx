@@ -141,7 +141,12 @@ function useBuildMoment() {
     let at = 0;
     let id = "";
     let timer = 0;
-    const tick = () => setMoment({ id, phase: phaseAt(performance.now() - at) });
+    const tick = () => {
+      // the payoff is over: the moment ends even if the scene never says done
+      const phase = phaseAt(performance.now() - at);
+      if (phase === "done") window.clearInterval(timer);
+      setMoment(phase === "done" ? null : { id, phase });
+    };
     const off = onBuild((d) => {
       window.clearInterval(timer);
       if (d.phase === "done") return setMoment(null);
