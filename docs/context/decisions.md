@@ -1,5 +1,13 @@
 # Decisions and open items
 
+- 2026-10-27: A full governance/escalation window can no longer hide the only real
+  runner plan or approval. Keep the existing passive-alert replacement preference,
+  then reserve the lowest-ranked non-merge slot when needed. This only changes the
+  visible 12-card window: proposals, choices, defer counts and job state stay intact.
+  Merge-gate decisions retain priority; twelve merge-gate cards still own all twelve
+  slots. Spark ordering, suppression and launch proof are unchanged.
+
+
 - 2026-10-27: The 12-card cap reserves at most one existing eligible runner decision
   when passive source alerts would hide it. Awaiting plan consent takes precedence
   over a new planning proposal; only a passive unblock/Look later slot can be replaced.

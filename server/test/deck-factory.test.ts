@@ -3,6 +3,7 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { emptyDeckBook, moveKey } from "../src/deck-decisions";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -315,5 +316,39 @@ describe("real runner proposals survive a deck full of passive source alerts", (
     expect(f.saved().deck?.some(move => move.itemId === item.id && move.options.some(option => option.actions.some(action => action.tool === tool)))).toBe(true);
     if (status !== "none") expect(f.data.get("runnerJob:job-58")).toEqual(job);
     else expect(await f.factory.runnerJobs()).toEqual([]);
+  });
+});
+
+
+describe("runner decisions remain reachable among durable third-defer escalations", () => {
+  for (const status of ["failed", "awaiting_approval"] as const) it(`keeps the ${status} path visible without consuming governance decisions`, async () => {
+    const now = Date.now();
+    const issue = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the queued regression", district: "/", state: "queued" as const, attempts: 0, updatedAt: now };
+    const older = Array.from({ length: 12 }, (_, n) => ({ ...issue, id: `sentry-${n}`, source: "sentry" as const, updatedAt: now - 4 * 60 * 60_000, value: 100 }));
+    const alerts = older.map(item => card(`governance-${item.id}`, { itemId: item.id, kind: "unblock", stage: "inspect", createdAt: item.updatedAt }));
+    const book = emptyDeckBook();
+    for (const move of alerts) { const key = moveKey(move); book.decisions[key] = { key, move, count: 3 }; }
+    const originalBook = structuredClone(book);
+    const f = fixture(alerts, { items: [issue, ...older] });
+    f.data.set("deckBook", book);
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: now });
+    const job = { id: "job-58", itemId: issue.id, repo: "r3dbars/demo", status, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-job-58", baseSha: "a".repeat(40), plan: "Fix the scoped regression and prove it", approvalMoveId: "approval-58" };
+    f.data.set("runnerJob:job-58", structuredClone(job));
+    const internal = f.factory as unknown as { offerRunnerPlan(): Promise<void>; resolveRunnerMove(move: Move): Promise<void> };
+    await internal.offerRunnerPlan();
+    const tool = status === "awaiting_approval" ? "approve_runner_job" : "plan_runner_job";
+    const proposal = f.saved().deck?.find(move => move.itemId === issue.id && move.options.some(option => option.actions.some(action => action.tool === tool)));
+    expect(proposal).toBeDefined();
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.filter(move => move.id.endsWith(":deferred"))).toHaveLength(11);
+    expect((f.data.get("openMoves") as Move[]).filter(move => alerts.some(alert => alert.id === move.id))).toHaveLength(12);
+    expect(f.data.get("deckBook")).toEqual(originalBook);
+    expect(f.data.get("runnerJob:job-58")).toEqual(job);
+    await internal.resolveRunnerMove(proposal!);
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.filter(move => move.id.endsWith(":deferred")).every(move => move.title === "Never, or let the factory decide?")).toBe(true);
+    expect((f.data.get("openMoves") as Move[]).filter(move => alerts.some(alert => alert.id === move.id))).toHaveLength(12);
+    expect(f.data.get("deckBook")).toEqual(originalBook);
+    expect(f.data.get("runnerJob:job-58")).toEqual(job);
   });
 });
