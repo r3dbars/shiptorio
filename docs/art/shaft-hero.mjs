@@ -24,7 +24,7 @@ const scenario = arg("scenario", "judge");
 const warm = Number(arg("warm", "45")); // seconds of sim before the first frame, so the line is busy
 const FPS = 24, SECONDS = 10, FADE = FPS; // a 10s loop, the last second fading into the first
 const CUTS = [
-  { name: "hero", w: 1600, h: 900, view: arg("desk-view", "build"), crf: 23 },
+  { name: "hero", w: 1600, h: 900, view: arg("desk-view", "build"), crf: 26 },
   { name: "hero-phone", w: 600, h: 800, view: arg("phone-view", "launch"), crf: 25 },
 ].filter((c) => !arg("only") || c.name.endsWith(arg("only")) || (arg("only") === "desk" && c.name === "hero"));
 
