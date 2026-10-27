@@ -2,7 +2,7 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { GitHubReadCache } from "../src/github-cache";
 import { githubLease } from "../src/github-concurrency";
-import { gh, installationToken, openPullRequest, registerGithubCredential } from "../src/github";
+import { gh, openPullRequest, registerGithubCredential } from "../src/github";
 import { githubCooldown, RateLimitError } from "../src/rate-limit";
 import { budgetDb } from "./budget-fixture";
 
@@ -98,6 +98,7 @@ it("does not cache writes, no-store, range or alternative representations", asyn
 });
 
 it("uses KV for installation reads, pins authorization and denies cached bodies after suspension", async () => {
+  const isolated = await import(`../src/github.ts?eviction-isolate=${crypto.randomUUID()}`) as typeof import("../src/github");
   const { db, sqlite } = budgetDb();
   sqlite.exec("ALTER TABLE installations ADD COLUMN token_version INTEGER DEFAULT 0; ALTER TABLE installations ADD COLUMN status TEXT DEFAULT 'active'; INSERT INTO installations(id, account_login) VALUES(9021, 'owner'); CREATE TABLE repos(full_name TEXT, archived_at INTEGER, installation_id INTEGER); INSERT INTO repos VALUES('a/b', NULL, 9021)");
   const env = { DB: db, ...cacheEnv(), GITHUB_APP_ID: crypto.randomUUID(), GITHUB_APP_PRIVATE_KEY: generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } }).privateKey };
@@ -108,16 +109,16 @@ it("uses KV for installation reads, pins authorization and denies cached bodies 
     authorization = new Headers(init?.headers).get("authorization");
     return Response.json({ body: "private" }, { headers: { etag: '"one"' } });
   }) as unknown as typeof fetch;
-  await installationToken(env, 9021);
+  await isolated.installationToken(env, 9021);
   // Evict optional registration metadata; owned installation budgets must survive.
-  for (let i = 0; i < 501; i++) await registerGithubCredential(`eviction-${i}`, db, `github:test:eviction:${i}`);
-  await gh("/repos/a/b", token, { headers: { authorization: "Bearer other" } });
+  for (let i = 0; i < 501; i++) await isolated.registerGithubCredential(`eviction-${i}`, db, `github:test:eviction:${i}`);
+  await isolated.gh("/repos/a/b", token, { headers: { authorization: "Bearer other" } });
   expect(authorization as string | null).toBe(`Bearer ${token}`);
   expect(sqlite.query("SELECT next_at FROM api_limits WHERE scope = 'github:installation:9021:inflight:0'").get()).toEqual({ next_at: 0 });
   expect([...env.values.keys()].filter(key => key.startsWith("ghread:v1:"))).toHaveLength(1);
   sqlite.exec("UPDATE installations SET status = 'suspended' WHERE id = 9021");
   globalThis.fetch = (async () => { throw new Error("must not fetch with a suspended installation"); }) as unknown as typeof fetch;
-  await expect(gh("/repos/a/b", token)).rejects.toThrow("suspended");
+  await expect(isolated.gh("/repos/a/b", token)).rejects.toThrow("suspended");
 });
 
 it("caps shared installation leases at two, isolates installations, recovers crashes and fences late release", async () => {
