@@ -43,6 +43,10 @@ export class ShaftStage {
   W = 2;
   H = 2;
   pixel = 1; // 1 = full resolution, 2-3 chunkier, 0 = smooth
+  // where the view's center sits on screen, as a fraction of the view from the middle (+x right, +y up): the game
+  // lifts it when a card or sheet covers the bottom of the screen
+  bias = { x: 0, y: 0 };
+  reduceMotion = false; // views snap instead of gliding
   private readonly sunDir = new THREE.Vector3(-12, 24, 16);
   private readonly cv = new THREE.Vector3();
   private shadowBox = 26;
@@ -152,7 +156,7 @@ export class ShaftStage {
         this.viewGoal = this.phone ? 11 : 9;
       }
     } else if (this.view !== "free") this.presetGoal();
-    const k = 1 - Math.exp(-dt * (this.view === "follow" ? 3 : 5));
+    const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * (this.view === "follow" ? 3 : 5));
     this.tgt.lerp(this.tgtGoal, k);
     this.viewH += (this.viewGoal - this.viewH) * k;
   }
@@ -189,6 +193,14 @@ export class ShaftStage {
     const t = this.tgt;
     cam.position.set(t.x + D * Math.cos(TILT) * Math.sin(YAW), t.y + D * Math.sin(TILT), t.z + D * Math.cos(TILT) * Math.cos(YAW));
     cam.lookAt(t);
+    if (this.bias.x || this.bias.y) {
+      // slide the camera so the target shows off-center (the camera never turns, so this is a pure shift)
+      cam.updateMatrixWorld();
+      const right = this.cv.setFromMatrixColumn(cam.matrixWorld, 0).multiplyScalar(-this.bias.x * vh * a);
+      cam.position.add(right);
+      const up = this.cv.setFromMatrixColumn(cam.matrixWorld, 1).multiplyScalar(-this.bias.y * vh);
+      cam.position.add(up);
+    }
     cam.updateMatrixWorld();
     // the sun's shadow box follows the view: the mockup's 26 around the deck, more when zoomed out
     const box = Math.max(26, Math.ceil((vh * Math.max(1, a) * 0.62) / 4) * 4);

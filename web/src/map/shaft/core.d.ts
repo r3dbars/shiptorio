@@ -24,6 +24,7 @@ export interface IronItem {
   dest: string | null; // the assembler it's routed to
   boost: number; // speed multiplier (the game driver uses it to catch up)
   hidden: boolean;
+  gone: boolean; // removed from the world (shipped or vanished)
   emerge: unknown;
   mesh: THREE.Group;
   setKind(kind: ItemKind, silent?: boolean): void;
@@ -84,6 +85,7 @@ export interface Driver {
   ready?(st: IronStation, item: IronItem): boolean;
   judge?(st: IronStation, item: IronItem): Verdict | null;
   decision?(st: IronStation): string | null;
+  admit?(st: IronStation, item: IronItem): boolean;
   power?(st: IronStation): { level: number; online: boolean };
   step?(dt: number, t: number): void;
 }
@@ -122,6 +124,7 @@ export interface Iron {
   spawnItem(src: string, o?: { ref?: string; num?: number; title?: string; kind?: ItemKind; attempts?: number }): IronItem | null;
   put(src: string, path: string, frac: number, kind?: ItemKind, o?: { ref?: string; num?: number; title?: string; attempts?: number }): IronItem | null;
   removeItem(it: IronItem): void;
+  relabel(it: IronItem, o: { ref?: string; num?: number; title?: string; attempts?: number; src?: string; label?: () => string }): void;
   queueFor(id: string): number;
   debug: { advance(sec: number, step?: number): void; stats(): Record<string, unknown> };
   dispose(): void;

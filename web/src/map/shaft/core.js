@@ -506,6 +506,7 @@ export function createIron(opts) {
   //   ready(st, item)       may this item leave the station yet? (false: keep working, ask again next frame)
   //   judge(st, item)       a check's verdict { pass, reason } or null (not decided yet; ask again next frame)
   //   decision(st)          a NEEDS YOU text while the real station waits on the player, else null
+  //   admit(st, item)       may this station take this waiting item? (false: it stays on the belt; optional)
   //   power(st)             { level 0..1, online } for power stations
   //   step(dt)              per-frame bookkeeping
   // =====================================================================
@@ -564,7 +565,8 @@ export function createIron(opts) {
       port(name) { const d = ports[name]; if (!d) return null; return { local: new V3(d.p[0], d.p[1], d.p[2]), root: new V3().fromArray(portRoot(name)), out: d.out }; },
       waiting(port) {
         const key = def.id + '.' + (port || 'in');
-        const cands = I.pathList.filter((p) => p.port === key).map((p) => p.items.find((it) => it.atEnd)).filter(Boolean);
+        // the driver may leave an item waiting on the belt (the real factory hasn't handed it to this machine yet)
+        const cands = I.pathList.filter((p) => p.port === key).map((p) => p.items.find((it) => it.atEnd)).filter((it) => it && (!I.driver.admit || it.gone || I.driver.admit(st, it) !== false));
         cands.sort((a, b) => (b.path.rework ? 1 : 0) - (a.path.rework ? 1 : 0));
         return cands[0] || null;
       },
@@ -850,6 +852,21 @@ export function createIron(opts) {
   I.spawnItem = spawnItem;
   I.enterPath = enterPath; I.leavePath = leavePath; I.entryFree = entryFree;
   // remove an item from the world without shipping it (the real item vanished: closed, merged elsewhere)
+  // give an item another identity (the game's driver: the real factory picked a different piece of work than the
+  // one at the front of the belt). A new source rebuilds its look in place, carriers and all.
+  I.relabel = (it, o) => {
+    if (o.src && o.src !== it.src && MINE_DEFS[o.src]) {
+      const old = it.mesh, kind = it.kind;
+      it.src = o.src; it.carrierMeshes = {};
+      it.mesh = makeItemMesh(it); it.mesh.userData.item = it;
+      it.mesh.position.copy(old.position); it.mesh.quaternion.copy(old.quaternion); it.mesh.visible = old.visible;
+      itemsRoot.add(it.mesh); old.parent && old.parent.remove(old);
+      it.setKind(kind, true);
+      showCarrier(it, it.emerge ? 'cart' : it.path && it.path.carrier);
+    }
+    for (const k of ['ref', 'num', 'title', 'attempts']) if (o[k] !== undefined) it[k] = o[k];
+    if (o.label) it.label = o.label;
+  };
   I.removeItem = (it) => {
     if (it.owner && I.stations[it.owner] && I.stations[it.owner].item === it) I.stations[it.owner].item = null;
     leavePath(it); it.owner = null; it.emerge = null; it.gone = true; it.followObj = null; it.mesh.parent && it.mesh.parent.remove(it.mesh);

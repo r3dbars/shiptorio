@@ -1,0 +1,74 @@
+/* The shaft's in-world chips, item tags, pings and floor buttons, as in the Black Iron mockup (docs/black-iron.html
+   .chip and .tag). Scoped to .maplabels.shaft so the island map's labels don't change. Loaded only with ?world=shaft. */
+
+.maplabels.shaft .maplabel {
+  position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  max-width: 240px; padding: 4px 7px 5px; margin: 0; text-align: left; cursor: pointer; pointer-events: auto;
+  background: rgba(14, 10, 8, 0.9); border: 2px solid var(--iron-line); outline: 2px solid #000; border-radius: 0;
+  color: var(--iron-ink); font: inherit; will-change: transform;
+}
+.maplabels.shaft .maplabel:hover { border-color: var(--iron-dim); }
+.maplabels.shaft .maplabel:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+.maplabels.shaft .maplabel .nm { display: flex; align-items: center; gap: 6px; font: 700 9px/1.1 var(--iron-pixel); letter-spacing: 0.08em; white-space: nowrap; }
+.maplabels.shaft .maplabel .dot { width: 8px; height: 8px; flex: none; background: var(--iron-idle); }
+.maplabels.shaft .maplabel .st { font: 700 9px/1 var(--iron-pixel); letter-spacing: 0.06em; color: var(--iron-idle); margin-left: 2px; }
+.maplabels.shaft .maplabel .st:empty { display: none; }
+.maplabels.shaft .maplabel .short { display: none; }
+.maplabels.shaft .maplabel .row2 { display: flex; align-items: center; gap: 6px; }
+.maplabels.shaft .maplabel .det { font: 400 10px/1.3 var(--iron-mono); color: var(--iron-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.maplabels.shaft .maplabel .det:empty { display: none; }
+.maplabels.shaft .maplabel[data-s="WORKING"] { border-color: #2f7a46; }
+.maplabels.shaft .maplabel[data-s="WORKING"] .dot { background: var(--iron-ok); animation: shaft-blink 0.9s steps(1) infinite; }
+.maplabels.shaft .maplabel[data-s="WORKING"] .st { color: var(--iron-ok); }
+.maplabels.shaft .maplabel[data-s="BLOCKED"] { border-color: var(--iron-amber); background: rgba(40, 26, 4, 0.95); animation: shaft-ping 1s infinite; }
+.maplabels.shaft .maplabel[data-s="BLOCKED"] .dot { background: var(--iron-bad); animation: shaft-blink 0.4s steps(1) infinite; }
+.maplabels.shaft .maplabel[data-s="BLOCKED"] .st { color: var(--iron-amber); }
+.maplabels.shaft .maplabel[data-s="BLOCKED"] .det { color: #fff1d0; }
+.maplabels.shaft .maplabel.ghost { opacity: 0.85; border-style: dashed; }
+.maplabels.shaft .maplabel.ghost .dot { background: transparent; border: 1px solid var(--iron-dim); }
+.maplabels.shaft .maplabel.teaching { border-color: var(--iron-aether); box-shadow: 0 0 0 2px rgba(122, 240, 216, 0.35); }
+.maplabels.shaft .maplabel.sel { border-color: var(--iron-amber-hi, #ffd060); }
+
+/* item tags: the issue or PR number riding over each item */
+.maplabels.shaft .tag {
+  position: absolute; left: 0; top: 0; pointer-events: none; font: 700 9px/1 var(--iron-pixel); letter-spacing: 0.04em;
+  padding: 3px 4px; background: rgba(10, 7, 5, 0.85); border: 1px solid var(--iron-line); color: var(--iron-ink); white-space: nowrap;
+}
+.maplabels.shaft .tag.k-issue { border-color: #8a6a3a; }
+.maplabels.shaft .tag.k-cards { border-color: #c8b070; color: #ffe9b8; }
+.maplabels.shaft .tag.k-capsule { border-color: #ff9a2a; color: #ffd08a; }
+.maplabels.shaft .tag.k-pass { border-color: #2f9a56; color: #8affb0; }
+.maplabels.shaft .tag.k-reject { border-color: #c03020; color: #ff9a8a; }
+.maplabels.shaft .tag.held { border-color: var(--iron-amber); color: var(--iron-amber); }
+
+/* floor buttons: an elevator panel on the right edge (the shaft is one tall building) */
+.maplabels.shaft .shaftfloors {
+  position: absolute; right: calc(10px + var(--sar, 0px)); top: 50%; transform: translateY(-50%); z-index: 2;
+  display: flex; flex-direction: column; gap: 4px; padding: 6px; pointer-events: auto;
+  background: rgba(14, 10, 8, 0.9); border: 2px solid var(--iron-line); outline: 2px solid #000;
+}
+.maplabels.shaft .shaftfloors .eyebrow { font: 400 8px/1.2 var(--iron-pixel); letter-spacing: 0.14em; color: var(--iron-dim); text-align: center; }
+.maplabels.shaft .shaftfloors button {
+  font: 400 9px/1 var(--iron-pixel); letter-spacing: 0.06em; color: var(--iron-ink); background: rgba(20, 14, 10, 0.94);
+  border: 2px solid var(--iron-line); min-height: 28px; min-width: 64px; padding: 0 8px; cursor: pointer; white-space: nowrap; border-radius: 0;
+}
+.maplabels.shaft .shaftfloors button:hover { border-color: var(--iron-dim); }
+.maplabels.shaft .shaftfloors button[aria-pressed="true"] { background: var(--iron-amber); border-color: var(--iron-amber); color: var(--iron-on-amber, #120c02); }
+.maplabels.shaft .shaftfloors button:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+.maplabels.shaft .shaftfloors hr { border: 0; border-top: 1px solid var(--iron-line); margin: 2px 0; }
+
+@keyframes shaft-blink { 50% { opacity: 0.25; } }
+@keyframes shaft-ping { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 176, 32, 0.7); } 50% { box-shadow: 0 0 0 8px rgba(255, 176, 32, 0); } }
+
+@media (max-width: 760px) {
+  .maplabels.shaft .maplabel { padding: 3px 5px 4px; }
+  .maplabels.shaft .maplabel .long, .maplabels.shaft .maplabel .row2 { display: none; }
+  .maplabels.shaft .maplabel .short { display: inline; }
+  .maplabels.shaft .maplabel[data-s="BLOCKED"] .row2 { display: flex; }
+  .maplabels.shaft .shaftfloors { padding: 4px; gap: 3px; }
+  .maplabels.shaft .shaftfloors button { min-width: 52px; min-height: 30px; padding: 0 5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .maplabels.shaft .maplabel, .maplabels.shaft .maplabel .dot { animation: none !important; }
+}
