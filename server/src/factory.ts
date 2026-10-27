@@ -77,7 +77,7 @@ import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelT
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
-import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapOutcome } from "./taps";
+import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapContext, type TapOutcome } from "./taps";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
@@ -490,23 +490,32 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const ids = new Set(deck.map(m => m.id));
       const fresh = deck.filter(m => !this.tapsOpen!.has(m.id));
       const gone = [...this.tapsOpen].filter(id => !ids.has(id));
-      await offerCards(this.env.DB, fresh.map(m => this.tapRow(m, now)));
+      await offerCards(this.env.DB, await Promise.all(fresh.map(m => this.tapRow(m, now))));
       await closeGone(this.env.DB, repo, gone, now);
       this.tapsOpen = ids;
     } catch (error) { this.tapsError(error); }
   }
 
-  private tapRow(move: Move, now: number) {
+  private async tapRow(move: Move, now: number) {
     const s = this.state!, b = s.bottleneck;
     // The model wrote it when the card carries the game master's reason or pick for it.
-    const by = this.gm && (this.gm.call.because[move.id] === move.because || this.gm.call.picks[move.id]) ? "spark" as const : "rule" as const;
+    let by = this.gm && (this.gm.call.because[move.id] === move.because || this.gm.call.picks[move.id]) ? "spark" as const : "rule" as const;
     const rank = s.brain?.thoughts.find(t => t.decision === "rank")?.reason;
-    return offeredRow(this.meta!.repo, move, moveScope(move, s), by, now, { bottleneck: b ? { stage: b.stage, wip: b.wip, ageMinutes: Math.round(b.ageMs / 60000) } : null, ...(rank ? { rank } : {}) });
+    const context: TapContext = { bottleneck: b ? { stage: b.stage, wip: b.wip, ageMinutes: Math.round(b.ageMs / 60000) } : null, ...(rank ? { rank } : {}) };
+    let play: string | undefined;
+    // Bottleneck-brain cards (`unlock:<bottleneckId>`, #388): grade them by play, with the signals the brain saw.
+    if (move.id.startsWith("unlock:")) {
+      const memory = await this.ctx.storage.get<{ current?: { bottleneck: { id: string; by: "spark" | "rule" }; unlock: { play: string } } }>("brainMemory");
+      const signals = await this.ctx.storage.get<{ signals: { id: string; severity: number }[] }>("brainSignals");
+      if (memory?.current && `unlock:${memory.current.bottleneck.id}` === move.id) { play = memory.current.unlock.play; by = memory.current.bottleneck.by; }
+      context.signals = (signals?.signals ?? []).slice(0, 10).map(x => ({ id: x.id, severity: Math.round(x.severity * 100) / 100 }));
+    }
+    return offeredRow(this.meta!.repo, move, moveScope(move, s), by, now, context, play);
   }
 
   private async logTap(card: Move, action: Exclude<TapAction, "gone">, optionId?: string, reason?: NeverReason): Promise<void> {
     if (!tapsEnabled(this.env) || !this.meta) return;
-    try { await recordTap(this.env.DB, this.tapRow(card, Date.now()), { action, optionId, reason }, Date.now()); }
+    try { await recordTap(this.env.DB, await this.tapRow(card, Date.now()), { action, optionId, reason }, Date.now()); }
     catch (error) { this.tapsError(error); }
   }
 

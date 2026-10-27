@@ -142,6 +142,16 @@ describe("durable live check-in decisions", () => {
     expect((await rows()).filter(r => r.card_id === "later")).toHaveLength(2);
   });
 
+  it("grades bottleneck-brain cards by their play, with the signals the brain saw", async () => {
+    const f = fixture([card("unlock:ci:ci_slow:repo", { kind: "automate", options: [{ id: "continue", label: "Cache installs", recommended: true, actions: [] }, { id: "later", label: "Later", recommended: false, actions: [] }] })]);
+    f.data.set("brainMemory", { current: { bottleneck: { id: "ci:ci_slow:repo", by: "spark" }, unlock: { play: "ci_cache_installs" } } });
+    f.data.set("brainSignals", { signals: [{ id: "ci:ci_slow:repo", severity: 0.734 }] });
+    await f.checkin();
+    const row = await f.taps.prepare("SELECT play, by, context FROM card_taps WHERE card_id = 'unlock:ci:ci_slow:repo'").first<{ play: string; by: string; context: string }>();
+    expect(row).toMatchObject({ play: "ci_cache_installs", by: "spark" });
+    expect(JSON.parse(row!.context).signals).toEqual([{ id: "ci:ci_slow:repo", severity: 0.73 }]);
+  });
+
   it("can resolve the third-defer choice for an implied bottleneck card", async () => {
     const f = fixture([], { items: [{ id: "gh-unpowered", kind: "bug", source: "github_issue", title: "Waiting for a builder", district: "/", state: "queued", attempts: 0, updatedAt: 1 }] });
     let current = f.factory;
