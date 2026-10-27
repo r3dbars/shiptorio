@@ -7,7 +7,7 @@ if (report.origin !== "https://shiptorio.dev" || report.fixture !== false) throw
 const repo = process.env.GITHUB_REPOSITORY;
 if (repo !== "r3dbars/shiptorio") throw new Error("Unexpected issue repository");
 const gh = args => execFileSync("gh", [...args, "--repo", repo], { encoding: "utf8" });
-for (const failure of report.failures) {
+for (const failure of report.failures.filter(f => !String(f).startsWith("Screen:"))) {
   const normalized = String(failure).replace(/[a-f0-9]{8}-[a-f0-9-]{27,}/gi, "<id>").replace(/\b\d{10,}\b/g, "<time>").slice(0, 1000);
   const hash = createHash("sha256").update(`${report.persona}:${normalized}`).digest("hex").slice(0, 16);
   const marker = `bot-bug:${hash}`;
