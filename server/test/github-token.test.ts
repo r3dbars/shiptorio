@@ -77,7 +77,7 @@ describe("shared installation tokens", () => {
     const cache = kv();
     const env = { ...await credentials(), CACHE: cache, CRED_MASTER_KEY: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64") };
     const original = globalThis.fetch; let issued = 0;
-    globalThis.fetch = (async () => Response.json({ token: `shared-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() })) as unknown as typeof fetch;
+    globalThis.fetch = onlyGitHub(async () => Response.json({ token: `shared-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() })) as unknown as typeof fetch;
     try {
       const [a, b] = await Promise.all([isolate(1), isolate(2)]);
       expect(await a.installationToken(env as never, 70)).toBe("shared-1");
@@ -92,7 +92,7 @@ describe("shared installation tokens", () => {
   it("after GitHub refuses a token, the retry mints instead of reusing the shared copy", async () => {
     const env = { ...await credentials(), CACHE: kv(), CRED_MASTER_KEY: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64") };
     const original = globalThis.fetch; let issued = 0; const used: string[] = [];
-    globalThis.fetch = (async (url: any, init?: RequestInit) => {
+    globalThis.fetch = onlyGitHub(async (url: any, init?: RequestInit) => {
       if (String(url).endsWith("/access_tokens")) return Response.json({ token: `refused-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() });
       used.push(new Headers(init?.headers).get("authorization")!);
       return used.length === 1 ? new Response(null, { status: 401 }) : Response.json({ ok: true });
