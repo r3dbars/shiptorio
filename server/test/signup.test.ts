@@ -1,7 +1,7 @@
 import { unlimitedFactory } from "./browser-fixture";
 import { afterEach, expect, mock, test } from 'bun:test';
 import { signedInCookie, testD1 } from './d1-fixture';
-import { admit, signupAllowed, redeemInvite, hash, resourceQuota, runQuota, turnstile, addPending } from '../src/signup';
+import { admit, signupAllowed, redeemInvite, hash, resourceQuota, runQuota, runQuotaStatus, turnstile, addPending } from '../src/signup';
 import { browserSocketAuth, browserSocketActive } from '../src/browser-socket';
 mock.module('cloudflare:workers',()=>({DurableObject:class {ctx:unknown;env:unknown;constructor(ctx:unknown,env:unknown){this.ctx=ctx;this.env=env;}}}));
 const {testApp:app}=await import('./app-fixture');
@@ -124,4 +124,31 @@ test('the docs site stays public in waitlist mode; the app and its API do not',a
   for (const path of ['/docs/','/docs/faq']) expect(await (await app.fetch(req(path),e as never)).text()).toBe('factory app');
   expect((await app.fetch(req('/api/repos'),e as never)).status).toBe(401);
   expect(await (await app.fetch(req('/art/spark.html'),e as never)).text()).not.toBe('factory app');
+});
+
+
+test('configured owner has uncapped resources and a 200-run floor with no allowlist row', async () => {
+  const e = { ...env(), ADMIN_LOGINS: ' Custom-Owner ', ALLOWED_LOGINS: 'custom-owner' };
+  for (const kind of ['factory', 'repo'] as const) {
+    for (let i = 0; i < 5; i++) expect(await resourceQuota(e as never, 'CUSTOM-OWNER', kind, `org/repo${i}`)).toBe(true);
+  }
+  expect((await e.DB.prepare("SELECT COUNT(*) AS n FROM signup_resources WHERE login='custom-owner'").first<{n:number}>())?.n).toBe(10);
+  expect((await runQuotaStatus(e, 'CUSTOM-OWNER')).limit).toBe(200);
+  const bucket = Math.floor(Date.now() / 86400000);
+  await e.DB.prepare("INSERT INTO signup_counters VALUES('runs:custom-owner',?,199,?)").bind(bucket, (bucket + 2) * 86400000).run();
+  expect(await runQuota(e as never, 'CUSTOM-OWNER')).toBe(true);
+  expect(await runQuota(e as never, 'custom-owner')).toBe(false);
+  await e.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at,factories,repos,runs_daily) VALUES('custom-owner','custom-owner',0,0,0,0)").run();
+  expect((await runQuotaStatus(e, 'custom-owner')).limit).toBe(200);
+  expect(await resourceQuota(e as never, 'custom-owner', 'factory', 'org/extra')).toBe(true);
+  await e.DB.prepare("UPDATE signup_allowlist SET runs_daily=500 WHERE login='custom-owner'").run();
+  expect((await runQuotaStatus(e, 'custom-owner')).limit).toBe(500);
+  // Quota exemption grants neither signup approval nor access after explicit revocation.
+  await e.DB.prepare("UPDATE signup_allowlist SET enabled=0 WHERE login='custom-owner'").run();
+  expect(await runQuota(e as never, 'custom-owner')).toBe(false);
+  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: '*' }, 'other')).limit).toBe(20);
+  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(200); // migration row, not an exemption
+  await e.DB.prepare("DELETE FROM signup_allowlist WHERE login='r3dbars'").run();
+  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(20);
+  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: undefined }, 'r3dbars')).limit).toBe(200);
 });
