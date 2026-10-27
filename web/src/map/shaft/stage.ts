@@ -17,7 +17,7 @@ export type ShaftView = "stack" | "mine" | "build" | "checks" | "launch" | "line
 // [root x, y, z the view centers on, view height on a wide screen, the width it must fit]
 type Preset = { at: [number, number, number]; h: number; w: number; phone: { at: [number, number, number]; h: number } };
 const PRESETS: Record<"stack" | "mine" | "build" | "checks" | "launch" | "line", Preset> = {
-  stack: { at: [0, 6.5, -8.4], h: 60, w: 42, phone: { at: [0, 6.5, -8.4], h: 72 } },
+  stack: { at: [0, 5, -8.4], h: 62, w: 42, phone: { at: [0, 5, -8.4], h: 74 } },
   mine: { at: [0, -10.5, 8.5], h: 18, w: 41, phone: { at: [-3, -10.5, 8.5], h: 22 } },
   build: { at: [0, 2.2, 0.8], h: 14, w: 39, phone: { at: [-4, 2.2, 0.8], h: 18 } },
   checks: { at: [1, 13.2, -9.4], h: 13, w: 38, phone: { at: [4, 13.2, -9.4], h: 18 } },

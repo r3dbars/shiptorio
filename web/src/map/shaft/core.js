@@ -382,7 +382,7 @@ export function createIron(opts) {
     it.title = o.title || list[Math.floor(Math.random() * list.length)];
     it.kind = 'issue'; it.attempts = o.attempts || 0; it.stage = 'Mined'; it.reason = null; it.path = null; it.s = 0; it.atEnd = false;
     it.owner = null; it.followObj = null; it.followOff = new V3(); it.hidden = false; it.born = performance.now(); it.carrierMeshes = {}; it.qT = new THREE.Quaternion(); it.emerge = null;
-    it.dest = null; it.boost = 1; it.passed = {};
+    it.dest = null; it.boost = 1; it.passed = {}; it.gone = false;
     it.mesh = makeItemMesh(it); it.mesh.userData.item = it; itemsRoot.add(it.mesh);
     it.setKind(o.kind || it.kind, true);
   }
@@ -571,8 +571,9 @@ export function createIron(opts) {
       take(port) { const it = M.waiting(port); if (!it) return null; leavePath(it); it.owner = def.id; st.item = it; it.stage = st.label || def.type; I.emit('take', { item: it, station: def.id }); return it; },
       canGive(port) { const p = outPath(port); return !!p && entryFree(p, 0); },
       // may this item leave yet? (the real work might still be running). give() checks it too.
-      ready(it) { return !it || I.driver.ready(st, it) !== false; },
+      ready(it) { return !it || it.gone || I.driver.ready(st, it) !== false; },
       give(it, port) {
+        if (it.gone) { if (st.item === it) st.item = null; it.owner = null; return true; } // removed from the world meanwhile: nothing to hand on
         const pth = outPath(port);
         if (!pth || !entryFree(pth, 0) || !M.ready(it)) return false;
         if (def.type === 'planner' && port === 'pass' && !it.dest) it.dest = I.driver.route(it, st) || null;
@@ -591,11 +592,12 @@ export function createIron(opts) {
       maybeDecision(text) { if (I.driver !== AUTO || !I.policy.events) return false; if (Math.random() < (I.CFG.decisionChance[def.type] || 0)) { M.decision(text); return true; } return false; },
       onResolve(fn) { st.resolveFns.push(fn); },
       // a check's verdict for an item: { pass, reason }, or null while the real check is still running (ask again)
-      judge(it) { const v = I.driver.judge(st, it); return v || null; },
+      judge(it) { if (it.gone) return { pass: true, reason: null }; const v = I.driver.judge(st, it); return v || null; },
       reject(it, reason) { it.attempts++; it.reason = reason; it.passed = {}; I.counters.rework++; log(it.label() + ' sent back by ' + (st.label || def.type) + ': ' + reason, 'bad'); I.emit('reject', { item: it, reason, station: def.id }); },
       pass(it) { it.passed[def.id] = true; log(it.label() + ' passed ' + (st.label || def.type), 'good'); I.emit('pass', { item: it, station: def.id }); },
       consume(it) { // shipped: remove from the world
-        if (st.item === it) st.item = null; it.owner = null; leavePath(it); it.mesh.parent && it.mesh.parent.remove(it.mesh);
+        if (it.gone) { if (st.item === it) st.item = null; return; }
+        if (st.item === it) st.item = null; it.owner = null; it.gone = true; leavePath(it); it.mesh.parent && it.mesh.parent.remove(it.mesh);
         const k = I.items.indexOf(it); if (k >= 0) I.items.splice(k, 1); I.counters.shipped++; log(it.label() + ' shipped · ' + it.title, 'ship'); I.emit('ship', { item: it, station: def.id });
       },
       queue() { return I.queueFor(def.id); },
@@ -846,7 +848,7 @@ export function createIron(opts) {
   // remove an item from the world without shipping it (the real item vanished: closed, merged elsewhere)
   I.removeItem = (it) => {
     if (it.owner && I.stations[it.owner] && I.stations[it.owner].item === it) I.stations[it.owner].item = null;
-    leavePath(it); it.owner = null; it.emerge = null; it.mesh.parent && it.mesh.parent.remove(it.mesh);
+    leavePath(it); it.owner = null; it.emerge = null; it.gone = true; it.followObj = null; it.mesh.parent && it.mesh.parent.remove(it.mesh);
     const k = I.items.indexOf(it); if (k >= 0) I.items.splice(k, 1);
   };
   I.debug = {
