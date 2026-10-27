@@ -3,8 +3,6 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { compact, planLocalTask, reviewWithTools, runReadTool, type Toolbox } from "../src/spark-tools";
 import { factoryBrief, signalsBrief, issueComments, ciReport } from "../src/spark-context";
 import type { FactoryState, Item } from "@shiptorio/shared";
-const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
 
 // The r3dbars/Testing shop, as the two live review misses saw it (Testing #12 and #13).
 const repo: Record<string, string> = {
@@ -17,6 +15,10 @@ const repo: Record<string, string> = {
 };
 const box = (extra: Partial<Toolbox> = {}): Toolbox => ({ paths: Object.keys(repo), read: async p => repo[p] ?? null, ...extra });
 const syntheticPem = `-----BEGIN PRIVATE KEY-----\n${"SYNTHETICKEY".repeat(100)}\n-----END PRIVATE KEY-----`;
+
+// Every test that fakes Spark puts the real fetch back, so the stub can't leak into other test files.
+const realFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = realFetch; });
 
 /** Fake Spark: replays a script and keeps every user payload it was sent. */
 function spark(script: unknown[]) {

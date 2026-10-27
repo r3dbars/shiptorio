@@ -6,8 +6,7 @@ export function sparkStub() {
     const prompt = messages.filter(m => m.role === "developer").map(m => m.content).join("\n");
     let reply, kind;
     if (prompt.includes("You triage incoming work")) { kind = "triage"; reply = { kind: "bug", district: "src", reason: "Checkout discount is missing." }; }
-    // Review now has a tool loop too; its prompt also says "Choose ONE tool per turn".
-    // Match the review station first so the fixture cannot answer it with a planner assignment.
+    // The review station is a tool loop too, so it is matched before the planner's prompt.
     else if (prompt.includes("hostile reviewer")) { kind = "review"; reply = { tool: "verdict", verdict: "pass", reason: "Discount calculation and regression agree.", findings: [] }; }
     else if (prompt.includes("Choose ONE tool per turn")) {
       kind = "plan";
