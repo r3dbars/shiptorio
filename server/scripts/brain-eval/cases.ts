@@ -7,12 +7,16 @@
 // wrong answer (loud-vs-stuck, goal-customers, spike-plus-mail): that's where the model has to beat the rule.
 
 import { signalId, type BottleneckArea, type BrainSignal, type SignalSource } from "@shiptorio/shared";
+import { deriveCiSignals, type WorkflowRun } from "../../src/signals/ci";
+import clogged from "../../test/fixtures/ci/clogged-runs.json";
 import { repoCases } from "./repo-cases";
 
 export interface EvalCase {
   id: string;
   title: string; // the situation in one line, for the report
   goal?: string; // what the player said they're after, in their words
+  /** The player's picked goals (shared/src/goals.ts, #387). The factory tilts signals by them before diagnosing. */
+  goals?: { picks: string[]; by: "player" | "inferred" };
   signals: (now: number) => BrainSignal[];
   /** The bottleneck a sharp lead would name; null = nothing worth a card. */
   expect: { area: BottleneckArea | null; signal?: string };
@@ -50,7 +54,38 @@ const humBut = (...replace: ((now: number) => BrainSignal)[]) => (now: number) =
   return [...hum.map(s => s(now)).filter(h => !mine.some(m => m.id === h.id)), ...mine];
 };
 
+/**
+ * Real CI collector output, not hand-written signals: GitHub Actions runs from a fixture go through
+ * deriveCiSignals, shifted so the fixture's "now" is the eval's now.
+ */
+const FIXTURE_NOW = Date.parse("2026-10-27T18:00:00Z");
+function fromRuns(runs: WorkflowRun[], keep: (s: BrainSignal) => boolean = () => true) {
+  return (now: number) => {
+    const shift = (t: string | undefined) => t && new Date(Date.parse(t) - FIXTURE_NOW + now - 60_000).toISOString();
+    const moved = runs.map(r => ({ ...r, created_at: shift(r.created_at)!, updated_at: shift(r.updated_at)!, run_started_at: shift(r.run_started_at) }));
+    return deriveCiSignals(moved, { repo: "acme/shop", defaultBranch: "main", observedAt: now - 60_000 }).filter(keep);
+  };
+}
+const cloggedRuns = clogged.workflow_runs as WorkflowRun[];
+const humWithCi = (ci: (now: number) => BrainSignal[], ...more: ((now: number) => BrainSignal)[]) => (now: number) => {
+  const mine = [...ci(now), ...more.map(s => s(now))];
+  return [...hum.map(s => s(now)).filter(h => h.source !== "ci" && !mine.some(m => m.id === h.id)), ...mine];
+};
+
 export const CASES: EvalCase[] = [
+  {
+    id: "ci-collector-clogged", title: "Real CI collector: main red 5 h, CI 23 min, flaky retries, 4 runs queued, Lint failing on PRs",
+    signals: humWithCi(fromRuns(cloggedRuns),
+      sig("sentry", "errors_piling", 0.35, "22 open errors, steady; 30 users hit one this week.", ["22 unresolved, 300 events/24h (310 the day before)"])),
+    expect: { area: "speed", signal: "ci:ci_red_main:CI" }, unlock: /green|main|fix|revert|red/i, plays: ["fix_red_main"],
+    why: "Five CI problems at once all point the same way, and red main is the one that stops every ship. Fix it first.",
+  },
+  {
+    id: "ci-collector-blocking", title: "Real CI collector: Lint is failing on 4 PRs, main is green, everything else calm",
+    signals: humWithCi(fromRuns(cloggedRuns, s => s.kind === "ci_blocking")),
+    expect: { area: "speed", signal: "ci:ci_blocking:Lint" }, alsoOk: ["ship"], unlock: /lint|check|fail|fix|unblock|PRs?/i, plays: ["fix_blocking_check"],
+    why: "One failing check holds four finished PRs. One fix ships all of them.",
+  },
   {
     id: "red-ci-quiet-sentry", title: "Main has been red for 5 hours, production is calm",
     signals: humBut(sig("ci", "ci_red_main", 0.85, "Main has been red for 5 hours; 4 PRs can't merge.", ["Run #4812 failed: checkout.test.ts", "4 PRs blocked on a red base"])),
@@ -91,8 +126,8 @@ export const CASES: EvalCase[] = [
   },
   {
     id: "usage-drop", title: "Daily users fell 55% week over week, no new errors",
-    signals: humBut(sig("posthog", "usage_flat", 0.65, "Daily users fell from 410 to 180 this week.", ["DAU 180, last week 410", "Signups 9 (was 58)"], { metric: { value: 180, baseline: 410, unit: "users" } })),
-    expect: { area: "users", signal: "posthog:usage_flat:repo" }, alsoOk: ["feedback"], unlock: /drop|funnel|why|churn|onboard|signup|ask|interview|retention|fell/i,
+    signals: humBut(sig("posthog", "usage_falling", 0.65, "Daily users fell from 410 to 180 this week.", ["DAU 180, last week 410", "Signups 9 (was 58)"], { metric: { value: 180, baseline: 410, unit: "users" } })),
+    expect: { area: "users", signal: "posthog:usage_falling:repo" }, alsoOk: ["feedback"], unlock: /drop|funnel|why|churn|onboard|signup|ask|interview|retention|fell/i,
     why: "Something made people stop coming back; find out what before building more.",
   },
   {
@@ -109,8 +144,9 @@ export const CASES: EvalCase[] = [
   },
   {
     id: "player-bottleneck", title: "4 PRs passed every check and wait on the player to launch",
-    signals: humBut(sig("factory", "queue_jam", 0.75, "4 PRs passed every check and wait on you to launch; oldest 30 h.", ["4 items on the launch pad", "Oldest wait 30 h"], { scope: "merge" })),
-    expect: { area: "ship", signal: "factory:queue_jam:merge" }, unlock: /launch|approve|decide|permit|merge|pad/i,
+    // The live collectors report the launch pad as repo:approve_queue (queue_jam skips the pad stage).
+    signals: humBut(sig("repo", "approve_queue", 0.75, "4 PRs passed every check and wait on you to launch; oldest 30 h.", ["4 items on the launch pad", "Oldest wait 30 h"])),
+    expect: { area: "ship", signal: "repo:approve_queue:repo" }, unlock: /launch|approve|decide|permit|merge|pad/i,
     why: "The machines are done; the human is the slowest station.",
   },
   {
@@ -346,6 +382,25 @@ export const CASES: EvalCase[] = [
       sig("factory", "queue_jam", 0.6, "3 items waiting at AI review; oldest 6 h.", ["3 items at AI review", "Oldest wait 6 h"], { scope: "review" })),
     expect: { area: "ship", signal: "factory:queue_jam:review" }, alsoOk: ["feedback"], unlock: /review|jam|clear|line|inspect/i,
     why: "A jam on the line beats a quiet inbox: unstick what's already built first.",
+  },
+  // From the goals thread (#387): the factory tilts severities by the player's goals before the brain ranks.
+  {
+    id: "goal-tilts-users", title: "Goal is first users: flat usage (0.4) vs piling errors (0.5)",
+    goal: "First users", goals: { picks: ["first_users"], by: "player" }, needs: "#387",
+    signals: humBut(
+      sig("posthog", "usage_flat", 0.4, "6 people a day, flat for a month.", ["DAU 6, last month 6"]),
+      sig("sentry", "errors_piling", 0.5, "40 open errors; 12 users hit one this week.", ["40 unresolved, 300 events/24h"])),
+    expect: { area: "users", signal: "posthog:usage_flat:repo" }, unlock: /users|people|launch|post|share|front/i,
+    why: "Tilted by the goal, usage weighs 0.6 and beats errors at 0.5.",
+  },
+  {
+    id: "goal-fire-still-wins", title: "Goal is first users, but main is red",
+    goal: "First users", goals: { picks: ["first_users"], by: "player" }, needs: "#387",
+    signals: humBut(
+      sig("posthog", "usage_flat", 0.4, "6 people a day, flat for a month.", ["DAU 6, last month 6"]),
+      sig("ci", "ci_red_main", 0.9, "Main has been red for 7 hours; nothing can merge.", ["Run #4901 failed: auth.test.ts"])),
+    expect: { area: "speed", signal: "ci:ci_red_main:repo" }, unlock: /main|green|fix|revert|auth/i,
+    why: "A goal tilts the pick at most 1.5x; a real fire still wins.",
   },
   // Repo flow, read through the real collector.
   ...repoCases(now => hum.map(s => s(now))),

@@ -41,6 +41,7 @@ import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn } from "./flags";
 import { useComeback } from "./ui/Comeback";
+import { etas } from "./ui/eta";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -116,6 +117,9 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
   const { state, log, status, send: sendRaw } = useFactory(cfg);
+  useEffect(() => {
+    if (state) etas.observe(state, Date.now()); // learns real stage times for the cart callout's wait
+  }, [state]);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);

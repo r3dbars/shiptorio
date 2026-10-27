@@ -16,6 +16,7 @@ export interface GitHubIssue {
   author_association?: string;
   pull_request?: unknown;
   reactions?: { total_count?: number };
+  comments?: number;
 }
 export interface GitHubRepository { id?: number; full_name: string; default_branch?: string }
 export interface GitHubPayload {
@@ -48,6 +49,12 @@ const isShiptorioBot = (user?: { login: string; type?: string }) => user?.login.
 export function trustedAuthor(entry: { author_association?: string; user?: { login: string; type?: string } }): boolean {
   return entry.author_association === undefined || TRUSTED_ASSOCIATIONS.has(entry.author_association) || isShiptorioBot(entry.user);
 }
+/** Someone with a hand on the repo (or our bot). Unlike trustedAuthor, a missing association is not the team. */
+export const isTeamAuthor = (entry: { author_association?: string; user?: { login: string; type?: string } }): boolean =>
+  (!!entry.author_association && TRUSTED_ASSOCIATIONS.has(entry.author_association)) || isShiptorioBot(entry.user);
+/** A person outside the team: their words stay out of the mine, but they still count as feedback. Bots don't. */
+export const isOutsideAuthor = (entry: { author_association?: string; user?: { login: string; type?: string } }): boolean =>
+  !!entry.author_association && !isTeamAuthor(entry) && entry.user?.type !== "Bot" && !entry.user?.login.endsWith("[bot]");
 export function trustedIssue(issue: GitHubIssue): boolean {
   return trustedAuthor(issue) || !!issue.labels?.some((label) => label.name.toLowerCase() === TRUST_LABEL);
 }
