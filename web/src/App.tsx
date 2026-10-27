@@ -167,7 +167,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const profile = progressProfile(cfg.kind, login);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
-  const [calm] = useState(attentionOn); // docs/ATTENTION.md, behind the "attention" flag
+  const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
   const nudge = useBottleneckNudge(deck, progressing, calm);
   achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson }; // achievements pay XP into progression; toasts wait out the tour coach card
   // today's log remembers the deck you walked in to (the morning number the trend is made of)

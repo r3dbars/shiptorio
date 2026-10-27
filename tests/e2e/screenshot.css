@@ -2,3 +2,4 @@
    Full-map evidence uses page.screenshot() and does not load this stylesheet. */
 canvas { visibility: hidden !important; }
 .nrow { background: rgb(30, 20, 4) !important; }
+.acard { background: rgb(14, 10, 8) !important; }

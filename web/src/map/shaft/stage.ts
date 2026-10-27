@@ -7,13 +7,35 @@ import * as THREE from "three";
 
 import type { Iron, IronItem, Layout } from "./core";
 import { FinishPass } from "./finish";
-import { floorFrame, followH, isFloorView, isPhone, stationFrame } from "./frame";
+import { floorFrame, followH, isFloorView, isPhone, stationFrame, type FloorView } from "./frame";
 
 export const YAW = Math.PI / 4;
 export const TILT = (30 * Math.PI) / 180;
 const D = 80;
 
 export type ShaftView = "stack" | "mine" | "build" | "checks" | "launch" | "line" | "station" | "follow" | "free";
+
+// the floors a phone settles on after a drag, bottom to top (Justin's pick: snap to floors)
+const SNAP_FLOORS: FloorView[] = ["mine", "build", "checks", "launch"];
+
+/** the snap floor whose framed middle sits closest to root height y on a W x H screen */
+export function nearestFloorAt(y: number, W: number, H: number): FloorView {
+  let best: FloorView = "build", d = Infinity;
+  for (const v of SNAP_FLOORS) {
+    const dd = Math.abs(floorFrame(v, W, H).at[1] - y);
+    if (dd < d) (d = dd), (best = v);
+  }
+  return best;
+}
+
+/**
+ * The floor a drag that ends at root height y, showing h of the shaft, settles on: the nearest one, but only when
+ * the view is already about one floor tall. Zoomed out on the whole shaft (or in close) the view stays put.
+ */
+export function snapFloorAt(y: number, h: number, W: number, H: number): FloorView | null {
+  const v = nearestFloorAt(y, W, H);
+  return Math.abs(Math.log(h / floorFrame(v, W, H).h)) <= Math.log(1.35) ? v : null;
+}
 
 export class ShaftStage {
   readonly scene = new THREE.Scene();
@@ -143,6 +165,11 @@ export class ShaftStage {
     const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * (this.view === "follow" ? 3 : 5));
     this.tgt.lerp(this.tgtGoal, k);
     this.viewH += (this.viewGoal - this.viewH) * k;
+  }
+
+  /** the floor a phone drag settles on, or null to stay put (snapFloorAt) */
+  snapFloor(): FloorView | null {
+    return snapFloorAt(this.root.worldToLocal(this.tgt.clone()).y, this.viewH * this.zoom, this.W, this.H);
   }
 
   /** drag the view by screen pixels */
