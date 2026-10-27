@@ -49,7 +49,7 @@ export async function applyCodexEdits(sandbox: import("./sandbox").CheckSandbox,
   const checked = parseCodexEdits(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: JSON.stringify(proposal) } }) + '\n{"type":"turn.completed"}', allowed);
   const status = await sandbox.run(["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "status", "--porcelain", "--untracked-files=all"]);
   if (status.code || status.out.trim()) throw Error("Codex proposal requires a clean checkout");
-  const program = `import {constants,openSync,closeSync,fstatSync,lstatSync,readFileSync,realpathSync,writeFileSync,ftruncateSync,mkdirSync} from "node:fs";
+  const program = `import {constants,openSync,closeSync,fstatSync,lstatSync,readFileSync,realpathSync,writeSync,ftruncateSync,mkdirSync} from "node:fs";
 import {join} from "node:path";
 const root=realpathSync(process.cwd()), edits=JSON.parse(process.argv[1]), limit=${CODEX_EDIT_LIMITS.fileBytes};
 const files=new Map();
@@ -63,7 +63,7 @@ for(const e of edits){if(!files.has(e.path)){const target=join(root,e.path);let 
  if(Buffer.byteLength(f.text)>limit)throw Error("Edited file exceeds limit");}
 // Validate the entire proposal before any write. Open regular files without following links.
 for(const [path,f] of files){if(f.text===f.original)throw Error("Proposal has no effect");}
-for(const [path,f] of files){parent(path,true);const target=join(root,path);const fd=openSync(target,constants.O_WRONLY|constants.O_NOFOLLOW|(f.original===null?constants.O_CREAT|constants.O_EXCL:0),0o600);try{const info=fstatSync(fd);if(!info.isFile()||info.nlink!==1||(f.info&&(info.ino!==f.info.ino||info.dev!==f.info.dev)))throw Error("Changed edit target");if(f.original!==null&&readFileSync(target,"utf8")!==f.original)throw Error("Edit source changed");ftruncateSync(fd,0);writeFileSync(fd,f.text);}finally{closeSync(fd);}}
+for(const [path,f] of files){parent(path,true);const target=join(root,path);const fd=openSync(target,constants.O_RDWR|constants.O_NOFOLLOW|(f.original===null?constants.O_CREAT|constants.O_EXCL:0),0o600);try{const info=fstatSync(fd);if(!info.isFile()||info.nlink!==1||(f.info&&(info.ino!==f.info.ino||info.dev!==f.info.dev)))throw Error("Changed edit target");if(f.original!==null&&readFileSync(fd,"utf8")!==f.original)throw Error("Edit source changed");ftruncateSync(fd,0);const bytes=Buffer.from(f.text);let written=0;while(written<bytes.length){const n=writeSync(fd,bytes,written,bytes.length-written,written);if(!n)throw Error("Short edit write");written+=n;}}finally{closeSync(fd);}}
 console.log(JSON.stringify([...files.keys()]));`;
   const result = await sandbox.run([process.execPath, "--no-env-file", "-e", program, JSON.stringify(checked.edits)]);
   if (result.code) throw Error("Supervisor rejected Codex edits; exact regular-file match required");
