@@ -72,6 +72,7 @@ try {
       else if (fixture && await visible(install)) {
         const next = context.waitForEvent("page"); await install.first().click(); const tab = await next;
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
+        await repo.first().waitFor({ state: "visible", timeout: 60000 });
       } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
       else if (await visible(go)) { await go.first().click(); await capture("continue"); }
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
@@ -93,7 +94,9 @@ try {
 finally {
   const unique = [...new Set(failures)];
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
-  const report = { persona, origin: url.origin, fixture: local, fixtureMerges: fixture?.stub.state.merges.length ?? null, steps, failures: unique, fingerprint, passed: !unique.length };
+  const report = { persona, origin: url.origin, fixture: local, fixturePRs: fixture?.stub.state.pulls.length ?? null,
+    fixtureMerges: fixture?.stub.state.merges.length ?? null, receiptAttached: fixture?.stub.state.pulls.some(pr => pr.body?.includes("shiptorio-proof:")) ?? false,
+    steps, failures: unique, fingerprint, passed: !unique.length };
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
   console.log(JSON.stringify({ report: join(out, "report.md"), failures: unique.length, fingerprint }));
