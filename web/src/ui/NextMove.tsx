@@ -40,7 +40,7 @@ export function NextMove({ move, bottleneck, stations, send, onOpen, onPower, nu
   if (move) {
     const stage = move.stage ?? bottleneck?.stage;
     const why = because(move);
-    const more = !!why || !!move.plan?.length || !!move.url;
+    const more = !!why || !!move.plan?.length;
     first = (
       <section className={`nrow move${open ? " open" : ""}`} aria-label={NEXT_MOVE.label} aria-live="polite">
         <span className="ic" aria-hidden="true">!</span>
@@ -60,11 +60,6 @@ export function NextMove({ move, bottleneck, stations, send, onOpen, onPower, nu
                   <ol>{move.plan.map((step, i) => <li key={i}>{step}</li>)}</ol>
                 </details>
               )}
-              {move.url && (
-                <a className="nm-link" href={move.url} target="_blank" rel="noreferrer">
-                  {WORDS.prLink}
-                </a>
-              )}
             </div>
           )}
         </div>
@@ -81,8 +76,13 @@ export function NextMove({ move, bottleneck, stations, send, onOpen, onPower, nu
               {o.recommended && <span className="sr">, {WORDS.suggested}</span>}
             </button>
           ))}
+          {move.url && (
+            <a className="nm-link" href={move.url} target="_blank" rel="noreferrer">
+              {WORDS.prLink}
+            </a>
+          )}
           {more && (
-            <button type="button" className="tg" aria-expanded={open} aria-label={open ? N.lessLabel : N.moreLabel} onClick={() => setOpen((v) => !v)}>
+            <button type="button" className="tg" aria-expanded={open} title={open ? N.lessLabel : N.moreLabel} onClick={() => setOpen((v) => !v)}>
               {open ? N.less : N.more}
             </button>
           )}
