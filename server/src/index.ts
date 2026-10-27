@@ -1,7 +1,7 @@
 import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
 import { godRoutes } from "./admin-god";
-import { readAdminView, viewCookieValue } from "./admin-view";
+import { readAdminView, viewCookieValue, adminViewCookie } from "./admin-view";
 import { accountIdentity } from "./account-identity";
 import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
@@ -273,8 +273,16 @@ app.post('/waitlist',async c => {
 });
 app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
 app.post('/admin',c=>adminSignup(c.req.raw,c.env));
-app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
-app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.get("/auth/callback", async (c) => {
+  const original=await authCallback(c.req.raw,new URL(c.req.url),c.env), response=new Response(original.body,original);
+  response.headers.append('Set-Cookie',adminViewCookie('',new URL(c.req.url).protocol==='https:'));
+  return response;
+});
+app.get("/auth/logout", async (c) => {
+  const original=await logout(c.req.raw,c.env), response=new Response(original.body,original);
+  response.headers.append('Set-Cookie',adminViewCookie('',new URL(c.req.url).protocol==='https:'));
+  return response;
+});
 // The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
 // already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
 app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));

@@ -113,3 +113,11 @@ it('/api/me exposes admin only from configuration and displays the viewed player
  const view=await post(env,owner,actions[0]);const cookie=owner+'; '+view.headers.get('set-cookie')!.split(';')[0];
  expect(await(await get(cookie)).json()).toMatchObject({login:'operator',admin:true,viewingAs:{login:'player',writable:false},prefs:{intro:'seen'}});
 });
+
+it('signing out clears the admin view so another account does not inherit the context',async()=>{
+ const {env,owner}=await fixture();const result=await post(env,owner,actions[0]);const cookie=owner+'; '+result.headers.get('set-cookie')!.split(';')[0];
+ const response=await app.fetch(new Request(url+'/auth/logout',{headers:{cookie}}),env);
+ expect(response.headers.get('set-cookie')).toContain('shiptorio_admin_view=;');
+ expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+ expect(await readAdminView(env,new Request(url,{headers:{cookie}}))).toBeNull();
+});
