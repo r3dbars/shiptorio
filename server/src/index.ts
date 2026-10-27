@@ -1,3 +1,5 @@
+import { factorySpend, NANO_USD } from "./spend";
+import { budgetAccount } from "./budget";
 import { byRepoId, repositoryFactory } from "./repository";
 import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
@@ -639,6 +641,25 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
   const parsed = RunnerReceipt.safeParse(JSON.parse(body));
   if (!parsed.success) return c.json({ error: "invalid receipt" }, 400);
   return c.json(await (await factory(c.env, identity.repo)).finishRunner(identity.pairId, parsed.data));
+});
+
+// Spend belongs to the stable payer, rather than every collaborator with map access.
+app.on(["GET", "POST"], "/api/repos/:owner/:repo/spend", async c => {
+  const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  if (await budgetAccount(c.env.DB, repo) !== `user:${c.get("user").id}`) return c.json({ error: "budget owner required" }, 403);
+  if (c.req.method === "POST") {
+    if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
+    const raw = await c.req.text();
+    if (raw.length > 128) return c.json({ error: "too large" }, 413);
+    let value: unknown;
+    try { value = JSON.parse(raw).dailyBudgetUsd; } catch { return c.json({ error: "invalid JSON" }, 400); }
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 10000 || Math.abs(value * 100 - Math.round(value * 100)) > 0.000001)
+      return c.json({ error: "Budget must be $0–$10,000 in whole cents" }, 400);
+    await c.env.DB.prepare("INSERT INTO spark_factory_budgets(repo, daily_nano_usd) VALUES (?, ?) ON CONFLICT(repo) DO UPDATE SET daily_nano_usd = excluded.daily_nano_usd")
+      .bind(repo, Math.round(value * NANO_USD)).run();
+  }
+  c.header("Cache-Control", "no-store");
+  return c.json(await factorySpend(c.env.DB, repo));
 });
 
 // Exports are stricter than map access: only the repository owner can download them.

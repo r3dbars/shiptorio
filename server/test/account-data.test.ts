@@ -172,12 +172,14 @@ describe("account data controls", () => {
       "INSERT INTO signup_counters VALUES ('runs:alice', 1, 1, 2)",
       "INSERT INTO signup_abuse (scope, reason, updated_at) VALUES ('install:alice', 'test', 1)",
       "INSERT INTO spark_usage (account, day) VALUES ('user:11', '2026-10-26')",
+      "INSERT INTO spark_factory_budgets VALUES ('alice/app', 5000000000)",
+      "INSERT INTO spark_factory_calls (id, repo, day, model, nano_usd) VALUES ('call-1', 'alice/app', '2026-10-26', 'muse-spark-1.3', 100)",
       "INSERT INTO factory_budget_owners VALUES ('alice/app', 11)",
       "INSERT INTO api_limits (scope) VALUES ('github:installation:1')",
     ]) await env.DB.prepare(sql).run();
     expect((await exportAccount(env, user)).progress).not.toBeNull();
     await deleteAccount(env, user, ["alice/app"]);
-    for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
+    for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "spark_factory_calls", "spark_factory_budgets", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
     expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}]);
   });
   it("exports the stable repo-id factory and erases both it and its frozen legacy object", async () => {
