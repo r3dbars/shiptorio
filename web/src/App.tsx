@@ -1,3 +1,4 @@
+import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
@@ -462,7 +463,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             counts={counts}
             repo={state?.repo}
             showKey={show("line")}
-            extra={(progressing && !tour.on) || empire.on ? (<>
+            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" ? (<>
+              <SparkSpendChip repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
               {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
             </>) : undefined}
@@ -562,7 +564,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <MakeItYours state={state} send={send} onClose={() => setSheet(null)} />
         ) : sheet === "thinks" ? (
           <Suspense fallback={null}>
-            <HowItThinks brain={state?.brain} onClose={() => setSheet(null)} />
+            <HowItThinks repo={cfg.kind === "live" ? cfg.repo : undefined} brain={state?.brain} onClose={() => setSheet(null)} />
           </Suspense>
         ) : sheet === "empire" ? (
           <EmpireSheet e={empire} live={cfg.kind === "live"} onClose={() => setSheet(null)} />

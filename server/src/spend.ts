@@ -48,5 +48,5 @@ export async function factorySpend(db: D1Database, repo: string, now = Date.now(
     pricing: "Estimated at $1.25/M input, $0.15/M cached input, $4.25/M output. Unmeasured calls retain their reservation." };
 }
 export async function spendReport(db: D1Database, day = utcDay()) {
-  return (await db.prepare("SELECT * FROM spark_factory_daily WHERE day = ? ORDER BY nano_usd DESC, repo").bind(day).all()).results;
+  return (await db.prepare("SELECT d.*, COALESCE(b.daily_nano_usd, 5000000000) AS daily_budget_nano_usd FROM spark_factory_daily d LEFT JOIN spark_factory_budgets b ON b.repo = d.repo WHERE day = ? ORDER BY nano_usd DESC, d.repo").bind(day).all()).results;
 }

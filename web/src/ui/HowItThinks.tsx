@@ -1,3 +1,4 @@
+import { SparkSpendPanel } from "./SparkSpend";
 // "How it thinks": the planner's decision log. Every call the factory's planner made, what it looked at,
 // what it decided and why, and when a fixed rule had to stand in. This sheet is where the in-game
 // credit lives (copy.ts CREDIT, docs/VISION.md principle 8).
@@ -13,7 +14,7 @@ const ago = (at: number) => {
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`;
 };
 
-export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => void }) {
+export function HowItThinks({ brain, onClose, repo }: { repo?: string; brain?: Brain; onClose: () => void }) {
   const total = (brain?.decisions ?? 0) + (brain?.fallbacks ?? 0);
   const share = total ? Math.round(((brain?.decisions ?? 0) / total) * 100) : 0;
   const simulated = brain?.thoughts.some((t) => t.simulated);
@@ -27,6 +28,7 @@ export function HowItThinks({ brain, onClose }: { brain?: Brain; onClose: () => 
         </button>
       </div>
       <p className="empty">{THINKS.intro}</p>
+      <SparkSpendPanel repo={repo} />
       <div className="thinks-stats">
         <div><b>{brain?.decisions ?? 0}</b>{THINKS.decisions}</div>
         <div><b>{share}%</b>{THINKS.byModel}</div>
