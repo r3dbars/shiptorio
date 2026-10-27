@@ -3,11 +3,11 @@
 Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind the preview password.
 
 - **Page:** `web/public/welcome/index.html`, plain static HTML (no React bundle), inline CSS. Vite copies `web/public/` to `web/dist/` as-is.
-- **Look (Oct 26):** Black Iron (`docs/art/IRON-STYLE.md`): furnace sky hero, riveted plates, Silkscreen headings,
-  JetBrains Mono body (both from `/fonts/*`, public past the gate), amber primary, aether-teal links, the wordmark
-  from `/brand/wordmark.svg`. The tokens are inlined (same hex as `web/src/iron.css`); the page loads no app CSS.
-  The video nameplate is a machine chip: IDLE on the poster, WORKING while the loop plays. The "loop" section uses
-  IDLE / WORKING / NEEDS YOU chips to explain the game. Under reduced motion the chips, belt and ping stand still.
+- **Look (Oct 27, stripped down):** Justin: "super duper simple, it looks so vibe coded". The page is only the
+  wordmark (`/brand/wordmark.svg`), one line ("Your repo is a factory. Teach it to run itself."), the art full bleed,
+  one email field + "Get an invite", a small "Sign in" link and the "powered by Meta Muse Spark" credit. No sections,
+  no chips, no explainer copy. Desktop: art covers the viewport with soot gradients top and bottom for the words.
+  Phones (<760px): words on top, a tall cut of the art fills the middle, form below. Tokens inlined from iron.css.
 - **Routing (`server/src/access.ts` `publicRoute`, `server/src/landing.ts`):**
   - `GET /` with no valid `shiptorio_access` cookie → the landing page (`no-cache`, `Vary: cookie`, CSP).
     With the cookie (or `DEV_LOGIN` on localhost), `/` is the app as before.
@@ -22,14 +22,12 @@ Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind th
 - **Signup modes:** password mode (default) shows the landing to anyone without the preview cookie. In
   `SIGNUP_GATE_MODE=waitlist`, anyone with a `shiptorio_session` cookie skips the landing for the signup gate.
 - **CSP:** security.ts sets `script-src 'self'` site-wide, so the page's JS lives in `/welcome/landing.js`.
-- **Video:** `loop.mp4` (1280×720) and `loop-640.mp4` (phones) are 30s of the real Black Iron line
-  (`docs/black-iron.html`) rendered frame by frame in headless Playwright (three r128 routed to a local copy,
-  `Math.random` seeded, rAF off, `IRON.debug.advance(1/24)` + `IRON.camStep` + `IRON.render` + a screenshot per frame),
-  then ffmpeg. Camera tour: LINE → UNDERSIDE (mines, carts, ore lift) → assembler → splitter → launch pad (a NEEDS YOU
-  merge hold, then liftoff). HUD/controls hidden, machine chips kept; the word "Spark" is rewritten to "AI" in the
-  captured page so it never shows in footage. Posters are frame 0. Step images (`step-ore`, `step-build`,
-  `step-follow` = the FOLLOW WORK camera, `step-launch`) are 960×600 stills downscaled to 720×450 webp.
-  Desktop autoplays after load; phones start on first scroll/tap; reduced motion / Save-Data wait for Play.
+- **Art:** `hero.webp` (1600×900) / `hero-1024.webp` / `hero-phone.webp` (600×800 cut of the dome + rocket) are frame 0
+  of `hero.mp4` / `hero-phone.mp4`: 10s of the real Black Iron line (`docs/black-iron.html`), DECK view, fixed camera,
+  every overlay (HUD, chips, tags, ticker, controls) hidden. Rendered frame by frame in headless Playwright (three r128
+  routed to a local copy, seeded `Math.random`, rAF off, `IRON.debug.advance(1/24)` + `camStep` + `render` + screenshot),
+  the last second crossfaded into the first so it loops without a seam, then ffmpeg. The still paints first; the loop
+  fades in after load and never under reduced motion or Save-Data. A small pause button sits top right (bottom of the art on phones).
 - **Copy rule:** the only model credit is the footer line "powered by Meta Muse Spark". No "Spark" elsewhere.
 - **Verified (local wrangler dev):** Lighthouse desktop 100/100/100/100 (LCP 0.5s), mobile 99/100/100/100
   (LCP 2.1s on simulated slow 4G, CLS 0).
