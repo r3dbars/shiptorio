@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      - name: Install smoke Chromium
+        timeout-minutes: 2
+        run: bun x playwright install --with-deps chromium
       - name: Roll back Worker code (data is preserved)
         working-directory: server
         env:
@@ -44,3 +47,13 @@ jobs:
           else
             exit 1
           fi
+      - name: Browser smoke restored production
+        if: inputs.environment == 'production'
+        run: node scripts/smoke/browser.mjs https://shiptorio.com "$RUNNER_TEMP/browser-smoke/restored"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rollback-browser-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/browser-smoke/
+          retention-days: 7
+          if-no-files-found: warn

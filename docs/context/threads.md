@@ -333,3 +333,11 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+
+## Deploy browser smoke (Codex, 2026-10-27)
+
+- Adds Chromium pixel sampling of the public judge shaft at 390×844 and 1440×900,
+  console/page error checks, screenshot artifacts, and browser re-smoke after rollback.
+- Moves the Oct 27 live-map checkpoint forward by catching blank/crashed production renders.
+- `/judge` is simulated and opens no socket; authenticated live-socket coverage needs a separate probe.
+- Production browser rollback drill receipt pending validation below.
