@@ -138,7 +138,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
   const hv = useHeightVars();
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
-  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
+  // One thing talks at a time: a rocket's celebration, then a lesson, then a badge, then the card (bug hunt, 2026-10-27).
+  const [celebrating, setCelebrating] = useState(false);
+  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0", celebrating || !!ach.toast);
   const { show } = tour;
   // Coming back after hours away: a few seconds of what really shipped meanwhile, then the launch waiting on you.
   const [reduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
@@ -183,7 +185,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
   const nudge = useBottleneckNudge(deck, progressing, calm);
-  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson }; // achievements pay XP into progression; toasts wait out the tour coach card
+  achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson || celebrating }; // achievements pay XP into progression; toasts wait out the tour coach card and a rocket
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
     if (progressing && state) prog.open(deck.length);
@@ -483,9 +485,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           empire={!intro && sheet === "empire"}
           summary={factorySummary(state)}
           lapse={intro ? null : back.lapse}
+          still={intro}
         />
         <SoundCaptions />
-        <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} />
+        <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} onBusy={setCelebrating} />
         {intro && <div className="tour-vignette" aria-hidden="true" />}
         {intro && tourly.top}
         {intro && tourly.card}
@@ -729,7 +732,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               </div>
             )}
           </section>
-        ) : back.holding ? null : (
+        ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
           <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
             {calm ? (
               <AttentionTray
