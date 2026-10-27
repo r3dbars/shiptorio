@@ -14,6 +14,11 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== 
   const server = Bun.serve({ port: 0, async fetch(request) {
     const body = await request.json() as { authRequired?: string[]; harnesses?: string[] };
     if (new URL(request.url).pathname.endsWith("/heartbeat")) { authCard ||= body.authRequired?.includes("codex") ?? false; return Response.json({ ok: true }); }
+    if (new URL(request.url).pathname.endsWith("/renew")) {
+      const expires = Date.now() + 7 * 86400000;
+      const token = `${btoa(JSON.stringify({purpose:"runner",repo:"you/repo",pairId:"reconnect-fixture",expires})).replace(/=/g, "")}.signature`;
+      return Response.json({token, expires});
+    }
     claims++;
     if (claims === 1) return new Response("network outage", { status: 503 });
     if (claims === 2) await Bun.write(resolve(root, ".agent-home", "expired"), "expired");

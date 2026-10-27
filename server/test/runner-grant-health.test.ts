@@ -8,7 +8,7 @@ const { testApp: app } = await import("./app-fixture");
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
-for (const upstream of [503, 429]) test(`GitHub ${upstream} denies the request but never permanently rejects a valid runner grant`, async () => {
+for (const upstream of [503, 429, 403, 404]) test(`GitHub ${upstream} denies the request but never permanently rejects a valid runner grant`, async () => {
   let repairs = 0, beats = 0, warm = false, calls = 0;
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const env = { DB: testD1(), SESSION_SECRET: "runner-outage-fixture", ALLOWED_LOGINS: "player",
