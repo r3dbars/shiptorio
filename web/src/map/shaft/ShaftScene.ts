@@ -128,6 +128,14 @@ export class ShaftScene {
     this.hud.syncFloors("free");
   }
 
+  /** A drag ended. On a phone showing about one floor, the view settles on the nearest floor instead of stopping between two. */
+  settle() {
+    const stage = this.stage;
+    if (!stage || this.view.view !== "free" || !stage.phone) return;
+    const floor = stage.snapFloor();
+    if (floor) this.setView(floor, null);
+  }
+
   update(state: FactoryState) {
     this.state = state;
     if (!this.fns) return; // the art is still loading: build once it's here
@@ -263,6 +271,7 @@ export class ShaftScene {
     const small = (window.matchMedia?.("(pointer: coarse)").matches ?? false) || (navigator.hardwareConcurrency ?? 8) <= 4;
     const stage = new ShaftStage(I, layout, { shadowMap: small ? 1024 : 2048 });
     stage.reduceMotion = this.reduceMotion;
+    I.calm = this.reduceMotion; // core.js steadies the item halos
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
     bakeShaft(I, stage.root);

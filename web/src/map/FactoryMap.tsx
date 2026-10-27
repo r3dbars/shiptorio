@@ -5,12 +5,13 @@ import { FactoryScene, type Cosmetics, type Ping } from "./scene";
 import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
+import { mapGesture } from "./gesture";
 
 // What FactoryMap asks of a map. The shaft (shaft/ShaftScene.ts, the map) and the island (scene.ts, ?world=iron) both do it.
 type MapScene = Pick<
   FactoryScene,
   "setSize" | "setLift" | "zoomBy" | "panBy" | "update" | "pick" | "hover" | "clearHover" | "setTeachingKeys" | "setShowAllLabels" | "setPings" | "focus" | "setSatellites" | "backToLine" | "empireView" | "overview" | "setCosmetics" | "dispose"
->;
+> & { settle?: () => void }; // the shaft snaps a phone drag to the nearest floor
 type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void) => MapScene;
 
 interface Props {
@@ -85,52 +86,19 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     const ro = new ResizeObserver(([e]) => scene.setSize(e.contentRect.width, e.contentRect.height));
     ro.observe(canvas);
 
-    // One finger (or mouse) drags to pan, two fingers pinch to zoom and pan together.
-    // A press that barely moves is a tap (or click) on whatever is under it.
-    const pts = new Map<number, { x: number; y: number }>();
-    let moved = 0;
-    let pinch = 0; // last distance between two fingers
-    const mid = () => {
-      const [a, b] = [...pts.values()];
-      return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
-    };
-    const down = (e: PointerEvent) => {
-      if (pts.size === 0) moved = 0;
-      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      canvas.setPointerCapture(e.pointerId);
-      if (pts.size === 2) pinch = mid().d;
-    };
-    const move = (e: PointerEvent) => {
-      const p = pts.get(e.pointerId);
-      if (!p) {
-        // no button down: hovering shows that thing's label
-        if (e.pointerType === "mouse") canvas.style.cursor = scene.hover(e.clientX, e.clientY, canvas.getBoundingClientRect()) ? "pointer" : "";
-        return;
-      }
-      if (pts.size === 1) {
-        moved += Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y);
-        scene.panBy(e.clientX - p.x, e.clientY - p.y);
-        p.x = e.clientX;
-        p.y = e.clientY;
-        return;
-      }
-      const before = mid();
-      p.x = e.clientX;
-      p.y = e.clientY;
-      const after = mid();
-      moved += 100; // two fingers never count as a tap
-      scene.panBy(after.x - before.x, after.y - before.y);
-      if (pinch > 0 && after.d > 0) scene.zoomBy(pinch / after.d); // fingers apart zooms in
-      pinch = after.d;
-    };
-    const up = (e: PointerEvent) => {
-      if (pts.size === 1 && pts.has(e.pointerId) && moved < 8 && e.type === "pointerup") {
-        const id = scene.pick(e.clientX, e.clientY, canvas.getBoundingClientRect());
+    // pointer gestures (gesture.ts): drag pans, pinch zooms, a tap picks, a phone drag settles on a floor
+    const { down, move, up } = mapGesture({
+      capture: (id) => canvas.setPointerCapture(id),
+      panBy: (dx, dy) => scene.panBy(dx, dy),
+      zoomBy: (f) => scene.zoomBy(f),
+      // no button down: hovering shows that thing's label
+      hover: (x, y) => (canvas.style.cursor = scene.hover(x, y, canvas.getBoundingClientRect()) ? "pointer" : ""),
+      pick: (x, y) => {
+        const id = scene.pick(x, y, canvas.getBoundingClientRect());
         if (id) pickRef.current?.(id);
-      }
-      pts.delete(e.pointerId);
-      pinch = pts.size === 2 ? mid().d : 0;
-    };
+      },
+      settle: () => scene.settle?.(),
+    });
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
       scene.zoomBy(Math.exp(e.deltaY * 0.001)); // scroll down zooms out

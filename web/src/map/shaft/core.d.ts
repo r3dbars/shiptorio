@@ -98,6 +98,8 @@ export interface Look {
 }
 
 export interface Iron {
+  /** reduced motion: item halos hold still (set by ShaftScene) */
+  calm?: boolean;
   LOOK: Look;
   CFG: Record<string, unknown>;
   policy: { intake: boolean; autoResolve: boolean; autoResolveAfter: number; speed: number; events: boolean };
