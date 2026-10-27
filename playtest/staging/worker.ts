@@ -9,12 +9,34 @@ import { fixtureOnlyFetch } from "./runtime";
 import type { FixtureEnv } from "./env";
 import { Factory as SeededFactory } from "../bot/worker";
 export class Factory extends SeededFactory {
-  async resetFixture(receipt: string) {
+  async prepareFixtureReset() {
+    const existing = await this.ctx.storage.get<{ receipt: string; complete: boolean }>("fixtureReset");
+    if (existing) {
+      const alarm = await this.ctx.storage.getAlarm();
+      if (!existing.complete && (alarm === null || alarm > Date.now() + 5000)) await this.ctx.storage.setAlarm(Date.now() + 1);
+      return existing;
+    }
+    const reset = { receipt: crypto.randomUUID(), complete: false };
+    await this.ctx.storage.put("fixtureReset", reset);
+    await this.ctx.storage.setAlarm(Date.now() + 1);
+    return reset;
+  }
+  async confirmFixtureReset(receipt: string) { const reset = await this.ctx.storage.get<{receipt:string;complete:boolean}>("fixtureReset"); return reset?.complete === true && reset.receipt === receipt; }
+  async completeFixtureReset() { await this.ctx.storage.delete("fixtureReset"); }
+  async alarm() {
+    const reset = await this.ctx.storage.get<{receipt:string;complete:boolean}>("fixtureReset");
+    if (!reset) {
+      await super.alarm();
+      const pending = await this.ctx.storage.get<{complete:boolean}>("fixtureReset");
+      if (pending && !pending.complete) await this.ctx.storage.setAlarm(Date.now() + 1);
+      return;
+    }
+    if (reset.complete) return;
     await this.eraseAccountData();
-    await this.ctx.storage.put("fixtureReset", receipt);
+    await this.ctx.storage.put("fixtureReset", { ...reset, complete: true });
+    await this.ctx.storage.sync();
     this.ctx.abort("Fixture reset completed");
   }
-  async confirmFixtureReset(receipt: string) { return await this.ctx.storage.get("fixtureReset") === receipt; }
 }
 export { FixtureProvider } from "./provider";
 
@@ -28,11 +50,11 @@ export default {
       const repo = personaRepo(persona), id = personaId(persona), installation = 9000 + Math.abs(id);
       const provider = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(persona));
       const stopped = await provider.fetch(new Request("http://fixture.internal/reset", { method: "POST", headers: { "x-test-persona": persona } }));
-      if (!stopped.ok) return new Response("Fixture reset failed", { status: 503 });
+      if (!stopped.ok) return new Response("Fixture reset failed", { status: stopped.status === 409 ? 409 : 503 });
       const factory = env.FACTORY.get(env.FACTORY.idFromName(`repo:${990000 + Math.abs(id)}`)) as unknown as Factory;
-      const receipt = crypto.randomUUID();
-      try { await factory.resetFixture(receipt); } catch { /* abort evicts all cached state */ }
-      if (!await factory.confirmFixtureReset(receipt)) return new Response("Fixture wipe was not confirmed", { status: 503 });
+      const reset = await factory.prepareFixtureReset();
+      if (!reset.complete) return new Response("Fixture reset pending", { status: 409 });
+      if (!await factory.confirmFixtureReset(reset.receipt)) return new Response("Fixture wipe was not confirmed", { status: 503 });
       await env.DB.batch([
         env.DB.prepare("DELETE FROM user_repos WHERE user_id=? AND repo=?").bind(id, repo),
         env.DB.prepare("DELETE FROM user_installations WHERE user_id=? AND installation_id=?").bind(id, installation),
@@ -45,8 +67,16 @@ export default {
         env.DB.prepare("DELETE FROM factory_budget_owners WHERE repo=?").bind(repo),
         env.DB.prepare("DELETE FROM spark_usage WHERE account=?").bind(`github:user:${id}`),
       ]);
+      await factory.completeFixtureReset();
+      const resumed = await provider.fetch(new Request("http://fixture.internal/resume", { method: "POST", headers: { "x-test-persona": persona } }));
+      if (!resumed.ok) return new Response("Fixture reset remains locked", { status: 503 });
       return Response.json({ reset: persona });
     }
+    const gate = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(persona));
+    const entered = await gate.fetch(new Request("http://fixture.internal/enter", { method: "POST", headers: { "x-test-persona": persona } }));
+    if (!entered.ok) return new Response("Fixture reset in progress", { status: 409 });
+    const { leaseId } = await entered.json() as { leaseId: string };
+    try {
     await seedTestUser(env, persona);
     let session = await env.CACHE.get(`fixture-session:${persona}`);
     if (!session || !(await currentUser(env, session))) {
@@ -76,5 +106,8 @@ export default {
     if (response.status === 101) return response;
     const clean = new Response(response.body, response); clean.headers.delete("set-cookie");
     return clean;
+    } finally {
+      await gate.fetch(new Request("http://fixture.internal/exit", { method: "POST", headers: { "x-test-persona": persona, "content-type": "application/json" }, body: JSON.stringify({ leaseId }) })).catch(() => undefined);
+    }
   },
 } satisfies ExportedHandler<FixtureEnv>;

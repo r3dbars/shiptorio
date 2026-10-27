@@ -59,8 +59,14 @@ try {
     }
     const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
-    if (!local && width === 390) {
-      const reset = await page.evaluate(async () => { const r = await fetch("/test/reset", { method: "POST" }); return { ok: r.ok, status: r.status }; });
+    if (!local && persona !== "test-guest" && width === 390) {
+      let reset;
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const response = await context.request.post(`${url.origin}/test/reset`, { headers: { origin: url.origin } });
+        reset = { ok: response.ok(), status: response.status() };
+        if (reset.status !== 409) break;
+        await page.waitForTimeout(2000);
+      }
       if (!reset.ok) throw new Error(`Isolated staging reset unavailable: HTTP ${reset.status}`);
       await page.goto(`${url.origin}/test/login?as=${persona}`);
     }

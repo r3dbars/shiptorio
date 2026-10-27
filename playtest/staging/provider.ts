@@ -13,7 +13,7 @@ import { sparkStub } from "../stranger/spark-stub.mjs";
 
 type Receipt = { jobId: string; lease: string; ok: true; sha: string; summary: string; checks: string[]; proof: { baseSha: string; headSha: string; failsOnBase: true; passesOnHead: true; command: string; logTail: string } };
 type Runner = { token: string; until: number; completed: boolean; pending?: Receipt; receiptSent?: boolean; error?: string };
-type Stored = { persona: TestPersona; github: Record<string, unknown>; spark: { calls: string[]; unexpected: string[] }; runner?: Runner };
+type Stored = { persona: TestPersona; github: Record<string, unknown>; spark: { calls: string[]; unexpected: string[] }; runner?: Runner; resetLocked?: boolean; requestLeases?: Record<string, number> };
 type Storage = Pick<DurableObjectStorage, "get" | "put" | "setAlarm" | "deleteAlarm">;
 type Worker = (request: Request) => Promise<Response>;
 const KNOWN = new Set<string>(TEST_PERSONAS);
@@ -32,6 +32,8 @@ export class FixtureRuntime {
   private spark: any;
   private ready: Promise<void>;
   private ticking = false;
+  private activeRequests = 0;
+  private resetting = false;
   private pairing?: Promise<void>;
   constructor(private storage: Storage, private env: FixtureEnv, private worker: Worker) {
     this.ready = storage.get<Stored>("fixture").then(saved => {
@@ -79,9 +81,43 @@ export class FixtureRuntime {
     if (!persona || !KNOWN.has(persona) || this.record && this.record.persona !== persona) return json({ error: "Invalid fixture persona" }, 403);
     if (!this.record) { this.openStubs(persona as TestPersona); await this.persist(); }
     const url = new URL(request.url);
+    if (url.origin === "http://fixture.internal" && url.pathname === "/enter" && request.method === "POST") {
+      if (this.record!.resetLocked || this.resetting) return json({ error: "Fixture reset in progress" }, 409);
+      this.pruneRequestLeases();
+      const leaseId = crypto.randomUUID();
+      (this.record!.requestLeases ??= {})[leaseId] = Date.now() + 5 * 60_000;
+      await this.persist();
+      return json({ leaseId });
+    }
+    if (url.origin === "http://fixture.internal" && url.pathname === "/exit" && request.method === "POST") {
+      const raw = await request.text();
+      if (raw.length > 1024) return json({ error: "Invalid request lease" }, 400);
+      let leaseId: unknown;
+      try { leaseId = JSON.parse(raw).leaseId; } catch { return json({ error: "Invalid request lease" }, 400); }
+      if (typeof leaseId !== "string" || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(leaseId)) return json({ error: "Invalid request lease" }, 400);
+      if (this.record!.requestLeases) delete this.record!.requestLeases[leaseId];
+      await this.persist();
+      return json({ released: true });
+    }
+    if (url.origin === "http://fixture.internal" && url.pathname === "/status" && request.method === "GET") return json({ resetLocked: !!this.record!.resetLocked || this.resetting });
+    if (url.origin === "http://fixture.internal" && url.pathname === "/reset") {
+      if (request.method !== "POST") return json({ error: "Reset requires POST" }, 405);
+      return this.reset();
+    }
+    if (url.origin === "http://fixture.internal" && url.pathname === "/resume") {
+      if (request.method !== "POST") return json({ error: "Resume requires POST" }, 405);
+      if (this.resetting) return json({ error: "Fixture reset in progress" }, 409);
+      delete this.record!.resetLocked;
+      await this.persist();
+      return json({ resumed: true });
+    }
+    if (this.record!.resetLocked) return json({ error: "Fixture reset awaiting cleanup" }, 409);
+    if (this.resetting) return json({ error: "Fixture reset in progress" }, 409);
+    this.activeRequests++;
+    try {
     if (url.origin === "http://fixture.internal") {
-      if (url.pathname === "/install") return this.install(request);
-      if (url.pathname === "/start" && request.method === "POST") return this.start(request);
+      if (url.pathname === "/install") return await this.install(request);
+      if (url.pathname === "/start" && request.method === "POST") return await this.start(request);
       return json({ error: "Unknown fixture command" }, 404);
     }
     let response: Response;
@@ -90,6 +126,28 @@ export class FixtureRuntime {
     else return json({ error: "Outbound destination blocked by fixture" }, 599);
     await this.persist();
     return response;
+    } finally { this.activeRequests--; }
+  }
+  private pruneRequestLeases() {
+    for (const [id, expires] of Object.entries(this.record!.requestLeases ?? {})) {
+      if (expires <= Date.now()) delete this.record!.requestLeases![id];
+    }
+  }
+  private async reset() {
+    this.pruneRequestLeases();
+    if (this.record!.resetLocked && !this.resetting) return json({ reset: true });
+    const runner = this.currentRunner();
+    if (this.resetting || this.activeRequests || Object.keys(this.record!.requestLeases ?? {}).length || this.ticking || this.pairing || runner?.pending && runner.until > Date.now()) {
+      return json({ error: "Fixture work is still active; retry reset after it settles" }, 409);
+    }
+    this.resetting = true;
+    try {
+      await this.storage.deleteAlarm();
+      this.openStubs(this.record!.persona);
+      this.record!.resetLocked = true;
+      await this.persist();
+      return json({ reset: true });
+    } finally { this.resetting = false; }
   }
   private async install(request: Request) {
     const confirm = new URL(request.url).searchParams.get("confirm") === "1";
@@ -151,7 +209,7 @@ export class FixtureRuntime {
     if (!enabled(this.env)) return;
     await this.ready;
     const runner = this.record?.runner;
-    if (!runner || this.ticking) return;
+    if (!runner || this.ticking || this.resetting || this.record?.resetLocked) return;
     if (Date.now() >= runner.until) { await this.storage.deleteAlarm(); return; }
     this.ticking = true;
     try {
@@ -176,9 +234,10 @@ export class FixtureRuntime {
       // Never store response bodies, headers, session cookies or credentials in diagnostics.
       runner.error = "Fixture runner could not advance; it will retry before the ten-minute deadline.";
     } finally {
-      this.ticking = false;
-      await this.persist();
-      if (Date.now() < runner.until) await this.storage.setAlarm(Date.now()+5000); else await this.storage.deleteAlarm();
+      try {
+        await this.persist();
+        if (Date.now() < runner.until) await this.storage.setAlarm(Date.now()+5000); else await this.storage.deleteAlarm();
+      } finally { this.ticking = false; }
     }
   }
 }
