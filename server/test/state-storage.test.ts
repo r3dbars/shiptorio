@@ -8,16 +8,31 @@ import original from "./fixtures/factory-state/unversioned-original.json";
 export function stateStorage(initial: unknown = original) {
   const rows = new Map<string, unknown>(initial == null ? [] : [["state", structuredClone(initial)]]);
   let failAt: string | undefined;
+  const calls = { get: 0, put: 0, delete: 0 };
+  const batchSizes: number[] = [];
   const storage = {
-    async get(key: string) { return structuredClone(rows.get(key)); },
-    async put(key: string, value: unknown) { if (key === failAt) throw new Error("injected disk failure"); rows.set(key, structuredClone(value)); },
-    async delete(key: string) { return rows.delete(key); },
+    async get(key: string | string[]) {
+      calls.get++;
+      if (Array.isArray(key)) { batchSizes.push(key.length); return new Map(key.filter(k => rows.has(k)).reverse().map(k => [k, structuredClone(rows.get(k))])); }
+      return structuredClone(rows.get(key));
+    },
+    async put(key: string | Record<string, unknown>, value?: unknown) {
+      calls.put++;
+      const entries = typeof key === "string" ? [[key, value] as const] : Object.entries(key);
+      if (typeof key !== "string") batchSizes.push(entries.length);
+      for (const [k, v] of entries) { if (k === failAt) throw new Error("injected disk failure"); rows.set(k, structuredClone(v)); }
+    },
+    async delete(key: string | string[]) {
+      calls.delete++;
+      if (Array.isArray(key)) { batchSizes.push(key.length); return key.reduce((n, k) => n + Number(rows.delete(k)), 0); }
+      return rows.delete(key);
+    },
     async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
       const before = structuredClone(rows);
       try { return await fn(storage); } catch (err) { rows.clear(); for (const [k,v] of before) rows.set(k,v); throw err; }
     },
   };
-  return { rows, storage: storage as unknown as DurableObjectStorage, fail: (key?: string) => { failAt = key; } };
+  return { rows, calls, batchSizes, resetCalls: () => { calls.get = calls.put = calls.delete = 0; batchSizes.length = 0; }, storage: storage as unknown as DurableObjectStorage, fail: (key?: string) => { failAt = key; } };
 }
 
 describe("persisted factory schema", () => {
@@ -93,4 +108,23 @@ it("refuses a chunked write when account deletion has stopped the factory", asyn
   // The storage transaction rolls back the partially written chunk.
   expect([...f.rows.keys()]).toEqual(["state"]);
   expect(f.rows.get("state")).toEqual(original);
+});
+
+// Fixed 129-chunk fixture spans the Cloudflare 128-key batch boundary.
+it("pins storage API calls for a 129-chunk snapshot", async () => {
+  const f = stateStorage(null);
+  const large = migrateFactoryState({...original, goal: "x".repeat(16000 * 128)});
+  await saveFactoryState(f.storage, large);
+  expect((f.rows.get("state") as {chunks: number}).chunks).toBe(129);
+  expect(f.calls).toEqual({get: 1, put: 3, delete: 0});
+  expect(f.batchSizes).toEqual([128, 1]);
+  f.resetCalls();
+  expect(await loadFactoryState(f.storage)).toEqual(large);
+  expect(f.calls).toEqual({get: 3, put: 0, delete: 0});
+  expect(f.batchSizes).toEqual([128, 1]);
+  f.resetCalls();
+  await saveFactoryState(f.storage, migrateFactoryState(original));
+  expect(f.calls).toEqual({get: 1, put: 1, delete: 2});
+  expect(f.batchSizes).toEqual([128, 1]);
+  expect([...f.rows.keys()]).toEqual(["state"]);
 });
