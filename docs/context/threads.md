@@ -333,3 +333,7 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+
+## AI review eval (Codex, Oct 27, 2026)
+
+Day 2 gauntlet trust checkpoint: pinned 15 Testing patches (10 bad, 5 good), executable witnesses and a live production-reviewer harness. Results and limitations are generated in [EVAL.md](../EVAL.md) from raw receipts; no production reviewer changes.
