@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { BottleneckArea, BrainSignal, SIGNAL_KINDS } from "@shiptorio/shared";
+import { BottleneckArea, BrainSignal, SIGNAL_KINDS, SignalSource } from "@shiptorio/shared";
 import { CASES } from "../scripts/brain-eval/cases";
 import { evaluate, runCase, sparkThink, stubSpark, summarize, T0 } from "../scripts/brain-eval/harness";
 import { emptyMemory, ruleDiagnosis } from "../src/diagnose";
@@ -30,7 +30,9 @@ describe("brain eval fixtures", () => {
     const ids = CASES.map(c => c.id);
     expect(CASES.filter(c => c.expect.area === null).length).toBeGreaterThanOrEqual(5);
     for (const id of ["red-ci-quiet-sentry", "error-spike", "no-users", "feedback-backlog", "player-bottleneck", "nothing-wrong", "loud-vs-stuck", "goal-customers", "injection-in-feedback"]) expect(ids).toContain(id);
-    for (const area of BottleneckArea.options.filter(a => a !== "focus")) expect(CASES.some(c => c.expect.area === area)).toBe(true);
+    for (const area of BottleneckArea.options) expect(CASES.some(c => c.expect.area === area)).toBe(true);
+    // Every source a collector reads is the main signal of at least one case.
+    for (const source of SignalSource.options) expect(CASES.some(c => c.expect.signal?.startsWith(`${source}:`))).toBe(true);
   });
 });
 
