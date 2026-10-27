@@ -17,6 +17,7 @@ import type { SatelliteSpec } from "../empire";
 import { bakeShaft } from "./bake";
 import { createIron, type Iron } from "./core";
 import { GameDriver } from "./driver";
+import { FirstRunLight, LIT_LINE, litFloors } from "./firstRun";
 import { biasFor } from "./frame";
 import { ShaftHud } from "./hud";
 import { makeLayout, MINES } from "./layout";
@@ -69,6 +70,9 @@ export class ShaftScene {
   private home: { view: ShaftView; id: string | null } | null = null;
   private view: { view: ShaftView; id: string | null } = { view: "stack", id: null };
   private readonly ray = new THREE.Raycaster();
+  // a factory that never shipped starts dark and lights floor by floor (firstRun.ts)
+  private readonly firstRun = new FirstRunLight();
+  private readonly said: HTMLElement;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -89,6 +93,10 @@ export class ShaftScene {
       reframe: () => (this.governor.poke(), this.applyBias()),
     });
     this.hud.syncFloors(this.view.view);
+    this.said = document.createElement("div");
+    this.said.className = "sr";
+    this.said.setAttribute("aria-live", "polite");
+    labelRoot.appendChild(this.said);
 
     void loadModules().then((fns) => {
       if (this.disposed) return;
@@ -144,6 +152,16 @@ export class ShaftScene {
     else this.sp = sp;
     this.driver?.sync(state);
     this.hud.read(state, this.sp!);
+    this.light(state);
+  }
+
+  // A floor lit up: a quick swoop to it (a snap under reduced motion), unless you're looking somewhere yourself.
+  private light(state: FactoryState) {
+    const floor = this.firstRun.set(litFloors(state), this.reduceMotion);
+    if (!floor) return;
+    this.governor.poke();
+    this.said.textContent = LIT_LINE[floor];
+    if (!this.home && this.view.view !== "free" && this.view.view !== "station") this.setView(floor, null);
   }
 
   keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
@@ -248,6 +266,7 @@ export class ShaftScene {
     cancelAnimationFrame(this.raf);
     this.teardown();
     this.hud.dispose();
+    this.said.remove();
     this.renderer.dispose();
   }
 
@@ -275,6 +294,8 @@ export class ShaftScene {
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
     bakeShaft(I, stage.root);
+    if (this.firstRun.level < 0 && this.state) this.firstRun.set(litFloors(this.state), this.reduceMotion); // the first look: no swoop
+    this.firstRun.patch(stage.root);
     if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
@@ -293,7 +314,9 @@ export class ShaftScene {
           I.debug.advance(sec);
           this.t = I._t ?? this.t;
           stage.camStep(sec);
+          this.firstRun.step(this.t, sec, this.reduceMotion);
         },
+        firstRun: this.firstRun,
         view: (v: ShaftView, id?: string) => (this.setView(v, id ?? null, true), this.applyBias()),
         render: () => {
           this.renderer.info.reset();
@@ -375,6 +398,7 @@ export class ShaftScene {
     this.t += dt;
     I.step(this.t, dt);
     stage.camStep(dt);
+    this.firstRun.step(this.t, dt, this.reduceMotion);
     this.renderer.shadowMap.needsUpdate = this.governor.shadows();
     stage.render(this.renderer);
     this.hud.place(this.W, this.H);
