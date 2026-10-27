@@ -15,6 +15,7 @@ import { FrameGovernor } from "../quality";
 import type { Cosmetics, Ping } from "../scene";
 import type { SatelliteSpec } from "../empire";
 import { bakeShaft } from "./bake";
+import { type Clog, clogOf, ClogView } from "./clog";
 import { createIron, type Iron } from "./core";
 import { GameDriver } from "./driver";
 import { FirstRunLight, LIT_LINE, litFloors } from "./firstRun";
@@ -88,6 +89,7 @@ export class ShaftScene {
   private lapsing = false;
   private asked: string | null = null; // the last focus asked for, kept for a shaft that wasn't built yet
   private readonly trophies = new Trophies(); // a green lamp per shipped PR, by the assembler that built it
+  private readonly clogs = new ClogView(); // the bottleneck, piling up where it lives (clog.ts)
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -167,6 +169,7 @@ export class ShaftScene {
     else this.sp = sp;
     this.driver?.sync(state);
     if (this.I) this.trophies.sync(this.I, state);
+    if (this.I) this.clogs.set(this.I, clogOf(state), this.reduceMotion);
     this.hud.read(state, this.sp!);
     this.light(state);
     this.startLapse();
@@ -321,6 +324,7 @@ export class ShaftScene {
     cancelAnimationFrame(this.raf);
     this.teardown();
     this.trophies.dispose();
+    this.clogs.dispose();
     this.hud.dispose();
     this.said.remove();
     this.renderer.dispose();
@@ -357,6 +361,9 @@ export class ShaftScene {
     this.firstRun.patch(stage.root);
     this.trophies.reset();
     stage.root.add(this.trophies.group);
+    this.clogs.reset();
+    this.clogs.scene = stage.scene;
+    stage.root.add(this.clogs.group);
     if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
@@ -377,7 +384,10 @@ export class ShaftScene {
           this.t = I._t ?? this.t;
           stage.camStep(sec);
           this.firstRun.step(this.t, sec, this.reduceMotion);
+          this.clogs.step(this.t, sec, this.reduceMotion);
         },
+        clogs: this.clogs,
+        clog: (c: Clog | null) => this.clogs.set(I, c, this.reduceMotion),
         firstRun: this.firstRun,
         view: (v: ShaftView, id?: string) => (this.setView(v, id ?? null, true), this.applyBias()),
         render: () => {
@@ -393,6 +403,7 @@ export class ShaftScene {
   private teardown() {
     this.hud.clear();
     this.trophies.group.removeFromParent(); // its meshes outlive the shaft; I.dispose frees what's under the root
+    this.clogs.group.removeFromParent();
     if (this.I) this.I.dispose();
     this.stage?.dispose();
     this.I = null;
@@ -462,6 +473,7 @@ export class ShaftScene {
     I.step(this.t, dt);
     stage.camStep(dt);
     this.firstRun.step(this.t, dt, this.reduceMotion);
+    this.clogs.step(this.t, dt, this.reduceMotion);
     this.renderer.shadowMap.needsUpdate = this.governor.shadows();
     stage.render(this.renderer);
     this.hud.place(this.W, this.H);
