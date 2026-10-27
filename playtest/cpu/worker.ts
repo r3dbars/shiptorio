@@ -22,7 +22,11 @@ export class Factory extends PracticeFactory {
     if (meta?.repo !== CPU_REPO || meta.installationId !== CPU_INSTALLATION) throw new Error("CPU fixture is not installed");
     const existing = await this.ctx.storage.get<TickMode>("cpuMode");
     if (existing && existing.until > Date.now()) throw new Error("CPU fixture already leased");
+    await this.observedCall("ensure", [CPU_REPO, CPU_INSTALLATION], { requestId: crypto.randomUUID(), repo: CPU_REPO, userId: "github:user:-9001" });
     const snapshot = await this.debugSnapshot();
+    const exported = await this.exportState();
+    if (!exported || (exported.state.autonomy?.level ?? "advisor") !== "advisor" || exported.state.autonomy?.districts.some(district => district.permit)) throw new Error("CPU fixture requires advisor autonomy without permits");
+    if (snapshot?.items.some(item => !["ore", "queued", "launched"].includes(item.state))) throw new Error("CPU fixture contains active gauntlet work");
     if ((await this.runnerJobs()).some(job => !["done", "failed"].includes(job.status))) throw new Error("CPU fixture has runner work");
     if (snapshot?.items.some(item => item.state === "working" || item.state === "on_pad")) throw new Error("CPU fixture must be idle");
     await this.ctx.storage.put("cpuMode", { runId, until } satisfies TickMode);
@@ -121,6 +125,8 @@ export default class CpuProbe extends WorkerEntrypoint<FixtureEnv> {
   async probe(raw: Record<string,unknown>): Promise<Record<string,unknown>> {
     const env = this.env;
     if (!enabled(env) || !raw || typeof raw !== "object" || Object.keys(raw).some(key => !["action", "runId", "until", "operation", "sample"].includes(key)) || !validRun(raw.runId)) return { ok: false, code: "cpu_probe_denied" };
+    const allowed = raw.action === "prepare" ? ["action", "runId", "until"] : raw.action === "sample" ? ["action", "runId", "operation", "sample"] : ["action", "runId"];
+    if (Object.keys(raw).some(key => !allowed.includes(key))) return { ok: false, code: "cpu_probe_denied" };
     const provider = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(CPU_PERSONA)) as unknown as FixtureProvider;
     try {
       if (raw.action === "prepare") {

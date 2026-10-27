@@ -17,7 +17,7 @@ Only the existing reserved fixture is usable: `test-newbie` / user `-9001`, repo
 installed through the normal private practice setup. `prepare` validates its live
 session/repository and pairs the fixture through normal Factory methods, then stores
 its credentials only inside the private provider DO. Grants expire within 35 minutes.
-No active runner jobs/working items may exist. Use the same initial advisor snapshot
+Advisor autonomy, no launch permits, no active runner jobs and no active gauntlet items are required. Use the same initial advisor snapshot
 and provider/ledger state for each comparison block; setup/reset is outside measurement.
 
 `sample` with sequential IDs 0–299 constructs the real internal application request:
