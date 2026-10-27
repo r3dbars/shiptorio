@@ -1,9 +1,9 @@
 import "./RunnerConnection.css";
 import { useEffect, useRef, useState } from "react";
+import { runnerInstallCommand } from "../runner-install";
 import { RUNNER } from "../copy";
 import { PowerPlug, type PlugState } from "./ironArt";
 
-const INSTALL = "curl -fsSL https://shiptorio.com/install.sh | sh";
 interface Join { join: string; expires: number }
 interface RunnerStatus { paired: boolean; online: boolean; seenAt: number | null; harnesses: string[]; lastJob: { id: string; status: string } | null }
 
@@ -39,7 +39,7 @@ export function RunnerConnection({ repo }: { repo: string }) {
       .then((r) => (r.ok ? r.json() as Promise<Join> : null)).then((j) => { if (j) setJoin(j); }).catch(() => {})
       .finally(() => { minting.current = false; });
   }, [repo, unpaired, status, join]);
-  const command = join ? `${INSTALL} -s -- --join ${join.join}` : INSTALL;
+  const command = runnerInstallCommand(window.location.origin, join?.join);
   const copy = async () => {
     try { await navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* the command stays selectable */ }
   };
