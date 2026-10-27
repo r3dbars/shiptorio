@@ -9,7 +9,7 @@ mock.module('cloudflare:workers',()=>({DurableObject:class{ctx:unknown;env:unkno
 const {testApp:app}=await import('./app-fixture');
 async function fixture(){
  const calls:unknown[]=[];
- const env={DB:testD1(),SESSION_SECRET:'admin-god-test',GITHUB_APP_ID:'1',GITHUB_APP_PRIVATE_KEY:'fixture-no-provider-call',ALLOWED_LOGINS:'operator,player,outsider',ADMIN_LOGINS:'operator',SIGNUP_GATE_MODE:'waitlist',CACHE:{list:async()=>({keys:[]}),put:async()=>{},get:async()=>null},FACTORY:{idFromName:(id:string)=>id,get:()=>({adminControl:async(...args:unknown[])=>calls.push(args),debugSnapshot:async()=>null,ensure:async()=>{},securityLimit:async()=>({allowed:true,retryAfter:0})})}};
+ const env={DB:testD1(),SESSION_SECRET:'admin-god-test',GITHUB_APP_SLUG:'fixture',GITHUB_APP_ID:'1',GITHUB_APP_PRIVATE_KEY:'fixture-no-provider-call',ALLOWED_LOGINS:'operator,player,outsider',ADMIN_LOGINS:'operator',SIGNUP_GATE_MODE:'waitlist',CACHE:{list:async()=>({keys:[]}),put:async()=>{},get:async()=>null},FACTORY:{idFromName:(id:string)=>id,get:()=>({adminControl:async(...args:unknown[])=>calls.push(args),debugSnapshot:async()=>null,ensure:async()=>{},securityLimit:async()=>({allowed:true,retryAfter:0})})}};
  const owner=await signedInCookie(env,'operator',[],1),player=await signedInCookie(env,'player',['fixture/repo'],2),outsider=await signedInCookie(env,'outsider',[],3);
  return {env,owner,player,outsider,calls};
 }
@@ -103,4 +103,13 @@ it('the real websocket handler blocks view writes until an audited toggle, then 
  await f.webSocketMessage(ws,move);expect((data.get('state') as any).goal).toBe('support check');
  expect((await env.DB.prepare("SELECT count(*) n FROM admin_audit WHERE action='view-write'").first<{n:number}>())!.n).toBe(1);
  env.ADMIN_LOGINS='';await f.webSocketMessage(ws,JSON.stringify({type:'set_goal',text:'should not apply'}));expect((data.get('state') as any).goal).toBe('support check');
+});
+
+it('/api/me exposes admin only from configuration and displays the viewed player prefs',async()=>{
+ const {env,owner,player}=await fixture();
+ await env.DB.prepare("INSERT INTO user_prefs(user_id,key,value,updated_at) VALUES (2,'intro','seen',1)").run();
+ const get=(cookie:string)=>app.fetch(new Request(url+'/api/me',{headers:{cookie}}),env);
+ expect(await(await get(player)).json()).toMatchObject({login:'player',admin:false});
+ const view=await post(env,owner,actions[0]);const cookie=owner+'; '+view.headers.get('set-cookie')!.split(';')[0];
+ expect(await(await get(cookie)).json()).toMatchObject({login:'operator',admin:true,viewingAs:{login:'player',writable:false},prefs:{intro:'seen'}});
 });

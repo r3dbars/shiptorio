@@ -21,6 +21,7 @@ test('admin page and in-game God panel show audited read-only controls',async({p
  await page.getByRole('button',{name:'Apply this action',exact:true}).click();
  await expect(page).toHaveURL(new RegExp('source=live'));
  await expect(page.getByText('Viewing as fixture · Read-only',{exact:true})).toBeVisible();
+ await expect(page.getByText('Loading the factory.',{exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:/Menu|Tools/i}).first().click();
  await page.getByRole('button',{name:'God',exact:true}).click();
  const panel=page.getByRole('region',{name:'God controls'});

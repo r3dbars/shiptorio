@@ -1,7 +1,7 @@
 import "./GodControls.css";
 import { useEffect, useState, type FormEvent } from 'react';
 
-type Data = {users:{login:string}[];repos:{full_name:string}[];view:{login:string;repo:string;writable:boolean}|null;audit:{id:string;at:number;admin_login:string;action:string;target_repo:string|null;target_user:string|null}[]};
+type Data = {users:{login:string;runs_used:number;calls_used:number;tokens_used:number}[];repos:{full_name:string}[];view:{login:string;repo:string;writable:boolean}|null;audit:{id:string;at:number;admin_login:string;action:string;target_repo:string|null;target_user:string|null;detail_json:string}[]};
 const PROGRESS = JSON.stringify({v:1,xp:0,streak:0,best:0,freezes:0,last:null,days:[],seen:{},unlocked:[],equip:{}});
 export function GodControls({onClose}:{onClose:()=>void}) {
   const [data,setData]=useState<Data|null>(null),[user,setUser]=useState(''),[repo,setRepo]=useState(''),[action,setAction]=useState('view'),[status,setStatus]=useState('Loading controls…');
@@ -29,11 +29,11 @@ export function GodControls({onClose}:{onClose:()=>void}) {
       </select></label>
       {action==='autonomy'&&<label>Level<select value={level} onChange={e=>{setLevel(e.target.value);setPending(null)}}>{['advisor','floor','build','lights_out'].map(l=><option key={l}>{l}</option>)}</select></label>}
       {action==='progress'&&<label>Progress JSON<textarea value={progress} onChange={e=>{setProgress(e.target.value);setPending(null)}} rows={6} style={{width:'100%'}}/></label>}
-      {action==='limits'&&<>{[['Build runs / day',runs,setRuns],['Spark calls / day',calls,setCalls],['Spark tokens / day',tokens,setTokens],['Spark dollars / factory / day',dollars,setDollars]].map(([name,value,setter])=><label key={name as string}>{name as string}<input type="number" min="0" step="any" value={value as string} onChange={e=>{(setter as (v:string)=>void)(e.target.value);setPending(null)}}/></label>)}</>}
+      {action==='limits'&&<><p>Already used today: {data.users.find(u=>u.login===user)?.runs_used??0} runs, {data.users.find(u=>u.login===user)?.calls_used??0} Spark calls, {data.users.find(u=>u.login===user)?.tokens_used??0} tokens. These count toward the new ceilings.</p>{[['Build runs / day',runs,setRuns],['Spark calls / day',calls,setCalls],['Spark tokens / day',tokens,setTokens],['Spark dollars / factory / day',dollars,setDollars]].map(([name,value,setter])=><label key={name as string}>{name as string}<input type="number" min="0" step="any" value={value as string} onChange={e=>{(setter as (v:string)=>void)(e.target.value);setPending(null)}}/></label>)}</>}
       {action==='reset-factory'&&<label>Type {repo} to confirm reset<input value={confirm} onChange={e=>{setConfirm(e.target.value);setPending(null)}} autoComplete="off"/></label>}
       <button type="submit" className="tbtn" disabled={busy}>Review action</button>
       {pending&&<section aria-label="Confirm admin action"><p>Apply {action} for {String(pending.repo??pending.user??'all factories')}? This action is logged.</p><button type="button" className="tbtn hot" disabled={busy} onClick={apply}>Apply this action</button><button type="button" className="tbtn" disabled={busy} onClick={()=>setPending(null)}>Cancel</button></section>}
     </form>}
-    {data&&<details><summary>Last 50 admin actions</summary>{data.audit.map(a=><p key={a.id}>{new Date(a.at).toLocaleString()} · {a.admin_login} · {a.action} · {a.target_repo??a.target_user??'global'}</p>)}</details>}
+    {data&&<details><summary>Last 50 admin actions</summary>{data.audit.map(a=><p key={a.id}>{new Date(a.at).toLocaleString()} · {a.admin_login} · {a.action} · {a.target_repo??a.target_user??'global'} · {JSON.parse(a.detail_json).status??'recorded'}</p>)}</details>}
   </div></section>;
 }

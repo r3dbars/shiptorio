@@ -26,10 +26,10 @@ export const GodAction = z.discriminatedUnion('action', [
 ]);
 export function godRoutes(app:Hono<any>, factory:(env:Env, repo:string)=>Promise<DurableObjectStub<Factory>>|DurableObjectStub<Factory>) {
   app.get('/admin/god/state', async c=>{
-    const env=c.env as Env, user=await currentUser(env,c.req.header('cookie')??null,new URL(c.req.url));
+    const env=c.env as Env, user=await currentUser({...env,DEV_LOGIN:undefined},c.req.header('cookie')??null,new URL(c.req.url));
     if(!configuredAdmin(env,user?.login)) return c.json({error:'admin login required'},403);
     const [users,repos,audit,pauses,view]=await Promise.all([
-      env.DB.prepare('SELECT id, login FROM users ORDER BY login').all(),
+      env.DB.prepare(`SELECT u.id,u.login,COALESCE(c.count,0) AS runs_used,COALESCE(s.calls,0) AS calls_used,COALESCE(s.tokens,0) AS tokens_used FROM users u LEFT JOIN signup_counters c ON c.scope='runs:'||lower(u.login) AND c.bucket=? LEFT JOIN spark_usage s ON s.account='user:'||u.id AND s.day=? ORDER BY u.login`).bind(Math.floor(Date.now()/86400000),new Date().toISOString().slice(0,10)).all(),
       env.DB.prepare('SELECT full_name FROM repos ORDER BY full_name').all(),
       env.DB.prepare('SELECT * FROM admin_audit ORDER BY at DESC, id DESC LIMIT 50').all(),
       env.DB.prepare('SELECT scope, paused FROM admin_controls').all(),readAdminView(env,c.req.raw),
@@ -37,7 +37,7 @@ export function godRoutes(app:Hono<any>, factory:(env:Env, repo:string)=>Promise
     return c.json({users:users.results,repos:repos.results,audit:audit.results,pauses:pauses.results,view:view&&{login:view.login,repo:view.repo,writable:view.writable}});
   });
   app.post('/admin/god', async c=>{
-    const env=c.env as Env, operator=await currentUser(env,c.req.header('cookie')??null,new URL(c.req.url));
+    const env=c.env as Env, operator=await currentUser({...env,DEV_LOGIN:undefined},c.req.header('cookie')??null,new URL(c.req.url));
     if(!operator || !configuredAdmin(env,operator.login)) return c.json({error:'admin login required'},403);
     if(c.req.header('origin')!==new URL(c.req.url).origin) return c.json({error:'invalid origin'},403);
     const text=await c.req.text(); if(text.length>35000) return c.json({error:'too large'},413);
