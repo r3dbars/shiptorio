@@ -2,6 +2,7 @@ import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
+import { CODEX_EDIT_SCHEMA, codexEditPrompt, parseCodexEdits, applyCodexEdits } from "./codex-edits";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
@@ -202,12 +203,15 @@ async function execute(job: Job, pair: Pairing) {
         console.log(`Running local model ${local!.model} in isolated checkout ${job.id}; geothermal power, Spark planned the task.`);
         output = JSON.stringify(await runLocalAssembler(job, work, local!));
       } else {
-        const prompt = assemblerPrompt(job, await assemblerContext(sandbox, job.allowedPaths));
+        const context = await assemblerContext(sandbox, job.allowedPaths);
+        const prompt = job.harness === "codex" ? codexEditPrompt(job, context) : assemblerPrompt(job, context);
+        const schema = job.harness === "codex" ? resolve(jobRoot, "codex-edit-schema.json") : undefined;
+        if (schema) await Bun.write(schema, JSON.stringify(CODEX_EDIT_SCHEMA), { mode: 0o600 });
         console.log(`Running ${job.harness} in isolated checkout ${job.id}; Spark planned the task.`);
         const executable = harnessPath(job.harness);
         if (!executable) throw new Error("Assigned harness is unavailable");
         agentSandbox = await checkSandbox(jobRoot, { home: authHome, executable });
-        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt)], work, { timeout: Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now())) });
+        const result = await agentSandbox.run([executable, ...harnessArgs(job.harness, prompt, schema)], work, { timeout: Math.max(1, Math.min(15 * 60 * 1000, job.deadline - Date.now())) });
         if (result.code) {
           // The redacted stderr tail stays on this Mac (service-error.log); the server only sees the generic failure.
           console.error(`${job.harness} exited ${result.code}: ${redactText(result.err.trim().slice(-2000))}`);
@@ -220,6 +224,7 @@ async function execute(job: Job, pair: Pairing) {
         }
         output = result.out;
         await agentSandbox.close(); agentSandbox = undefined;
+        if (job.harness === "codex") await applyCodexEdits(sandbox, parseCodexEdits(output, job.allowedPaths), job.allowedPaths);
       }
       // Preserve local evidence; never forward raw agent output to the server/browser.
       await Bun.write(resolve(root, ".work", `${job.id}.agent.log`), output, { mode: 0o600 });
