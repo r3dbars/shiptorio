@@ -18,13 +18,13 @@ function fixture() {
   const DB = {
     prepare(sql: string) {
       let args: any[] = [];
-      const statement = { bind(...values: any[]) { args = values; return statement; },
+      const statement = { sql, bind(...values: any[]) { args = values; return statement; },
         async first() { return sqlite.query(sql).get(...args); },
         async all() { return { results: sqlite.query(sql).all(...args) }; },
         async run() { return { meta: sqlite.query(sql).run(...args) }; } };
       return statement;
     },
-    async batch(statements: any[]) { return Promise.all(statements.map(s => s.run())); },
+    async batch(statements: any[]) { return Promise.all(statements.map(s => /^\s*SELECT\b/i.test(s.sql) ? s.all() : s.run())); },
   };
   const objects = new Map<string, ReturnType<typeof create>>();
   const env: any = { ...browserEnv, DB, GITHUB_APP_ID: "40", GITHUB_APP_PRIVATE_KEY: "not-used", FACTORY: { idFromName: (name: string) => name, get(name: string) { if (!objects.has(name)) objects.set(name, create()); return objects.get(name)!.factory; } } };
