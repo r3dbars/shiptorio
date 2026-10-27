@@ -34,7 +34,11 @@ async function fixture() {
     put: async (key: string, value: string) => { kv.set(key, value); },
     delete: async (key: string) => { kv.delete(key); },
     list: async ({cursor, prefix}: {cursor?: string; prefix?: string}) => { const keys = [...kv.keys()].filter(key => !prefix || key.startsWith(prefix)).sort(); const offset = Number(cursor ?? 0); return { keys: keys.slice(offset, offset + 2).map(name => ({name})), list_complete: offset + 2 >= keys.length, cursor: String(offset + 2) }; },
-  }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => objects.get(repo)!.factory }, ASSETS: {fetch: async () => new Response("app")} } as unknown as Env;
+  }, FACTORY: { idFromName: (repo: string) => repo, get: (repo: string) => repo.startsWith("security:") ? {
+    // Rate-limit behavior is covered by the security/guest suites; keep these fixtures focused on erasure.
+    securityLimit: async () => ({ allowed: true, retryAfter: 0 }),
+    eraseAccountData: () => objects.get(repo)?.factory.eraseAccountData(),
+  } : objects.get(repo)!.factory }, ASSETS: {fetch: async () => new Response("app")} } as unknown as Env;
   for (const repo of ["alice/app", "bob/app", "org/shared", "github-installations", await securityObjectName("user:11"), await securityObjectName("user:alice")]) {
     const record = { data: new Map<string, unknown>([
       ["state", FactoryState.parse({repo, baseBranch: "main", districts: [], ...starterLine(), items: [{id: "gh-1", kind: "bug", source: "github_issue", title: "Fix", district: "/", state: "ore", attempts: 0, updatedAt: 1}], science: {red: 0, green: 0, grey: 0, blue: 0}, trust: 0.5, tick: 0, research: {done: ["types"], spent: 0}})],

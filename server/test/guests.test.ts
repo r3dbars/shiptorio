@@ -5,7 +5,7 @@ import { currentUser, readPrefs, readProgress, upsertUser, writePrefs, writeProg
 import { makeSessionCookie } from "../src/session";
 import { testD1 } from "./d1-fixture";
 import { unlimitedFactory } from "./browser-fixture";
-mock.module("cloudflare:workers", () => ({ DurableObject: class {} }));
+mock.module("cloudflare:workers", () => ({ DurableObject: class { ctx: unknown; env: unknown; constructor(ctx: unknown, env: unknown) { this.ctx = ctx; this.env = env; } } }));
 const { testApp: app } = await import("./app-fixture");
 const { authCallback } = await import("../src/auth");
 const { default: worker } = await import("../src/index");

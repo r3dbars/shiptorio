@@ -1,3 +1,4 @@
+import { unlimitedFactory } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
 import { makeSessionCookie } from "../src/session";
 import { securityHeaders } from "../src/security";
@@ -33,7 +34,7 @@ test("public docs survive password and waitlist gates while private APIs stay ga
   for (const mode of ["password", "waitlist"]) {
     let assets = 0;
     const env = {
-      SESSION_SECRET: "docs-session", APP_PASSWORD: "docs-password", SIGNUP_GATE_MODE: mode,
+      SESSION_SECRET: "docs-session", APP_PASSWORD: "docs-password", SIGNUP_GATE_MODE: mode, FACTORY: unlimitedFactory,
       ASSETS: { fetch: async (request: Request) => {
         assets++;
         return new Response("public documentation", { status: new URL(request.url).pathname.includes("missing") ? 404 : 200 });
