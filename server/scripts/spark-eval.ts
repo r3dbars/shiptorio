@@ -119,7 +119,7 @@ const prepared = prepare();
 console.log(`Validated ${prepared.length} seeded patches, witnesses and supplied base/head regression tests.`);
 if (args.has("--check")) process.exit(0);
 if (!process.env.META_API_KEY) throw new Error("Set META_API_KEY in the environment; no paid calls made.");
-const env: SparkEnv = { ...localBudget(), META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: "muse-spark-1.3", SPARK_DAILY_CALLS: "400", SPARK_DAILY_TOKENS: "1000000" };
+const env: SparkEnv = { ...localBudget(), META_API_KEY: process.env.META_API_KEY, SPARK_MODEL: "muse-spark-1.3", SPARK_DISABLED: process.env.SPARK_DISABLED, SPARK_DAILY_CALLS: "400", SPARK_DAILY_TOKENS: "1000000" };
 const startBudget = await budgetUsage(env,await env.budgetAccount!());
 const remainingTokens = Math.max(0,1000000-startBudget.tokens), remainingCalls = Math.max(0,400-startBudget.calls);
 console.log(`Cost BEFORE calls: <= ${dollars(remainingTokens*4.25/1000000)} (all remaining tokens at output rate); typical 15×${REVIEW_TURNS} = <=90 calls before transport retries. Remaining daily allowance: ${remainingCalls}/400 calls, ${remainingTokens}/1000000 tokens. Unknown usage retains reservations. Actual cost printed per case.`);
@@ -139,10 +139,15 @@ const observed = (async (input: Parameters<typeof fetch>[0], init?: Parameters<t
   try {
     const response = await realFetch(input,init);
     call.status = response.status;
-    const body = await response.clone().json() as { usage?: TokenUsage };
-    call.response = body; call.usage = body.usage;
-    const cost = measuredCost(body.usage);
-    call.estimatedUsd = cost ? cost.cost/NANO_USD : null;
+    // An invalid/non-JSON response must reach production unchanged; observation never causes a retry.
+    try {
+      const text = await response.clone().text();
+      let body: { usage?: TokenUsage };
+      try { body = JSON.parse(text); } catch { call.response = text; return response; }
+      call.response = body; call.usage = body?.usage;
+      const cost = measuredCost(body?.usage);
+      call.estimatedUsd = cost ? cost.cost/NANO_USD : null;
+    } catch { call.error = "Unable to observe response body"; }
     return response;
   } catch(error) { call.error = error instanceof Error ? error.message : "HTTP failure"; throw error; }
 }) as typeof fetch;
