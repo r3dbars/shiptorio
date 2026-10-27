@@ -1,3 +1,4 @@
+import { identityAccountId } from "./account-identity";
 import { factoryDeleted } from "./account-lifecycle";
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as Sentry from '@sentry/cloudflare';
@@ -32,7 +33,10 @@ export function log(level: LogEntry['level'], event: string, fields: Record<stri
     const mayRetain = async () => {
       if (!ctx.env.DB) return true;
       if (entry.repo && await factoryDeleted(ctx.env.DB, entry.repo)) return false;
-      if (entry.userId && !await ctx.env.DB.prepare("SELECT id FROM users WHERE lower(login) = ?").bind(entry.userId.toLowerCase()).first()) return false;
+      if (entry.userId) {
+        const id = identityAccountId(entry.userId);
+        if (id === null || !await ctx.env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first()) return false;
+      }
       return true;
     };
     const persist = Promise.resolve().then(async () => {
