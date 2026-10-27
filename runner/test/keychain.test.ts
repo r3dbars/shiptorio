@@ -71,25 +71,37 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== 
     const bin = join(root, "bin"); await mkdir(bin);
     for (const name of ["codex", "claude"]) {
       const executable = join(bin, name);
-      await Bun.write(executable, `#!/bin/sh\n[ "$HOME" = ${JSON.stringify(home)} ] || exit 9\n[ -z "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN$SHIPTORIO_RUNNER_TOKEN" ] || exit 8\nprintf 'dedicated-provider-called'\n`);
+      await Bun.write(executable, `#!/bin/sh
+[ "$HOME" = ${JSON.stringify(home)} ] || exit 9
+[ -z "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN$SHIPTORIO_RUNNER_TOKEN" ] || exit 8
+printf '%s\\n' "$1 $2" >> "$HOME/.codex/${name}-invoked"
+[ "$CI" != true ] || printf 'sandbox' > "$HOME/.codex/${name}-sandbox-invoked"
+printf 'dedicated-provider-called'
+`);
       await chmod(executable, 0o700);
     }
-    const invoke = async (provider: string) => {
-      const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), "login", provider], {
+    const invoke = async (...args: string[]) => {
+      const child = Bun.spawn([process.execPath, join(import.meta.dir, "../src/cli.ts"), ...args], {
         env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root }, stdin: "ignore", stdout: "pipe", stderr: "pipe",
       });
       const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
       return { out, err, code };
     };
-    const codex = await invoke("codex");
+    const codex = await invoke("login", "codex");
     expect(codex.code).toBe(0);
     expect(codex.out).toContain("dedicated-provider-called");
     expect(codex.err).toContain("Claude Code is unavailable: its private Keychain could not be unlocked");
     expect(codex.err).not.toContain(original);
-    const claude = await invoke("claude");
+    const claude = await invoke("login", "claude");
     expect(claude.code).not.toBe(0);
     expect(claude.out).not.toContain("dedicated-provider-called");
     expect(claude.err).toContain("Repair the private Keychain before signing in to Claude");
+    const doctor = await invoke("doctor");
+    expect(doctor.code).not.toBe(0);
+    expect(doctor.out).toContain("FAIL auth:claude_code");
+    expect(doctor.out).toContain("FAIL sandbox:claude_code");
+    expect(await Bun.file(join(home, ".codex/codex-sandbox-invoked")).exists()).toBe(true);
+    expect(await Bun.file(join(home, ".codex/claude-invoked")).exists()).toBe(false);
     expect(await readFile(password, "utf8")).not.toBe(original);
   } finally {
     if (home) await run(["delete-keychain", join(home, "Library/Keychains/shiptorio.keychain-db")], home).catch(() => {});
