@@ -32,12 +32,25 @@ test('quota warning → cap → raise link → automatic recovery and retry cool
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(card).toContainText('limit reached');
   // Owner administration stays in a new tab so returning to the factory refreshes the live card.
-  await page.route('**/admin/signup?login=fixture', route => route.fulfill({ contentType: 'text/html', body: '<title>Shiptorio quota admin</title><h1>Signup and quotas</h1>' }));
   const popupPromise = page.waitForEvent('popup');
   await card.getByRole('link', { name: 'Raise limit' }).click();
   const popup = await popupPromise;
   await popup.waitForLoadState();
   expect(popup.url()).toContain('/admin/signup?login=fixture');
+  const runInput = popup.getByRole('spinbutton', { name: 'Runs/day (UTC)', exact: true });
+  await expect(runInput).toHaveValue('20');
+  await runInput.fill('25');
+  const saved = popup.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/admin/signup');
+  await popup.getByRole('button', { name: 'Save access and quotas', exact: true }).click();
+  const response = await saved;
+  expect(response.status(), await response.text()).toBe(200);
+  expect(response.request().headers().origin).toBe(new URL(info.project.use.baseURL as string).origin);
+  await expect(runInput).toHaveValue('25');
+  // Reload proves the change reached D1 rather than merely changing the input's local value.
+  await popup.reload();
+  await expect(runInput).toHaveValue('25');
+  await expect(popup.getByRole('spinbutton', { name: 'Factories', exact: true })).toHaveValue('51');
+  await expect(popup.getByRole('spinbutton', { name: 'Repos', exact: true })).toHaveValue('51');
   await popup.close();
   used = 0;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
