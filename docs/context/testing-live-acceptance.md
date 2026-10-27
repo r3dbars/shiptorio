@@ -61,8 +61,8 @@ identities. No Shiptorio #170 runner or pairing was changed by that run.
 ## Historical deployment handoff
 
 At the earlier checkpoint, GitHub Actions refused to start Deploy run 40439788803 because of an account payment /
-spending-limit block (no job steps or Cloudflare mutation). The verified #307 commit is
-not live. Production independently returned `be3a81bc177932dcfc4b831a8b9d58cbdfafab77`.
+spending-limit block (no job steps or Cloudflare mutation). The verified #307 commit was
+not live at that checkpoint. Production independently returned `be3a81bc177932dcfc4b831a8b9d58cbdfafab77`.
 
 A detached exact-commit checkout had a successful build and Wrangler dry run; approval was requested
 before any local deployment, and none was attempted by that acceptance run. There were no migration or
