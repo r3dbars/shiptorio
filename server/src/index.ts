@@ -25,9 +25,9 @@ import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./gith
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
 import { isAllowed } from "./session";
-import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
 import { joinWaitlist } from "./waitlist";
-import { landingPage, publicFile } from "./landing";
+import { judgePage, landingPage, publicFile } from "./landing";
 
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
@@ -174,9 +174,14 @@ app.use("*", async (c, next) => {
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
   const open = await publicRoute(c.req.raw, c.env);
+  if (open === "judge") return judgePage(c.req.raw, c.env.ASSETS);
   if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
   if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
-  if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
+  if (open === "file") {
+    const response = await publicFile(c.req.raw, c.env.ASSETS);
+    if (isJudgeAsset(c.req.path)) response.headers.set("Cache-Control", browserCacheControl(c.req.raw, response.status));
+    return response;
+  }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
   const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
   if (denied) { c.set("gateResponse", true); return denied; }

@@ -37,3 +37,11 @@ export async function withRange(request: Request, response: Response): Promise<R
   headers.set("content-length", String(end - start + 1));
   return new Response(body.slice(start, end + 1), { status: 206, headers });
 }
+
+/** Explicit rewrite: Workers Assets does not assume an SPA fallback for /judge. */
+export async function judgePage(request: Request, assets: Fetcher): Promise<Response> {
+  const page = await assets.fetch(new Request(new URL("/index.html", request.url), { method: request.method }));
+  const response = new Response(page.body, page);
+  response.headers.set("cache-control", "no-store");
+  return response;
+}

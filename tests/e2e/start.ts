@@ -1,7 +1,8 @@
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-const occupied = await fetch('http://localhost:8799/api/version', { signal: AbortSignal.timeout(1000) }).then(() => true, () => false);
-if (occupied) throw new Error('Test port 8799 is already in use; stop the previous fixture server first');
+const port = process.env.SHIPTORIO_TEST_PORT || '8799';
+const occupied = await fetch(`http://localhost:${port}/api/version`, { signal: AbortSignal.timeout(1000) }).then(() => true, () => false);
+if (occupied) throw new Error(`Test port ${port} is already in use; stop the previous fixture server first`);
 const dir = resolve('.test-runtime');
 await mkdir(dir, { recursive: true });
 await rm(`${dir}/state`, { recursive: true, force: true });
@@ -22,4 +23,4 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => { 
 const run = async (args: string[]) => { const p = child = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' }); if (await p.exited) throw new Error(args.join(' ')); };
 await run(['bun', 'run', 'build']);
 await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'd1', 'migrations', 'apply', 'test', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`]);
-await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', '8799', '--inspector-port', '9249']);
+await run(['node', 'server/node_modules/wrangler/wrangler-dist/cli.js', 'dev', '--local', '--config', `${dir}/wrangler.json`, '--persist-to', `${dir}/state`, '--port', port, '--inspector-port', '0']);
