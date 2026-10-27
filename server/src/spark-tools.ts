@@ -154,11 +154,13 @@ export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: str
   // Approved paths may name a new doc that isn't in the tree yet; reading it says so.
   const withApproved: Toolbox = { ...box, paths: [...new Set([...box.paths, ...allowedPaths])], issue: () => JSON.stringify(task) };
   const tools = availableTools(withApproved);
-  const observations: Observation[] = [];
+  // The issue is always the starting evidence, so Spark spends no turn (and no round trip) fetching it.
+  const observations: Observation[] = [{ tool: "read_issue", result: redactText(JSON.stringify(task).slice(0, 8000)) }];
   const cache = new Map<string, string | null>();
-  const seen = new Set<string>();
+  const seen = new Set<string>(["read_issue"]);
   const readFiles = new Set<string>();
-  let readIssue = false;
+  const readIssue = true;
+  await record({ tool: "read_issue", reason: "The issue is the starting evidence for every plan.", result: `Read the issue (${observations[0].result.length} characters)`, at: Date.now() });
   // A repeated read (the issue again, a file already read) gets a short reminder and doesn't spend a turn,
   // so Spark can't burn its budget re-reading. Two free repeats, then they count.
   let freeRepeats = 2;
@@ -172,7 +174,7 @@ export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: str
       "read the issue, find the code it is about (search_code, list_files), read it, and check the factory's scars and the player's past calls when they matter. " +
       `Read tools: ${tools.map(t => TOOL_GUIDE[t]).join("; ")}. ` +
       "Finishing tools: assign_job {plan: plain-language instructions without code, acceptance: string[], files: exact paths to EDIT, heeded: string[]}; ask_player {reason} when the issue is too unclear to plan. " +
-      "You MUST read_issue and read_file at least one file before assign_job. " +
+      "The issue is already in observations; don't read it again. You MUST read_file at least one file before assign_job. " +
       "When rework is present, a station sent the last attempt back: the new plan MUST fix exactly what rework says first (read the code it names), name that problem in its first sentence, and acceptance MUST include a check that the rejected problem is gone. Never just restate the original task. " +
       (opts.widen
         ? "files may come from approvedPaths or from files you read with read_file; the player approves the final scope. "
@@ -214,7 +216,6 @@ export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: str
     }
     seen.add(key);
     const result = (await runReadTool(withApproved, tool, out, cache)) ?? `${tool} isn't available here.`;
-    if (tool === "read_issue") readIssue = true;
     if (tool === "read_file" && out.path && cache.has(out.path.replace(/^\.?\//, ""))) readFiles.add(out.path.replace(/^\.?\//, ""));
     await record({ tool, reason, result: `${tool === "read_issue" ? "Read the issue" : key} (${result.length} characters)`, at: Date.now() });
     observations.push({ tool, ...(arg ? { args: arg } : {}), result });

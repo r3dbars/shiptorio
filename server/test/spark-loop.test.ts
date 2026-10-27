@@ -24,8 +24,7 @@ test("a repeated read doesn't spend a planning turn or show up as a step", async
   const original = globalThis.fetch;
   const script = [
     { tool: "read_issue", reason: "read it" },
-    { tool: "read_issue", reason: "read it again" },
-    { tool: "read_issue", reason: "and again" },
+    { tool: "read_issue", reason: "read it again" }, // the issue is pre-read, so both are free repeats
     { tool: "read_file", path: "web/src/a.ts", reason: "a" },
     { tool: "read_file", path: "web/src/b.ts", reason: "b" },
     { tool: "read_file", path: "web/src/c.ts", reason: "c" },
