@@ -14,6 +14,10 @@ on:
         description: Generate Linux visual baselines for review
         type: boolean
         default: false
+      browser_grep:
+        description: Optional focused browser diagnostic (empty runs every test)
+        type: string
+        default: ''
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     # docs/site/*.md is the public docs site (served at /docs), so it builds and deploys like code
@@ -67,6 +71,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    # Each viewport keeps its serial fixture, without making all three 90s
+    # replays and visual checks compete with one job's 12-minute deadline.
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop, iphone-14, pixel-7]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -80,11 +90,20 @@ jobs:
       - name: Check browser libraries
         run: |
           node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
-      - run: bun run test:e2e ${{ inputs.update_baselines && '--update-snapshots' || '' }}
+      - name: Run browser tests
+        env:
+          BROWSER_PROJECT: ${{ matrix.project }}
+          BROWSER_GREP: ${{ inputs.browser_grep }}
+          UPDATE_BASELINES: ${{ inputs.update_baselines }}
+        run: |
+          args=("--project=$BROWSER_PROJECT")
+          if [ -n "$BROWSER_GREP" ]; then args+=(--grep "$BROWSER_GREP"); fi
+          if [ "$UPDATE_BASELINES" = true ]; then args+=(--update-snapshots=all); fi
+          bun run test:e2e "${args[@]}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-evidence
+          name: browser-evidence-${{ matrix.project }}
           path: |
             test-results/
             playwright-report/
