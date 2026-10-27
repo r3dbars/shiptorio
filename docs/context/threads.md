@@ -380,3 +380,12 @@ Codex: the operational production-owner upsert replaced raised call/token limits
 with NULL on every deploy. Preserve existing values, including explicit zero; a
 new owner row still uses normal defaults. Regression executes the actual deploy SQL
 twice and checks raised, zero and fresh-row cases. No usage ledger is reset.
+
+## Browser verification rendering mode
+
+Codex: the final release desktop trace spent tens of seconds on ordinary clicks
+and document readiness, leaving only six seconds for the final rocket assertion.
+Use Chromium WebGL-only SwiftShader fallback rather than SwANGLE for the whole
+compositor. Preserve actual 3D rendering and every test assertion, deadline and
+visual baseline. Extracted narrowly from the CI performance lane; full370 stays
+for the next batch. Failed40574810643 is retained.
