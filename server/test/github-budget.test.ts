@@ -287,3 +287,43 @@ it("adds exactly two D1 statements on an uncontended successful installation req
     expect(statements.filter(sql => sql.includes("excluded.failures") || sql.includes("AND failures = ?"))).toHaveLength(2);
   } finally { prepare.mockRestore(); }
 });
+
+it("accepts authorized 304 when its selected validator expires in flight, then fetches unconditionally", async () => {
+  const token = crypto.randomUUID(), now = Date.now();
+  const clock = spyOn(Date, "now").mockReturnValue(now);
+  const conditionals: (string | null)[] = [];
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    conditionals.push(new Headers(init?.headers).get("if-none-match"));
+    if (conditionals.length === 2) {
+      clock.mockReturnValue(now + 300010);
+      return new Response(null, { status: 304 });
+    }
+    return Response.json({ body: conditionals.length === 1 ? "original" : "updated" }, { headers: { etag: '"one"' } });
+  }) as unknown as typeof fetch;
+  try {
+    expect(await gh("/repos/a/b/issues/1", token)).toEqual({ body: "original" });
+    clock.mockReturnValue(now + 299999);
+    expect(await gh("/repos/a/b/issues/1", token)).toEqual({ body: "original" });
+    expect(await gh("/repos/a/b/issues/1", token)).toEqual({ body: "updated" });
+    expect(conditionals).toEqual([null, '"one"', null]);
+  } finally { clock.mockRestore(); }
+});
+
+for (const status of [403, 404]) it(`never serves an in-flight expired candidate after GitHub denies access (${status})`, async () => {
+  const token = crypto.randomUUID(), now = Date.now();
+  const clock = spyOn(Date, "now").mockReturnValue(now);
+  let calls = 0;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    if (++calls === 1) return Response.json({ body: "private" }, { headers: { etag: '"one"' } });
+    expect(new Headers(init?.headers).get("if-none-match")).toBe('"one"');
+    clock.mockReturnValue(now + 300010);
+    return Response.json({ message: "Access denied" }, { status });
+  }) as unknown as typeof fetch;
+  try {
+    await gh("/repos/a/b/issues/1", token);
+    clock.mockReturnValue(now + 299999);
+    if (status === 404) await expect(gh("/repos/a/b/issues/1", token)).rejects.toMatchObject({ status });
+    else await expect(gh("/repos/a/b/issues/1", token)).rejects.toMatchObject({ cause: { status } });
+    expect(calls).toBe(2);
+  } finally { clock.mockRestore(); }
+});

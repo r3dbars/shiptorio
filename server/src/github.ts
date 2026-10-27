@@ -187,7 +187,10 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
       boundedSet(cooldowns, scope, { next, failures });
       if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
       if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
-      if (res.status === 304 && cached && cached.expires > Date.now()) return structuredClone(cached.value) as T;
+      // The candidate was fresh when selected; this authenticated 304 validates its
+      // exact ETag even if its storage TTL elapsed in flight. Do not extend that TTL:
+      // the next request must fetch unconditionally once the original entry expires.
+      if (res.status === 304 && cached) return structuredClone(cached.value) as T;
       // Never serve stale data on errors, including revoked access disguised as 404.
       if (!res.ok || res.status === 204) {
         if (cacheKey && cached) await readCache.delete(cacheKey, owner?.env);
