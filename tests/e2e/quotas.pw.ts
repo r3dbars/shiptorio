@@ -6,6 +6,7 @@ async function ownerSession(page: Page, context: BrowserContext, baseURL: string
   }));
 }
 async function saveNativeQuota(admin: Page, baseURL: string) {
+  await expect(admin.locator('meta[name="viewport"]')).toHaveAttribute('content', 'width=device-width, initial-scale=1');
   const runInput = admin.getByRole('spinbutton', { name: 'Runs/day (UTC)', exact: true });
   await expect(runInput).toHaveValue('20');
   await runInput.fill('25');

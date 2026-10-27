@@ -1,2 +1,4 @@
-/* Isolate UI geometry/text from the moving WebGL backdrop for stable card baselines. */
-.card { backdrop-filter: none !important; background: #1b2448 !important; }
+/* Isolate UI geometry/text from the moving WebGL backdrop during card snapshots.
+   Full-map evidence uses page.screenshot() and does not load this stylesheet. */
+canvas { visibility: hidden !important; }
+.nrow { background: rgb(30, 20, 4) !important; }
