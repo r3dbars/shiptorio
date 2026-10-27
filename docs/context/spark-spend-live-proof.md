@@ -32,4 +32,4 @@ D1 and the authenticated owner endpoint agree with `/admin`. Integer cost check:
 
 The rendered live admin row shows `5 / 2795 / 2231 / $0.0126 / $5.00 / 0 unmeasured`. The rendered owner chip shows approximately $0.01, its accessible label shows $0.0126, and the budget panel shows 5 calls, 2,795 input, 2,231 output and $0.0126. Screenshots were captured from the real signed-in site; the owner tab had no captured console warnings/errors.
 
-The plan remains behind the approval gate and occupies the single job slot. The run counter did not change during planning. This verifies the production factory → Meta → D1 → admin/HUD path; it does not claim a local code build, fix PR or launch for issue #10.
+The verification ended with the plan behind the approval gate. A later read showed `Player declined this plan`, with build usage still 20/21. The run counter did not change during planning or decline. This verifies the production factory → Meta → D1 → admin/HUD path; it does not claim a local code build, fix PR or launch for issue #10.
