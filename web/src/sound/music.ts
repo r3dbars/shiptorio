@@ -112,3 +112,37 @@ export function arpNotes(chord: number[]): number[] {
 export function padCutoff(intensity: number, tension: number): number {
   return Math.round(500 + intensity * 1700 - tension * 300);
 }
+
+// Foundry score v2: arrangement decisions stay independent of the audio clock.
+export type MusicState = "idle" | "working" | "blocked" | "launch";
+export const BAR_SECONDS = EIGHTH * STEPS_PER_BAR;
+export const FADE_SECONDS = 0.48;
+export const MUSIC_BUDGET = { payloadBytes: 3_000_000, firstSetBytes: 600_000, decodedBytes: 40_000_000,
+  actualPayloadBytes: 0, actualDecodedBytes: 0 } as const; // oscillator score; no stems
+
+export function stateFor(intensity: number, tension: number, launch: boolean, previous: MusicState = "idle"): MusicState {
+  if (launch) return "launch";
+  if (tension >= 0.5 || (previous === "blocked" && tension >= 0.38)) return "blocked";
+  return intensity >= (previous === "working" ? 0.1 : 0.15) ? "working" : "idle";
+}
+
+export interface Arrangement { rhythm: boolean; bass: boolean; counter: boolean; theme: boolean }
+export function arrangementFor(intensity: number, previous?: Arrangement): Arrangement {
+  const on = (key: keyof Arrangement, threshold: number) => intensity >= threshold || (!!previous?.[key] && intensity >= threshold - 0.08);
+  return { rhythm: on("rhythm", 0.15), bass: on("bass", 0.28), counter: on("counter", 0.46), theme: on("theme", 0.65) };
+}
+
+export function nextBarTime(time: number, origin = 0): number {
+  return origin + Math.ceil(Math.max(0, time - origin) / BAR_SECONDS - 1e-9) * BAR_SECONDS;
+}
+
+export function crossfadeGains(progress: number): [number, number] {
+  const angle = clamp(progress) * Math.PI / 2;
+  return [Math.cos(angle), Math.sin(angle)];
+}
+
+// Resume at the next eighth after a browser stall; preserve absolute phrase/bar position.
+export function transportAt(time: number, origin: number) {
+  const slot = Math.max(0, Math.ceil((time-origin)/EIGHTH - 1e-9));
+  return { time: origin+slot*EIGHTH, step: slot%STEPS_PER_BAR, bar: Math.floor(slot/STEPS_PER_BAR) };
+}

@@ -19,6 +19,21 @@ function pick(): WorldStyle {
 export const WORLD: WorldStyle = pick();
 export const IRON = WORLD === "iron";
 
+// The shaft (?world=shaft): the vertical mine-to-launch factory (map/shaft/), behind a flag until it matches the
+// mockup. Remembered on this browser; ?world=iron or ?world=classic turns it off again.
+const SHAFT_KEY = "shiptorio:map";
+function pickShaft(): boolean {
+  try {
+    const w = new URLSearchParams(globalThis.location?.search ?? "").get("world");
+    if (w === "shaft") localStorage.setItem(SHAFT_KEY, "shaft");
+    else if (w) localStorage.removeItem(SHAFT_KEY);
+    return w === "shaft" || (!w && localStorage.getItem(SHAFT_KEY) === "shaft");
+  } catch {
+    return false; // no location or storage (tests)
+  }
+}
+export const SHAFT = pickShaft();
+
 // Lights: three r155+ is physically based, so the reference's r128 intensities are × π.
 const L = Math.PI;
 

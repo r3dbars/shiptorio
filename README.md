@@ -43,3 +43,11 @@ the real factory for that repo.
 | `briefs/` | Briefs for the other lanes (Codex, Muse Code) |
 
 `AGENTS.md` has the full context for coding agents. `docs/SETUP.md` covers going live.
+
+## Original game music
+
+Compare the original score with the composed foundry theme using `?music=2`.
+Music starts after a gesture; its switch and separate volume are in Settings.
+“Up from the Mine”, its original synthesized instruments and generated audio are
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/); see
+[the music inventory](web/public/music/LICENSES.md). There are no sampled audio assets.
