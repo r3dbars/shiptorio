@@ -150,8 +150,8 @@ try {
   await step("open the factory", async () => {
     await page.getByRole("button", { name: new RegExp(stub.state.repo) }).click();
     await page.waitForURL((u) => u.searchParams.get("repo") === stub.state.repo, { timeout: 10000 });
-    // the live map is up when the top bar shows and the factory has its folders
-    await page.locator(".topbar").waitFor({ timeout: 30000 });
+    // the live map is up when the floor card (top-left HUD) shows and the factory has its folders
+    await page.locator(".floorcard").waitFor({ timeout: 30000 });
   });
   await step("real factory work reaches the agent handoff", async () => {
     await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: 20000 });

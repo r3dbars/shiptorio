@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { Ref } from "react";
 
 import { savePref } from "./account";
 import type { FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
@@ -7,14 +8,14 @@ import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
 import { readConfig } from "./source";
 import { SCENARIOS } from "./sim/engine";
-import { useFactory, type LogLine } from "./store";
-import { NextMove } from "./ui/NextMove";
+import { useFactory } from "./store";
+import { NextMove, type NeedRow } from "./ui/NextMove";
+import { FloorCard, Ticker, type Count } from "./ui/Hud";
 import { SupportPanel, supportReviewTarget } from "./ui/SupportPanel";
 import { whatsNext, type NudgeAction } from "./ui/whatsNext";
 import { StationPanel } from "./ui/StationPanel";
 import { SoundControl } from "./ui/SoundControl";
 import { ActivityTray } from "./ui/ActivityTray";
-import { Mark } from "./ui/Logo";
 import { Icon } from "./ui/icons";
 import { Coach, lessonFocus, useTutorial } from "./ui/tutorial";
 import { FieldGuide, GUIDE_TOTAL, guideMet } from "./ui/FieldGuide";
@@ -33,10 +34,12 @@ import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
-import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
+
+const ON_LINE = new Set<Item["state"]>(["working", "inspecting", "rejected", "passed", "on_pad"]);
 
 const codePath = (district: string) => (district === "/" ? "/" : `/${district}`);
 
@@ -64,23 +67,25 @@ function fmtLead(ms?: number) {
   return m < 90 ? `${m}m` : `${Math.round(m / 60)}h`;
 }
 
-// Big news from the floor log shows up as a caption for a few seconds.
-function useCaption(log: LogLine[]) {
-  const [caption, setCaption] = useState<{ title: string; sub: string }>({ title: MAP.captionTitle, sub: MAP.captionSub });
-  const [on, setOn] = useState(true); // the text stays while the box fades out
-  const last = log[log.length - 1];
-  useEffect(() => {
-    if (!last || last.level === "info") return;
-    const [title, ...rest] = last.text.split(": ");
-    setCaption({ title, sub: rest.join(": ") });
-    setOn(true);
-  }, [last]);
-  useEffect(() => {
-    if (!on) return;
-    const t = setTimeout(() => setOn(false), 2800);
-    return () => clearTimeout(t);
-  }, [caption, on]);
-  return { ...caption, on };
+// The HUD's plates measure themselves into CSS variables on the floor, so the plates around them stack without
+// overlapping (the mockup's layout(): on a phone the needs tray and the ticker sit right above the controls).
+function useHeightVars() {
+  const host = useRef<HTMLElement | null>(null);
+  const refs = useMemo(() => {
+    const live = new Map<string, ResizeObserver>();
+    const make = (name: string): Ref<HTMLElement> => (el) => {
+      live.get(name)?.disconnect();
+      live.delete(name);
+      const set = (v: string) => host.current?.style.setProperty(name, v);
+      if (!el) return set("0px");
+      if (typeof ResizeObserver === "undefined") return;
+      const ro = new ResizeObserver(() => set(`${el.offsetHeight}px`));
+      ro.observe(el);
+      live.set(name, ro);
+    };
+    return { top: make("--top-h"), ctrl: make("--ctrl-h"), needs: make("--needs-h") };
+  }, []);
+  return { host, refs };
 }
 
 // Next free spot for a new assembler, stacked beside the existing ones.
@@ -114,7 +119,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
   const tourly = useIntroTour(intro ? state : null, send, tourDone, login);
-  const caption = useCaption(log);
+  const hv = useHeightVars();
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0");
   const { show } = tour;
@@ -238,6 +243,48 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     return out;
   }, [state, ping, narrow]);
   const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
+  const blocked = state?.machines.filter((m) => m.state === "blocked") ?? [];
+
+  // The floor card's one row of numbers, in the mockup's order: mined, on line, shipped, rework, needs you.
+  const F = HUD.floor;
+  const counts: Count[] = [];
+  if (show("line")) {
+    counts.push({ key: "mined", label: F.mined, value: items.length, title: F.minedTitle });
+    counts.push({ key: "line", label: F.onLine, value: items.filter((i) => ON_LINE.has(i.state)).length, title: F.onLineTitle });
+  }
+  if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
+  if (show("line")) counts.push({ key: "rw", label: F.rework, value: items.filter((i) => i.state === "rejected").length, tone: "rw", title: F.reworkTitle });
+  if (show("line")) counts.push({ key: "need", label: F.needs, value: waiting + blocked.length, tone: "need", title: F.needsTitle });
+  // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
+  const extras: Count[] = [];
+  if (autonomy?.launches) {
+    // Live: how much of the shipping runs itself. Shows up after the first rocket.
+    extras.push({
+      key: "auto",
+      label: autonomy.level === "advisor" ? HUD.automated : `${HUD.automated} · ${LEVEL_LABEL[autonomy.level]}`,
+      value: `${Math.round((autonomy.automated ?? 0) * 100)}%`,
+      tone: "aether",
+      title: [permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone, autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : ""].join(" ").trim(),
+    });
+  } else if (show("autonomy") && autonomy) {
+    extras.push({
+      key: "auto",
+      label: autonomy.next ? HUD.toLevel(LEVEL_LABEL[autonomy.next.level]) : HUD.trust,
+      value: autonomy.next ? `${autonomy.next.have}/${autonomy.next.need}` : LEVEL_LABEL[autonomy.level],
+      tone: "aether",
+      title: autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : autonomy.level === "advisor" ? HUD.trustAdvisor : HUD.trustTop,
+    });
+  }
+  if (show("score") && metrics) extras.push({ key: "score", label: F.score, value: metrics.shipScore.toLocaleString(), tone: "amber", title: HUD.scoreTitle });
+
+  // The needs-you tray's other rows: the rest of the check-in deck, and any machine that stopped to ask.
+  const needRows: NeedRow[] = [];
+  if (world !== "checkin" && show("checkin") && deck.length > 1 && !checkin)
+    needRows.push({ key: "deck", label: HUD.needs.checkin(deck.length), text: HUD.needs.checkinWhy(deck.length - (state?.move ? 1 : 0)), go: { label: HUD.needs.checkinGo, onClick: () => setCheckin(true), aria: HUD.checkinLabel(deck.length) } });
+  for (const m of blocked.slice(0, 2)) {
+    const name = MACHINE_NAME[m.type] ?? m.type;
+    needRows.push({ key: `m:${m.id}`, label: HUD.needs.blocked(name), text: HUD.needs.blockedWhy, go: { label: HUD.needs.open, onClick: () => setPanel(pickKey(m.id)), aria: `${HUD.needs.open} ${name}` } });
+  }
 
   const launchItem = (item: Item) => {
     sound.play("arm");
@@ -268,6 +315,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     else if (a.do === "place") build();
     else setSheet(a.sheet);
   };
+  // the needs tray is up when nothing bigger holds the middle of the screen (the chain of sheets below)
+  const trayUp = !fork && !(brief.show && progressing && !checkin && !sheet) && !source && !sheet && !checkin;
   const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
   // Keyboard players: whatever opens (a sheet, a station panel, the tray, the deck) takes focus,
@@ -384,8 +433,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
   return (
     <div className={panel ? "app picked" : "app"}>
-      <main className="floor">
-        <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>
+      <main className="floor" ref={hv.host as Ref<HTMLElement>}>
+        {intro && <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>}
         <FactoryMap
           state={state}
           onPick={pickOnMap}
@@ -408,129 +457,71 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         {intro && tourly.card}
         {!intro && (<>
 
-        <header className="topbar">
-          <div className="chips">
-            <span className="brand" aria-hidden="true"><Mark size={32} decorative /></span>
-            {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
-
-            {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
-            {show("score") && (
-              <div className={progressing ? "chip ship desk" : "chip ship"} title={HUD.shippedTitle}>
-                <span className="badge">
-                  <Icon name="rocket" size={14} />
-                </span>
-                <span>
-                  {metrics?.rockets ?? shipped}
-                  <small>{HUD.shipped}</small>
-                </span>
-              </div>
-            )}
-            {autonomy?.launches ? (
-              // Live: how much of the shipping runs itself. Shows up after the first rocket.
-              <div className="chip auto" title={[permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone, autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : ""].join(" ").trim()}>
-                <span className="badge">
-                  <Icon name="bot" size={14} />
-                </span>
-                <span>
-                  {Math.round((autonomy.automated ?? 0) * 100)}%
-                  <small>{autonomy.level === "advisor" ? HUD.automated : `${HUD.automated} · ${LEVEL_LABEL[autonomy.level]}`}</small>
-                </span>
-              </div>
-            ) : show("autonomy") && autonomy && (
-              <div
-                className="chip auto"
-                title={autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : autonomy.level === "advisor" ? HUD.trustAdvisor : HUD.trustTop}
+        <div className="hudtop" ref={hv.refs.top as Ref<HTMLDivElement>}>
+          <FloorCard
+            counts={counts}
+            repo={state?.repo}
+            showKey={show("line")}
+            extra={(progressing && !tour.on) || empire.on ? (<>
+              {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
+              {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
+            </>) : undefined}
+          />
+          <div className="hudicons">
+            {state && (
+              <button
+                type="button"
+                className="tbtn ico"
+                aria-pressed={sheet === "status"}
+                onClick={() => toggleSheet("status")}
+                aria-label="Factory status as text"
+                title="Factory status as text (T)"
               >
-                <span className="badge">
-                  <Icon name="bot" size={14} />
-                </span>
-                <span>
-                  {autonomy.next ? `${autonomy.next.have}/${autonomy.next.need}` : LEVEL_LABEL[autonomy.level]}
-                  <small>{autonomy.next ? HUD.toLevel(LEVEL_LABEL[autonomy.next.level]) : HUD.trust}</small>
-                </span>
-              </div>
+                <Icon name="eye" size={16} />
+              </button>
             )}
-            {show("score") && metrics && (
-              <div className="chip score desk" title={HUD.scoreTitle}>
-                <span className="badge">
-                  <Icon name="star" size={14} />
-                </span>
-                <span>
-                  {metrics.shipScore.toLocaleString()}
-                  <small>{HUD.score}</small>
-                </span>
-              </div>
+            <button
+              type="button"
+              className={`tbtn ico guide-btn${met.size > seenGuide ? " new" : ""}`}
+              aria-pressed={sheet === "guide"}
+              onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
+              aria-label={HUD.guideLabel(met.size)}
+              title={HUD.guideTitle(met.size)}
+            >
+              <Icon name="book" size={16} />
+            </button>
+            {state && shipped > 0 && (
+              // Research shows up after the first ship: that's the first science pack to spend.
+              <button
+                type="button"
+                className={`tbtn ico research-btn${researchReady(state) ? " new" : ""}`}
+                aria-pressed={sheet === "research"}
+                onClick={() => toggleSheet("research")}
+                aria-label={HUD.researchLabel}
+                title={HUD.researchTitle}
+              >
+                <Icon name="flask" size={16} />
+              </button>
             )}
-          </div>
-          {!world && show("checkin") && deck.length > 1 && !checkin && (
-            <button type="button" className="checkin-chip" onClick={() => setCheckin(true)} aria-label={HUD.checkinLabel(deck.length)}>
-              {HUD.checkinChip(deck.length)}
-            </button>
-          )}
-          {state && (
-            <button
-              type="button"
-              className="hud-iconbtn"
-              aria-pressed={sheet === "status"}
-              onClick={() => toggleSheet("status")}
-              aria-label="Factory status as text"
-              title="Factory status as text (T)"
-            >
-              <Icon name="eye" size={20} />
-            </button>
-          )}
-          <button
-            type="button"
-            className={`hud-iconbtn guide-btn${met.size > seenGuide ? " new" : ""}`}
-            aria-pressed={sheet === "guide"}
-            onClick={() => { setSeenGuide(met.size); toggleSheet("guide"); }}
-            aria-label={HUD.guideLabel(met.size)}
-            title={HUD.guideTitle(met.size)}
-          >
-            <Icon name="book" size={20} />
-          </button>
-          {state && shipped > 0 && (
-            // Research shows up after the first ship: that's the first science pack to spend.
-            <button
-              type="button"
-              className={`hud-iconbtn research-btn${researchReady(state) ? " new" : ""}`}
-              aria-pressed={sheet === "research"}
-              onClick={() => toggleSheet("research")}
-              aria-label={HUD.researchLabel}
-              title={HUD.researchTitle}
-            >
-              <Icon name="flask" size={20} />
-            </button>
-          )}
-          {ach.count > 0 && (
-            // Achievements show up with the first one earned.
-            <button
-              type="button"
-              className={`hud-iconbtn ach-btn${ach.toast ? " new" : ""}`}
-              aria-pressed={sheet === "achievements"}
-              onClick={() => toggleSheet("achievements")}
-              aria-label={`Achievements, ${ach.count} earned`}
-              title={`Achievements · ${ach.count} earned`}
-            >
-              <Icon name="medal" size={20} />
-            </button>
-          )}
-          <button type="button" className="hud-iconbtn" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
-            {waiting > 0 && <span className="n">{waiting}</span>}
-            <Icon name="bell" size={20} />
-          </button>
-        </header>
-
-        {world && (
-          <div className="lens" role="group" aria-label={HUD.view}>
-            <button type="button" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
-              {HUD.checkin}{deck.length > 0 && <span className="lens-n">{deck.length}</span>}
-            </button>
-            <button type="button" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
-              {HUD.factory}
+            {ach.count > 0 && (
+              // Achievements show up with the first one earned.
+              <button
+                type="button"
+                className={`tbtn ico ach-btn${ach.toast ? " new" : ""}`}
+                aria-pressed={sheet === "achievements"}
+                onClick={() => toggleSheet("achievements")}
+                aria-label={`Achievements, ${ach.count} earned`}
+                title={`Achievements · ${ach.count} earned`}
+              >
+                <Icon name="medal" size={16} />
+              </button>
+            )}
+            <button type="button" className="tbtn ico" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
+              {waiting > 0 && <span className="n">{waiting}</span>}
+              <Icon name="bell" size={16} />
             </button>
           </div>
-        )}
+        </div>
 
         {tour.lesson && (
           <section className="card coachcard" aria-label={HUD.tour}>
@@ -603,6 +594,16 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
+            {extras.length > 0 && (
+              <dl className="counts">
+                {extras.map((c) => (
+                  <div key={c.key} className={c.tone} title={c.title}>
+                    <dt>{c.label}</dt>
+                    <dd>{c.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             <h3>{LINE.onPad}</h3>
             {pad.length === 0 && <p className="empty">{LINE.padEmpty}</p>}
             {pad.map((i) => (
@@ -710,51 +711,63 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
           </section>
         ) : (
-          <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} />
+          <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
+            <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} rows={needRows} />
+          </div>
         )}
 
+        {show("log") && !fork && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
+
         {!checkin && (
-        <nav className="dock" aria-label={HUD.dock.label}>
-          <button type="button" className="tool" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")} disabled={!show("line")}>
-            {show("line") && inFlight.length + pad.length > 0 && <span className="n">{inFlight.length + pad.length}</span>}
-            <Icon name="list" size={20} />
-            {HUD.dock.line}
-          </button>
-          {world !== "checkin" && show("build") && (metrics?.rockets ?? shipped) > 0 && (
-            <button type="button" className="tool" aria-pressed={sheet === "yours"} onClick={() => toggleSheet("yours")}>
-              <Icon name="wrench" size={20} />
-              {HUD.dock.yours}
+        <nav className="ctrl" aria-label={HUD.dock.label} ref={hv.refs.ctrl as Ref<HTMLElement>}>
+          {world && (
+            <div className="row" role="group" aria-label={HUD.view}>
+              <span className="eyebrow" aria-hidden="true">{HUD.view}</span>
+              <button type="button" className="tbtn" aria-pressed={world === "checkin"} onClick={() => { setWorld("checkin"); setSheet(null); if (deck.length > 1) setCheckin(true); }}>
+                {HUD.checkin}{deck.length > 0 && <span className="cnt">{deck.length}</span>}
+              </button>
+              <button type="button" className="tbtn" aria-pressed={world === "build"} onClick={() => { setWorld("build"); setCheckin(false); }}>
+                {HUD.factory}
+              </button>
+            </div>
+          )}
+          <div className="row">
+            <span className="eyebrow" aria-hidden="true">{HUD.dock.tools}</span>
+            <button type="button" className="tbtn" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")} disabled={!show("line")}>
+              {show("line") && inFlight.length + pad.length > 0 && <span className="cnt">{inFlight.length + pad.length}</span>}
+              {HUD.dock.line}
             </button>
-          )}
-          {world !== "checkin" && (
-          <button type="button" className="tool" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={cfg.kind !== "live" && !show("power")}>
-            <Icon name="bolt" size={20} />
-            {HUD.dock.power}
-          </button>
-          )}
-          <button type="button" className="tool big" onClick={launch} disabled={!show("launch") || pad.length === 0} aria-label={HUD.dock.launchLabel} title={HUD.dock.launchTitle}>
-            <Icon name="rocket" size={20} />
-            {HUD.dock.launch}
-          </button>
-          {world === "checkin" ? (
-          <button type="button" className="tool big go" onClick={() => setCheckin(true)} disabled={deck.length === 0} aria-label={HUD.dock.checkinLabel(deck.length)}>
-            {deck.length > 0 && <span className="n">{deck.length}</span>}
-            <Icon name="list" size={20} />
-            {HUD.checkin}
-          </button>
-          ) : (
-          <button
-            type="button"
-            className="tool big go"
-            onClick={build}
-            disabled={!show("build") || !slot || !plugged || cfg.kind === "live"}
-            aria-label={plugged ? HUD.dock.placeLabel(plugged.name) : HUD.dock.placeNeedsPower}
-            title={plugged ? HUD.dock.placeTitle(plugged.name) : HUD.dock.placeNeedsPowerTitle}
-          >
-            <Icon name="bot" size={20} />
-            {HUD.dock.place}
-          </button>
-          )}
+            {world !== "checkin" && show("build") && (metrics?.rockets ?? shipped) > 0 && (
+              <button type="button" className="tbtn" aria-pressed={sheet === "yours"} onClick={() => toggleSheet("yours")}>
+                {HUD.dock.yours}
+              </button>
+            )}
+            {world !== "checkin" && (
+              <button type="button" className="tbtn" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={cfg.kind !== "live" && !show("power")}>
+                {HUD.dock.power}
+              </button>
+            )}
+            <button type="button" className={pad.length > 0 && show("launch") ? "tbtn hot" : "tbtn"} onClick={launch} disabled={!show("launch") || pad.length === 0} aria-label={HUD.dock.launchLabel} title={HUD.dock.launchTitle}>
+              {HUD.dock.launch}
+            </button>
+            {world === "checkin" ? (
+              <button type="button" className="tbtn hot" onClick={() => setCheckin(true)} disabled={deck.length === 0} aria-label={HUD.dock.checkinLabel(deck.length)}>
+                {deck.length > 0 && <span className="cnt">{deck.length}</span>}
+                {HUD.checkin}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="tbtn ok"
+                onClick={build}
+                disabled={!show("build") || !slot || !plugged || cfg.kind === "live"}
+                aria-label={plugged ? HUD.dock.placeLabel(plugged.name) : HUD.dock.placeNeedsPower}
+                title={plugged ? HUD.dock.placeTitle(plugged.name) : HUD.dock.placeNeedsPowerTitle}
+              >
+                {HUD.dock.place}
+              </button>
+            )}
+          </div>
         </nav>
         )}
 
@@ -763,11 +776,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} reviewTicket={supportReview} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} live={cfg.kind === "live"} />)}
 
         {progressing && <XpPop pop={prog.pop} />}
-
-        <div className={`card caption${caption.on && !fork ? " on" : ""}${tour.lesson ? " coached" : ""}`} role="status" aria-live="polite">
-          <div className="ptitle">{caption.title}</div>
-          <div className="psub">{caption.sub}</div>
-        </div>
 
         {tray && (
           <ActivityTray

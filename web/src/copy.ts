@@ -126,6 +126,44 @@ export const HUD = {
     placeTitle: (who: string) => `Place another ${who} assembler (A)`,
     placeNeedsPower: "Sign in with Claude or ChatGPT to place builders",
     placeNeedsPowerTitle: "Sign in with Claude or ChatGPT first",
+    tools: "TOOLS",
+  },
+  /** The floor card, top left: the factory's numbers in one row, then what the colored items are. */
+  floor: {
+    eyebrow: "THE FACTORY FLOOR",
+    label: "Factory floor numbers",
+    mined: "MINED",
+    minedTitle: "Everything the mines have dug up so far",
+    onLine: "ON LINE",
+    onLineTitle: "Work on the belts and in the machines right now",
+    shipped: "SHIPPED",
+    rework: "REWORK",
+    reworkTitle: "Sent back by a check, riding the rework belt",
+    needs: "NEEDS YOU",
+    needsTitle: "Cards and machines waiting on you",
+    score: "SCORE",
+    keyLabel: "What the items are",
+    key: { issue: "ISSUE", cards: "CARDS", pr: "PR", ships: "SHIPS", rework: "REWORK" },
+  },
+  /** The ticker, bottom left: the last lines of the floor log. */
+  ticker: {
+    label: "Floor log",
+    idle: "The line is running. Drag to pan, scroll or pinch to zoom.",
+  },
+  /** The needs-you tray, top center (above the controls on a phone). */
+  needs: {
+    label: "Needs you",
+    nextMove: "NEXT MOVE",
+    blocked: (name: string) => `${name.toUpperCase()} NEEDS YOU`,
+    blockedWhy: "Stopped. Open it to see what it's waiting on.",
+    open: "OPEN",
+    checkin: (n: number) => `CHECK IN · ${n} CARDS`,
+    checkinWhy: (n: number) => `${n} more cards are waiting on you in the deck.`,
+    checkinGo: "CHECK IN",
+    more: "MORE",
+    less: "LESS",
+    moreLabel: "Show the why and the plan",
+    lessLabel: "Hide the why and the plan",
   },
 };
 
