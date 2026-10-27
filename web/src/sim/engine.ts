@@ -806,7 +806,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         focus: asm?.id,
         itemId: item.id,
         options: [
-          { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: item.id, machineId: asm?.id }, reason: "highest value on the floor" }] },
+          { id: "go", label: "Go", recommended: true, actions: [{ tool: "start_job", args: { itemId: item.id, machineId: asm?.id }, reason: "It's the most useful thing waiting." }] },
           { id: "skip", label: "Not now", recommended: false, actions: [] },
         ],
       },
@@ -835,7 +835,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         evidence: lineNow().filter((g) => g.kind !== "merge").map((g) => ({ station: g.name, ok: true })),
         itemId: item.id,
         options: [
-          { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "green and on the pad" }] },
+          { id: "launch", label: `Launch #${item.prNumber}`, recommended: true, actions: [{ tool: "request_merge", args: { pr: item.prNumber }, reason: "Every check passed, so it's safe to ship." }] },
           { id: "later", label: "Later", recommended: false, actions: [] },
         ],
       },
@@ -856,7 +856,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         focus: "ore-inbox",
         itemId: item.id,
         options: [
-          { id: "send", label: "Send", recommended: true, actions: [{ tool: "send_customer_reply", args: { to }, reason: "the fix shipped" }] },
+          { id: "send", label: "Send", recommended: true, actions: [{ tool: "send_customer_reply", args: { to }, reason: "The fix is live, so they'll want to know." }] },
           { id: "skip", label: "Don't send", recommended: false, actions: [] },
         ],
       },
@@ -1698,7 +1698,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         why: `A splitter, one assembler, an inspector and a launch pad, with belts. First job: "${first.title}".`,
         stage: "build",
         options: [
-          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "smallest line that can ship a PR" }] },
+          { id: "build", label: "Build it", recommended: true, actions: [{ tool: "place_machine", args: { layout: "starter" }, reason: "The smallest setup that can ship something." }] },
           { id: "later", label: "Not yet", recommended: false, actions: [] },
         ],
       },
