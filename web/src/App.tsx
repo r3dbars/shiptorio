@@ -385,7 +385,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   keys.current = { launch, build, show, intro };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
       else if (k === "t") setSheet((v) => (v === "status" ? null : "status"));
