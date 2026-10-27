@@ -179,13 +179,36 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
 - Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
 
-## Quota recovery (Codex, 2026-10-26)
+## Quota recovery (Codex, 2026-10-26; PR #269)
 
-In progress on `codex/quota-recovery` (Day 1 loop reliability). Run charging moves from
-planning to dispatch; failed plans back off 1m/2m, capped at three failures per issue
-per UTC day. Persistent cooldowns survive factory restarts. The live Black Iron limits
-card reads authenticated telemetry for runs, Spark calls/tokens/dollars, connected
-resources and concurrent jobs, with reset times and admin quota links. Admin signup
-adds per-account call/token overrides (migration 0013); Spark remains the planner.
-Narrow `web/` change explicitly requested for this card; shared websocket contract unchanged.
-Validation and PR/merge evidence will follow before completion.
+- Day 1 loop reliability: [PR #269](https://github.com/r3dbars/shiptorio/pull/269), `codex/quota-recovery`.
+- Black Iron live card warns at 80% and at exhaustion, naming the allowance, used/limit,
+  local reset time and 00:00 UTC. `/admin/signup?login=…` selects the correct run owner or
+  stable Spark payer for quota increases. Resource caps have no timed reset; job slots
+  free on completion. Dollar totals remain private to the stable payer, who can open
+  the existing thinking-budget editor. Global Spark pause and refresh failures stay visible.
+- Card refreshes every 15s, on focus/visibility, and after budget edits. Requests time out
+  so a hung refresh can recover. Raising run/call/token caps takes effect on the next
+  attempt, with no restart. Migration `0013_quota_controls.sql` adds nullable per-account
+  Spark call/token overrides; blank inherits Worker defaults, zero pauses that allowance.
+- Local planning only checks run capacity; actual dispatch charges it. Lost claim responses
+  reuse the lease without another charge. Failed, declined or stale plans spend no run.
+  Quota-paused ready jobs remain ready and poll without abuse-counter writes.
+- Failed planning persists a per-issue UTC-day ledger: 1m, 2m, then until midnight after
+  three failures. Restarting the factory or changing the issue does not bypass it. Early
+  plan cards disappear; the alarm wakes at cooldown expiry. A new plan still requires
+  the player's approval. The optional hosted assembler also charges after successful
+  scoping, when writing starts, and uses the same cooldown after scoping failures.
+- Rebases include #259 runner resilience, #262 approval binding and #265's separate
+  per-autopilot-session attempt cap. Narrow `web/` edits implement Justin's requested
+  card; shared websocket contracts and the simulator remain unchanged.
+- Validation: all workspace/test typechecks; full fast suite (697 passed, 2 platform
+  skips); 26 playtest cases / 332 decisions, no findings; production build. SQL-backed
+  enforcement/reset/admin/access tests plus real Factory failure/restart/dispatch tests.
+  Playwright card warning → stop → admin link → recovery → retry cooldown passes on
+  desktop (1440×900) and iPhone 14 (390×664), with no page or console errors. Existing
+  spend-panel save/stop/resume also passes on both. Browser plugin unavailable; used
+  project Playwright. Browser quota states are mocked; backend enforcement uses SQLite.
+- No manual deploy or Cloudflare resource changes. Production recovery remains untested;
+  migration 0013 must run through the existing deployment workflow. No historical run
+  counters were reset or refunded.
