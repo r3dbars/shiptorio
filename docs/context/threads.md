@@ -10,12 +10,19 @@
 
 ## Codex: pre-hackathon security pass (2026-10-26)
 
-- Auditing all server routes, factory isolation, GitHub/Sentry authentication,
-  Spark's untrusted-input boundary and secret logging from updated main.
-- First separate fix: [#267](https://github.com/r3dbars/shiptorio/pull/267), current
-  repository checks before empire summaries. Regression demonstrated the old
-  leak; full local check passes. Further findings and PRs are in progress.
-- Summary: [security.md](security.md). No manual deployment or resource changes.
+- Completed the server route, factory isolation, GitHub/Sentry signature,
+  Spark tool/secret and logging audit at baseline `44942fd` (63 source files),
+  plus the subsequently added runner-health display helper.
+- Four findings, each with a small fix PR and regression: [#267](https://github.com/r3dbars/shiptorio/pull/267)
+  reauthorizes empire summaries; [#270](https://github.com/r3dbars/shiptorio/pull/270)
+  separates read and writer authority; [#271](https://github.com/r3dbars/shiptorio/pull/271)
+  rejects incomplete PR-file inspection; [#273](https://github.com/r3dbars/shiptorio/pull/273)
+  binds automatic permits to current files and head. PR links retain CI/merge evidence.
+- Full local checks passed on each fix. No additional confirmed webhook,
+  Spark secret-tool or log-secret vulnerability; no production exploitation or
+  live model red-team claim. Details and limitations: [security.md](security.md).
+- No manual deployment, Cloudflare resource or web source changes. Merges use
+  green CI; existing deployment automation remains responsible for rollout.
 
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
