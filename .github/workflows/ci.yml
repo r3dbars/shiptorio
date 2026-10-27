@@ -247,7 +247,7 @@ jobs:
   # browser/load jobs are valid only for feature PRs targeting an integration branch.
   check:
     needs: [policy, verify, selfhost, browser, load]
-    if: always() && !cancelled() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -259,11 +259,16 @@ jobs:
           import json, os
           jobs = json.loads(os.environ['RESULTS'])
           for job in ['policy', 'verify', 'selfhost']:
-              assert jobs[job]['result'] == 'success', job + ' did not pass'
+              if jobs[job]['result'] != 'success':
+                  raise SystemExit(job + ' did not pass')
           scope = jobs['policy']['outputs']
-          assert scope['admit'] == 'true', 'Feature/diagnostic heads cannot satisfy the main release gate; target the integration branch'
+          if scope['admit'] != 'true':
+              raise SystemExit('Feature/diagnostic heads cannot satisfy the main release gate; target the integration branch')
+          if scope['full'] == 'true' and any(scope[job] != 'true' for job in ['browser', 'load']):
+              raise SystemExit('Full-suite scope is missing a required suite')
           for job in ['browser', 'load']:
               expected = 'success' if scope[job] == 'true' else 'skipped'
-              assert jobs[job]['result'] == expected, job + ' did not complete its required scope'
+              if jobs[job]['result'] != expected:
+                  raise SystemExit(job + ' did not complete its required scope')
           print('All required verification passed for this exact head and target')
           PY
