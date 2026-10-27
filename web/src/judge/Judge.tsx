@@ -53,7 +53,9 @@ function JudgeRun({ replay }: { replay: () => void }) {
 
   const beat = complete ? 8 : tick >= 92 ? 7 : tick >= 80 ? 6 : tick >= 72 ? 5 : tick >= 58 ? 4 : tick >= 25 ? 3 : tick >= 14 ? 2 : tick >= 2 ? 1 : 0;
   const chapter = JUDGE.beats[beat];
-  const focus = beat === 1 ? "m:ore-sentry" : beat === 2 ? "m:steam-spark" : beat === 3 ? checkout?.machineId ?? "inspector-1" : beat === 4 ? "gate-1" : beat === 5 || beat === 6 ? "m:launch-pad" : null;
+  const at = checkout?.machineId ?? "ci-1";
+  const workFocus = state?.stations?.some(s => s.id === at) ? at : `m:${at}`;
+  const focus = beat === 1 ? "m:ore-sentry" : beat === 2 ? "m:steam-spark" : beat === 3 ? workFocus : beat === 4 ? "gate-1" : beat === 5 || beat === 6 ? "m:launch-pad" : null;
   useFactorySound(state, focus);
   const stations = state?.stations?.filter(s => ["ci", "verify", "review"].includes(s.kind)) ?? [];
   return <>
