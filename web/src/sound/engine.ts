@@ -37,6 +37,7 @@ export type Sfx =
   | "beat"
   | "beat_done"
   | "finale"
+  | "hold_start"
   | Accent
   | SteamSfx;
 
@@ -482,6 +483,8 @@ class SoundEngine {
   // near: this sound belongs to the thing you're focused on, so it plays up close, unmuffled
   // The hold-to-launch countdown: tick i of 4 as the ring fills (Countdown clank, soundboard take B).
   holdTick(i: number) {
+    // Meaningful hold feedback follows the same caption path even when audio is muted.
+    if (i === 0) window.dispatchEvent(new CustomEvent<SfxEvent>(SFX_EVENT, { detail: { sfx: "hold_start", delayMs: 0 } }));
     if (this.live && this.kit && this.steamBus) this.kit.holdTick(i, this.ctx!.currentTime, this.steamBus.ui);
   }
   play(s: Sfx, delay = 0, near = false) {

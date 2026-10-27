@@ -210,7 +210,7 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
           // Countdown clank: a ratchet and a rising bell at each quarter of the hold
           const tick = Math.min(3, Math.floor(p * 4));
           if (p > 0 && tick > ticked.current) for (let i = ticked.current + 1; i <= tick; i++) sound.holdTick(i);
-          ticked.current = p > 0 ? Math.max(ticked.current, tick) : -1;
+          if (p > 0) ticked.current = Math.max(ticked.current, tick);
         },
         arm: () => { ticked.current = 0; sound.holdTick(0); },
         cancel: () => { ticked.current = -1; sound.play("hold_cancel"); },

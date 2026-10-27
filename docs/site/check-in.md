@@ -18,7 +18,7 @@ If work is ready to build but no agent is plugged in, the bottleneck is power. F
 
 Always on screen at the bottom, one card at a time: anything stuck first, then work parked on your yes, then ideas. **Later** is on the left and parks it for a day. **Continue** is the tab down the card's right edge (or swipe right) and runs the Suggested option. **Details** shows the plan and the other options. When more cards are waiting, their edges peek out behind this one; tap the card to open the check-in deck.
 
-A **Launch** card is different: its right edge is a big red button you press and hold until the ring fills. A tap or a swipe never merges. Keyboard: hold Space or Enter. Screen reader: activate twice within five seconds.
+A **Launch** card is different: its right edge is a big red button you press and hold until the ring fills. A tap or a swipe never merges. Keyboard: hold Space or Enter. Screen reader: activate twice within five seconds. The hold plays four countdown clanks; sound captions announce when a hold starts, is cancelled, or sends a launch request. A request is not a completed launch.
 
 Add `?attention=0` to the URL to get the older Next Move card below for one more release.
 
