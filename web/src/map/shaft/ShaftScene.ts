@@ -82,7 +82,12 @@ export class ShaftScene {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.BasicShadowMap;
     this.renderer.shadowMap.autoUpdate = false; // the frame governor says when
-    this.hud = new ShaftHud(labelRoot, { pick: (key) => this.onPick?.(key), goTo: (view) => this.goTo(view) });
+    this.hud = new ShaftHud(labelRoot, {
+      pick: (key) => this.onPick?.(key),
+      goTo: (view) => this.goTo(view),
+      // the plates over the map changed: the floor views refit on their own each frame (frame.ts), the bias doesn't
+      reframe: () => (this.governor.poke(), this.applyBias()),
+    });
     this.hud.syncFloors(this.view.view);
 
     void loadModules().then((fns) => {
@@ -242,6 +247,7 @@ export class ShaftScene {
 
   private rebuild(sp: ShaftPlan) {
     const keep = this.stage ? { zoom: this.stage.zoom } : null;
+    const carried = this.driver?.carry() ?? null; // the work on the line stays where it is
     this.teardown();
     const I = createIron();
     for (const f of this.fns ?? []) {
@@ -260,6 +266,7 @@ export class ShaftScene {
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
     bakeShaft(I, stage.root);
+    if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
     this.driver = driver;
@@ -332,6 +339,10 @@ export class ShaftScene {
   private floorOfKey(key: string): ShaftView | undefined {
     if (key.startsWith("src:") || (key.startsWith("m:") && this.sp && Object.values(this.sp.mines).includes(key.slice(2)))) return "mine";
     if (key === "rework") return "checks";
+    // machines the shaft doesn't draw on their own yet: a test turret guards the checks, a fourth builder builds
+    const m = key.startsWith("m:") ? this.state?.machines.find((x) => x.id === key.slice(2)) : undefined;
+    if (m?.type === "turret") return "checks";
+    if (m?.type === "assembler") return "build";
     return undefined;
   }
 
