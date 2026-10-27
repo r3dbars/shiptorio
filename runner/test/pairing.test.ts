@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -38,25 +38,34 @@ test("one-paste join trades the install command's code for a saved pairing; a sp
 test("browser pairing keeps waiting through a dropped connection or a busy server instead of burning the code", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "shiptorio-device-"));
   let polls = 0;
-  const server = Bun.serve({ port: 0, async fetch(req) {
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
     const base = new URL(req.url).origin;
-    if (new URL(req.url).pathname.endsWith("/start")) return Response.json({ code: "AAAA-BBBB-CCCC", secret: "s", expires: Date.now() + 60000, verificationUri: `${base}/runner/pair?code=AAAA-BBBB-CCCC` });
+    const path = new URL(req.url).pathname;
+    if (req.method !== "POST") return new Response("not found", { status: 404 });
+    if (path === "/api/runner-device/start") return Response.json({ code: "AAAA-BBBB-CCCC", secret: "s", expires: Date.now() + 60000, verificationUri: `${base}/runner/pair?code=AAAA-BBBB-CCCC` });
+    if (path !== "/api/runner-device/poll") return new Response("not found", { status: 404 });
     polls++;
     if (polls === 1) return Response.json({ error: "busy" }, { status: 503 });
     if (polls === 2) return Response.json({ status: "pending" });
     return Response.json({ status: "approved", repo: "you/repo", token: "cred", expires: Date.now() + 3600000 });
   } });
-  const path = process.env.PATH, realFetch = globalThis.fetch;
+  const base = `http://127.0.0.1:${server.port}`;
+  const realFetch = globalThis.fetch, realWhich = Bun.which.bind(Bun);
+  const opener = spyOn(Bun, "which").mockImplementation((name, options) => name === "open" || name === "xdg-open" ? null : realWhich(name, options));
   let dropped = false;
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-    if (!dropped && String(url).endsWith("/poll")) { dropped = true; throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }); }
+    if (!dropped && String(url) === `${base}/api/runner-device/poll`) { dropped = true; throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }); }
     return realFetch(url, init);
   }) as typeof fetch;
-  process.env.PATH = "";
   try {
-    await pairMachine(`http://localhost:${server.port}`, root, 5);
+    const unrelated = await realFetch(`${base}/runner/pair?code=AAAA-BBBB-CCCC`);
+    expect(unrelated.status).toBe(404);
+    await unrelated.body?.cancel();
+    expect(polls).toBe(0);
+    await pairMachine(base, root, 5);
+    expect(opener).toHaveBeenCalledWith(process.platform === "darwin" ? "open" : "xdg-open");
     expect(dropped).toBe(true);
     expect(polls).toBe(3);
     expect((await loadPairings(root)).map(p => p.token)).toEqual(["cred"]);
-  } finally { globalThis.fetch = realFetch; process.env.PATH = path; server.stop(true); await rm(root, { recursive: true, force: true }); }
+  } finally { globalThis.fetch = realFetch; opener.mockRestore(); server.stop(true); await rm(root, { recursive: true, force: true }); }
 });
