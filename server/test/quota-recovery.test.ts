@@ -150,7 +150,12 @@ test("a GitHub rate limit pauses planning until GitHub's retry time without spen
   expect(planningHold(paused, start + 25 * 60000)).toBeNull();
   // A ledger written before this fix counted the rate limit as the third try; it only waits out the pause.
   const legacy: PlanningRetry = { day: '2026-10-27', failures: 3, retryAt: Date.parse('2026-10-28T00:00:00Z'), reason: limited(start + 60000) };
-  expect(planningHold(legacy, start + 120000)).toEqual(legacy);
+  expect(planningHold(legacy, start + 30000)).toEqual({ ...legacy, retryAt: start + 60000 });
+  expect(planningHold(legacy, start + 60000)).toBeNull();
+  expect(planningHold(legacy, start + 120000)).toBeNull();
+  // Invalid timestamps cannot turn a real daily cap into a free retry.
+  expect(planningHold({ ...legacy, reason: limited(start) + 'invalid' }, start + 120000)?.retryAt).toBe(legacy.retryAt);
+  expect(planningHold({ ...legacy, reason: 'offline' }, start + 120000)?.retryAt).toBe(legacy.retryAt);
   const capped = planningFailure(planningFailure(paused, 'offline', start + 26 * 60000), 'offline', start + 30 * 60000);
   expect(capped.failures).toBe(3);
   expect(planningHold(capped, start + 60 * 60000)?.retryAt).toBe(Date.parse('2026-10-28T00:00:00Z'));
