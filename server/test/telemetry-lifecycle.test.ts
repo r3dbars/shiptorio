@@ -38,7 +38,7 @@ it("shares registered request credentials with subsequent logs and drops them af
 
 it("redacts credentials learned during a request before diagnostic truncation", () => {
   const info = spyOn(console, "info").mockImplementation(() => {});
-  const secret = `fixture-${crypto.randomUUID()}-learned-private`;
+  const secret = `${crypto.randomUUID()}-learned-private`;
   try {
     inTrace({ requestId: "learned-boundary" }, {}, () => {}, () => {
       currentRedactor()!.register({ token: secret });
