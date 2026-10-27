@@ -1,13 +1,14 @@
 # Overnight paper-cut sweep
 
-Run: Oct 26, 2026, 9:22 PM CT → Oct 27, 8:00 AM CT at latest. In progress.
+Run: Oct 26, 2026, 9:22–10:08 PM CT. Read-only sweep completed a second rotation with no new functional finding. The fix/merge/deploy loop remains blocked by GitHub billing; deadline was Oct 27, 8:00 AM CT.
 
 ## Summary
 
 - **1 fixed/merged; 0 verified deployed; 10 logged, not fixed yet** (8 queued product cuts, 2 protected-area/test issues).
 - Merged: browser QA commands work after a clean install, [#302](https://github.com/r3dbars/shiptorio/pull/302). **Deploy blocked before any step by GitHub billing**; no live claim.
-- User-visible cuts queued: onboarding blank screen on a hung version probe; docs search remains empty after going back online; denied clipboard access produces an unhandled error; malformed scenario links crash the simulator.
-- **Human action required:** resolve GitHub Billing & plans. Deploy [40439556051](https://github.com/r3dbars/shiptorio/actions/runs/40439556051) never started: recent payments failed or spending limit must increase. Public `/api/version` remains `be3a81b`. New code fixes are paused under the requested Deploy gate; read-only hunting/local checks continue. Protected UI and runner install/login remain untouched.
+- **Player-facing fixes deployed: none.** Only the browser-tool repair merged before the billing block; there are not five shipped player-facing fixes to list.
+- Highest-impact queued cuts: onboarding blank screen on a hung version probe; docs search remains empty after going back online; denied clipboard access produces an unhandled error; malformed scenario links crash the simulator.
+- **Human action required:** resolve GitHub Billing & plans. Deploy [40439556051](https://github.com/r3dbars/shiptorio/actions/runs/40439556051) never started: recent payments failed or spending limit must increase. Public `/api/version` remains `be3a81b`. New code fixes are blocked under the requested Deploy gate; read-only hunting/local checks continue. Protected UI and runner install/login remain untouched.
 
 ## Top unresolved (up to 10)
 
@@ -63,11 +64,19 @@ Run: Oct 26, 2026, 9:22 PM CT → Oct 27, 8:00 AM CT at latest. In progress.
 - Font probe: default Arial on SVG-only icon buttons is not visible text and is not counted as a typography bug. The unstyled admin page is a separate, screenshot-confirmed theme regression. Existing CSP-driven font-free utility pages were left alone.
 - Only one code fix merged before the external gate; it repairs QA tooling rather than player-facing behavior. There are not five shipped player-facing fixes to list. The report names every reproduced queued cut instead.
 
-## Coverage still to complete
+### Oct 26, 10:08 PM CT — final read-only rotation and touch/audio
 
-- Fresh full judge story; keyboard/a11y with current tool visibility; five-minute perf stability.
-- Offline/slow network interactions, reload mid-flow, Back, resize/rotate, detailed keyboard/focus and docs interaction checks.
-- Fix/verify queued cuts, merge only green agent PRs, verify Deploy after each code merge; repeat a full rotation until it finds nothing new.
+- Rebased the report on latest merged code through `402a1b9` (#313); production build passed. Second pinned-build rotation completed **80 additional page checks**, all four viewport/motion profiles, with no new unexpected app errors, HTTP failures or document overflow. Total: **160 page checks**. Known 403/404 access/error responses and browser GPU/Canvas2D advisories remain classified separately.
+- Full mobile emulation for iPhone 390×844 and Pixel 412×915 (touch/coarse pointer enabled): Later advanced the check-in to a different card; no page errors or overflow. AudioContext count was zero before a gesture, running after touch, and suspended after mute. This proves activation/mute behavior, not an audible mix or physical-device sound review.
+- The committed keyboard harness remains red for the generic Launch-selector loop; no full keyboard first-run pass. Welcome tour plus first rocket was reached with keyboard-only input. All 14 axe screens were inspected via the temporary Menu-aware harness; 11 map-bearing screens share the protected chip-name mismatch, three entry screens pass.
+- GitHub billing is still unresolved; report PR #309 cannot pass its required check or update main. Public production remains at the last successful deployed version, rather than claiming #302 or later merges are live.
+
+## Remaining work / resume
+
+1. Human: resolve GitHub Billing & plans; no account settings or spending cap changed by this sweep.
+2. Rerun the failed Deploy gate for #302 (or a main deployment containing it), verify green and `/api/version`, then rerun/merge report #309 after its required check is green. No CI/deploy bypass.
+3. Fix the eight unprotected product cuts above one tiny PR at a time, each with a failing regression/script and green CI/Deploy. Update this report after every merge. Protected chip/Menu issues stay logged for their owners.
+4. Restore the committed a11y/keyboard harnesses with test-only changes once their protected UI owners are clear; retain a separate full keyboard first-run-to-rocket acceptance check. Physical-device rendering, audible sound quality and real provider execution are not proved by these fixture runs.
 
 ## Boundaries
 
