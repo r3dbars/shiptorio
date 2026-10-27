@@ -43,6 +43,26 @@ jobs:
       - run: bun test
       - run: bun run playtest --check
       - run: bun run build
+  selfhost:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Self-host from a clean clone (no Cloudflare credentials)
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          git clone --no-local "$GITHUB_WORKSPACE" "$RUNNER_TEMP/shiptorio-selfhost"
+          cd "$RUNNER_TEMP/shiptorio-selfhost"
+          bun install --frozen-lockfile
+          bun run selfhost --dry-run
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
   browser:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
