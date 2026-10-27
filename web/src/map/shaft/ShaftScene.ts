@@ -27,6 +27,15 @@ import { ShaftStage, type ShaftView } from "./stage";
 THREE.ColorManagement.enabled = false;
 
 type Install = (I: Iron) => void;
+
+export interface Timelapse {
+  refs: string[]; // launched item ids, oldest first
+  onStart: (placed: string[]) => void; // the ones that found room on the line (none: nothing to show)
+  onShip: (ref: string) => void; // one of them just launched
+  onOver: () => void; // the replay ran its full length
+}
+const LAPSE_SPEED = 8; // the whole factory runs this much faster while the replay plays
+const LAPSE_MAX_S = 9; // and never longer than this
 const MODS = import.meta.glob("./modules/*.js");
 let installs: Promise<Install[]> | null = null;
 function loadModules(): Promise<Install[]> {
@@ -69,6 +78,10 @@ export class ShaftScene {
   private home: { view: ShaftView; id: string | null } | null = null;
   private view: { view: ShaftView; id: string | null } = { view: "stack", id: null };
   private readonly ray = new THREE.Raycaster();
+  // the coming-back time-lapse (ui/away.ts): asked for before the shaft may be built, started on the first sync
+  private lapse: Timelapse | null = null;
+  private lapsing = false;
+  private asked: string | null = null; // the last focus asked for, kept for a shaft that wasn't built yet
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -144,6 +157,33 @@ export class ShaftScene {
     else this.sp = sp;
     this.driver?.sync(state);
     this.hud.read(state, this.sp!);
+    this.startLapse();
+  }
+
+  /** Fly these launched items up the shaft again, fast: what really shipped while the player was away. */
+  timelapse(lapse: Timelapse) {
+    this.lapse = lapse;
+    this.lapsing = false;
+    this.startLapse();
+  }
+
+  /** The replay is over or skipped: back to real time, and the PR waiting at the gate is back on it. */
+  endTimelapse() {
+    this.lapse = null;
+    this.lapsing = false;
+    this.driver?.endLapse();
+    if (this.I) this.I.policy.speed = 1;
+  }
+
+  private startLapse() {
+    const lapse = this.lapse, I = this.I, driver = this.driver;
+    if (!lapse || this.lapsing || !I || !driver?.state) return;
+    this.lapsing = true;
+    const placed = driver.beginLapse(lapse.refs, LAPSE_MAX_S * LAPSE_SPEED, () => lapse.onOver());
+    I.policy.speed = LAPSE_SPEED;
+    this.governor.poke();
+    this.setView("launch", null, true); // the rockets go up from the top floor
+    lapse.onStart(placed);
   }
 
   keyAt(clientX: number, clientY: number, rect: DOMRect): string | undefined {
@@ -208,6 +248,7 @@ export class ShaftScene {
 
   // Fly in on a picked thing (its panel is open), or back to where you were (null).
   focus(key: string | null) {
+    this.asked = key;
     this.hud.selected = key ?? undefined;
     const id = key ? this.stationOfKey(key) : undefined;
     if (key && (id || this.floorOfKey(key))) {
@@ -268,6 +309,9 @@ export class ShaftScene {
     const layout = makeLayout(sp.plan);
     const driver = new GameDriver(I, layout);
     I.setDriver(driver);
+    I.on("ship", ({ item }: { item: { ref: string | null } }) => {
+      if (this.lapsing && item.ref && this.lapse?.refs.includes(item.ref)) this.lapse.onShip(item.ref);
+    });
     const small = (window.matchMedia?.("(pointer: coarse)").matches ?? false) || (navigator.hardwareConcurrency ?? 8) <= 4;
     const stage = new ShaftStage(I, layout, { shadowMap: small ? 1024 : 2048 });
     stage.reduceMotion = this.reduceMotion;
@@ -284,6 +328,7 @@ export class ShaftScene {
     if (keep) stage.zoom = keep.zoom;
     this.hud.build(I, stage, sp);
     this.setView(this.view.view === "station" && this.view.id && !I.stations[this.view.id] ? "stack" : this.view.view, this.view.id, true);
+    if (this.asked && !this.home) this.focus(this.asked); // asked before the shaft stood (coming back parks on a launch)
     this.applyBias();
     this.renderer.shadowMap.needsUpdate = true;
     if (import.meta.env.DEV)
