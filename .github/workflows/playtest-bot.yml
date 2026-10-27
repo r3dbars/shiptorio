@@ -1,0 +1,53 @@
+name: Player bot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+permissions:
+  contents: read
+jobs:
+  local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bun install --frozen-lockfile
+      - run: bun x playwright install --with-deps chromium
+      - run: bun run build
+      - run: bun run playtest:bot -- --persona test-newbie --url http://localhost:8809 --out playtest/out/local
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bot-local-evidence
+          path: playtest/out/
+  staging:
+    # Turn on only after TEST_FACTORY points at an isolated real Worker + provider stubs.
+    if: vars.TEST_USERS_STAGING_READY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bun install --frozen-lockfile
+      - run: bun x playwright install --with-deps chromium
+      - run: bun run playtest:bot -- --persona test-newbie --url https://shiptorio.dev --out playtest/out/staging
+      - name: File each unique staging failure once
+        if: failure()
+        run: node playtest/bot/report-issues.mjs playtest/out/staging/report.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bot-staging-evidence
+          path: playtest/out/

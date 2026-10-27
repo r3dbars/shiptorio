@@ -43,7 +43,35 @@ export async function localFactory(persona, origin) {
     const sql = wrangler.unstable_splitSqlQuery(readFileSync(join(server, "migrations", file), "utf8")).filter(s => s.trim());
     await db.batch(sql.map(s => db.prepare(s)));
   }
-  return { stub, dispose: () => mf.dispose(), async seed() {
+  let runnerTimer, busy = false, runnerToken;
+  const runnerErrors = [];
+  const api = async (path, body, cookie) => {
+    const response = await mf.dispatchFetch(origin + path, { method: "POST", headers: { origin, "content-type": "application/json", ...(cookie ? { cookie, "x-shiptorio-test-hop": key } : { authorization: `Bearer ${runnerToken}` }) }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`Fixture runner ${path}: ${response.status}`);
+    return response.json();
+  };
+  return { stub, runnerErrors, async dispose() { clearInterval(runnerTimer); while (busy) await new Promise(r => setTimeout(r, 25)); await mf.dispose(); }, async startRunner(cookie) {
+    if (runnerToken || ["test-guest", "test-broke"].includes(persona)) return;
+    const paired = await api("/_bot/runner", {}, cookie);
+    runnerToken = paired.token;
+    const tick = async () => {
+      if (busy) return; busy = true;
+      try {
+        await api(`/api/runner/${stub.state.repo}/heartbeat`, { harnesses: ["codex"] });
+        const { job } = await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] });
+        if (job) {
+          // Same external CLI/Git transport fixture as Stranger E2E. The real server validates
+          // the receipt and opens the PR; only browser approval can make this claim succeed.
+          if (job.allowedPaths.some(p => !["src/cart.ts", "test/cart.test.ts"].includes(p))) throw new Error("Unexpected out-of-scope fixture job");
+          stub.state.branches[job.branch] = stub.state.headSha;
+          await api(`/api/runner/${stub.state.repo}/finish`, { jobId: job.id, lease: job.lease, ok: true, sha: stub.state.headSha,
+            summary: "Fixture: SAVE10 regression fix", checks: ["typecheck", "test", "build"], proof: { baseSha: job.baseSha, headSha: stub.state.headSha, failsOnBase: true, passesOnHead: true, command: "bun test test/cart.test.ts", logTail: "FIXTURE ONLY: base fails, head passes" } });
+          await stub.completeChecks("success");
+        }
+      } catch (error) { runnerErrors.push(String(error)); } finally { busy = false; }
+    };
+    await tick(); runnerTimer = setInterval(tick, 5000);
+  }, async seed() {
     if (["test-newbie", "test-guest"].includes(persona)) return;
     stub.state.installation = 9000 + Math.abs(stub.state.user.id);
     const r = await mf.dispatchFetch(`${origin}/_bot/seed`, { method: "POST", headers: { "x-shiptorio-test-hop": key, "content-type": "application/json" }, body: JSON.stringify({ persona, repo: stub.state.repo, installationId: stub.state.installation, repoId: stub.state.repoId }) });

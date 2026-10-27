@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { Hono } from "hono";
 import { testD1 } from "./d1-fixture";
 import { currentUser, createSession, readProgress } from "../src/accounts";
+import { makeSessionCookie } from "../src/session";
 import { TEST_PERSONAS, personaId, seedTestUser, testUserRoutes, testUsersEnabled } from "../src/test-users";
 
 const fixture = () => {
@@ -11,6 +12,7 @@ const fixture = () => {
   app.all("*", c => { calls++; return c.json({ ordinary: true }); });
   return { env, app, calls: () => calls };
 };
+const preview = async () => (await makeSessionCookie("test-session-secret:test-preview", "preview")).replace("shiptorio_session=", "shiptorio_access=").split(";")[0];
 test("test auth refuses production, aliases, mismatched PUBLIC_URL and disabled mode", () => {
   for (const [host, canonical, mode] of [
     ["https://shiptorio.com", "https://shiptorio.com", "on"],
@@ -37,7 +39,7 @@ test("normal negative-ID sessions persist progress and test seeds are idempotent
 });
 test("negative sessions cannot hit real repos, connectors, runner or admin before provider work", async () => {
   const f = fixture(); await seedTestUser(f.env, "test-midgame");
-  const cookie = await createSession(f.env, { id: personaId("test-midgame"), login: "test-midgame" }, "test");
+  const cookie = (await createSession(f.env, { id: personaId("test-midgame"), login: "test-midgame" }, "test")).split(";")[0] + "; " + await preview();
   for (const path of ["/api/repos/r3dbars/shiptorio/factory", "/api/repos/test-fixture/test-midgame/runner/pair", "/connect/sentry?repo=x/y", "/admin", "/api/runner/x/y/claim", "/api/account/delete"]) {
     expect((await f.app.request(`http://localhost:8787${path}`, { headers: { cookie } }, f.env)).status).toBe(403);
   }
@@ -49,9 +51,17 @@ test("negative sessions cannot hit real repos, connectors, runner or admin befor
 });
 test("test login rejects unknown persona and guest does not create a signed account", async () => {
   const f = fixture();
-  expect((await f.app.request("http://localhost:8787/test/login?as=admin", {}, f.env)).status).toBe(400);
-  const guest = await f.app.request("http://localhost:8787/test/login?as=test-guest", {}, f.env);
+  const headers = { cookie: await preview() };
+  expect((await f.app.request("http://localhost:8787/test/login?as=admin", { headers }, f.env)).status).toBe(400);
+  const guest = await f.app.request("http://localhost:8787/test/login?as=test-guest", { headers }, f.env);
   expect(guest.status).toBe(303);
   expect(guest.headers.get("set-cookie")).toContain("shiptorio_session=;");
+  expect((await f.env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{ n: number }>())?.n).toBe(0);
+});
+test("test login never issues a preview credential or bypasses the password gate", async () => {
+  const f = fixture(); f.env.APP_PASSWORD = "required-password";
+  const response = await f.app.request("http://localhost:8787/test/login?as=test-midgame", {}, f.env);
+  expect(response.status).toBe(401);
+  expect(response.headers.get("set-cookie") ?? "").not.toContain("shiptorio_access=");
   expect((await f.env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{ n: number }>())?.n).toBe(0);
 });
