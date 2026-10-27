@@ -3,7 +3,7 @@
 
 .maplabels.shaft .maplabel {
   position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  max-width: 240px; padding: 4px 7px 5px; margin: 0; text-align: left; cursor: pointer; pointer-events: auto;
+  max-width: 320px; padding: 4px 7px 5px; margin: 0; text-align: left; cursor: pointer; pointer-events: auto;
   background: rgba(14, 10, 8, 0.9); border: 2px solid var(--iron-line); outline: 2px solid #000; border-radius: 0;
   color: var(--iron-ink); font: inherit; will-change: transform;
 }
@@ -65,8 +65,30 @@
   .maplabels.shaft .maplabel .long, .maplabels.shaft .maplabel .row2 { display: none; }
   .maplabels.shaft .maplabel .short { display: inline; }
   .maplabels.shaft .maplabel[data-s="BLOCKED"] .row2 { display: flex; }
-  .maplabels.shaft .shaftfloors { padding: 4px; gap: 3px; }
-  .maplabels.shaft .shaftfloors button { min-width: 52px; min-height: 30px; padding: 0 5px; }
+  /* a phone: the elevator panel becomes one row under the floor card, so it never sits on the shaft */
+  .maplabels.shaft .shaftfloors {
+    top: calc(14px + var(--sat, 0px) + var(--top-h, 92px)); right: calc(8px + var(--sar, 0px)); left: calc(8px + var(--sal, 0px));
+    transform: none; flex-direction: row; align-items: stretch; padding: 4px; gap: 3px;
+  }
+  .maplabels.shaft .shaftfloors .eyebrow, .maplabels.shaft .shaftfloors hr { display: none; }
+  .maplabels.shaft .shaftfloors button { flex: 1 1 0; min-width: 0; min-height: 32px; padding: 0 2px; font-size: 8px; position: relative; }
+  .maplabels.shaft .shaftfloors button::after { content: ""; position: absolute; inset: -6px -2px; } /* 44px tap target */
+}
+
+/* a phone on its side: a two-column panel on the right, between the floor card and the controls */
+@media (max-height: 500px) and (orientation: landscape) {
+  .maplabels.shaft .shaftfloors {
+    top: calc(12px + var(--sat, 0px) + var(--top-h, 60px)); right: calc(8px + var(--sar, 0px)); transform: none;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 4px;
+  }
+  .maplabels.shaft .shaftfloors .eyebrow { grid-column: 1 / -1; }
+  .maplabels.shaft .shaftfloors hr { display: none; }
+  .maplabels.shaft .shaftfloors button { min-width: 58px; min-height: 26px; padding: 0 4px; font-size: 8px; position: relative; }
+  .maplabels.shaft .shaftfloors button::after { content: ""; position: absolute; inset: -9px -2px; }
+  .maplabels.shaft .maplabel { padding: 3px 5px 4px; }
+  .maplabels.shaft .maplabel .long, .maplabels.shaft .maplabel .row2 { display: none; }
+  .maplabels.shaft .maplabel .short { display: inline; }
+  .maplabels.shaft .maplabel[data-s="BLOCKED"] .row2 { display: flex; }
 }
 
 @media (prefers-reduced-motion: reduce) {

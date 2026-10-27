@@ -529,6 +529,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
   .floorcard .eyebrow, .fkey { display: none; }
   .floorcard { padding: 6px 10px; gap: 4px; }
   .needs-slot { max-height: calc(var(--vh) - 110px - var(--sat) - var(--top-h, 92px)); overflow-y: auto; overscroll-behavior: contain; }
+  .ticker div:nth-child(n + 2) { display: none; } /* one line, as on a phone held upright: the map needs the height */
 }
 /* fingers: the small iron buttons keep their look and get a 44px hit area */
 @media (pointer: coarse) {
