@@ -5,7 +5,7 @@
 import { because } from "./because";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
-import { CHECKIN, STAGE_LABEL, THINKS, WORDS } from "../copy";
+import { ATTENTION, CHECKIN, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { Icon } from "./icons";
 
 type Gesture = "right" | "left" | "down" | "up";
@@ -24,6 +24,7 @@ interface Props {
   onClose: () => void;
   onAnswered?: (left: number) => void; // a yes or a never landed (progression), with this many cards still up
   end?: ReactNode; // extra on the end screen: today's tally and the deck trend
+  calm?: boolean; // docs/ATTENTION.md: two buttons only (Continue / Later); the never reasons move into Details
 }
 
 const pickOf = (m: Move) => m.options.find((o) => o.recommended) ?? m.options[0];
@@ -110,7 +111,7 @@ export function createAnswerTracker() {
   };
 }
 
-export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, end }: Props) {
+export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, end, calm }: Props) {
   const [session] = useState(() => createCheckInSession(deck));
   const [answers] = useState(createAnswerTracker);
   const [sheet, setSheet] = useState<"details" | "never" | null>(null);
@@ -168,10 +169,10 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
       setToast(CHECKIN.toast.yes(o?.label));
     });
 
-  const act = (g: Gesture, card = top) => {
+  const act = (g: Gesture, card = top): void => {
     if (!card || card.id !== top?.id || session.busy()) return;
     if (g === "up") return setSheet("details");
-    if (g === "down") return setSheet("never");
+    if (g === "down") return calm ? act("left", card) : setSheet("never");
     if (g === "right") return choose(card, pickOf(card).id); // a locked card's pick is the missing check, never a merge
     done(card, "left", { type: "defer_move", moveId: card.id }, () => {
       setTally((t) => ({ ...t, later: t.later + 1 }));
@@ -374,17 +375,19 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
 
       {top && (
         <div className="ci-actions">
-          <button type="button" className="ci-act never" disabled={!!fly} onClick={() => act("down")}>
-            <span className="k"><Icon name="cross" size={16} /></span>{CHECKIN.buttons.never}
-          </button>
+          {!calm && (
+            <button type="button" className="ci-act never" disabled={!!fly} onClick={() => act("down")}>
+              <span className="k"><Icon name="cross" size={16} /></span>{CHECKIN.buttons.never}
+            </button>
+          )}
           <button type="button" className="ci-act later" disabled={!!fly} onClick={() => act("left")}>
-            <span className="k"><Icon name="back" size={16} /></span>{CHECKIN.buttons.later}
+            <span className="k"><Icon name="back" size={16} /></span>{calm ? ATTENTION.later : CHECKIN.buttons.later}
           </button>
           <button type="button" className="ci-act more" disabled={!!fly} onClick={() => act("up")}>
             <span className="k"><Icon name="info" size={16} /></span>{CHECKIN.buttons.details}
           </button>
           <button type="button" className="ci-act do" disabled={!!fly} onClick={() => act("right")}>
-            <span className="k"><Icon name="check" size={16} /></span>{CHECKIN.buttons.doIt}
+            <span className="k"><Icon name="check" size={16} /></span>{calm ? ATTENTION.continue : CHECKIN.buttons.doIt}
           </button>
         </div>
       )}
@@ -416,6 +419,17 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
             <a className="nm-link" href={top.url} target="_blank" rel="noreferrer">
               {WORDS.onGithub}
             </a>
+          )}
+          {calm && (
+            <>
+              <div className="ci-sec">{ATTENTION.teach}</div>
+              {NEVER.filter((n) => n.why !== "once").map((n) => (
+                <button key={n.why} type="button" disabled={!!fly} className="ci-opt why" onClick={() => { setSheet(null); never(n.why); }}>
+                  <b>{n.label}</b>
+                  {n.text}
+                </button>
+              ))}
+            </>
           )}
         </div>
       )}
