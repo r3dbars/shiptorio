@@ -3,6 +3,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { loadFeatureFlags } from "./flags";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Judge } from "./judge/Judge";
 import { App } from "./App";
 import { Onboarding, type OnboardStep } from "./ui/Onboarding";
 import { sound } from "./sound/engine";
@@ -25,6 +26,7 @@ async function hasServer(): Promise<boolean> {
 // A bare visit starts at onboarding. `?onboard=repo` resumes it after the GitHub login; any
 // `?source=` or `?scenario=` goes straight to the map.
 function Root() {
+  if (location.pathname === "/judge" || location.pathname === "/judge/") return <Judge />;
   const q = new URLSearchParams(location.search);
   const start = (q.get("onboard") || (!q.has("source") && !q.has("scenario") ? "hello" : null)) as OnboardStep | null;
   const [step, setStep] = useState(start);
@@ -50,7 +52,10 @@ function Root() {
   );
 }
 
-void Promise.all([initTelemetry(), loadFeatureFlags()]).then(() => createRoot(document.getElementById("root")!).render(
+const judge = location.pathname === "/judge" || location.pathname === "/judge/";
+// Public replay stays offline, including boot: no telemetry/account/flag requests.
+if (judge) history.replaceState(null, "", "/judge?source=sim");
+void Promise.all(judge ? [] : [initTelemetry(), loadFeatureFlags()]).then(() => createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary><Root /></ErrorBoundary>
   </StrictMode>,
