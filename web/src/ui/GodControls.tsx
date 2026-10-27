@@ -19,8 +19,8 @@ export function GodControls({onClose}:{onClose:()=>void}) {
     setPending(body);
   }
   async function apply(){if(!pending||busy)return;setBusy(true);try{const r=await fetch('/admin/god',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(pending)}),d=await r.json();if(!r.ok)throw Error(d.error||'Action failed');if(d.url)location.assign(d.url);else location.reload()}catch(e){setStatus(e instanceof Error?e.message:'Action failed');setPending(null);setBusy(false)}}
-  return <section className="card sheet god-controls" aria-label="God controls"><header className="sheet-top"><h2>God controls</h2><button className="tbtn" type="button" onClick={onClose}>Close</button></header><div className="god-body">
-    <p>Administrator actions are logged. Daily limits include usage already spent. Viewing starts read-only. Launch and verification gates still apply.</p><p role="status">{status}</p>
+  return <section className="card sheet god-controls" aria-label="God controls"><p role="status" className="god-view-status">{status}</p><header className="sheet-top"><h2>God controls</h2><button className="tbtn" type="button" onClick={onClose}>Close</button></header><div className="god-body">
+    <p>Administrator actions are logged. Daily limits include usage already spent. Viewing starts read-only. Launch and verification gates still apply.</p>
     {data&&<form onSubmit={review} style={{display:'grid',gap:12}}>
       <label>Player<select value={user} onChange={e=>{setUser(e.target.value);setPending(null)}}>{data.users.map(u=><option key={u.login}>{u.login}</option>)}</select></label>
       <label>Factory<select value={repo} onChange={e=>{setRepo(e.target.value);setPending(null)}}>{data.repos.map(r=><option key={r.full_name}>{r.full_name}</option>)}</select></label>

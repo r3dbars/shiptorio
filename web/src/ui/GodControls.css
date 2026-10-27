@@ -7,3 +7,5 @@
 .god-controls section[aria-label="Confirm admin action"] { display:grid; gap:8px; border:2px solid var(--iron-amber); padding:12px; overflow-wrap:anywhere; }
 .god-controls details p { margin-top:10px; overflow-wrap:anywhere; }
 .god-view-banner { position:absolute; z-index:7; left:12px; top:calc(var(--top-h,120px) + 76px + var(--sat)); max-width:calc(100% - 24px); padding:8px 12px; color:var(--iron-ink); background:var(--iron-panel); border:2px solid var(--iron-amber); font:14px/1.4 var(--iron-mono); pointer-events:none; }
+
+.god-controls > .god-view-status { margin:0 0 12px; padding:8px; border:2px solid var(--iron-amber); color:var(--iron-ink); overflow-wrap:anywhere; }
