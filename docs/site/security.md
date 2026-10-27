@@ -23,6 +23,7 @@ GitHub is the only login. No passwords.
 - Your GitHub token is used once, at sign-in, to see which repos you can reach. It isn't stored.
 - Your session is a random id in a cookie that's `HttpOnly`, `Secure` and `SameSite=Lax`, and lasts 14 days. Shiptorio only keeps a SHA-256 hash of it. Signing out deletes it.
 - Every factory request checks that your GitHub account can reach that repo. Repos you can't reach look the same as repos that don't exist.
+- Read and triage collaborators can view the factory. Changing it, managing connectors, pairing a runner, or launching requires GitHub write, maintain, or admin permission. Existing runner grants and socket actions recheck that permission; cached grants expire within 60 seconds.
 
 ## What Shiptorio stores
 

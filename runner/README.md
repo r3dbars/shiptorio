@@ -33,7 +33,7 @@ Subscription sign-ins must be made inside WSL, not on the Windows host.
 
 ```sh
 ~/.local/bin/shiptorio-runner login codex # or login claude: dedicated provider sign-in
-~/.local/bin/shiptorio-runner doctor   # check installed agent sign-ins
+~/.local/bin/shiptorio-runner doctor   # check auth, real OS/agent sandboxes (#235), and server pairing
 ~/.local/bin/shiptorio-runner watch    # resume after closing the terminal
 ~/.local/bin/shiptorio-runner pair     # add another repo, without stopping watch
 ~/.local/bin/shiptorio-runner uninstall
@@ -72,3 +72,70 @@ verification runs inside sandbox-exec on macOS or bubblewrap on Linux. Publicati
 uses a trusted fresh clone; no GitHub credential is passed to the assembler.
 
 Public help: [shiptorio.com/docs/runner](https://shiptorio.com/docs/runner).
+
+## Recovery and diagnostics
+
+`watch` retries each repository independently with exponential backoff and jitter, capped
+at one minute. Heartbeats run separately during a build. Sleep or a network outage does
+not remove pairings. A 401 prints the pairing command; it never starts a browser login
+or discards your local evidence on its own.
+
+A private `.recovery/` journal and `.work/` checkout keep the current build across runner
+restarts and provider/network interruptions. Restart `watch`: the server hands back the
+same still-valid lease (after its 45-second lost-claim grace period), with a fresh GitHub
+installation token. If the agent was interrupted, it continues against the existing edits;
+if it finished, the supervisor skips inference and reruns every check. Frozen approved
+files must still match the saved snapshot. Completion receipts replay automatically even
+when the server accepted the result but its response was lost. Publication retries create
+the identical commit SHA. The journal never stores GitHub installation tokens.
+
+Recovery stays inside the original 30-minute build lease. A changed, revoked or expired
+assignment requires fresh player approval; it cannot extend its own authority. Unfinished
+checkouts/journals remain local for inspection after expiry. Successful acknowledgments
+remove the checkout and journal; local agent logs, verification logs and receipts remain
+under `.work/`. Run only one watcher per runner data root.
+
+An unavailable/expired Codex or Claude login produces an in-game **Sign in again** card
+with `shiptorio-runner login codex` or `shiptorio-runner login claude`. The watcher stays
+alive and stops offering that harness until login is restored. A provider reporting a
+revoked token stays blocked even if its cached login status says signed in; a changed
+local credential file clears the block. Restart watch after signing in if a provider uses
+only the OS keychain. Sandbox failures and ordinary test failures do not become sign-in
+errors. Raw provider output stays in redacted local logs.
+
+`doctor` prints PASS/FAIL for each installed harness, the verification sandbox, each agent
+sandbox (CLI startup/auth status, macOS preferences and HTTPS access), and every pairing.
+It checks all categories even when one fails, exits nonzero if any check fails, and never
+claims a job or runs paid inference. Pairing failures distinguish a missing/expired local
+token from an unreachable server or rejected credential in the printed recovery steps.
+
+## Claude Code and Codex power
+
+`shiptorio-runner login claude` runs Claude's subscription login with an explicit
+`CLAUDE_CONFIG_DIR` in the private `.agent-home/.claude` under the runner data root.
+Codex keeps using `.agent-home/.codex`. Login, status, doctor and the assembler use
+that same canonical home, outside `.work/`. No normal Claude config, API key or
+provider token is copied into a job. Claude's temporary files stay in a private
+sandbox directory. macOS retains #235's preferences/network service permissions and grants agent-only read access to the system timezone database needed by Claude's Intl initialization.
+
+The runner checks sign-ins again before every job. It runs one supervised build at
+a time across all paired repos. Spark's preferred subscription gets the job when
+ready; if it is signed out, the other signed-in, idle subscription may execute the
+same approved plan and file scope. A running/recovering lease never switches agents.
+Local models keep their existing guarded routing; they are never an automatic
+substitute for a subscription. “Free” means idle in this runner, not unlimited usage
+or idle in unrelated Claude/Codex terminals. The Power sheet shows a separate plant
+for each provider, ready/running/offline; it does not invent remaining plan quota.
+
+**Runner changes require reinstalling the local bundle. A merge or website deploy
+does not update a running terminal or launch agent.** Standalone users stop watch,
+rerun the installer above, and run `shiptorio-runner login claude` in the next
+terminal. Legacy service users rerun `bun run runner:service install` from their
+updated paired checkout. Sign in against the service's actual data root:
+
+```sh
+SHIPTORIO_RUNNER_ROOT="$HOME/Library/Application Support/Shiptorio" bun run runner login claude
+```
+
+Keep that root stable: Claude's macOS Keychain login is scoped to its config path.
+A checkout login copied into a service directory may require signing in again.

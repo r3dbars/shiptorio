@@ -28,6 +28,7 @@ test("host isolation",async()=>{
  expect(process.env.SHIPTORIO_RUNNER_TOKEN).toBeUndefined();
  expect(process.env.GITHUB_TOKEN).toBeUndefined();
  expect(process.env.CODEX_HOME).toBeUndefined();
+ expect(process.env.CLAUDE_CONFIG_DIR).toBeUndefined();
  const lib=dlopen("/usr/lib/libSystem.B.dylib",{sysctl:{args:["ptr","u32","ptr","ptr","ptr","u64"],returns:"i32"}});
  const mib=new Int32Array([1,49,${outsideProcess.pid}]);const size=new BigUint64Array([1048576n]);const data=Buffer.alloc(1048576);
  const status=lib.symbols.sysctl(ptr(mib),3,ptr(data),ptr(size),null,0);
@@ -87,5 +88,7 @@ test.skipIf(process.platform !== "darwin" || process.env.SHIPTORIO_CHECK_SANDBOX
     await Bun.sleep(650);
     expect(await Bun.file(join(work, "descendant-marker")).exists()).toBe(false);
     await expect(sandbox.run([process.execPath, "-e", ""], root)).rejects.toThrow("escapes");
+    const timed = await sandbox.run([process.execPath, "-e", "setInterval(()=>{},1000)"], work, { timeout: 30 });
+    expect(timed.timedOut).toBe(true); expect(timed.code).not.toBe(0);
   } finally { await sandbox.close(); await rm(root, { recursive: true, force: true }); }
 });

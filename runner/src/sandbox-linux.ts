@@ -26,7 +26,7 @@ export async function linuxSandbox(work: string, agent?: { home: string; executa
     const binary = await realpath(agent.executable);
     visible.push("--ro-bind", await realpath(join(binary, "..")), await realpath(join(binary, "..")));
   }
-  const env = { ...(agent ? { CODEX_HOME: join(home, ".codex") } : {}), HOME: home, TMPDIR: temp, TMP: temp, TEMP: temp, PATH: `${bin}:/usr/bin:/bin`, LANG: "C.UTF-8", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1", BUN_INSTALL_CACHE_DIR: join(home, ".bun-cache"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
+  const env = { ...(agent ? { CODEX_HOME: join(home, ".codex"), CLAUDE_CONFIG_DIR: join(home, ".claude"), CLAUDE_CODE_TMPDIR: temp } : {}), HOME: home, TMPDIR: temp, TMP: temp, TEMP: temp, PATH: `${bin}:/usr/bin:/bin`, LANG: "C.UTF-8", CI: "true", SHIPTORIO_CHECK_SANDBOX: "1", BUN_INSTALL_CACHE_DIR: join(home, ".bun-cache"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   let closed = false;
   return {
     async run(args, cwd = directory, options = {}) {
@@ -34,10 +34,12 @@ export async function linuxSandbox(work: string, agent?: { home: string; executa
       const location = await realpath(cwd);
       if (location !== directory && !location.startsWith(directory + "/")) throw new Error("Verification cwd escapes the assigned checkout");
       if (options.install && !(await realpath(args[0]) === runtime && args.length === 4 && args[1] === "install" && args[2] === "--frozen-lockfile" && args[3] === "--ignore-scripts")) throw new Error("Only frozen dependency installation without lifecycle scripts can use network access");
-      const child = Bun.spawn([Bun.which("bwrap")!, "--die-with-parent", "--new-session", "--unshare-all", ...(options.install || agent ? ["--share-net"] : []), "--cap-drop", "ALL", ...visible, "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--bind", directory, directory, "--bind", root, root, ...(agent ? ["--bind", home, home] : []), "--chdir", location, "--", ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdout: "pipe", stderr: "pipe", detached: true });
+      // Mask host temp before mounting trusted runtimes/agent binaries, which may themselves live in /tmp.
+      const child = Bun.spawn([Bun.which("bwrap")!, "--die-with-parent", "--new-session", "--unshare-all", ...(options.install || agent ? ["--share-net"] : []), "--cap-drop", "ALL", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", ...visible, "--bind", directory, directory, "--bind", root, root, ...(agent ? ["--bind", home, home] : []), "--chdir", location, "--", ...(options.install ? [args[0], "--no-env-file", "--config=/dev/null", ...args.slice(1)] : args)], { cwd: location, env, stdin: "ignore", stdout: "pipe", stderr: "pipe", detached: true });
       const stop = () => { try { process.kill(-child.pid, "SIGKILL"); } catch {} };
-      const timer = setTimeout(stop, options.timeout ?? 180000);
-      try { const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]); return { code, out, err }; }
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; stop(); }, options.timeout ?? 180000);
+      try { const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]); return { code, out, err, timedOut }; }
       finally { clearTimeout(timer); stop(); }
     },
     async close() { closed = true; await rm(root, { recursive: true, force: true }); },

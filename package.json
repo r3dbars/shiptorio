@@ -30,7 +30,8 @@
     "typecheck:tests": "tsc --noEmit -p tests",
     "autopilot": "bun --env-file=server/.dev.vars server/scripts/autopilot.ts",
     "fake:support": "bun --env-file=server/.dev.vars server/scripts/fake-support.ts",
-    "stranger": "bun run build && node playtest/stranger/run.mjs"
+    "stranger": "bun run build && node playtest/stranger/run.mjs",
+    "selfhost": "bun server/scripts/selfhost.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261026.1",

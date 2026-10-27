@@ -47,11 +47,18 @@ is open. One process serves all paired repos, with one build at a time. Pairing
 another repo preserves earlier connections. Pairing a new machine to the same repo
 replaces that repo's previous machine credential.
 
-Rerun the installer to update. Existing pairings survive the update. After closing
+**Runner code changes require a local reinstall.** Stop watch and rerun the installer to update. Existing pairings survive the update. A website update does not replace a running local helper. After closing
 the terminal, restart with `~/.local/bin/shiptorio-runner watch`.
 
 In the game, **Power → Connect your machine** shows online/offline, last seen,
 detected agents and latest job. A newly selected live repo opens this card.
+Claude Code and Codex appear as separate power plants. Each shows ready, running or
+offline. Subscription usage remaining is not measured here; your plan's limits still apply.
+
+Before each job the runner checks which subscriptions are signed in and idle. If
+Spark's preferred subscription is unavailable, the other can execute the same approved
+plan and files. One supervised build runs at a time across paired repos; a running or
+recovering job keeps its original provider. Local models keep their guarded routing.
 
 ## Troubleshooting
 
@@ -66,8 +73,12 @@ detected agents and latest job. A newly selected live repo opens this card.
   pair that repo again. Logout or lost repository access also revokes the grant.
 - **No plan:** the first runner plan needs an open GitHub issue. Pairing alone does
   not create an issue or start a build. Spark still asks for plan approval.
-- **Claude uses macOS Keychain:** some installations may fail in the dedicated
-  sandbox. Do not expose your normal Keychain or home to get around that boundary.
+- **Claude sign-in:** run `~/.local/bin/shiptorio-runner login claude`. This opens
+  Claude's subscription login and checks it finished. Login, status and builds share
+  Shiptorio's private Claude configuration, outside job checkouts. Keep the runner's
+  data location stable: the macOS Keychain login is scoped to that path. If you move
+  from a checkout to the legacy service, sign in again using the service's data root.
+  Your usual Claude home stays separate.
 
 ## What your agent can and can't touch
 
@@ -76,6 +87,12 @@ then opens a pull request. It never pushes to the default branch. The OS sandbox
 keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
 sign-in and contact its inference provider; tests run without those credentials.
+
+Codex returns a structured edit proposal in read-only mode. After Codex exits, the
+supervisor applies only exact, unique replacements in approved regular files; new
+files require an explicit create proposal. Dirty checkouts, ambiguous matches and
+links are rejected. Claude Code and local-model adapters retain their existing edit
+flow.
 
 The supervisor runs the repository's checks and verifies the frozen patch before
 publication. You still approve the plan and decide when to merge.
@@ -98,3 +115,9 @@ their checkout. That service has a separate install under
 `~/Library/Application Support/Shiptorio` and a launch agent at
 `~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
 files to uninstall the legacy service.
+
+Approving a plan stays bound to that exact issue and plan even if another card moves to
+the top of the deck. If the issue changes before approval, request a fresh plan.
+
+If old source alerts fill the check-in, one existing build or plan-approval card stays
+reachable. This only makes the decision visible; it does not approve a plan or start work.
