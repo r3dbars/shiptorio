@@ -41,7 +41,7 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
   const bucket = Math.floor(Date.now() / 86400000);
   await env.DB.prepare("INSERT INTO signup_counters VALUES('runs:owner',?,16,?)").bind(bucket, (bucket + 2) * 86400000).run();
   const account = await budgetAccount(env.DB, "owner/repo");
-  await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,160,400000)').bind(account, new Date().toISOString().slice(0, 10)).run();
+  await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,320,800000)').bind(account, new Date().toISOString().slice(0, 10)).run();
   env.ADMIN_LOGINS = "admin";
   const status = await quotaStatus(env, "owner/repo", { id: 1, login: "admin" });
   expect(status.quotas.filter(q => ['runs','spark-calls','spark-tokens'].includes(q.id)).map(q => q.status)).toEqual(['warning','warning','warning']);
@@ -141,6 +141,28 @@ test("planning cooldowns increase, midnight clears the cap, and issue state cann
   expect(planningHold(three, three.retryAt - 1)).toEqual(three);
   expect(planningHold(three, three.retryAt)).toBeNull();
   expect(planningFailure(three, 'offline', three.retryAt).failures).toBe(1);
+});
+
+test("a GitHub rate limit pauses planning until GitHub's retry time without spending a daily try", () => {
+  const start = Date.parse('2026-10-27T03:00:00Z');
+  const limited = (at: number) => `GitHub rate limit; queued work retries after ${new Date(at).toISOString()}`;
+  const one = planningFailure(undefined, 'offline', start);
+  const paused = planningFailure(one, limited(start + 25 * 60000), start + 120000);
+  expect(paused.failures).toBe(1);
+  expect(paused.retryAt).toBe(start + 25 * 60000);
+  expect(planningHold(paused, start + 25 * 60000 - 1)).toEqual(paused);
+  expect(planningHold(paused, start + 25 * 60000)).toBeNull();
+  // A ledger written before this fix counted the rate limit as the third try; it only waits out the pause.
+  const legacy: PlanningRetry = { day: '2026-10-27', failures: 3, retryAt: Date.parse('2026-10-28T00:00:00Z'), reason: limited(start + 60000) };
+  expect(planningHold(legacy, start + 30000)).toEqual({ ...legacy, retryAt: start + 60000 });
+  expect(planningHold(legacy, start + 60000)).toBeNull();
+  expect(planningHold(legacy, start + 120000)).toBeNull();
+  // Invalid timestamps cannot turn a real daily cap into a free retry.
+  expect(planningHold({ ...legacy, reason: limited(start) + 'invalid' }, start + 120000)?.retryAt).toBe(legacy.retryAt);
+  expect(planningHold({ ...legacy, reason: 'offline' }, start + 120000)?.retryAt).toBe(legacy.retryAt);
+  const capped = planningFailure(planningFailure(paused, 'offline', start + 26 * 60000), 'offline', start + 30 * 60000);
+  expect(capped.failures).toBe(3);
+  expect(planningHold(capped, start + 60 * 60000)?.retryAt).toBe(Date.parse('2026-10-28T00:00:00Z'));
 });
 
 test("limits endpoint denies other repos, requires authentication, and returns no-store telemetry", async () => {

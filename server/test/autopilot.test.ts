@@ -17,6 +17,12 @@ describe("autopilot allowlist", () => {
     expect(allowedTap(card("request_merge", { pr: 3 }, { locked: true }))).toHaveProperty("skip");
     expect(allowedTap(card("request_merge", { pr: 3, overrule: true }))).toHaveProperty("skip");
   });
+  it("never launches an item a human is holding, but still plans and reworks it", () => {
+    const held = new Set(["gh-7"]);
+    expect(allowedTap({ ...card("request_merge", { pr: 13 }), itemId: "gh-7" }, held)).toHaveProperty("skip");
+    expect(allowedTap({ ...card("request_merge", { pr: 12 }), itemId: "gh-5" }, held)).toHaveProperty("optionId");
+    expect(allowedTap({ ...card("plan_runner_job", { harness: "codex" }), itemId: "gh-7" }, held)).toHaveProperty("optionId");
+  });
   it("leaves research, sources, dismissals and permit revokes to the human", () => {
     for (const c of [card("research", { tech: "lint" }), card("connect_source", { kind: "claude" }), card("set_autonomy", { district: "docs", permit: false })])
       expect(allowedTap(c)).toHaveProperty("skip");
