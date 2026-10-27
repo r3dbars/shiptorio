@@ -55,7 +55,7 @@ jobs:
                   prs = [pr for pr in json.load(response) if pr.get('head', {}).get('sha') == os.environ['GITHUB_SHA']]
           inputs = event.get('inputs') or {}
           diagnostic = manual and (bool(inputs.get('browser_grep')) or str(inputs.get('update_baselines', 'false')).lower() == 'true')
-          protected_main = manual and os.environ['GITHUB_REF'] == 'refs/heads/main' and os.environ['GITHUB_ACTOR'] == repo.split('/')[0]
+          protected_main = manual and os.environ['GITHUB_REF'] == 'refs/heads/main' and os.environ.get('GITHUB_REF_PROTECTED') == 'true' and os.environ['GITHUB_ACTOR'] == repo.split('/')[0]
           eligible = protected_main or any(batch(pr, repo) or factory(pr) for pr in prs)
           full = eligible and not diagnostic
           targets_main = protected_main or any(pr.get('base', {}).get('ref') == 'main' for pr in prs)
