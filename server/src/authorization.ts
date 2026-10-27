@@ -29,11 +29,27 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   if (!sessionUser || !await signupAllowed(env,sessionUser.login)) return null;
   const row = await env.DB.prepare('SELECT installation_id FROM repos WHERE full_name = ?').bind(repo).first<{ installation_id: number }>();
   if (!row?.installation_id) return null;
-  const installed = await env.DB.prepare('SELECT id FROM installations WHERE id = ?').bind(row.installation_id).first();
-  if (!installed) return null;
-  const membership = await env.DB.prepare('SELECT installation_id FROM user_repos WHERE user_id = ? AND repo = ?').bind(user.id, repo).first<{ installation_id: number }>();
-  const userInstallation = await env.DB.prepare('SELECT installation_id FROM user_installations WHERE user_id = ? AND installation_id = ?').bind(user.id, row.installation_id).first();
-  if (!membership || membership.installation_id !== row.installation_id || !userInstallation) return null;
+  const checks = [
+    env.DB.prepare('SELECT id FROM installations WHERE id = ?').bind(row.installation_id),
+    env.DB.prepare('SELECT installation_id FROM user_repos WHERE user_id = ? AND repo = ?').bind(user.id, repo),
+    env.DB.prepare('SELECT installation_id FROM user_installations WHERE user_id = ? AND installation_id = ?').bind(user.id, row.installation_id),
+  ];
+  type Relationship = { id?: number; installation_id?: number };
+  let installed: Relationship | null | undefined, membership: Relationship | null | undefined, userInstallation: Relationship | null | undefined;
+  if (typeof env.DB.batch === 'function') {
+    // These three facts are independent after the repo lookup. Read them in one D1
+    // roundtrip on every request/frame; no authorization result is cached here.
+    const results = await env.DB.batch<Relationship>(checks);
+    if (results.length !== checks.length || results.some((result: { success?: boolean }) => result.success === false)) return null;
+    [installed, membership, userInstallation] = results.map(result => result.results?.[0]);
+  } else {
+    // Lightweight D1 adapters can retain the original sequential read behavior.
+    installed = await checks[0].first<Relationship>();
+    if (!installed) return null;
+    membership = await checks[1].first<Relationship>();
+    userInstallation = await checks[2].first<Relationship>();
+  }
+  if (!installed || !membership || membership.installation_id !== row.installation_id || !userInstallation) return null;
   // Never promote a cached visibility grant into mutation authority. Separate
   // keys also make pre-upgrade read-only grants harmless for writers.
   const key = `access:v2:${authority === "write" ? "write:" : ""}${row.installation_id}:${repo}:${user.id}`;
