@@ -1,4 +1,4 @@
-import { prepareAgentKeychain, unlockAgentKeychain } from "./keychain";
+import { KeychainUnavailable, prepareAgentKeychain, unlockAgentKeychain } from "./keychain";
 import { chmod, lstat, mkdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment } from "./policy";
@@ -7,7 +7,7 @@ export const subscriptionArgs = (h: Subscription, login = false): string[] =>
   h === "codex" ? ["login", ...(login ? [] : ["status"])] : ["auth", login ? "login" : "status", login ? "--claudeai" : "--json"];
 
 /** Resolve before passing the path to Claude: its Keychain identity depends on this exact path. */
-export async function prepareAgentHome(root: string): Promise<string> {
+export async function prepareAgentHome(root: string, onKeychainUnavailable?: () => void): Promise<string> {
   await mkdir(root, { recursive: true, mode: 0o700 });
   const home = resolve(await realpath(root), ".agent-home");
   for (const path of [home, resolve(home, ".codex"), resolve(home, ".claude"), resolve(home, ".claude/tmp")]) {
@@ -15,7 +15,12 @@ export async function prepareAgentHome(root: string): Promise<string> {
     if (!(await lstat(path)).isDirectory() || await realpath(path) !== path) throw new Error("Agent home must not be a symlink");
     await chmod(path, 0o700);
   }
-  await prepareAgentKeychain(home);
+  try { await prepareAgentKeychain(home); }
+  catch (error) {
+    // Only the optional provider unlock may degrade. Filesystem/isolation failures stay fatal.
+    if (!(error instanceof KeychainUnavailable) || !onKeychainUnavailable) throw error;
+    onKeychainUnavailable();
+  }
   return home;
 }
 export async function subscriptionSignedIn(h: Subscription, executable: string, home: string): Promise<boolean> {

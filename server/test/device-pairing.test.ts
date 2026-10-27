@@ -76,7 +76,22 @@ test("browser pairing: session + origin + repo permission, terminal-only deliver
     const status = await request("/api/repos/you/repo/runner/status", { headers: { cookie: cookies } });
     expect(await status.json()).toMatchObject({ online: true, paired: true, harnesses: ["codex"], lastJob: null });
     expect((await request("/api/runner/you/second/heartbeat", { method: "POST", headers: { authorization: `Bearer ${result.token}` } })).status).toBe(401);
-    await instances.get("repo:101")!.revokeRunner(); expect((await heartbeat()).status).toBe(401);
+    const f = instances.get("repo:101")!;
+    const expiredToken = await pairToken(browserEnv.SESSION_SECRET, {...claims!, expires: Date.now() - 1});
+    const expired = await request("/api/runner/you/repo/heartbeat", {method:"POST", headers:{authorization:`Bearer ${expiredToken}`}, body:JSON.stringify({harnesses:["codex"]})});
+    expect(expired.status).toBe(401);
+    expect(await expired.json()).toMatchObject({code:"runner_grant_expired"});
+    // A stale old grant cannot override the still-valid renewed/current grant's health.
+    expect((await f.runnerStatus()).needsRepair).toBe(false);
+    await f.revokeRunner();
+    const revoked = await heartbeat();
+    expect(revoked.status).toBe(401);
+    expect(await revoked.json()).toMatchObject({code:"runner_pair_revoked"});
+    expect(await f.runnerStatus()).toMatchObject({paired:false, online:false, needsRepair:true, repairCommand:"shiptorio-runner pair"});
+    await f.activateRunner("replacement-pair");
+    expect((await f.runnerStatus()).needsRepair).toBe(false);
+    await f.recordRunnerGrant("replacement-pair", Date.now() - 1);
+    expect(await f.runnerStatus()).toMatchObject({needsRepair:true, repairReason:"runner_grant_expired", repairCommand:"shiptorio-runner pair"});
     for (let i = 0; i < 9; i++) expect((await request("/api/runner-device/start", { method: "POST" })).status).toBe(200);
     expect((await request("/api/runner-device/start", { method: "POST" })).status).toBe(429);
     const record = stores.get(`device:${d.code.toLowerCase()}`)!.get("device");

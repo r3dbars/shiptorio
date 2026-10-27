@@ -253,3 +253,24 @@ explicit Launch. Do not implement the issue outside that runner path.
 
 The historical runtime experiments above are evidence of failed or bounded attempts, not approval to
 replace the runtime, widen the sandbox or resume a process using an old PID/session handle.
+
+## Reviewed runner release deployed; startup recovery still pending
+
+- [Release batch #362](https://github.com/r3dbars/shiptorio/pull/362) merged as
+  `3615a53df7d17db3c7323960a3be43fd4fc1a95d`. Its exact candidate passed
+  [full browser/load CI](https://github.com/r3dbars/shiptorio/actions/runs/40581595915),
+  [PR CI](https://github.com/r3dbars/shiptorio/actions/runs/40581602302), and
+  [Stranger E2E](https://github.com/r3dbars/shiptorio/actions/runs/40581602158).
+- [Deploy](https://github.com/r3dbars/shiptorio/actions/runs/40583445850) passed.
+  The public version endpoint returned that exact main SHA; anonymous `/api/me`
+  returned 401, preserving the password gate.
+- The installed runner was verified against that release's HTTPS manifest,
+  SHA-256 `44d68bb6e14401b89ef98156beadbf850ca272eaf55acb6653e29045ddf5212e`,
+  and Bun 1.4.4. Pairing files were unchanged. No ready/running job existed
+  before starting the owned launchd service.
+- Startup failed when the dedicated Claude Keychain rejected its saved password.
+  The service was stopped to prevent repeated crashes. A disposable Keychain
+  confirmed the same stdin quoting works with spaces; dedicated Codex sign-in
+  separately remains valid. No real Keychain was reset or recreated.
+- This is deployment and installation evidence only. No new #170 build,
+  supervised regression receipt, factory PR or Launch has been established.

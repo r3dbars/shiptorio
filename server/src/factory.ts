@@ -1,3 +1,6 @@
+import { adminPaused, auditAdmin } from "./admin-control";
+import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
+import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
 import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
@@ -8,7 +11,7 @@ import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
-import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
+import { capture, currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
 import { redact, redactText } from "./redact";
 import { Redactor } from "./redact";
 
@@ -26,7 +29,7 @@ import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
-import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
@@ -42,11 +45,9 @@ import {
   suggestResearch,
   techById,
   TECHS,
-  type Belt,
   type FactoryState,
   type FunnelWindow,
   type Item,
-  type Machine,
   type Move,
   type Patch,
   type ServerToWeb,
@@ -62,6 +63,8 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
+import { initialFactoryState } from "./factory-initialization";
+import { inventoryCommand } from "./factory-inventory";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import type { SparkStep, Toolbox } from "./spark-tools";
@@ -152,6 +155,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private batchingDecisions = false;
+  private activeBrowserMoves = 0;
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
@@ -225,7 +229,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -235,6 +239,41 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         log("info", "factory.rpc", { method, durationMs: Date.now() - start });
         return result;
       } catch (error) { report(error, "factory.rpc_failed", { method, durationMs: Date.now() - start }); throw error; }
+    });
+  }
+
+  /** Internal RPC reachable only through the authenticated, audited admin route. No merge action exists. */
+  async adminControl(action: string, input: {level?: AutonomyLevel}) {
+    await this.load();
+    if(!this.state || !this.meta) throw new Error('Factory unavailable');
+    if(action === 'autonomy') {
+      if(!input.level || !['advisor','floor','build','lights_out'].includes(input.level)) throw new Error('Invalid level');
+      const book=await this.permitBook();
+      await this.savePermits({...book,ladder:{...ladderOf(book),level:input.level,since:Date.now()}});
+      return;
+    }
+    if(action === 'fast-forward') {
+      // Only scheduling delays. Never alter leases, inspection proof, strikes or launch permits.
+      for(const [key,value] of await this.ctx.storage.list<PlanningRetry>({prefix:'planningRetry:'})) {
+        await this.accountPut(key,{...value,retryAt:0});
+      }
+      await this.accountPut('posthogPoll',{nextAt:0,failures:0});
+      await this.accountAlarm(Date.now()+1);
+      return;
+    }
+    if(action !== 'reset-factory') throw new Error('Unknown control');
+    await this.ctx.blockConcurrencyWhile(async()=>{
+      const jobs=await this.runnerJobs();
+      if(this.running.size || this.batchingDecisions || this.initializing || this.activeBrowserMoves || jobs.some(j=>j.status==='running'||j.status==='planning') || this.state!.items.some(i=>i.prNumber&&i.state!=='launched')) throw new Error('Active work must finish first');
+      for(const [key] of await this.ctx.storage.list()) {
+        if(/^(runnerJob:|planningRetry:|delivery:)/.test(key)||['permits','openMoves','deckBook','approvalEvents','stageHistory','support','research','researchOffered','sparkResearch','posthogTraffic','pendingReviewComments','reconcileAt','reconcileCursor','runnerLastJobId','supportSeen'].includes(key)) await this.ctx.storage.delete(key);
+      }
+      await this.env.DB.prepare('DELETE FROM move_kind_rules WHERE repo=?').bind(this.meta!.repo).run();
+      this.openMoves=null;this.deckBook=null;this.deckRules=null;
+      this.state={repo:this.meta!.repo,baseBranch:this.state!.baseBranch,districts:this.state!.districts,...starterLine(),items:[],science:{red:0,green:0,grey:0,blue:0},trust:0.5,tick:0,sources:this.state!.sources};
+      await this.save();
+      await this.broadcast({type:'snapshot',state:this.state!});
+      await this.scheduleTick();
     });
   }
 
@@ -657,19 +696,41 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const lastId = await this.ctx.storage.get<string>("runnerLastJobId");
     const last = jobs.find(job => job.id === lastId);
     const paired = !!await this.ctx.storage.get("runnerPair");
-    return { paired, online: paired && !!presence && Date.now() - presence.seenAt < 20000,
+    const expires = await this.ctx.storage.get<number>("runnerGrantExpiry");
+    const repair = await this.ctx.storage.get<{code: string; at: number}>("runnerRepair") ??
+      (paired && expires && expires <= Date.now() ? {code: "runner_grant_expired", at: expires} : null);
+    return { needsRepair: !!repair, repairCommand: repair ? "shiptorio-runner pair" : null, repairReason: repair?.code ?? null,
+      paired, online: paired && !repair && !!presence && Date.now() - presence.seenAt < 20000,
       seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
       lastJob: last ? { id: last.id, status: last.status } : null };
   }
-  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); }
+  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); await this.ctx.storage.delete("runnerRepair"); await this.ctx.storage.delete("runnerGrantExpiry"); }
   async pairRunner(): Promise<string> {
     await this.assertAccountActive(this.meta?.repo);
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const pairId = crypto.randomUUID();
     await this.accountPut("runnerPair", pairId); // Re-pairing revokes the previous token.
+    await this.ctx.storage.delete("runnerRepair");
+    await this.ctx.storage.delete("runnerGrantExpiry");
     return pairId;
   }
+  async recordRunnerGrant(pairId: string, expires: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.isRunnerPaired(pairId)) await this.accountPut("runnerGrantExpiry", Math.max(expires, await this.ctx.storage.get<number>("runnerGrantExpiry") ?? 0));
+    });
+  }
+  async rejectRunnerGrant(pairId: string, code: "runner_grant_expired" | "runner_access_revoked", expires?: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const knownExpiry = await this.ctx.storage.get<number>("runnerGrantExpiry");
+      if (code === "runner_grant_expired" && knownExpiry && expires && expires < knownExpiry) return;
+      if (await this.isRunnerPaired(pairId)) {
+        await this.accountPut("runnerRepair", { code, at: Date.now() });
+        await this.ctx.storage.delete("runnerPresence");
+      }
+    });
+  }
   async revokeRunner(): Promise<void> {
+    await this.accountPut("runnerRepair", { code: "runner_pair_revoked", at: Date.now() });
     await this.ctx.storage.delete("runnerPair");
     await this.ctx.storage.delete("runnerPresence");
     await this.load();
@@ -770,7 +831,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
     const trace = await this.ctx.storage.get<Trace>(`trace:${job.itemId}`);
-    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
+    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId, job: job.id }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
   }
 
   private async planRunnerJob(job: RunnerJob): Promise<void> {
@@ -857,6 +918,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
+      if (await adminPaused(this.env.DB,this.meta?.repo ?? (await this.ctx.storage.get<Meta>("meta"))?.repo)) return null;
       const running = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const expired = [...running.values()].filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now());
       for (const old of expired) {
@@ -1695,11 +1757,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private broadcastQueue: Promise<void> = Promise.resolve();
+  private browserFrames = new BrowserFrames(this.ctx.storage);
 
   private broadcast(msg: ServerToWeb) {
-    const text = JSON.stringify(this.redactor.value(msg));
+    const frame = this.browserFrames.frame(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
+      const text = await frame;
       // A player may have many sockets. Share the same revocable session check only
       // within this frame; the next frame must query D1 again (no authorization TTL).
       const access = new Map<string, Promise<boolean>>();
@@ -1707,9 +1771,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         try {
           const auth = ws.deserializeAttachment();
           if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user) { ws.close(1008, "Repository access revoked"); continue; }
-          const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login]);
+          const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login, (auth as {adminView?:string}).adminView]);
           let allowed = access.get(key);
-          if (!allowed) { allowed = repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
+          if (!allowed) { allowed = (auth as {adminView?:string}).adminView ? activeAdminView(this.env,(auth as {adminView:string}).adminView,auth.user.id,auth.user.sessionHash,repo).then(Boolean) : repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
           if (!await allowed) { ws.close(1008, "Repository access revoked"); continue; }
           ws.send(text);
         } catch { try { ws.close(1008, "Sign in again"); } catch {} }
@@ -1724,7 +1788,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
     text = this.redactor.text(text);
     log(level === "success" ? "info" : level, "factory.event", { message: text, itemId, repo: this.meta?.repo });
-    if (level === "error") Sentry.captureException(new Error(text), { tags: { itemId, repo: this.meta?.repo } });
+    if (level === "error") capture(new Error(text), { itemId, repo: this.meta?.repo });
     this.broadcast({ type: "log", level, text, at: Date.now(), itemId });
   }
 
@@ -1885,17 +1949,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, installationId);
     const tree = await repoTree(token, repo);
     if (await this.githubStopped()) return;
-    this.state = {
-      repo,
-      baseBranch: tree.branch,
-      districts: layoutMap(tree.entries).zones,
-      ...starterLine(),
-      items: [],
-      science: { red: 0, green: 0, grey: 0, blue: 0 },
-      trust: 0.5,
-      tick: 0,
-      sources: [githubStatus(this.env)],
-    };
+    this.state = initialFactoryState(repo, tree, this.env);
     await this.save();
   }
 
@@ -2584,16 +2638,25 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
     const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
     await this.load();
-    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
-    Object.assign(auth, { repo, user });
+    const adminView = await readAdminView(this.env,request);
+    if (viewCookieValue(request.headers.get("cookie")) && !adminView) return new Response("Admin view expired",{status:403});
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
+    Object.assign(auth, { repo, user, ...(adminView ? {adminView:adminView.idHash} : {}) });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
     const state = await this.load();
-    if (state && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
-    else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
+    else if (state) {
+      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
+      server.send(await this.browserFrames.frame(snapshot, false));
+    }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    // Restoring the map must not wait for a new planner turn (or provider latency).
+    if (!adminView && state) this.ctx.waitUntil((async () => {
+      if (!(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+    })());
     // The initial snapshot was authorized above. Other sockets may still be
     // revalidating queued frames; they must not hold this handshake open.
     return new Response(null, { status: 101, webSocket: client });
@@ -2603,7 +2666,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
     return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
-      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
+      this.activeBrowserMoves++;
+      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { this.activeBrowserMoves--; await this.broadcastQueue; }
     });
   }
 
@@ -2613,7 +2677,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
-    if (typeof raw !== "string" || raw === "ping") return;
+    if (typeof raw !== "string" || browserHeartbeat(ws, raw)) return;
     if (raw.length > 16384) return;
     for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
@@ -2622,7 +2686,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     await this.load();
     const repo = this.meta?.repo ?? this.state?.repo;
-    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo, "write")) { ws.close(1008, "Repository write access required"); return; }
+    const viewId=(auth as {adminView?:string}).adminView;
+    const view=viewId && auth.user ? await activeAdminView(this.env,viewId,auth.user.id,auth.user.sessionHash,repo) : null;
+    if(viewId && !view?.writable) { ws.send(JSON.stringify({type:'log',level:'warn',text:'Viewing as player is read-only. Enable write mode in God controls.',at:Date.now()}));return; }
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !view?.writable && !await repoAccess(this.env, auth.user, repo, "write")) { ws.close(1008, "Repository write access required"); return; }
 
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
@@ -2630,6 +2697,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
+    if(view) await auditAdmin(this.env.DB,auth.login,'view-write',repo,view.login,{message:msg.type});
     const trace = currentTrace();
     if (trace) { trace.repo = this.meta?.repo; if ("itemId" in msg && typeof msg.itemId === "string") trace.itemId = msg.itemId; }
     if (this.meta?.repo) Sentry.setTag("repo", this.meta.repo);
@@ -2675,7 +2743,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.refreshDecisions(); return;
     }
-    switch (msg.type) {
+    const inventory = inventoryCommand(s, msg, () => crypto.randomUUID().slice(0, 6));
+    if (inventory.handled) {
+      if (inventory.stop) return;
+      if (inventory.patch) await this.patch(inventory.patch);
+    } else switch (msg.type) {
       case "send_reply":
         await this.sendSupportReply(playerTap(msg.ticketId, msg.draftHash, playerLogin(auth)));
         await this.refreshDecisions();
@@ -2721,53 +2793,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         else if (msg.kind === "sentry" || msg.kind === "posthog") await this.disconnectMine(msg.kind);
         else if (msg.kind === "email") await this.disconnectSupport();
         else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
-        break;
-      }
-      case "place_machine": {
-        const m: Machine = {
-          id: `${msg.machineType}-${crypto.randomUUID().slice(0, 6)}`,
-          type: msg.machineType,
-          x: msg.x,
-          y: msg.y,
-          district: msg.district,
-          harness: msg.harness,
-          powerId: msg.harness === "spark" ? "steam-spark" : undefined,
-          tier: 1,
-          state: "idle",
-        };
-        await this.patch({ machines: [m] });
-        break;
-      }
-      case "remove_machine":
-        if (s.machines.some((m) => m.id === msg.id && m.state === "working")) break;
-        if (s.stations?.some((st) => st.machineId === msg.id)) break; // gauntlet stations stay on the line
-        await this.patch({
-          removed: [
-            { kind: "machine", id: msg.id },
-            ...s.belts.filter((b) => b.from === msg.id || b.to === msg.id).map((b) => ({ kind: "belt" as const, id: b.id })),
-          ],
-        });
-        break;
-      case "connect_belt": {
-        if (!s.machines.some((m) => m.id === msg.from) || !s.machines.some((m) => m.id === msg.to)) return;
-        const b: Belt = { id: `belt-${crypto.randomUUID().slice(0, 6)}`, from: msg.from, to: msg.to, carries: msg.carries };
-        await this.patch({ belts: [b] });
-        break;
-      }
-      case "move_machine": {
-        const m = s.machines.find((x) => x.id === msg.id);
-        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
-        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
-        break;
-      }
-      case "set_harness": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
-        break;
-      }
-      case "set_module": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m) await this.patch({ machines: [{ ...m, module: msg.module }] });
         break;
       }
       case "route_item": {
@@ -2829,9 +2854,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.accountPut(key, clock);
     }
-    for (const [key, expiry] of await this.ctx.storage.list<number>({ prefix: "done:delivery:" })) {
-      if (expiry <= now) await this.ctx.storage.delete(key);
-    }
+    await pruneExpiredDeliveryMarkers(this.ctx.storage, now);
   }
 
   /** Repair missed webhooks without ever issuing a merge. Reuse the normal gated transitions. */
@@ -2934,6 +2957,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.load();
     await this.processDeliveries();
     if (await this.githubStopped()) return;
+    if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     if (!(await this.load())) return;
     await this.guard("pollPostHog", () => this.pollPostHog());
     await this.guard("tickSupport", () => this.tickSupport());

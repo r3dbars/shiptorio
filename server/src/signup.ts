@@ -97,7 +97,8 @@ export async function runQuotaStatus(env: Pick<Env, 'DB' | 'ADMIN_LOGINS'>, logi
   const row = await env.DB.prepare('SELECT runs_daily FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{runs_daily:number}>();
   const used = await env.DB.prepare('SELECT count FROM signup_counters WHERE scope=? AND bucket=?')
     .bind(`runs:${login.toLowerCase()}`, Math.floor(now / 86400000)).first<{count:number}>();
-  return { used: used?.count ?? 0, limit: isQuotaOwner(env, login) ? Math.max(200, row?.runs_daily ?? 0) : row?.runs_daily ?? 20, resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
+  const override = await env.DB.prepare('SELECT runs FROM admin_user_limits WHERE user_id = (SELECT id FROM users WHERE lower(login) = ?)').bind(login.toLowerCase()).first<{runs:number|null}>();
+  return { used: used?.count ?? 0, limit: override?.runs ?? (isQuotaOwner(env, login) ? Math.max(200, row?.runs_daily ?? 0) : row?.runs_daily ?? 20), resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
 }
 export async function runQuota(env: Env, login: string): Promise<boolean> {
   if (!await signupAllowed(env,login)) return false;

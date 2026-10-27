@@ -1,5 +1,24 @@
 # Loop reliability
 
+## Overnight runner connection (2026-10-27)
+
+Two distinct failures were found. PR #340 fixed renewal persistence: the process could
+keep selecting the original environment grant or stale JSON after renewing. The
+remaining sleep failure is reproducible on current main: every pairing and renewal
+lasted eight hours, and renewal happened only in the job-poll loop during its final
+hour. A twelve-hour sleep necessarily missed that window; a long build could miss it
+too. The installed helper log also contains repeated 401/re-pair messages, but lacks
+timestamps sufficient to attribute each historical failure to sleep rather than the
+older storage bug. No evidence of a server sweep deleting valid grants was found.
+
+New grants last up to seven days, capped by the approving account session's expiry.
+The heartbeat renews with a full day remaining, independently of a running build.
+Transport failures retain the grant and retry with bounded backoff; a backwards clock
+correction clears an obsolete retry deadline. A previously expired grant still needs
+one re-pair: this does not revive expired tokens or bypass session/repository revocation.
+Tests advance twelve hours, inject ten minutes offline, and reconnect using the same
+signed grant. This is deterministic outage proof, not a real overnight sleep test.
+
 Checkpoint: Oct 28 inspector/rework loop. Backend only; existing shared protocol and player approval gates.
 
 ## Delivery and outbound calls
@@ -27,3 +46,24 @@ After a one-minute warmup, once per minute the factory scans the 100 most recent
 Regression tests cover duplicate intake and DO completion replay; retry delay/exhaustion/permanent errors; a lost comment POST response; all nonterminal SLAs; one watchdog alert across restart; broken tick recovery; dead-letter retention and healthy subsequent work; missed merge/close/head/check reconciliation and single science credit. Existing runner rework, launch-permit and orbit suites remain required.
 
 Run `bun run check` before making the PR ready; then verify PR CI and the main Deploy workflow separately. Mocked external transports prove transition behavior, not an induced production outage.
+
+
+Permanent runner rejection is distinct from transport failure: the Worker returns explicit
+`runner_grant_expired`, `runner_grant_invalid`, `runner_pair_revoked`, or
+`runner_access_revoked` codes. The helper persists the rejection only for the exact grant
+that failed; late responses cannot stop a new pairing. Watching skips rejected grants after
+restart, keeps build/receipt evidence, and refuses publication if a rejection was observed
+during local work. Generic 401s keep their existing bounded retry behavior.
+
+Runner status exposes `needsRepair`, `repairReason`, and `repairCommand` without returning
+a credential. Revocation clears presence; new pairing clears repair status. Stored grant
+expiry also makes an expired offline machine's need to re-pair visible without waiting for
+another request. An older expired token cannot overwrite a newer grant's healthy status.
+
+
+Permission lookup failures remain fail-closed without becoming permanent connection
+rejections. The runner opts into `repoAccess` propagating upstream errors; all other
+callers keep its existing deny-on-error behavior. A failed/limited GitHub lookup returns
+503 with a retry delay, not a revoked-grant code. Known revoked permission or pairing
+still denies access. A late renewal cannot clear a persisted rejection, and renewal is
+skipped when a grant has already reached its approving browser session's expiry.

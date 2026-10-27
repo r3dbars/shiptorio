@@ -1,7 +1,8 @@
 import { chmod, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
-export interface Pairing { repo: string; token: string; expires: number }
+export type GrantRejectionCode = "runner_grant_expired" | "runner_grant_invalid" | "runner_pair_revoked" | "runner_access_revoked";
+export interface Pairing { repo: string; token: string; expires: number; rejected?: { code: GrantRejectionCode; at: number } }
 export const runnerHome = () => resolve(process.env.SHIPTORIO_RUNNER_ROOT || resolve(homedir(), ".local/share/shiptorio/runner"));
 const validRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo) && !repo.split("/").some(p => p === "." || p === "..");
 export async function savePairing(pairing: Pairing, root = runnerHome()) {
@@ -30,7 +31,7 @@ export async function updatePairing(repo: string, root: string, update: (current
     const next = await update(current);
     if (next) {
       if (next.repo.toLowerCase() !== repo || typeof next.token !== "string" || !Number.isFinite(next.expires)) throw new Error("Invalid pairing response");
-      if (!current || current.token !== next.token || current.expires !== next.expires || current.repo !== repo) {
+      if (!current || current.token !== next.token || current.expires !== next.expires || current.repo !== repo || JSON.stringify(current.rejected) !== JSON.stringify(next.rejected)) {
         await Bun.write(temp, JSON.stringify({ ...next, repo }), { mode: 0o600 }); await chmod(temp, 0o600); await rename(temp, path);
       }
     } else await rm(path, { force: true });

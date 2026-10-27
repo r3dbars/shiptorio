@@ -3,7 +3,7 @@ import { BudgetError } from "../src/budget";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
-import { FactoryState, type Item } from "@shiptorio/shared";
+import { FactoryState, type Item, type Patch, type WebToServer } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { freshInspection, setStage, stageOf } from "../src/gauntlet";
 import { normalizeGitHub } from "../src/sources/github";
@@ -39,7 +39,115 @@ function fixture(items: Item[] = [], extraEnv: Record<string, unknown> = {}) {
 
 }
 
+// Observe the real patch/scheduler boundaries without replacing their effects.
+function inventoryFixture() {
+  const f = fixture();
+  const calls: string[] = [];
+  const patches: Patch[] = [];
+  const internal = f.factory as unknown as { patch(p: Patch): Promise<void>; scheduleTick(): Promise<void> };
+  const patch = internal.patch.bind(internal), schedule = internal.scheduleTick.bind(internal);
+  internal.patch = async p => { calls.push("patch"); patches.push(structuredClone(p)); await patch(p); };
+  internal.scheduleTick = async () => { calls.push("schedule"); await schedule(); };
+  return { ...f, calls, patches, send: (msg: WebToServer) => f.factory.webSocketMessage(authorizedSocket(), JSON.stringify(msg)) };
+}
+
 const item = (overrides: Partial<Item> = {}): Item => ({ id: "gh-1", kind: "bug", source: "github_issue", title: "Fix checkout", district: "/", state: "on_pad", attempts: 1, prNumber: 42, updatedAt: Date.now(), ...overrides });
+
+describe("Factory inventory command behavior", () => {
+  it("places Spark and local machinery with the existing defaults before scheduling", async () => {
+    for (const harness of ["spark", "claude_code", undefined] as const) {
+      const f = inventoryFixture();
+      await f.send({ type: "place_machine", machineType: "assembler", harness, district: "src", x: 12, y: 6 });
+      const added = f.saved().machines.at(-1)!;
+      expect(added).toEqual({ id: expect.stringMatching(/^assembler-[a-f0-9]{6}$/), type: "assembler", harness, district: "src", x: 12, y: 6, powerId: harness === "spark" ? "steam-spark" : undefined, tier: 1, state: "idle" });
+      expect(f.patches).toEqual([{ machines: [added] }]);
+      expect(f.calls).toEqual(["patch", "schedule"]);
+    }
+  });
+
+  it("removes idle machines with incident belts, while working machines and stations stay", async () => {
+    for (const id of ["assembler-1", "ci-1", "missing", "splitter-1"]) {
+      const f = inventoryFixture();
+      const initial = f.saved();
+      initial.machines.find(m => m.id === "splitter-1")!.state = "working";
+      const connected = initial.belts.filter(b => b.from === id || b.to === id);
+      await f.send({ type: "remove_machine", id });
+      if (id === "ci-1" || id === "splitter-1") {
+        expect(f.patches).toEqual([]);
+        expect(f.saved().machines.some(m => m.id === id)).toBe(true);
+        expect(f.calls).toEqual(["schedule"]);
+      } else {
+        expect(f.patches[0]?.removed).toEqual([{ kind: "machine", id }, ...connected.map(b => ({ kind: "belt" as const, id: b.id }))]);
+        expect(f.saved().machines.some(m => m.id === id)).toBe(false);
+        expect(f.saved().belts.some(b => b.from === id || b.to === id)).toBe(false);
+        expect(f.calls).toEqual(["patch", "schedule"]);
+      }
+    }
+  });
+
+  it("connects existing belt endpoints and returns before scheduling for missing endpoints", async () => {
+    for (const carries of ["bug", undefined] as const) {
+      const f = inventoryFixture();
+      await f.send({ type: "connect_belt", from: "splitter-1", to: "assembler-1", carries });
+      const added = f.saved().belts.at(-1)!;
+      expect(added).toEqual({ id: expect.stringMatching(/^belt-[a-f0-9]{6}$/), from: "splitter-1", to: "assembler-1", carries });
+      expect(f.patches).toEqual([{ belts: [added] }]);
+      expect(f.calls).toEqual(["patch", "schedule"]);
+    }
+    for (const [from, to] of [["missing", "assembler-1"], ["splitter-1", "missing"]]) {
+      const f = inventoryFixture();
+      await f.send({ type: "connect_belt", from, to });
+      expect(f.patches).toEqual([]);
+      expect(f.calls).toEqual([]);
+    }
+  });
+
+  it("moves only existing machines into unoccupied coordinates with a strict two-tile boundary", async () => {
+    for (const [id, x, y, allowed] of [
+      ["assembler-1", -2, 0, false], // one tile from the splitter
+      ["assembler-1", -1, 0, true], // exactly two tiles from the splitter
+      ["assembler-1", -3, 2, true], // exactly two tiles vertically
+      ["assembler-1", 0, 0, true], // its own position never collides
+      ["missing", 20, 20, false],
+    ] as const) {
+      const f = inventoryFixture();
+      const before = structuredClone(f.saved().machines.find(m => m.id === id));
+      await f.send({ type: "move_machine", id, x, y });
+      expect(f.patches).toEqual(allowed ? [{ machines: [{ ...before!, x, y }] }] : []);
+      expect(f.calls).toEqual(allowed ? ["patch", "schedule"] : ["schedule"]);
+    }
+  });
+
+  it("changes only nonworking assembler harnesses and retains power for local agents", async () => {
+    for (const [id, working, harness, allowed] of [
+      ["assembler-1", false, "spark", true],
+      ["assembler-1", false, "claude_code", true],
+      ["assembler-1", true, "codex", false],
+      ["splitter-1", false, "codex", false],
+      ["missing", false, "codex", false],
+    ] as const) {
+      const f = inventoryFixture();
+      const original = f.saved().machines.find(m => m.id === id);
+      if (original) { original.powerId = "solar-existing"; if (working) original.state = "working"; }
+      const before = structuredClone(original);
+      await f.send({ type: "set_harness", machineId: id, harness });
+      expect(f.patches).toEqual(allowed ? [{ machines: [{ ...before!, harness, powerId: harness === "spark" ? "steam-spark" : "solar-existing" }] }] : []);
+      expect(f.calls).toEqual(allowed ? ["patch", "schedule"] : ["schedule"]);
+    }
+  });
+
+  it("sets modules on existing machines including working ones, and schedules missing-machine noops", async () => {
+    for (const id of ["assembler-1", "splitter-1", "missing"]) {
+      const f = inventoryFixture();
+      const original = f.saved().machines.find(m => m.id === id);
+      if (original) original.state = "working";
+      const before = structuredClone(original);
+      await f.send({ type: "set_module", machineId: id, module: "careful" });
+      expect(f.patches).toEqual(original ? [{ machines: [{ ...before!, module: "careful" }] }] : []);
+      expect(f.calls).toEqual(original ? ["patch", "schedule"] : ["schedule"]);
+    }
+  });
+});
 
 describe("Factory lifecycle", () => {
   it("broadcasts both provider plants from heartbeats before any claim, and marks logout offline", async () => {
@@ -75,7 +183,7 @@ describe("Factory lifecycle", () => {
     for (const goal of ["  Ship checkout fixes\nwithout regressions  ", "g".repeat(200), ""]) {
       f.events.length = 0;
       await f.factory.webSocketMessage(authorizedSocket(), JSON.stringify({ type: "set_goal", text: goal }));
-      expect(f.events).toContainEqual({ type: "patch", patch: { goal } });
+      expect(f.events).toContainEqual(expect.objectContaining({ type: "patch", patch: { goal } }));
       expect(f.saved().goal).toBe(goal);
       // A fresh instance must read the durable value, not the previous instance's cache.
       const reloaded = f.reload() as unknown as { load(): Promise<FactoryState | null> };

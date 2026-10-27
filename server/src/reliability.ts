@@ -1,9 +1,10 @@
+import { ShiptorioError } from "./errors";
 import type { Item, Move } from '@shiptorio/shared';
 
-export class OutboundError extends Error {
+export class OutboundError extends ShiptorioError {
   constructor(readonly status: number) { super(`Outbound request failed (${status})`); }
 }
-export class RetryExhausted extends Error {
+export class RetryExhausted extends ShiptorioError {
   constructor(readonly operation: string, readonly attempts: number, cause: unknown) {
     super(`${operation} failed after ${attempts} attempts`, { cause });
   }
