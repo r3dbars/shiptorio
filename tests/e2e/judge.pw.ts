@@ -42,8 +42,10 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   // Evidence capture can take longer than the next story beat on software GL.
   // Pause browser time at this beat so screenshot latency cannot advance the sim.
   await page.clock.pauseAt(new Date(Date.now() + 1000));
+  await expect(story).toHaveAttribute('data-beat', '4');
   await info.attach('judge-permit', { body: await page.screenshot(), contentType: 'image/png' });
   await page.screenshot({ path: `/tmp/shiptorio-judge-${info.project.name}.png` });
+  await expect(story).toHaveAttribute('data-beat', '4');
   if (info.project.name !== 'desktop') {
     await page.getByRole('button', { name: 'Grant docs permit' }).click();
     await expect(page.getByRole('button', { name: 'Permit granted' })).toBeDisabled();
