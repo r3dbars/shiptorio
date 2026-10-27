@@ -81,7 +81,7 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       if (!(await started())) { await shot(`${n}-${id}-after.png`); continue; }
     }
     await expect.poll(started, { timeout: 90_000, message: `${id} starts building` }).toBe(true);
-    if (!opts.reduced) {
+    if (!opts.reduced && !NO_PIECES.has(id)) {
       await expect(root).toHaveAttribute('data-phase', 'construct', { timeout: 3_000 }).catch(() => {});
       await shot(`${n}-${id}-construct.png`);
     }
@@ -90,8 +90,10 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     await shot(`${n}-${id}-online.png`);
     const log = (await builds(page)).filter(b => b.id === id);
     const ms = log.find(b => b.phase === 'done')!.at - log.find(b => b.phase === 'start')!.at;
-    // Payoff always plays. Full motion is ~7s; reduced motion swaps construct for a 1s fade.
-    if (opts.reduced) expect(ms, `${id} reduced build ms`).toBeLessThan(4_500);
+    // Logical steps reveal no piece (CONTRACT.md): their optional markers are
+    // synchronous. Physical construction still keeps its original duration bounds.
+    if (NO_PIECES.has(id)) expect(log.map(b => b.phase), `${id} logical markers`).toEqual(['start', 'burst', 'done']);
+    else if (opts.reduced) expect(ms, `${id} reduced build ms`).toBeLessThan(4_500);
     else expect(ms, `${id} build ms`).toBeGreaterThan(3_000);
     // One build at a time, in order, each exactly once.
     const doneIds = (await builds(page)).filter(b => b.phase === 'done').map(b => b.id);
