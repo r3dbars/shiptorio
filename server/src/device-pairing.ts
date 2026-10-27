@@ -3,6 +3,11 @@ import { ironPage } from "./ironPage";
 // locates a record; only the runner's random secret can retrieve its repo-scoped credential.
 export interface DeviceRecord { secret: string; expires: number; approved?: { repo: string; token: string; expires: number }; ready?: boolean; delivered?: boolean; lastPoll?: number }
 export const DEVICE_TTL = 10 * 60_000;
+// One-paste setup: the signed-in Power panel mints a join code that rides in the install command. It lands in shell
+// history and screen shares, so it is single use, lives ten minutes and is bound to one account and one repo.
+export interface JoinRecord { repo: string; user: import("./authorization").AccessUser; expires: number }
+export const JOIN_RE = /^[a-f0-9]{48}$/;
+export const newJoinCode = () => (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, "").slice(0, 48);
 export const CODE_RE = /^[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
 export const normalizeCode = (code: string) => code.trim().toUpperCase();
 export async function secretHash(secret: string) {
