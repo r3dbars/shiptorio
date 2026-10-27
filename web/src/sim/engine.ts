@@ -1679,6 +1679,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
           // a cart's callout (shared/src/priority.ts), the same rules the live factory uses
           const item = s.items.find((i) => i.id === msg.itemId);
           if (!item || !canSetPriority(item, msg.priority)) break;
+          if (msg.priority === "park") held.delete(item.id); // set aside: the rest of the line stops waiting on it
           apply({ items: [{ ...withPriority(item, msg.priority), updatedAt: Date.now() }] });
           log("info", msg.priority === "rush" ? `Rushed "${item.title}" to the front of the line` : msg.priority === "park" ? `Parked "${item.title}"` : `Unparked "${item.title}"`, item.id);
           break;

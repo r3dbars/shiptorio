@@ -154,7 +154,7 @@ export class ShaftScene {
     // a cart riding the shaft first: it's small and moving, so it gets a finger's reach around it
     const at = new THREE.Vector3();
     const carts = I.items
-      .filter((it) => it.ref && it.path && !it.gone && !it.hidden && it.mesh.visible)
+      .filter((it) => it.ref && !it.owner && !it.gone && !it.hidden && it.mesh.visible) // inside a machine, the machine answers
       .map((it) => {
         it.mesh.getWorldPosition(at).project(stage.camera);
         return { ref: it.ref!, x: rect.left + ((at.x + 1) / 2) * rect.width, y: rect.top + ((1 - at.y) / 2) * rect.height, z: at.z };
