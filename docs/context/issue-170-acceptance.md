@@ -160,3 +160,22 @@ explicit Launch. Do not implement the issue outside that runner path.
 - Independent bounded review found no material blocker. Current-head full CI
   40437123211 and Stranger40437121642 passed at cd57759; merged e05776b.
   Deploy40437854040 is still running. This is not yet live recovery proof.
+
+## Live claim recovery and second actual build
+
+- Deploy40437854040 passed and live version matched e05776b. Restarted only
+  the owned source watcher as session45945. Post-deploy tail observed13 successful
+  heartbeats for each of Shiptorio and Testing without the earlier lock reset.
+  Slow initial websocket upgrade remains separately tracked in PR #305.
+- The old729 plan correctly failed its revision guard. Through the actual game,
+  requested a fresh plan, reviewed the same exact two-file scope and approved
+  jobcaeb4542-d0c3-494c-8180-48bb2f51c8df. The UI logged Plan approved and
+  Local codex took the plan; the isolated runner executed real Codex.
+- Codex emitted a proposal, but the supervisor rejected added authentication
+  fixture configuration under the existing secret-content policy. No provider-key
+  or private-key signature was found; no PR or push occurred. The policy stays
+  intact. The failed job and retained private proposal establish this boundary.
+- Added retry feedback at issuecomment-6432354463: plain payload normalizer
+  regressions only, reuse existing imports, leave authentication setup/tests
+  unchanged; preserve fail-on-base/pass-on-head and all checks. Requested a new
+  Spark plan through the game. Acceptance remains incomplete.
