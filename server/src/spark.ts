@@ -423,14 +423,21 @@ export interface Task {
   scars?: { station: string; reason: string; strike: number; evidenceUrl?: string }[];
 }
 
+// A docs issue often needs a file that doesn't exist yet (CHANGELOG.md, docs/SHIPPING.md). Spark may propose up
+// to two new Markdown files at the repo root or directly in docs/; everything else must already be in the list.
+const NEW_DOC = /^(?:docs\/)?[\w.-]+\.md$/i;
+export const newDocAllowed = (path: string) => NEW_DOC.test(path) && pathAllowed(path);
+
 export async function pickFiles(env: SparkEnv, task: Task, paths: string[]): Promise<string[]> {
   const out = await sparkJson(env, filesReply,
-    "You are a coding agent planning a small, focused change. Pick the files you need to read and probably edit. At most 4.",
+    "You are a coding agent planning a small, focused change. Pick the files you need to read and probably edit. At most 4. Pick from the repo files; if the task needs a new Markdown doc, you may name up to 2 new .md paths at the repo root or in docs/.",
     `Task: ${task.title}\n\n${task.body.slice(0, 4000)}\nLatest failure: ${task.failure ?? "none"}\nScars: ${JSON.stringify(task.scars?.slice(-5) ?? [])}\n\nRepo files:\n${paths.slice(0, 600).join("\n")}\n\nJSON shape: {"files": ["path", ...]}`,
     "medium",
   );
-  // A pick outside the candidate list is dropped, not fatal: only listed, allowed paths survive.
-  const files = [...new Set(out.files.filter(f => paths.includes(f) && pathAllowed(f)))];
+  // A pick outside the candidate list is dropped, not fatal: only listed, allowed paths survive, plus up to two new docs.
+  const listed = out.files.filter(f => paths.includes(f) && pathAllowed(f));
+  const created = out.files.filter(f => !paths.includes(f) && newDocAllowed(f)).slice(0, 2);
+  const files = [...new Set([...listed, ...created])];
   if (!files.length) throw new SparkError(`Unapproved file selection (${out.files.slice(0, 4).join(", ").slice(0, 200)})`);
   return files;
 }

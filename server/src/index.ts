@@ -25,9 +25,9 @@ import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./gith
 import { currentUser, MAX_PROGRESS_BYTES, readPrefs, readProgress, reposFor, writePrefs, writeProgress, type User } from "./accounts";
 
 import { isAllowed } from "./session";
-import { isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
+import { isJudgeAsset, isPublicDocs, previewAccess, publicRoute, secureTransport } from "./access";
 import { joinWaitlist } from "./waitlist";
-import { landingPage, publicFile } from "./landing";
+import { judgePage, landingPage, publicFile } from "./landing";
 
 import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
@@ -88,7 +88,7 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean } };
 const app = new Hono<AppEnv>();
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
   const user = await signedIn(c);
@@ -124,7 +124,8 @@ app.use("*", async (c, next) => {
   const redirect = secureTransport(c.req.raw);
   if (redirect) c.res = redirect;
   else await next();
-  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN))) c.header(key, value);
+  const gatePolicy = c.get("gateResponse") ? c.res.headers.get("Content-Security-Policy") ?? undefined : undefined;
+  for (const [key, value] of Object.entries(securityHeaders(c.req.raw, c.get("artNonce"), signupMode(c.env) === "waitlist", c.env.SHIPTORIO_SENTRY_DSN, gatePolicy))) c.header(key, value);
 
 });
 
@@ -173,12 +174,17 @@ app.use("*", async (c, next) => {
   }
   if (c.req.path === "/api/health" && ["GET", "HEAD"].includes(c.req.method)) { await next(); c.header("Cache-Control", "no-store"); return; }
   const open = await publicRoute(c.req.raw, c.env);
+  if (open === "judge") return judgePage(c.req.raw, c.env.ASSETS);
   if (open === "landing") return landingPage(c.req.raw, c.env.ASSETS);
   if (open === "waitlist") return joinWaitlist(c.req.raw, c.env);
-  if (open === "file") return publicFile(c.req.raw, c.env.ASSETS);
+  if (open === "file") {
+    const response = await publicFile(c.req.raw, c.env.ASSETS);
+    if (isJudgeAsset(c.req.path)) response.headers.set("Cache-Control", browserCacheControl(c.req.raw, response.status));
+    return response;
+  }
   const publicDocs = isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method);
   const denied = publicDocs ? null : signupMode(c.env) === "password" ? await previewAccess(c.req.raw, c.env) : await signupGate(c.req.raw, c.env);
-  if (denied) return denied;
+  if (denied) { c.set("gateResponse", true); return denied; }
   await next();
   // Docs are public static content; authenticated build assets retain their private immutable policy.
   c.header("Cache-Control", isPublicDocs(c.req.path) && ["GET", "HEAD"].includes(c.req.method) && c.res.ok
@@ -620,11 +626,12 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   const identity = c.get("runner");
   const body = await c.req.text();
   if (body.length > 1024) return c.json({ error: "too large" }, 413);
-  let raw: { harnesses?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
+  let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
   if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
-  await f.heartbeatRunner(identity.pairId, raw.harnesses); return c.json({ ok: true });
+  if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
+  await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
@@ -890,7 +897,8 @@ export async function accessFastPath(request: Request, env: Env): Promise<Respon
   if (!response) return null; // local dev login: the full app handles it
   response = new Response(response.body, response);
   response.headers.set("Cache-Control", "no-store");
-  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN))) response.headers.set(key, value);
+  const gatePolicy = response.headers.get("Content-Security-Policy") ?? undefined;
+  for (const [key, value] of Object.entries(securityHeaders(request, undefined, false, env.SHIPTORIO_SENTRY_DSN, gatePolicy))) response.headers.set(key, value);
   console.log(JSON.stringify({ level: "info", event: "http.request", method: request.method, path: "/access", status: response.status, ts: new Date().toISOString() }));
   return response;
 }

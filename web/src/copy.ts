@@ -960,3 +960,32 @@ export const BRAND = {
   wordmarkAlt: "Shiptorio",
   markAlt: "Shiptorio",
 };
+
+// Public, explicitly simulated 90-second judge replay.
+export const JUDGE = {
+  badge: "Judge mode · simulation",
+  title: "A factory that ships fixes",
+  intro: "Follow a checkout crash from customer signal to verified fix in about 90 seconds. The replay runs itself; you can try the launch permit card along the way.",
+  disclosure: "Scripted simulation. No live AI calls, GitHub changes, or customer messages.",
+  credit: CREDIT,
+  play: "Play the 90-second story", replay: "Replay", docs: "Explore the docs",
+  captionLabel: "Judge story", progress: "Story progress", inputs: "Simulation inputs", results: "Simulation results",
+  permitTitle: "Docs launch permit", permitText: "Low-risk docs earned trust through clean reviews. Allow docs to launch after every required check passes. Checkout still waits for a human.",
+  permitAction: "Grant docs permit", permitGranted: "Permit granted", autoPermit: "The simulated player grants this automatically at 65 seconds.",
+  receipts: "Gauntlet receipts", passed: "PASS", waiting: "WAITING",
+  rework: "CAUGHT: the empty-cart repro failed. A scar tag sends the fix back to the planner; the assembler builds again.",
+  checking: "CI → verify bay → independent AI review. Each station checks the assembler's work.",
+  rockets: "Rockets", users: "Users unblocked", autonomy: "Autonomy", floor: "Floor", advisor: "Advisor",
+  done: "Story complete. Two launches. One stronger factory.",
+  beats: [
+    { title: "The factory must grow", text: "Your codebase becomes a factory. Customer signals are ore. Your subscriptions power the machines." },
+    { title: "Three signals, one floor", text: "Sentry reports a checkout crash affecting 112 users. An inbox report joins the same problem. A GitHub docs issue enters its own lane." },
+    { title: "The planner picks the next move", text: "The foreman ranks the crash first, links the customer report, and plans a guarded total plus an empty-cart regression test. You approve the plan." },
+    { title: "Build, prove, rework", text: "Your Claude Code assembler builds the PR. CI checks it, the verify bay reproduces the bug, and a separate reviewer attacks the fix. Failed proof goes back with a scar." },
+    { title: "Trust comes with receipts", text: "The repaired PR clears CI, proof, and independent review. The merge gate still needs you. A narrow docs permit can remove a routine bottleneck." },
+    { title: "A permit launches the docs", text: "The docs PR passed its checks and launches under its permit. The high-risk checkout fix stays at the human merge gate." },
+    { title: "Merge means liftoff", text: "The simulated player merges the verified checkout fix. A rocket launches, Sentry clears, and 112 users are unblocked." },
+    { title: "Autonomy is earned", text: "The customer reply is approved. Two accepted suggestions unlock Floor: the foreman can route and tune work. Launch permits stay scoped to their folder." },
+    { title: "More trust. More factory.", text: "Signals became plans, plans became verified PRs, and merges became rockets. In a connected factory these are real changes. The more you play, the more it can run itself." },
+  ],
+} as const;

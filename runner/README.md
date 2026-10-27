@@ -33,7 +33,7 @@ Subscription sign-ins must be made inside WSL, not on the Windows host.
 
 ```sh
 ~/.local/bin/shiptorio-runner login codex # or login claude: dedicated provider sign-in
-~/.local/bin/shiptorio-runner doctor   # check installed agent sign-ins
+~/.local/bin/shiptorio-runner doctor   # check auth, real OS/agent sandboxes (#235), and server pairing
 ~/.local/bin/shiptorio-runner watch    # resume after closing the terminal
 ~/.local/bin/shiptorio-runner pair     # add another repo, without stopping watch
 ~/.local/bin/shiptorio-runner uninstall
@@ -72,3 +72,39 @@ verification runs inside sandbox-exec on macOS or bubblewrap on Linux. Publicati
 uses a trusted fresh clone; no GitHub credential is passed to the assembler.
 
 Public help: [shiptorio.com/docs/runner](https://shiptorio.com/docs/runner).
+
+## Recovery and diagnostics
+
+`watch` retries each repository independently with exponential backoff and jitter, capped
+at one minute. Heartbeats run separately during a build. Sleep or a network outage does
+not remove pairings. A 401 prints the pairing command; it never starts a browser login
+or discards your local evidence on its own.
+
+A private `.recovery/` journal and `.work/` checkout keep the current build across runner
+restarts and provider/network interruptions. Restart `watch`: the server hands back the
+same still-valid lease (after its 45-second lost-claim grace period), with a fresh GitHub
+installation token. If the agent was interrupted, it continues against the existing edits;
+if it finished, the supervisor skips inference and reruns every check. Frozen approved
+files must still match the saved snapshot. Completion receipts replay automatically even
+when the server accepted the result but its response was lost. Publication retries create
+the identical commit SHA. The journal never stores GitHub installation tokens.
+
+Recovery stays inside the original 30-minute build lease. A changed, revoked or expired
+assignment requires fresh player approval; it cannot extend its own authority. Unfinished
+checkouts/journals remain local for inspection after expiry. Successful acknowledgments
+remove the checkout and journal; local agent logs, verification logs and receipts remain
+under `.work/`. Run only one watcher per runner data root.
+
+An unavailable/expired Codex or Claude login produces an in-game **Sign in again** card
+with `shiptorio-runner login codex` or `shiptorio-runner login claude`. The watcher stays
+alive and stops offering that harness until login is restored. A provider reporting a
+revoked token stays blocked even if its cached login status says signed in; a changed
+local credential file clears the block. Restart watch after signing in if a provider uses
+only the OS keychain. Sandbox failures and ordinary test failures do not become sign-in
+errors. Raw provider output stays in redacted local logs.
+
+`doctor` prints PASS/FAIL for each installed harness, the verification sandbox, each agent
+sandbox (CLI startup/auth status, macOS preferences and HTTPS access), and every pairing.
+It checks all categories even when one fails, exits nonzero if any check fails, and never
+claims a job or runs paid inference. Pairing failures distinguish a missing/expired local
+token from an unreachable server or rejected credential in the printed recovery steps.
