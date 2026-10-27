@@ -225,6 +225,8 @@ export class ShaftStage {
     const sx = Math.round(t.x / texel) * texel, sy = Math.round(t.y / texel) * texel, sz = Math.round(t.z / texel) * texel;
     this.sun.position.set(sx + this.sunDir.x, sy + this.sunDir.y, sz + this.sunDir.z);
     this.sun.target.position.set(sx, sy, sz);
+    // the backdrop (backdrop-kit.js) follows the camera now that it's placed, before the render
+    this.I.emit("camera", { camera: cam, root: this.root, scene: this.scene, viewH: vh });
   }
 
   render(renderer: THREE.WebGLRenderer) {

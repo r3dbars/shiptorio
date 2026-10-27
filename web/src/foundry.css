@@ -35,7 +35,7 @@
 .ob-tagline{font:400 22px/1.35 Georgia,serif;letter-spacing:.025em;text-transform:none;color:var(--foundry-cream)}
 .ob-card.iron-plate{background:var(--foundry-pipes) left top / 100% 9px no-repeat,var(--iron-panel-solid);padding-top:25px}
 .ob-card::after{display:none}
-.ob-readout b{font-family:var(--foundry-title);font-size:36px}
+.ob-stop b{font-family:var(--foundry-title);letter-spacing:.06em}
 @media(max-width:600px){
  .floorcard{padding:8px 10px 12px;max-width:calc(100vw - 112px)}
  .floorcard h1{width:160px;max-width:100%}
