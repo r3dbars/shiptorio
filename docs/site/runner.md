@@ -139,6 +139,8 @@ flow.
 The supervisor runs the repository's checks and verifies the frozen patch before
 publication. You still approve the plan and decide when to merge.
 
+Shiptorio's own application, unit and regression tests still run inside verification. Host integration probes that need local listener sockets, a dedicated Keychain or another OS sandbox are unsupported inside that already restricted boundary (`SHIPTORIO_CHECK_SANDBOX=1`). Their assertions and existing platform requirements remain intact in normal host runs: platform-eligible cases run in CI, while macOS-specific integrations retain local macOS validation. The runner does not grant extra network, host or credential access to make these probes pass.
+
 ## Stop, revoke and uninstall
 
 Ctrl-C stops the foreground runner. **Disconnect this machine** in the factory
