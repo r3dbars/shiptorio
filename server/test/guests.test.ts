@@ -44,6 +44,9 @@ test("first visit creates only an isolated signed guest save; reload retains pro
 test("preview password still gates guest creation; cookie tampering and cross-origin writes fail", async () => {
   const env = environment();
   expect((await app.fetch(req("/api/me"), env)).status).toBe(401);
+  const crossSite = req("/api/me", await access(env));
+  crossSite.headers.set("sec-fetch-site", "cross-site");
+  expect((await app.fetch(crossSite, env)).status).toBe(403);
   expect((await env.DB.prepare("SELECT count(*) n FROM guests").first<{ n: number }>())?.n).toBe(0);
   const first = await browser(env);
   const tampered = first.cookie.replace(/.$/, c => c === "0" ? "1" : "0");

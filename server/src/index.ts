@@ -318,6 +318,7 @@ app.get("/api/me", async (c) => {
   if (!user) {
     let guest = await currentGuest(c.env, c.req.header("cookie") ?? null);
     if (!guest) {
+      if (c.req.header("sec-fetch-site") === "cross-site") return c.json({ error: "invalid origin" }, 403);
       if (!await admit(c.env, await ipScope(c.req.raw, "guest-create"), 10, 3600000, "guest creation flood")) return c.json({ error: "too many requests" }, 429);
       guest = await createGuest(c.env);
       c.header("Set-Cookie", await guestCookie(c.env, guest.id));
