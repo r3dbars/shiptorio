@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { testD1 } from "./d1-fixture";
 import { currentUser, createSession, readProgress } from "../src/accounts";
 import { makeSessionCookie } from "../src/session";
+import { personaSnapshot } from "../../playtest/bot/personas";
 import { TEST_PERSONAS, personaId, seedTestUser, testUserRoutes, testUsersEnabled } from "../src/test-users";
 
 const fixture = () => {
@@ -66,4 +67,12 @@ test("test login never issues a preview credential or bypasses the password gate
   expect(response.status).toBe(401);
   expect(response.headers.get("set-cookie") ?? "").not.toContain("shiptorio_access=");
   expect((await f.env.DB.prepare("SELECT COUNT(*) AS n FROM users").first<{ n: number }>())?.n).toBe(0);
+});
+test("fixture personas have real shared-schema ships and a failed CI decision", () => {
+  const mid = personaSnapshot("test-midgame", "test-fixture/test-midgame", 123);
+  expect(mid.items.filter(i => i.state === "launched")).toHaveLength(3);
+  expect(mid.autonomy?.level).toBe("floor");
+  const blocked = personaSnapshot("test-blocked", "test-fixture/test-blocked", 123);
+  expect(blocked.items[0].inspection?.stages[0].state).toBe("rework");
+  expect(blocked.items[0].scars?.[0].station).toBe("ci");
 });

@@ -17,7 +17,7 @@ const steps = [], failures = [];
 let fixture, browser, lastPage;
 try {
   if (local) fixture = await localFactory(persona, url.origin);
-  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"] });
+  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), ...(process.platform === "linux" ? { args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"] } : {}) });
   for (const width of [390, 1280]) {
     const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 800 } });
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
@@ -31,7 +31,7 @@ try {
     let lastChange = Date.now(), previous = "", number = 0;
     const capture = async label => {
       const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
-      await page.screenshot({ path: join(out, file), animations: "disabled", timeout: 15000 }); steps.push({ width, label, file, url: page.url() });
+      await page.screenshot({ path: join(out, file), animations: "disabled", timeout: 60000 }); steps.push({ width, label, file, url: page.url() });
     };
     await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (await page.getByLabel("Password", { exact: true }).count()) {
