@@ -67,3 +67,19 @@ describe("privileged browser socket lifetime", () => {
     expect((data.get("state") as FactoryState).machines).toHaveLength(before + 1);
   });
 });
+
+it("browser transport cursors persist across hibernation and snapshots do not advance them", async () => {
+  const { browserFrame, browserHeartbeat } = await import("../src/browser-socket");
+  const data = new Map<string, unknown>();
+  const storage = { get: async (key: string) => data.get(key), put: async (key: string, value: unknown) => { data.set(key, value); } } as Pick<DurableObjectStorage, "get" | "put">;
+  const frame = { type: "log", level: "info", text: "Current", at: 1 };
+  expect(JSON.parse(await browserFrame(storage, { type: "snapshot" }, false)).seq).toBe(0);
+  expect(JSON.parse(await browserFrame(storage, frame))).toEqual({ ...frame, seq: 1 });
+  expect(JSON.parse(await browserFrame({ ...storage }, { type: "snapshot" }, false)).seq).toBe(1);
+  expect(JSON.parse(await browserFrame({ ...storage }, frame)).seq).toBe(2);
+  const sent: string[] = [];
+  const ws = { send: (raw: string) => { sent.push(raw); } };
+  expect(browserHeartbeat(ws, "ping")).toBe(true);
+  expect(browserHeartbeat(ws, '{"type":"launch_pr"}')).toBe(false);
+  expect(sent).toEqual(["pong"]);
+});

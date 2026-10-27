@@ -52,3 +52,17 @@ export async function browserSocketActive(auth: BrowserSocketAuth, env: BrowserS
   const row = await env.DB.prepare('SELECT u.login FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=? AND s.user_id=? AND s.expires_at>?').bind(auth.sessionHash,auth.userId,Date.now()).first<{login:string}>();
   return !!row && row.login.toLowerCase() === auth.login.toLowerCase() && await signupAllowed({DB:env.DB,ALLOWED_LOGINS:env.ALLOWED_LOGINS},row.login);
 }
+
+// Transport metadata is additive: the shared gameplay schemas still parse the
+// original snapshot/patch/log payload. The durable cursor survives DO hibernation.
+export async function browserFrame(storage: Pick<DurableObjectStorage, "get" | "put">, message: object, advance = true): Promise<string> {
+  const seq = (await storage.get<number>("browserSeq") ?? 0) + (advance ? 1 : 0);
+  if (advance) await storage.put("browserSeq", seq);
+  return JSON.stringify({ ...message, seq });
+}
+
+export function browserHeartbeat(ws: Pick<WebSocket, "send">, raw: string | ArrayBuffer): boolean {
+  if (raw !== "ping") return false;
+  ws.send("pong");
+  return true;
+}

@@ -333,3 +333,12 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+
+## Quiet live reconnect (Codex, 2026-10-27)
+
+Day 2 live-map checkpoint: replace sleeping sockets on tab return/network recovery,
+use heartbeat deadlines and jittered retry, and resync from one sequenced full snapshot.
+A small Reconnecting… notice waits three seconds; short blips retain the current map.
+Existing transport lifecycle tests move beside live.ts; factory.ts needs the small
+sequence/snapshot/heartbeat wiring because browser-socket.ts does not own delivery.
+Comeback, sound, shaft, source/index.ts and other active lanes remain untouched.
