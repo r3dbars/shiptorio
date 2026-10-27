@@ -7,7 +7,7 @@
 > **Living doc:** whenever Justin states a new high-level goal in the project, fold it in here (one line,
 > dated) and push. If this page and another doc disagree on *direction*, this page wins.
 >
-> Last updated: 2026-10-26.
+> Last updated: 2026-10-27.
 
 ## The goal
 
@@ -48,6 +48,11 @@ It never ends. There is always a bottleneck, always something to optimize, alway
    just get a "Suggested" tag. No named character. The only credit is one small "powered by Meta Muse Spark" line
    (onboarding/about). Internally (code, docs, contracts) Spark keeps its name.
 9. **Progressive disclosure: one concept at a time, mobile first.** Shiptorio is a lot (ore, machines, power, the gauntlet, bottlenecks, autonomy), and all of it at once overwhelms. Onboarding walks a new player through it step by step, with a coach card as the guide: your factory is one codebase, then ore, a machine, power, the line, one inspection, the rocket, the bottleneck, the check-in deck. Each piece of HUD stays hidden until the coach introduces it, and each lesson is taught by doing, not by reading. New features follow the same rule: they show up when the player is ready for them. Big readable text, few boxes.
+
+10. **The map reads like the work, bottom to top.** Raw work is mined deep underground (inbox, GitHub, Sentry,
+   PostHog), rides lifts up through planning, building and the checks, and launches from the top. One continuous
+   line where you can watch every item travel, in the Black Iron look (`docs/black-iron.html`), matched closely.
+   If a player can't tell what a part does by looking at it, it isn't done.
 
 ## Non-goals (for now)
 
@@ -106,3 +111,6 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-26: Humans are the bottleneck in the agentic loop. Shiptorio always points at it, and a swipe
   check-in (8 to 12 cards, right = do it, left = later, down = never + why) lets you push the whole system
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
+- 2026-10-27: The map goes vertical (principle 10). Work is mined underground, cascades down, rides up through
+  refining and the checks, becomes a PR and launches from the top. The visual style is critical and must make
+  plain what each part does. Being built in `web/src/map/shaft/` behind `?world=shaft`.
