@@ -71,6 +71,7 @@ export function testUserRoutes(app: Hono<any>): void {
     const user = await currentUser(env, c.req.header("cookie") ?? null);
     const p = user?.login as TestPersona;
     if (!user || !TEST_PERSONAS.includes(p) || user.id !== personaId(p)) return c.json({ error: "Invalid test identity" }, 403);
+    if (url.pathname === "/api/flags" && !["GET", "HEAD"].includes(c.req.method)) return c.json({ error: "Test account operation is not permitted" }, 403);
     const repo = personaRepo(p);
     if (url.pathname === "/api/repos") {
       const owned = await env.DB.prepare("SELECT installation_id FROM user_repos WHERE user_id=? AND repo=?").bind(user.id, repo).first<{ installation_id: number }>();
