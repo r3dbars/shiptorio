@@ -76,7 +76,10 @@ export function bakeShaft(I: Iron, root: THREE.Group): BakeInfo {
   const wp = new THREE.Vector3();
   let before = 0;
   root.traverse((o) => (o as THREE.Mesh).isMesh && o.visible && before++);
-  const floors = new Map<string, Set<THREE.Object3D>>();
+  // one floor map per Iron: baking a whole root starts it over, baking one holder (a machine that just rose) adds to it
+  const I2 = I as Iron & { _floors?: Map<string, Set<THREE.Object3D>> };
+  const floors = (I2._floors ??= new Map());
+  if (root === I.root) floors.clear();
   const tag = (o: THREE.Object3D, floor: string | undefined) => {
     if (!floor) return;
     if (!floors.has(floor)) floors.set(floor, new Set());
@@ -145,7 +148,7 @@ export function bakeShaft(I: Iron, root: THREE.Group): BakeInfo {
   // part's anchor, so they stay in the list on their own
   for (const set of floors.values())
     for (const o of [...set]) for (let p = o.parent; p; p = p.parent) if (set.has(p)) { set.delete(o); break; }
-  I.floorParts = (id: string) => [...(floors.get(id) ?? [])];
+  I.floorParts ??= (id: string) => [...(I2._floors?.get(id) ?? [])];
   return { ms: Math.round(performance.now() - t0), meshesBefore: before, merged, meshesAfter: after };
 }
 

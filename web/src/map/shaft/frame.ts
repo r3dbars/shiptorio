@@ -2,6 +2,7 @@
 // screen and on a phone, how close a picked station and the follow cam sit, where a station's chip stands, and where
 // on screen the view's center sits when a card covers part of it. The stage (stage.ts) reads it every frame.
 
+import { artPass } from "./backdrop-kit.js";
 import type { IronStation } from "./core";
 
 export type FloorView = "stack" | "mine" | "build" | "checks" | "launch" | "line";
@@ -34,6 +35,10 @@ const PRESETS: Record<FloorView, Preset> = {
   launch: { at: [0, 26, -21], h: 17, w: 32, phone: { at: [0, 26, -21], h: 22 } },
   line: { at: [0, -4.5, 3.5], h: 30, w: 41, phone: { at: [-2, -4.5, 3.5], h: 36 } },
 };
+
+// the floating city (?artpass=1, ART-PASS.md): the ALL view reaches down past the rock's tip to the aether engine's
+// cage (keel-shape.js TIP y -36, the cage to about -40), so the island reads as floating
+if (artPass()) PRESETS.stack = { at: [0, -3.1, -8.4], h: 77, w: 42, phone: { at: [0, -3.1, -8.4], h: 88 } };
 
 export const isFloorView = (v: string): v is FloorView => v in PRESETS;
 
