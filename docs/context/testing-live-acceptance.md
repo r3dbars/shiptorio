@@ -1,6 +1,16 @@
 # Testing real-loop acceptance — 2026-10-26
 
-Status: **in progress; real PRs opened, no launch or merge claimed**.
+Status: **historical checkpoint recorded; real-loop acceptance incomplete**.
+
+Read-only recheck at **2026-10-27 11:53 UTC**: Testing PRs [#12](https://github.com/r3dbars/Testing/pull/12)
+and [#13](https://github.com/r3dbars/Testing/pull/13) remain open and unmerged at the exact heads recorded below.
+Shiptorio [Deploy 40498676438](https://github.com/r3dbars/shiptorio/actions/runs/40498676438) succeeded;
+the live version returned `61ef296c44ca4a4b22ac1e0a4a92513eff521b92`. Actions now runs on the public
+repository. The earlier billing block and deployment handoff below are historical.
+
+The observations below retain the original evidence and its limits. This documentation recheck did not
+approve a plan, mutate a factory, control a runner/autopilot, or merge a factory PR. Current pairing,
+service and process state was not revalidated.
 
 Target: [r3dbars/Testing #5](https://github.com/r3dbars/Testing/issues/5), README setup instructions.
 Real builder PR: [Testing #12](https://github.com/r3dbars/Testing/pull/12).
@@ -43,28 +53,27 @@ Real builder PR: [Testing #12](https://github.com/r3dbars/Testing/pull/12).
 Justin approved raising the daily build cap from 21 to 25, retaining the separate $5 Spark
 budget. Before mutation, the quota guard found a newer stored cap of 200 and preserved it.
 No quota change was made by this run. The competing Testing autopilot process was paused to
-prevent competing jobs; restore it after safely finishing the controlled acceptance run.
+prevent competing jobs; its later recovery was left for the acceptance owner to reconcile.
 The original paused PID 87503 exited; its replacement PID 56132 was verified as
-Testing-only and paused. No Shiptorio #170 runner or pairing was changed.
+Testing-only and paused at that checkpoint. These PIDs are historical receipts, not current process
+identities. No Shiptorio #170 runner or pairing was changed by that run.
 
-## Deployment handoff
+## Historical deployment handoff
 
-GitHub Actions refused to start Deploy run 40439788803 because of an account payment /
+At the earlier checkpoint, GitHub Actions refused to start Deploy run 40439788803 because of an account payment /
 spending-limit block (no job steps or Cloudflare mutation). The verified #307 commit is
 not live. Production independently returned `be3a81bc177932dcfc4b831a8b9d58cbdfafab77`.
 
-A local deployment requires Justin's explicit approval under AGENTS.md. Approval was
-requested; no deployment has been attempted. A detached exact-commit checkout at
-`/Users/redbars/shiptorio-verified-launch-deploy` has a successful build and Wrangler
-dry run. There are no migration or Wrangler configuration changes between the live
-commit and this candidate. Captured active rollback version:
-`dde742b6-0698-436c-9666-2343f9aff5fd` (100% traffic). Re-read it before any authorized
-deployment in case another owner advances production. Preserve all deployed vars and
-secrets; run the existing live smoke on the exact commit after deployment.
+A detached exact-commit checkout had a successful build and Wrangler dry run; approval was requested
+before any local deployment, and none was attempted by that acceptance run. There were no migration or
+Wrangler configuration changes between that checkpoint's live commit and candidate. Captured rollback
+version `dde742b6-0698-436c-9666-2343f9aff5fd` then had 100% traffic. This is a historical version receipt,
+not a current rollback/deployment instruction; the fresh release recheck is recorded above.
 
-Testing autopilot PID 56132 remains paused to keep this controlled run isolated. The
-paired local runner is online. Resume that verified Testing-only process after safely
-finishing or abandoning this acceptance run. No Shiptorio #170 process was modified.
+At that checkpoint Testing autopilot PID 56132 was paused to keep the controlled run isolated and the
+paired local runner was online. Neither remains certified by this receipt. Reconcile current ownership,
+pairing and process identity before a new acceptance run; do not resume a process using a historical PID.
+No Shiptorio #170 process was modified by the acceptance run or this documentation recheck.
 
 ## Remaining proof
 
