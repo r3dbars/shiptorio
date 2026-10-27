@@ -1,6 +1,7 @@
-// The stranger dry run: a brand-new GitHub account goes from the front door to a live factory on the
+// The stranger E2E suite: a brand-new GitHub account goes from the front door to a live factory on the
 // real Worker (Miniflare, with D1, KV, the Factory DO and the built web app) and a pretend GitHub.
 // Every step is timed; the run fails on the first step a stranger couldn't get past.
+// GitHub, Spark and local build output are fixtures. No real credentials or remote writes.
 //
 //   bun run build && node playtest/stranger/run.mjs        (STRANGER_OUT=dir keeps screenshots + timings)
 //
@@ -40,7 +41,8 @@ execFileSync("npx", ["wrangler", "deploy", "--dry-run", "--outdir", bundle], { c
 
 const { workerOptions } = wrangler.unstable_getMiniflareWorkerOptions(join(server, "wrangler.jsonc"));
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
-let mf;
+let mf, browser, context;
+try {
 const spark = sparkStub();
 const stub = githubStub({ origin, webhookSecret: WEBHOOK_SECRET, worker: (url, init) => mf.dispatchFetch(url, init) });
 // Only the bindings this Worker uses; the rest of wrangler's option bag is empty defaults.
@@ -79,8 +81,9 @@ for (const file of readdirSync(migrations).filter((f) => f.endsWith(".sql")).sor
 if (process.env.STRANGER_SETUP_URL !== "0") stub.state.setupUrl = `${origin}/github/installed`;
 
 // 2. The stranger: a fresh browser profile, phone-ish laptop window, github.com answered by the stub.
-const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
-const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+await context.tracing.start({ screenshots: true, snapshots: true });
 await context.route("https://github.com/**", (route) => stub.browser(route));
 // Playwright can't intercept a redirect hop, so the Worker's 302 to github.com becomes a fresh navigation.
 await context.route(`${origin}/auth/login*`, async (route) => {
@@ -294,6 +297,9 @@ Object.assign(report, { totalMs: Date.now() - t0, steps, consoleErrors, apiError
 writeFileSync(join(out, "timings.json"), JSON.stringify(report, null, 2));
 for (const s of steps) console.log(`${s.ok ? "✓" : "✗"} ${s.name.padEnd(52)} ${(s.ms / 1000).toFixed(1)}s${s.error ? `  ${s.error}` : ""}`);
 console.log(`total ${(report.totalMs / 1000).toFixed(1)}s · screenshots and timings.json in ${out}`);
-await browser.close();
-await mf.dispose();
-process.exit(failed ? 1 : 0);
+process.exitCode = failed ? 1 : 0;
+} finally {
+  if (context) await context.tracing.stop({ path: join(out, "trace.zip") }).catch(() => {});
+  await browser?.close();
+  await mf?.dispose();
+}
