@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { savePairing } from "../src/pairing";
 
 // Exercise the shipped polling loop with a real HTTP server and an isolated fake subscription CLI.
-test.skipIf(process.platform !== "darwin")("watch reconnects after HTTP drops and reports unavailable auth without exiting", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== "darwin")("watch reconnects after HTTP drops and reports unavailable auth without exiting", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "shiptorio-reconnect-"));
   const bin = resolve(root, "bin"); await mkdir(bin);
   await Bun.write(resolve(bin, "codex"), '#!/bin/sh\nif [ -f "$HOME/expired" ]; then echo "Not logged in" >&2; exit 1; fi\necho "Logged in using ChatGPT"\n');

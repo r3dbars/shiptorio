@@ -314,12 +314,14 @@ export const PANEL = {
   closeLabel: "Close and zoom back out",
   bottleneck: "bottleneck",
   rightNow: "Right now",
-  idle: "Idle. Nothing on it right now.",
+  idle: "Nothing on it right now.",
   more: (n: number) => `+${n} more`,
   in: "IN",
   out: "OUT",
   lately: "Lately",
-  machine: { IDLE: "Idle", WORKING: "Working", BLOCKED: "Needs you" },
+  // a quiet machine says what it's waiting on, never "idle" (map/shaft/waiting.ts)
+  machine: { IDLE: "Ready", WORKING: "Working", BLOCKED: "Needs you" },
+  quiet: { next: "Next up", you: "Waiting on you" },
   stats: {
     onBelt: "On the belt",
     topScar: "Top scar",

@@ -483,7 +483,9 @@ export function createIron(opts) {
       });
       const front = arr[0];
       const stuck = front && front.atEnd && front.path === path;
-      path.jamT = stuck && arr.length >= 2 ? path.jamT + dt : 0;
+      // a pile-up jams the belt; so does even one item at the tray of a machine that is waiting on the player
+      const into = path.port && I.stations[path.port.split('.')[0]];
+      path.jamT = stuck && (arr.length >= 2 || (into && into.blocked)) ? path.jamT + dt : 0;
       path.jammed = path.jamT > 0.35;
       path.moving = moved;
       path.flow += ((path.jammed ? 0 : 1) - path.flow) * Math.min(1, dt * 3);
