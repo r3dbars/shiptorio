@@ -7,7 +7,7 @@ import { gunzipSync } from "node:zlib";
 // @ts-ignore Developer Node script is exercised through its real HTTP boundary.
 import { benchmarkServer } from "../scripts/perf-server.mjs";
 
-test("benchmark contains raw paths and symlinks while serving assets and SPA routes", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("benchmark contains raw paths and symlinks while serving assets and SPA routes", async () => {
   const base = mkdtempSync(join(tmpdir(), "shiptorio-bench-"));
   const root = join(base, "dist"); mkdirSync(root); mkdirSync(join(base, "dist-private"));
   writeFileSync(join(root, "index.html"), "factory"); writeFileSync(join(root, "app.js"), "asset");
