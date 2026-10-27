@@ -1332,7 +1332,32 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .acard button { font: 700 10px/1 var(--pixel); letter-spacing: .08em; text-transform: uppercase; padding: 10px 12px 9px; border: 2px solid var(--iron-line); background: transparent; color: var(--dim); cursor: pointer; }
 .acard button.ago { flex: 1; background: var(--ak); color: var(--ak-ink); border-color: #000; }
 .acard.suggest button.ago { background: transparent; color: var(--iron-aether); border-color: var(--iron-aether); }
-.acard button.atog { margin-left: auto; border-color: transparent; }
+.acard button.atog { border-color: transparent; }
+.acard .abody { display: contents; }
+/* play flag: Continue is a tab down the card's right edge, a launch is a big red hold button. */
+.acard.tabbed { flex-direction: row; gap: 0; padding-right: 0; }
+.acard.tabbed .abody { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; padding-right: 10px; }
+.acard.tabbed .aacts .atog { margin-left: auto; }
+.acard button.atab { flex: 0 0 72px; margin: -9px 0; border: 0; border-left: 2px solid #000; background: var(--ak); color: var(--ak-ink); font-size: 11px; }
+.acard.suggest button.atab { background: #1d3a35; color: var(--iron-aether); }
+.acard button.alaunch {
+  flex: 0 0 88px; margin: -9px 0; padding: 0; border: 0; border-left: 2px solid #000; background: #120806;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; touch-action: none; -webkit-touch-callout: none;
+}
+.acard button.alaunch .cap {
+  position: relative; width: 56px; height: 56px; border-radius: 50%;
+  background: conic-gradient(#ffd27a calc(var(--p) * 360deg), #2a1410 0) ; padding: 4px; box-sizing: border-box;
+}
+.acard button.alaunch .cap::after {
+  content: ""; position: absolute; inset: 5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff8a73 0 12%, #e0301c 38%, #8e140a 100%);
+  box-shadow: 0 5px 0 #4a0904, 0 7px 0 #000; transition: transform .06s, box-shadow .06s;
+}
+.acard button.alaunch.down .cap::after { transform: translateY(4px); box-shadow: 0 1px 0 #4a0904, 0 2px 0 #000; }
+.acard button.alaunch .lbl { color: #ff8a73; font-size: 9px; }
+/* More cards waiting: their edges peek out behind this one instead of a counter. */
+.acard.peek { margin-bottom: 6px; box-shadow: var(--iron-plate-shadow), 0 9px 0 -5px #2e2119, 0 11px 0 -5px #000; }
+.acard.peek2 { margin-bottom: 12px; box-shadow: var(--iron-plate-shadow), 0 9px 0 -5px #2e2119, 0 11px 0 -5px #000, 0 17px 0 -10px #221812, 0 19px 0 -10px #000; }
 .acard button:focus-visible, .aask button:focus-visible, .arest button:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
 .aask, .arest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 10px; background: rgba(14, 10, 8, 0.94); border: 2px solid var(--iron-line); outline: 2px solid #000; font-size: 11px; color: var(--dim); }
 .aask div { display: flex; flex-wrap: wrap; gap: 4px; }

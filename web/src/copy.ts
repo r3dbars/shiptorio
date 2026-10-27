@@ -1006,5 +1006,9 @@ export const ATTENTION = {
   parked: "Parked for a day.",
   more: (approve: number, steer: number, suggest: number) => [steer && `${steer} steer`, approve && `${approve} approve`, suggest && `${suggest} suggested`].filter(Boolean).join(" · "),
   checkin: "Check in ›",
+  go: "Go →",
+  hold: "Hold",
+  holdLaunch: "Hold to launch",
+  moreWaiting: (n: number) => `${n} more waiting`,
   pushTitle: (approve: number, steer: number) => [steer && `${steer} to steer`, approve && `${approve} to approve`].filter(Boolean).join(", ") + " in Shiptorio",
 };
