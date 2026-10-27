@@ -180,7 +180,7 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).progress).not.toBeNull();
     await deleteAccount(env, user, ["alice/app"]);
     for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "spark_factory_calls", "spark_factory_budgets", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
-    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist ORDER BY login").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}, {login: "r3dbars", approved_by: "r3dbars"}]);
+    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist ORDER BY login").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}]);
   });
   it("exports the stable repo-id factory and erases both it and its frozen legacy object", async () => {
     const {env, user, objects} = await fixture();

@@ -147,8 +147,8 @@ test('configured owner has uncapped resources and a 200-run floor with no allowl
   await e.DB.prepare("UPDATE signup_allowlist SET enabled=0 WHERE login='custom-owner'").run();
   expect(await runQuota(e as never, 'custom-owner')).toBe(false);
   expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: '*' }, 'other')).limit).toBe(20);
-  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(200); // migration row, not an exemption
+  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(20); // portable migrations never enroll a maintainer
   await e.DB.prepare("DELETE FROM signup_allowlist WHERE login='r3dbars'").run();
   expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: 'someone-else' }, 'r3dbars')).limit).toBe(20);
-  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: undefined }, 'r3dbars')).limit).toBe(200);
+  expect((await runQuotaStatus({ ...e, ADMIN_LOGINS: undefined }, 'r3dbars')).limit).toBe(20);
 });
