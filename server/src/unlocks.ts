@@ -19,7 +19,7 @@ export interface Play {
   path?: string; // under https://github.com/<repo>/
 }
 
-const gh = (repo: string | undefined, path: string) => repo && /^[\w.-]+\/[\w.-]+$/.test(repo) ? `https://github.com/${repo}/${path}` : undefined;
+const gh = (repo: string | undefined, path: string) => repo && /^[\w-][\w.-]*\/[\w-][\w.-]*$/.test(repo) && !repo.includes("..") ? `https://github.com/${repo}/${path}` : undefined;
 const inspect = (s: BrainSignal) => ({ tool: "inspect_bottleneck", args: { signalId: s.id } });
 const connect = (kind: string) => () => ({ tool: "connect_source", args: { kind } });
 
@@ -29,9 +29,13 @@ export const PLAYBOOK: readonly Play[] = [
   { play: "connect_agent", kinds: ["no_agent", "no_power"], kind: "unblock", effort: "minutes", title: "Plug in an agent to build", grows: ["+1 BUILDER"], action: connect("claude") },
   { play: "read_rework_scars", kinds: ["rework_loop"], kind: "verify", effort: "minutes", title: "See why work keeps bouncing back", action: inspect },
   // repo flow
-  { play: "review_stale_prs", kinds: ["prs_stale"], kind: "review", effort: "minutes", title: "Land or close the stale PRs", path: "pulls?q=is%3Apr+is%3Aopen+sort%3Aupdated-asc" },
+  { play: "review_stale_prs", kinds: ["prs_stale", "prs_dropped"], kind: "review", effort: "minutes", title: "Land or close the stale PRs", path: "pulls?q=is%3Apr+is%3Aopen+sort%3Aupdated-asc" },
+  { play: "launch_waiting_prs", kinds: ["prs_waiting_on_you", "approve_queue"], kind: "ship", effort: "tap", title: "Launch what's waiting on you", action: inspect },
+  { play: "speed_up_merges", kinds: ["slow_merge"], kind: "review", effort: "minutes", title: "Get PRs merged faster", path: "pulls?q=is%3Apr+is%3Aopen+sort%3Acreated-asc" },
+  { play: "clean_stale_branches", kinds: ["branches_stale"], kind: "unblock", effort: "minutes", title: "Clear out the dead branches", path: "branches/stale" },
+  { play: "connect_github", kinds: ["repo_missing"], kind: "input", effort: "minutes", title: "Connect your repo", grows: ["+1 SOURCE"], action: connect("github") },
   { play: "split_big_prs", kinds: ["big_prs"], kind: "review", effort: "hours", title: "Split the biggest PR", path: "pulls" },
-  { play: "triage_issues", kinds: ["issues_untriaged"], kind: "input", effort: "minutes", title: "Sort the new issues", path: "issues?q=is%3Aissue+is%3Aopen+no%3Alabel" },
+  { play: "triage_issues", kinds: ["issues_untriaged", "backlog_growing"], kind: "input", effort: "minutes", title: "Sort the new issues", path: "issues?q=is%3Aissue+is%3Aopen+no%3Alabel" },
   { play: "add_first_tests", kinds: ["no_tests"], kind: "verify", effort: "hours", title: "Add a first test so the checks mean something", grows: ["+1 CHECK"] },
   { play: "write_next_issues", kinds: ["backlog_empty"], kind: "input", effort: "minutes", title: "Write down what to build next", grows: ["+1 ORE"], path: "issues/new" },
   { play: "inspect_ship_rate", kinds: ["ship_rate_drop"], kind: "unblock", effort: "tap", title: "Find out why shipping slowed", action: inspect },
@@ -42,20 +46,22 @@ export const PLAYBOOK: readonly Play[] = [
   { play: "ci_add_runners", kinds: ["ci_queue"], kind: "automate", effort: "minutes", title: "Stop PRs queueing for CI", path: "actions" },
   { play: "add_ci", kinds: ["ci_missing"], kind: "automate", effort: "minutes", title: "Turn on CI so every PR gets checked", grows: ["+1 CHECK"], path: "actions/new" },
   // Sentry
+  { play: "connect_sentry", kinds: ["sentry_missing"], kind: "input", effort: "minutes", title: "Connect Sentry to see what breaks", grows: ["+1 SOURCE"], action: connect("sentry") },
   { play: "triage_errors", kinds: ["errors_piling", "errors_unowned"], kind: "unblock", effort: "minutes", title: "Triage the errors piling up" },
   { play: "chase_error_spike", kinds: ["error_spike", "regression"], kind: "unblock", effort: "minutes", title: "Chase down the new errors" },
   // PostHog
   { play: "connect_posthog", kinds: ["no_analytics"], kind: "input", effort: "minutes", title: "Connect PostHog to see who uses it", grows: ["+1 SOURCE"], action: connect("posthog") },
-  { play: "fix_funnel_step", kinds: ["funnel_drop"], kind: "build", effort: "hours", title: "Fix the step where people drop off" },
-  { play: "get_first_users", kinds: ["no_users", "usage_flat"], kind: "input", effort: "hours", title: "Put it in front of more people" },
+  { play: "fix_funnel_step", kinds: ["funnel_drop", "funnel_leak"], kind: "build", effort: "hours", title: "Fix the step where people drop off" },
+  { play: "get_first_users", kinds: ["no_users", "usage_flat", "growth_stall"], kind: "input", effort: "hours", title: "Put it in front of more people" },
+  { play: "find_what_changed", kinds: ["usage_falling"], kind: "unblock", effort: "minutes", title: "Find what changed when usage dropped", path: "pulls?q=is%3Apr+is%3Amerged+sort%3Aupdated-desc" },
   { play: "announce_feature", kinds: ["feature_unused"], kind: "input", effort: "minutes", title: "Tell people about what you shipped" },
   // feedback
   { play: "reply_to_feedback", kinds: ["feedback_unanswered"], kind: "reply", effort: "minutes", title: "Answer the people who wrote in" },
   { play: "ask_for_feedback", kinds: ["feedback_thin"], kind: "input", effort: "minutes", title: "Ask a few users what's missing" },
   { play: "fix_top_complaint", kinds: ["same_complaint"], kind: "build", effort: "hours", title: "Fix what people keep asking about", path: "issues/new" },
   // the player's own goals and taps
-  { play: "set_a_goal", kinds: ["goal_missing"], kind: "input", effort: "tap", title: "Set a goal so the factory knows what matters" },
-  { play: "revisit_goal", kinds: ["goal_stalled", "goal_off_track"], kind: "input", effort: "tap", title: "Check in on your goal" },
+  { play: "set_a_goal", kinds: ["goal_missing"], kind: "input", effort: "tap", title: "Set a goal so the factory knows what matters", action: () => ({ tool: "ask_goal", args: {} }) },
+  { play: "revisit_goal", kinds: ["goal_stalled", "goal_off_track"], kind: "input", effort: "tap", title: "Check in on your goal", action: () => ({ tool: "ask_goal", args: {} }) },
   { play: "tune_the_deck", kinds: ["card_ignored", "later_streak", "never_reason"], kind: "input", effort: "tap", title: "Tell the factory what to stop suggesting" },
 ];
 
