@@ -130,3 +130,4 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-27: Plan locked through Nov 4: prove the loop with real clean ships on Testing + one real autonomy
   level-up, nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1, park build
   mode / pricing / empire / new mines. Codex on reliability prompts only. See "Current focus through Nov 4".
+- 2026-10-26: Make independent self-hosting simple for open-source users bringing their own Meta API keys and GitHub App: one guided Cloudflare setup command, with a credential-free CI dry run.
