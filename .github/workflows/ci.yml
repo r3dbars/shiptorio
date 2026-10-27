@@ -67,6 +67,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    # Each viewport keeps its serial fixture, without making all three 90s
+    # replays and visual checks compete with one job's 12-minute deadline.
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop, iphone-14, pixel-7]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -80,11 +86,11 @@ jobs:
       - name: Check browser libraries
         run: |
           node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
-      - run: bun run test:e2e ${{ inputs.update_baselines && '--update-snapshots' || '' }}
+      - run: bun run test:e2e --project=${{ matrix.project }} ${{ inputs.update_baselines && '--update-snapshots' || '' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: browser-evidence
+          name: browser-evidence-${{ matrix.project }}
           path: |
             test-results/
             playwright-report/
