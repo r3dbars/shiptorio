@@ -43,7 +43,8 @@ export function floorFrame(view: FloorView, W: number, H: number): { at: [number
   // frame the floor into the band the plates leave free, then grow the view so that band shows all of it
   const { free, grow } = freeBand(H);
   const a = W / free;
-  const h = isPhone(W) ? Math.max(P.phone.h, (P.w * 0.62) / a) : Math.max(P.h, P.w / a);
+  // a phone shows the floor's middle up close, as the mockup's phone does, and the player pans for the rest
+  const h = isPhone(W) ? Math.max(P.phone.h, (P.w * 0.4) / a) : Math.max(P.h, P.w / a);
   return { at: isPhone(W) ? P.phone.at : P.at, h: h * grow };
 }
 

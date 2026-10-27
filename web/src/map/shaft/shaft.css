@@ -3,7 +3,7 @@
 
 .maplabels.shaft .maplabel {
   position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px;
-  max-width: 240px; padding: 4px 7px 5px; margin: 0; text-align: left; cursor: pointer; pointer-events: auto;
+  max-width: 320px; padding: 4px 7px 5px; margin: 0; text-align: left; cursor: pointer; pointer-events: auto;
   background: rgba(14, 10, 8, 0.9); border: 2px solid var(--iron-line); outline: 2px solid #000; border-radius: 0;
   color: var(--iron-ink); font: inherit; will-change: transform;
 }

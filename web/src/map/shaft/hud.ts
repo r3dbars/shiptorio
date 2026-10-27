@@ -237,7 +237,7 @@ export class ShaftHud {
       c.el.classList.toggle("teaching", teaching);
       c.el.classList.toggle("sel", !!c.key && c.key === this.selected);
       const [x, y] = stage.project(...c.at());
-      const off = !shown || x < -120 || x > W + 120 || y < top || y > bottom;
+      const off = !shown || x < 0 || x > W || y < top || y > bottom;
       if (off) {
         if (c.el.style.display !== "none") c.el.style.display = "none";
         continue;
@@ -247,6 +247,8 @@ export class ShaftHud {
     }
     // read every size once, then write every position (no layout thrash)
     for (const p of placed) (p.w = p.c.el.offsetWidth), (p.h = p.c.el.offsetHeight);
+    // a chip whose machine is on screen stays whole: slide it in from the edge rather than cut it off
+    for (const p of placed) p.x = Math.min(Math.max(p.x, p.w / 2 + 4), W - p.w / 2 - 4);
     // chips that would overlap: the more important one stays, the other moves down under it (phones: it hides)
     placed.sort((a, b) => a.rank - b.rank || a.y - b.y);
     const kept: Placed[] = [];
