@@ -45,6 +45,35 @@ it("turns a Sentry issue into one chunk that grows on repeats and closes on reso
   expect(normalizeSentry({ data: {} }, "issue")).toEqual([]);
 });
 
+it("keeps the resolved Sentry assignment reproduction resolved", () => {
+  expect(normalizeSentry({ action: "assigned", data: { issue: { id: "123", title: "Resolved issue assigned for follow-up", status: "resolved", level: "error" } } }, "issue")[0].action).toBe("resolved");
+});
+
+it.each([
+  ["resolved", "resolved"], ["Resolved", "resolved"], ["RESOLVED", "resolved"],
+  ["ignored", "close"], ["Ignored", "close"], ["IGNORED", "close"],
+  ["archived", "close"], ["Archived", "close"], ["ARCHIVED", "close"],
+] as const)("honors terminal Sentry status %s as %s on neutral notifications", (status, expected) => {
+  for (const action of ["assigned", "updated", "created"]) {
+    expect(normalizeSentry({ action, data: { issue: { id: "123", status } } }, "issue")[0].action).toBe(expected);
+  }
+});
+
+it.each(["resolved", "ignored", "archived"])("preserves explicit Sentry %s lifecycle actions", (action) => {
+  const expected = action === "resolved" ? "resolved" : "close";
+  expect(normalizeSentry({ action, data: { issue: { id: "123" } } }, "issue")[0].action).toBe(expected);
+  for (const status of ["", "unresolved", "reopened", "resolved", "ignored", "archived"]) {
+    expect(normalizeSentry({ action, data: { issue: { id: "123", status } } }, "issue")[0].action).toBe(expected);
+  }
+});
+
+it.each(["assigned", "updated"])("keeps open Sentry %s notifications as upserts", (action) => {
+  expect(normalizeSentry({ action, data: { issue: { id: "123" } } }, "issue")[0].action).toBe("upsert");
+  for (const status of ["", "unresolved", "Unresolved", "reopened", "Reopened"]) {
+    expect(normalizeSentry({ action, data: { issue: { id: "123", status } } }, "issue")[0].action).toBe("upsert");
+  }
+});
+
 it("finds the topmost in-app frame", () => {
   expect(topInAppPath({ exception: { values: [{ stacktrace: { frames: [{ filename: "./cart/a.ts", in_app: true }, { filename: "node_modules/x.js", in_app: false }] } }] } })).toBe("cart/a.ts");
 });

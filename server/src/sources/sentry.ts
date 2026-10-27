@@ -70,7 +70,11 @@ export function normalizeSentry(payload: unknown, resource = "issue"): Signal[] 
     if (!/^\w{1,40}$/.test(id)) return [];
     const route = issue.culprit?.startsWith("/") ? issue.culprit.split(" ")[0] : undefined;
     const path = issue.metadata?.filename ? cleanPath(issue.metadata.filename) : undefined;
-    const action = p.action === "resolved" ? "resolved" : p.action === "ignored" || p.action === "archived" ? "close" : "upsert";
+    const status = issue.status?.toLowerCase();
+    const action = p.action === "resolved" ? "resolved"
+      : p.action === "ignored" || p.action === "archived" ? "close"
+      : status === "resolved" ? "resolved"
+      : status === "ignored" || status === "archived" ? "close" : "upsert";
     return [{
       source: "sentry", externalId: id, fingerprint: `sentry:${id}`, kindHint: "bug",
       title: (issue.title ?? "Sentry error").slice(0, 300),
