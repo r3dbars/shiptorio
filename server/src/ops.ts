@@ -1,3 +1,4 @@
+import { configuredAdmin } from "./admin-policy";
 import { budgetReport } from "./budget";
 import { log } from "./telemetry";
 import { Hono } from "hono";
@@ -37,7 +38,7 @@ ops.get("/api/flags", async c => {
 for (const path of ["/admin/flags", "/api/admin/*"]) ops.use(path, async (c, next) => {
   const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
   const login = user?.login;
-  if (!login || !(c.env.ADMIN_LOGINS ?? "").split(",").some(admin => admin.trim().toLowerCase() === login.toLowerCase())) return c.json({ error: "admin login required" }, 403);
+  if (!login || !configuredAdmin(c.env, login)) return c.json({ error: "admin login required" }, 403);
   c.set("admin", login);
   await next();
 });
