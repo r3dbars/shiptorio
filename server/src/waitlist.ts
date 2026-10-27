@@ -2,6 +2,7 @@
 // /waitlist (signup.ts addPending), so they show up on /admin for approval. The landing page has no
 // Turnstile widget yet; a hidden honeypot field and the per-IP admission budget stand in for it.
 import { addPending, admit, ipScope } from "./signup";
+import { boundedBody } from "./webhook-body";
 import type { Env } from "./index";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -16,9 +17,8 @@ export async function joinWaitlist(request: Request, env: Env): Promise<Response
 
   const origin = request.headers.get("origin");
   if ((origin && origin !== url.origin) || request.headers.get("sec-fetch-site") === "cross-site") return reply(403, { error: "Please sign up from shiptorio.com." });
-  if (Number(request.headers.get("content-length") ?? 0) > 2048) return reply(413, { error: "Too large." });
-  const raw = await request.text();
-  if (raw.length > 2048) return reply(413, { error: "Too large." });
+  const raw = await boundedBody(request, 2048);
+  if (raw === null) return reply(413, { error: "Too large." });
 
   let fields: Record<string, unknown> = {};
   try {

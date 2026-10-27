@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { agentEnvironment } from "./policy";
 
+export class KeychainUnavailable extends Error {}
+
 const paths = (home: string) => ({ keychain: join(home, "Library/Keychains/shiptorio.keychain-db"), password: join(dirname(home), ".agent-keychain-password") });
 async function regular(path: string) {
   const info = await lstat(path);
@@ -17,7 +19,10 @@ async function security(home: string, args: string[], secret?: string) {
   const timer = setTimeout(() => child.kill(), 10000);
   try {
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    if (code || /SecKeychain\w*:|error:|Usage:/i.test(err)) throw new Error(`Dedicated Keychain ${args[0]} failed`);
+    if (code || /SecKeychain\w*:|error:|Usage:/i.test(err)) {
+      if (args[0] === "unlock-keychain") throw new KeychainUnavailable("Dedicated Keychain unlock failed");
+      throw new Error(`Dedicated Keychain ${args[0]} failed`);
+    }
     return out;
   } finally { clearTimeout(timer); }
 }

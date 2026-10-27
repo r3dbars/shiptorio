@@ -1,3 +1,4 @@
+import { nativeTest } from "./native-prerequisite";
 import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +7,7 @@ import { freeSubscriptions, prepareAgentHome, subscriptionSignedIn, subscription
 import { harnessArgs, agentEnvironment } from "../src/policy";
 import { checkSandbox } from "../src/sandbox";
 
-test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("Claude CLI login → status → sandbox uses the same private config outside job workspaces", async () => {
+nativeTest("Claude CLI login → status → sandbox uses the same private config outside job workspaces", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-subscriptions-"));
   try {
     const home = await prepareAgentHome(root), executable = join(root, "claude");

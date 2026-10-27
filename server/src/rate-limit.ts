@@ -1,3 +1,4 @@
+import { ShiptorioError } from "./errors";
 /** Retry-After accepts delta seconds or an HTTP date. Never retry before the server's deadline. */
 export function retryAfterMs(value: string | null, now = Date.now(), fallback = 60000): number {
   if (!value) return fallback;
@@ -9,7 +10,7 @@ export function retryAfterMs(value: string | null, now = Date.now(), fallback = 
 export function pollDelay(base: number, failures = 0, retryMs = 0, random = Math.random): number {
   return Math.max(retryMs, Math.min(3600000, base * 2 ** Math.min(failures, 6))) + Math.floor(random() * base * 0.2);
 }
-export class RateLimitError extends Error {
+export class RateLimitError extends ShiptorioError {
   constructor(public retryAt: number) { super(`GitHub rate limit; queued work retries after ${new Date(retryAt).toISOString()}`); }
 }
 export function githubCooldown(res: Response, now: number, failures: number, secondary: boolean): number {

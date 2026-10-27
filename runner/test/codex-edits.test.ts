@@ -20,9 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyCodexEdits, type CodexEdits } from "../src/codex-edits";
 import { checkSandbox, type CheckSandbox } from "../src/sandbox";
-// CI installs bubblewrap and runs these fixtures. Deploy has no OS backend;
-// real repository checks must not recursively create another OS boundary.
-const osTest = test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || (process.platform === "linux" ? !Bun.which("bwrap") : process.platform !== "darwin"));
+import { nativeTest as osTest } from "./native-prerequisite";
 async function fixture(run: (root: string, work: string, box: CheckSandbox) => Promise<void>, setup?: (root: string, work: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-codex-edit-")), work = join(root,"checkout");
   let box: CheckSandbox | undefined;
