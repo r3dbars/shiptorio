@@ -62,3 +62,14 @@ explicit Launch. Do not implement the issue outside that runner path.
   recovery after both performance fixes, not sustained load or a shipped issue.
 - No Cloudflare billing change was made. Defer any paid upgrade decision while
   checking this recovery; extra CPU headroom is separate from code correctness.
+
+## Paid runtime headroom approved
+
+- Repeated watching after the bounded recovery still returned 503/403 and request
+  timeouts. The redactor fix did not establish sustained Free-tier operation;
+  stopped only the isolated watcher again.
+- Justin explicitly approved the Workers Paid charges. Cloudflare checkout now
+  confirms purchase complete and subscription active: $5/month minimum plus
+  usage overages, at account scope. No other Worker code or configuration changed.
+- PR #249 separately preserves the password/origin/rate-limit checks on an access
+  fast path; it does not substitute for adequate runner runtime headroom.
