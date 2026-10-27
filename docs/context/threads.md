@@ -3,6 +3,10 @@
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
 
+> **Plan through Nov 4 (locked 2026-10-27):** prove the loop (Testing #5 + 5 to 10 more clean ships + one real
+> autonomy level-up), nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1,
+> park build mode / pricing / empire / new mines. Codex is on reliability prompts only. Details: `docs/VISION.md`.
+
 | Thread | State | What it did / produced |
 | --- | --- | --- |
 | Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README). Other repos: transcripted, transcripted-webapp, redbars, pipread, BetterFeedback |
