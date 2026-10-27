@@ -24,6 +24,7 @@ import { makeLayout, MINES } from "./layout";
 import { cartAt, clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
 import { ShaftStage, type ShaftView } from "./stage";
 import { Trophies } from "./trophies";
+import { TrustLamps } from "./trust";
 
 // the mockup's art was tuned without color management (three r128); the engine's lights are patched to match
 THREE.ColorManagement.enabled = false;
@@ -88,6 +89,7 @@ export class ShaftScene {
   private lapsing = false;
   private asked: string | null = null; // the last focus asked for, kept for a shaft that wasn't built yet
   private readonly trophies = new Trophies(); // a green lamp per shipped PR, by the assembler that built it
+  private readonly trust = new TrustLamps(); // trust in levels up the launch lift's tower
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -167,6 +169,7 @@ export class ShaftScene {
     else this.sp = sp;
     this.driver?.sync(state);
     if (this.I) this.trophies.sync(this.I, state);
+    this.trust.sync(state);
     this.hud.read(state, this.sp!);
     this.light(state);
     this.startLapse();
@@ -321,6 +324,7 @@ export class ShaftScene {
     cancelAnimationFrame(this.raf);
     this.teardown();
     this.trophies.dispose();
+    this.trust.dispose();
     this.hud.dispose();
     this.said.remove();
     this.renderer.dispose();
@@ -357,6 +361,8 @@ export class ShaftScene {
     this.firstRun.patch(stage.root);
     this.trophies.reset();
     stage.root.add(this.trophies.group);
+    this.trust.reset();
+    stage.root.add(this.trust.group);
     if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
@@ -394,6 +400,7 @@ export class ShaftScene {
   private teardown() {
     this.hud.clear();
     this.trophies.group.removeFromParent(); // its meshes outlive the shaft; I.dispose frees what's under the root
+    this.trust.group.removeFromParent();
     if (this.I) this.I.dispose();
     this.stage?.dispose();
     this.I = null;
