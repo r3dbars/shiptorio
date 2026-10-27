@@ -36,6 +36,8 @@ Pick **Allow** (Suggested) or **Not yet**. Not yet asks again three clean ships 
 
 With a permit, a PR in that lane that is on the pad and passed every station with no scars **merges on its own**. The log says "Rocket launched on its own: PR #N merged on the docs launch permit."
 
+Before an automatic launch, Shiptorio rechecks the current PR files and commit against the permit. A changed lane or a commit that changes during that check stops the launch for player review.
+
 Anything that needs rework still comes to you.
 
 ## Losing a permit

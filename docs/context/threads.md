@@ -10,12 +10,19 @@
 
 ## Codex: pre-hackathon security pass (2026-10-26)
 
-- Auditing all server routes, factory isolation, GitHub/Sentry authentication,
-  Spark's untrusted-input boundary and secret logging from updated main.
-- First separate fix: [#267](https://github.com/r3dbars/shiptorio/pull/267), current
-  repository checks before empire summaries. Regression demonstrated the old
-  leak; full local check passes. Further findings and PRs are in progress.
-- Summary: [security.md](security.md). No manual deployment or resource changes.
+- Completed the server route, factory isolation, GitHub/Sentry signature,
+  Spark tool/secret and logging audit at baseline `44942fd` (63 source files),
+  plus the subsequently added runner-health display helper.
+- Four findings, each with a small fix PR and regression: [#267](https://github.com/r3dbars/shiptorio/pull/267)
+  reauthorizes empire summaries; [#270](https://github.com/r3dbars/shiptorio/pull/270)
+  separates read and writer authority; [#271](https://github.com/r3dbars/shiptorio/pull/271)
+  rejects incomplete PR-file inspection; [#273](https://github.com/r3dbars/shiptorio/pull/273)
+  binds automatic permits to current files and head. PR links retain CI/merge evidence.
+- Full local checks passed on each fix. No additional confirmed webhook,
+  Spark secret-tool or log-secret vulnerability; no production exploitation or
+  live model red-team claim. Details and limitations: [security.md](security.md).
+- No manual deployment, Cloudflare resource or web source changes. Merges use
+  green CI; existing deployment automation remains responsible for rollout.
 
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
@@ -51,6 +58,7 @@ is the only copy agents outside it (Codex) can see.
 | Add progression and daily streaks | PR #172 | XP from real results, levels, daily streak + shields, unlocks on the island (glass lake, lanterns, gold pad), morning brief with the deck-size trend, check-in end tally, opt-in "you're the bottleneck" notification. `shared/src/progression.ts`, `web/src/ui/Progress.tsx`. Behind `?progress=1` (`?progress=demo` in the sim) |
 | Grow the factory across many repos | PR open | The empire, behind `?empire=1` (remembered; `?empire=0` off). Every other repo you connect floats as a satellite island beyond the main one, tied by a sky rail with crates (`web/src/map/empire.ts`: real island, districts and launch pad, flattened to ~25 draw calls, no shadows). Island chip in the top bar opens the overview: camera pulls back over every island, sheet rolls up shipped, weighted Automated %, waiting on you, and the most stuck island; tap an island to sail there (`web/src/ui/Empire.tsx`). `IslandSummary` + `rollup` in `shared/src/empire.ts`; `GET /api/empire` asks each repo's Factory `summary()` (player's own repos via `reposFor`). Sim shows shiptorio, testing, transcripted |
 | Always show a next move after rockets | PR open | #105 follow-up. `web/src/ui/whatsNext.ts`: when no Next Move card is open, one clear move is always picked from state (launch, check in, stuck station, research, connect a mine, near permit, place a builder, the line, grow) and shown in the Next Move slot, live and sim. Sim planner keeps dealing moves after scripted ore runs out (connect a mine, then "pull 3 more open issues"). Check: `node web/scripts/next-move-check.mjs` (10 rockets, card within 2s each) |
+| Rebuild the map as a vertical mine-to-launch factory | working | Justin 2026-10-27: the map goes vertical (VISION principle 10). `web/src/map/shaft/` behind `?world=shaft`: quarry floor with mines in a cliff (inbox, GitHub, Sentry, PostHog) → ore lift → build floor (planner, assemblers) → tubes up → checks floor (CI, researched checks, verify, review) → freight lift → launch floor (gate, pad, rocket, orbit). Engine ported from the Black Iron mockup (`docs/art/black-iron/`), art in `shaft/modules/*.js` per `shaft/CONTRACT.md`, layout contract `shaft/layout.js`. Dev harness `web/shaft.html` + `web/scripts/shaft-shot.mjs`. Owns everything positioned in the world (chips, tags, pings); the HUD (#248) owns fixed chrome |
 | Design build mode and Codex task pack | parked (after Nov 4) | Justin 2026-10-27: optional Factorio / RCT-style build mode (place, move, rotate, rewire machines and belts). Spec `docs/BUILD-MODE.md`: every piece, its real pipeline meaning and ports, the per-tier grid on the vertical shaft (`web/src/map/shaft/layout.js`), the `Blueprint` model, `compile()` from layout to real pipeline config, safety rules, server draft/apply, web tools behind `?build=1`. 8-prompt Codex pack in project files `shiptorio/codex-prompts/build-mode.md`, parked until after Nov 4, then needs the shaft map on main |
 
 ## Codex: public judge replay (2026-10-26)
@@ -118,6 +126,12 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - Implemented: per-repository capped reconnect backoff, private lease-bound recovery journal, automatic completion receipt retry, explicit subscription sign-in cards, and doctor auth/sandbox/pairing probes. Builds still require player approval; expired/revoked leases never resume automatically. No deployment requested.
 - Focused macOS validation: 54 tests passed, including real sandbox/publication tests and card lifecycle through Factory reload; HTTP polling smoke also passed with dropped requests and an expired fake sign-in. Added immutable patch recovery, automatic receipt replay even when claim is empty, and cached-auth failure latching. Local full validation after rebase: `bun run test:fast` passed (671 tests, 2 platform skips; 24 playtest cases / 306 decisions / no findings), plus `bun run build`. Includes real macOS sandbox/publication probes and a doctor subprocess test. PR checks and merge result are on the linked PR. Merge gate: CI and stranger-path checks green on the exact head; native GitHub auto-merge is disabled, so the chat performs that gate.
 
+## Real assembler edit doctor (Codex, 2026-10-26)
+
+- [PR #275](https://github.com/r3dbars/shiptorio/pull/275), branch `codex/runner-edit-doctor`: add an explicit real subscription edit probe, proving exact file bytes and untouched canaries in a disposable checkout. Basic doctor stays inference-free.
+- Integrates the merged supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
+- Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. The full `doctor --edit codex` command reported PASS for Codex auth, sandbox, pairing and actual edit; it correctly exited nonzero for the separate missing Claude sign-in/sandbox. Integrated runner tests: 45 passed, 2 platform skips. Full `bun run check` passed after integration (726 tests, 2 platform skips; all workspace typechecks and production/web/standalone-runner build). CI/merge outcome is on PR #275.
+
 ## Codex (outside the Claude project)
 
 Only what Codex has pushed is visible here, not its live session. Codex commits show as "J B" or "Redbars". As of ~17:20 UTC:
@@ -125,6 +139,7 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | PR | What | State |
 | --- | --- | --- |
 | #13 | Private preview (password gate), hardened issue → Spark → PR → inspector/rework loop, bounded alarm jobs, stale-check handling | merged. Supersedes #4's fixes |
+| Game music | PR #263; merge authorized after green CI | Original 16-bar foundry score, activity layers, blocked brass and launch fanfare; separate persisted music volume, CC0, no audio downloads/decoded stems. Desktop/phone controls and two 65s recordings verified. **Keep behind `?music=2`**; existing score stays default. Code: `web/src/sound/foundryScore.ts`; evidence: `docs/evidence/music/`. |
 | #19, #21 | Auto-deploy of `main` verified, `/api/version` shows the live SHA, shiptorio.com + shiptorio.dev live | merged |
 | #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
 | Add real user accounts and sign-in | working | D1 `users`/`sessions`/`user_installations`/`user_repos`/`user_prefs` (migration 0004), revocable sessions, repo membership on every factory route, per-repo Sentry/PostHog keys + per-repo Sentry webhook, `requireUser` helper. Password gate stays in front. Next: web install link + prefs sync |
@@ -187,6 +202,11 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Local dry run passed with all 12 migrations and Worker/assets bundle. Live resource creation, credential upload, GitHub callbacks and end-to-end factory operation are not exercised by the dry run. No Cloudflare resources were changed during development.
 - Advances the Day 1 Cloudflare/GitHub setup checkpoint for open-source users with their own keys: [PR #266](https://github.com/r3dbars/shiptorio/pull/266). Local validation: 677 tests passed, 2 platform skips; all workspace/test typechecks; 26 playtest cases / 332 decisions; fresh-clone install, local migrations and Wrangler dry-run passed with a clean tracked tree. CI gates the merge. GitHub auto-merge is disabled for this repository, so Codex will merge only after green checks, as requested.
 
+## Factory-triggered Spark spend proof (Codex, 2026-10-26)
+
+- [Live proof](spark-spend-live-proof.md): recovered the exhausted 20/day allowance to 21 without resetting usage, after quota fix #269 deployed. Requested Plan #10 through the testing factory's real websocket action; Spark completed a plan awaiting approval.
+- Five real Worker Meta calls, 2,795 input / 2,231 output tokens (369 cached input), $0.0125696 estimated; zero unmeasured calls. Admin and owner endpoint match; real browser admin row, HUD chip and How it thinks panel verified. Build run usage stayed 20/21 throughout planning. Public [Spark docs](../site/spark.md) now describe spend and quota recovery.
+
 ## Quota recovery (Codex, 2026-10-26; PR #269)
 
 - Day 1 loop reliability: [PR #269](https://github.com/r3dbars/shiptorio/pull/269), `codex/quota-recovery`.
@@ -220,3 +240,28 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - No manual deploy or Cloudflare resource changes. Production recovery remains untested;
   migration 0013 must run through the existing deployment workflow. No historical run
   counters were reset or refunded.
+## Claude runner login and two subscription plants (Codex, 2026-10-26)
+
+- Checkpoint: Oct 29 local runner / Oct 30 power routing. Branch `codex/claude-runner-power`, [PR #274](https://github.com/r3dbars/shiptorio/pull/274); based on current main including #235 and runner recovery #259.
+- Claude subscription login explicitly uses its canonical private `.agent-home/.claude` via `CLAUDE_CONFIG_DIR`, shared by login, status, doctor and sandbox execution. Claude temp files are isolated too; the macOS agent profile can read only the system timezone database needed to avoid an ICU/Intl startup spin; no personal agent homes or inherited API keys are exposed. A successful login wakes the expired-auth guard even when credentials live only in Keychain.
+- Recheck sign-ins before each assignment. Use Spark's preferred subscription when free, otherwise another signed-in subscription runs the unchanged approved plan/scope. Retain the one-build supervisor and original provider on recovery; never downgrade a subscription assignment to geothermal.
+- Heartbeats publish separate Codex / Claude Code plants before the first job, update logout/offline state, and clear stale/revoked plants. Power sheet shows availability rather than an invented remaining subscription quota. Crosses into `web/` only for this requested Power sheet behavior; no shared schema change.
+- **Justin must reinstall the runner bundle after merge** (standalone installer or legacy `runner:service install`). Existing running helpers do not update with the website. Sign into Claude using the installed runner's real data root; macOS Keychain identity depends on that path. The PR includes the reinstall paste.
+- Validation: full fast suite passes after rebase (723 tests, 2 platform skips), workspace/test typechecks, build, 26 playtests / 332 decisions / no findings; Power sheet browser checks pass on desktop/iPhone 14/Pixel 7. CLI login → stored status → real sandbox uses a provider fixture; native Claude 2.1.310 separately reaches its expected signed-out error in the macOS sandbox with zero tokens. Provider dispatch, unchanged recovery leases and independent auth guards are covered. Justin's dedicated browser sign-in and a real Claude-produced PR remain acceptance steps. CI gates merge; repository auto-merge is disabled, so this chat merges the verified head after green checks.
+
+
+## Owner quota recovery (Codex, 2026-10-26)
+
+PR #281 fixes the Day 1 issue-to-PR checkpoint blocker: migration 0014 upserts `r3dbars`
+with 99999 factories/repos, 200 runs/day, inherited Worker Spark quotas, enabled access,
+and deletes only `runs:r3dbars` from the abuse ledger. Explicit `ADMIN_LOGINS` identities
+(default `r3dbars`) bypass resource caps and retain a 200-run floor even without a row;
+signup/repo authorization and explicit revocation still apply. Quota telemetry uses the
+same effective limits. The existing #269 failed-plan accounting stays in place: no build
+run until dispatch; per-issue backoff of 1m, 2m, then midnight UTC after three failures.
+The daily retry cap now also holds when a stored cooldown timestamp has elapsed.
+Regression tests cover absent/low/high owner limits, ordinary users, wildcard configuration,
+resource attribution, migration upsert/cleanup, zero-charge failed plans across restarts,
+and independent issue retry caps. Validation and merge are tracked in
+[PR #281](https://github.com/r3dbars/shiptorio/pull/281); its final verification comment
+links the successful Deploy run, including D1 migration application and live smoke.

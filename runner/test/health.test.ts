@@ -54,5 +54,25 @@ test("doctor CLI reports every category and a failing exit code without pairing 
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
     expect(code).toBe(1); expect(out).toContain("FAIL auth:"); expect(out).toContain("sandbox:verification:"); expect(out).toContain("FAIL pairing:");
     expect(out + err).not.toContain("Waiting for your approval");
+    expect(out).toContain("SKIP edit:codex: Not checked");
+    const edit = Bun.spawn([process.execPath, "runner/src/cli.ts", "doctor", "--edit", "codex"], {
+      cwd: resolve(import.meta.dir, "../.."), env: { PATH: "/usr/bin:/bin", SHIPTORIO_RUNNER_ROOT: root }, stdout: "pipe", stderr: "pipe",
+    });
+    const [editOut, editErr, editCode] = await Promise.all([new Response(edit.stdout).text(), new Response(edit.stderr).text(), edit.exited]);
+    expect(editCode).toBe(1); expect(editOut).toContain("FAIL edit:codex:");
+    expect(editOut + editErr).not.toContain("Waiting for your approval");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("doctor's explicit edit probe runs only for a signed-in installed harness and reports real edit failure", async () => {
+  let calls = 0;
+  const options = { harnesses: ["codex"] as const, pairs: [], auth: async () => true, sandbox: async () => {}, pairing: async () => {}, editHarness: "codex" as const, edit: async () => { calls++; } };
+  const good = await diagnose({ ...options, harnesses: [...options.harnesses] });
+  expect(good.find(r => r.check === "edit:codex")?.ok).toBe(true); expect(calls).toBe(1);
+  const failed = await diagnose({ ...options, harnesses: [...options.harnesses], edit: async () => { throw Error("sandbox_apply Operation not permitted"); } });
+  expect(failed.find(r => r.check === "edit:codex")?.ok).toBe(false);
+  expect(failed.find(r => r.check === "edit:codex")?.detail).toContain("successful login/startup does not prove");
+  await diagnose({ ...options, harnesses: [...options.harnesses], auth: async () => false });
+  await diagnose({ ...options, harnesses: [] });
+  expect(calls).toBe(1);
 });

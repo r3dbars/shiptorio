@@ -15,6 +15,8 @@ export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist
 export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
 export const isAdmin = (env: Env, login: string) => isAllowed(env.ADMIN_LOGINS || 'r3dbars', login);
+// Only explicitly configured owner/admin identities get quota exemptions, never a wildcard.
+export const isQuotaOwner = (env: SignupEnv, login: string) => (env.ADMIN_LOGINS || 'r3dbars').split(',').some(owner => owner.trim().toLowerCase() === login.toLowerCase());
 export async function signupAllowed(env: {DB:D1Database;ALLOWED_LOGINS?:string}, login: string): Promise<boolean> {
   const row = await env.DB.prepare('SELECT enabled FROM signup_allowlist WHERE login = ?').bind(login.toLowerCase()).first<{enabled: number}>();
   return row ? row.enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", login);
@@ -78,6 +80,11 @@ export async function redeemInvite(env: Env, code: string, login: string): Promi
   return results[0].meta.changes === 1 && results[1].meta.changes === 1;
 }
 export async function resourceQuota(env: Env, login: string, kind: 'factory'|'repo', resource: string): Promise<boolean> {
+  if (isQuotaOwner(env, login)) {
+    // Still record ownership: run attribution, telemetry and account cleanup depend on this ledger.
+    await env.DB.prepare('INSERT OR IGNORE INTO signup_resources(login,kind,resource) VALUES (?,?,?)').bind(login.toLowerCase(),kind,resource.toLowerCase()).run();
+    return true;
+  }
   const caps = await env.DB.prepare('SELECT factories,repos FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{factories:number;repos:number}>();
   const cap = kind === 'factory' ? caps?.factories ?? 3 : caps?.repos ?? 3;
   const row = await env.DB.prepare(`INSERT OR IGNORE INTO signup_resources(login,kind,resource) SELECT ?,?,? WHERE
@@ -85,11 +92,11 @@ export async function resourceQuota(env: Env, login: string, kind: 'factory'|'re
   if (row) return true;
   return !!await env.DB.prepare('SELECT resource FROM signup_resources WHERE login=? AND kind=? AND resource=?').bind(login.toLowerCase(),kind,resource.toLowerCase()).first();
 }
-export async function runQuotaStatus(env: Pick<Env, 'DB'>, login: string, now = Date.now()) {
+export async function runQuotaStatus(env: Pick<Env, 'DB' | 'ADMIN_LOGINS'>, login: string, now = Date.now()) {
   const row = await env.DB.prepare('SELECT runs_daily FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{runs_daily:number}>();
   const used = await env.DB.prepare('SELECT count FROM signup_counters WHERE scope=? AND bucket=?')
     .bind(`runs:${login.toLowerCase()}`, Math.floor(now / 86400000)).first<{count:number}>();
-  return { used: used?.count ?? 0, limit: row?.runs_daily ?? 20, resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
+  return { used: used?.count ?? 0, limit: isQuotaOwner(env, login) ? Math.max(200, row?.runs_daily ?? 0) : row?.runs_daily ?? 20, resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
 }
 export async function runQuota(env: Env, login: string): Promise<boolean> {
   if (!await signupAllowed(env,login)) return false;

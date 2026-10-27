@@ -6,7 +6,7 @@ export function agentEnvironment(input: NodeJS.ProcessEnv, home?: string): NodeJ
   return {
     PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LANG: "en_US.UTF-8", TERM: "dumb",
     GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null", GIT_TERMINAL_PROMPT: "0",
-    ...(home ? { HOME: home, CODEX_HOME: `${home}/.codex` } : {}),
+    ...(home ? { HOME: home, CODEX_HOME: `${home}/.codex`, CLAUDE_CONFIG_DIR: `${home}/.claude`, CLAUDE_CODE_TMPDIR: `${home}/.claude/tmp` } : {}),
   };
 }
 export function assertCheckCommand(args: string[], runtime: string, scripts: string[]): void {

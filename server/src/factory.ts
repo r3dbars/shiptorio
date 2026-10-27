@@ -1,5 +1,6 @@
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
+import { availableJobHarness, syncRunnerPower } from "./runner-power";
 import { factoryDeleted } from "./account-data";
 import { pollDelay, RateLimitError } from "./rate-limit";
 import { factorySpend } from "./spend";
@@ -60,7 +61,7 @@ import { layoutMap } from "./map";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
-import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute, runnerPower } from "./geothermal";
+import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
 import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
@@ -275,6 +276,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
     if (changed) await this.accountPut("stageHistory", history.filter(h => h.exitedAt === undefined || h.exitedAt > now - 86400000).slice(-4000));
     const presenceFresh = !!presence?.harnesses.length && now - presence.seenAt < 20000;
+    if (!presenceFresh && !jobs.some(j => j.status === "running")) {
+      const power = syncRunnerPower(s.power, []);
+      if (JSON.stringify(power) !== JSON.stringify(s.power)) { s.power = power; this.broadcast({ type: "patch", patch: { power } }); }
+    }
     const telemetryState = presenceFresh || jobs.some(j => j.status === "running") ? s : { ...s, power: s.power.filter(p => p.kind !== "solar" && p.kind !== "geothermal") };
     const derived = deriveBottleneck(telemetryState, { now, history, jobs, powered: this.env.HOSTED_SPARK_ASSEMBLER === "1" || !!presence?.harnesses.length && now - presence.seenAt < 20000 || jobs.some(j => j.status === "running") });
     s.bottleneck = derived.bottleneck;
@@ -571,7 +576,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async heartbeatRunner(pairId: string, harnesses: RunnerJob["harness"][], authRequired?: AuthHarness[]) {
     if (!await this.isRunnerPaired(pairId)) throw new Error("Runner pairing revoked");
     await this.accountPut("runnerPresence", { harnesses, authRequired, seenAt: Date.now() });
-    if (authRequired !== undefined && await this.load()) {
+    await this.load();
+    if (this.state) {
+      const power = syncRunnerPower(this.state.power, harnesses, authRequired);
+      if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
+    }
+    if (authRequired !== undefined && this.state) {
       await this.decisionData();
       const ids = authRequired.map(h => `runner-auth:${h}`);
       const current = this.openMoves!.filter(m => m.id.startsWith("runner-auth:")).map(m => m.id);
@@ -611,7 +621,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.ctx.storage.delete("runnerPair");
     await this.ctx.storage.delete("runnerPresence");
     await this.load();
-    if (this.state) await this.patch({ power: this.state.power.filter(p => !p.id.startsWith("solar-")) });
+    if (this.state) await this.patch({ power: syncRunnerPower(this.state.power, []) });
   }
   async isRunnerPaired(pairId: string): Promise<boolean> {
     return await this.ctx.storage.get("runnerPair") === pairId;
@@ -805,15 +815,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const stranded = this.state?.items.filter(i => i.state === "working" && expired.some(j => j.itemId === i.id)) ?? [];
       if (stranded.length) await this.patch({ items: stranded.map(i => ({ ...i, state: "queued" as const, updatedAt: Date.now() })) });
       await this.accountPut("runnerPresence", { harnesses, seenAt: Date.now() });
-      const localPower = runnerPower(harnesses);
-      if (this.state && localPower.some(p => !this.state!.power.some(existing => existing.id === p.id && existing.online))) {
-        await this.patch({ power: [...this.state.power.filter(p => !["power-codex", "power-claude_code", ...localPower.map(p => p.id)].includes(p.id)), ...localPower] });
+      if (this.state) {
+        const power = syncRunnerPower(this.state.power, harnesses);
+        if (JSON.stringify(power) !== JSON.stringify(this.state.power)) await this.patch({ power });
       }
       await this.offerRunnerPlan();
       await this.refreshDecisions();
       await this.scheduleTick();
       const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
-      const job = [...jobs.values()].find(j => j.status === "ready" && harnesses.includes(j.harness));
+      const job = [...jobs.values()].find(j => j.status === "ready" && availableJobHarness(j.harness, harnesses));
       if (!job) return null;
       if (this.env.SPARK_DISABLED === "1" || this.running.size + [...jobs.values()].filter(j => j.status === "running").length >= budgetLimits(this.env).jobs) return null;
       const currentItem = this.state?.items.find(i => i.id === job.itemId);
@@ -827,6 +837,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (!account) return null;
       const quota = await runQuotaStatus(this.env, account);
       if (quota.used >= quota.limit || !await runQuota(this.env as never, account)) return null;
+      const selected = availableJobHarness(job.harness, harnesses)!;
+      if (selected !== job.harness) {
+        this.log("info", `${harnessLabel(job.harness)} is unavailable; ${harnessLabel(selected)} will execute the same approved plan.`, job.itemId);
+        job.route = `solar, ${harnessLabel(selected)}. Preferred subscription unavailable at dispatch.`;
+        job.harness = selected;
+      }
       await this.accountPut("runnerLastJobId", job.id);
       Object.assign(job, { status: "running", pairId, lease: crypto.randomUUID(), deadline: Date.now() + RUNNER_LEASE_MS });
       await this.accountPut(`runnerJob:${job.id}`, job);
@@ -1860,9 +1876,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         }
         continue;
       }
-      if (item.branch?.startsWith("shiptorio/runner-") && !item.lane) {
+      if (item.branch?.startsWith("shiptorio/runner-") && (!item.lane || item.inspection?.headSha !== result.headSha)) {
         const lane = await prFiles(token, this.meta.repo, item.prNumber).then((files) => laneOf(files.map((f) => f.filename))).catch(error => { this.log("error", `Lane metadata unavailable: ${String(error)}`, item.id); return null; });
-        if (lane) item.lane = lane;
+        item.lane = lane ?? undefined;
       }
       if (result.state === "passed") {
         if (item.branch?.startsWith("shiptorio/runner-")) {
@@ -1990,10 +2006,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
-      const lane = item.lane ?? laneOf(files.map((f) => f.filename)) ?? undefined;
+      const lane = laneOf(files.map((f) => f.filename)) ?? undefined;
       const currentInLane = () => {
         const now = current();
-        return now && lane && !now.lane ? { ...now, lane } : now;
+        return now ? { ...now, lane } : now;
       };
       if (gate === "checks") {
         const now = currentInLane();
@@ -2139,7 +2155,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           throw new Error("Current checks have not passed. The PR is back at CI.");
         }
       }
-      if (by === "autonomy") await this.accountPut(`autoLaunch:${item.id}`, item.prNumber);
+      if (by === "autonomy") {
+        // A permit belongs to a lane on this head, never an item's historical
+        // classification. Bracket the file read with head checks; merge also
+        // supplies the expected SHA so a subsequent push cannot win the race.
+        const lane = laneOf((await prFiles(token, this.meta.repo, item.prNumber)).map(f => f.filename)) ?? undefined;
+        const latestHead = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
+        if (latestHead !== head) throw new Error("The PR changed while its launch permit was being checked.");
+        if (lane !== item.lane || !mayAutoLaunch(await this.permitBook(), { ...item, lane })) {
+          await this.patch({ items: [{ ...item, lane }] });
+          throw new Error("The PR changed its permitted lane. A player must review the launch.");
+        }
+        await this.accountPut(`autoLaunch:${item.id}`, item.prNumber);
+      }
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
       const stages = (item.inspection?.stages ?? []).map((st) => (st.gate === "human" ? { ...st, state: "passed" as const, reason } : st));
@@ -2751,7 +2779,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (pr.merged) await this.onPullClosed(item.prNumber!, true, pr.merge_commit_sha);
         else if (pr.state === "closed") await this.onPullClosed(item.prNumber!, false);
         else {
-          if (item.inspection && item.inspection.headSha !== pr.head.sha) await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(pr.head.sha), updatedAt: now }] });
+          if (item.inspection && item.inspection.headSha !== pr.head.sha) await this.patch({ items: [{ ...item, lane: undefined, state: "inspecting", machineId: "ci-1", inspection: freshInspection(pr.head.sha), updatedAt: now }] });
           await this.onCheckSuite([item.prNumber!], false, "Periodic GitHub reconciliation", pr.head.sha);
         }
       } catch (error) { await this.reliabilityFailure(`reconcile:${item.id}`, error, item.id); }

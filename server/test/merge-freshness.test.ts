@@ -12,13 +12,18 @@ const { Factory } = await import("../src/factory");
 const head = "a".repeat(40);
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
 type Mode = "passed" | "pending" | "failed" | "unavailable";
-async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; merges: () => number; launch: () => Promise<void> }) => Promise<void>) {
+async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: Map<string, unknown>; saved: () => FactoryState; mode: (next: Mode) => void; currentHead: (sha: string) => void; files: (names: string[], changeHead?: boolean) => void; merges: () => number; launch: () => Promise<void>; autoLaunch: () => Promise<void> }) => Promise<void>) {
   let mode: Mode = "passed", current = head, merges = 0;
+  let names = ["docs/README.md"], changeDuringFiles = false;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/access_tokens")) return Response.json({ token: "fake-token" });
     if (url.endsWith("/pulls/99")) return Response.json({ head: { sha: current }, merged: false });
+    if (url.includes("/pulls/99/files?")) {
+      if (changeDuringFiles) current = "b".repeat(40);
+      return Response.json(names.map(filename => ({ filename, status: "modified", patch: "+safe" })));
+    }
     if (url.endsWith("/pulls/99/merge")) { merges++; return Response.json({ merged: true }); }
     if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: mode === "pending" ? "in_progress" : "completed", conclusion: mode === "failed" ? "failure" : "success" }] });
     if (url.includes("/status?")) return mode === "unavailable" ? new Response("forbidden", { status: 403 }) : Response.json({ total_count: 0, statuses: [] });
@@ -40,7 +45,12 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
       expect(card).toBeDefined();
       await factory.webSocketMessage(authorizedSocket(undefined, "owner/repo"), JSON.stringify({ type: "choose_move", moveId: card.id, optionId: "launch" }));
     };
-    await run({ factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, merges: () => merges, launch });
+    const autoLaunch = async () => {
+      data.set("permits", setPermit(emptyBook(), "docs", true));
+      await factory.exportState();
+      await (factory as unknown as { launch(item: Item, by: "autonomy"): Promise<void> }).launch(saved().items[0], "autonomy");
+    };
+    await run({ factory, data, saved, mode: next => { mode = next; }, currentHead: sha => { current = sha; }, files: (next, change = false) => { names = next; changeDuringFiles = change; }, merges: () => merges, launch, autoLaunch });
   } finally { globalThis.fetch = original; }
 }
 
@@ -88,5 +98,27 @@ it("a changed head returns to CI instead of consuming an old launch approval", a
     expect(f.merges()).toBe(0);
     expect(f.saved().items[0].state).toBe("inspecting");
     expect(f.saved().items[0].inspection?.headSha).toBe("b".repeat(40));
+  });
+});
+
+it("a historical docs permit cannot launch code or cross-lane changes", async () => {
+  for (const files of [["src/fix.ts"], ["docs/README.md", "src/fix.ts"]]) await fixture(async f => {
+    f.files(files);
+    await f.autoLaunch();
+    expect(f.merges()).toBe(0);
+    expect(f.saved().items[0].lane).not.toBe("docs");
+    expect(f.data.has("autoLaunch:gh-1")).toBe(false);
+  });
+});
+
+it("automatic launch requires a stable current diff and still permits unchanged docs", async () => {
+  await fixture(async f => {
+    f.files(["docs/README.md"], true);
+    await f.autoLaunch();
+    expect(f.merges()).toBe(0);
+  });
+  await fixture(async f => {
+    await f.autoLaunch();
+    expect(f.merges()).toBe(1);
   });
 });

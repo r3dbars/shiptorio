@@ -42,7 +42,8 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
   await env.DB.prepare("INSERT INTO signup_counters VALUES('runs:owner',?,16,?)").bind(bucket, (bucket + 2) * 86400000).run();
   const account = await budgetAccount(env.DB, "owner/repo");
   await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,160,400000)').bind(account, new Date().toISOString().slice(0, 10)).run();
-  const status = await quotaStatus(env, "owner/repo", { id: 1, login: "owner" });
+  env.ADMIN_LOGINS = "admin";
+  const status = await quotaStatus(env, "owner/repo", { id: 1, login: "admin" });
   expect(status.quotas.filter(q => ['runs','spark-calls','spark-tokens'].includes(q.id)).map(q => q.status)).toEqual(['warning','warning','warning']);
   expect(status.quotas[0].raiseUrl).toBe('/admin/signup?login=owner');
   expect(status.resetsAt).toBe((bucket + 1) * 86400000);
@@ -50,18 +51,21 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
   expect((await runQuotaStatus(env, 'owner', status.resetsAt)).used).toBe(0);
   expect((await quotaStatus(env, 'owner/repo', { id: 2, login: 'guest' })).quotas[0].raiseUrl).toBeNull();
   await env.DB.prepare("UPDATE signup_counters SET count=20").run();
-  expect((await quotaStatus(env, 'owner/repo', { id: 1, login: 'owner' })).quotas[0].status).toBe('stopped');
+  expect((await quotaStatus(env, 'owner/repo', { id: 1, login: 'admin' })).quotas[0].status).toBe('stopped');
 });
 
 test("one-tap admin link selects existing limits; saving raises Spark and run quotas immediately", async () => {
-  const { env, cookie } = await fixture();
+  const { env } = await fixture();
+  env.ADMIN_LOGINS = 'admin';
+  const adminCookie = await signedInCookie(env, 'admin', [], 3);
+  await env.DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at) VALUES('admin','admin',0)").run();
   await env.DB.prepare("UPDATE signup_allowlist SET runs_daily=5, spark_calls_daily=0, spark_tokens_daily=0").run();
   const account = await budgetAccount(env.DB, 'owner/repo');
   await expect(reserveSpark(env, account, 1)).rejects.toThrow('exhausted');
-  const page = await adminSignup(new Request('https://shiptorio.test/admin/signup?login=owner', { headers: { cookie } }), env);
+  const page = await adminSignup(new Request('https://shiptorio.test/admin/signup?login=owner', { headers: { cookie: adminCookie } }), env);
   const html = await page.text();
   expect(html).toContain('value="owner" required'); expect(html).toContain('value="5"');
-  const response = await adminSignup(new Request('https://shiptorio.test/admin/signup', { method: 'POST', headers: { cookie, origin: 'https://shiptorio.test' }, body: new URLSearchParams({ action: 'limits', login: 'owner', runs: '30', factories: '3', repos: '3', spark_calls: '500', spark_tokens: '1000000' }) }), env);
+  const response = await adminSignup(new Request('https://shiptorio.test/admin/signup', { method: 'POST', headers: { cookie: adminCookie, origin: 'https://shiptorio.test' }, body: new URLSearchParams({ action: 'limits', login: 'owner', runs: '30', factories: '3', repos: '3', spark_calls: '500', spark_tokens: '1000000' }) }), env);
   expect(response.status).toBe(200);
   await expect(reserveSpark(env, account, 1)).resolves.toMatchObject({ account });
   const q = await quotaStatus(env, 'owner/repo', { id: 1, login: 'owner' });
@@ -101,6 +105,7 @@ test("legacy hosted scoping failures also preserve run quota and wait behind the
 
 test("approved ready jobs wait for capacity and dispatch charges exactly once, including a lost claim", async () => {
   const { f, env, data } = await fixture();
+  env.ADMIN_LOGINS = 'admin';
   const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });
   expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
   data.set(`runnerJob:${job.id}`, { ...job, status: 'ready' });
@@ -143,4 +148,27 @@ test("limits endpoint denies other repos, requires authentication, and returns n
   const response = await request('/api/repos/owner/repo/limits');
   expect(response.status).toBe(200); expect(response.headers.get('cache-control')).toContain('no-store');
   expect((await response.json() as { quotas: unknown[] }).quotas).toHaveLength(7);
+});
+
+
+test("daily planning cap survives an elapsed timestamp and does not block another issue", async () => {
+  const { f, data, env, reload } = await fixture();
+  await f.usage();
+  const state = data.get('state') as FactoryState;
+  data.set('state', { ...state, items: [...state.items, { ...state.items[0], id: 'gh-2' }] });
+  const retry = { day: new Date().toISOString().slice(0, 10), failures: 3, retryAt: Date.now() - 1, reason: 'offline' };
+  data.set('planningRetry:gh-1', retry);
+  const current = reload();
+  const input = { harness: 'codex' as const, allowedPaths: ['src/cart.ts'] };
+  await expect(current.enqueueRunner({ ...input, itemId: 'gh-1' })).rejects.toThrow('Planning paused');
+  expect(await current.enqueueRunner({ ...input, itemId: 'gh-2' })).toMatchObject({ status: 'planning' });
+  expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
+});
+
+
+test("quota telemetry reports the configured owner floor and effective resource limits without a row", async () => {
+  const { env } = await fixture();
+  await env.DB.prepare("DELETE FROM signup_allowlist WHERE login='owner'").run();
+  const status = await quotaStatus(env, 'owner/repo', { id: 1, login: 'owner' });
+  expect(status.quotas.filter(q => ['runs', 'factories', 'repos'].includes(q.id)).map(q => q.limit)).toEqual([200, 99999, 99999]);
 });

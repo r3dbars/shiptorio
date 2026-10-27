@@ -2,8 +2,15 @@ import "./gauntlet.css";
 import { useEffect, useRef } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import { FactoryScene, type Cosmetics, type Ping } from "./scene";
+import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
+
+// What FactoryMap asks of a map. The island (scene.ts) and the shaft (shaft/ShaftScene.ts, ?world=shaft) both do it.
+type MapScene = Pick<
+  FactoryScene,
+  "setSize" | "setLift" | "zoomBy" | "panBy" | "update" | "pick" | "hover" | "clearHover" | "setTeachingKeys" | "setShowAllLabels" | "setPings" | "focus" | "setSatellites" | "backToLine" | "empireView" | "overview" | "setCosmetics" | "dispose"
+>;
 
 interface Props {
   state: FactoryState | null;
@@ -27,13 +34,43 @@ const NO_SATS: SatelliteSpec[] = [];
 export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<FactoryScene | null>(null);
+  const sceneRef = useRef<MapScene | null>(null);
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
+  // the latest props, for a map that arrives late (the shaft loads its art first)
+  const propsRef = useRef({ showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire });
+  propsRef.current = { showLabels, lift, cosmetics, teachingKeys, pings, satellites, focus, wide, empire };
 
   useEffect(() => {
+    let off: (() => void) | null = null;
+    let dead = false;
+    const start = (scene: MapScene, late: boolean) => {
+      if (dead) return scene.dispose();
+      off = attach(scene);
+      if (stateRef.current) scene.update(stateRef.current);
+      if (!late) return; // the effects below hand it the rest
+      const p = propsRef.current;
+      scene.setShowAllLabels(p.showLabels);
+      scene.setLift(p.lift);
+      scene.setCosmetics(p.cosmetics);
+      scene.setTeachingKeys(p.teachingKeys);
+      scene.setPings(p.pings);
+      scene.setSatellites(p.satellites);
+      if (p.empire) scene.empireView();
+      else if (!p.focus && p.wide) scene.overview(p.wide);
+      else if (p.focus) scene.focus(p.focus);
+    };
+    if (SHAFT) void import("./shaft/ShaftScene").then(({ ShaftScene }) => start(new ShaftScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), true));
+    else start(new FactoryScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), false);
+    return () => {
+      dead = true;
+      off?.();
+    };
+  }, []);
+
+  // input and sizing for a map, once it exists; returns the teardown
+  function attach(scene: MapScene) {
     const canvas = canvasRef.current!;
-    const scene = new FactoryScene(canvas, labelsRef.current!, (id) => pickRef.current?.(id));
     sceneRef.current = scene;
     const ro = new ResizeObserver(([e]) => scene.setSize(e.contentRect.width, e.contentRect.height));
     ro.observe(canvas);
@@ -117,13 +154,23 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       el.addEventListener("focusin", focusIn);
       el.addEventListener("focusout", focusOut);
     }
-    if (stateRef.current) scene.update(stateRef.current);
     return () => {
       ro.disconnect();
+      canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerup", up);
+      canvas.removeEventListener("pointercancel", up);
+      canvas.removeEventListener("pointerleave", leave);
+      canvas.removeEventListener("wheel", wheel);
+      canvas.removeEventListener("keydown", keys);
+      for (const el of [canvas, labels]) {
+        el.removeEventListener("focusin", focusIn);
+        el.removeEventListener("focusout", focusOut);
+      }
       scene.dispose();
       sceneRef.current = null;
     };
-  }, []);
+  }
 
   const stateRef = useRef(state);
   stateRef.current = state;
