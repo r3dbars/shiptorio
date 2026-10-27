@@ -155,7 +155,8 @@ export interface PlanOptions {
  */
 export async function planLocalTask(env: SparkEnv, task: Task, allowedPaths: string[], source: Toolbox | ((path: string) => Promise<string | null>), record: (step: SparkStep) => Promise<void>, opts: PlanOptions = {}): Promise<{ plan: string; files: string[]; heeded: string[] }> {
   // Parallel task fields (rework, title, player feedback) must obey the same boundary as observations.
-  task = redact(task);
+  // History is newest-last; the generic log redactor's first-200 array cap must not discard recent scars.
+  task = { ...redact(task), scars: task.scars?.map(scar => redact(scar)) };
   if (!allowedPaths.length || !allowedPaths.every(pathAllowed)) throw new SparkError("Unsafe planning paths");
   const box: Toolbox = typeof source === "function" ? { paths: allowedPaths, read: source } : source;
   // Approved paths may name a new doc that isn't in the tree yet; reading it says so.

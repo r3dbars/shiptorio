@@ -161,6 +161,19 @@ describe("planner tools", () => {
     expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
   });
 
+  it("keeps the newest scars in long histories while sanitizing their complete reasons", async () => {
+    const sent = spark([{ tool: "read_file", path: "README.md", reason: "Read" }, { tool: "assign_job", reason: "Fix", plan: "Update the README.", acceptance: ["README is accurate"], files: ["README.md"] }]);
+    const scars = Array.from({ length: 201 }, (_, i) => ({ station: "review", reason: i === 200 ? `LATEST SCAR ${"x".repeat(240)} ${syntheticPem}` : `Earlier scar ${i}`, strike: i + 1 }));
+    await planLocalTask(sparkTestEnv(), { title: "x", body: "Ordinary issue", district: "/", scars }, ["README.md"], box(), async () => {});
+    const payload = JSON.parse(JSON.parse(sent[0].split("\n")[1]));
+    expect(payload.rework.scars).toHaveLength(3);
+    expect(payload.rework.scars[0]).toBe("review: Earlier scar 198");
+    expect(payload.rework.scars[2]).toContain("LATEST SCAR");
+    expect(payload.rework.scars[2]).toContain("[REDACTED]");
+    expect(sent.join(" ")).not.toContain("SYNTHETICKEY");
+    expect(sent.join(" ")).not.toContain("BEGIN PRIVATE KEY");
+  });
+
   const found = [
     { tool: "read_issue", reason: "Understand it" },
     { tool: "search_code", query: "argv", reason: "Find where the coupon is read" },
