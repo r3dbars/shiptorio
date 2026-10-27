@@ -10,11 +10,14 @@
 //   BATTERY     an accumulator: a rack of glass cells whose charge glow rises and falls with the level.
 //   GEOTHERMAL  your own computer running local models: a wellhead on the quarry floor drawing lava heat up from
 //               deep below, a heat-exchanger coil (glowing hot at the bottom, aether teal at the top) and a turbine.
-//   power lines IRON.part('power'): a conduit from each plant to the back corner of every machine it feeds
-//               (def.feeds), on saddles along the floor and brackets up the cliff and wall, ending in a socket;
+//   power lines IRON.part('power'): a conduit from each plant to every machine it feeds (def.feeds): low along
+//               the floor on saddles behind the machines (kept out of bays, plant footprints and paths), up the
+//               cliff's right edge and the riser wall on brackets, rising into the machine's own power fitting
+//               (the assembler's aether socket, the planner's aether manifold) or our socket at its back corner;
 //               pulses flow toward the machine, faster when the level is high, dim and red when offline.
 // M.power() -> { level 0..1, online }: WORKING while online, IDLE when the level is ~0, BLOCKED when offline
-// (or when a decision is pending). Point lights: none (quota 0) — every glow is emissive.
+// (or when a decision is pending). Point lights: none (quota 0) — every glow is emissive. Draw calls: every
+// opaque part of a plant (and of each moving part) merges into one vertex-coloured mesh (see vcKit).
 // =====================================================================
 
 const C45 = Math.SQRT1_2;
@@ -38,8 +41,8 @@ const HARNESS_NAME = { claude_code: 'CLAUDE CODE', codex: 'CODEX', cursor: 'CURS
 // The power part routes on from the last point, so plant and line always meet.
 const OUT = {
   steam: [[0.38, 0.86, 0.84], [0.38, 0.58, 1.28], [-1.25, 0.58, 1.28], [-1.6, 0.3, 1.28]],
-  dynamo: [[0.16, 0.5, 0.55]],
-  battery: [[-0.34, 0.5, 0.62]],
+  dynamo: [[0.16, 0.3, 0.55]],
+  battery: [[0.854, 0.3, 1.14]],
   geothermal: [[0.42, 0.62, -0.9], [0.42, 0.55, -1.04], [0.99, 0.55, -1.04]],
 };
 const Y_RUN = 0.3; // conduit centre above a deck (deck top + 0.2)
@@ -182,6 +185,131 @@ export default function install(IRON) {
     return { tex, aspect: W / Hh };
   }
 
+  // ------------------------------------------------------------------ one draw call per rigid part
+  // The plants are hundreds of little boxes in ~25 materials. Every opaque untextured part under each anchor (the
+  // plant itself and every part marked K.dyn) merges into ONE vertex-coloured mesh: each part's diffuse, specular
+  // colour + shininess, emissive and fog ride along per vertex (the MACHINES agent's trick in assembler.js, copied).
+  // Materials that change at runtime are tagged lamp(mt); sync(refs) copies their colour/emissive into their
+  // vertices when it changes (an unlit glow merges as pure emission). Textured / see-through parts stay as they are.
+  let VC = null;
+  function vcKit(THREE) {
+    if (VC) return VC;
+    let vcMat = null;
+    function material() {
+      if (vcMat) return vcMat;
+      vcMat = new THREE.MeshPhongMaterial({ color: 0xffffff, vertexColors: true, flatShading: true });
+      vcMat.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 spec;\nattribute vec3 emis;\nattribute float fogk;\nvarying vec4 vSpec;\nvarying vec3 vEmis;\nvarying float vFogK;')
+          .replace('#include <color_vertex>', '#include <color_vertex>\n\tvSpec = spec; vEmis = emis; vFogK = fogk;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec4 vSpec;\nvarying vec3 vEmis;\nvarying float vFogK;')
+          .replace('vec3 totalEmissiveRadiance = emissive;', 'vec3 totalEmissiveRadiance = emissive + vEmis;')
+          .replace('#include <lights_phong_fragment>', 'BlinnPhongMaterial material;\n\tmaterial.diffuseColor = diffuseColor.rgb;\n\tmaterial.specularColor = vSpec.rgb;\n\tmaterial.specularShininess = vSpec.a;\n\tmaterial.specularStrength = specularStrength;')
+          .replace('#include <fog_fragment>', '#ifdef USE_FOG\n\t#ifdef FOG_EXP2\n\t\tfloat fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n\t#else\n\t\tfloat fogFactor = smoothstep( fogNear, fogFar, vFogDepth );\n\t#endif\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor * vFogK );\n#endif');
+      };
+      vcMat.customProgramCacheKey = () => 'iron-vc-power';
+      return vcMat;
+    }
+    const lamp = (mt) => { mt.userData.lamp = true; return mt; };
+    // the kit's caution beacon + status lamp merge too (their materials sync like lamps; the static ones never change)
+    const kitLamps = (grp) => grp.traverse((o) => { if (o.isMesh && o.material.isMeshPhongMaterial && !o.material.map && !o.material.transparent) lamp(o.material); });
+    const ok = (c) => {
+      const mt = c.material;
+      if (c.constructor !== THREE.Mesh || c.children.length || !mt || Array.isArray(mt) || mt.transparent || mt.map || mt.userData.live || c.renderOrder !== 0 || !c.geometry.attributes.normal) return false;
+      return (mt.isMeshPhongMaterial && mt.flatShading) || (mt.isMeshBasicMaterial && !!mt.userData.lamp);
+    };
+    function geometry(list, inv) {
+      const rel = new THREE.Matrix4();
+      let n = 0;
+      const parts = list.map((o) => {
+        rel.multiplyMatrices(inv, o.matrixWorld);
+        const gg = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); gg.applyMatrix4(rel);
+        const cnt = gg.attributes.position.count, dbl = o.material.side === THREE.DoubleSide;
+        n += dbl ? cnt * 2 : cnt;
+        return { gg, mt: o.material, flip: rel.determinant() < 0, dbl };
+      });
+      const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), emi = new Float32Array(n * 3), spc = new Float32Array(n * 4), fgk = new Float32Array(n);
+      const colA = new THREE.BufferAttribute(col, 3), emiA = new THREE.BufferAttribute(emi, 3), refs = [];
+      let off = 0;
+      const put = (Pa, Na, cnt, rev) => {
+        for (let q = 0; q < cnt; q += 3) for (let j = 0; j < 3; j++) {
+          const src = q + (rev ? (j === 0 ? 0 : 3 - j) : j), dst = off + q + j;
+          for (let k = 0; k < 3; k++) { pos[dst * 3 + k] = Pa[src * 3 + k]; nor[dst * 3 + k] = Na[src * 3 + k] * (rev === 2 ? -1 : 1); }
+        }
+        off += cnt;
+      };
+      for (const { gg, mt, flip, dbl } of parts) {
+        const Pa = gg.attributes.position.array, Na = gg.attributes.normal.array, cnt = gg.attributes.position.count, start = off;
+        put(Pa, Na, cnt, flip ? 1 : 0);
+        if (dbl) put(Pa, Na, cnt, flip ? 0 : 2);
+        const basic = mt.isMeshBasicMaterial, c = mt.color, e = basic ? c : mt.emissive, ei = basic ? 1 : mt.emissiveIntensity, s = basic ? null : mt.specular, shn = basic ? 1 : Math.max(mt.shininess, 1e-4), fog = mt.fog ? 1 : 0;
+        for (let i = start; i < off; i++) {
+          col[i * 3] = basic ? 0 : c.r; col[i * 3 + 1] = basic ? 0 : c.g; col[i * 3 + 2] = basic ? 0 : c.b;
+          emi[i * 3] = e.r * ei; emi[i * 3 + 1] = e.g * ei; emi[i * 3 + 2] = e.b * ei;
+          spc[i * 4] = s ? s.r : 0; spc[i * 4 + 1] = s ? s.g : 0; spc[i * 4 + 2] = s ? s.b : 0; spc[i * 4 + 3] = shn; fgk[i] = fog;
+        }
+        if (mt.userData.lamp) refs.push({ mt, basic, colA, emiA, start, end: off, key: '' });
+        gg.dispose();
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      geo.setAttribute('color', colA); geo.setAttribute('emis', emiA); geo.setAttribute('spec', new THREE.BufferAttribute(spc, 4)); geo.setAttribute('fogk', new THREE.BufferAttribute(fgk, 1));
+      geo.computeBoundingSphere();
+      return { geo, refs };
+    }
+    // merge one anchor's static opaque parts (not its K.dyn children) into one mesh per bucket (cellOf: optional
+    // world-position -> bucket key, so a long part can still be culled floor by floor)
+    function merge(anchor, refs, cellOf) {
+      anchor.updateMatrixWorld(true);
+      const sv = new THREE.Vector3(), wp = new THREE.Vector3(), buckets = new Map();
+      const walk = (o) => {
+        for (const c of o.children) {
+          if (c.userData.dyn || c.userData.noBake || !c.visible) continue;
+          if (ok(c)) {
+            const key = cellOf ? cellOf(c.getWorldPosition(wp)) : '';
+            const b = buckets.get(key) || { list: [], cast: false, recv: false };
+            buckets.set(key, b); b.list.push(c);
+            const gm = c.geometry; if (!gm.boundingSphere) gm.computeBoundingSphere();
+            c.getWorldScale(sv);
+            if (c.castShadow && gm.boundingSphere.radius * Math.max(sv.x, sv.y, sv.z) >= 0.16) b.cast = true;
+            if (c.receiveShadow) b.recv = true;
+          } else walk(c);
+        }
+      };
+      walk(anchor);
+      const inv = new THREE.Matrix4().copy(anchor.matrixWorld).invert();
+      buckets.forEach((b) => {
+        if (b.list.length < 2) return;
+        const r = geometry(b.list, inv);
+        refs.push(...r.refs);
+        const mm = new THREE.Mesh(r.geo, material()); mm.castShadow = b.cast; mm.receiveShadow = b.recv; mm.userData.noBake = true; mm.name = 'vc';
+        anchor.add(mm);
+        b.list.forEach((o) => o.parent.remove(o));
+      });
+    }
+    // a plant and each of its moving parts
+    function bakeAll(root, refs) {
+      const anchors = [root];
+      const visit = (o) => { for (const c of o.children) { if (c.userData.dyn) anchors.push(c); visit(c); } };
+      visit(root);
+      anchors.forEach((a) => merge(a, refs));
+    }
+    function sync(refs) {
+      for (const L of refs) {
+        const mt = L.mt, c = mt.color, e = L.basic ? c : mt.emissive, ei = L.basic ? 1 : mt.emissiveIntensity;
+        const dr = L.basic ? 0 : c.r, dgr = L.basic ? 0 : c.g, db = L.basic ? 0 : c.b, er = e.r * ei, eg = e.g * ei, eb = e.b * ei;
+        const key = dr + ',' + dgr + ',' + db + ',' + er + ',' + eg + ',' + eb;
+        if (key === L.key) continue;
+        L.key = key;
+        const C = L.colA.array, E = L.emiA.array;
+        for (let i = L.start; i < L.end; i++) { C[i * 3] = dr; C[i * 3 + 1] = dgr; C[i * 3 + 2] = db; E[i * 3] = er; E[i * 3 + 1] = eg; E[i * 3 + 2] = eb; }
+        if (L.colA.addUpdateRange) { L.colA.addUpdateRange(L.start * 3, (L.end - L.start) * 3); L.emiA.addUpdateRange(L.start * 3, (L.end - L.start) * 3); }
+        L.colA.needsUpdate = true; L.emiA.needsUpdate = true;
+      }
+    }
+    VC = { lamp, kitLamps, merge, bakeAll, sync };
+    return VC;
+  }
+
   // ------------------------------------------------------------------ state (shared by every plant)
   const clamp01 = (k) => Math.max(0, Math.min(1, k));
   function readPower(M) {
@@ -230,7 +358,7 @@ export default function install(IRON) {
   // STEAM: the planner's boiler house
   // =====================================================================
   IRON.machine('steam', function (K, M) {
-    const P = palette(K), H = kit(K, P), THREE = K.THREE, lerp = K.lerp;
+    const P = palette(K), H = kit(K, P), THREE = K.THREE, lerp = K.lerp, VCK = vcKit(THREE), refs = [];
     const g = K.group();
     const ps = newStatus();
     // ---------- plinth ----------
@@ -246,9 +374,9 @@ export default function install(IRON) {
     const door = H.face(g, BO.x, 0.78, BO.z + 0.93, 0);
     K.box(0.7, 0.6, 0.12, P.iron, 0, 0, 0, door);
     K.box(0.78, 0.07, 0.16, P.brassD, 0, 0.33, 0.01, door);
-    const fireM = K.glow(0xffa040);
-    K.box(0.52, 0.4, 0.04, fireM, 0, -0.02, 0.05, door);
-    for (let i = 0; i < 5; i++) K.box(0.035, 0.4, 0.05, P.soot, -0.2 + i * 0.1, -0.02, 0.085, door);
+    const fireM = VCK.lamp(K.glow(0xffa040));
+    K.box(0.52, 0.4, 0.04, fireM, 0, -0.02, 0.08, door);
+    for (let i = 0; i < 4; i++) K.box(0.03, 0.4, 0.04, P.soot, -0.15 + i * 0.1, -0.02, 0.115, door);
     K.box(0.62, 0.1, 0.32, P.ironM, 0, -0.36, 0.14, door);
     const leaf = K.group(door, 0.33, 0, 0.07); leaf.rotation.y = -2.0;
     K.box(0.34, 0.5, 0.04, P.ironL, 0.17, 0, 0, leaf); K.box(0.06, 0.06, 0.08, P.brassL, 0.28, 0, 0.04, leaf);
@@ -280,7 +408,7 @@ export default function install(IRON) {
     const sgA = 1.35, sgx = BO.x + Math.sin(sgA) * 0.95, sgz = BO.z + Math.cos(sgA) * 0.95;
     K.cyl(0.055, 0.055, 1.0, P.glass, 8, sgx, 2.15, sgz, g).castShadow = false;
     for (const y of [1.62, 2.68]) { K.cyl(0.08, 0.08, 0.08, P.brass, 8, sgx, y, sgz, g); const st = K.cyl(0.035, 0.035, 0.16, P.brassD, 6, BO.x + Math.sin(sgA) * 0.86, y, BO.z + Math.cos(sgA) * 0.86, g); st.rotation.set(Math.PI / 2, sgA, 0, 'YXZ'); }
-    const waterM = K.glow(0x6ad8e8);
+    const waterM = VCK.lamp(K.glow(0x6ad8e8));
     const water = K.dyn(K.group(g, sgx, 1.66, sgz));
     K.cyl(0.035, 0.035, 1, waterM, 6, 0, 0.5, 0, water).castShadow = false;
     // safety valve (lever + ball weight lifts when it blows) and the whistle
@@ -293,7 +421,7 @@ export default function install(IRON) {
     K.cyl(0.03, 0.03, 0.34, P.brass, 6, WH.x, 4.12, WH.z, g);
     K.cyl(0.075, 0.075, 0.26, P.brassL, 10, WH.x, 4.42, WH.z, g); K.cyl(0.045, 0.085, 0.07, P.brass, 10, WH.x, 4.58, WH.z, g);
     K.box(0.18, 0.025, 0.03, P.iron, WH.x + 0.09, 4.32, WH.z, g); K.box(0.012, 0.9, 0.012, P.ink, WH.x + 0.17, 3.86, WH.z, g);
-    const alarmM = K.mat(0x401010, { e: 0 });
+    const alarmM = VCK.lamp(K.mat(0x401010, { e: 0 }));
     K.sph(0.13, alarmM, BO.x - 0.5, 3.92, BO.z + 0.36, g, 8, 6); K.cyl(0.1, 0.12, 0.06, P.brassD, 8, BO.x - 0.5, 3.8, BO.z + 0.36, g);
 
     // ---------- mill engine on the front-right: cylinder, crosshead, flywheel, governor, aether generator ----------
@@ -334,16 +462,18 @@ export default function install(IRON) {
     // aether generator behind the wheel, output flange at OUT.steam[0]
     const gen = K.cyl(0.27, 0.27, 0.42, P.ironM, 12, 0.38, FY, FZ, g); gen.rotation.z = Math.PI / 2;
     for (const x of [0.2, 0.56]) { const b = K.cyl(0.29, 0.29, 0.05, P.brass, 12, x, FY, FZ, g); b.rotation.z = Math.PI / 2; }
-    const genM = K.glow(0x2cb89c);
+    const genM = VCK.lamp(K.glow(0x2cb89c));
     for (let i = 0; i < 3; i++) K.box(0.08, 0.05, 0.02, genM, 0.28 + i * 0.1, FY + 0.12, FZ + 0.27, g);
     K.cyl(0.03, 0.03, 0.36, P.steel, 6, 0.75, FY, FZ, g).rotation.z = Math.PI / 2;
     K.box(0.3, 0.5, 0.3, P.iron, 0.38, 0.65, FZ, g);
     K.cyl(0.14, 0.14, 0.06, P.brass, 10, OUT.steam[0][0], OUT.steam[0][1] + 0.08, OUT.steam[0][2], g);
 
     // ---------- nameplate, caution, lamp ----------
-    H.sign(g, 'STEAM', 0.26, BO.x + Math.sin(0.1) * 0.86, 3.08, BO.z + Math.cos(0.1) * 0.86, 0.1, { bg: '#b8883c', fg: '#1e1408', hi: '#e4b85e', lo: '#5a3e14', edge: '#2a1a0a' });
+    H.sign(g, 'STEAM', 0.26, BO.x + Math.sin(gp) * 0.87, 3.1, BO.z + Math.cos(gp) * 0.87, gp, { bg: '#b8883c', fg: '#1e1408', hi: '#e4b85e', lo: '#5a3e14', edge: '#2a1a0a' });
     const caution = K.caution(g, 1.18, 0.4, -1.18, 0.8);
     const lamp = K.statusLamp(g, 1.2, 0.4, 1.2, 1.1);
+    VCK.kitLamps(caution.g); VCK.kitLamps(lamp.g);
+    VCK.bakeAll(g, refs);
 
     // ---------- run ----------
     let flyA = 0, spd = 0, fireK = 0.5, vent = 0, tPuff = 0, whistle = 0, tWhistle = 3, waterK = 0.6;
@@ -400,6 +530,7 @@ export default function install(IRON) {
         whistle = Math.max(0, whistle - dt * 1.6);
       }
       if (work && Math.random() < dt * 2 * fireK) { v.set(BO.x + K.R() * 0.3, 0.75, BO.z + 1.05); K.spawn(g, v.x, v.y, v.z, K.R() * 0.4, 0.6 + Math.random() * 0.6, 0.4, Math.random() < 0.5 ? 0xffb050 : 0xff7a2a, 0.5, 0.035, 2, true); }
+      VCK.sync(refs);
     } };
   });
 
@@ -407,11 +538,15 @@ export default function install(IRON) {
   // DYNAMO: one per subscription, behind its assembler
   // =====================================================================
   IRON.machine('dynamo', function (K, M) {
-    const P = palette(K), H = kit(K, P), THREE = K.THREE;
+    const P = palette(K), H = kit(K, P), THREE = K.THREE, VCK = vcKit(THREE), refs = [];
     const g = K.group();
     const ps = newStatus();
     const harness = (M.def && M.def.harness) || M.harness || '';
-    const NAME = HARNESS_NAME[harness] || (harness ? String(harness).replace(/_/g, ' ').toUpperCase() : 'DYNAMO');
+    let NAME = HARNESS_NAME[harness] || (harness ? String(harness).replace(/_/g, ' ').toUpperCase() : 'DYNAMO');
+    // two subscriptions of the same kind: number them like their assemblers' marquees do (CLAUDE CODE 1, 2)
+    { const asms = (I.layout && I.layout.assemblers) || [], feeds = (M.def && M.def.feeds) || [];
+      const fed = asms.find((a) => feeds.includes(a.id));
+      if (fed) { const same = asms.filter((a) => (a.def && a.def.harness) === (fed.def && fed.def.harness)).sort((a, b) => a.x - b.x); if (same.length > 1) NAME += ' ' + (same.findIndex((a) => a.id === fed.id) + 1); } }
     // the body stands left of the assembler's back corner, clear of the dome (body frame: B, same axes as local)
     const B = K.group(g, -0.45, 0, 0.95);
     const AY = 2.45;
@@ -462,21 +597,29 @@ export default function install(IRON) {
     const cb = H.face(B, SC, AY + 0.55, SC, Math.PI / 4); K.box(SU * 2 + 0.1, 0.06, 0.06, P.brassD, 0, 0, 0, cb); K.box(SU * 2 + 0.1, 0.06, 0.06, P.brassD, 0, 0.66, 0, cb);
     const dialN = H.gauge(B, SC + 0.06, AY + 0.88, SC + 0.06, 0.27, Math.PI / 4, true);
     const plate = H.sign(B, NAME, 0.34, SC + 0.05, AY + 1.5, SC + 0.05, Math.PI / 4, { bg: '#1c2a26', fg: '#bff8ea', edge: '#0a0806', hi: '#2e443e', glow: 0.9, frame: P.brassD });
-    const lamp = K.statusLamp(B, SC + 0.05 - (plate.w / 2 + 0.12) * C45, AY + 1.32, SC + 0.05 + (plate.w / 2 + 0.12) * C45, 0.9);
+    // status lamp on the board's right end; the caution beacon on a bracket off its left end, up where the camera
+    // sees it over the assembler (its floor rings would hang in the air up there: kept hidden)
+    const lamp = K.statusLamp(B, SC + 0.05 + (plate.w / 2 + 0.12) * C45, AY + 1.32, SC + 0.05 - (plate.w / 2 + 0.12) * C45, 0.9);
+    const cd = plate.w / 2 + 0.24, cx = SC + 0.05 - cd * C45, cz = SC + 0.05 + cd * C45, px = posts[1][0], pz = posts[1][1];
+    { const br = K.box(0.05, 0.05, Math.hypot(cx - px, cz - pz) + 0.05, P.iron, (cx + px) / 2, AY + 1.16, (cz + pz) / 2, B); br.rotation.y = Math.atan2(cx - px, cz - pz);
+      K.box(0.22, 0.05, 0.22, P.ironM, cx, AY + 1.19, cz, B); }
+    const caution = K.caution(B, cx, AY + 1.21, cz, 0.5);
+    const cRings = []; caution.g.traverse((o) => { if (o.isMesh && o.userData.dyn && o.geometry.type === 'TorusGeometry') cRings.push(o); });
     // output terminal box on the right side (conduit to the assembler's socket starts here)
     const T = OUT.dynamo[0];
-    K.box(0.34, 0.38, 0.3, P.ironM, T[0] - 0.22, 0.47, T[2], g); K.box(0.36, 0.04, 0.32, P.brass, T[0] - 0.22, 0.68, T[2], g);
-    const termM = K.glow(0x2cb89c); K.box(0.14, 0.08, 0.02, termM, T[0] - 0.22 + 0.08, 0.5, T[2] + 0.16, g);
-    const ring = K.cyl(0.13, 0.13, 0.05, P.brass, 10, T[0] - 0.04, T[1], T[2], g); ring.rotation.z = Math.PI / 2;
+    K.box(0.3, 0.46, 0.34, P.ironM, T[0] - 0.19, 0.33, T[2], g); K.box(0.34, 0.04, 0.38, P.brass, T[0] - 0.19, 0.58, T[2], g);
+    const termM = VCK.lamp(K.glow(0x2cb89c)); K.box(0.16, 0.08, 0.02, termM, T[0] - 0.19, 0.44, T[2] + 0.18, g);
+    const ring = K.cyl(0.13, 0.13, 0.05, P.brass, 10, T[0] - 0.03, T[1], T[2], g); ring.rotation.z = Math.PI / 2;
     // caution post where the camera sees it (left of the dome)
-    const caution = K.caution(g, -1.05, 0.1, 1.45, 0.65);
+    VCK.kitLamps(caution.g); VCK.kitLamps(lamp.g);
+    VCK.bakeAll(g, refs);
     const fieldE = new THREE.Color();
 
     let ang = 0, spd = 0, tSpark = 0;
     return { g, update(t, dt) {
       const st = stepStatus(M, ps, dt, NAME.toLowerCase());
       const S = st.S, blk = S === 'BLOCKED', work = S === 'WORKING';
-      caution.update(t, dt, S); lamp.set(S, t);
+      caution.update(t, dt, S); lamp.set(S, t); for (const r of cRings) r.visible = false;
       const strobe = blk ? (Math.sin(t * 11) > 0 ? 1 : 0.15) : 0;
       const target = blk ? 0 : work ? (2.5 + 9 * st.lv) * (0.4 + 0.6 * st.load) : 0;
       spd += (target - spd) * Math.min(1, dt * (blk ? 8 : 1.4));
@@ -495,6 +638,7 @@ export default function install(IRON) {
         const rate = blk ? 0.15 : Math.min(0.9, spd / 10);
         for (const [x, y] of BR) if (Math.random() < rate) H.sparks(B, x, AY + y, 0.5, 2, blk ? 0xff6030 : 0x9affea, blk ? 0.6 : 1);
       }
+      VCK.sync(refs);
     } };
   });
 
@@ -502,7 +646,7 @@ export default function install(IRON) {
   // BATTERY: a rack of glass accumulator cells
   // =====================================================================
   IRON.machine('battery', function (K, M) {
-    const P = palette(K), H = kit(K, P);
+    const P = palette(K), H = kit(K, P), VCK = vcKit(K.THREE), refs = [];
     const g = K.group();
     const ps = newStatus();
     const CB = { x: 0.32, z: 0.32 }; // rack centre (pushed forward off the wall)
@@ -513,7 +657,7 @@ export default function install(IRON) {
     for (const y of [0.52, RH]) { K.box(1.32, 0.06, 0.07, P.ironM, CB.x, y, CB.z + 0.62, g); K.box(0.07, 0.06, 1.32, P.ironM, CB.x + 0.62, y, CB.z, g); K.box(1.32, 0.06, 0.07, P.ironM, CB.x, y, CB.z - 0.62, g); K.box(0.07, 0.06, 1.32, P.ironM, CB.x - 0.62, y, CB.z, g); }
     K.box(1.2, 0.06, 1.2, P.woodD, CB.x, 0.46, CB.z, g);
     // 3x3 glass cells, lead plates, the charge glow (one group, scaled with the level)
-    const glowM = K.glow(0x3ad0b0);
+    const glowM = VCK.lamp(K.glow(0x3ad0b0));
     const charge = K.dyn(K.group(g, 0, 0.52, 0));
     const CELLS = [];
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
@@ -535,10 +679,12 @@ export default function install(IRON) {
     const lampTop = K.statusLamp(g, CB.x - 0.62, RH + 0.03, CB.z + 0.62, 0.8);
     // output terminal on the left side
     const T = OUT.battery[0];
-    K.box(0.22, 0.34, 0.34, P.ironM, T[0] + 0.12, 0.62, T[2], g); K.box(0.24, 0.04, 0.36, P.brass, T[0] + 0.12, 0.81, T[2], g);
-    const ring = K.cyl(0.13, 0.13, 0.05, P.brass, 10, T[0], T[1], T[2], g); ring.rotation.z = Math.PI / 2;
-    K.tube([[CELLS[0][0] - 0.07, 1.46, CELLS[0][1]], [T[0] + 0.1, 1.2, T[2] - 0.2], [T[0] + 0.12, 0.8, T[2]]], 0.025, P.rubber, g, 10, 4);
+    K.box(0.32, 0.34, 0.14, P.ironM, T[0], 0.27, T[2] - 0.08, g); K.box(0.36, 0.04, 0.16, P.brass, T[0], 0.45, T[2] - 0.08, g);
+    const ring = K.cyl(0.13, 0.13, 0.05, P.brass, 10, T[0], T[1], T[2], g); ring.rotation.x = Math.PI / 2;
+    K.tube([[CELLS[8][0] + 0.07, 1.46, CELLS[8][1]], [T[0] - 0.04, 1.5, T[2] - 0.2], [T[0], 1.1, T[2] - 0.12], [T[0], 0.62, T[2] - 0.1], [T[0], 0.47, T[2] - 0.08]], 0.025, P.rubber, g, 14, 4);
     const caution = K.caution(g, CB.x + 0.85, 0.1, CB.z - 0.55, 0.6);
+    VCK.kitLamps(caution.g); VCK.kitLamps(lampTop.g);
+    VCK.bakeAll(g, refs);
 
     let lvShow = 0.5, tBub = 0;
     return { g, update(t, dt) {
@@ -556,6 +702,7 @@ export default function install(IRON) {
       // bubbles rise in the cells while it's live
       tBub -= dt;
       if (tBub <= 0) { tBub = 0.12; if (work && Math.random() < 0.7) { const [x, z] = CELLS[Math.floor(Math.random() * CELLS.length)]; K.spawn(g, x + K.R() * 0.12, 0.6, z + K.R() * 0.12, 0, 0.35 + Math.random() * 0.2, 0, 0x9affea, Math.max(0.3, lvShow * 1.4), 0.03, 0, true); } }
+      VCK.sync(refs);
     } };
   });
 
@@ -563,7 +710,7 @@ export default function install(IRON) {
   // GEOTHERMAL: your own computer, drawing lava heat up from deep below the quarry floor
   // =====================================================================
   IRON.machine('geothermal', function (K, M) {
-    const P = palette(K), H = kit(K, P);
+    const P = palette(K), H = kit(K, P), VCK = vcKit(K.THREE), refs = [];
     const g = K.group();
     const ps = newStatus();
     H.plinth(g, 1.35, 1.35);
@@ -572,14 +719,17 @@ export default function install(IRON) {
     K.cyl(0.66, 0.72, 0.3, P.stone, 14, W.x, 0.55, W.z, g);
     K.cyl(0.7, 0.7, 0.06, P.brassD, 14, W.x, 0.71, W.z, g);
     H.rivetRing(g, W.x, W.z, 0.71, 0.62, 14, P.brassL, true);
-    const lavaM = K.glow(0xff6a1a);
+    const lavaM = VCK.lamp(K.glow(0xff6a1a));
     K.cyl(0.5, 0.5, 0.04, lavaM, 14, W.x, 0.5, W.z, g).castShadow = false;
+    // heat rising out of the bore: a bright bloom at the collar and a tall shimmering column
+    const bloomM = K.glow(0xffa040, 0.5, true);
+    const bloom = K.cyl(0.62, 0.62, 0.02, bloomM, 14, W.x, 0.78, W.z, g); bloom.castShadow = false;
     const hazeM = K.glow(0xff8a3a, 0.2, true);
-    const haze = K.cyl(0.42, 0.52, 0.5, hazeM, 12, W.x, 0.98, W.z, g); haze.castShadow = false;
+    const haze = K.cyl(0.22, 0.5, 1.3, hazeM, 12, W.x, 1.42, W.z, g); haze.castShadow = false;
     for (let i = 0; i < 5; i++) K.box(1.0, 0.05, 0.06, P.iron, W.x, 0.74, W.z - 0.36 + i * 0.18, g);
     K.box(0.06, 0.05, 1.0, P.iron, W.x, 0.75, W.z, g);
     // the casing pipe up out of the well, valve wheel, then over to the heat exchanger
-    const hotM = K.mat(0x8a4a2a, { shine: 30, spec: 0x6a3a20, e: 0x000000 });
+    const hotM = VCK.lamp(K.mat(0x8a4a2a, { shine: 30, spec: 0x6a3a20, e: 0x000000 }));
     K.cyl(0.13, 0.13, 1.2, hotM, 10, W.x - 0.25, 1.3, W.z - 0.25, g);
     for (const y of [0.85, 1.55]) K.cyl(0.18, 0.18, 0.06, P.brass, 10, W.x - 0.25, y, W.z - 0.25, g);
     const vw = H.face(g, W.x - 0.25, 1.32, W.z - 0.25 + 0.2, 0);
@@ -590,7 +740,7 @@ export default function install(IRON) {
     K.cyl(0.46, 0.48, 1.85, P.iron, 14, X.x, 0.4 + 0.925, X.z, g);
     for (const y of [0.55, 1.35, 2.15]) H.band(g, X.x, X.z, 0.49, y, P.brassD, 0.08);
     K.lathe([[0.48, 0], [0.42, 0.18], [0.24, 0.32], [0.0, 0.36]], P.copperD, 14, X.x, 2.25, X.z, g);
-    const coilHotM = K.glow(0xff6a20), coilCoolM = K.glow(0x3ad0b0);
+    const coilHotM = VCK.lamp(K.glow(0xff6a20)), coilCoolM = VCK.lamp(K.glow(0x3ad0b0));
     const helix = (y0, y1, turns, m) => { const pts = []; const n = Math.round(turns * 12); for (let i = 0; i <= n; i++) { const a = i / 12 * Math.PI * 2; pts.push([X.x + Math.cos(a) * 0.56, y0 + (y1 - y0) * i / n, X.z + Math.sin(a) * 0.56]); } return K.tube(pts, 0.045, m, g, n * 2, 5); };
     helix(0.62, 1.32, 2.5, coilHotM); helix(1.38, 2.05, 2.5, coilCoolM);
     const vent = { x: X.x + 0.15, z: X.z + 0.1 };
@@ -611,6 +761,8 @@ export default function install(IRON) {
     for (const s of [-1, 1]) K.box(0.05, 0.55, 0.05, P.iron, -0.42 + s * plate.w * 0.4 * C45, 0.6, 1.12 - s * plate.w * 0.4 * C45 - 0.04, g);
     const caution = K.caution(g, 1.1, 0.4, 0.55, 0.7);
     const lamp = K.statusLamp(g, -1.05, 0.4, -0.2, 1.0);
+    VCK.kitLamps(caution.g); VCK.kitLamps(lamp.g);
+    VCK.bakeAll(g, refs);
 
     let ang = 0, spd = 0, heat = 0.5, tEmb = 0, tVent = 0;
     return { g, update(t, dt) {
@@ -621,7 +773,9 @@ export default function install(IRON) {
       heat += ((work ? 0.55 + 0.45 * st.lv : blk ? 0.5 : 0.18) - heat) * Math.min(1, dt * 1.5);
       const fl = 0.85 + 0.1 * Math.sin(t * 5.3) + 0.05 * Math.sin(t * 13);
       if (blk) lavaM.color.setRGB(0.5 + 0.45 * strobe, 0.08, 0.03); else lavaM.color.setRGB(lerpC(0.35, 1, heat) * fl, lerpC(0.08, 0.45, heat) * fl, 0.06 * fl);
-      hazeM.opacity = blk ? 0.08 + 0.12 * strobe : 0.06 + 0.18 * heat * fl;
+      hazeM.opacity = blk ? 0.06 + 0.08 * strobe : 0.04 + 0.1 * heat * fl;
+      bloomM.opacity = blk ? 0.2 + 0.3 * strobe : 0.12 + 0.45 * heat * fl;
+      bloomM.color.setHex(blk ? 0xff3010 : 0xffa040);
       hotM.emissive.setRGB(0.25 * heat, 0.05 * heat, 0.0);
       coilHotM.color.setRGB(lerpC(0.25, 1, heat) * fl, lerpC(0.06, 0.4, heat) * fl, 0.04);
       coilCoolM.color.setHex(blk ? (strobe > 0.5 ? 0xff5030 : 0x401008) : work ? (Math.sin(t * 6) > 0 ? 0x7af0d8 : 0x3ad0b0) : 0x16443a);
@@ -635,20 +789,28 @@ export default function install(IRON) {
       if (tEmb <= 0) { tEmb = 0.08; if (Math.random() < 0.35 + heat * 0.5) K.spawn(g, W.x + K.R() * 0.6, 0.6, W.z + K.R() * 0.6, K.R() * 0.3, 0.6 + Math.random() * 0.9, K.R() * 0.3, Math.random() < 0.5 ? 0xff8a3a : 0xffc060, 1.2, 0.04, -0.2, true); }
       tVent -= dt;
       if (tVent <= 0) { tVent = blk ? 0.05 : 0.25; if (blk || Math.random() < 0.5) K.spawn(g, vent.x + K.R() * 0.05, 3.25, vent.z + K.R() * 0.05, K.R() * 0.3, blk ? 2.8 : 1.0, K.R() * 0.3, blk ? 0xd4ccbc : 0xb8b0a2, blk ? 1.8 : 2.2, blk ? 0.18 : 0.14, -0.15); }
+      VCK.sync(refs);
     } };
   });
   const lerpC = (a, b, k) => a + (b - a) * k;
 
   // =====================================================================
-  // POWER LINES: aether conduits from each plant to the back corner of the machines it feeds
+  // POWER LINES: aether conduits from each plant to the machines it feeds
+  // A line plugs into the machine's own power fitting when its module has one (the assembler's aether SOCKET on its
+  // back edge, the planner's aether manifold at its back corner: assembler.js / planner.js coordinates, matched
+  // exactly here); any other machine gets our socket box at its back corner. Lines run on saddles along the floor
+  // behind the machines (a little router keeps them out of machine bays, plant footprints, paths and the world's
+  // props) and the geothermal line climbs the cliff's right edge and the riser wall on brackets.
   // =====================================================================
   IRON.part('power', function (K, root, ctx) {
-    const P = palette(K), H = kit(K, P), THREE = K.THREE;
+    const P = palette(K), H = kit(K, P), THREE = K.THREE, VCK = vcKit(THREE), refs = [];
     const V3 = THREE.Vector3;
     const toRoot = (st, p) => ctx.toRootAt(st, p[0], p[1], p[2]);
     const byId = {}; ctx.stations.forEach((s) => (byId[s.id] = s));
-    const plants = ctx.stations.filter((s) => s.power || ['steam', 'dynamo', 'battery', 'geothermal'].includes(s.type));
+    const plants = ctx.stations.filter((s) => s.power || OUT[s.type]);
     const tiers = ctx.tiers || {};
+    const TB = tiers.build || { y: 0, x0: -18.5, x1: 18.5, z0: -4.5, z1: 7.5 };
+    const machines = (I.mods && I.mods.machines) || {};
     const deckTop = (y) => { // the deck top a conduit at height y rests over
       let best = null;
       for (const k in tiers) { const T = tiers[k]; const top = T.y + 0.1; if (top <= y + 0.05 && (best === null || top > best)) best = top; }
@@ -656,17 +818,165 @@ export default function install(IRON) {
     };
     const lines = [], sockets = {};
 
-    // ---- the socket at a machine's back corner (one per machine; every plant's line ends in it)
+    // ---- what a line must keep out of: machine bays (diamonds), plant footprints, paths (+-0.7), the deck's edges
+    const BAY = { planner: 3.25, assembler: 3.25, ci: 3.25, verify: 3.25, review: 3.25, gate: 3.25, launch: 3.25, pad: 3.25, check: 2.0 };
+    const FOOT = { steam: [0, 0, 1.45], dynamo: [-0.45, 0.95, 0.75], battery: [0.32, 0.32, 0.72], geothermal: [0, 0, 1.35] };
+    const OBST = [];
+    ctx.stations.forEach((s) => {
+      if (BAY[s.type]) OBST.push({ id: s.id, x: s.x, z: s.z, y: s.y, r: BAY[s.type] });
+      else if (FOOT[s.type]) { const f = FOOT[s.type], c = toRoot(s, [f[0], 0, f[1]]); OBST.push({ id: s.id, x: c[0], z: c[2], y: s.y, r: f[2] * Math.SQRT2 + 0.15 }); }
+    });
+    const SEGS = [];
+    (ctx.pathList || []).forEach((p) => { const q = p.points || p.pts || []; for (let i = 1; i < q.length; i++) SEGS.push([q[i - 1], q[i]]); });
+    function nearPath(x, y, z) {
+      for (const [a, b] of SEGS) {
+        const dx = b[0] - a[0], dz = b[2] - a[2], l2 = dx * dx + dz * dz;
+        const k = l2 < 1e-6 ? 0 : Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[2]) * dz) / l2));
+        const py = a[1] + (b[1] - a[1]) * k;
+        if (Math.abs(py - y) < 1.6 && Math.hypot(x - a[0] - k * dx, z - a[2] - k * dz) < 0.75) return true;
+      }
+      return false;
+    }
+    // what the world already stood on the build deck (crates, barrels, racks, coal, lamp posts, stairs, columns):
+    // world.js builds (and pre-merges) before us, so its triangles are in the scene now. The ones that cross the
+    // conduit's height band go into a 0.1 m grid over the deck, grown by two cells (rings, saddles); lines keep off it.
+    const GRID = 0.1, GW = Math.ceil((TB.x1 - TB.x0) / GRID), GH = Math.ceil((TB.z1 - TB.z0) / GRID), occ = new Uint8Array(GW * GH);
+    {
+      const R0 = root.parent, wg = R0 && R0.children.find((c) => c.name === 'part:world');
+      if (wg) {
+        R0.updateMatrixWorld(true);
+        const inv = new THREE.Matrix4().copy(R0.matrixWorld).invert(), m = new THREE.Matrix4(), bb = new THREE.Box3();
+        const va = new V3(), vb = new V3(), vc = new V3(), yb0 = TB.y + 0.18, yb1 = TB.y + 0.62, raw = new Uint8Array(GW * GH);
+        const visit = (o) => {
+          for (const c of o.children) {
+            if (c.userData.dyn || c.name === 'far' || !c.visible) continue;
+            const gm = c.isMesh && !c.isInstancedMesh ? c.geometry : null, pa = gm && gm.attributes.position;
+            if (pa) {
+              m.multiplyMatrices(inv, c.matrixWorld);
+              if (!gm.boundingBox) gm.computeBoundingBox();
+              bb.copy(gm.boundingBox).applyMatrix4(m);
+              if (bb.min.y < yb1 && bb.max.y > yb0 && bb.max.x > TB.x0 && bb.min.x < TB.x1 && bb.max.z > TB.z0 && bb.min.z < TB.z1) {
+                const ix = gm.index, n = ix ? ix.count : pa.count;
+                for (let i = 0; i + 2 < n; i += 3) {
+                  va.fromBufferAttribute(pa, ix ? ix.getX(i) : i).applyMatrix4(m);
+                  vb.fromBufferAttribute(pa, ix ? ix.getX(i + 1) : i + 1).applyMatrix4(m);
+                  vc.fromBufferAttribute(pa, ix ? ix.getX(i + 2) : i + 2).applyMatrix4(m);
+                  if (Math.min(va.y, vb.y, vc.y) > yb1 || Math.max(va.y, vb.y, vc.y) < yb0) continue;
+                  const x0 = Math.max(0, Math.floor((Math.min(va.x, vb.x, vc.x) - TB.x0) / GRID)), x1 = Math.min(GW - 1, Math.floor((Math.max(va.x, vb.x, vc.x) - TB.x0) / GRID));
+                  const z0 = Math.max(0, Math.floor((Math.min(va.z, vb.z, vc.z) - TB.z0) / GRID)), z1 = Math.min(GH - 1, Math.floor((Math.max(va.z, vb.z, vc.z) - TB.z0) / GRID));
+                  for (let zz = z0; zz <= z1; zz++) for (let xx = x0; xx <= x1; xx++) raw[zz * GW + xx] = 1;
+                }
+              }
+            }
+            visit(c);
+          }
+        };
+        visit(wg);
+        for (let zz = 0; zz < GH; zz++) for (let xx = 0; xx < GW; xx++) if (raw[zz * GW + xx]) {
+          for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) { const X = xx + dx, Z = zz + dz; if (X >= 0 && X < GW && Z >= 0 && Z < GH) occ[Z * GW + X] = 1; }
+        }
+      }
+    }
+    const inProp = (x, y, z) => {
+      if (y < TB.y + 0.1 || y > TB.y + 0.75) return false;
+      const X = Math.floor((x - TB.x0) / GRID), Z = Math.floor((z - TB.z0) / GRID);
+      return X >= 0 && X < GW && Z >= 0 && Z < GH && occ[Z * GW + X] === 1;
+    };
+    // cost of a route: its length, +4 per 0.25 sample in someone's way, +0.35 per corner. `avoid`: the plug point
+    // itself (a route must reach the fitting from behind, never run through it)
+    function cost(pts, skip, avoid) {
+      let L = 0, hit = 0;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]); L += len;
+        const n = Math.max(1, Math.ceil(len / 0.25));
+        for (let k = 0; k <= n; k++) {
+          const f = k / n, x = a[0] + (b[0] - a[0]) * f, y = a[1] + (b[1] - a[1]) * f, z = a[2] + (b[2] - a[2]) * f;
+          for (const o of OBST) if (!skip.includes(o.id) && y > o.y - 1 && y < o.y + 5 && Math.abs(x - o.x) + Math.abs(z - o.z) < o.r) hit++;
+          if (nearPath(x, y, z)) hit++;
+          if (y > TB.y - 1 && y < TB.y + 5 && (x < TB.x0 + 0.3 || x > TB.x1 - 0.3 || z < TB.z0 + 0.3 || z > TB.z1 - 1.2)) hit++;
+          if (inProp(x, y, z)) hit++;
+          if (avoid && Math.abs(y - avoid[1]) < 0.5 && Math.hypot(x - avoid[0], z - avoid[2]) < 0.25) hit++;
+        }
+      }
+      return L + hit * 4 + (pts.length - 2) * 0.35;
+    }
+    // drop repeated points and straight-through corners
+    function simplify(pts) {
+      const out = [];
+      for (const p of pts) { const q = out[out.length - 1]; if (q && Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 0.02) continue; out.push(p.slice()); }
+      for (let i = out.length - 2; i >= 1; i--) {
+        const a = out[i - 1], b = out[i], c = out[i + 1];
+        const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+        if ((u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (Math.hypot(...u) * Math.hypot(...v) || 1) > 0.9995) out.splice(i, 1);
+      }
+      return out;
+    }
+    // floor routes from T to A (same height): straight / 45deg legs, or out to a lane behind the machines and back
+    function bestRoute(T, A, skip, avoid) {
+      const y = A[1], dx = A[0] - T[0], dz = A[2] - T[2], sx = Math.sign(dx) || 1, sz = Math.sign(dz) || 1;
+      const ax = Math.abs(dx), az = Math.abs(dz), k = Math.min(ax, az);
+      const C = [
+        [T, [T[0] + sx * k, y, T[2] + sz * k], A],
+        [T, [A[0] - sx * k, y, A[2] - sz * k], A],
+        [T, [A[0], y, T[2]], A],
+        [T, [T[0], y, A[2]], A],
+      ];
+      for (const back of [1.55, 1.1, 0.6]) {
+        const zl = TB.z0 + back, d1 = Math.abs(zl - T[2]), d2 = Math.abs(zl - A[2]);
+        C.push([T, [T[0], y, zl], [A[0], y, zl], A]);
+        if (ax > d1 + d2 + 0.2) C.push([T, [T[0] + sx * d1, y, zl], [A[0] - sx * d2, y, zl], A]);
+        if (ax > d2 + 0.2) C.push([T, [T[0], y, zl], [A[0] - sx * d2, y, zl], A]);
+        if (ax > d1 + 0.2) C.push([T, [T[0] + sx * d1, y, zl], [A[0], y, zl], A]);
+      }
+      // hooks round the fitting: across, back beside it, then in from the side (when something sits behind it)
+      if (avoid) for (const h of [0.5, 0.8]) { const xh = A[0] - sx * h; C.push([T, [xh, y, T[2]], [xh, y, A[2]], A]); }
+      let best = null;
+      for (const c of C) {
+        const pts = simplify(c); let cs = cost(pts, skip, avoid);
+        if (avoid && pts.length > 1) { // never double back into the fitting
+          const q = pts[pts.length - 2], ux = A[0] - q[0], uz = A[2] - q[2], ex = avoid[0] - A[0], ez = avoid[2] - A[2];
+          if ((ux * ex + uz * ez) / (Math.hypot(ux, uz) * Math.hypot(ex, ez) || 1) < -0.3) cs += 12;
+        }
+        if (!best || cs < best.cost - 1e-6) best = { pts, cost: cs };
+      }
+      return best;
+    }
+
+    // ---- where a line plugs in: P (the plug point), n (outward, root), reach (the straight run into it)
+    const used = {};
+    function entryFor(c, fromX) {
+      const u = used[c.id] || (used[c.id] = []);
+      const pick = (order, fb) => { const k = order.find((i) => !u.includes(i)); const kk = k === undefined ? fb : k; u.push(kk); return kk; };
+      if (c.type === 'assembler' && machines.assembler) {
+        // the assembler's aether socket: box at local (0.35, 0.65, -2.1), 0.5 deep, its outer face at local z -2.35
+        const SL = [[0.2, 0.65], [0.5, 0.65], [0.35, 0.86]];
+        const kk = pick(fromX <= toRoot(c, [0.35, 0, -2.35])[0] ? [0, 1, 2] : [1, 0, 2], 2);
+        return { P: toRoot(c, [SL[kk][0], SL[kk][1], -2.35]), n: [C45, 0, -C45], reach: 0.8, own: null };
+      }
+      if (c.type === 'planner' && machines.planner) {
+        // the planner's aether manifold: group at local (-2.05, 0, -2.05) turned pi/4, three copper stubs at its
+        // x -0.3 / 0 / 0.3, y 0.32, ending at its z -0.57: root (planner.x + x, 0.32, z - 3.47), pointing straight back
+        const XS = [0.3, 0, -0.3];
+        const kk = pick(fromX >= c.x ? [0, 1, 2] : [2, 1, 0], 1), xk = XS[kk];
+        return { P: toRoot(c, [-2.05 + C45 * (xk - 0.57), 0.32, -2.05 + C45 * (-xk - 0.57)]), n: [0, 0, -1], reach: 0.45, own: null };
+      }
+      const sk = socketFor(c);
+      const side = fromX < sk.S[0] ? -1 : 1;
+      return { P: [sk.S[0] + side * 0.31, sk.y0 + Y_RUN, sk.S[2]], n: [side, 0, 0], reach: 0.3, own: sk };
+    }
+
+    // ---- our socket at a machine's back corner (for machines without a power fitting of their own)
     function socketFor(c) {
       if (sockets[c.id]) return sockets[c.id];
       const S = toRoot(c, [-2.62, 0, -2.62]);
       const y0 = c.y + 0.1;
-      const eyeM = K.glow(0x2cb89c);
+      const eyeM = VCK.lamp(K.glow(0x2cb89c));
       const sg = K.group(root);
-      K.box(0.62, 0.42, 0.44, P.ironM, S[0], y0 + 0.21, S[2], sg);
-      K.box(0.68, 0.06, 0.5, P.brass, S[0], y0 + 0.45, S[2], sg);
-      for (const sx of [-0.27, 0.27]) K.box(0.06, 0.06, 0.06, P.brassL, S[0] + sx, y0 + 0.36, S[2] + 0.23, sg);
-      K.cyl(0.11, 0.11, 0.05, eyeM, 10, S[0], y0 + 0.49, S[2], sg).castShadow = false;
+      K.box(0.62, 0.5, 0.44, P.ironM, S[0], y0 + 0.25, S[2], sg);
+      K.box(0.68, 0.06, 0.5, P.brass, S[0], y0 + 0.53, S[2], sg);
+      for (const sx of [-0.27, 0.27]) K.box(0.06, 0.06, 0.06, P.brassL, S[0] + sx, y0 + 0.42, S[2] + 0.23, sg);
+      K.cyl(0.11, 0.11, 0.05, eyeM, 10, S[0], y0 + 0.57, S[2], sg).castShadow = false;
       // the plug: a brass collar from the socket into the machine's back corner
       const plug = K.cyl(0.1, 0.1, 0.5, P.brass, 10, S[0], y0 + Y_RUN, S[2] + 0.4, sg); plug.rotation.x = Math.PI / 2;
       const col = K.cyl(0.15, 0.15, 0.06, P.brassD, 10, S[0], y0 + Y_RUN, S[2] + 0.26, sg); col.rotation.x = Math.PI / 2;
@@ -696,7 +1006,7 @@ export default function install(IRON) {
           for (let d = 0.6; d < len - 0.3; d += 1.4) {
             p.copy(a).addScaledVector(dir, d);
             const top = deckTop(p.y), h = p.y - 0.1 - top;
-            if (h > 0.04) { K.box(0.2, h, 0.22, P.ironM, p.x, top + h / 2, p.z, root); K.box(0.26, 0.05, 0.28, P.iron, p.x, top + 0.025, p.z, root); }
+            if (h > 0.04) { K.box(0.2, h, 0.2, P.ironM, p.x, top + h / 2, p.z, root); K.box(0.26, 0.04, 0.26, P.iron, p.x, top + 0.02, p.z, root); }
           }
         } else if (vertical && opts.wall) {
           // brackets back to the wall / cliff behind the riser
@@ -715,86 +1025,118 @@ export default function install(IRON) {
         const f = K.cyl(0.16, 0.16, 0.06, P.brass, 10, a.x, a.y, a.z, root); f.quaternion.setFromUnitVectors(Yax, dir);
       }
     }
-
-    // ---- routing: out of the plant, a 45deg run, then straight along the socket's z into its side
-    function route(plant, c) {
-      const outs = (OUT[plant.type] || [[0, 0.5, 0]]).map((p) => toRoot(plant, p));
-      const T = outs[outs.length - 1];
-      const sk = socketFor(c);
-      const S = sk.S, y = sk.y0 + Y_RUN;
-      const pts = outs.slice();
-      if (plant.type === 'geothermal') return geoRoute(pts, sk);
-      const side = T[0] < S[0] ? -1 : 1;
-      const px = S[0] + side * 0.42, pz = S[2];
-      if (Math.abs(T[1] - y) > 0.05) { pts.push([T[0], y, T[2]]); }
-      const dz = pz - T[2], dx = px - T[0];
-      if (Math.abs(dz) > 0.02) {
-        const k = Math.min(Math.abs(dz), Math.max(0, Math.abs(dx) - 0.15));
-        pts.push([T[0] + Math.sign(dx) * k, y, T[2] + Math.sign(dz) * k]);
-        if (k < Math.abs(dz) - 0.02) pts.push([T[0] + Math.sign(dx) * k, y, pz]);
-      }
-      pts.push([px, y, pz]);
-      return pts;
+    // the coupling where a line meets a machine's fitting: brass collar + nut
+    function coupling(Pp, n) {
+      const d = new V3(n[0], n[1], n[2]).normalize(), q = new THREE.Quaternion().setFromUnitVectors(Yax, d);
+      const c1 = K.cyl(0.14, 0.14, 0.08, P.brassD, 10, Pp[0] + d.x * 0.07, Pp[1], Pp[2] + d.z * 0.07, root); c1.quaternion.copy(q);
+      const c2 = K.cyl(0.125, 0.125, 0.05, P.iron, 6, Pp[0] + d.x * 0.135, Pp[1], Pp[2] + d.z * 0.135, root); c2.quaternion.copy(q);
     }
-    // geothermal: along the quarry floor to the cliff's right edge, up the face, over the deck's corner, then
-    // to the LOCAL box; to feed a machine: along the deck's right edge, up the riser wall, along it and down
-    const GX = 18.8, GZ = 7.78, WALLZ = ((tiers.checks && tiers.checks.z1) || -4.5) + 0.22;
-    let localBox = null;
+
+    // ---- geothermal: along the quarry floor to the cliff's right edge, up the face beside the deck, over its corner
+    // (x 19.0, z 7.62: clear of the mine's slag furnace (x <= 18.8) and the flywheel engine's cylinder (z >= 7.81))
+    const GX = 19.0, GZ = 7.62, WALLZ = ((tiers.checks && tiers.checks.z1) || -4.5) + 0.22;
+    const yb = TB.y + 0.1 + Y_RUN;
     function geoHead(pts) {
       const T = pts[pts.length - 1];
-      const yb = (tiers.build ? tiers.build.y : 0) + 0.1 + Y_RUN;
-      pts.push([GX, T[1], T[2]], [GX, T[1], GZ], [GX, yb, GZ], [GX - 0.4, yb, GZ - 0.4], [GX - 0.4, yb, 6.35]);
-      return yb;
-    }
-    function geoRoute(pts, sk) {
-      const yb = geoHead(pts);
-      const S = sk.S, y = sk.y0 + Y_RUN, yw = (tiers.build ? tiers.build.y : 0) + 5.6;
-      pts.push([GX - 0.4, yb, WALLZ + 0.1], [GX - 0.4, yw, WALLZ], [S[0] + 0.0, yw, WALLZ], [S[0], y, WALLZ], [S[0], y, S[2] - 0.32]);
+      pts.push([GX, T[1], T[2]], [GX, T[1], GZ], [GX, yb, GZ], [GX - 0.7, yb, GZ - 0.7], [GX - 0.7, yb, 6.35]);
       return pts;
     }
+    // ... and on to a machine: back along the deck's right edge, up the riser wall, along it over everything, down
+    // behind the machine and across the floor to its fitting
+    function geoTail(A, y, skip, avoid) {
+      const yw = TB.y + 5.6, dzA = Math.abs(A[2] - WALLZ);
+      let best = null;
+      for (const xw of [A[0] + dzA, A[0], A[0] - dzA, A[0] + 1.6, A[0] - 1.6]) {
+        if (xw < TB.x0 + 0.6 || xw > GX - 0.7) continue;
+        const head = [[GX - 0.7, yb, WALLZ], [GX - 0.7, yw, WALLZ], [xw, yw, WALLZ], [xw, y, WALLZ]];
+        const r = bestRoute([xw, y, WALLZ], A, skip, avoid);
+        const cs = r.cost + Math.abs(GX - 0.7 - xw) * 0.5;
+        if (!best || cs < best.cs) best = { cs, pts: head.concat(r.pts.slice(1)) };
+      }
+      return best ? best.pts : [[GX - 0.7, yb, WALLZ], [GX - 0.7, yw, WALLZ], [A[0], yw, WALLZ], [A[0], y, WALLZ], A];
+    }
+    let localBox = null;
     function buildLocalBox() {
       if (localBox) return localBox;
-      const yb = (tiers.build ? tiers.build.y : 0) + 0.1;
-      const bx = GX - 0.85, bz = 5.9;
+      const y0 = TB.y + 0.1;
+      const bx = TB.x1 - 0.4, bz = 5.9;
       const lg = K.group(root);
-      K.box(0.72, 0.9, 0.5, P.ironM, bx, yb + 0.45, bz, lg); K.box(0.78, 0.06, 0.56, P.brass, bx, yb + 0.92, bz, lg);
-      K.box(0.62, 0.08, 0.06, P.brassD, bx, yb + 0.05, bz + 0.26, lg);
-      const eyeM = K.glow(0x2cb89c); K.cyl(0.1, 0.1, 0.05, eyeM, 10, bx + 0.2, yb + 0.96, bz, lg).castShadow = false;
-      H.sign(lg, 'LOCAL', 0.22, bx, yb + 0.64, bz + 0.27, 0, { bg: '#1c2a26', fg: '#bff8ea', edge: '#0a0806', hi: '#2e443e', glow: 0.8 });
-      const needle = H.gauge(lg, bx, yb + 0.3, bz + 0.26, 0.12, 0, true);
-      localBox = { eyeM, needle, p: [bx + 0.36, yb + Y_RUN, bz] };
+      K.box(0.72, 0.9, 0.5, P.ironM, bx, y0 + 0.45, bz, lg); K.box(0.78, 0.06, 0.56, P.brassD, bx, y0 + 0.92, bz, lg);
+      K.box(0.62, 0.08, 0.06, P.brassD, bx, y0 + 0.05, bz + 0.26, lg);
+      const eyeM = VCK.lamp(K.glow(0x2cb89c)); K.cyl(0.1, 0.1, 0.05, eyeM, 10, bx + 0.2, y0 + 0.96, bz, lg).castShadow = false;
+      H.sign(lg, 'LOCAL', 0.22, bx - 0.04, y0 + 0.64, bz + 0.27, 0, { bg: '#1c2a26', fg: '#bff8ea', edge: '#0a0806', hi: '#2e443e', glow: 0.8 });
+      const needle = H.gauge(lg, bx - 0.18, y0 + 0.3, bz + 0.26, 0.12, 0, true);
+      localBox = { eyeM, needle, p: [GX - 0.7, yb, bz + 0.25] };
       return localBox;
     }
 
-    plants.forEach((pl) => {
-      const feeds = ((pl.def && pl.def.feeds) || []).map((id) => byId[id]).filter(Boolean);
-      const add = (pts, c) => {
-        const coreM = K.glow(0x248a74);
-        conduit(pts, coreM, { wall: (p) => (p.z > 6.5 ? { x: p.x, z: GZ - 0.28 } : p.z < -3.5 ? { x: p.x, z: WALLZ - 0.22 } : null) });
-        const pv = pts.map((q) => new V3(q[0], q[1], q[2]));
-        const cum = [0]; for (let i = 1; i < pv.length; i++) cum.push(cum[i - 1] + pv[i].distanceTo(pv[i - 1]));
-        const L = cum[cum.length - 1];
-        const ln = { plant: pl, c, pv, cum, L, coreM, n: Math.max(2, Math.round(L / 1.5)), off: Math.random() * L };
-        lines.push(ln);
-        if (c && sockets[c.id]) sockets[c.id].lines.push(ln);
-        return ln;
-      };
-      if (pl.type === 'geothermal') {
-        const outs = (OUT.geothermal).map((p) => toRoot(pl, p));
-        const box = buildLocalBox();
-        if (!feeds.length) { const pts = outs.slice(); geoHead(pts); pts.push(box.p); add(pts, null); }
-        feeds.forEach((c) => add(route(pl, c), c));
+    // ---- every plant's lines
+    function lineFor(plant, c) {
+      const outs = (OUT[plant.type] || [[0, 0.5, 0]]).map((p) => toRoot(plant, p));
+      const e = entryFor(c, outs[outs.length - 1][0]);
+      const y = c.y + 0.1 + Y_RUN; // low along the floor (like the mockup's), rising into the fitting at the end
+      const A = [e.P[0] + e.n[0] * e.reach, y, e.P[2] + e.n[2] * e.reach];
+      const skip = [plant.id];
+      let pts = outs.slice();
+      if (plant.type === 'geothermal') pts = geoHead(pts).concat(geoTail(A, y, skip, e.P).slice(0, -1));
+      else {
+        const T = pts[pts.length - 1];
+        if (Math.abs(T[1] - y) > 0.04) pts.push([T[0], y, T[2]]);
+        pts = pts.concat(bestRoute(pts[pts.length - 1], A, skip, e.P).pts.slice(1, -1));
+      }
+      pts.push(A, e.P.slice());
+      return { pts: simplify(pts), e };
+    }
+    const wallOf = (p) => (p.z > 6.5 ? { x: p.x, z: GZ - 0.28 } : p.z < -3.5 ? { x: p.x, z: WALLZ - 0.22 } : null);
+    // a red handwheel valve on the first long floor run (the mockup's)
+    function valve(pts, skipN) {
+      for (let i = skipN; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1], len = Math.hypot(b[0] - a[0], b[2] - a[2]);
+        if (Math.abs(b[1] - a[1]) > 0.02 || len < 1.8 || a[1] > TB.y + 1) continue;
+        const k = Math.min(0.9, len * 0.5) / len, x = a[0] + (b[0] - a[0]) * k, z = a[2] + (b[2] - a[2]) * k, y = a[1];
+        K.cyl(0.13, 0.13, 0.16, P.ironM, 8, x, y + 0.02, z, root);
+        K.cyl(0.045, 0.045, 0.3, P.ironL, 6, x, y + 0.24, z, root);
+        K.torus(0.15, 0.035, P.valve, 4, 12, x, y + 0.4, z, root).rotation.x = Math.PI / 2;
+        for (let s = 0; s < 3; s++) K.box(0.28, 0.02, 0.02, P.valve, x, y + 0.4, z, root).rotation.y = s * Math.PI / 3;
         return;
       }
-      feeds.forEach((c) => add(route(pl, c), c));
+    }
+    function add(pl, pts, c, e) {
+      const coreM = VCK.lamp(K.glow(0x248a74));
+      conduit(pts, coreM, { wall: wallOf });
+      valve(pts, Math.max(0, (OUT[pl.type] || []).length - 1));
+      if (e && !e.own) coupling(e.P, e.n);
+      const pv = pts.map((q) => new V3(q[0], q[1], q[2]));
+      const cum = [0]; for (let i = 1; i < pv.length; i++) cum.push(cum[i - 1] + pv[i].distanceTo(pv[i - 1]));
+      const L = cum[cum.length - 1];
+      const ln = { plant: pl, c, pv, cum, L, coreM, n: Math.max(2, Math.round(L / 1.5)), off: Math.random() * L };
+      lines.push(ln);
+      if (e && e.own) e.own.lines.push(ln);
+      return ln;
+    }
+    plants.forEach((pl) => {
+      const feeds = ((pl.def && pl.def.feeds) || []).map((id) => byId[id]).filter(Boolean);
+      if (pl.type === 'geothermal' && !feeds.length) {
+        const box = buildLocalBox();
+        const pts = geoHead(OUT.geothermal.map((p) => toRoot(pl, p)));
+        pts.push(box.p);
+        add(pl, simplify(pts), null, null);
+        return;
+      }
+      feeds.forEach((c) => { const r = lineFor(pl, c); add(pl, r.pts, c, r.e); });
     });
 
-    // ---- pulses: one instanced mesh (a bright bead) + one for the soft halo round each
+    // everything static on the lines: one vertex-coloured mesh per floor (the cores and eyes sync like lamps)
+    VCK.merge(root, refs, (p) => (p.y < -6 ? 'mine' : 'build') + (p.x < 0 ? 'L' : 'R'));
+    // every line's points (root frame), for tests and for anyone who wants to keep things off them
+    root.userData.routes = lines.map((l) => ({ from: l.plant.id, to: l.c ? l.c.id : 'local', pts: l.pv.map((v) => [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)]) }));
+
+    // ---- pulses: one instanced mesh of bright beads inside the glass + one of soft halos round them
     let total = 0; lines.forEach((l) => (total += l.n));
     const beadM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-    const haloM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const haloM = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
     const mk = (geo, m) => { const im = new THREE.InstancedMesh(geo, m, Math.max(1, total)); im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, total) * 3), 3); im.frustumCulled = false; im.castShadow = im.receiveShadow = false; im.count = total; K.dyn(im); root.add(im); return im; };
-    const beads = mk(new THREE.SphereGeometry(0.11, 6, 4), beadM), halos = mk(new THREE.SphereGeometry(0.26, 8, 6), haloM);
+    const beads = mk(new THREE.SphereGeometry(0.1, 6, 4), beadM), halos = mk(new THREE.SphereGeometry(0.19, 8, 6), haloM);
     const mtx = new THREE.Matrix4(), qI = new THREE.Quaternion(), sc = new V3(), pos = new V3(), col = new THREE.Color();
     function at(ln, s, out) {
       s = ((s % ln.L) + ln.L) % ln.L;
@@ -809,32 +1151,32 @@ export default function install(IRON) {
       for (const ln of lines) {
         const ps = statusOf(ln.plant.id, dt) || { S: 'IDLE', lv: 0, online: true, load: 0 };
         const S = ps.S, off = !ps.online, blk = S === 'BLOCKED', work = S === 'WORKING';
-        const cs = ln.c ? stateOf(ln.c.id) : 'IDLE';
-        const sp = blk ? (Math.sin(t * 5 + ln.L) > 0 ? 0.7 : 0.05) : work ? (0.9 + 2.6 * ps.lv) * (cs === 'WORKING' ? 1 : 0.55) : 0.22;
+        const cs = ln.c ? stateOf(ln.c.id) : 'WORKING';
+        const sp = off ? 0 : blk ? (Math.sin(t * 5 + ln.L) > 0 ? 0.7 : 0.05) : work ? (0.9 + 2.6 * ps.lv) * (cs === 'WORKING' ? 1 : 0.55) : 0.22;
         ln.off = (ln.off + dt * sp) % ln.L;
-        // core: bright teal with the level, dim idle, amber/red blink when blocked, near dark when offline
-        if (off) ln.coreM.color.setRGB(Math.sin(t * 7 + ln.L) > 0.6 ? 0.35 : 0.12, 0.03, 0.02);
+        // core: bright teal with the level, dim idle, amber blink when blocked, dark red flicker when offline
+        if (off) ln.coreM.color.setRGB(Math.sin(t * 7 + ln.L) > 0.6 ? 0.3 : 0.1, 0.03, 0.02);
         else if (blk) ln.coreM.color.setHex(Math.sin(t * 6) > 0 ? 0x9a6a10 : 0x4a3008);
-        else if (work) ln.coreM.color.setRGB(0.1 + 0.12 * ps.lv, 0.42 + 0.4 * ps.lv, 0.36 + 0.32 * ps.lv);
+        else if (work) ln.coreM.color.setRGB(0.14 + 0.1 * ps.lv, 0.58 + 0.26 * ps.lv, 0.5 + 0.2 * ps.lv);
         else ln.coreM.color.setRGB(0.05, 0.2, 0.17);
         for (let i = 0; i < ln.n; i++) {
           const s = (ln.off + i * ln.L / ln.n) % ln.L;
           at(ln, s, pos);
-          const arrive = work ? K.clamp01((s / ln.L - 0.82) / 0.18) : 0;
+          const arrive = work ? K.clamp01((s / ln.L - 0.88) / 0.12) : 0;
           const tw = 0.85 + Math.sin(t * 10 + i * 2.1) * 0.15;
           let r, gg, b, size;
-          if (off) { const f = Math.sin(t * 9 + i) > 0.7 ? 0.5 : 0.1; r = f; gg = f * 0.12; b = f * 0.08; size = 0.7; }
-          else if (blk) { const f = Math.sin(t * 5 + i * 0.7) > 0 ? 0.9 : 0.25; r = f; gg = f * 0.62; b = f * 0.12; size = 0.85; }
-          else if (work) { const f = (0.45 + 0.55 * ps.lv) * tw; r = f * (0.55 + 0.45 * arrive); gg = f; b = f * (0.88 + 0.12 * arrive); size = (0.8 + 0.25 * ps.lv) * (1 + arrive * 0.9); }
-          else { r = 0.05; gg = 0.22; b = 0.18; size = 0.6; }
+          if (off) { const f = Math.sin(t * 9 + i) > 0.7 ? 0.4 : 0.06; r = f; gg = f * 0.12; b = f * 0.08; size = 0.6; }
+          else if (blk) { const f = Math.sin(t * 5 + i * 0.7) > 0 ? 0.85 : 0.2; r = f; gg = f * 0.62; b = f * 0.12; size = 0.8; }
+          else if (work) { const f = (0.5 + 0.5 * ps.lv) * tw; r = f * (0.5 + 0.5 * arrive); gg = f; b = f * (0.86 + 0.14 * arrive); size = (0.8 + 0.2 * ps.lv) * (1 + arrive * 0.3); }
+          else { r = 0.04; gg = 0.2; b = 0.16; size = 0.6; }
           mtx.compose(pos, qI, sc.set(size, size, size));
           beads.setMatrixAt(j, mtx); halos.setMatrixAt(j, mtx);
-          beads.setColorAt(j, col.setRGB(r, gg, b)); halos.setColorAt(j, col.setRGB(r * 0.5, gg * 0.5, b * 0.5));
+          beads.setColorAt(j, col.setRGB(r, gg, b)); halos.setColorAt(j, col.setRGB(r * 0.45, gg * 0.45, b * 0.45));
           j++;
         }
       }
       if (j) { beads.instanceMatrix.needsUpdate = halos.instanceMatrix.needsUpdate = true; beads.instanceColor.needsUpdate = halos.instanceColor.needsUpdate = true; }
-      // socket eyes show the best state among the plants feeding that machine
+      // our socket eyes show the best state among the plants feeding that machine
       for (const id in sockets) {
         const sk = sockets[id];
         let best = 0;
@@ -849,6 +1191,7 @@ export default function install(IRON) {
       }
       // a few sparks off the beads
       if (lines.length && Math.random() < dt * 3) { const ln = lines[Math.floor(Math.random() * lines.length)]; const ps = statusOf(ln.plant.id, 0); if (ps && ps.S === 'WORKING') { at(ln, ln.off, pos); K.spawn(root, pos.x, pos.y, pos.z, K.R() * 1.4, Math.random() * 1.2, K.R() * 1.4, Math.random() < 0.5 ? 0x9affea : 0xffffff, 0.3, 0.04, 2, true); } }
+      VCK.sync(refs);
     } };
   });
 }

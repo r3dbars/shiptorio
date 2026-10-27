@@ -549,19 +549,23 @@ export default function install(IRON) {
     }
 
     // =================================================================
-    // HARNESS NAMEPLATE: a marquee board on top of the gantry post, facing the camera, the agent's name lit in
-    // its accent color, a pilot lamp at each end (dim idle, lit working, amber/red blinking when blocked)
+    // HARNESS NAMEPLATE: a marquee board standing on the gantry beam, facing the camera, the agent's name lit in
+    // its accent color, a pilot lamp at each end (dim idle, lit working, amber/red blinking when blocked). It sits
+    // toward the machine's middle so a phone's narrow station view still shows it.
     // =================================================================
-    const plate = K.group(st, GP.x + 0.1, BEAM_Y + 0.5, GP.z + 0.1); plate.rotation.order = 'YXZ'; plate.rotation.y = Math.PI / 4; plate.rotation.x = -0.16;
-    const NT = textTex(HN.name, hex(HN.col), hex(HN.dim));
+    const plate = K.group(st, GP.x + GU.x * 1.55, BEAM_Y + 0.52, GP.z + GU.z * 1.55); plate.rotation.order = 'YXZ'; plate.rotation.y = Math.PI / 4; plate.rotation.x = -0.16;
+    // two assemblers on the same harness are numbered left to right (the planner names them the same way)
+    const SAME = ((IRON.layout && IRON.layout.assemblers) || []).filter((a) => (a.def && a.def.harness) === M.harness).sort((a, b) => a.x - b.x);
+    const plateName = SAME.length > 1 ? HN.name + ' ' + (SAME.findIndex((a) => a.id === M.id) + 1) : HN.name;
+    const NT = textTex(plateName, hex(HN.col), hex(HN.dim));
     const PH = 0.34, PW = PH * NT.aspect;
     const nameM = new THREE.MeshBasicMaterial({ map: NT.tex, color: 0xffffff, fog: false });
     K.box(PW + 0.16, PH + 0.16, 0.07, m.ironM, 0, 0, -0.04, plate);
     K.mesh(new THREE.PlaneGeometry(PW, PH), nameM, 0, 0, 0.0, plate).castShadow = false;
     for (const sy of [-1, 1]) K.box(PW + 0.24, 0.05, 0.1, m.brass, 0, sy * (PH / 2 + 0.07), -0.01, plate);
     for (const sx of [-1, 1]) { K.box(0.05, PH + 0.18, 0.1, m.brassD, sx * (PW / 2 + 0.1), 0, -0.01, plate); for (const sy of [-1, 1]) K.box(0.05, 0.05, 0.05, m.brassL, sx * (PW / 2 + 0.1), sy * (PH / 2 + 0.07), 0.05, plate); }
-    // hangers down to the post top + a brass cap on the post
-    for (const sx of [-0.18, 0.18]) K.box(0.05, 0.36, 0.05, m.iron, sx, -PH / 2 - 0.2, -0.03, plate);
+    // two posts down onto the beam + a brass cap on the gantry post
+    for (const sx of [-0.25, 0.25]) K.box(0.06, 0.2, 0.06, m.iron, sx, -PH / 2 - 0.16, -0.03, plate);
     K.box(0.3, 0.05, 0.3, m.brass, GP.x, BEAM_Y + 0.16, GP.z, st);
     const pilotM = [-1, 1].map(() => lamp(K.mat(HN.dim, { e: 0 })));
     pilotM.forEach((pm, i) => { const sx = i ? 1 : -1; K.cyl(0.07, 0.08, 0.05, m.brassD, 8, sx * (PW / 2 + 0.22), -0.08, 0.0, plate); K.sph(0.075, pm, sx * (PW / 2 + 0.22), 0.0, 0.0, plate, 8, 6); });
@@ -621,7 +625,7 @@ export default function install(IRON) {
     const ROT_FLAT = -Math.PI / 4;
     const qFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, ROT_FLAT, 0));
     let gripA = 0, clawGrip = 0, lidOpen = 0, clawS = S_OUT, clawY = 2.45, speedG = 0, ribbonOff = 0, tTick = 0, tPuff = 0, tSpark = 0, tDrip = 0, compile = 0;
-    let lightK = 0, idleT = 0, punchKick = 0, tubeKick = 0, wasWaiting = false, tBubble = 0, sweepT = 0;
+    let lightK = 0, idleT = 0, punchKick = 0, tubeKick = 0, wasWaiting = false, tBubble = 0, sweepT = 0, lastPR = '';
     const engAnchor = dyn(K.group(dg));
     const D_RISE0 = 1.05, D_HOLD = 2.15, D_TOP = 3.55, D_EXIT = 4.42, MIN_BREW = 0.7;
     // make the bound card stack the brightest cream thing on the line, ribbon glowing in the source color
@@ -739,7 +743,7 @@ export default function install(IRON) {
         if (k >= 1) { E.ph = 'top'; E.t = 0; }
       } else if (E.ph === 'top') {
         const k = cl(E.t / 0.35); engAnchor.position.set(D.x, lerp(D_TOP, D_EXIT, sm(k)), D.z);
-        if (k >= 1 && M.give(E.item, 'out')) { E.item = null; E.ph = 'vent'; E.t = 0; tubeKick = 1; prCount++; setCounter(prCount); pulse(D.x, 4.5, D.z, 0xffb050); for (let i = 0; i < 10; i++) puff(BO.x + 0.4, BO.y + 3.4, BO.z + 0.3, 0xd8ccb8, 0.16, 2.0, 0.1, 1.2, 0.3, 0.3); }
+        if (k >= 1 && M.give(E.item, 'out')) { lastPR = E.item.label(); E.item = null; E.ph = 'vent'; E.t = 0; tubeKick = 1; prCount++; setCounter(prCount); pulse(D.x, 4.5, D.z, 0xffb050); for (let i = 0; i < 10; i++) puff(BO.x + 0.4, BO.y + 3.4, BO.z + 0.3, 0xd8ccb8, 0.16, 2.0, 0.1, 1.2, 0.3, 0.3); }
       } else if (E.ph === 'vent') { if (E.t > 0.4) { E.ph = 'empty'; E.t = 0; E.reserved = false; } }
     }
 
@@ -751,7 +755,7 @@ export default function install(IRON) {
       if (PMS.item) L.push([PMS.item, PMS.ph === 'punch' ? 'punching cards' : PMS.ph === 'ready' || PMS.ph === 'eject' ? 'cards bound' : 'feeding the punch', PMS.ph === 'punch' ? 'punching' : PMS.ph === 'ready' || PMS.ph === 'eject' ? 'cards bound' : 'feeding']);
       if (ARMS.item) L.push([ARMS.item, 'arm picking up', 'arm grab']);
       if (!L.length && ARMS.ph === 'reach') { const w = M.waiting('in'); if (w) L.push([w, 'arm reaching', 'arm grab']); }
-      if (!L.length) return 'warming up';
+      if (!L.length) return ENG.ph === 'vent' && lastPR ? lastPR + ' PR sent up the tube' : 'warming up';
       const [it, long] = L[0]; let s = (it.attempts > 0 ? 'rework ' : '') + it.label() + ' ' + long;
       if (L[1]) s += ' · next ' + L[1][0].label() + ' ' + L[1][2];
       return s;
