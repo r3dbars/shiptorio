@@ -1,3 +1,4 @@
+import { fetchApprovedSource } from "./approved-source";
 import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
@@ -200,11 +201,11 @@ async function execute(job: Job, pair: Pairing) {
   try {
     await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
     if (await realpath(authHome) !== authHome) throw new Error("Agent home must not be a symlink");
-    // Fresh clone contains tracked files only: no primary checkout secrets, hooks or local edits.
+    // Fetch approved commits only: no primary checkout secrets, hooks, refs or full history.
     const source = resolve(jobRoot, "source.git");
     if (!workspace.state.initialized) {
       await rm(source, { recursive: true, force: true }); await rm(work, { recursive: true, force: true });
-      await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "clone", "--bare", "--", `https://github.com/${job.repo}.git`, source], jobRoot, gitEnv);
+      await fetchApprovedSource(async (args, cwd = jobRoot) => command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], cwd, gitEnv), source, `https://github.com/${job.repo}.git`, [job.baseSha, ...(job.verifyBaseSha ? [job.verifyBaseSha] : [])], true);
       await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
       await workspace.checkpoint("initialized");
     }
@@ -283,7 +284,7 @@ async function execute(job: Job, pair: Pairing) {
       if (verifyPaths.length && !proof.passesOnHead) throw new Error("Regression recipe failed on the fix commit");
     }
     if (JSON.stringify(await snapshotApproved(sandbox, paths)) !== JSON.stringify(frozen)) throw new Error("Checks changed approved files");
-    // Publication is rebuilt from a fresh trusted clone; hostile hooks/config never see credentials.
+    // Publication is rebuilt from a fresh trusted checkout; hostile hooks/config never see credentials.
     // Publication/installation can fail offline. Keep the workspace and rerun all checks on recovery.
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     let sha: string;

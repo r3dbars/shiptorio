@@ -124,7 +124,9 @@ failure.
 
 ## What your agent can and can't touch
 
-Jobs run in an isolated checkout. The runner publishes only the approved file scope,
+Jobs fetch only the approved revision and, for rework, its regression-proof base rather
+than downloading the repository’s full history. Jobs run in an isolated checkout.
+The runner publishes only the approved file scope,
 then opens a pull request. It never pushes to the default branch. The OS sandbox
 keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
