@@ -300,3 +300,7 @@ admin popup in quota browser tests with the real authenticated form and persiste
 save/reload checks, passing on desktop and iPhone. Public FAQ now explains quotas and
 recovery. PR #284 carries the deployment and live stop/recovery verification receipt.
 The rejected production saves left all original account limits intact.
+
+## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
+
+Small existing-behavior fixes only, one PR each; protected work excluded. Progress, unresolved findings and verification receipts: [papercuts.md](papercuts.md).

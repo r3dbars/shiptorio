@@ -7,7 +7,7 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { chromium } = require("playwright");
+const { chromium } = require("@playwright/test");
 
 const o = Object.fromEntries(process.argv.slice(2).map((a) => { const [k, ...v] = a.replace(/^--/, "").split("="); return [k, v.length ? v.join("=") : true]; }));
 const base = o.base ?? "http://localhost:5173";
