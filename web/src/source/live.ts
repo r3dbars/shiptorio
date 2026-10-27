@@ -10,6 +10,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
   let ws: WebSocket | null = null;
   let closed = false, synced = false, attempt = 0, lastSeq = -1;
   let openedAt = 0, openedOnline = true;
+  let sleeping = typeof document !== "undefined" && document.visibilityState === "hidden";
   let heartbeat: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -29,9 +30,12 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       document.body.appendChild(notice);
     }, NOTICE_MS);
   };
-  const ready = () => {
+  const clearNotice = () => {
     clearTimeout(noticeTimer); noticeTimer = undefined;
     notice?.remove(); notice = undefined;
+  };
+  const ready = () => {
+    clearNotice();
     attempt = 0;
     onStatus("live");
   };
@@ -80,6 +84,9 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
         heartbeat = setTimeout(() => ping(socket), HEARTBEAT_MS);
         return;
       }
+      // Background frames are catch-up state, not a queue of sounds to play on wake.
+      // The visible tab replaces this socket and receives one current snapshot.
+      if (sleeping || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
       let value: unknown;
       try { value = JSON.parse(e.data); } catch { return; }
       let parsed: ReturnType<typeof parseLiveMessage>;
@@ -110,17 +117,24 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
   const resume = () => {
     if (closed || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
     // online and visibilitychange often arrive together. Keep the fresh handshake.
-    if (ws && !synced && openedOnline && Date.now() - openedAt < 1000) return;
+    if (!sleeping && ws && !synced && openedOnline && Date.now() - openedAt < 1000) return;
     // Mobile browsers can leave readyState OPEN on a dead socket. Replacing it
     // also discards frames buffered while asleep before they can replay sounds.
+    // Count the three-second grace from the player's return, not time asleep.
+    sleeping = false;
+    clearNotice();
     open();
+  };
+  const visibility = () => {
+    if (document.visibilityState === "hidden") { sleeping = true; clearNotice(); }
+    else resume();
   };
   const offline = () => { openedOnline = false; };
   if (typeof window !== "undefined") {
     window.addEventListener("online", resume);
     window.addEventListener("offline", offline);
   }
-  if (typeof document !== "undefined") document.addEventListener("visibilitychange", resume);
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", visibility);
   onStatus("connecting");
   open();
 
@@ -133,13 +147,12 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     close: () => {
       if (closed) return;
       closed = true;
-      detach(); clearTimeout(retry); clearTimeout(noticeTimer);
-      notice?.remove();
+      detach(); clearTimeout(retry); clearNotice();
       if (typeof window !== "undefined") {
         window.removeEventListener("online", resume);
         window.removeEventListener("offline", offline);
       }
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", resume);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", visibility);
     },
   };
 }

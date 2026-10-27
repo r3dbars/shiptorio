@@ -13,6 +13,7 @@ function harness() {
   const keys = ["WebSocket", "location", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "window", "document"] as const;
   const descriptors = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   let now = 0, nextId = 0;
+  const dateNow = Date.now; Date.now = () => now;
   const tasks = new Map<number, { at: number; every?: number; run: () => void }>();
   const schedule = (run: () => void, delay: number, repeat = false) => { const id = ++nextId; tasks.set(id, { at: now + delay, every: repeat ? delay : undefined, run }); return id; };
   const clear = (id: number) => { tasks.delete(id); };
@@ -32,12 +33,13 @@ function harness() {
     close() { this.closeCalls++; this.readyState = 3; this.onclose?.(); }
   }
   const win = new EventTarget();
-  const doc = Object.assign(new EventTarget(), { visibilityState: "visible", body: { appendChild() {} }, createElement: () => ({ setAttribute() {}, textContent: "", style: { cssText: "" }, remove() {} }) });
+  const notices = new Set<unknown>();
+  const doc = Object.assign(new EventTarget(), { visibilityState: "visible", body: { appendChild(el: unknown) { notices.add(el); } }, createElement: () => { const el = { setAttribute() {}, textContent: "", style: { cssText: "" }, remove() { notices.delete(el); } }; return el; } });
   const values = { window: win, document: doc, WebSocket: Socket, location: { protocol: "https:", host: "shiptorio.com" }, setTimeout: (run: () => void, delay: number) => schedule(run, delay), clearTimeout: clear, setInterval: (run: () => void, delay: number) => schedule(run, delay, true), clearInterval: clear };
   for (const key of keys) Object.defineProperty(globalThis, key, { value: values[key], writable: true, configurable: true });
   const messages: ServerToWeb[] = [], statuses: string[] = [];
   return {
-    sockets, tasks, messages, statuses, win, doc,
+    sockets, tasks, messages, statuses, win, doc, notices,
     connect: (onStatus: (status: string) => void = status => statuses.push(status)) => connectLive("r3dbars/shiptorio", msg => messages.push(msg), onStatus),
     advance(ms: number) {
       const until = now + ms;
@@ -52,6 +54,7 @@ function harness() {
       now = until;
     },
     restore() {
+      Date.now = dateNow;
       for (const key of keys) {
         const descriptor = descriptors.get(key);
         if (descriptor) Object.defineProperty(globalThis, key, descriptor);
@@ -220,4 +223,35 @@ it("coalesces simultaneous return signals but replaces a handshake that crossed 
   h.win.dispatchEvent(new Event("online"));
   expect(h.sockets).toHaveLength(3);
   source.close();
+}));
+
+
+it("drops gameplay frames while hidden instead of queuing old sounds for wake", () => transportTest(h => {
+  const source = h.connect(); h.sockets[0].open(); sync(h.sockets[0]);
+  h.doc.visibilityState = "hidden"; h.doc.dispatchEvent(new Event("visibilitychange"));
+  h.sockets[0].message(JSON.stringify({ ...JSON.parse(log), seq: 4 }));
+  expect(h.messages).toHaveLength(1);
+  h.doc.visibilityState = "visible";
+  h.sockets[0].message(JSON.stringify({ ...JSON.parse(log), seq: 4 })); // queued before visibility callback
+  expect(h.messages).toHaveLength(1);
+  h.doc.dispatchEvent(new Event("visibilitychange"));
+  h.sockets[1].open(); h.sockets[1].message(JSON.stringify({ ...JSON.parse(snapshot), seq: 4 }));
+  expect(h.messages).toHaveLength(2);
+  source.close();
+}));
+
+
+it("gives a returning tab a fresh three-second notice grace and never flashes on a 1s blip", () => transportTest(h => {
+  const source = h.connect(); h.sockets[0].open(); sync(h.sockets[0]);
+  h.sockets[0].close(); h.advance(1000);
+  expect(h.notices.size).toBe(0);
+  h.sockets[1].open(); sync(h.sockets[1]); h.advance(3001);
+  expect(h.notices.size).toBe(0);
+  h.sockets[1].close(); h.advance(3001);
+  expect(h.notices.size).toBe(1);
+  h.doc.visibilityState = "visible"; h.doc.dispatchEvent(new Event("visibilitychange"));
+  expect(h.notices.size).toBe(0);
+  const socket = h.sockets.at(-1)!; socket.open(); sync(socket);
+  h.advance(3001); expect(h.notices.size).toBe(0);
+  source.close(); expect(h.tasks.size).toBe(0);
 }));

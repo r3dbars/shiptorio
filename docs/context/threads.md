@@ -339,6 +339,8 @@ Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 1
 Day 2 live-map checkpoint: replace sleeping sockets on tab return/network recovery,
 use heartbeat deadlines and jittered retry, and resync from one sequenced full snapshot.
 A small Reconnecting… notice waits three seconds; short blips retain the current map.
-Existing transport lifecycle tests move beside live.ts; factory.ts needs the small
+Existing transport lifecycle tests move to web/test; factory.ts needs the small
 sequence/snapshot/heartbeat wiring because browser-socket.ts does not own delivery.
-Comeback, sound, shaft, source/index.ts and other active lanes remain untouched.
+Contract/journey assertions recognize seq/pong; the deck fixture drains background
+check-in work and the goal assertion allows transport metadata. Comeback, sound,
+shaft, source/index.ts and other active lanes remain untouched.
