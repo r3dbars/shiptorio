@@ -139,6 +139,23 @@ test("planning cooldowns increase, midnight clears the cap, and issue state cann
   expect(planningFailure(three, 'offline', three.retryAt).failures).toBe(1);
 });
 
+test("a GitHub rate limit pauses planning until GitHub's retry time without spending a daily try", () => {
+  const start = Date.parse('2026-10-27T03:00:00Z');
+  const limited = (at: number) => `GitHub rate limit; queued work retries after ${new Date(at).toISOString()}`;
+  const one = planningFailure(undefined, 'offline', start);
+  const paused = planningFailure(one, limited(start + 25 * 60000), start + 120000);
+  expect(paused.failures).toBe(1);
+  expect(paused.retryAt).toBe(start + 25 * 60000);
+  expect(planningHold(paused, start + 25 * 60000 - 1)).toEqual(paused);
+  expect(planningHold(paused, start + 25 * 60000)).toBeNull();
+  // A ledger written before this fix counted the rate limit as the third try; it only waits out the pause.
+  const legacy: PlanningRetry = { day: '2026-10-27', failures: 3, retryAt: Date.parse('2026-10-28T00:00:00Z'), reason: limited(start + 60000) };
+  expect(planningHold(legacy, start + 120000)).toEqual(legacy);
+  const capped = planningFailure(planningFailure(paused, 'offline', start + 26 * 60000), 'offline', start + 30 * 60000);
+  expect(capped.failures).toBe(3);
+  expect(planningHold(capped, start + 60 * 60000)?.retryAt).toBe(Date.parse('2026-10-28T00:00:00Z'));
+});
+
 test("limits endpoint denies other repos, requires authentication, and returns no-store telemetry", async () => {
   const { env, cookie } = await fixture();
   const bindings = { ...env, FACTORY: { idFromName: (s: string) => s, get: () => ({ runnerJobs: async () => [], planningRetries: async () => [], securityLimit: async () => ({ allowed: true, retryAfter: 0 }) }) } };
