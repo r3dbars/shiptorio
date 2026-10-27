@@ -7,6 +7,7 @@ import type { Bottleneck, BrainSignal, FactoryState, SignalCollector, SignalSour
 import { signalId } from "@shiptorio/shared";
 import type { StageMetrics } from "../bottleneck";
 import type { FactoryEnv } from "../factory";
+import { ciCollector, kvCiCache } from "./ci";
 
 /** What every collector gets. Read-only: collectors look, they never change the factory. */
 export interface SignalContext {
@@ -59,7 +60,10 @@ export const factoryCollector: Collector = {
 };
 
 /** Every source's collector. Source threads: add yours here (one import, one entry). */
-export const COLLECTORS: Collector[] = [factoryCollector];
+export const COLLECTORS: Collector[] = [
+  factoryCollector,
+  bind(ciCollector, async c => ({ repo: c.repo ?? c.state.repo, defaultBranch: c.state.baseBranch, token: c.githubToken ? await c.githubToken() : undefined, cache: kvCiCache(c.env.CACHE) })),
+];
 
 export interface SignalCache { readAt: Partial<Record<SignalSource, number>>; signals: BrainSignal[] }
 export const emptyCache = (): SignalCache => ({ readAt: {}, signals: [] });

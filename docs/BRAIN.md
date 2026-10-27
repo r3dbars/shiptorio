@@ -61,7 +61,7 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
 
 | Piece | Files | Signals / output |
 |---|---|---|
-| CI | `server/src/signals/ci.ts` | `ci_slow`, `ci_flaky`, `ci_red_main`, `ci_queue`, `ci_missing` |
+| CI | `server/src/signals/ci.ts` | `ci_slow`, `ci_flaky`, `ci_red_main`, `ci_queue`, `ci_blocking`, `ci_missing` |
 | Sentry | `server/src/signals/sentry.ts` | `errors_piling`, `error_spike`, `regression`, `errors_unowned` |
 | PostHog | `server/src/signals/posthog.ts` | `usage_flat`, `funnel_drop`, `no_users`, `feature_unused`, `no_analytics` |
 | Feedback | `server/src/signals/feedback.ts` | `feedback_unanswered`, `feedback_thin`, `same_complaint` |
