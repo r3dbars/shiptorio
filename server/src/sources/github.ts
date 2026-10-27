@@ -21,7 +21,7 @@ export interface GitHubRepository { id?: number; full_name: string; default_bran
 export interface GitHubPayload {
   action?: string;
   repository?: GitHubRepository;
-  installation?: { id: number; account?: { login: string; type?: string }; permissions?: Record<string, string> };
+  installation?: { id: number; account?: { id?: number; login: string; type?: string }; permissions?: Record<string, string> };
   issue?: GitHubIssue;
   comment?: { id: number; body: string; created_at?: string; updated_at?: string; user?: { login: string; type?: string }; author_association?: string; performed_via_github_app?: { id: number } | null };
   repositories?: GitHubRepository[];
