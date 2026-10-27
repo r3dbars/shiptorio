@@ -419,3 +419,7 @@ production config; provider key values, revocations and permissions are unchange
   running lease and a heartbeat completes before browser authorization resolves;
   no frame is sent early or after revocation. Restoring the old await makes this
   regression fail. This receipt does not claim a real issue-to-PR launch.
+
+## 2026-10-26 — Foundry S-rocket identity
+
+Justin selected the third refined rocket/S logo and **“A little play. A lot shipped.”** He asked Codex to implement it as code across the title screen, company logo, app titles and overlays, and merge it. The design uses dark enamel, brass, pipe rails and larger industrial headings; the existing factory artwork remains. See `docs/art/FOUNDRY-BRAND.md` for source assets and typography.

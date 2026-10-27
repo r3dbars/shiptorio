@@ -9,6 +9,7 @@ import { Onboarding, type OnboardStep } from "./ui/Onboarding";
 import { sound } from "./sound/engine";
 import "./iron.css";
 import "./styles.css";
+import "./foundry.css";
 
 sound.install();
 
