@@ -19,6 +19,15 @@ export function planningHold(retry: PlanningRetry | undefined, now = Date.now())
   if (!retry || retry.day !== utcDay(now)) return null;
   // The per-issue daily cap also holds if an old cooldown timestamp has already elapsed. A ledger whose
   // latest entry is a rate limit only waits out that pause: older ledgers counted rate limits as tries.
-  if (retry.failures >= MAX_PLANNING_FAILURES && !RATE_LIMITED.test(retry.reason)) return { ...retry, retryAt: (Math.floor(now / 86400000) + 1) * 86400000 };
+  if (retry.failures >= MAX_PLANNING_FAILURES) {
+    const midnight = (Math.floor(now / 86400000) + 1) * 86400000;
+    const limited = RATE_LIMITED.exec(retry.reason);
+    const at = limited ? Date.parse(limited[1]) : NaN;
+    if (!Number.isFinite(at)) return { ...retry, retryAt: midnight };
+    // Before rate limits stopped consuming tries, the third pause was stored as midnight.
+    // Its original GitHub deadline is still in the reason; do not keep that legacy cap alive.
+    const retryAt = Math.min(retry.retryAt, at, midnight);
+    return retryAt > now ? { ...retry, retryAt } : null;
+  }
   return retry.retryAt > now ? retry : null;
 }
