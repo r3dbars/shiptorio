@@ -20,7 +20,9 @@ test.skipIf(process.platform !== "darwin")("watch reconnects after HTTP drops an
     return Response.json({ job: null });
   } });
   await Bun.write(resolve(root, "server-url"), `http://127.0.0.1:${server.port}\n`);
-  await savePairing({ repo: "you/repo", token: "test-token", expires: Date.now() + 7200000 }, root);
+  const expires = Date.now() + 7200000;
+  const token = `${btoa(JSON.stringify({ purpose: "runner", repo: "you/repo", pairId: "reconnect-fixture", expires })).replace(/=/g, "")}.signature`;
+  await savePairing({ repo: "you/repo", token, expires }, root);
   const child = Bun.spawn([process.execPath, "runner/src/cli.ts", "watch"], { cwd: resolve(import.meta.dir, "../.."), env: { PATH: `${bin}:/usr/bin:/bin`, SHIPTORIO_RUNNER_ROOT: root, SHIPTORIO_URL: `http://127.0.0.1:${server.port}` }, stdout: "pipe", stderr: "pipe" });
   const out = new Response(child.stdout).text(), err = new Response(child.stderr).text();
   try {
