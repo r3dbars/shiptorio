@@ -1,9 +1,10 @@
+import { GodControls } from "./ui/GodControls";
 import { QuotaCard } from "./ui/QuotaCard";
 import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
-import { savePref } from "./account";
+import { savePref, setAccountReadOnly } from "./account";
 import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
@@ -54,7 +55,7 @@ const SLOTS = POWER.slots;
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". Everyone starts on the map; the toggle switches any time.
 type World = "checkin" | "build";
-type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
+type Sheet = "god" | "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
 const WORLD_KEY = "shiptorio:world";
 const TOOLS_AT = 5; // rockets before Make it yours and Place show up on their own
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
@@ -115,6 +116,10 @@ whenIdle(() => void (loadCheckIn(), loadHowItThinks()));
 
 export function App({ config, onIntroDone, login }: { config?: SourceConfig; onIntroDone?: () => void; login?: string | null } = {}) {
   const cfg = useMemo(() => config ?? readConfig(), [config]);
+  const [admin, setAdmin] = useState(false);
+  const [viewing, setViewing] = useState<{login:string;writable:boolean}|null>(null);
+  const [viewReady,setViewReady]=useState(cfg.kind!=="live");
+  useEffect(()=>{if(cfg.kind!=="live")return;let active=true;fetch('/api/me').then(r=>r.ok?r.json():null).then(d=>{if(active){setAdmin(d?.admin===true);setViewing(d?.viewingAs??null);setAccountReadOnly(!!d?.viewingAs);setViewReady(true)}}).catch(()=>{});return()=>{active=false;setAccountReadOnly(false)}},[cfg.kind]);
   const { state, log, status, send: sendRaw } = useFactory(cfg);
   const empire = useEmpire(cfg, state);
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
@@ -122,7 +127,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
   // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
   const lastTap = useRef(0);
-  const ach = useAchievements(state, cfg.kind === "live", intro || (attentionOn() && Date.now() - lastTap.current > 10_000), sendRaw, achLink, progressProfile(cfg.kind, login));
+  const ach = useAchievements(!viewReady || viewing ? null : state, cfg.kind === "live" && viewReady && !viewing, intro || (attentionOn() && Date.now() - lastTap.current > 10_000), sendRaw, achLink, progressProfile(cfg.kind, login));
   const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -169,8 +174,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
-  const profile = progressProfile(cfg.kind, login);
-  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
+  const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login);
+  const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on && viewReady, !!viewing);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
   const nudge = useBottleneckNudge(deck, progressing, calm);
@@ -233,6 +238,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // The default screen is the map, one card and two counters (Justin, 2026-10-27: "still a ton of shit just in my
   // face"). Every other tool waits behind one Menu button, and stays out while a sheet or the tray it opened is up.
   const [menu, setMenu] = useState(false);
+
   const toolsOut = menu || !!sheet || tray;
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
@@ -380,7 +386,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   keys.current = { launch, build, show, intro };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (keys.current.intro || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       if (k === "l") setShowLabels((v) => !v);
       else if (k === "t") setSheet((v) => (v === "status" ? null : "status"));
@@ -561,6 +567,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </div>
 
+        {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
           <section className="card coachcard" aria-label={HUD.tour}>
             <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? WORDS.yourRepo} onDismiss={tour.dismiss} onSkip={tour.skip} />
@@ -569,6 +576,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         {brief.show && progressing && !checkin && !sheet ? (
           <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
+        ) : sheet === "god" && admin ? (
+          <GodControls onClose={()=>setSheet(null)} />
         ) : sheet === "progress" ? (
           <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
         ) : source && state ? (
@@ -760,6 +769,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           )}
           <div className="row">
             <span className="eyebrow" aria-hidden="true">{HUD.dock.tools}</span>
+            {admin && <button type="button" className="tbtn" aria-pressed={sheet === "god"} onClick={()=>toggleSheet("god")}>God</button>}
             {/* Tools show up when they're needed, never as dead buttons waiting to unlock (2026-10-27). */}
             {show("line") && (
               <button type="button" className="tbtn" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")}>

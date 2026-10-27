@@ -10,6 +10,7 @@ export function budgetDb() {
   sqlite.exec("CREATE TABLE users(id INTEGER PRIMARY KEY, login TEXT); INSERT INTO users VALUES(1, 'owner')");
   sqlite.exec(readFileSync(new URL("../migrations/0007_signup_abuse.sql", import.meta.url), "utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0013_quota_controls.sql", import.meta.url), "utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0016_admin_audit.sql", import.meta.url), "utf8"));
   const db = { prepare(sql: string) {
     const query = sqlite.query(sql);
     const statement = (values: any[]) => ({

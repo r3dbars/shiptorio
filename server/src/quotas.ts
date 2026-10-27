@@ -7,9 +7,11 @@ export function quota(id: string, label: string, used: number, limit: number, re
   return { id, label, used, limit, resetsAt, raiseUrl, status: used >= limit ? "stopped" : used >= limit * 0.8 ? "warning" : "ok" };
 }
 /** Read-only telemetry. Never spends a run or calls Spark. All callers pass normal repo access checks. */
-export async function quotaStatus(env: Env, repo: string, viewer: User) {
-  const account = await budgetAccount(env.DB, repo);
-  const owner = await env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(repo).first<{login:string}>();
+export async function quotaStatus(env: Env, repo: string, viewer: User, readonly = false) {
+  const payerRow = readonly ? await env.DB.prepare('SELECT user_id FROM factory_budget_owners WHERE repo=?').bind(repo).first<{user_id:number}>() : null;
+  const account = readonly ? `user:${payerRow?.user_id ?? viewer.id}` : await budgetAccount(env.DB, repo);
+  let owner = await env.DB.prepare("SELECT login FROM signup_resources WHERE kind='factory' AND resource=? ORDER BY rowid LIMIT 1").bind(repo).first<{login:string}>();
+  if (!owner && readonly) owner = {login:viewer.login};
   if (!owner) throw new Error("Quota owner unavailable");
   const [runs, spark, spend, resources, caps] = await Promise.all([
     runQuotaStatus(env, owner.login), budgetUsage(env, account), factorySpend(env.DB, repo),
