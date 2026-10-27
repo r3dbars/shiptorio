@@ -1,3 +1,4 @@
+import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
@@ -68,8 +69,8 @@ async function loginHarness(h: Job["harness"]) {
   // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
   if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
-const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
-if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{4,5}$/.test(base)) throw new Error("Unsupported Shiptorio origin");
+const savedOrigin = Bun.file(resolve(root, "server-url"));
+const base = runnerOrigin(process.env.SHIPTORIO_URL || (await savedOrigin.exists() ? (await savedOrigin.text()).trim() : "https://shiptorio.com"));
 if (process.argv[2] === "doctor") {
   const args = process.argv.slice(3);
   if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
@@ -114,7 +115,7 @@ if (process.argv[2] === "doctor") {
 }
 if (["setup", "login"].includes(process.argv[2])) {
   await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
-  if (!available.length) throw new Error("Install Codex CLI or Claude Code first, then rerun the installer. See https://shiptorio.com/docs/runner");
+  if (!available.length) throw new Error(`Install Codex CLI or Claude Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
     const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
     if (!h || !available.includes(h)) throw new Error("Use login codex or login claude, with that CLI installed");

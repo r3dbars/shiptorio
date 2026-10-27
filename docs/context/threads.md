@@ -153,6 +153,13 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - Integrates the merged supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
 - Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. The full `doctor --edit codex` command reported PASS for Codex auth, sandbox, pairing and actual edit; it correctly exited nonzero for the separate missing Claude sign-in/sandbox. Integrated runner tests: 45 passed, 2 platform skips. Full `bun run check` passed after integration (726 tests, 2 platform skips; all workspace typechecks and production/web/standalone-runner build). CI/merge outcome is on PR #275.
 
+## Codex: self-host runner origin and live pairing (2026-10-26)
+
+- `codex/selfhost-runner-origin` fixes the Power panel install command to use the current origin and pass it to the shell side of the pipeline. The installer downloads that origin's bundle, saves its endpoint for later invocations, and rejects cross-server reuse of existing pairings. The CLI accepts self-hosted HTTPS origins and loopback-only HTTP.
+- Narrow `web/` lane exception: `RunnerConnection.tsx` and its command helper, needed to correct the self-host setup defect; no layout/art changes or shared protocol changes.
+- Tests cover endpoint persistence after removing the install-time environment, updates, cross-server refusal, HTTPS/loopback validation and shell quoting. Live temporary-deployment pairing evidence will be added after the acceptance run.
+- Justin requested no existing Worker changes. PR checks run normally; the squash merge will carry a workflow-skip marker to prevent the main push from triggering production Deploy. No repository deployment settings are changed.
+
 ## Codex (outside the Claude project)
 
 Only what Codex has pushed is visible here, not its live session. Codex commits show as "J B" or "Redbars". As of ~17:20 UTC:
