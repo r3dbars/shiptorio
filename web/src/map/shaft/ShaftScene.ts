@@ -271,6 +271,7 @@ export class ShaftScene {
     const small = (window.matchMedia?.("(pointer: coarse)").matches ?? false) || (navigator.hardwareConcurrency ?? 8) <= 4;
     const stage = new ShaftStage(I, layout, { shadowMap: small ? 1024 : 2048 });
     stage.reduceMotion = this.reduceMotion;
+    I.calm = this.reduceMotion; // core.js steadies the item halos
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
     bakeShaft(I, stage.root);
