@@ -8,11 +8,11 @@ export interface Trace { requestId: string; userId?: string; repo?: string; item
 export interface TelemetryEnv { SHIPTORIO_SENTRY_DSN?: string; BUILD_SHA?: string; CACHE?: KVNamespace; DB?: D1Database }
 export type LogGroup = 'events' | 'errors' | 'spark' | 'webhooks';
 export interface LogEntry extends Trace { level: 'info' | 'warn' | 'error'; ts: string; event: string; durationMs?: number; [key: string]: unknown }
-interface Context { trace: Trace; env: TelemetryEnv; waitUntil: (task: Promise<unknown>) => void }
+interface Context { trace: Trace; redactor: Redactor; env: TelemetryEnv; waitUntil: (task: Promise<unknown>) => void }
 const context = new AsyncLocalStorage<Context>();
 export const currentTrace = () => context.getStore()?.trace;
 export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['waitUntil'], run: () => T): T {
-  return context.run({ trace, env, waitUntil }, () => Sentry.withScope(() => {
+  return context.run({ trace, redactor: new Redactor(env), env, waitUntil }, () => Sentry.withScope(() => {
     Sentry.setTag('requestId', trace.requestId);
     if (trace.repo) Sentry.setTag('repo', trace.repo);
     if (trace.itemId) Sentry.setTag('itemId', trace.itemId);
@@ -22,7 +22,7 @@ export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['
 }
 export function log(level: LogEntry['level'], event: string, fields: Record<string, unknown> = {}, { persist = true } = {}): LogEntry {
   const ctx = context.getStore();
-  const entry = new Redactor(ctx?.env).value(redact({ ...fields, ...ctx?.trace, requestId: ctx?.trace.requestId ?? crypto.randomUUID(), level, ts: new Date().toISOString(), event })) as LogEntry;
+  const entry = (ctx?.redactor ?? new Redactor()).value(redact({ ...fields, ...ctx?.trace, requestId: ctx?.trace.requestId ?? crypto.randomUUID(), level, ts: new Date().toISOString(), event })) as LogEntry;
   console[level](JSON.stringify(entry));
   // One immutable key per event avoids cross-isolate lost updates. Seven-day retention.
   if (persist && ctx?.env.CACHE) {
@@ -41,7 +41,8 @@ export function log(level: LogEntry['level'], event: string, fields: Record<stri
     };
     const persist = Promise.resolve().then(async () => {
       if (!await mayRetain()) return;
-      await Promise.all(keys.map(key => ctx.env.CACHE!.put(key, JSON.stringify(entry), { expirationTtl: 7 * 86400 })));
+      const serialized = JSON.stringify(entry);
+      await Promise.all(keys.map(key => ctx.env.CACHE!.put(key, serialized, { expirationTtl: 7 * 86400 })));
       // A background write that overlaps deletion must clean up its late keys.
       if (!await mayRetain()) await Promise.all(keys.map(key => ctx.env.CACHE!.delete(key)));
     }).catch(() => {
