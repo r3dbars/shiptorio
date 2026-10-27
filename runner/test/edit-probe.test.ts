@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { probeAssemblerEdit } from "../src/edit-probe";
 const supported = ["darwin", "linux"].includes(process.platform);
-const osTest = test.skipIf(!supported || process.platform === "linux" && !Bun.which("bwrap"));
+const osTest = test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || !supported || process.platform === "linux" && !Bun.which("bwrap"));
 osTest("edit doctor proves exact file bytes through the real verification sandbox", async () => {
   const proof = await probeAssemblerEdit(async context => {
     expect(context.allowedPaths).toEqual(["example.ts"]);

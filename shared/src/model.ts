@@ -123,6 +123,7 @@ export const Item = z.object({
   inspection: Inspection.optional(),
   scars: z.array(ScarTag).optional(), // every fail so far, newest last
   orbit: OrbitWatch.optional(), // set at launch; orbit watch's verdict on the last launch
+  priority: z.enum(["rush", "park"]).optional(), // the player's Rush or Park from the cart's callout (shared/src/priority.ts)
 });
 export type Item = z.infer<typeof Item>;
 

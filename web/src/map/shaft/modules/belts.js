@@ -1329,7 +1329,8 @@ export default function install(IRON) {
       }
       for (const c of chases) {
         const p = c.p;
-        if (p.jammed) { const on = Math.sin(t * 9) > 0; for (let j = 0; j < 4; j++) LA.set(c.base + j, on ? 0xff2a10 : 0x5a0a04); }
+        // reduced motion (I.calm): a jam holds a steady red instead of flashing
+        if (p.jammed) { const on = I.calm || Math.sin(t * 9) > 0; for (let j = 0; j < 4; j++) LA.set(c.base + j, on ? 0xff2a10 : 0x5a0a04); }
         else {
           const k = Math.floor(t * 5 * Math.max(0.2, p.flow * runF(p))) % 4;
           for (let j = 0; j < 4; j++) LA.set(c.base + j, j === k ? (c.rw ? 0xff5a3a : 0xffb040) : (c.rw ? 0x381408 : 0x382610));
