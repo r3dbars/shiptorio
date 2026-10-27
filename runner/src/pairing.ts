@@ -1,4 +1,4 @@
-import { chmod, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 export interface Pairing { repo: string; token: string; expires: number }
@@ -6,11 +6,36 @@ export const runnerHome = () => resolve(process.env.SHIPTORIO_RUNNER_ROOT || res
 const validRepo = (repo: string) => /^[\w.-]+\/[\w.-]+$/.test(repo) && !repo.split("/").some(p => p === "." || p === "..");
 export async function savePairing(pairing: Pairing, root = runnerHome()) {
   if (!validRepo(pairing.repo) || typeof pairing.token !== "string" || !Number.isFinite(pairing.expires)) throw new Error("Invalid pairing response");
+  await updatePairing(pairing.repo, root, () => pairing, true);
+}
+/** Serialize manual pairing, renewal and removal across CLI/service processes. */
+export async function updatePairing(repo: string, root: string, update: (current: Pairing | null) => Pairing | null | Promise<Pairing | null>, replace = false): Promise<Pairing | null> {
+  if (!validRepo(repo)) throw new Error("Invalid pairing repository");
+  repo = repo.toLowerCase();
   const dir = resolve(root, "pairings");
   await mkdir(dir, { recursive: true, mode: 0o700 }); await chmod(root, 0o700); await chmod(dir, 0o700);
-  const path = resolve(dir, encodeURIComponent(pairing.repo.toLowerCase()) + ".json");
+  const path = resolve(dir, encodeURIComponent(repo) + ".json"), lock = path + ".lock";
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try { handle = await open(lock, "wx", 0o600); break; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; await Bun.sleep(20); }
+  }
+  // Never break another process's lock based on age: an interrupted write fails closed.
+  if (!handle) throw new Error("Pairing store is busy; close other pairing commands and retry. An interrupted writer may require lock recovery.");
   const temp = path + "." + crypto.randomUUID();
-  await Bun.write(temp, JSON.stringify(pairing), { mode: 0o600 }); await chmod(temp, 0o600); await rename(temp, path);
+  try {
+    await handle.writeFile(String(process.pid));
+    const file = Bun.file(path);
+    const current = !replace && await file.exists() ? await file.json() as Pairing : null;
+    const next = await update(current);
+    if (next) {
+      if (next.repo.toLowerCase() !== repo || typeof next.token !== "string" || !Number.isFinite(next.expires)) throw new Error("Invalid pairing response");
+      if (!current || current.token !== next.token || current.expires !== next.expires || current.repo !== repo) {
+        await Bun.write(temp, JSON.stringify({ ...next, repo }), { mode: 0o600 }); await chmod(temp, 0o600); await rename(temp, path);
+      }
+    } else await rm(path, { force: true });
+    return next ? { ...next, repo } : null;
+  } finally { await rm(temp, { force: true }); await handle.close(); await rm(lock, { force: true }); }
 }
 export async function loadPairings(root = runnerHome()): Promise<Pairing[]> {
   const dir = resolve(root, "pairings");
@@ -21,7 +46,7 @@ export async function loadPairings(root = runnerHome()): Promise<Pairing[]> {
     return pair;
   }));
 }
-export async function removePairing(repo: string, root = runnerHome()) { await rm(resolve(root, "pairings", encodeURIComponent(repo.toLowerCase()) + ".json"), { force: true }); }
+export async function removePairing(repo: string, root = runnerHome()) { await updatePairing(repo, root, () => null, true); }
 export async function pairMachine(base: string, root = runnerHome(), pollMs = 3000) {
   const start = await fetch(`${base}/api/runner-device/start`, { method: "POST", signal: AbortSignal.timeout(30000) });
   if (!start.ok) throw new Error(`Could not start pairing (${start.status})`);
