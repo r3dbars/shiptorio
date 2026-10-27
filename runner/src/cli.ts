@@ -3,13 +3,12 @@ import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSign
 import { assembleCodex } from "./codex-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
-import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
-import { runnerHome, loadPairings, savePairing, pairMachine, joinMachine, type Pairing } from "./pairing";
+import { runnerHome, loadPairings, pairMachine, joinMachine, type Pairing } from "./pairing";
 import { loadConnections, persistRenewal } from "./grant-store";
 
 
@@ -306,7 +305,7 @@ async function execute(job: Job, pair: Pairing) {
 
 }
 async function connections() {
-  return loadConnections(root, process.env);
+  return loadConnections(root, { SHIPTORIO_REPO: process.env.SHIPTORIO_REPO, SHIPTORIO_RUNNER_TOKEN: process.env.SHIPTORIO_RUNNER_TOKEN });
 }
 await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 let pairs = await connections();

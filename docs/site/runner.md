@@ -56,6 +56,10 @@ manual token copying is required. Add `~/.local/bin` to PATH if desired.
 
 ## More repos and updates
 
+Renewed connections are saved in the private pairing store so they survive the next poll and a restart. Legacy environment grants are imported only when no pairing exists, or when a newer grant belongs to that same pairing and sign-in session. They cannot replace a different pairing. Disconnect the machine in the game to revoke access; deleting a local file does not revoke an environment grant.
+
+Pairing changes are serialized across helper processes. A busy-store error means another pairing writer has the lock. Close the other pairing command and retry; an interrupted writer's lock requires recovery with the helper stopped, rather than automatically overriding a possibly active writer.
+
 Run `~/.local/bin/shiptorio-runner pair` to add another repository while the runner
 is open. One process serves all paired repos, with one build at a time. Pairing
 another repo preserves earlier connections. Pairing a new machine to the same repo

@@ -29,7 +29,8 @@ export async function loadConnections(root: string, env: { SHIPTORIO_REPO?: stri
     const index = pairs.findIndex(pair => pair.repo === repo);
     const expected = index >= 0 ? pairs[index] : null;
     // Re-read under the same lock used by manual pairing. Never replace a new
-    // pair/session with an older environment grant, or recreate a removed record.
+    // pair/session with an older environment grant, or recreate a record removed
+    // concurrently after this load's initial snapshot. Local removal is not revocation.
     const selected = await updatePairing(repo, root, current => {
       if (!current && expected) throw new Error("Pairing changed while loading; retry the current connection");
       return current ? latest(current, candidate) : candidate;
