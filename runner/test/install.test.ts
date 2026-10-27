@@ -22,7 +22,7 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
     if (url.pathname.endsWith("/poll")) {
       const request = await req.json() as { code: string; secret: string }; expect(request).toEqual({ code, secret });
       const repo = starts === 1 ? "you/first" : "you/second", expires = Date.now() + 8 * 3600000;
-      const token = `${btoa(JSON.stringify({ repo, expires })).replace(/=/g, "")}.signature`; tokens.set(repo, token);
+      const token = `${btoa(JSON.stringify({ purpose: "runner", repo, pairId: repo, expires })).replace(/=/g, "")}.signature`; tokens.set(repo, token);
       return Response.json({ status: "approved", repo, token, expires });
     }
     const match = url.pathname.match(/^\/api\/runner\/(you\/\w+)\/(claim|heartbeat)$/);

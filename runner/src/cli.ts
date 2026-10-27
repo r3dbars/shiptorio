@@ -3,13 +3,13 @@ import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSign
 import { assembleCodex } from "./codex-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
-import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
-import { runnerHome, loadPairings, savePairing, pairMachine, joinMachine, type Pairing } from "./pairing";
+import { runnerHome, loadPairings, pairMachine, joinMachine, type Pairing } from "./pairing";
+import { loadConnections, persistRenewal } from "./grant-store";
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
@@ -167,11 +167,7 @@ async function api(pair: Pairing, action: keyof typeof responseSchemas, body: un
 async function renewPairing(pair: Pairing) {
   if (pair.expires > Date.now() + 60 * 60 * 1000) return;
   const renewed = await api(pair, "renew", {});
-  Object.assign(pair, renewed);
-  if (process.env.SHIPTORIO_REPO === pair.repo) {
-    const file = resolve(root, ".dev.vars");
-    await Bun.write(file, `SHIPTORIO_URL=${base}\nSHIPTORIO_REPO=${pair.repo}\nSHIPTORIO_RUNNER_TOKEN=${pair.token}\n`, { mode: 0o600 }); await chmod(file, 0o600);
-  } else await savePairing(pair, root);
+  await persistRenewal(root, pair, renewed);
 }
 async function execute(job: Job, pair: Pairing) {
   const repo = pair.repo;
@@ -309,13 +305,7 @@ async function execute(job: Job, pair: Pairing) {
 
 }
 async function connections() {
-  const pairs = await loadPairings(root);
-  const repo = process.env.SHIPTORIO_REPO, token = process.env.SHIPTORIO_RUNNER_TOKEN;
-  if (repo && token && !pairs.some(p => p.repo === repo)) {
-    const claims = JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
-    pairs.push({ repo, token, expires: claims.expires });
-  }
-  return pairs;
+  return loadConnections(root, { SHIPTORIO_REPO: process.env.SHIPTORIO_REPO, SHIPTORIO_RUNNER_TOKEN: process.env.SHIPTORIO_RUNNER_TOKEN });
 }
 await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 let pairs = await connections();
