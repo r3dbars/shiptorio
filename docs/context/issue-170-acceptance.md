@@ -73,3 +73,10 @@ explicit Launch. Do not implement the issue outside that runner path.
   usage overages, at account scope. No other Worker code or configuration changed.
 - PR #249 separately preserves the password/origin/rate-limit checks on an access
   fast path; it does not substitute for adequate runner runtime headroom.
+- After the upgrade, ten consecutive authenticated runner/status requests all
+  returned 200, preserving the same awaiting-approval job. Restarted only the
+  isolated current-source Shiptorio watcher; no claim errors observed during the
+  initial follow-up. The exact approval button is visible in the real game.
+- PR #249 deployed green as 40f65897c3b9291afa4c0da6e510bb4468e2483e;
+  Deploy https://github.com/r3dbars/shiptorio/actions/runs/40427939355 succeeded
+  and the live version matched. No issue #170 build or Launch has happened yet.
