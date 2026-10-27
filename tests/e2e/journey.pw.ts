@@ -26,7 +26,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     if (m.type() === 'error' || m.text().includes('bad message from server')) errors.push(`${m.text()} ${m.location().url}`); });
   page.on('websocket', ws => {
     ws.on('framesent', ({ payload }) => {
-      if (typeof payload !== 'string') return;
+      if (typeof payload !== 'string' || payload === 'ping') return;
       const raw = JSON.parse(payload);
       if (raw.type === 'choose_move') choices.push({ moveId: raw.moveId, optionId: raw.optionId });
     });
@@ -134,6 +134,7 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   try {
     await press();
     await page.clock.fastForward(200);
+    await expect(launch).toHaveClass(/\bdown\b/);
     await release();
     await expect(launch).not.toHaveClass(/\bdown\b/);
     expect(choices).toHaveLength(before);
