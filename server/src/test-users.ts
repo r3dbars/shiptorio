@@ -86,7 +86,7 @@ export function testUserRoutes(app: Hono<any>): void {
     const match = url.pathname.match(/^\/api\/repos\/([^/]+\/[^/]+)(?:\/|$)/);
     const sourceRead = ["/api/setup/status", "/api/sources"].includes(url.pathname) && c.req.method === "GET";
     if (match || sourceRead) {
-      if ((match?.[1] ?? url.searchParams.get("repo")) !== repo || /\/runner(?:\/|$)/.test(url.pathname)) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
+      if ((match?.[1] ?? url.searchParams.get("repo")) !== repo || /\/runner(?:\/|$)/.test(url.pathname) && !(c.req.method === "GET" && url.pathname.endsWith("/runner/status"))) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
       // The local fixture service re-enters this same real Worker after installing the outbound
       // GitHub/Spark stubs. A flag alone cannot open this route: the service AND private hop key
       // are required. Remote staging always goes through its separate isolated service.
@@ -102,7 +102,7 @@ export function testUserRoutes(app: Hono<any>): void {
     }
     if (/^\/(?:connect|admin|setup|github)(?:\/|$)/.test(url.pathname) || /^\/api\/(?:runner|account|setup|sources|empire)/.test(url.pathname) || url.pathname === "/auth/owner-session") return c.json({ error: "Test account operation is not permitted" }, 403);
     // Test accounts may use ordinary persisted preferences/progress and the built client only.
-    if (url.pathname.startsWith("/api/") && !/^\/api\/(?:me(?:\/|$)|version$|health$|telemetry\/config$)/.test(url.pathname)) return c.json({ error: "Test account operation is not permitted" }, 403);
+    if (url.pathname.startsWith("/api/") && !/^\/api\/(?:me(?:\/|$)|version$|health$|flags$|telemetry\/config$)/.test(url.pathname)) return c.json({ error: "Test account operation is not permitted" }, 403);
     return next();
   });
 }

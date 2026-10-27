@@ -41,6 +41,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun x playwright install --with-deps chromium
       - run: bun run playtest:bot -- --persona test-newbie --url https://shiptorio.dev --out playtest/out/staging
+        env:
+          SHIPTORIO_TEST_PASSWORD: ${{ secrets.SHIPTORIO_TEST_PASSWORD }}
       - name: File each unique staging failure once
         if: failure()
         run: node playtest/bot/report-issues.mjs playtest/out/staging/report.json
