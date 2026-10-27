@@ -201,30 +201,30 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
     setAt(at + 1);
   };
 
-  // the camera, per beat
+  // the camera, per beat: always close on the one thing the beat is about, never the whole factory. The art is
+  // revealed by playing, not by the tour (Justin's playtest, 2026-10-27).
   const cam: TourCam = useMemo(() => {
     const f = (focus: string | null): TourCam => ({ focus, wide: null });
-    const w = (wide: number): TourCam => ({ focus: null, wide });
     switch (at) {
       case 0:
-        return w(0.85);
+        return f("src:github");
       case 1:
-        return has("assembler-1") ? f("m:assembler-1") : w(0.85);
+        return has("assembler-1") ? f("m:assembler-1") : f("src:github");
       case 2:
-        return f("gate-1");
+        return f("m:launch-pad");
       case 3:
-        return done ? f("m:launch-pad") : tourAt >= 0 && tourAt < 3 ? f(VERIFY_TOUR[tourAt]) : f("gate-1");
+        return done ? f("m:launch-pad") : tourAt >= 0 && tourAt < 3 ? f(VERIFY_TOUR[tourAt]) : f("m:launch-pad");
       case 4:
-        return done ? w(0.8) : f("gate-1");
+        return f("m:launch-pad");
       case 5:
-        return done && turret ? f(`m:${turret.id}`) : caught ? f("verify-1") : w(0.8);
+        return done && turret ? f(`m:${turret.id}`) : f("verify-1");
       case 6:
         return sentry ? f("m:ore-sentry") : f("src:sentry");
       default:
-        return w(1.0);
+        return f("m:launch-pad");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [at, done, tourAt, !!caught, sentry, turret?.id, has("assembler-1")]);
+  }, [at, done, tourAt, sentry, turret?.id, has("assembler-1")]);
 
   // a tap on the map: the Sentry mine is the beat-6 move
   const pick = (key: string | null) => {

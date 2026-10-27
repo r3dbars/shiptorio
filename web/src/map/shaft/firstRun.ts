@@ -6,6 +6,11 @@
 //
 // The darkness is a few lines of shader patched into the shaft's own materials (inside its footprint only), so
 // the art stays as it is and a fully lit factory renders exactly as before.
+//
+// Build as you go (?buildout=1, buildout.ts) drives the same light from builds instead of state, moves the pool of
+// light to the next build site, and adds the other half: a triangle tagged with a piece that isn't built (or hasn't
+// risen that far) isn't drawn at all. The tag rides in a vertex attribute, `frPiece` (or `frPieceI` per instance):
+// 0 and 1 mean nothing (what an untagged mesh reads), 2 + piece + how far along it sits (0-1) otherwise.
 
 import * as THREE from "three";
 
@@ -62,9 +67,33 @@ vec3 frShade(vec3 c) {
 }
 `;
 
+// the piece tags (buildout.ts): drop what isn't built
+const HIDE_V = /* glsl */ `
+attribute float frPiece;
+#ifdef USE_INSTANCING
+attribute float frPieceI;
+#endif
+uniform vec4 frRise[16];
+varying float vFrGone;
+`;
+const HIDE_MAIN = /* glsl */ `
+{ float frA = frPiece;
+#ifdef USE_INSTANCING
+  frA = max(frA, frPieceI);
+#endif
+  vFrGone = 0.0;
+  if (frA >= 2.0) {
+    int frP = int(frA) - 2;
+    float frR = frRise[frP >> 2][frP & 3];
+    if (frR < 1.0 && fract(frA) >= frR) vFrGone = 1.0;
+  } }
+`;
+
 export class FirstRunLight {
   /** floors lit so far (never goes down while this map is open) */
   level = -1;
+  /** the spot was placed by hand (buildout): set() leaves it alone */
+  private spotted = false;
   private readonly lit = new THREE.Vector4(1, 1, 1, 1);
   private readonly goal = new THREE.Vector4(1, 1, 1, 1);
   private readonly uniforms = {
@@ -72,7 +101,21 @@ export class FirstRunLight {
     frNext: { value: new THREE.Vector4() },
     frSpot: { value: new THREE.Vector4(MINES.github.x, MINES.github.y, MINE_FACE_Z, 0) },
     frRootInv: { value: new THREE.Matrix4() },
+    frRise: { value: Array.from({ length: 16 }, () => new THREE.Vector4(1, 1, 1, 1)) },
   };
+
+  /** Build as you go: the rise per piece (buildout.ts owns the array, the shader reads it every frame). */
+  bindRise(rise: THREE.Vector4[]) {
+    this.uniforms.frRise.value = rise;
+  }
+
+  /** Build as you go: the pool of light sits on the next build site (root coords, radius), or nowhere. */
+  spotAt(at: [number, number, number, number] | null) {
+    this.spotted = true;
+    const s = this.uniforms.frSpot.value;
+    if (at) s.set(...at);
+    else s.w = 0;
+  }
 
   /** Take the factory's lit floors. Returns the floor that just lit (after the first look), or null. */
   set(n: number, calm: boolean): Floor | null {
@@ -81,7 +124,7 @@ export class FirstRunLight {
     this.level = n;
     for (let i = 0; i < 4; i++) this.goal.setComponent(i, i < n ? 1 : 0);
     if (first || calm) this.lit.copy(this.goal);
-    this.uniforms.frSpot.value.w = n === 0 ? 3.6 : 0;
+    if (!this.spotted) this.uniforms.frSpot.value.w = n === 0 ? 3.6 : 0;
     this.write(0, calm);
     return first ? null : FLOORS[n - 1];
   }
@@ -90,9 +133,10 @@ export class FirstRunLight {
     return this.level >= 0 && this.level < 4;
   }
 
-  /** Patch every material under the shaft's root (after build and bake), unless it's all lit already. */
-  patch(root: THREE.Object3D) {
-    if (!this.dark) return;
+  /** Patch every material under the shaft's root (after build and bake), unless it's all lit already (and, with
+   * `hide`, nothing is waiting to be built). */
+  patch(root: THREE.Object3D, hide = false) {
+    if (!this.dark && !hide) return;
     root.updateMatrixWorld(true);
     this.uniforms.frRootInv.value.copy(root.matrixWorld).invert();
     const u = this.uniforms;
@@ -104,6 +148,7 @@ export class FirstRunLight {
         if (seen.has(m) || (m as THREE.ShaderMaterial).isShaderMaterial || m.userData.firstRun) continue;
         seen.add(m);
         m.userData.firstRun = true;
+        const tags = hide;
         const before = m.onBeforeCompile;
         m.onBeforeCompile = (sh, r) => {
           before.call(m, sh, r);
@@ -111,6 +156,12 @@ export class FirstRunLight {
           const at = ["#include <tonemapping_fragment>", "#include <fog_fragment>"].find((c) => sh.fragmentShader.includes(c));
           if (!at || !sh.vertexShader.includes("#include <project_vertex>")) return;
           Object.assign(sh.uniforms, u);
+          if (tags && sh.fragmentShader.includes("#include <clipping_planes_fragment>")) {
+            sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>\n${HIDE_V}`).replace("#include <project_vertex>", `#include <project_vertex>\n${HIDE_MAIN}`);
+            sh.fragmentShader = sh.fragmentShader
+              .replace("#include <common>", "#include <common>\nvarying float vFrGone;")
+              .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vFrGone > 0.5) discard;");
+          }
           sh.vertexShader = sh.vertexShader
             .replace("#include <common>", "#include <common>\nuniform mat4 frRootInv;\nvarying vec3 vFrPos;")
             .replace(
@@ -120,7 +171,7 @@ export class FirstRunLight {
           sh.fragmentShader = sh.fragmentShader.replace("#include <common>", `#include <common>\n${SHADE}`).replace(at, `gl_FragColor.rgb = frShade(gl_FragColor.rgb);\n${at}`);
         };
         const key = m.customProgramCacheKey.bind(m);
-        m.customProgramCacheKey = () => `${key()}|firstRun`;
+        m.customProgramCacheKey = () => `${key()}|firstRun${tags ? "|tags" : ""}`;
         m.needsUpdate = true;
       }
     });

@@ -8,9 +8,9 @@ type Props = { className?: string; decorative?: boolean };
 export function Wordmark({ width = 300, className, decorative }: Props & { width?: number }) {
   return (
     <img
-      src="/brand/wordmark.svg?v=foundry-s3"
+      src="/brand/wordmark.svg?v=foundry-o2"
       width={width}
-      height={Math.round((width * 240) / 1132)}
+      height={Math.round((width * 240) / 1085)}
       alt={decorative ? "" : BRAND.wordmarkAlt}
       aria-hidden={decorative || undefined}
       className={className}

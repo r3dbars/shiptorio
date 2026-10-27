@@ -36,6 +36,17 @@ const mined = {
 };
 
 describe("whatsNext", () => {
+  test("play first, sign in later: the demo shop's first rockets unlock your own repo", () => {
+    const one = factory({ metrics: { rockets: 1, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 1 } });
+    expect(whatsNext(one, { sandbox: true }).cta.action).toEqual({ do: "signin" });
+    // not without a server to sign in to, not before the first rocket, and it steps aside after two more
+    expect(whatsNext(one).cta.action.do).not.toBe("signin");
+    expect(whatsNext(factory({ metrics: { rockets: 0, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 0 } }), { sandbox: true }).cta.action.do).not.toBe("signin");
+    expect(whatsNext(factory({ metrics: { rockets: 3, bitersKilled: 0, escapedDefects: 0, customersAnswered: 0, usersUnblocked: 0, shipScore: 3 } }), { sandbox: true }).cta.action.do).not.toBe("signin");
+    // a PR on the pad still launches first
+    expect(whatsNext(factory({ items: [item("on_pad", 2)], metrics: one.metrics }), { sandbox: true }).cta.action.do).toBe("launch");
+  });
+
   test("a PR on the pad comes first", () => {
     const n = whatsNext(factory({ items: [item("launched", 1), item("on_pad", 2)], deck: [] }));
     expect(n.cta.action).toEqual({ do: "launch", itemId: "it-2" });

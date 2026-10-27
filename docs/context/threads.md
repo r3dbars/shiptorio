@@ -11,6 +11,16 @@
 - Machine taps play when the camera flies in (`tapFor` in steamIron, called from `useFactorySound`); close-ups get a mood layer (working / stuck / rework / idle, `moodOf`); the hold-to-launch button is a 4-tick countdown clank; card Continue / Later, unlock, merged, caught a bug and ore arriving replaced the chiptune versions. Repair sounds (`repair_pry`, `repair_boiler`, `repair_cart`) are ready for the first-run repair slice.
 - Music: Justin hasn't picked tracks yet, so the current score stays.
 
+## Let players play first, sign in later (Claude, 2026-10-27)
+
+- A bare visit plays the welcome tour, then drops signed-out players straight into the demo shop sandbox. GitHub sign-in is an unlock: the floor card's "Demo shop · Use your repo" chip, and a Suggested card after the first rocket. See docs/context/accounts.md "Play first". Codex prompt 3 (guest accounts, server side) builds on this; the intro story/look stays with "Fix the onboarding from Justin's playtest".
+
+## Build the agent loop that picks the bottleneck (Claude, 2026-10-27)
+
+- Loop core of the bottleneck brain (docs/BRAIN.md): `server/src/diagnose.ts` (one bottleneck + one unlock per pass, memory of Later/Continue/wins, throttle: main-signal change or 30 min, 24 a day, stops at half the model budget, rule fallback), `server/src/unlocks.ts` (playbook by signal kind; actions are only `inspect_bottleneck`, `connect_source`, `ask_goal`, everything else is a link), `server/src/signals/index.ts` (collector registry, `bind()` for collectors with their own ctx, plus the `factory:*` collector over bottleneck.ts).
+- Factory: `kickBrain` runs off the tick (one pass in flight, ≥30 s apart), stores `brainMemory`, `brainSignals`, `brainDiagnoses` (last 50, for the eval harness). Model calls go through `Factory.think("diagnose")`. Behind the `brain` flag, off by default.
+- Collector threads add one line to `COLLECTORS`. Eval entry point: `runDiagnose()` with an injectable `think`.
+
 ## Give Spark tools and full understanding (Claude, 2026-10-27)
 
 - Owns Spark's tool layer: `server/src/spark-tools.ts` (toolbox, planner loop, review loop) and `spark-context.ts` (what the tools see). The "Make Meta Muse Spark central" thread keeps the audit (docs/context/spark-audit.md); this thread owns the planner and review prompts.
@@ -390,6 +400,12 @@ compositor. Preserve actual 3D rendering and every test assertion, deadline and
 visual baseline. Extracted narrowly from the CI performance lane; full370 stays
 for the next batch. Failed40574810643 is retained.
 
+## See what players say yes and no to (Claude, Oct 27, 2026)
+
+Card tap log + eval: every dealt card, the planner's reason, the tap (Continue/other/Later/Never chip/untapped),
+time to decide and the approved work's outcome go to D1 `card_taps`. `/admin/taps` shows yes rates by kind and
+area, model vs rules, most skipped and outcome quality; `signals/taps.ts` is the brain's taps collector and the
+game master reads a short `taps` brief. Doc: [taps.md](taps.md). Meta API audit: [meta-api.md](meta-api.md) (native structured output behind `SPARK_NATIVE_JSON=1`; native tools/Responses API deferred). Migration 0016 may need renumbering in the batch.
 ## Vertical judge clock and suite completion
 
 Codex:72219fb fixed the desktop journey (hosted2.2m pass) but the separate
@@ -404,3 +420,7 @@ complete evidence. No production runtime or visual baselines change.
 Added advisory CodeQL, grouped weekly dependency updates, private reporting/scope policy,
 and HTML response-header regression coverage preserving the preview nonce. Full-history
 secret-scan counts and validation receipts are recorded in the PR; see [security.md](security.md).
+
+## Codex — isolated release integration candidate (2026-10-27)
+
+Integrated Claude batch #427 at `c75b4de` onto root release #432 checkpoint `ff75a044` using a real merge parent. Kept the factory initialization/inventory extraction imports alongside the new goals/Spark imports; retained the release security, redaction, streamed webhook boundaries and Keychain fixes. Renumbered card taps to `0018_card_taps.sql` after the storage migration `0017`. Types and the focused migration/account-data/GitHub lifecycle/factory/taps tests pass (55 tests). Guest backend/personas, factory-generated #373, and held #406/#417 are excluded. This is a review candidate, not a production release; final combined checks and root acceptance remain required.

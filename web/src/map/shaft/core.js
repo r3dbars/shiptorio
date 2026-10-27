@@ -270,9 +270,9 @@ export function createIron(opts) {
   I.K = K;
   I._fx = updateFx;
   // Point lights are rationed: every one costs every lit pixel on a phone. Quota per module (all instances of a
-  // machine type share it), and a hard cap for the whole scene. Extras silently become dummies.
-  const LIGHT_QUOTA = { world: 2, underside: 3, belts: 0, planner: 1, assembler: 2, ci: 0, check: 0, verify: 1, review: 0, gate: 1, launch: 2, orbit: 0, measure: 0, steam: 0, dynamo: 0, battery: 0, geothermal: 0 };
-  const LIGHT_CAP = opts.lightCap === undefined ? 12 : opts.lightCap;
+  // machine type share it), and a hard cap for the whole scene. 'engine' is the floating city's aether engine part. Extras silently become dummies.
+  const LIGHT_QUOTA = { world: 2, underside: 3, belts: 0, planner: 1, assembler: 2, ci: 0, check: 0, verify: 1, review: 0, gate: 1, launch: 2, engine: 1, orbit: 0, measure: 0, steam: 0, dynamo: 0, battery: 0, geothermal: 0 };
+  const LIGHT_CAP = opts.lightCap === undefined ? 13 : opts.lightCap; // 12 + the floating city's aether engine (?artpass=1)
   const lightsUsed = {}; let lightsTotal = 0;
   const dummyLight = () => ({ intensity: 0, color: new THREE.Color(), position: new V3(), distance: 0, visible: false, isDummy: true });
   function kitFor(mod) {

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Floor build (dev)</title>
+    <!-- dev only: replay a floor of the floating city being built (src/map/shaft/floorbuild.ts) in the real shaft.
+           ?floor=build|checks|launch   which floor (default checks)    ?at=3.2   hold the build at 3.2 s (screenshots)
+           ?reduced=1   the reduced-motion fade    ?speed=0.25   slow motion    ?artpass=1   the floating city's new art
+           ?bake=0   skip the static merge (floors are then found by their userData.floor tags)
+         window.FLOORBUILD: { play(id), at(sec), run, info() } for the console and screenshots. -->
+    <style>
+@font-face { font-family: 'Silkscreen'; font-weight: 400; src: url('/fonts/silkscreen-400.woff2') format('woff2'); }
+@font-face { font-family: 'Silkscreen'; font-weight: 700; src: url('/fonts/silkscreen-700.woff2') format('woff2'); }
+:root { --bg: #0b0806; --panel: rgba(14, 10, 8, 0.9); --line: #5a4434; --ink: #f4ead8; --dim: #b8a48a; --amber: #ffb020; --focus: #6fb2ff; --pixel: 'Silkscreen', 'Courier New', monospace; color-scheme: dark; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); overflow: hidden; }
+#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+.card { background: var(--panel); border: 2px solid var(--line); outline: 2px solid #000; }
+#ctrl { position: fixed; right: max(10px, env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; z-index: 5; align-items: center; justify-content: flex-end; max-width: calc(100% - 20px); }
+.tbtn { font: 400 10px/1 var(--pixel); letter-spacing: 0.06em; color: var(--ink); background: rgba(20, 14, 10, 0.94); border: 2px solid var(--line); min-height: 30px; padding: 0 9px; cursor: pointer; white-space: nowrap; }
+.tbtn:hover { border-color: var(--dim); }
+.tbtn[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: #120c02; }
+.tbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#meter { font: 400 9px/1 var(--pixel); letter-spacing: 0.08em; color: var(--dim); min-width: 92px; text-align: right; }
+#loading { position: fixed; inset: 0; display: grid; place-items: center; font: 700 13px var(--pixel); letter-spacing: 0.12em; color: var(--dim); z-index: 9; background: var(--bg); }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage" aria-label="A floor of the shaft being built"></canvas>
+    <div id="loading">BUILDING THE SHAFT…</div>
+    <div id="ctrl" class="card">
+      <button class="tbtn" data-floor="build">BUILD</button><button class="tbtn" data-floor="checks">CHECKS</button><button class="tbtn" data-floor="launch">LAUNCH</button>
+      <button class="tbtn" id="slow" aria-pressed="false">SLOW</button><button class="tbtn" id="calm" aria-pressed="false">REDUCED</button>
+      <span id="meter"></span>
+    </div>
+    <script type="module">
+import * as THREE from "three";
+import { createIron } from "/src/map/shaft/core.js";
+import { defaultPlan, makeLayout } from "/src/map/shaft/layout.js";
+import { bakeShaft } from "/src/map/shaft/bake.ts";
+import { ShaftStage } from "/src/map/shaft/stage.ts";
+import { buildFloor, floorPieces, FLOOR_BUILD_SECONDS } from "/src/map/shaft/floorbuild.ts";
+
+THREE.ColorManagement.enabled = false;
+const q = new URLSearchParams(location.search);
+// each floor framed with the floor below it, where the crane stands
+const FRAME = { build: { at: [0, -6.5, 6], h: 30 }, checks: { at: [0, 6, -4.5], h: 23 }, launch: { at: [0, 17, -15.5], h: 23 } };
+
+const canvas = document.getElementById("stage");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.BasicShadowMap;
+renderer.info.autoReset = false;
+
+const I = createIron();
+for (const [, load] of Object.entries(import.meta.glob("/src/map/shaft/modules/*.js")).sort()) (await load()).default?.(I);
+const layout = makeLayout(defaultPlan());
+const stage = new ShaftStage(I, layout);
+I.build(stage.scene, stage.root, layout, {});
+stage.applyLook();
+if (q.get("bake") !== "0") bakeShaft(I, stage.root);
+stage.setSize(innerWidth, innerHeight);
+renderer.setSize(innerWidth, innerHeight, false);
+
+let floor = FRAME[q.get("floor")] ? q.get("floor") : "checks";
+let speed = Number(q.get("speed") ?? 1) || 1, reduced = q.get("reduced") === "1", run = null, tw = 0;
+const meter = document.getElementById("meter");
+function frame(id) {
+  const f = FRAME[id], a = innerWidth / innerHeight;
+  stage.setView("free");
+  stage.rootToWorld(...f.at, stage.tgtGoal);
+  stage.tgt.copy(stage.tgtGoal);
+  // a phone fits the deck's width
+  stage.viewH = stage.viewGoal = Math.max(f.h, a < 1 ? 40 / a / 1.6 : 0);
+}
+function play(id = floor) {
+  run?.cancel();
+  floor = id;
+  // the floors above aren't built yet
+  const order = ["build", "checks", "launch"];
+  for (const f of order) for (const o of floorPieces(I, f)) o.visible = order.indexOf(f) < order.indexOf(id);
+  // and their machines aren't either (in the game Build As You Go raises those after the floor)
+  const top = { build: 0, checks: 11, launch: 22 }[id];
+  for (const st of I.stationList) st.holder.visible = st.y < top - 1;
+  frame(id);
+  run = buildFloor(I, id, { reduced, speed: 1 });
+  tw = 0;
+  document.querySelectorAll("[data-floor]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.floor === id)));
+  return run;
+}
+/** hold the build at sec seconds (fresh run, stepped there in small ticks) */
+function at(sec) {
+  play(floor);
+  for (let t = 0; t < sec - 1e-6; t += 1 / 30) run.update(Math.min(1 / 30, sec - t));
+  render();
+}
+function render() {
+  renderer.info.reset();
+  stage.render(renderer);
+  meter.textContent = run ? `${(run.progress * (reduced ? 1 : FLOOR_BUILD_SECONDS)).toFixed(1)}S · ${renderer.info.render.calls} CALLS` : "";
+}
+document.querySelectorAll("[data-floor]").forEach((b) => (b.onclick = () => play(b.dataset.floor)));
+const slow = document.getElementById("slow"), calm = document.getElementById("calm");
+slow.setAttribute("aria-pressed", String(speed < 1));
+calm.setAttribute("aria-pressed", String(reduced));
+slow.onclick = () => (speed = speed < 1 ? 1 : 0.25, slow.setAttribute("aria-pressed", String(speed < 1)), play());
+calm.onclick = () => (reduced = !reduced, calm.setAttribute("aria-pressed", String(reduced)), play());
+addEventListener("resize", () => (renderer.setSize(innerWidth, innerHeight, false), stage.setSize(innerWidth, innerHeight), frame(floor)));
+
+let last = performance.now(), t = 0;
+function loop(now) {
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
+  last = now;
+  t += dt;
+  I.step(t, dt);
+  // replay it after a beat
+  if (run?.update(dt * speed)) (tw += dt) > 1.6 && play();
+  render();
+  requestAnimationFrame(loop);
+}
+window.FLOORBUILD = { I, stage, renderer, play, at, get run() { return run; }, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }), ready: true };
+document.getElementById("loading").hidden = true;
+if (q.has("at")) at(Number(q.get("at")));
+else (play(), requestAnimationFrame(loop));
+    </script>
+  </body>
+</html>

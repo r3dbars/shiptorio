@@ -65,6 +65,12 @@ where the first fix doesn't really fix the bug, so AI review fails it and the re
 | 10-27 02:41 | #13's doc contradicts the code (bug #2): launch held | https://github.com/r3dbars/shiptorio/pull/312 | Not a clean ship. `AUTOPILOT_HOLD=gh-7` |
 | 10-27 02:50 | Live `spark:loop`: 8/8 after the re-plan fix, 9/9 on the toolbox branch | https://github.com/r3dbars/shiptorio/pull/310 · https://github.com/r3dbars/shiptorio/pull/314 | Review now catches #12 and #13 offline |
 | 10-27 03:03 | #12 rework tap refused while gh-1 holds the one job slot | https://github.com/r3dbars/shiptorio/pull/312 | F25 |
+| 10-27 ~03:20 | GitHub rate limit parks gh-1/2/3/4/9 until midnight UTC | https://github.com/r3dbars/shiptorio/pull/312 · https://github.com/r3dbars/shiptorio/pull/323 | F26. Merged 12:18 |
+| 10-27 ~10:50 | Actions running again once the repo went public | | F24 cleared |
+| 10-27 11:20 | Runner pairing expired overnight: renew and heartbeat 401 | | F27. Deck's top card: "Plug in Claude or ChatGPT" |
+| 10-27 14:45 | Three browser pair codes expire unseen; one killed by ECONNRESET | https://github.com/r3dbars/shiptorio/pull/339 | F28. Merged 15:59 |
+| 10-27 ~16:30 | Mac runner handed to Codex root for the Shiptorio #170 acceptance run | | Testing paused until it's released |
+| 10-27 17:24 | Testing#13 (#7, docs/SHIPPING.md) merged | https://github.com/r3dbars/Testing/pull/13 | Doc is true only once #2 ships |
 
 ## Friction log
 
@@ -146,3 +152,12 @@ Format: what hurt, how bad, what we did. Fixed items stay for the record.
 - **F25. One job slot plus a plan cap stalled rework.** While gh-1 was planning, the #12 rework tap was refused
   ("Factory job budget reached"), and the autopilot counted each refused tap toward its 3-plan cap. #312 counts only
   plans that started.
+- **F26. Rate-limit failures counted as planning failures.** The Testing app install shares GitHub quota with the busy
+  shiptorio repo. Each rate-limited plan counted toward the 3-failure cap, which then held five issues until UTC
+  midnight even though GitHub said retry in minutes. #312 keeps the count but retries at GitHub's own reset time;
+  #323 frees cooldowns recorded the old way.
+- **F27. A paired runner silently goes dark when its pairing expires.** The service kept running but every renew and
+  heartbeat got 401. The only player-visible sign was a generic "plug in a builder" card. Re-pairing needs a person at
+  a browser within 10 minutes, so an overnight expiry stalls an unattended factory until someone notices.
+- **F28. Pairing died on one dropped connection.** A single ECONNRESET on the poll ended `pair` and burned the code.
+  #339 retries network errors, 429 and 5xx until the code's own expiry.
