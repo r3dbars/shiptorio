@@ -118,6 +118,12 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - Implemented: per-repository capped reconnect backoff, private lease-bound recovery journal, automatic completion receipt retry, explicit subscription sign-in cards, and doctor auth/sandbox/pairing probes. Builds still require player approval; expired/revoked leases never resume automatically. No deployment requested.
 - Focused macOS validation: 54 tests passed, including real sandbox/publication tests and card lifecycle through Factory reload; HTTP polling smoke also passed with dropped requests and an expired fake sign-in. Added immutable patch recovery, automatic receipt replay even when claim is empty, and cached-auth failure latching. Local full validation after rebase: `bun run test:fast` passed (671 tests, 2 platform skips; 24 playtest cases / 306 decisions / no findings), plus `bun run build`. Includes real macOS sandbox/publication probes and a doctor subprocess test. PR checks and merge result are on the linked PR. Merge gate: CI and stranger-path checks green on the exact head; native GitHub auto-merge is disabled, so the chat performs that gate.
 
+## Real assembler edit doctor (Codex, 2026-10-26)
+
+- Branch `codex/runner-edit-doctor`: add an explicit real subscription edit probe, proving exact file bytes and untouched canaries in a disposable checkout. Basic doctor stays inference-free.
+- Integrates the active supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
+- Fixture tests reject no-op success, extra/unapproved edits and provider failure; public runner documentation describes the probe and nested Seatbelt failure. Production wiring and real provider proof are in progress.
+
 ## Codex (outside the Claude project)
 
 Only what Codex has pushed is visible here, not its live session. Codex commits show as "J B" or "Redbars". As of ~17:20 UTC:

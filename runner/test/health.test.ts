@@ -56,3 +56,16 @@ test("doctor CLI reports every category and a failing exit code without pairing 
     expect(out + err).not.toContain("Waiting for your approval");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("doctor's explicit edit probe runs only for a signed-in installed harness and reports real edit failure", async () => {
+  let calls = 0;
+  const options = { harnesses: ["codex"] as const, pairs: [], auth: async () => true, sandbox: async () => {}, pairing: async () => {}, editHarness: "codex" as const, edit: async () => { calls++; } };
+  const good = await diagnose({ ...options, harnesses: [...options.harnesses] });
+  expect(good.find(r => r.check === "edit:codex")?.ok).toBe(true); expect(calls).toBe(1);
+  const failed = await diagnose({ ...options, harnesses: [...options.harnesses], edit: async () => { throw Error("sandbox_apply Operation not permitted"); } });
+  expect(failed.find(r => r.check === "edit:codex")?.ok).toBe(false);
+  expect(failed.find(r => r.check === "edit:codex")?.detail).toContain("successful login/startup does not prove");
+  await diagnose({ ...options, harnesses: [...options.harnesses], auth: async () => false });
+  await diagnose({ ...options, harnesses: [] });
+  expect(calls).toBe(1);
+});
