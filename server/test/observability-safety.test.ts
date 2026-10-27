@@ -1,7 +1,7 @@
 import { expect, test, spyOn } from 'bun:test';
 import { Redactor, redact } from '../src/redact';
 import { inTrace, log, sentryOptions, telemetryTags } from '../src/telemetry';
-import { ShiptorioError, asError } from '../src/errors';
+import { ShiptorioError, asError, diagnosticError } from '../src/errors';
 import { BudgetError } from '../src/budget';
 import { OutboundError, RetryExhausted, retry } from '../src/reliability';
 import { RateLimitError } from '../src/rate-limit';
@@ -88,4 +88,15 @@ test('shared application objects are copied rather than mistaken for cycles', ()
   const state = { move, deck: [move] };
   expect(new Redactor().value(state)).toEqual(state);
   expect(redact(state)).toEqual(state);
+});
+
+test('transport captures a scrubbed Error graph before an SDK loses request context', () => {
+  const secret = canary();
+  const redactor = new Redactor({ TOKEN: secret });
+  const original = new Error(`outer ${secret}`, { cause: new Error(`inner ${secret}`) });
+  const error = diagnosticError(original, value => redactor.diagnostic(value));
+  expect(error instanceof Error).toBe(true);
+  expect(error.cause instanceof Error).toBe(true);
+  hidden(new Redactor().diagnostic(error), [secret]);
+  expect(original.message.includes(secret)).toBe(true);
 });

@@ -1,4 +1,4 @@
-import { asError } from "./errors";
+import { diagnosticError } from "./errors";
 import { identityAccountId } from "./account-identity";
 import { factoryDeleted } from "./account-lifecycle";
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -61,10 +61,12 @@ export function telemetryTags(fields: Record<string, unknown> = {}): Record<stri
   return Object.fromEntries(Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
 }
 export function capture(error: unknown, fields: Record<string, unknown> = {}): string {
-  // beforeSend scrubs the final SDK payload, including linked Error causes.
+  // Scrub while the request context is available, before the SDK queues work.
+  // beforeSend also scrubs the final SDK payload.
+  const redactor = new Redactor(context.getStore()?.env);
   const trace = currentTrace();
   const tags = { ...telemetryTags(fields), repo: fields.repo ?? trace?.repo, itemId: fields.itemId ?? trace?.itemId };
-  return Sentry.captureException(asError(error), { tags: Object.fromEntries(Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) });
+  return Sentry.captureException(diagnosticError(error, value => redactor.diagnostic(value)), { tags: Object.fromEntries(Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) });
 }
 export function report(error: unknown, event = 'exception', fields: Record<string, unknown> = {}): string {
   log('error', event, { ...fields, error });
