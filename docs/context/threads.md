@@ -450,3 +450,7 @@ sequence/snapshot/heartbeat wiring because browser-socket.ts does not own delive
 Contract/journey assertions recognize seq/pong; the deck fixture drains background
 check-in work and the goal assertion allows transport metadata. Comeback, sound,
 shaft, source/index.ts and other active lanes remain untouched.
+
+## Root release reconciliation (2026-10-27)
+
+Main received #427 as c5e23309 while #445 was completing its green older-base checks. Deploy40604211672 cancellation raced Cloudflare acceptance; root restored the recorded verified eb6a820 Worker using [Rollback40604702919](https://github.com/r3dbars/shiptorio/actions/runs/40604702919). Live version matched eb6a820 and anonymous factory access remained401. Preserve all merged main code in the repair candidate, apply only the reviewed buildout elapsed-clock backport, restore complete Pixel coverage and correct logical no-piece assertions. The reduced builder still has an observed4.5-second budget failure; older green #445 checks do not validate the newly combined candidate.
