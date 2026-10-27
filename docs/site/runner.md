@@ -101,3 +101,6 @@ files to uninstall the legacy service.
 
 Approving a plan stays bound to that exact issue and plan even if another card moves to
 the top of the deck. If the issue changes before approval, request a fresh plan.
+
+If old source alerts fill the check-in, one existing build or plan-approval card stays
+reachable. This only makes the decision visible; it does not approve a plan or start work.

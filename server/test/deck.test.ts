@@ -109,4 +109,31 @@ describe("runner decisions stay reachable in a full alert deck", () => {
     expect(deck.some(card => card.id === decision.id)).toBe(true);
     expect(deck.filter(card => card.id.startsWith("alert-"))).toHaveLength(11);
   });
+  it("reserves only one slot, preferring already planned consent, without reordering the selected deck", () => {
+    const s = state([item("gh-58", { updatedAt: clock })]);
+    const approval = runner("approve_runner_job"), plan = runner("plan_runner_job");
+    const deck = buildDeck(s, [...alerts(), plan, approval], { now: clock });
+    expect(deck).toHaveLength(12);
+    expect(deck.at(-1)?.id).toBe(approval.id);
+    expect(deck.some(card => card.id === plan.id)).toBe(false);
+    expect(deck.slice(0, 11).map(card => card.id)).toEqual(buildDeck(s, alerts(), { now: clock }).slice(0, 11).map(card => card.id));
+  });
+  it("honors explicit suppression and never promotes an ineligible or removed work item", () => {
+    const s = state([item("gh-58", { updatedAt: clock, state: "working" })]);
+    const approval = runner("approve_runner_job");
+    expect(buildDeck(s, [...alerts(), approval], { now: clock }).some(card => card.id === approval.id)).toBe(false);
+    expect(buildDeck(state(), [...alerts(), approval], { now: clock }).some(card => card.id === approval.id)).toBe(false);
+    expect(buildDeck(state([item("gh-58", { updatedAt: clock })]), [...alerts(), approval], { now: clock, suppressedIds: new Set([approval.id]) }).some(card => card.id === approval.id)).toBe(false);
+  });
+  it("never evicts executable cards or explicit third-defer and review escalation choices", () => {
+    const s = state([item("gh-58", { updatedAt: clock })]);
+    const executable = alerts().map(card => ({ ...card, options: [{ id: "go", label: "Review", recommended: true, actions: [{ tool: "inspect_bottleneck", args: {}, reason: "Check the real bottleneck" }] }] }));
+    const escalation = alerts().map(card => ({ ...card, id: `${card.id}:deferred` }));
+    const review = alerts().map(card => ({ ...card, kind: "review" as const }));
+    for (const protectedCards of [executable, escalation, review]) {
+      const deck = buildDeck(s, [...protectedCards, runner("plan_runner_job")], { now: clock });
+      expect(deck.map(card => card.id)).toEqual(buildDeck(s, protectedCards, { now: clock }).map(card => card.id));
+    }
+  });
+
 });
