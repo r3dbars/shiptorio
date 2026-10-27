@@ -75,23 +75,8 @@ function extras(step: StepId, L: Layout): { stations: string[]; paths: string[] 
   if (step === "planner") return { stations: plants(L.planner.id).map((s) => s.id), paths: names.filter((n) => n === "feed-0") };
   if (step === "checks")
     return { stations: L.checks.map((s) => s.id), paths: names.filter((n) => n === "ci-feed" || /^(lane|drop)-/.test(n) || n === "rework" || n === "rw-drop" || n === "rw-in") };
-  if (step === "launch") return { stations: L.pad ? [L.pad.id] : [], paths: names.filter((n) => n === "to-lift" || /^(to-gate|to-pad|gate-)/.test(n)) };
+  if (step === "launch") return { stations: [], paths: names.filter((n) => n === "to-lift" || /^(to-gate|to-pad|gate-)/.test(n)) };
   return { stations: [], paths: [] };
-}
-
-/** The machines a step raises where the player can see them (journey.resolve, plus the pad: its type is "launch"). */
-export function sitesOf(step: StepId, L: Layout): { stations: string[]; mines: string[] } {
-  const r = resolve(stepById(step).reveals, L);
-  const stations = [...r.stations];
-  if (stepById(step).reveals.some((p) => "station" in p && p.station === "pad") && L.pad && !stations.includes(L.pad.id)) stations.push(L.pad.id);
-  return { stations, mines: r.mines };
-}
-
-/** Where the camera parks for a step (journey.cameraFor, plus the pad). */
-export function cameraOf(step: StepId, L: Layout): string[] {
-  const target = cameraFor(stepById(step), L);
-  if (!target.length && stepById(step).camera && "station" in stepById(step).camera && L.pad) return [L.pad.id];
-  return target;
 }
 
 /** Which step raises each station, path and mine of this layout (anything left over: null). */
@@ -503,7 +488,7 @@ export class Buildout {
 
   private parkOn(id: StepId | null) {
     if (!id || !this.L) return;
-    const target = cameraOf(id, this.L);
+    const target = cameraFor(stepById(id), this.L);
     const key = target.join(",");
     if (key === this.parked || !target.length) return;
     this.parked = key;
@@ -598,7 +583,7 @@ export class Buildout {
     mo.phase = "burst";
     mo.t = 0;
     // the machine the camera's on bursts; a step that raised none (the tunnel) crackles at its site
-    const cam = cameraOf(mo.step, L);
+    const cam = cameraFor(stepById(mo.step), L);
     let target: THREE.Object3D | undefined = cam.map((k) => I.stations[k]?.holder).find((h) => h && mo.holders.includes(h));
     if (!target) {
       mo.anchor = new THREE.Group();
@@ -616,7 +601,7 @@ export class Buildout {
 
   private siteOf(step: StepId): THREE.Vector3 {
     const L = this.L!;
-    const r = sitesOf(step, L);
+    const r = resolve(stepById(step).reveals, L);
     const st = r.stations.map((id) => L.stations.find((s) => s.id === id)).find(Boolean);
     if (st) return new THREE.Vector3(st.x, st.y + 1, st.z);
     const m = r.mines[0] && MINES[r.mines[0]];
@@ -642,7 +627,7 @@ export class Buildout {
     this.clearChalk();
     if (!step || !this.root || !this.L || this.moment?.phase === "construct" || this.moment?.phase === "burst" || this.moment?.phase === "payoff") return;
     const L = this.L;
-    const r = sitesOf(step, L);
+    const r = resolve(stepById(step).reveals, L);
     const g = new THREE.Group();
     g.name = "buildout-chalk";
     g.userData.noBake = true;
