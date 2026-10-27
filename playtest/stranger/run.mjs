@@ -126,6 +126,8 @@ let signedIn = false;
 const consoleWarnings = [];
 const socketMessages = [];
 let sawFactoryWork = false;
+let resolveFactoryWork;
+const factoryWork = new Promise(resolve => { resolveFactoryWork = resolve; });
 let factoryState = {};
 page.on("websocket", socket => {
   socket.on("framereceived", frame => {
@@ -144,7 +146,10 @@ page.on("websocket", socket => {
           factoryState.items = [...byId.values()];
         }
       }
-      if (factoryState.items?.length) sawFactoryWork = true;
+      if (factoryState.items?.length) {
+        sawFactoryWork = true;
+        resolveFactoryWork();
+      }
       socketMessages.push({ type: value.type, text: value.text, itemCount: factoryState.items?.length, move: factoryState.move?.title });
     } catch (error) { consoleErrors.push(`Invalid factory frame: ${error}`); }
   });
@@ -267,10 +272,16 @@ try {
   await step("real factory work reaches the agent handoff", async () => {
     await page.getByText(/plug in claude or chatgpt/i).first().or(page.getByRole("region", { name: "Power", exact: true })).first().waitFor({ timeout: UI_TIMEOUT });
     // A sheet opened by URL alone is insufficient: real signed-install backlog must reach the browser.
-    await new Promise((resolve, reject) => {
-      const poll = setInterval(() => { if (sawFactoryWork) { clearInterval(poll); clearTimeout(deadline); resolve(); } }, 25);
-      const deadline = setTimeout(() => { clearInterval(poll); reject(new Error("No real factory backlog arrived over the live socket")); }, 10000);
-    });
+    // Resolve on the real frame, rather than waiting for the next polling tick.
+    // An arrival between the final poll and the deadline must not be rejected.
+    let deadline;
+    try {
+      await Promise.race([
+        factoryWork,
+        new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("No real factory backlog arrived over the live socket")), 10000); }),
+      ]);
+    } finally { clearTimeout(deadline); }
+    assert.equal(sawFactoryWork, true, "real factory backlog arrived over the live socket");
     report.powerOpenedAutomatically = await page.getByRole("region", { name: "Power", exact: true }).isVisible();
   });
   await step("the agent handoff reaches Power, not a dead end", async () => {
