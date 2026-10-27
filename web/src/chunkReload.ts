@@ -31,9 +31,10 @@ export function installChunkReload() {
     alert.append(refresh);
     document.body.append(alert);
   };
-  window.addEventListener("vite:preloadError", (event) => {
+  window.addEventListener("vite:preloadError", () => {
     // Vite catches errors even when React.lazy or a map fallback handles the rejection.
-    event.preventDefault();
+    // Let Vite reject with the original import error. Preventing that rejection makes
+    // its loader resolve undefined, causing unrelated property-access errors at boot.
     if (!recover()) notice();
   });
   const failed = (reason: unknown) => IMPORT_FAILURE.test(reason instanceof Error ? reason.message : String(reason));

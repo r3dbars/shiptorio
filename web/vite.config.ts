@@ -47,6 +47,17 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes("node_modules/three/") || id.includes("node_modules/.bun/three@")) return "three";
           if (/node_modules\/(\.bun\/)?(react|react-dom|scheduler)[@/]/.test(id)) return "react";
+          // Assign only code: putting entry CSS in the factory chunk would make the
+          // recovery bootstrap statically import the very chunk it must recover.
+          if (!/\.[cm]?[jt]sx?(?:\?|$)/.test(id)) return;
+          // Keep the core together for gzip efficiency, without promoting route-only pages,
+          // idle panels or shaft art into startup. A forest of tiny shared chunks costs more
+          // transfer bytes and dependency round trips on a cold phone connection.
+          if (/\/web\/src\/(main\.tsx|chunkReload\.ts)$/.test(id)) return;
+          // These two pure layout helpers are also used by the initial station panel.
+          if (/\/web\/src\/map\/shaft\/(waiting|plan)\.ts$/.test(id)) return "factory";
+          if (/\/web\/src\/(judge\/|lab\/|map\/shaft\/|ui\/(Onboarding|IslandBackdrop|CheckIn|HowItThinks)\.tsx$|sound\/foundryPlayer\.ts$|source\/live\.ts$)/.test(id)) return;
+          if (/\/(web|shared|server)\/src\//.test(id) || /node_modules\/(\.bun\/)?(@sentry|zod)[/@]/.test(id)) return "factory";
         },
       },
     },

@@ -4,13 +4,13 @@ import { gzipSync } from "node:zlib";
 
 // Cold startup through the first shaft frame (including its dynamically loaded art).
 // Updated from the measured optimized build; do not silently raise this on regressions.
-const BASELINE_GZIP_BYTES = 700_000; // calibrated below after the mobile measurement
+const BASELINE_GZIP_BYTES = 709_465; // Bun gzip bytes requested through the first shaft frame
 const LIMIT = Math.ceil(BASELINE_GZIP_BYTES * 1.10);
 const DIST = resolve(import.meta.dir, "../web/dist");
 type Chunk = { file: string; imports?: string[]; dynamicImports?: string[] };
-// These imports require another route, player action, or an idle callback. Everything new
+// These imports require another route or a player action. Idle-prefetched panels count. Everything new
 // is counted by default, so moving startup work behind import() cannot evade the budget.
-const DEFERRED = /^(src\/judge\/|src\/source\/live\.ts$|src\/ui\/(CheckIn|HowItThinks)\.tsx$|src\/sound\/foundryPlayer\.ts$)/;
+const DEFERRED = /^(src\/judge\/|src\/source\/live\.ts$|src\/sound\/foundryPlayer\.ts$)/;
 
 export function initialJS(manifest: Record<string, Chunk>) {
   const seen = new Set<string>();
@@ -36,10 +36,22 @@ async function testRecovery() {
   const recovery = await built.outputs[0].text();
   const browser = await chromium.launch();
   try {
-    for (const mode of ["transient", "persistent", "preload", "storage-blocked", "unrelated"] as const) {
+    for (const mode of ["transient", "persistent", "preload", "storage-blocked", "unrelated", "app-transient", "app-persistent"] as const) {
       let documents = 0, chunks = 0;
       const server = Bun.serve({ port: 0, fetch(req) {
         const path = new URL(req.url).pathname;
+        if (mode.startsWith("app-")) {
+          if (path === "/") documents++;
+          if (path.startsWith("/api/")) return Response.json({}, { status: 404 });
+          if (/^\/assets\/(App|factory)-.*\.js$/.test(path)) {
+            chunks++;
+            if (mode === "app-persistent" || documents === 1) return new Response("missing old app chunk", { status: 404 });
+          }
+          try {
+            const file = Bun.file(resolve(DIST, path === "/" ? "index.html" : path.slice(1)));
+            return new Response(file);
+          } catch { return new Response("missing", { status: 404 }); }
+        }
         if (path === "/recovery.js") return new Response(recovery, { headers: { "content-type": "text/javascript" } });
         if (path === "/chunk.js") {
           chunks++;
@@ -54,16 +66,24 @@ async function testRecovery() {
         return new Response(`<h1>Opening factory</h1><script type="module">import {installChunkReload} from "/recovery.js"; installChunkReload(); ${action};</script>`, { headers: { "content-type": "text/html" } });
       } });
       const context = await browser.newContext();
+      // Third-party fonts are irrelevant to missing-chunk recovery; keep the fixture offline.
+      await context.route("https://fonts.googleapis.com/**", (route) => route.abort());
+      await context.route("https://fonts.gstatic.com/**", (route) => route.abort());
       try {
         if (mode === "storage-blocked") await context.addInitScript(() => { Storage.prototype.setItem = () => { throw new Error("blocked"); }; });
         const page = await context.newPage();
-        await page.goto(`http://localhost:${server.port}/`, { waitUntil: "commit" });
-        if (mode === "transient") await expect(page.locator("h1")).toHaveText("Factory ready");
+        const errors: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        await page.goto(`http://localhost:${server.port}/${mode.startsWith("app-") ? "?source=sim&scenario=quiet-morning" : ""}`, { waitUntil: "commit" });
+        if (mode === "app-transient") await expect(page.locator("canvas.map")).toBeVisible({ timeout: 30_000 });
+        else if (mode === "transient") await expect(page.locator("h1")).toHaveText("Factory ready");
         else if (mode !== "unrelated") await expect(page.locator("#chunk-reload-notice")).toBeVisible();
         // Observation window catches a recurring reload, without retrying a failed test.
         await page.waitForTimeout(1500);
         expect(documents).toBe(mode === "storage-blocked" || mode === "unrelated" ? 1 : 2);
         if (mode === "transient") expect(chunks).toBe(2);
+        if (mode === "app-transient") expect(chunks).toBeGreaterThanOrEqual(2);
+        if (mode.startsWith("app-")) expect(errors).toEqual([]);
         console.log(`PASS chunk recovery: ${mode} (${documents} document requests)`);
       } finally { await context.close(); await server.stop(true); }
     }
@@ -74,6 +94,7 @@ if (import.meta.main) {
   if (process.argv.includes("--test")) await testRecovery();
   else {
     const manifest = JSON.parse(readFileSync(resolve(DIST, ".vite/manifest.json"), "utf8"));
+    if (manifest["index.html"].imports?.length) throw new Error("Recovery entry must not statically import game/vendor chunks");
     const files = initialJS(manifest);
     const bytes = files.reduce((sum, file) => sum + gzipSync(readFileSync(resolve(DIST, file))).length, 0);
     console.log(`Initial JS gzip: ${bytes.toLocaleString()} bytes / ${LIMIT.toLocaleString()} budget (${files.length} chunks; shaft art included)`);
