@@ -62,3 +62,40 @@ describe("installation token lifecycle", () => {
     } finally { globalThis.fetch = original; }
   });
 });
+
+describe("shared installation tokens", () => {
+  const kv = () => { const data = new Map<string, string>(); return { data, get: async (k: string, type?: string) => { const v = data.get(k); return v === undefined ? null : type === "json" ? JSON.parse(v) : v; }, put: async (k: string, v: string) => { data.set(k, v); }, delete: async (k: string) => { data.delete(k); } }; };
+  // A second module instance stands in for another Worker isolate with an empty in-memory cache.
+  const isolate = (n: number) => { const path = `../src/github.ts?isolate=${n}-${crypto.randomUUID()}`; return import(path) as Promise<typeof import("../src/github")>; };
+  it("another isolate reuses the encrypted KV token instead of minting, and never stores it in plaintext", async () => {
+    const cache = kv();
+    const env = { ...await credentials(), CACHE: cache, CRED_MASTER_KEY: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64") };
+    const original = globalThis.fetch; let issued = 0;
+    globalThis.fetch = (async () => Response.json({ token: `shared-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() })) as unknown as typeof fetch;
+    try {
+      const [a, b] = await Promise.all([isolate(1), isolate(2)]);
+      expect(await a.installationToken(env as never, 70)).toBe("shared-1");
+      expect(await b.installationToken(env as never, 70)).toBe("shared-1");
+      expect(issued).toBe(1);
+      expect([...cache.data.values()].join()).not.toContain("shared-1");
+      // Close to expiry, the shared copy is ignored and a fresh token replaces it.
+      const clock = Date.now; Date.now = () => clock() + 3300000;
+      try { expect(await (await isolate(3)).installationToken(env as never, 70)).toBe("shared-2"); } finally { Date.now = clock; }
+    } finally { globalThis.fetch = original; }
+  });
+  it("after GitHub refuses a token, the retry mints instead of reusing the shared copy", async () => {
+    const env = { ...await credentials(), CACHE: kv(), CRED_MASTER_KEY: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64") };
+    const original = globalThis.fetch; let issued = 0; const used: string[] = [];
+    globalThis.fetch = (async (url: any, init?: RequestInit) => {
+      if (String(url).endsWith("/access_tokens")) return Response.json({ token: `refused-${++issued}`, expires_at: new Date(Date.now() + 3600000).toISOString() });
+      used.push(new Headers(init?.headers).get("authorization")!);
+      return used.length === 1 ? new Response(null, { status: 401 }) : Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    try {
+      const [a, b] = await Promise.all([isolate(4), isolate(5)]);
+      await a.installationToken(env as never, 71);
+      expect(await b.gh("/test", await b.installationToken(env as never, 71))).toEqual({ ok: true });
+      expect(used).toEqual(["Bearer refused-1", "Bearer refused-2"]);
+    } finally { globalThis.fetch = original; }
+  });
+});
