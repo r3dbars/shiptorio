@@ -143,8 +143,9 @@ export const CASES: EvalCase[] = [
   },
   {
     id: "player-bottleneck", title: "4 PRs passed every check and wait on the player to launch",
-    signals: humBut(sig("factory", "queue_jam", 0.75, "4 PRs passed every check and wait on you to launch; oldest 30 h.", ["4 items on the launch pad", "Oldest wait 30 h"], { scope: "merge" })),
-    expect: { area: "ship", signal: "factory:queue_jam:merge" }, unlock: /launch|approve|decide|permit|merge|pad/i,
+    // The live collectors report the launch pad as repo:approve_queue (queue_jam skips the pad stage).
+    signals: humBut(sig("repo", "approve_queue", 0.75, "4 PRs passed every check and wait on you to launch; oldest 30 h.", ["4 items on the launch pad", "Oldest wait 30 h"])),
+    expect: { area: "ship", signal: "repo:approve_queue:repo" }, unlock: /launch|approve|decide|permit|merge|pad/i,
     why: "The machines are done; the human is the slowest station.",
   },
   {
