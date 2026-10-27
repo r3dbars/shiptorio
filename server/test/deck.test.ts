@@ -94,3 +94,19 @@ it("does not turn an earned permit card into a missing-proof merge card", () => 
   expect(enrichMove(permit, state()).options[0].id).toBe("allow");
   expect(enrichMove(permit, state()).locked).toBeUndefined();
 });
+
+describe("runner decisions stay reachable in a full alert deck", () => {
+  const clock = 5 * 60 * 60_000;
+  const alerts = () => Array.from({ length: 12 }, (_, n) => move(`alert-${n}`, { kind: "unblock", stage: "intake", createdAt: clock - 4 * 60 * 60_000, options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] }));
+  const runner = (tool: "plan_runner_job" | "approve_runner_job", id = tool) => move(id, { kind: "build", stage: "build", itemId: "gh-58", createdAt: clock, options: [{ id: tool === "plan_runner_job" ? "codex" : "approve", label: "Continue the build", recommended: true, actions: [{ tool, args: tool === "plan_runner_job" ? { harness: "codex" } : { jobId: "job-58" }, reason: "Player approval is required" }] }] });
+  for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps ${tool} visible after feedback resets the item's wait time`, () => {
+    const s = state([item("gh-58", { updatedAt: clock })]);
+    const decision = runner(tool);
+    const candidates = [...alerts(), decision];
+    expect(deckScore(candidates[0], s, clock)).toBeGreaterThan(deckScore(decision, s, clock));
+    const deck = buildDeck(s, candidates, { now: clock });
+    expect(deck).toHaveLength(12);
+    expect(deck.some(card => card.id === decision.id)).toBe(true);
+    expect(deck.filter(card => card.id.startsWith("alert-"))).toHaveLength(11);
+  });
+});
