@@ -59,7 +59,7 @@ async function fixture() {
   const aliceCookie = await signedInCookie(env, "alice", ["alice/app", "org/shared"], 11);
   const aliceSecond = (await createSession(env, {id: 11, login: "alice"}, "other-browser")).split(";")[0];
   const bobCookie = await signedInCookie(env, "bob", ["bob/app", "alice/app"], 22);
-  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (1, 'alice'), (2, 'bob'), (3, 'org')").run();
+  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login, account_id, account_type) VALUES (1, 'alice', 11, 'User'), (2, 'bob', 22, 'User'), (3, 'org', 33, 'Organization')").run();
   await DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES ('alice/app', 1), ('bob/app', 2), ('org/shared', 3)").run();
   await DB.prepare("INSERT OR REPLACE INTO user_installations (user_id, installation_id, account_login) VALUES (11, 1, 'alice'), (11, 3, 'org'), (22, 2, 'bob')").run();
   await DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('alice/app', 1, 'Fix', 'open'), ('bob/app', 2, 'Other', 'open')").run();
@@ -73,6 +73,26 @@ async function fixture() {
 }
 
 describe("account data controls", () => {
+  it("does not grant a recycled login retained export or deletion rights", async () => {
+    const {env, user, objects} = await fixture();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 11").run();
+    await env.DB.prepare("UPDATE installations SET account_id = 99 WHERE id = 1").run();
+    expect(await ownedRepos(env, user)).toEqual([]);
+    expect((await exportAccount(env, user)).factories).toEqual([]);
+    await expect(deleteAccount(env, user, ["alice/app"])).rejects.toThrow("exactly");
+    expect(objects.get("alice/app")!.data.size).toBeGreaterThan(0);
+    expect(await factoryDeleted(env.DB, "alice/app")).toBe(false);
+  });
+  it("retains verified numeric ownership after a rename and fails closed for legacy and org rows", async () => {
+    const {env, user} = await fixture();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 11").run();
+    await env.DB.prepare("UPDATE installations SET account_login = 'old-login' WHERE id = 1").run();
+    expect((await exportAccount(env, user)).factories.map(f => f.repo)).toEqual(["alice/app"]);
+    for (const sql of ["UPDATE installations SET account_id = NULL WHERE id = 1", "UPDATE installations SET account_id = 11, account_type = 'Organization' WHERE id = 1"]) {
+      await env.DB.prepare(sql).run(); expect(await ownedRepos(env, user)).toEqual([]);
+    }
+  });
+
   it("exports visible factory items, permits, research and saved logs, without raw runner jobs/credentials", async () => {
     const {env, user} = await fixture();
     const result = await exportAccount(env, user);
@@ -134,16 +154,19 @@ describe("account data controls", () => {
   });
   it("exports and purges both repo and global operational log copies, preserving other users", async () => {
     const {env, user, kv} = await fixture();
-    kv.set("ops:events:all:alice", JSON.stringify({userId: "alice", repo: "org/shared", event: "saved"}));
+    kv.set("ops:events:all:alice", JSON.stringify({userId: "github:user:11", repo: "org/shared", event: "saved"}));
     kv.set("ops:events:repo:alice/app:copy", JSON.stringify({repo: "alice/app", event: "saved"}));
     kv.set("ops:events:all:bob", JSON.stringify({userId: "bob", repo: "bob/app", event: "keep"}));
+    kv.set("ops:events:all:numeric-legacy", JSON.stringify({userId: "11", repo: "private/foreign", event: "foreign-numeric-login"}));
     const archive = await exportAccount(env, user);
+    expect(archive.activity.some(e => e.event === "foreign-numeric-login")).toBe(false);
     expect(archive.activity.some(e => e.event === "saved")).toBe(true);
     expect(archive.activity.some(e => e.event === "keep")).toBe(false);
     await deleteAccount(env, user, ["alice/app"]);
     expect(kv.has("ops:events:all:alice")).toBe(false);
     expect(kv.has("ops:events:repo:alice/app:copy")).toBe(false);
     expect(kv.has("ops:events:all:bob")).toBe(true);
+    expect(kv.has("ops:events:all:numeric-legacy")).toBe(true);
   });
   it("an in-flight operational log cannot recreate user keys after deletion", async () => {
     const {env, user, kv} = await fixture();
@@ -154,7 +177,7 @@ describe("account data controls", () => {
     const original = env.CACHE.put.bind(env.CACHE);
     env.CACHE.put = (async (key: string, value: string) => { if (key.startsWith("ops:")) {started(); await gate;} return original(key, value); }) as typeof env.CACHE.put;
     const tasks: Promise<unknown>[] = [];
-    inTrace({requestId: "delete-race", userId: "alice", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
+    inTrace({requestId: "delete-race", userId: "github:user:11", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
     await writing;
     await deleteAccount(env, user, ["alice/app"]);
     release();
@@ -180,7 +203,7 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).progress).not.toBeNull();
     await deleteAccount(env, user, ["alice/app"]);
     for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "spark_factory_calls", "spark_factory_budgets", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
-    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist ORDER BY login").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}, {login: "r3dbars", approved_by: "r3dbars"}]);
+    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist ORDER BY login").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}]);
   });
   it("exports the stable repo-id factory and erases both it and its frozen legacy object", async () => {
     const {env, user, objects} = await fixture();
