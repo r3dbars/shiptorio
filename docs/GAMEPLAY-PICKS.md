@@ -28,6 +28,19 @@ These combine recorded answers for the build plan; they are not additional expli
 - **Sound:** the author's proposed combination places steam-and-iron accents over the earlier hum base.
   The recorded answers remain Steam and iron (round 3) and Soft foundry hum (round 1).
 
+## Build as you go (Justin, 2026-10-27 20:06)
+
+Justin liked the dimmed tour (#357) on the local preview and asked for it to be the start: a fixed-ish camera,
+buildings that don't exist until you build them, each build a 5 to 8 second animated construction that bursts with
+electricity and stamps itself done, and a guided first issue followed issue → plan → build → checks → launch.
+
+- **Unbuilt means gone.** This supersedes the "faint silhouettes" half of r4-tease above: no silhouettes, only the
+  next site gets a chalk outline and stakes.
+- **The three repairs are builds 1, 2 and 4** (pry the tunnel, light the boiler, re-rail the cart), inside eight
+  builds that follow the first issue. r4-open, r3-firstrun (floors light as builds land) and r4-firstpick stand.
+- Free look and the two counters come after the first rocket, from one "Look around" card.
+- Behind `?buildout=1` until Justin plays it. Steps, triggers and hooks: `web/src/buildout/CONTRACT.md`.
+
 ## Round 4: the start of the game (14:28)
 
 | # | Question | Pick |
