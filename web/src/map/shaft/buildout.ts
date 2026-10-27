@@ -49,7 +49,8 @@ export function fullPlan(sp: ShaftPlan): ShaftPlan {
   const sources = p.sources?.includes("github") ? p.sources : ["github", ...(p.sources ?? [])];
   const first = assemblers[0].id;
   // a plant read off the state before its builder stands feeds nothing yet: it's the first builder's
-  const power = (p.power ?? []).map((x) => (x.type === "dynamo" && !x.feeds?.length ? { ...x, feeds: [first] } : x));
+  // and a plant feeding the placeholder planner feeds the skeleton's, or the key flips mid-build and the whole shaft rebuilds
+  const power = (p.power ?? []).map((x) => (x.type === "dynamo" && !x.feeds?.length ? { ...x, feeds: [first] } : x.feeds?.includes("planner") && planner.id !== "planner" ? { ...x, feeds: x.feeds.map((f) => (f === "planner" ? planner.id : f)) } : x));
   if (!power.some((x) => x.type === "steam")) power.unshift({ id: SKELETON.steam, type: "steam", feeds: [planner.id] });
   if (!power.some((x) => x.type !== "steam" && x.feeds?.includes(first))) power.push({ id: SKELETON.dynamo, type: "dynamo", feeds: [first], harness: "claude_code" });
   for (const x of power) labels[x.id] ??= x.type === "dynamo" ? "DYNAMO" : x.type.toUpperCase();

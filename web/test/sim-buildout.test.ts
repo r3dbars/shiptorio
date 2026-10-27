@@ -4,6 +4,8 @@ import { STARTER_ISSUE, stepFrom } from "../src/buildout/journey";
 import { connectSim } from "../src/sim/engine";
 import { applyPatch } from "../src/store";
 import { readConfig } from "../src/source";
+import { fullPlan } from "../src/map/shaft/buildout";
+import { planFromState } from "../src/map/shaft/plan";
 
 // Drive the simulator's timers by hand so a whole run takes milliseconds.
 let timers = new Map<number, { at: number; every?: number; fn: () => void }>();
@@ -146,5 +148,20 @@ test("skip ahead fills in the whole starter line and hands over to normal play",
   const f = run();
   f.build("all");
   for (const id of ["ore-issues", "splitter-1", "assembler-1", "ci-1", "verify-1", "review-1", "gate-1", "launch-pad"]) expect(f.s.machines.some((m) => m.id === id)).toBe(true);
+  f.src.close();
+});
+
+test("the shaft never rebuilds mid-run: its plan key holds from dark rock to the rocket", () => {
+  const f = run();
+  const key = () => fullPlan(planFromState(f.s)).key;
+  const first = key();
+  const keys = new Set([first]);
+  f.send({ type: "connect_source", kind: "github" });
+  keys.add(key());
+  for (const step of ["boiler", "builder", "issue"]) { f.build(step); keys.add(key()); }
+  advance(TICK * 20);
+  f.build("planner");
+  for (let i = 0; i < 14; i++) { advance(TICK); keys.add(key()); }
+  expect([...keys]).toEqual([first]);
   f.src.close();
 });
