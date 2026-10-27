@@ -8,6 +8,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 // Mirrors STEP_IDS in web/src/buildout/journey.ts. `issue` and `build` reveal nothing new
 // (the cart rolls, then rides into the builder), so they may advance without a build moment.
 const STEPS = ['tunnel', 'boiler', 'builder', 'issue', 'planner', 'build', 'checks', 'launch'] as const;
+type Step = (typeof STEPS)[number];
 const AUTO = new Set<string>(['build', 'checks']);
 const NO_PIECES = new Set<string>(['issue', 'build']);
 type Build = { id: string; phase: 'start' | 'burst' | 'done'; at: number };
@@ -61,7 +62,9 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
 
   for (const [i, id] of STEPS.entries()) {
     const n = String(i + 1).padStart(2, '0');
-    await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
+    // At least this far: the auto steps (build, checks) can run past before a slow test looks.
+    const reached = async () => { const at = await root.getAttribute('data-step'); return at === 'look' || STEPS.indexOf(at as Step) >= i; };
+    await expect.poll(reached, { timeout: 60_000, message: `step ${n} is ${id}` }).toBe(true);
     const done = async () => (await builds(page)).some(b => b.id === id && b.phase === 'done');
     const started = async () => (await builds(page)).some(b => b.id === id && b.phase === 'start');
     const next = async () => (await root.getAttribute('data-step')) !== id;
@@ -111,8 +114,9 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
   }
 
   // The rocket went: counters and the "Look around" card come out, then free look.
-  await expect(page.locator('.ship-cel').first()).toBeVisible({ timeout: 30_000 });
+  // (the ship celebration is brief, so a slow test may only catch the card it leaves behind)
   await expect(root).toHaveAttribute('data-step', 'look', { timeout: 30_000 });
+  await expect(page.getByText(/\b1 shipped\b/).first(), 'the factory counts the rocket').toBeAttached();
   await shot('09-launched.png');
   const look = card.getByRole('button', { name: /look around/i });
   await expect(look).toBeVisible();
