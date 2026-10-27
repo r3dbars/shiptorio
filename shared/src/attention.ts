@@ -7,7 +7,8 @@ import type { Item, Move } from "./model";
 export type Attention = "approve" | "steer" | "suggest";
 
 // Parked work with an obvious answer: plans, builds, launches, the missing check, a customer reply.
-const APPROVE_TOOLS = new Set(["plan_runner_job", "approve_runner_job", "request_merge", "run_missing_check", "review_customer_reply"]);
+// (start_job, request_rework and send_customer_reply are the simulator's names for the same steps.)
+const APPROVE_TOOLS = new Set(["plan_runner_job", "approve_runner_job", "request_merge", "run_missing_check", "review_customer_reply", "start_job", "request_rework", "send_customer_reply"]);
 // Cards the factory raises when it can't move on its own.
 const STEER_PREFIXES = ["stuck:", "reliability:", "failed:", "bottleneck:"];
 
@@ -20,7 +21,7 @@ export const ATTENTION_WAIT_MS: Record<Attention, number | null> = { steer: 10 *
 export function attentionOf(move: Move, item?: Item): Attention {
   if (move.attention) return move.attention;
   const tools = move.options.flatMap((o) => o.actions.map((a) => a.tool));
-  if (STEER_PREFIXES.some((p) => move.id.startsWith(p))) return "steer";
+  if (STEER_PREFIXES.some((p) => move.id.startsWith(p)) || tools.includes("escalate")) return "steer";
   // No builder plugged in while work waits: the line can't move until the player acts.
   if (move.stage === "resources" && tools.includes("connect_source")) return "steer";
   // A rework card: the first failure has an obvious answer (send it back with the scar); a second one, or no way
@@ -30,7 +31,7 @@ export function attentionOf(move: Move, item?: Item): Attention {
     return !canRework || (item?.scars?.length ?? 0) >= 2 ? "steer" : "approve";
   }
   if (tools.some((t) => APPROVE_TOOLS.has(t))) return "approve";
-  if (move.kind === "ship" || move.kind === "reply") return "approve";
+  if (move.kind === "ship" || move.kind === "reply" || move.kind === "build") return "approve";
   return "suggest";
 }
 

@@ -1,6 +1,7 @@
 # Attention: when Shiptorio is allowed to bug you
 
-> Status: **design draft, nothing built yet** (2026-10-27). Thread "Design a calm attention system for players".
+> Status: **v1 built behind the `attention` flag** (2026-10-27, off by default). Try it: add `?attention=1` to any
+> game URL (sim too: `/?source=sim&scenario=checkin&attention=1`), or turn the flag on at /admin/flags. Thread "Design a calm attention system for players".
 > Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb (Black Iron, real map art). Any build ships behind the `attention` flag first.
 
 ## The problem
@@ -225,6 +226,23 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
 | Map "Needs a look" amber tag | Keep, only on the top tray card's machine (already true) |
 | Quiet machine tags | Ambient, keep |
 | Planner comments on GitHub issues/PRs | Out of scope here (they live on GitHub, the player chose to watch the repo) |
+
+## What v1 builds (behind `attention`)
+
+- `shared/src/attention.ts`: `attentionOf(move, item)` sorts any card (server and sim names), `continueOption`,
+  wait times and rank. `Move.attention` is set by `enrichMove`.
+- `web/src/ui/Attention.tsx`: the tray. One card at a time (steer, then approve, then the top idea), Continue /
+  Later / Details, swipe right or left, the 4-second "why later?" chips, and "+ N approve · N suggested · Check in".
+- Check-in deck: Continue / Later only; the never reasons move into Details as "Or tell the planner".
+- Pings: only approve/steer, after 30 / 10 min (counted from first sight), max one an hour, never 10 pm to 8 am.
+- No sound for suggestions; badges toast only within 10 s of your own tap (the rest wait in the medal sheet);
+  "Needs you" on the floor card counts approve + steer only.
+- Server: `DeckBook.yes` counts Continues in a row per `kind|scope`; a Later or never resets it. With the flag
+  on, each one adds 4 to `deckScore` (max 20), the card says "You said yes to the last N like this.", and the
+  planner sees `playerYesStreaks` in `playerFeedback`.
+
+Not yet: the "let these run on their own?" offer at 5 in a row (needs real per-class autonomy; today "You decide
+these" is only recorded), the digest, push modes and quiet-hours settings, the coach lessons for the three kinds.
 
 ## Contract sketch (for the build, later)
 
