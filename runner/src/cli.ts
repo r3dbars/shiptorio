@@ -2,7 +2,7 @@ import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
 import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
-import { TEST_PATH, verifyRegression } from "./verify";
+import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
 import { runnerHome, loadPairings, savePairing, pairMachine, type Pairing } from "./pairing";
@@ -172,6 +172,7 @@ async function execute(job: Job, pair: Pairing) {
     if (!sandbox) throw new Error("Verification sandbox not prepared");
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     const result = await sandbox.run(args, work, { install, timeout: Math.min(180000, job.deadline - Date.now()) });
+    if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
     if (result.code) throw new Error(`Sandboxed ${args[0].split("/").at(-1)} ${args[1]} failed (${result.code}): ${(result.err || result.out).slice(-2000)}`);
     return result.out.trim();
   };
@@ -187,7 +188,12 @@ async function execute(job: Job, pair: Pairing) {
       await workspace.checkpoint("initialized");
     }
     const boundary = await checkSandbox(jobRoot);
-    sandbox = { run: (args, cwd = work, options) => boundary.run(args, cwd, options), close: () => boundary.close() };
+    sandbox = { run: async (args, cwd = work, options) => {
+      const result = await boundary.run(args, cwd, options);
+      if (result.timedOut) throw new TypeError("Supervisor interrupted or timed out; saved build will resume");
+      return result;
+    }, close: () => boundary.close() };
+    await resetVerifyBase(sandbox, work);
     await checked(["git", "checkout", "--detach", job.baseSha]);
     let output = "";
     if (!workspace.state.agentDone) {
