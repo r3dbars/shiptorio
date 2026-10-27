@@ -139,7 +139,7 @@ export const HUD = {
     shipped: "SHIPPED",
     rework: "REWORK",
     reworkTitle: "Sent back by a check, riding the rework belt",
-    needs: "NEEDS YOU",
+    needs: "WAITING ON YOU",
     needsTitle: "Cards and machines waiting on you",
     score: "SCORE",
     keyLabel: "What the items are",
@@ -693,7 +693,7 @@ export const LESSON_COPY: Record<string, { title: string; text: string }> = {
   inspect: { title: "Checks", text: "Nothing ships unchecked. Every PR runs the gauntlet: CI, proof, AI review. A fail rides the red belt back with the reason, for another try." },
   pad: { title: "Launch pad", text: "It passed and it's on the pad. Launching means you merge the PR. That's always your call." },
   rocket: { title: "Rocket", text: "Rocket! That was a real merged PR. The score counts what shipping did for people, not how busy the factory looks." },
-  bottleneck: { title: "Bottleneck", text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows. Tap Place to add another builder." },
+  bottleneck: { title: "Bottleneck", text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows." },
   autonomy: { title: "Autonomy", text: "Every suggestion you take as-is builds trust. Earn enough and the factory gets to do the small stuff on its own." },
   checkin: { title: "Check-in", text: "When a few things wait on you, check in: swipe through them in one go. Right does it, left is later, down is never." },
 };
@@ -879,8 +879,8 @@ export const EMPIRE = {
 const daysAgo = (n: number) => plural(n, "day");
 
 export const PROGRESS = {
-  chipLabel: (level: number, streak: number) => `Level ${level}, ${streak}-day streak. Open progress`,
-  chipTitle: (title: string, have: number, need: number, next: number) => `${title} · ${have}/${need} XP to level ${next}`,
+  chipLabel: (streak: number) => `${streak}-day streak. Open progress`,
+  chipTitle: (streak: number) => `${streak}-day streak`,
   days: (n: number) => (n === 1 ? "day" : "days"),
   lv: (level: number) => `Lv ${level}`,
   xp: (n: number) => `+${n} XP`,

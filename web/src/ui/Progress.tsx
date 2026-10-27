@@ -8,7 +8,6 @@ import {
   achieved,
   answered,
   dayKey,
-  levelOf,
   liveStreak,
   mergeProgress,
   nextUnlock,
@@ -24,7 +23,6 @@ import {
   type Step,
   type Unlock,
 } from "@shiptorio/shared";
-import { PressureGauge } from "./ironArt";
 import { Icon, type IconName } from "./icons";
 import { sound } from "../sound/engine";
 import { PROGRESS, WORDS } from "../copy";
@@ -176,23 +174,18 @@ export function cosmeticsOf(p: Progress, on: boolean) {
 // ---- top bar ----
 
 export function ProgressChip({ p, onOpen }: { p: Progress; onOpen: () => void }) {
-  const lv = levelOf(p.xp);
   const streak = liveStreak(p, Date.now());
   const today = p.last === dayKey(Date.now());
   return (
-    <button type="button" className="chip lvl-chip" onClick={onOpen} title={PROGRESS.chipTitle(lv.title, lv.have, lv.need, lv.level + 1)}>
+    <button type="button" className="chip lvl-chip" onClick={onOpen} title={PROGRESS.chipTitle(streak)}>
       {/* the name is what the chip shows plus this, so voice control can say what it sees */}
-      <span className="sr">{PROGRESS.chipLabel(lv.level, streak)}</span>
+      <span className="sr">{PROGRESS.chipLabel(streak)}</span>
       <span className={`badge flame${today ? " lit" : ""}`}>
         <Icon name="flame" size={14} />
       </span>
       <span>
         {streak}
         <small>{PROGRESS.days(streak)}</small>
-      </span>
-      <span className="lvl">
-        {PROGRESS.lv(lv.level)}
-        <i style={{ width: `${Math.round(lv.into * 100)}%` }} />
       </span>
     </button>
   );
@@ -343,7 +336,6 @@ export function MorningBrief({ p, deck, onCheckin, onClose }: { p: Progress; dec
 // ---- the progress sheet ----
 
 export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Progress; notify: NotifyState; onNotify: () => void; onEquip: (id: string, on: boolean) => void; onClose: () => void }) {
-  const lv = levelOf(p.xp);
   const streak = liveStreak(p, Date.now());
   const next = nextUnlock(p);
   const today = dayKey(Date.now());
@@ -352,20 +344,10 @@ export function ProgressSheet({ p, notify, onNotify, onEquip, onClose }: { p: Pr
   return (
     <section className="card sheet progress" aria-label={PROGRESS.sheet}>
       <div className="sheet-top">
-        <h2>{PROGRESS.sheetTitle(lv.level, lv.title)}</h2>
+        <h2>{PROGRESS.sheet}</h2>
         <button type="button" className="hud-iconbtn" onClick={onClose} aria-label={WORDS.close}>
           <Icon name="cross" size={14} />
         </button>
-      </div>
-      <div className="pg-level">
-        <PressureGauge into={lv.into} />
-        <span className="pg-odo">
-          <span className="iron-eyebrow">{PROGRESS.gauge}</span>
-          <span className="pg-digits" aria-hidden="true">
-            {String(lv.level).padStart(2, "0").split("").map((d, i) => <i key={i}>{d}</i>)}
-          </span>
-          <span>{PROGRESS.toLevel(lv.have, lv.need, lv.level + 1)}</span>
-        </span>
       </div>
       <div className="pg-streak">
         <span className="badge flame lit">

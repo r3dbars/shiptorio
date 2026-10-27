@@ -24,23 +24,6 @@ interface Show {
   delta: number;
 }
 
-function useCount(target: number, run: boolean, ms = 900) {
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    if (!run) return setN(0);
-    let raf = 0;
-    const t0 = performance.now();
-    const tick = (t: number) => {
-      const k = Math.min(1, (t - t0) / ms);
-      setN(Math.round(target * (1 - Math.pow(1 - k, 3))));
-      if (k < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, run, ms]);
-  return n;
-}
-
 // quiet: the rocket and the sound still go, but no card (the welcome tour's later, automatic rockets)
 // high: the card sits up top, clear of a card at the bottom (the welcome tour)
 export function ShipCelebration({ state, quiet = false, high = false }: { state: FactoryState | null; quiet?: boolean; high?: boolean }) {
@@ -99,7 +82,6 @@ export function ShipCelebration({ state, quiet = false, high = false }: { state:
   }, [show]);
 
   const shipped = show?.phase === "shipped";
-  const pts = useCount(show?.delta ?? 0, shipped);
   if (!show) return null;
   const { ev } = show;
   const next = state?.autonomy?.next;
@@ -136,11 +118,7 @@ export function ShipCelebration({ state, quiet = false, high = false }: { state:
           <div className="ship-what">
             {ev.prNumber != null && <b>#{ev.prNumber}</b>} {ev.title}
           </div>
-          <div className="ship-badges">
-            {ev.firstTry && <span className="b first">{SHIP.firstTry}</span>}
-            {ev.streak >= 2 && <span className="b streak">{SHIP.streak(ev.streak)}</span>}
-          </div>
-          {show.delta > 0 && <div className="ship-score">{SHIP.score(pts)}</div>}
+          {/* One thing to take away: how close the next trust level is. Badges and score points were cut (2026-10-27). */}
           {next && (
             <div className={`ship-auto ${unlocked ? "unlocked" : ""}`}>
               <span>{unlocked ? SHIP.unlocked(LEVEL[next.level]) : SHIP.toLevel(LEVEL[next.level], next.have, next.need)}</span>
