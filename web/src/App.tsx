@@ -667,10 +667,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                     <span className={p.busy ? "pill working" : "pill"}>{p.online ? (p.busy ? "running" : "ready") : "offline"}</span>
                   </div>
                   <div className="plant-bar">
-                    <span className="meter" role="meter" aria-label={`${p.name} headroom`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+                    {!(cfg.kind === "live" && p.kind === "solar") && <span className="meter" role="meter" aria-label={`${p.name} headroom`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
                       <i style={{ width: `${pct}%`, background: POWER_COLOR[p.kind] }} />
-                    </span>
-                    <span className="plant-num">{p.online ? `${pct}% left` : POWER.offline}</span>
+                    </span>}
+                    <span className="plant-num">{cfg.kind === "live" && p.kind === "solar" ? (p.online ? "Signed in" : POWER.offline) : p.online ? `${pct}% left` : POWER.offline}</span>
                     <span className="plant-num">
                       {p.jobs} {p.kind === "steam" ? (p.jobs === 1 ? "decision" : "decisions") : p.jobs === 1 ? "job" : "jobs"}
                     </span>
@@ -682,7 +682,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
             <button type="button" className="credit-btn" onClick={() => setSheet("thinks")}>{POWER.howItThinks}</button>
 
-            {SLOTS.filter((sl) => !state?.power.some((p) => p.name === sl.name)).map((sl) => {
+            {SLOTS.filter((sl) => !state?.power.some((p) => p.id === `solar-${sl.harness}` || p.name === sl.name)).map((sl) => {
               const opt = state?.move?.stage === "resources" ? state.move.options.find((o) => o.id === sl.harness) : undefined;
               return (
                 <div className="lrow" key={sl.harness}>

@@ -108,3 +108,34 @@ sandbox (CLI startup/auth status, macOS preferences and HTTPS access), and every
 It checks all categories even when one fails, exits nonzero if any check fails, and never
 claims a job or runs paid inference. Pairing failures distinguish a missing/expired local
 token from an unreachable server or rejected credential in the printed recovery steps.
+
+## Claude Code and Codex power
+
+`shiptorio-runner login claude` runs Claude's subscription login with an explicit
+`CLAUDE_CONFIG_DIR` in the private `.agent-home/.claude` under the runner data root.
+Codex keeps using `.agent-home/.codex`. Login, status, doctor and the assembler use
+that same canonical home, outside `.work/`. No normal Claude config, API key or
+provider token is copied into a job. Claude's temporary files stay in a private
+sandbox directory. macOS retains #235's preferences/network service permissions and grants agent-only read access to the system timezone database needed by Claude's Intl initialization.
+
+The runner checks sign-ins again before every job. It runs one supervised build at
+a time across all paired repos. Spark's preferred subscription gets the job when
+ready; if it is signed out, the other signed-in, idle subscription may execute the
+same approved plan and file scope. A running/recovering lease never switches agents.
+Local models keep their existing guarded routing; they are never an automatic
+substitute for a subscription. “Free” means idle in this runner, not unlimited usage
+or idle in unrelated Claude/Codex terminals. The Power sheet shows a separate plant
+for each provider, ready/running/offline; it does not invent remaining plan quota.
+
+**Runner changes require reinstalling the local bundle. A merge or website deploy
+does not update a running terminal or launch agent.** Standalone users stop watch,
+rerun the installer above, and run `shiptorio-runner login claude` in the next
+terminal. Legacy service users rerun `bun run runner:service install` from their
+updated paired checkout. Sign in against the service's actual data root:
+
+```sh
+SHIPTORIO_RUNNER_ROOT="$HOME/Library/Application Support/Shiptorio" bun run runner login claude
+```
+
+Keep that root stable: Claude's macOS Keychain login is scoped to its config path.
+A checkout login copied into a service directory may require signing in again.
