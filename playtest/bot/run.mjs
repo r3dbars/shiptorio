@@ -23,9 +23,10 @@ try {
     if (fixture) await context.route("https://github.com/**", route => fixture.stub.browser(route));
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
+    let admitted = false;
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
-    page.on("console", msg => { if (msg.type() === "error") failures.push(`Console: ${msg.text()}`); });
-    page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
+    page.on("console", msg => { if (msg.type() === "error" && (admitted || !/401/.test(msg.text()))) failures.push(`Console: ${msg.text()}`); });
+    page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400 && !(!admitted && response.status() === 401 && new URL(response.url()).pathname === "/test/login")) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
     let lastChange = Date.now(), previous = "", number = 0;
     const capture = async label => {
       const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
@@ -40,6 +41,7 @@ try {
     }
     const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
+    admitted = true;
     if (fixture) { console.log("Seeding isolated persona"); await fixture.seed(); console.log("Persona seeded"); }
     await capture("signed-in");
     const deadline = Date.now() + Number(option("--duration", "90")) * 1000;

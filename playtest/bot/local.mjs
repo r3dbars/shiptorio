@@ -31,9 +31,9 @@ export async function localFactory(persona, origin) {
     META_API_KEY: "stub-meta-key", SPARK_DAILY_TOKENS: "5000000" };
   mf = new Miniflare(convertV4MiniflareOptions({ port: Number(new URL(origin).port), workers: [{ compatibilityDate, compatibilityFlags, kvNamespaces, d1Databases, durableObjects, assets,
     name: "shiptorio", rootPath: bundle, modules: true, scriptPath: join(bundle, "worker.js"), bindings,
-    serviceBindings: { TEST_FACTORY: request => {
+    serviceBindings: { TEST_FACTORY: async request => {
       const headers = new Headers(request.headers); headers.set("x-shiptorio-test-hop", key);
-      return mf.dispatchFetch(new Request(request, { headers }));
+      return mf.dispatchFetch(request.url, { method: request.method, headers, body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer() });
     } },
     outboundService: request => new URL(request.url).host === "api.meta.ai" ? spark.outbound(request) : stub.outbound(request),
   }] }));
