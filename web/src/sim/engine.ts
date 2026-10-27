@@ -32,6 +32,7 @@ import {
   type District,
   type FactoryState,
   type Harness,
+  type HoldingBack,
   type Item,
   type ItemKind,
   type Machine,
@@ -110,6 +111,19 @@ interface Scenario {
   geothermal?: boolean; // the runner found a local model: a free, capped geothermal plant runs small, low-risk jobs
   overnight?: Shipped[]; // PRs that shipped before you opened the app, with when (the comeback time-lapse replays them)
   waiting?: Omit<Shipped, "hoursAgo">; // a PR that passed every check overnight and waits on the pad for your launch
+  brain?: BrainStep[]; // the bottleneck brain's picks, one at a time (docs/BRAIN.md): the map piles each one up
+}
+
+// One bottleneck the brain names (FactoryState.holdingBack) and the one unlock card it deals. It gets worse while it
+// waits; Continue works it off and it clears; Later parks it. Then the next one, round and round.
+interface BrainStep {
+  area: HoldingBack["area"];
+  signal: string;
+  title: string;
+  why: string;
+  unlock: string;
+  because: string;
+  kind: Move["kind"];
 }
 
 // A PR that already shipped when the scenario opens: real launch times, so "while you were away" can count them.
@@ -344,6 +358,24 @@ export const SCENARIOS = {
     ],
   },
   // The swipe check-in from docs/PRODUCT.md: you open the app and a deck is waiting.
+  // The bottleneck brain (docs/BRAIN.md): the factory runs, and the one thing holding you back shows up where it lives in
+  // the shaft, piling up until you act on its card.
+  brain: {
+    ores: [
+      // every source the brain reads is plugged in, so each pile lands on a live mine
+      { at: 2, title: "TypeError: cart.total is undefined", kind: "bug", district: "web", source: "sentry", users: 230 },
+      { at: 9, title: "Email: dark mode, please", kind: "feature", district: "web", source: "inbox", reporter: "sam@example.com" },
+      { at: 16, title: "Pricing page: nobody clicks Start", kind: "feature", district: "web", source: "posthog" },
+      { at: 24, title: "Missing tests for webhook signatures", kind: "tests", district: "server" },
+    ],
+    brain: [
+      { area: "quality", signal: "sentry:errors_piling:repo", title: "Errors are piling up", why: "14 checkout errors hit 230 users this week, none triaged.", unlock: "Triage the 14 new errors", because: "14 errors, 230 users, none triaged yet.", kind: "verify" },
+      { area: "speed", signal: "ci:ci_slow:repo", title: "CI is clogging the line", why: "CI went from 6 to 14 min, and every PR waits on it.", unlock: "Cache installs in CI", because: "Runs take 14 min, up from 6 last week.", kind: "automate" },
+      { area: "feedback", signal: "feedback:feedback_unanswered:repo", title: "People wrote in, nobody answered", why: "11 people wrote this week and 9 got no reply.", unlock: "Reply to the 9 waiting", because: "9 of 11 messages this week have no reply.", kind: "reply" },
+      { area: "users", signal: "posthog:usage_flat:repo", title: "Nobody is using what ships", why: "You shipped 6 PRs this week; daily users stayed at 3.", unlock: "Ask 5 users what they need", because: "6 PRs shipped, daily users flat at 3.", kind: "input" },
+      { area: "ship", signal: "repo:prs_stale:repo", title: "PRs are going stale", why: "4 PRs have waited 3+ days to merge.", unlock: "Review the oldest PR", because: "4 PRs waiting, the oldest for 3 days.", kind: "review" },
+    ],
+  },
   checkin: {
     districts: SHOP_DISTRICTS,
     harness: "claude_code",
@@ -682,6 +714,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
+    if (p.holdingBack !== undefined) s.holdingBack = p.holdingBack;
     if (p.research) s.research = p.research;
     if (p.support) s.support = p.support;
     if (p.experiments) s.experiments = p.experiments;
@@ -1283,6 +1316,61 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     const automated = (Math.round((a.automated ?? 0) * (a.launches ?? 0)) + (alone ? 1 : 0)) / launches;
     apply({ autonomy: { ...a, launches, automated, next: a.next?.level === "build" ? { ...a.next, have: a.next.have + 1 } : a.next } });
   };
+
+  // ---------- the bottleneck brain (docs/BRAIN.md) ----------
+
+  // One pick at a time: it gets heavier while it waits (the pile on the map grows), Continue works it off until it
+  // clears, Later parks it. Then the brain names the next one.
+  const brainSteps = sc.brain ?? [];
+  let brainAt = 0;
+  const holding = (h: HoldingBack | null) => apply({ holdingBack: h });
+  const brainNext = (ms: number) => brainSteps.length && later(ms, () => brainPick(brainSteps[brainAt++ % brainSteps.length]));
+  const brainPick = (b: BrainStep) => {
+    let h: HoldingBack = { id: b.signal, area: b.area, title: b.title, why: b.why, signalIds: [b.signal], confidence: 0.8, by: "spark", decidedAt: Date.now(), severity: 0.45 };
+    let working = false;
+    holding(h);
+    spark({ tool: "diagnose", text: `${b.title}. ${b.why}`, reason: "the heaviest fresh signal, against your goal" });
+    const worse = () => later(3000, () => {
+      if (working || s.holdingBack?.id !== h.id) return;
+      if (h.severity < 1) holding((h = { ...h, severity: Math.min(1, h.severity + 0.07) }));
+      worse();
+    });
+    worse();
+    const ease = () => later(1200, () => {
+      const severity = h.severity - 0.15;
+      if (severity < 0.35) {
+        holding(null);
+        log("info", `Cleared: ${b.title.toLowerCase()}`);
+        brainNext(4000);
+      } else {
+        holding((h = { ...h, severity }));
+        ease();
+      }
+    });
+    propose(
+      {
+        title: b.unlock,
+        why: b.why,
+        because: b.because,
+        kind: b.kind,
+        attention: "suggest",
+        options: [
+          { id: "continue", label: "Continue", recommended: true, actions: [] },
+          { id: "later", label: "Later", recommended: false, actions: [] },
+        ],
+      },
+      (opt) => {
+        if (opt === "continue") {
+          working = true;
+          ease();
+        } else {
+          holding(null);
+          brainNext(4000);
+        }
+      },
+    );
+  };
+  brainNext(3000);
 
   // ---------- the growth loop (shared/src/growth.ts) ----------
 
