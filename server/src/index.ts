@@ -66,6 +66,7 @@ export interface Env extends FactoryEnv, SignupEnv {
 }
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const RUNNER_POLL = /^\/api\/runner\/[\w.-]+\/[\w.-]+\/(heartbeat|claim)$/;
 
 const factory = async (env: Env, repo: string, repoId?: number) => {
   const stub = repoId ? byRepoId(env, repoId) : await repositoryFactory(env, repo);
@@ -108,10 +109,12 @@ app.use("*", async (c, next) => {
     await next();
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);
+    // A paired runner polls every 5s. Successful polls go to the console only, so they don't burn KV writes.
+    const routine = RUNNER_POLL.test(c.req.path) && c.res.status < 400;
     log(c.res.status >= 500 ? "error" : "info", c.req.path.startsWith("/webhooks/") ? "webhook.delivery" : "http.request", {
       method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - start,
       ...(c.req.path.startsWith("/webhooks/") ? { deliveryId: c.req.header("x-github-delivery") ?? c.req.header("request-id"), webhookEvent: c.req.header("x-github-event") ?? c.req.header("sentry-hook-resource") } : {}),
-    });
+    }, { persist: !routine });
   });
 });
 
@@ -873,6 +876,10 @@ export async function accessFastPath(request: Request, env: Env): Promise<Respon
 
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
-    return await accessFastPath(request, env) ?? wrapped.fetch!(request as never, env, ctx as ExecutionContext);
+    const response = await accessFastPath(request, env);
+    if (response) return response;
+    // Runner polls skip Sentry's per-binding instrumentation too. Errors still reach the log; renew and finish stay wrapped.
+    if (ctx && RUNNER_POLL.test(new URL(request.url).pathname)) return app.fetch(request, env, ctx);
+    return wrapped.fetch!(request as never, env, ctx as ExecutionContext);
   },
 } satisfies ExportedHandler<Env>;
