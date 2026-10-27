@@ -20,7 +20,7 @@ import { GameDriver } from "./driver";
 import { biasFor } from "./frame";
 import { ShaftHud } from "./hud";
 import { makeLayout, MINES } from "./layout";
-import { clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
+import { cartAt, clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
 import { ShaftStage, type ShaftView } from "./stage";
 
 // the mockup's art was tuned without color management (three r128); the engine's lights are patched to match
@@ -151,6 +151,17 @@ export class ShaftScene {
     const I = this.I, stage = this.stage, sp = this.sp;
     if (!I || !stage || !sp) return undefined;
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    // a cart riding the shaft first: it's small and moving, so it gets a finger's reach around it
+    const at = new THREE.Vector3();
+    const carts = I.items
+      .filter((it) => it.ref && it.path && !it.gone && !it.hidden && it.mesh.visible)
+      .map((it) => {
+        it.mesh.getWorldPosition(at).project(stage.camera);
+        return { ref: it.ref!, x: rect.left + ((at.x + 1) / 2) * rect.width, y: rect.top + ((1 - at.y) / 2) * rect.height, z: at.z };
+      })
+      .filter((c) => c.z > -1 && c.z < 1);
+    const cart = cartAt(carts, clientX, clientY);
+    if (cart) return cart;
     this.ray.setFromCamera(ndc, stage.camera);
     const mine = stage.root.getObjectByName("part:mine");
     const targets: THREE.Object3D[] = I.stationList.map((s) => s.holder);

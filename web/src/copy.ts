@@ -357,6 +357,19 @@ export const PANEL = {
   assembler: (who?: string) => (who ? `${who} assembler` : "assembler"),
   launchNext: "Launch the next one",
   factory: "Factory",
+  // a cart: one piece of work riding the shaft (docs/GAMEPLAY-PICKS.md r3-rush)
+  cart: {
+    zone: "Cart",
+    folder: "Folder",
+    tries: "Tries",
+    rushed: "rushed",
+    parked: "parked",
+    waiting: "Rush moves it to the front of the line. Park sets it aside until you unpark it.",
+    isRushed: "Rushed. It goes to the next free builder.",
+    isParked: "Parked. It stays off the line until you unpark it.",
+    onLine: "Already on the line. Rush and Park are for work still waiting.",
+    choice: { rush: "Rush", park: "Park", none: "Unpark" },
+  },
 };
 
 export interface PanelCopy {
