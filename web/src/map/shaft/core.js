@@ -576,11 +576,15 @@ export function createIron(opts) {
         if (it.gone) { if (st.item === it) st.item = null; it.owner = null; return true; } // removed from the world meanwhile: nothing to hand on
         const pth = outPath(port);
         if (!pth || !entryFree(pth, 0) || !M.ready(it)) return false;
-        if (def.type === 'planner' && port === 'pass' && !it.dest) it.dest = I.driver.route(it, st) || null;
+        if (def.type === 'planner' && port === 'pass') M.route(it);
         it.owner = null; it.followObj = null; if (st.item === it) st.item = null;
         enterPath(it, pth, 0); I.emit('give', { item: it, station: def.id, port });
         return true;
       },
+      // planner: which assembler this item goes to (asks the driver once; the plan belts' diverters follow it.dest)
+      route(it) { if (!it.dest && !it.gone) it.dest = I.driver.route(it, st) || null; return it.dest; },
+      // the last check before the freight lift (it turns the band green: the PR passed every check)
+      get last() { const c = I.layout.checks; return !!c.length && c[c.length - 1].id === def.id; },
       setState(s, detail) { st.state = s; if (detail !== undefined) st.detail = detail; },
       setStage(it, text) { it.stage = text; },
       get blocked() { return st.blocked; },

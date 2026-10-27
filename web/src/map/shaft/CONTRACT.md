@@ -182,6 +182,9 @@ M.stateShown           'IDLE' | 'WORKING' | 'BLOCKED'
 M.maybeDecision(text)  call at your natural decision point; may block (dice, harness only). true if it blocked.
 M.decision(text)       force one
 M.item                 the item the core thinks you hold (after take)
+M.route(item)          planner: the assembler id this item goes to (set once; the plan-belt diverters follow item.dest)
+M.last                 checks: true for the last check before the launch lift — it sets the green 'pass' band; the
+                       others just flash green and keep the amber capsule
 M.queue()              items waiting on your input belts
 M.power()              power plants: { level 0..1, online }
 M.toRoot(x,y,z) M.rootOf(obj) M.port(name) → { local, root, out }
@@ -251,7 +254,7 @@ node /home/user/shiptorio/web/scripts/shaft-shot.mjs --base=http://127.0.0.1:517
    --views=build,station:asm-1 [--warm=20] [--q=only=world,belts&asm=1] [--mobile] [--verify] [--hud=0] [--w=1440 --h=900]
 ```
 Views: `stack` (ALL), `mine`, `build`, `checks`, `launch`, `line` (build + mine), `follow`, `station:<id>`. Query:
-`only=`/`skip=` modules, `asm=1|2|3`, `checks=ci,custom:secrets,custom:types,verify,review`, `sources=github,sentry`.
+`only=`/`skip=` modules, `asm=1|2|3`, `checks=ci,custom:secrets,custom:types,verify,review`, `sources=github,sentry`, `measure=1`.
 It prints draw calls, triangles, module failures, console errors and the line's stats (shipped / rework counts prove items
 flow end to end). Use your OWN output folder. Look at your screenshots next to the mockup refs and iterate many times:
 build → shoot → compare → refine. Shoot at least desktop 1440×900 and phone (`--mobile`), and with `--verify`.

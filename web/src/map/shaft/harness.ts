@@ -47,6 +47,7 @@ function planFromQuery(): Plan {
       return { id: check ? `chk-${check}` : kind, kind, check };
     });
   }
+  if (q.get("measure") === "1") plan.measure = { id: "measure" };
   const sources = q.get("sources");
   if (sources !== null) plan.sources = sources.split(",").filter(Boolean);
   return plan;
