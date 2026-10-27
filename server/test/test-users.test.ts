@@ -29,6 +29,8 @@ test("normal negative-ID sessions persist progress and test seeds are idempotent
     await seedTestUser(env, p);
     const cookie = await createSession(env, { id: personaId(p), login: p }, "test");
     expect((await currentUser(env, cookie))?.id).toBeLessThan(0);
+    expect(await currentUser({ ...env, TEST_USERS: "off" }, cookie)).toBeNull();
+    expect(await currentUser({ ...env, PUBLIC_URL: "https://shiptorio.com" }, cookie)).toBeNull();
     const progress = (await readProgress(env, { id: personaId(p), login: p }))!;
     progress.xp = 123;
     await env.DB.prepare("UPDATE user_progress SET value=? WHERE user_id=?").bind(JSON.stringify(progress), personaId(p)).run();

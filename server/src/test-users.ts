@@ -6,23 +6,13 @@ import { previewAccess, secureTransport } from "./access";
 import { emptyProgress } from "@shiptorio/shared";
 import { admit, ipScope } from "./signup";
 import type { Env } from "./index";
+import { TEST_PERSONAS, type TestPersona, localTestHost as local, personaId, personaRepo, testUsersEnabled } from "./test-users-policy";
+export { TEST_PERSONAS, personaId, personaRepo, testUsersEnabled } from "./test-users-policy";
 
-export const TEST_PERSONAS = ["test-newbie", "test-guest", "test-midgame", "test-broke", "test-blocked"] as const;
-export type TestPersona = typeof TEST_PERSONAS[number];
 export interface TestUsersEnv {
   TEST_USERS?: string; PUBLIC_URL?: string; TEST_FACTORY_KEY?: string; TEST_FACTORY?: Fetcher;
   DB: D1Database; SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string;
 }
-const local = (u: URL) => ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
-export function testUsersEnabled(env: Pick<TestUsersEnv, "TEST_USERS" | "PUBLIC_URL">, url: URL): boolean {
-  if (env.TEST_USERS !== "on") return false;
-  let canonical: URL;
-  try { canonical = new URL(env.PUBLIC_URL ?? url.origin); } catch { return false; }
-  if (local(url)) return local(canonical) && canonical.origin === url.origin;
-  return url.origin === "https://shiptorio.dev" && canonical.origin === url.origin;
-}
-export const personaId = (p: TestPersona) => -9001 - TEST_PERSONAS.indexOf(p);
-export const personaRepo = (p: TestPersona) => `test-fixture/${p}`;
 export function testerLinks(env: Pick<TestUsersEnv, "TEST_USERS" | "PUBLIC_URL">, url: URL): string {
   if (!testUsersEnabled(env, url)) return "";
   return `<section aria-label="Test accounts"><h2>Sign in as tester</h2><p>Isolated fixtures only; these accounts cannot touch real repositories.</p><ul>${TEST_PERSONAS.map(p => `<li><a href="/test/login?as=${p}">${p}</a></li>`).join("")}</ul></section>`;

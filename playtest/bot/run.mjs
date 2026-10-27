@@ -38,8 +38,10 @@ try {
       const password = local ? "isolated-bot-preview" : process.env.SHIPTORIO_TEST_PASSWORD;
       if (!password) throw new Error("Staging preview password is required in SHIPTORIO_TEST_PASSWORD");
       await page.getByLabel("Password", { exact: true }).fill(password);
-      await page.getByRole("button", { name: /Enter the factory/ }).click();
-      await page.waitForURL(current => current.pathname !== "/access");
+      await Promise.all([
+        page.waitForURL(current => current.pathname === "/" && current.searchParams.has("source"), { timeout: 20000 }),
+        page.getByRole("button", { name: /Enter the factory/ }).click(),
+      ]);
     }
     const login = await page.goto(`${url.origin}/test/login?as=${persona}`);
     if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
@@ -78,6 +80,7 @@ try {
   }
   if (fixture?.stub.state.unexpected.length) failures.push(...fixture.stub.state.unexpected.map(p => `Unexpected provider request: ${p}`));
   if (fixture?.runnerErrors.length) failures.push(...fixture.runnerErrors);
+  if (fixture && persona === "test-newbie" && fixture.stub.state.merges.length === 0) failures.push("Fixture loop did not reach a player-approved Launch");
 } catch (error) {
   failures.push(String(error));
   if (lastPage && !lastPage.isClosed()) {
@@ -88,7 +91,7 @@ try {
 finally {
   const unique = [...new Set(failures)];
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
-  const report = { persona, origin: url.origin, fixture: local, steps, failures: unique, fingerprint, passed: !unique.length };
+  const report = { persona, origin: url.origin, fixture: local, fixtureMerges: fixture?.stub.state.merges.length ?? null, steps, failures: unique, fingerprint, passed: !unique.length };
   await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
   await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
   console.log(JSON.stringify({ report: join(out, "report.md"), failures: unique.length, fingerprint }));
