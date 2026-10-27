@@ -97,7 +97,8 @@ triage (including the testbed's misleading "docs typo" issue), the game master a
     the loop. Spark still can't write or merge: the planner finishes with assign_job/ask_player (files it found and read
     may join the scope only when the player approves it on the Build card), the reviewer with a verdict. Each tool call
     is broadcast to the log, listed in the plan comment, and the review comment gets a "How it checked" list.
-    Cost: a plan is up to 8 calls (was 5) and a review up to 6 (was 1), all under the same daily cap.
+    Cost: a plan is up to 8 calls (was 5) and a review up to 6 (was 1). The default daily cap went from 200 calls / 500k
+    tokens to 400 / 1M so a Testing day doesn't stall; the $5/day per-factory dollar budget (spend.ts) still caps spend.
 
 ## Still open
 
