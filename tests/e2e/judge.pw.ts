@@ -94,12 +94,23 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
 });
 
 test('judge replay plays in the vertical shaft map', async ({ page }, info) => {
+  const epoch = new Date('2026-10-27T12:00:00Z');
+  await page.clock.install({ time: epoch });
+  await page.clock.pauseAt(new Date(epoch.getTime() + 1000));
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto('/judge?world=shaft&repo=private/repo');
   await expect(page).toHaveURL(/\/judge\?source=sim&world=shaft$/);
   await page.getByRole('button', { name: 'Play the 90-second story' }).click();
   const story = page.getByRole('region', { name: 'Judge story', exact: true });
+  const progress = story.locator('progress');
+  // Observe every ordinary 900ms story tick, independent of software rendering.
+  // Keep the verified beat paused so slow screenshot capture cannot skip it.
+  while (Number(await progress.getAttribute('value')) < 58) {
+    const tick = Number(await progress.getAttribute('value'));
+    await page.clock.fastForward(900);
+    await expect.poll(async () => Number(await progress.getAttribute('value'))).toBeGreaterThan(tick);
+  }
   await expect(page.getByTestId('judge-item-sentry')).toHaveAttribute('data-scars', '1', { timeout: 60_000 });
   await expect(story).toHaveAttribute('data-beat', '4', { timeout: 60_000 });
   await page.screenshot({ path: `/tmp/shiptorio-judge-shaft-${info.project.name}.png` });

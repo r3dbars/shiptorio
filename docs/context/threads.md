@@ -389,3 +389,12 @@ Use Chromium WebGL-only SwiftShader fallback rather than SwANGLE for the whole
 compositor. Preserve actual 3D rendering and every test assertion, deadline and
 visual baseline. Extracted narrowly from the CI performance lane; full370 stays
 for the next batch. Failed40574810643 is retained.
+
+## Vertical judge clock and suite completion
+
+Codex:72219fb fixed the desktop journey (hosted2.2m pass) but the separate
+shaft replay relied on real timers and missed scar1 within60s. Drive its same
+900ms ticks explicitly and capture verifiedbeat4 whilepaused; preserveevery
+assertion and180s testdeadline. Nine serial desktop cases overran the12min job
+as the failed report printed, so only the wholejob budget is18min to retain
+complete evidence. No production runtime or visual baselines change.
