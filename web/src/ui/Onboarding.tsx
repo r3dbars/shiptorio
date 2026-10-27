@@ -1,13 +1,14 @@
 import { introEnabled } from "../flags";
-// The first screens of the game (docs/PRODUCT.md, Onboarding): sign in with GitHub, pick a repo.
-// Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
+// The first screens of the game (docs/PRODUCT.md, Onboarding): the welcome tour, then play first, sign in later.
+// A signed-out player goes straight to the demo shop (onPlay); signing in with GitHub is the unlock that brings
+// the repo step here. Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { App } from "../App";
 import type { SourceConfig } from "../source";
 import { IslandBackdrop } from "./IslandBackdrop";
-import { savePref, seedPrefs, type PrefKey } from "../account";
+import { savePref, seedPrefs, signInUrl, type PrefKey } from "../account";
 import { CREDIT, ONBOARD } from "../copy";
 import { Icon, type IconName } from "./icons";
 import { Wordmark } from "./Logo";
@@ -125,10 +126,11 @@ function Journey() {
   );
 }
 
-export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
+// onPlay: a bare visit. Nobody signed in goes to the demo shop instead of the sign-in card.
+export function Onboarding({ live, step: initial, onDone, onPlay }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void; onPlay?: () => void }) {
   // the tour comes first, before anyone's asked to sign in (playtest #107)
   const [step, setStep] = useState<OnboardStep>(introEnabled && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
-  const [login, setLogin] = useState<string | null>(live ? null : "you");
+  const [login, setLogin] = useState<string | null | undefined>(live ? undefined : "you"); // undefined: still asking /api/me
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
   const [installUrl, setInstallUrl] = useState<string | null>(null);
@@ -144,6 +146,11 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   };
   const now = useClock();
 
+  // The sandbox has no real sign-in to wait for: a bare visit just plays.
+  useEffect(() => {
+    if (!live && step === "hello") onPlay?.();
+  }, [live, step]);
+
   // Live: who is signed in and which repositories the existing App installation can see.
   useEffect(() => {
     if (!live) return;
@@ -154,8 +161,9 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
         setInstallUrl(me.installUrl ?? null);
         seedPrefs(me.prefs);
         if (me.login && step === "hello") setStep("repo");
+        else if (!me.login && step === "hello") onPlay?.();
       })
-      .catch(() => setLogin(null));
+      .catch(() => { setLogin(null); if (step === "hello") onPlay?.(); });
     loadRepos();
   }, [live]);
 
@@ -183,7 +191,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
     if (punched) return;
     setPunched(true);
     later(() => {
-      if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
+      if (live) location.href = signInUrl();
       else setStep("repo");
     }, 720);
   };
@@ -198,7 +206,10 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const needle = find.trim().toLowerCase();
   const shown = repos && (searchable && needle ? repos.filter((r) => r.fullName.toLowerCase().includes(needle)) : repos);
 
-  if (step === "intro" && introEnabled) return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep(live && login ? "repo" : "hello"); }} />;
+  if (step === "intro" && introEnabled) return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); if (live && login) setStep("repo"); else if (onPlay) onPlay(); else setStep("hello"); }} />;
+
+  // a bare visit: the hello card only shows when ?onboard=hello asks for it, never while we work out where to go
+  if (step === "hello" && onPlay) return null;
 
   return (
     <div className="onboard">
@@ -361,7 +372,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
             {!waiting && <p className="ob-help">
               {/* the list is the repos your GitHub account reaches through the App; installing on more adds them */}
               {ONBOARD.notThere}<a href={installUrl ?? "https://github.com/settings/installations"}>{ONBOARD.install}</a>{ONBOARD.onRepo}
-              {live && login ? <>{ONBOARD.then}<a href={`/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`}>{ONBOARD.refresh}</a></> : ONBOARD.first}.
+              {live && login ? <>{ONBOARD.then}<a href={signInUrl()}>{ONBOARD.refresh}</a></> : ONBOARD.first}.
             </p>}
           </>
         )}

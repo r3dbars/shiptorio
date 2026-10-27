@@ -811,6 +811,17 @@ export const TOUR = {
 
 // ---------- sign in and pick a repo ----------
 
+/** Play first, sign in later: the sandbox is the front door, and your own repo is an unlock you reach in play. */
+export const PLAY = {
+  chip: "Demo shop",
+  chipCta: "Use your repo ›",
+  chipLabel: "You're playing a demo shop. Sign in with GitHub to run your own repo",
+  kicker: "Unlocked · your repo",
+  title: "That was a demo shop. Run your own repo next",
+  why: "Sign in with GitHub and your real issues come up the shaft, built by your own agents.",
+  cta: "Sign in with GitHub",
+};
+
 export const ONBOARD = {
   label: "Welcome to Shiptorio",
   steps: ["WELCOME", "SIGN IN", "PICK A REPO", "PLAY"],

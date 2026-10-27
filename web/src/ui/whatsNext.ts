@@ -5,6 +5,7 @@
 import { sciencePacks, techById, techStatus, TECHS, type FactoryState } from "@shiptorio/shared";
 import { ghostSpots } from "../map/ghosts";
 import { lc } from "../sim/engine";
+import { PLAY } from "../copy";
 
 export type NudgeAction =
   | { do: "launch"; itemId: string } // simulator only; live uses existing server-approved check-in controls
@@ -13,6 +14,7 @@ export type NudgeAction =
   | { do: "research" } // open the research tree
   | { do: "connect"; source: string } // open the connect sheet for an empty mine
   | { do: "place" } // place another assembler
+  | { do: "signin" } // the sandbox's unlock: sign in with GitHub and bring your own repo
   | { do: "sheet"; sheet: "line" | "yours" | "guide" };
 
 export interface Nudge {
@@ -28,6 +30,7 @@ export interface Nudge {
 export interface NudgeContext {
   canPlace?: boolean; // a free slot and a signed-in subscription (sim only today)
   live?: boolean;
+  sandbox?: boolean; // the demo shop with a real server behind it, so signing in can bring your own repo
 }
 
 const MINE_NAME: Record<string, string> = { sentry: "Sentry", posthog: "PostHog" };
@@ -60,6 +63,12 @@ export function whatsNext(state: FactoryState, ctx: NudgeContext = {}): Nudge {
         ? { label: mergeGate ? "Open the merge gate" : "Open check-in", action: mergeGate ? { do: "station", id: mergeGate.id } : { do: "checkin" } }
         : { label: "Launch it", action: { do: "launch", itemId: onPad.id } },
     };
+  }
+
+  // Play first, sign in later: once the demo shop has launched a rocket, your own repo is the unlock.
+  // It holds the card for the next two rockets, then steps aside (the floor card's chip stays).
+  if (ctx.sandbox && rockets >= 1 && rockets < 3) {
+    return { id: "signin", kicker: PLAY.kicker, title: PLAY.title, why: PLAY.why, cta: { label: PLAY.cta, action: { do: "signin" } } };
   }
 
   // 2. Decisions are waiting on you.

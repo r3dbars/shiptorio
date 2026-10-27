@@ -2,6 +2,19 @@
 // localStorage stays the fast local copy; the server copy only matters in live mode, and every
 // call fails quietly so the sim, private windows and signed-out visits behave as before.
 
+/** Sign in with GitHub, then pick a repo. Where the sandbox's "Use your repo" goes. */
+export const signInUrl = () => `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
+
+// Is the real Worker behind this page? On shiptorio.com (and `bun run dev`) /api/version answers JSON;
+// the UI-only dev server (`bun run dev:web`) has no API, so there's nothing to sign in to. Asked once.
+let up: Promise<boolean> | null = null;
+export function serverUp(): Promise<boolean> {
+  up ??= fetch("/api/version", { cache: "no-store" })
+    .then((res) => res.ok && (res.headers.get("content-type") ?? "").includes("json"))
+    .catch(() => false);
+  return up;
+}
+
 export type PrefKey = "intro" | "guideSeen" | "achievements"; // achievements: web/src/ui/Achievements.tsx reads and merges its own
 
 const LOCAL: Record<Exclude<PrefKey, "achievements">, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };
