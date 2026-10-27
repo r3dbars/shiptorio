@@ -85,8 +85,8 @@ if (process.env.STRANGER_SETUP_URL !== "0") stub.state.setupUrl = `${origin}/git
 // 2. The stranger: a fresh browser profile, phone-ish laptop window, github.com answered by the stub.
 browser = await chromium.launch({
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
-  // Match the browser suite's explicit software WebGL backend on GPU-less CI.
-  args: ["--use-angle=swiftshader", "--enable-webgl", "--enable-unsafe-swiftshader"],
+  // Keep WebGL real without routing the entire UI compositor through SwANGLE.
+  args: ["--use-gl=angle", "--use-angle=swiftshader-webgl", "--enable-webgl", "--enable-unsafe-swiftshader"],
 });
 context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
 await context.tracing.start({ screenshots: false, snapshots: true });
