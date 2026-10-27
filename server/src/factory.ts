@@ -649,6 +649,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (stored) await this.accountPut(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
+      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active plan or build");
       if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
       const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
       if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);

@@ -9,7 +9,7 @@ export function QuotaNotice({ data, error, onBudget }: { data: Limits | null; er
   return <aside className="iron-plate iron-rivets quota-card" aria-label="Factory limits" role="status">
     <h2 className="iron-title">Factory limits</h2>
     {error && <p>{error} Status will refresh automatically.</p>}
-    {data?.disabled && <p>Planner paused by the owner. Ask the owner to restore Spark power.</p>}
+    {data?.disabled && <p>Planner paused by the owner. Ask the owner to restore planner power.</p>}
     {warnings.map(q => <section key={q.id} data-state={q.status}>
       <strong>{q.label}: {q.status === "stopped" ? "limit reached" : "near limit"}</strong>
       <p>{q.used.toLocaleString(undefined, { maximumFractionDigits: 4 })} / {q.limit.toLocaleString()} {q.id === "spark-spend" ? "USD" : "used"}.</p>

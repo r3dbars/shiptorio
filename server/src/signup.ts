@@ -125,8 +125,8 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO signup_allowlist(login,enabled,approved_by,updated_at,factories,repos,runs_daily) VALUES (?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET enabled=excluded.enabled,approved_by=excluded.approved_by,updated_at=excluded.updated_at,factories=excluded.factories,repos=excluded.repos,runs_daily=excluded.runs_daily`).bind(target,action==='deny'?0:1,login,Date.now(),count('factories',3),count('repos',3),count('runs',20)),
         env.DB.prepare('UPDATE signup_waitlist SET status=?,updated_at=? WHERE identity=?').bind(action==='deny'?'denied':'approved',Date.now(),identity),
+        ...(form.has('spark_calls') && form.has('spark_tokens') ? [env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=?,spark_tokens_daily=? WHERE login=?').bind(calls,tokens,target)] : []),
       ]);
-      if (form.has('spark_calls') && form.has('spark_tokens')) await env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=?,spark_tokens_daily=? WHERE login=?').bind(calls,tokens,target).run();
       message = `${target}: ${action==='deny'?'access revoked':'access approved'}`;
     } else return new Response('Choose a valid GitHub login',{status:400});
   }

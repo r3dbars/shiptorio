@@ -16,13 +16,15 @@ export async function quotaStatus(env: Env, repo: string, viewer: User) {
     env.DB.prepare('SELECT kind, COUNT(*) AS used FROM signup_resources WHERE login=? GROUP BY kind').bind(owner.login).all<{kind:string;used:number}>(),
     env.DB.prepare('SELECT factories,repos FROM signup_allowlist WHERE login=?').bind(owner.login).first<{factories:number;repos:number}>(),
   ]);
+  const payer = await env.DB.prepare('SELECT login FROM users WHERE id=?').bind(Number(account.slice(5))).first<{login:string}>();
+  const sparkRaiseUrl = isAdmin(env, viewer.login) && payer ? `/admin/signup?login=${encodeURIComponent(payer.login.toLowerCase())}` : null;
   const raiseUrl = isAdmin(env, viewer.login) ? `/admin/signup?login=${encodeURIComponent(owner.login)}` : null;
   const daily = runs.resetsAt;
   return { resetsAt: daily, disabled: spark.limits.disabled, quotas: [
     quota('runs', 'Build runs / day', runs.used, runs.limit, daily, raiseUrl),
-    quota('spark-calls', 'Spark calls / day', spark.calls, spark.limits.calls, daily, raiseUrl),
-    quota('spark-tokens', 'Spark tokens / day', spark.tokens, spark.limits.tokens, daily, raiseUrl),
-    quota('spark-spend', 'Spark dollars / day', spend.estimatedUsd, spend.dailyBudgetUsd, daily, account === `user:${viewer.id}` ? "#planner-budget" : null),
+    quota('spark-calls', 'Spark calls / day', spark.calls, spark.limits.calls, daily, sparkRaiseUrl),
+    quota('spark-tokens', 'Spark tokens / day', spark.tokens, spark.limits.tokens, daily, sparkRaiseUrl),
+    ...(account === `user:${viewer.id}` ? [quota('spark-spend', 'Spark dollars / day', spend.estimatedUsd, spend.dailyBudgetUsd, daily, account === `user:${viewer.id}` ? "#planner-budget" : null)] : []),
     quota('factories', 'Connected factories', resources.results.find(r => r.kind === 'factory')?.used ?? 0, caps?.factories ?? 3, null, raiseUrl),
     quota('repos', 'Connected repos', resources.results.find(r => r.kind === 'repo')?.used ?? 0, caps?.repos ?? 3, null, raiseUrl),
   ] };
