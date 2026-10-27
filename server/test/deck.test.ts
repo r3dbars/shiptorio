@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { FactoryState, Move, type Item, type Move as MoveType } from "@shiptorio/shared";
+import { thirdDefer } from "../src/deck-decisions";
 import { buildDeck, deckScore, enrichMove, GROW_BONUS, moveScope } from "../src/deck";
 const now = 600_000;
 const item = (id: string, overrides: Partial<Item> = {}): Item => ({ id, kind: "bug", source: "github_issue", title: id, district: "server", state: "queued", attempts: 0, updatedAt: 0, ...overrides });
@@ -147,6 +148,18 @@ describe("runner decisions stay reachable in a full alert deck", () => {
     expect(deck).toHaveLength(12);
     expect(deck.some(card => card.id === decision.id)).toBe(true);
     expect(deck.filter(card => card.id.startsWith("alert-"))).toHaveLength(11);
+  });
+  for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps ${tool} reachable behind twelve governance escalations`, () => {
+    const s = state([item("gh-58", { updatedAt: clock })]);
+    const escalations = alerts().map(thirdDefer);
+    const candidates = [...escalations, runner(tool)];
+    const original = structuredClone(candidates);
+    const deck = buildDeck(s, candidates, { now: clock });
+    expect(deck).toHaveLength(12);
+    expect(deck.some(card => card.id === tool)).toBe(true);
+    expect(deck.filter(card => card.id.endsWith(":deferred"))).toHaveLength(11);
+    expect(candidates).toEqual(original);
+    expect(buildDeck(s, escalations, { now: clock }).map(card => card.id)).toEqual(escalations.map(card => card.id).sort());
   });
   it("reserves only one slot, preferring already planned consent, without reordering the selected deck", () => {
     const s = state([item("gh-58", { updatedAt: clock })]);
