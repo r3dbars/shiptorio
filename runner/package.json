@@ -1,5 +1,6 @@
 {
-  "name": "@shiptorio/runner", "private": true, "type": "module",
+  "name": "@shiptorio/runner",
+  "license": "MIT", "private": true, "type": "module",
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": { "zod": "^4.0.0" },
   "devDependencies": { "@types/bun": "latest", "typescript": "^5.9.0" }
