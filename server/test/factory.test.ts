@@ -1,4 +1,5 @@
 import { budgetDb } from "./budget-fixture";
+import { BudgetError } from "../src/budget";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { describe, expect, it, mock } from "bun:test";
@@ -165,6 +166,53 @@ describe("Factory lifecycle", () => {
     }
     expect(checks).toBeGreaterThan(1); // Each queued frame revalidates after revocation.
     expect(f.events).toEqual([]);
+  });
+
+  it("rejects expected planning limits without throwing through the object reset boundary", async () => {
+    for (const scenario of ["capacity", "duplicate", "scope", "missing", "cooldown", "spark-budget", "budget-owner"] as const) {
+      const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })], scenario === "spark-budget" ? { SPARK_DAILY_CALLS: "0" } : {});
+      await f.factory.activateRunner("pair");
+      const internal = f.factory as unknown as { ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> }; usage(): Promise<unknown> };
+      const atomic = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+      let resets = 0;
+      internal.ctx.blockConcurrencyWhile = fn => atomic(async () => { try { return await fn(); } catch (error) { resets++; throw error; } });
+      if (scenario === "capacity" || scenario === "duplicate") f.data.set("runnerJob:existing", { id: "existing", itemId: scenario === "capacity" ? "gh-2" : "gh-1", status: "awaiting_approval", harness: "codex", allowedPaths: [] });
+      if (scenario === "cooldown") f.data.set("planningRetry:gh-1", { day: new Date().toISOString().slice(0, 10), failures: 3, retryAt: Date.now() + 60000, reason: "Failed planning" });
+      if (scenario === "budget-owner") internal.usage = async () => { throw new BudgetError("Budget owner unavailable"); };
+      const expected = { capacity: "Factory job budget reached", duplicate: "active runner job", scope: "Unsafe approved path", missing: "not available", cooldown: "Planning paused", "spark-budget": "daily call/token budget", "budget-owner": "Budget owner unavailable" }[scenario];
+      const before = [...f.data.keys()].filter(key => key.startsWith("runnerJob:"));
+      await expect(f.factory.enqueueRunner({ itemId: scenario === "missing" ? "gh-99" : "gh-1", harness: "codex", allowedPaths: scenario === "scope" ? [".github/workflows/escape.yml"] : ["src/a.ts"] })).rejects.toThrow(expected);
+      expect(resets).toBe(0); // Cloudflare resets the DO if the callback throws.
+      expect([...f.data.keys()].filter(key => key.startsWith("runnerJob:"))).toEqual(before);
+      await f.factory.heartbeatRunner("pair", ["codex"]);
+      expect((f.data.get("runnerPresence") as { harnesses: string[] }).harnesses).toEqual(["codex"]);
+    }
+  });
+
+  it("keeps unexpected storage failures inside the reset boundary", async () => {
+    const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })]);
+    const internal = f.factory as unknown as { ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T>; storage: { list(): Promise<unknown> } } };
+    const atomic = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+    let resets = 0;
+    internal.ctx.blockConcurrencyWhile = fn => atomic(async () => { try { return await fn(); } catch (error) { resets++; throw error; } });
+    internal.ctx.storage.list = async () => { throw Error("Synthetic storage failure"); };
+    await expect(f.factory.enqueueRunner({ itemId: "gh-1", harness: "codex", allowedPaths: ["src/a.ts"] })).rejects.toThrow("Synthetic storage failure");
+    expect(resets).toBe(1);
+    expect([...f.data.keys()].filter(key => key.startsWith("runnerJob:"))).toEqual([]);
+  });
+
+  it("keeps concurrent planning admission exclusive while duplicate rejection does not reset", async () => {
+    const f = fixture([item({ state: "queued", prNumber: undefined, attempts: 0 })]);
+    const internal = f.factory as unknown as { ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> } };
+    const atomic = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+    let resets = 0;
+    internal.ctx.blockConcurrencyWhile = fn => atomic(async () => { try { return await fn(); } catch (error) { resets++; throw error; } });
+    const input = { itemId: "gh-1", harness: "codex" as const, allowedPaths: ["src/a.ts"] };
+    const outcomes = await Promise.allSettled([f.factory.enqueueRunner(input), f.factory.enqueueRunner(input)]);
+    expect(outcomes.filter(result => result.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter(result => result.status === "rejected")).toHaveLength(1);
+    expect([...f.data.keys()].filter(key => key.startsWith("runnerJob:"))).toHaveLength(1);
+    expect(resets).toBe(0);
   });
 
   it("runs Spark planning, exclusive runner claim, scoped branch verification and idempotent PR receipts", async () => {
