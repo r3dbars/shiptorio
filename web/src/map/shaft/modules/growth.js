@@ -76,9 +76,8 @@ export default function install(IRON) {
       const I = IRON;
       mem.I = I;
       mem.off ??= onBuild(heard);
-      // a rebuild while a floor was rising: it stands on the new shaft (its id is in standing already)
+      // a rebuild while a floor was rising (a new machine id rebuilds the shaft): it starts over on the new one
       mem.run = null;
-      mem.floor = null;
       let first = true;
       return {
         update(t, dt) {
@@ -91,7 +90,8 @@ export default function install(IRON) {
               mem.standing = new Set(standingFor(state));
               emit({ phase: 'stand', floors: [...mem.standing] });
             }
-            for (const id of FLOOR_IDS) if (!ALWAYS.has(id)) showFloor(I, id, mem.standing.has(id));
+            for (const id of FLOOR_IDS) if (!ALWAYS.has(id)) showFloor(I, id, mem.standing.has(id) && id !== mem.floor);
+            if (mem.floor) mem.run = buildFloor(I, mem.floor, { reduced: reducedMotion() });
             next();
           }
           if (mem.run && mem.run.update(dt)) finished();
