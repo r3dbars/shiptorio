@@ -70,7 +70,8 @@ it("fast-path signed form proof still supports Firefox privacy headers without a
   const cookie = gate.headers.get("set-cookie")!.split(";")[0];
   const submit = (headers: Record<string, string>, token = csrf!) => new Request("https://shiptorio.com/access", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", ...headers }, body: new URLSearchParams({ password: "test-preview-password", csrf: token, next: "/" }) });
   expect((await accessFastPath(submit({ cookie }), settings))!.status).toBe(303);
-  for (const headers of [{ cookie, origin: "https://foreign.invalid" }, { cookie, origin: "https://shiptorio.com", "sec-fetch-site": "cross-site" }]) {
+  const deniedOrigins: Record<string, string>[] = [{ cookie, origin: "https://foreign.invalid" }, { cookie, origin: "https://shiptorio.com", "sec-fetch-site": "cross-site" }];
+  for (const headers of deniedOrigins) {
     const denied = (await accessFastPath(submit(headers), settings))!;
     expect(denied.status).toBe(403);
     expect(denied.headers.get("set-cookie")).not.toContain("shiptorio_access=");
