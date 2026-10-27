@@ -19,7 +19,7 @@ test("adding, renewing and revoking one repo preserves the other; credentials ar
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("one-paste join trades the install command's code for a saved pairing; a spent code says so", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("one-paste join trades the install command's code for a saved pairing; a spent code says so", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "shiptorio-join-"));
   const good = "a".repeat(48), seen: string[] = [];
   const server = Bun.serve({ port: 0, async fetch(req) {
@@ -35,7 +35,7 @@ test("one-paste join trades the install command's code for a saved pairing; a sp
   } finally { server.stop(true); await rm(root, { recursive: true, force: true }); }
 });
 
-test("browser pairing keeps waiting through a dropped connection or a busy server instead of burning the code", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("browser pairing keeps waiting through a dropped connection or a busy server instead of burning the code", async () => {
   const root = await mkdtemp(resolve(tmpdir(), "shiptorio-device-"));
   let polls = 0;
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {

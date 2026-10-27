@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
 
-test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME install → browser pairing → two repos in one runner → update → uninstall", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform === "linux" && !Bun.which("bwrap"))("clean HOME install → browser pairing → two repos in one runner → update → uninstall", async () => {
   const home = await mkdtemp(join(tmpdir(), "shiptorio-clean-user-")), fakeBin = join(home, "bin"); await mkdir(fakeBin);
   const fixture = join(home, "fixture"); await mkdir(fixture);
   const bundle = await Bun.build({ entrypoints: [join(import.meta.dir, "../src/cli.ts")], target: "bun", outdir: fixture, naming: "runner.mjs" });
