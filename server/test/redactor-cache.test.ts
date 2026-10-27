@@ -57,7 +57,7 @@ test("Sentry callbacks observe secret mutation, removal and previous-key rotatio
   expect(options.beforeBreadcrumb!({ message: forms(next) }, {})!.message).toBe("[REDACTED]|[REDACTED]|[REDACTED]");
   expect(options.beforeBreadcrumb!({ message: old }, {})!.message).toBe(old);
   env.CRED_PREVIOUS_KEYS = JSON.stringify({ "1": previous });
-  expect(options.beforeSend!({ message: previous, request: { url: "https://private.example" }, user: { id: "123", ip_address: "192.0.2.1" } }, {})).toEqual({ message: "[REDACTED]", user: { id: "123" } });
+  expect(options.beforeSend!({ type: undefined, message: previous, request: { url: "https://private.example" }, user: { id: "123", ip_address: "192.0.2.1" } }, {})).toEqual({ type: undefined, message: "[REDACTED]", user: { id: "123" } });
   delete env.SESSION_SECRET;
   delete env.CRED_PREVIOUS_KEYS;
   expect(options.beforeBreadcrumb!({ message: `${next}|${previous}` }, {})!.message).toBe(`${next}|${previous}`);
