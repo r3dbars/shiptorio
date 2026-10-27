@@ -9,6 +9,7 @@
 import { signalId, type BottleneckArea, type BrainSignal, type SignalSource } from "@shiptorio/shared";
 import { deriveCiSignals, type WorkflowRun } from "../../src/signals/ci";
 import clogged from "../../test/fixtures/ci/clogged-runs.json";
+import { analyzeUsage, fakeUsage, type FakeUsageScenario, type ItemLike } from "../../src/signals/posthog";
 
 export interface EvalCase {
   id: string;
@@ -69,6 +70,16 @@ const cloggedRuns = clogged.workflow_runs as WorkflowRun[];
 const humWithCi = (ci: (now: number) => BrainSignal[], ...more: ((now: number) => BrainSignal)[]) => (now: number) => {
   const mine = [...ci(now), ...more.map(s => s(now))];
   return [...hum.map(s => s(now)).filter(h => h.source !== "ci" && !mine.some(m => m.id === h.id)), ...mine];
+};
+/** The PostHog collector's real output on a canned read (server/src/signals/posthog.ts), not a hand-written signal. */
+const DAY = 24 * HOUR;
+const posthogRead = (scenario: FakeUsageScenario, launchesDaysAgo: number[] = []) => (now: number): BrainSignal[] => {
+  const items: ItemLike[] = launchesDaysAgo.map((d, i) => ({ id: `l${i}`, title: `Launch ${i + 1}`, kind: "feature", district: "web", orbit: { since: now - d * DAY, until: now - d * DAY + DAY, state: "clear" } }));
+  return analyzeUsage(fakeUsage(now, scenario), items, [], "$pageview", now);
+};
+const humWith = (read: (now: number) => BrainSignal[], ...more: ((now: number) => BrainSignal)[]) => (now: number) => {
+  const mine = [...read(now), ...more.map(s => s(now))];
+  return [...hum.map(s => s(now)).filter(h => !mine.some(m => m.id === h.id)), ...mine];
 };
 
 export const CASES: EvalCase[] = [
@@ -399,5 +410,17 @@ export const CASES: EvalCase[] = [
       sig("ci", "ci_red_main", 0.9, "Main has been red for 7 hours; nothing can merge.", ["Run #4901 failed: auth.test.ts"])),
     expect: { area: "speed", signal: "ci:ci_red_main:repo" }, unlock: /main|green|fix|revert|auth/i,
     why: "A goal tilts the pick at most 1.5x; a real fire still wins.",
+  },
+  {
+    id: "collector-usage-falling", title: "PostHog collector: daily people fell 30% this week while CI crept up a little",
+    signals: humWith(posthogRead("falling"), sig("ci", "ci_slow", 0.25, "CI takes 8 min, up from 6.", ["Median 8 min (was 6)"], { metric: { value: 8, baseline: 6, unit: "min" } })),
+    expect: { area: "users", signal: "posthog:usage_falling:repo" }, plays: ["find_what_changed"], unlock: /changed|drop|fell|why|launch|usage/i,
+    why: "A third of the people stopped coming; two extra minutes of CI can wait.",
+  },
+  {
+    id: "collector-growth-stall", title: "PostHog collector: 120 people a day, but only 10 new people a week and falling behind",
+    signals: humWith(posthogRead("stalled")),
+    expect: { area: "users", signal: "posthog:growth_stall:repo" }, plays: ["get_first_users"], unlock: /users|people|share|post|launch|tell|customer|grow/i,
+    why: "The product works for the people it has; the bottleneck is getting more of them.",
   },
 ];

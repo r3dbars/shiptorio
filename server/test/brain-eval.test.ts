@@ -43,6 +43,9 @@ describe("brain eval grading", () => {
     const byId = Object.fromEntries(r.cases.map(c => [c.id, c]));
     expect(byId["red-ci-quiet-sentry"].exact).toBe(true);
     expect(byId["error-spike"].got.signalId).toBe("sentry:error_spike:checkout");
+    // the PostHog collector's own output, not hand-written signals: usage wins as the bottleneck
+    expect(byId["collector-usage-falling"]).toMatchObject({ exact: true, playHit: true, got: { area: "users", signalId: "posthog:usage_falling:repo" } });
+    expect(byId["collector-growth-stall"]).toMatchObject({ exact: true, playHit: true, got: { area: "users", signalId: "posthog:growth_stall:repo" } });
     for (const id of ["nothing-wrong", "small-noise", "player-away-fine"]) { // under the floor: the rule stays quiet too
       expect(byId[id].got.area).toBeNull();
       expect(byId[id].nags).toEqual({ quietCard: false, flip: false, renag: false, heartbeatCard: false });

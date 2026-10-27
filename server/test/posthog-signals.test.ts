@@ -151,3 +151,15 @@ describe("queries and parsing", () => {
     expect(() => parseActive({ error: "nope" })).toThrow();
   });
 });
+
+describe("registered in the brain loop", () => {
+  it("collect() reads PostHog through COLLECTORS: fake data in, usage signals out; not linked = no_analytics", async () => {
+    const { collect, emptyCache } = await import("../src/signals/index");
+    const base = { state: { items: [] } as never, jam: { bottleneck: null, stages: [] }, storage: { get: async () => undefined } };
+    const fake = await collect({ ...base, env: { FAKE_POSTHOG: "1" } as never, posthogCreds: async () => ({}) }, emptyCache(), NOW);
+    expect(fake.errors).toEqual([]);
+    expect(fake.cache.signals.filter((s) => s.source === "posthog").map((s) => s.kind)).toContain("feature_unused");
+    const off = await collect({ ...base, env: {} as never, posthogCreds: async () => ({}) }, emptyCache(), NOW);
+    expect(off.cache.signals.filter((s) => s.source === "posthog").map((s) => s.kind)).toEqual(["no_analytics"]);
+  });
+});
