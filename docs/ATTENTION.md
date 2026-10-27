@@ -240,10 +240,8 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
   (replaces `useBottleneckNudge`). Quiet hours and push mode live in prefs (`savePref`).
 - Flag: `attention` (default off) until Justin has played it.
 
-## Open questions for Justin
+## Defaults (Justin can flip any of these)
 
-1. Launches are Approve and can push after 30 min. Or should merges wait for your check-in? (Recommend: push.)
-2. Default push mode once pushes are on: Live or Digest? (Recommend: Live, because Approve/Steer are rare after the
-   batching above.)
-3. Is red right for Steer? It reads as "failed." The alternative is idle blue `--iron-idle`. (Recommend: red,
-   because a stuck line is the one thing worth that color.)
+1. Launches are Approve and can push after 30 min.
+2. Default push mode once pushes are on: Live.
+3. Steer is red. Idle blue `--iron-idle` is the fallback if red reads too much like "failed".
