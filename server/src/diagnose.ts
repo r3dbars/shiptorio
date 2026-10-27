@@ -38,6 +38,8 @@ export const emptyMemory = (): BrainMemory => ({ runs: { day: "", count: 0 }, la
 export const BRAIN = {
   /** Under this weight a signal isn't worth a card: the brain stays quiet. */
   floor: 0.2,
+  /** The rule has no judgment, so it stays quiet on faint signals the model would weigh: it only deals at this weight or more. */
+  ruleFloor: 0.35,
   /** A parked bottleneck comes back early only when it got this much heavier. */
   worse: 0.2,
   laterMs: 24 * 3_600_000,
@@ -127,7 +129,7 @@ export function ruleDiagnosis(signals: readonly BrainSignal[], memory: BrainMemo
   // On a near-tie keep the current card, so the deck doesn't flip between two equal problems.
   const cur = memory.current && open.find(s => s.id === memory.current!.bottleneck.id);
   const main = cur && bucket(signalWeight(cur, now)) === bucket(signalWeight(open[0], now)) ? cur : open[0];
-  if (!main) return null;
+  if (!main || signalWeight(main, now) < BRAIN.ruleFloor) return null;
   const bottleneck: BrainBottleneck = { id: main.id, area: DEFAULT_AREA[main.source], title: main.title.slice(0, 80), why: (main.evidence[0]?.label ?? main.title).slice(0, 200), signalIds: [main.id], confidence: main.confidence, by: "rule", decidedAt: now };
   return { bottleneck, unlock: unlockFor(playsFor(main.kind)[0], main, main.id, ctx) };
 }
@@ -273,7 +275,8 @@ export async function runDiagnose(input: RunInput): Promise<RunResult> {
   if (!call.run && memory.quiet && memory.mainKey === mainKey(open, now)) return quiet(call.why, memory, false);
   const place = (b: BrainBottleneck, u: BrainUnlock): BrainMemory => ({ ...memory, quiet: false, current: { bottleneck: b, unlock: u, shownAt: b.id === memory.current?.bottleneck.id ? memory.current.shownAt : now } });
   const rule = (fellBack: string | undefined, thought: boolean): RunResult => {
-    const r = ruleDiagnosis(signals, memory, now, input.ctx)!;
+    const r = ruleDiagnosis(signals, memory, now, input.ctx);
+    if (!r) return { ...quiet(fellBack ? `Rule: nothing heavy enough for a card (${fellBack})`.slice(0, 300) : "Nothing heavy enough for a card.", memory, !!memory.current), thought, fellBack };
     return { memory: { ...place(r.bottleneck, r.unlock), mainKey: mainKey(open, now) }, diagnosis: { at: now, signals: fresh, ...r, reason: `${fellBack ? "Rule pick: " : ""}${r.bottleneck.title}`.slice(0, 300) }, decided: true, thought, cleared, fellBack, why: call.why };
   };
   if (!call.run) return rule(undefined, false); // over budget or capped with nothing up: the rule still deals a card

@@ -1,6 +1,7 @@
 // Every message on the wire. Both lanes build against this file; change it in a PR both see.
 
 import { z } from "zod";
+import { HoldingBack } from "./signals";
 import {
   Actor,
   Autonomy,
@@ -41,6 +42,7 @@ export const Patch = z.object({
   tick: z.number().int().optional(),
   goal: z.string().optional(),
   bottleneck: Bottleneck.nullable().optional(),
+  holdingBack: HoldingBack.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
