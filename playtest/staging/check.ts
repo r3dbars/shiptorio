@@ -29,7 +29,11 @@ try {
  r=await call("/test/install?confirm=1","POST");assert(r.status===302 || r.status===303,"Fixture install failed: "+r.status);
  for(let n=0;n<30;n++){r=await call("/api/repos"); const data=await r.json() as any; if(data.repos?.some((x:any)=>(x.full_name??x.fullName)==="test-fixture/test-newbie"))break;if(n===29)throw new Error("Signed fixture webhook did not populate inventory");await new Promise(r=>setTimeout(r,100));}
  r=await call("/api/repos/test-fixture/test-newbie/runner/status");assert(r.ok,"Fixture runner failed: "+r.status);
+ await db.prepare("INSERT OR REPLACE INTO spark_usage(account,day,calls,tokens) VALUES('user:-9001','fixture-day',7,700)").run();
+ await db.prepare("INSERT OR REPLACE INTO spark_usage(account,day,calls,tokens) VALUES('user:42','fixture-day',9,900)").run();
  for(let n=0;n<120;n++){r=await call("/test/reset","POST");if(r.status!==409)break;await new Promise(r=>setTimeout(r,250));} assert(r.ok,"Explicit reset failed: "+r.status+" "+await r.text());
+ assert(!await db.prepare("SELECT 1 FROM spark_usage WHERE account='user:-9001'").first(),"Reset retained tester usage");
+ assert(!!await db.prepare("SELECT 1 FROM spark_usage WHERE account='user:42'").first(),"Reset crossed account boundary");
  r=await call("/api/repos"); assert((await r.json() as any).repos.length===0,"Reset left installed inventory");
  r=await call("/test/install?confirm=1","POST"); assert(r.status===302 || r.status===303,"Second install failed");
  assert(outbound===0,"Native provider egress occurred");

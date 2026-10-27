@@ -65,7 +65,10 @@ export default {
         env.DB.prepare("DELETE FROM user_prefs WHERE user_id=?").bind(id),
         env.DB.prepare("DELETE FROM spark_factory_calls WHERE repo=?").bind(repo),
         env.DB.prepare("DELETE FROM factory_budget_owners WHERE repo=?").bind(repo),
-        env.DB.prepare("DELETE FROM spark_usage WHERE account=?").bind(`github:user:${id}`),
+        env.DB.prepare("DELETE FROM spark_usage WHERE account=?").bind(`user:${id}`),
+        env.DB.prepare("DELETE FROM signup_counters WHERE scope=?").bind(`runs:${persona}`),
+        env.DB.prepare("DELETE FROM signup_resources WHERE login=? AND resource=?").bind(persona, repo),
+        env.DB.prepare("DELETE FROM spark_factory_budgets WHERE repo=?").bind(repo),
       ]);
       await factory.completeFixtureReset();
       const resumed = await provider.fetch(new Request("http://fixture.internal/resume", { method: "POST", headers: { "x-test-persona": persona } }));
