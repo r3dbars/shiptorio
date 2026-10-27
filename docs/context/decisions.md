@@ -8,7 +8,8 @@
   slots. Spark ordering, suppression and launch proof are unchanged.
 
 
-- 2026-10-27: The 12-card cap reserves at most one existing eligible runner decision
+- 2026-10-27 (historical policy, superseded by the governance-window rule above):
+  The 12-card cap reserves at most one existing eligible runner decision
   when passive source alerts would hide it. Awaiting plan consent takes precedence
   over a new planning proposal; only a passive unblock/Look later slot can be replaced.
   Score order and Spark ordering remain intact, as do suppression, explicit escalation
