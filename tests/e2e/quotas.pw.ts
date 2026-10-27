@@ -1,14 +1,40 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+async function ownerSession(page: Page, context: BrowserContext, baseURL: string) {
+  const session = await (await page.request.post('/__test/session')).json();
+  await context.addCookies(session.cookie.split('; ').map((entry: string) => {
+    const i = entry.indexOf('='); return { name: entry.slice(0, i), value: entry.slice(i + 1), url: baseURL };
+  }));
+}
+async function saveNativeQuota(admin: Page, baseURL: string) {
+  const runInput = admin.getByRole('spinbutton', { name: 'Runs/day (UTC)', exact: true });
+  await expect(runInput).toHaveValue('20');
+  await runInput.fill('25');
+  const saved = admin.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/admin/signup');
+  await admin.getByRole('button', { name: 'Save access and quotas', exact: true }).click();
+  const response = await saved;
+  expect(response.status(), await response.text()).toBe(200);
+  expect(response.request().headers().origin).toBe(new URL(baseURL).origin);
+  await expect(runInput).toHaveValue('25');
+  // Reload proves the change reached D1 rather than merely changing the input's local value.
+  await admin.reload();
+  await expect(runInput).toHaveValue('25');
+  await expect(admin.getByRole('spinbutton', { name: 'Factories', exact: true })).toHaveValue('51');
+  await expect(admin.getByRole('spinbutton', { name: 'Repos', exact: true })).toHaveValue('51');
+}
+
+test('native owner quota form keeps Origin and persists the save', async ({ page, context }, info) => {
+  await ownerSession(page, context, info.project.use.baseURL as string);
+  await page.goto('/admin/signup?login=fixture');
+  await saveNativeQuota(page, info.project.use.baseURL as string);
+});
+
 test('quota warning → cap → raise link → automatic recovery and retry cooldown', async ({ page, context }, info) => {
   const repo = `fixture/${info.project.name}`;
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.request.post(`/__test/${repo}/seed?ore=0`);
-  const session = await (await page.request.post('/__test/session')).json();
-  await context.addCookies(session.cookie.split('; ').map((entry: string) => {
-    const i = entry.indexOf('='); return { name: entry.slice(0, i), value: entry.slice(i + 1), url: String(info.project.use.baseURL) };
-  }));
+  await ownerSession(page, context, info.project.use.baseURL as string);
   let used = 16, retry = false;
   const resetsAt = (Math.floor(Date.now() / 86400000) + 1) * 86400000;
   await page.route(`**/api/repos/${repo}/limits`, route => route.fulfill({ json: {
@@ -32,12 +58,12 @@ test('quota warning → cap → raise link → automatic recovery and retry cool
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(card).toContainText('limit reached');
   // Owner administration stays in a new tab so returning to the factory refreshes the live card.
-  await page.route('**/admin/signup?login=fixture', route => route.fulfill({ contentType: 'text/html', body: '<title>Shiptorio quota admin</title><h1>Signup and quotas</h1>' }));
   const popupPromise = page.waitForEvent('popup');
   await card.getByRole('link', { name: 'Raise limit' }).click();
   const popup = await popupPromise;
   await popup.waitForLoadState();
   expect(popup.url()).toContain('/admin/signup?login=fixture');
+  await saveNativeQuota(popup, info.project.use.baseURL as string);
   await popup.close();
   used = 0;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));

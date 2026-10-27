@@ -63,14 +63,14 @@ import { emptyBrain, recordThought, scoreShip } from "./brain";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
-import { beginCheckin, deferCard, emptyDeckBook, moveKey, plannerFeedback, suppressed, thirdDefer, type DeckBook, type DeckRule } from "./deck-decisions";
+import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
@@ -301,7 +301,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
-    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
+    const yes = await flagEnabled(this.env, "attention") ? this.deckBook!.yes : undefined;
+    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = this.applyGameMaster(ranked);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -310,7 +312,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.openMoves = this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") || offered.some(card => card.id === m.id));
     const deck = offered.filter(m => !suppressed(this.deckBook!, m)).map(m => {
       const decision = this.deckBook!.decisions[moveKey(m)];
-      return decision && decision.count >= 3 ? thirdDefer(m) : m;
+      if (decision && decision.count >= 3) return thirdDefer(m);
+      // Say out loud when the player's own taps put a card here, unless the game master already explained it.
+      const streak = yes?.[yesKey(m.kind ?? "unblock", moveScope(m, s))] ?? 0;
+      return streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
     });
     const previous = s.move;
     s.deck = deck; s.move = deck[0] ?? null;
@@ -407,6 +412,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong") {
     await this.decisionData();
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
+    resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!));
     if (why === "defer") deferCard(book, move);
     else {
       const id = crypto.randomUUID(), scope = moveScope(move, this.state!);
@@ -1751,7 +1757,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research || p.experiments) p = { ...p, stations: (s.stations = liveStations(s)) };
     await this.save();
-    await this.broadcast({ type: "patch", patch: p });
+    // Delivery revalidates browser membership over the network and may queue behind
+    // an earlier frame. Never hold an atomic runner mutation behind that I/O.
+    // broadcast preserves order and registers delivery with ctx.waitUntil.
+    this.broadcast({ type: "patch", patch: p });
     await this.refreshDecisions();
   }
 
@@ -2027,7 +2036,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (!v.passed) await this.noteRework(now);
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
-        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files)),
+        // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
+        const context = (await Promise.all(referencedFiles(files).map(async path => ({ path, content: (await fileContent(token, this.meta!.repo, path, headSha).catch(() => null))?.slice(0, 6000) }))))
+          .filter((c): c is { path: string; content: string } => typeof c.content === "string");
+        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context),
           v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
         const now = currentInLane();
         if (!now) return;
@@ -2586,7 +2598,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
-        if (consumed && option.recommended) await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
+        if (consumed && option.recommended) {
+          await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
+          noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
+          await this.accountPut("deckBook", this.deckBook);
+        }
       }
       await this.refreshDecisions(); return;
     }

@@ -167,19 +167,6 @@ export const HUD = {
   },
 };
 
-/** The first-run fork: which world to start in. */
-export const FORK = {
-  label: "First read",
-  kicker: (repo: string) => `First read · ${repo}`,
-  bottleneck: (summary: string) => `Your bottleneck right now: ${summary}.`,
-  scanned: (n: number) => `${n} folders scanned. Now let's find what's stuck.`,
-  checkin: "Show me what's stuck",
-  checkinSub: "Suggested · clear what waits on you, two minutes at a time",
-  factory: "Run the factory",
-  factorySub: "Lay down your own line and ship a fix",
-  switch: "You can switch any time.",
-};
-
 export const LINE = {
   title: "The line",
   onPad: "On the pad",
@@ -990,3 +977,26 @@ export const JUDGE = {
     { title: "More trust. More factory.", text: "Signals became plans, plans became verified PRs, and merges became rockets. In a connected factory these are real changes. The more you play, the more it can run itself." },
   ],
 } as const;
+
+/** docs/ATTENTION.md: one card shape, three kinds, Continue or Later. */
+export const ATTENTION = {
+  kind: { approve: "Approve", steer: "Steer", suggest: "Suggested" } as const,
+  continue: "Continue",
+  later: "Later",
+  details: "Details",
+  hide: "Hide",
+  others: "Other options",
+  swipeHint: "Swipe right to continue, left for later",
+  laterAsk: "Why later? (optional)",
+  teach: "OR TELL THE PLANNER",
+  why: [
+    { why: "defer", label: "Not now" },
+    { why: "kind", label: "Stop showing these" },
+    { why: "spark", label: "You decide these" },
+    { why: "wrong", label: "Wrong call" },
+  ] as const,
+  parked: "Parked for a day.",
+  more: (approve: number, steer: number, suggest: number) => [steer && `${steer} steer`, approve && `${approve} approve`, suggest && `${suggest} suggested`].filter(Boolean).join(" · "),
+  checkin: "Check in ›",
+  pushTitle: (approve: number, steer: number) => [steer && `${steer} to steer`, approve && `${approve} to approve`].filter(Boolean).join(", ") + " in Shiptorio",
+};

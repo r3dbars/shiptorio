@@ -191,7 +191,7 @@ export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
   return out;
 }
 
-export function useFactorySound(state: FactoryState | null, focus?: string | null) {
+export function useFactorySound(state: FactoryState | null, focus?: string | null, calm = false) {
   const prev = useRef<FactoryState | null>(null);
   const focused = state ? focusFor(focus, state) : null;
   useEffect(() => sound.setFocus(focused), [focus]);
@@ -209,7 +209,8 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     // so the art's station effects (stamp flash, ram slam, gate swing) can land on the same beat
     for (const v of stationVerdicts(p, state)) window.dispatchEvent(new CustomEvent<StationVerdict>(STATION_EVENT, { detail: v }));
     const sfx = diffSounds(p, state);
-    sfx.forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
+    // docs/ATTENTION.md: suggestions never make a sound
+    sfx.filter((s) => !(calm && s === "suggest")).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
     if (sfx.some((s) => CAUGHT.includes(s))) sound.musicAlert();
     // each PR that just launched gets the full celebration (event for the art + launch, fanfare, streak)
     const was = new Map(p.items.map((i) => [i.id, i.state]));

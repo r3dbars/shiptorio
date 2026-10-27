@@ -141,6 +141,19 @@ describe("browser origin and response policy", () => {
     expect(securityHeaders(request("/art/prototype.html"), "testnonce")["Content-Security-Policy"]).toContain("'nonce-testnonce'");
   });
 
+  it("preserves native admin form Origin while retaining strict CSRF checks and off-site privacy", () => {
+    for (const path of ["/runner/pair", "/admin/signup", "/admin/signup?login=r3dbars"]) {
+      expect(securityHeaders(request(path))["Referrer-Policy"]).toBe("same-origin");
+    }
+    for (const path of ["/", "/admin", "/admin/signup/extra", "/api/repos/a/b/limits"]) {
+      expect(securityHeaders(request(path))["Referrer-Policy"]).toBe("no-referrer");
+    }
+    for (const origin of [undefined, "null", "https://evil.example"]) {
+      expect(browserMutationAllowed(request("/admin/signup", { method: "POST", headers: origin ? { origin } : {} }))).toBe(false);
+    }
+    expect(browserMutationAllowed(request("/admin/signup", { method: "POST", headers: { origin: "https://shiptorio.com" } }))).toBe(true);
+  });
+
   it("caches public hashed judge assets; pages, gates and misses stay no-store", async () => {
     const env = { ...baseEnv(), ASSETS: { fetch: async (r: Request) => new URL(r.url).pathname === "/assets/gone.js" ? new Response("", { status: 404 }) : new Response("x") } };
     const cookie = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");

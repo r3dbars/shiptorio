@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Ref } from "react";
 
 import { savePref } from "./account";
-import type { FactoryState, Item, PowerSource, WebToServer } from "@shiptorio/shared";
+import { attentionOf, type FactoryState, type Item, type PowerSource, type WebToServer } from "@shiptorio/shared";
 import { FactoryMap } from "./map/FactoryMap";
 import type { Ping } from "./map/scene";
 import { css, KIND_COLOR } from "./map/palette";
@@ -36,8 +36,10 @@ import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
-import { ACTIVITY, FORK, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
+import { AttentionTray } from "./ui/Attention";
+import { attentionOn } from "./flags";
 
 const POWER_COLOR: Record<PowerSource["kind"], string> = { steam: "var(--iron-amber)", solar: "var(--iron-ok)", geothermal: "var(--iron-furnace)" };
 
@@ -49,7 +51,7 @@ const codePath = (district: string) => (district === "/" ? "/" : `/${district}`)
 const SLOTS = POWER.slots;
 
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
-// "let me make the factory mine". The first run asks once after the scan; the toggle switches any time.
+// "let me make the factory mine". Everyone starts on the map; the toggle switches any time.
 type World = "checkin" | "build";
 type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
 const WORLD_KEY = "shiptorio:world";
@@ -116,7 +118,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const satellites = useMemo(() => (empire.on ? satellitesFor(empire) : []), [empire.on, JSON.stringify(empire.others), empire.here?.repo, empire.here?.waiting, empire.here?.bottleneck?.wip]);
   const intro = introMode(cfg);
   const achLink = useRef<ProgressLink>({ streak: 0 }); // progression is set up further down
-  const ach = useAchievements(state, cfg.kind === "live", intro, sendRaw, achLink, progressProfile(cfg.kind, login));
+  // docs/ATTENTION.md: with the attention flag, a badge only toasts right after your own tap; the rest wait in the sheet.
+  const lastTap = useRef(0);
+  const ach = useAchievements(state, cfg.kind === "live", intro || (attentionOn() && Date.now() - lastTap.current > 10_000), sendRaw, achLink, progressProfile(cfg.kind, login));
   const send = ach.send; // achievements never treat an attempted send as an accepted move
   // played straight from ?scenario=intro, the tour ends at the first run, the way onboarding would
   const tourDone = onIntroDone ?? (() => (location.href = "?source=sim&scenario=first-run"));
@@ -130,8 +134,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   if (state) powerJobs.current = notePowerJobs(powerJobs.current, state);
   const plants = state ? powerLedger(state, powerJobs.current) : [];
   const [panel, setPanel] = useState<string | null>(null);
-  // the first run asks which world to start in; everyone else lands in Build, the full map
-  const [world, setWorldState] = useState<World | null>(() => (intro ? "build" : tour.on ? null : (readWorld() ?? "build")));
+  // Everyone lands in Build, the full map. The first run used to ask Check in or Build before the player had
+  // seen a machine, and both led to the same starter-factory card (new-player walkthrough, 2026-10-27).
+  const [world, setWorldState] = useState<World>(() => (intro ? "build" : (readWorld() ?? "build")));
   const setWorld = (w: World) => {
     setWorldState(w);
     try {
@@ -150,17 +155,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const deck = state?.deck ?? (state?.move ? [state.move] : []);
   const [supportReview, setSupportReview] = useState<string | null>(null);
   const sendCard = (message: WebToServer) => {
+    lastTap.current = Date.now();
     const ticketId = supportReviewTarget(message, deck);
     if (ticketId) { setSupportReview(ticketId); setPanel("m:ore-inbox"); setCheckin(false); return; }
     send(message);
   };
-  useFactorySound(state, focusKey ?? panel); // whatever the camera is in on, you hear up close
+  useFactorySound(state, focusKey ?? panel, attentionOn()); // whatever the camera is in on, you hear up close
   // Progression: level, streak, unlocks, morning brief. ?progress=1 until it's on by default.
   const [progressing] = useState(() => !intro && progressOn());
   const profile = progressProfile(cfg.kind, login);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
-  const nudge = useBottleneckNudge(deck, progressing);
+  const [calm] = useState(attentionOn); // docs/ATTENTION.md, behind the "attention" flag
+  const nudge = useBottleneckNudge(deck, progressing, calm);
   achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson }; // achievements pay XP into progression; toasts wait out the tour coach card
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
   useEffect(() => {
@@ -205,7 +212,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
       // this visit only
     }
   };
-  const fork = world === null && !!state && state.districts.length > 0 && !tour.lesson;
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const items = state?.items ?? [];
@@ -244,8 +250,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     }
     return out;
   }, [state, ping, narrow]);
-  const waiting = deck.length + pad.filter((i) => i.state === "on_pad").length;
-  const blocked = state?.machines.filter((m) => m.state === "blocked") ?? [];
+  // Each thing waiting on you counts once: a PR on the pad that already has its own card isn't counted twice.
+  const carded = new Set(deck.map((m) => m.itemId).filter(Boolean));
+  const waiting = deck.length + pad.filter((i) => i.state === "on_pad" && !carded.has(i.id)).length;
+  // A machine stopped for want of power is already the "plug in power" card, so it isn't a second ask.
+  const unpowered = [...deck, state?.move].some((m) => m?.stage === "resources" || m?.stage === "power");
+  const blocked = unpowered ? [] : state?.machines.filter((m) => m.state === "blocked") ?? [];
 
   // The floor card's one row of numbers, in the mockup's order: mined, on line, shipped, rework, needs you.
   const F = HUD.floor;
@@ -256,7 +266,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   }
   if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
   if (show("line")) counts.push({ key: "rw", label: F.rework, value: items.filter((i) => i.state === "rejected").length, tone: "rw", title: F.reworkTitle });
-  if (show("line")) counts.push({ key: "need", label: F.needs, value: waiting + blocked.length, tone: "need", title: F.needsTitle });
+  // Calm: "Needs you" counts only what's parked on you (approve + steer), never ideas.
+  const needs = calm ? deck.filter((m) => attentionOf(m) !== "suggest").length : waiting + blocked.length;
+  if (show("line")) counts.push({ key: "need", label: F.needs, value: needs, tone: "need", title: F.needsTitle });
   // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
   const extras: Count[] = [];
   if (autonomy?.launches) {
@@ -305,7 +317,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   };
   // No card open: always offer a next move, so the factory never goes quiet after a rocket (#105).
   // The first-run coach does its own teaching, so it waits until the coach is done.
-  const whatNext = state && !state.move && !tour.lesson && !fork ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
+  const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live" }) : null;
   const onNudge = (a: NudgeAction) => {
     if (a.do === "launch") {
       const item = state?.items.find((i) => i.id === a.itemId);
@@ -318,7 +330,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     else setSheet(a.sheet);
   };
   // the needs tray is up when nothing bigger holds the middle of the screen (the chain of sheets below)
-  const trayUp = !fork && !(brief.show && progressing && !checkin && !sheet) && !source && !sheet && !checkin;
+  const trayUp = !(brief.show && progressing && !checkin && !sheet) && !source && !sheet && !checkin;
   const toggleSheet = (s: Sheet) => setSheet((v) => (v === s ? null : s));
 
   // Keyboard players: whatever opens (a sheet, a station panel, the tray, the deck) takes focus,
@@ -533,30 +545,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </section>
         )}
 
-        {fork && state ? (
-          <section className="card nextmove firstread" aria-label={FORK.label}>
-            <div className="nm-head">
-              <span className="nm-kicker">{FORK.kicker(state.repo)}</span>
-            </div>
-            <h2>
-              {state.bottleneck?.summary
-                ? FORK.bottleneck(state.bottleneck.summary)
-                : FORK.scanned(state.districts.length)}
-            </h2>
-            {cfg.kind === "live" && <RunnerConnection repo={cfg.repo} />}
-            <div className="opts">
-              <button type="button" className="btn rec" onClick={() => { setWorld("checkin"); if (deck.length > 1) setCheckin(true); }}>
-                {FORK.checkin}
-                <small>{FORK.checkinSub}</small>
-              </button>
-              <button type="button" className="btn" onClick={() => setWorld("build")}>
-                {FORK.factory}
-                <small>{FORK.factorySub}</small>
-              </button>
-            </div>
-            <p className="empty">{FORK.switch}</p>
-          </section>
-        ) : brief.show && progressing && !checkin && !sheet ? (
+        {brief.show && progressing && !checkin && !sheet ? (
           <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
         ) : sheet === "progress" ? (
           <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
@@ -588,6 +577,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               onClose={() => { setCheckin(false); setFocus(null); }}
               onAnswered={progressing ? prog.card : undefined}
               end={progressing ? (<><DayTally p={prog.p} /><DeckTrend p={prog.p} /></>) : undefined}
+              calm={calm}
             />
           </Suspense>
         ) : sheet === "line" ? (
@@ -716,11 +706,21 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </section>
         ) : (
           <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
-            <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} rows={needRows} />
+            {calm ? (
+              <AttentionTray
+                deck={deck}
+                send={sendCard}
+                onPower={cfg.kind === "live" ? () => setSheet("power") : undefined}
+                onCheckin={world !== "checkin" && show("checkin") && !checkin ? () => setCheckin(true) : undefined}
+                quiet={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null}
+              />
+            ) : (
+              <NextMove move={state?.move} bottleneck={state?.bottleneck} stations={state?.stations} send={sendCard} onOpen={setPanel} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} nudge={whatNext} onNudge={onNudge} rows={needRows} />
+            )}
           </div>
         )}
 
-        {show("log") && !fork && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
+        {show("log") && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
 
         {!checkin && (
         <nav className="ctrl" aria-label={HUD.dock.label} ref={hv.refs.ctrl as Ref<HTMLElement>}>
@@ -795,6 +795,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             onLaunch={launchItem}
             onCheckin={show("checkin") ? () => { setTray(false); setCheckin(true); } : undefined}
             onClose={() => setTray(false)}
+            historyOnly={calm}
             header={
               <>
                 {cfg.kind === "sim" ? ACTIVITY.sim(cfg.scenario) : `${cfg.repo} · ${state?.baseBranch ?? "main"}`}

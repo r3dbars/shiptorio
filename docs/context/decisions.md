@@ -403,3 +403,19 @@ production config; provider key values, revocations and permissions are unchange
 - Existing diff scope/secret checks, frozen files, sandboxed checks, regression
   proof and fresh trusted publication still run afterward. This implementation
   does not establish issue #170 acceptance or a real PR launch.
+
+### Runner factory timeout recovery (2026-10-27)
+
+- A scoped live `shiptorio` tail captured heartbeat and webhook 500s for both active
+  factories with Cloudflare's `blockConcurrencyWhile()` timeout/reset error.
+  `claimRunner` held its atomic mutation gate while `patch` awaited the browser
+  broadcast queue. Fresh per-frame repository authorization can wait on remote
+  GitHub calls, so slow browser delivery could reset the whole factory.
+- Persisted state changes now enqueue browser delivery through its existing
+  `waitUntil` task without awaiting it. Frame ordering, fresh authorization,
+  rejection/close behavior, explicit browser-message drains and atomic runner
+  approval/lease validation stay intact.
+- A held-auth regression proves two concurrent claims create exactly one persisted
+  running lease and a heartbeat completes before browser authorization resolves;
+  no frame is sent early or after revocation. Restoring the old await makes this
+  regression fail. This receipt does not claim a real issue-to-PR launch.
