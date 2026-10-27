@@ -61,11 +61,11 @@ Every `Diagnosis` (signals in, bottleneck, unlock, reason) is stored so the eval
 
 | Piece | Files | Signals / output |
 |---|---|---|
-| CI | `server/src/signals/ci.ts` | `ci_slow`, `ci_flaky`, `ci_red_main`, `ci_queue`, `ci_missing` |
-| Sentry | `server/src/signals/sentry.ts` | `errors_piling`, `error_spike`, `regression`, `errors_unowned` |
-| PostHog | `server/src/signals/posthog.ts` | `usage_flat`, `funnel_drop`, `no_users`, `feature_unused`, `no_analytics` |
+| CI | `server/src/signals/ci.ts` | `ci_slow`, `ci_flaky`, `ci_red_main`, `ci_queue`, `ci_blocking`, `ci_missing` |
+| Sentry | `server/src/signals/sentry.ts` (hourly pulse log kept by `Factory.handleSentry`) | `errors_piling`, `error_spike`, `regression`, `errors_unowned`, `sentry_missing` |
+| PostHog | `server/src/signals/posthog.ts` | `usage_flat`, `usage_falling`, `funnel_drop` (growth loop), `funnel_leak`, `no_users`, `growth_stall`, `feature_unused`, `no_analytics` |
 | Feedback | `server/src/signals/feedback.ts` | `feedback_unanswered`, `feedback_thin`, `same_complaint` |
-| Repo flow | `server/src/signals/repo.ts`, `factory.ts` | `prs_stale`, `issues_untriaged`, `no_tests`, `big_prs`, `backlog_empty`, `ship_rate_drop`; `factory:*` from bottleneck.ts |
+| Repo flow | `server/src/signals/repo.ts` (factory:* lives in `signals/index.ts`) | `prs_waiting_on_you`, `prs_stale`, `branches_stale`, `backlog_growing`, `issues_untriaged`, `slow_merge`, `ship_rate_drop`, `prs_dropped`, `backlog_empty`, `approve_queue`, `repo_missing`. Five cached list calls per 15 min. `no_tests`, `big_prs` not built yet |
 | Player goals + taps | `server/src/signals/goals.ts`, `taps.ts` | `goal_*`, `card_ignored`, `later_streak`, `never_reason` |
 | Loop core | `server/src/signals/index.ts` (registry), `server/src/diagnose.ts`, `server/src/unlocks.ts` (playbook) | collect → diagnose → deal → close, wired into `Factory` |
 | Map | `web/src/map/shaft/` | the bottleneck's `area` lights its floor; no new HUD |

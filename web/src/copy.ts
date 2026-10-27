@@ -555,6 +555,7 @@ export const THINKS = {
     route: "Picked the power plant",
     growth: "Picked an experiment",
     diagnose: "Found what's holding you back",
+    goal: "Guessed what you want",
   } as Record<ThoughtDecision, string>,
 };
 
@@ -653,6 +654,9 @@ export const GUIDE = {
 
 export const YOURS = {
   title: "Make it yours",
+  goal: "Your goal",
+  goalWhy: (guessed: boolean) => guessed ? "The factory guessed this. Tap the one that matters most and it hunts for what blocks it." : "The factory hunts for whatever blocks this first.",
+  goalPick: "Pick your goal",
   whoBuilds: "Who builds",
   noAssemblers: "No assemblers yet.",
   anyFolder: "any folder",

@@ -896,6 +896,8 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .seg button + button { border-left: 2px solid #000; }
 .seg button:hover:not(:disabled) { background: #3a2e26; }
 .seg button[aria-pressed="true"] { background: var(--iron-amber); color: var(--iron-on-amber); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.25); }
+.seg.goals { display: flex; flex-wrap: wrap; flex: 1; }
+.seg.goals button { flex: 1 1 30%; border-bottom: 2px solid #000; margin-bottom: -2px; }
 .seg button:disabled { color: var(--iron-dim); background: #140e0a; cursor: default; }
 .pickm { flex: 1; min-width: 0; background: var(--iron-soot); color: var(--iron-ink); border: 2px solid var(--iron-line); border-radius: 0; padding: 8px 10px; font: 400 14px var(--iron-mono); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.5); }
 .pickm:hover { border-color: var(--iron-line-hi); }

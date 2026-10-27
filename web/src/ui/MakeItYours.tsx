@@ -3,7 +3,7 @@
 // a real factory command, so the server (or the sim) has the final say on what fits.
 
 import { useState } from "react";
-import type { FactoryState, Harness, WebToServer } from "@shiptorio/shared";
+import { GOAL_IDS, GOALS, type FactoryState, type Harness, type WebToServer } from "@shiptorio/shared";
 import { Icon } from "./icons";
 import { LEVEL_LABEL, MACHINE_NAME as NAME, SOURCE, WORDS, YOURS } from "../copy";
 
@@ -42,6 +42,22 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
           <Icon name="cross" size={14} />
         </button>
       </div>
+
+      {state.goals && (
+        <>
+          <h3>{YOURS.goal}</h3>
+          <p className="empty">{YOURS.goalWhy(state.goals.by !== "player")}</p>
+          <div className="lrow">
+            <span className="seg goals" role="group" aria-label={YOURS.goalPick}>
+              {GOAL_IDS.map((id) => (
+                <button key={id} type="button" aria-pressed={state.goals!.by === "player" && state.goals!.picks[0] === id} onClick={() => send({ type: "set_goals", picks: [id] })}>
+                  {GOALS[id].label}
+                </button>
+              ))}
+            </span>
+          </div>
+        </>
+      )}
 
       <h3>{YOURS.whoBuilds}</h3>
       {assemblers.length === 0 && <p className="empty">{YOURS.noAssemblers}</p>}
