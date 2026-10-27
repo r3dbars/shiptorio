@@ -10,8 +10,8 @@ move it, rotate it, add more, and rewire the belts and rails, and **every change
 to how their repo ships** (which agents build what, which checks run in which order, how much work can pile
 up where). It's not a level editor bolted onto a picture. The layout *is* the pipeline config.
 
-Status: spec. Built in phases by the Codex pack `shiptorio/codex-prompts/build-mode.md` (project files),
-which starts only after the vertical shaft map and the Black Iron HUD are on main.
+Status: spec, **parked until after Nov 4** (plan lock, PR #264). Built later in phases by the Codex pack `shiptorio/codex-prompts/build-mode.md` (project files),
+which starts only after the deadline and once the vertical shaft map is on main.
 
 Builds on:
 - **Art:** Black Iron (`docs/art/IRON-STYLE.md`, mockup `docs/art/black-iron/`, its `CONTRACT.md` for ports,
