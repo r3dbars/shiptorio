@@ -133,7 +133,9 @@ export async function registerGithubCredential(token: string, db: D1Database, sc
   boundedSet(contexts, await credentialKey(token), { db, scope });
 }
 async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const key = await credentialKey(token), context = contexts.get(key), owner = tokenOwners.get(key);
+  const key = await credentialKey(token), owner = tokenOwners.get(key);
+  // Bounded context eviction must never remove an installation's shared budget.
+  const context = owner?.env.DB ? { db: owner.env.DB, scope: `github:installation:${owner.installationId}` } : contexts.get(key);
   // Permission-scoped and replacement tokens still consume the same installation budget.
   // D1 shares spacing/cooldowns across isolates; this queue caps in-flight calls to one per isolate.
   const scope = context?.scope ?? (owner ? `github:installation:${owner.installationId}` : key);
