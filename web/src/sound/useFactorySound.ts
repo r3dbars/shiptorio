@@ -8,6 +8,7 @@ import type { ScapeKind } from "./scapes";
 import { celebrateShip } from "./ship";
 import type { MusicInput } from "./music";
 import { accentsFor, freshAccentMemory, LAUNCH_IRON_DELAY_S, limitAccents } from "./accents";
+import { tapFor, type MachineMood } from "./steamIron";
 
 // Each gauntlet station's verdict sounds: [pass, fail].
 const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
@@ -78,6 +79,26 @@ const MACHINE_SCAPE: Partial<Record<Machine["type"], ScapeKind>> = {
 // The thing the camera is locked onto (a station id, "m:<machine id>", "rework" or "power"),
 // as a soundscape kind plus how busy it is right now.
 export function focusFor(key: string | null | undefined, state: FactoryState): Focus | null {
+  const f = scapeFocus(key, state);
+  return f && { ...f, mood: moodOf(f, state) };
+}
+
+// What the close-up should sound like: stuck when it's waiting on you, rework when work is going back
+// to be fixed, working while it has work, idle when it has none.
+export function moodOf(f: Focus, state: FactoryState): MachineMood {
+  if (f.kind === "rework") return f.busy > 0 ? "rework" : "idle";
+  const mid = f.key.startsWith("m:") ? f.key.slice(2) : undefined;
+  const st = state.stations?.find((x) => x.id === f.key || (mid && x.machineId === mid));
+  const machineId = st?.machineId ?? mid;
+  const m = machineId ? state.machines.find((x) => x.id === machineId) : undefined;
+  const focusOf = (id?: string) => !!id && (id === f.key || id === mid || `m:${id}` === f.key);
+  const waiting = m?.state === "blocked" || (st && state.bottleneck?.stationId === st.id) || focusOf(state.move?.focus) || (m?.type === "launch_pad" && state.items.some((i) => i.state === "on_pad"));
+  if (waiting) return "stuck";
+  if (machineId && state.items.some((i) => i.state === "rejected" && i.machineId === machineId)) return "rework";
+  return f.busy > 0 ? "working" : "idle";
+}
+
+function scapeFocus(key: string | null | undefined, state: FactoryState): Focus | null {
   if (!key) return null;
   const n = (x: number, full: number) => Math.min(1, x / full);
   if (key === "rework") return { kind: "rework", key, busy: n(state.items.filter((i) => i.state === "rejected").length, 3) };
@@ -196,8 +217,13 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
   const prev = useRef<FactoryState | null>(null);
   const accentMem = useRef(freshAccentMemory());
   const focused = state ? focusFor(focus, state) : null;
-  useEffect(() => sound.setFocus(focused), [focus]);
-  useEffect(() => sound.updateFocus(focused), [focused?.busy, focused?.kind]);
+  useEffect(() => {
+    sound.setFocus(focused);
+    // the camera just flew in on something: that machine's own tap sound (soundboard picks)
+    const tap = focused && tapFor(focused.kind, focused.key, focused.busy);
+    if (tap) sound.play(tap);
+  }, [focus]);
+  useEffect(() => sound.updateFocus(focused), [focused?.busy, focused?.kind, focused?.mood]);
   useEffect(() => {
     const p = prev.current;
     prev.current = state;

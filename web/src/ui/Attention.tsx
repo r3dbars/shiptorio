@@ -59,12 +59,14 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) 
     send(why === "defer" ? { type: "defer_move", moveId: move.id } : { type: "dismiss_move", moveId: move.id, why });
   };
   const later = (move: Move) => {
+    sound.play("card_later");
     if (asking) settle(asking, "defer");
     setGone(move.id);
     setAsking(move);
     timer.current = setTimeout(() => settle(move, "defer"), LATER_ASK_MS);
   };
-  const go = (move: Move) => {
+  const go = (move: Move, held = false) => {
+    if (!held) sound.play("card_go"); // a held launch already played its countdown and clamp release
     if (asking) settle(asking, "defer");
     const option = continueOption(move);
     if (onPower && plugsInAgent(option)) return onPower();
@@ -139,16 +141,16 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet }: Props) 
           </div>
         )}
         <div className="aacts">
-          <button type="button" className="alater" onClick={() => later(shown)}>{ATTENTION.later}</button>
+          <button type="button" className="alater" data-sfx onClick={() => later(shown)}>{ATTENTION.later}</button>
           <button type="button" className="atog" aria-expanded={open} onClick={() => setOpen((v) => !v)} aria-label={`${open ? ATTENTION.hide : ATTENTION.details}: ${THINKS.why}`}>
             {open ? ATTENTION.hide : ATTENTION.details}
           </button>
         </div>
         </div>
         {isLaunch(shown) ? (
-          <HoldLaunch key={shown.id} card={shown.id} label={continueOption(shown).label} onLaunch={(id) => { if (id === shown.id) go(shown); }} />
+          <HoldLaunch key={shown.id} card={shown.id} label={continueOption(shown).label} onLaunch={(id) => { if (id === shown.id) go(shown, true); }} />
         ) : (
-          <button type="button" className="ago atab" onClick={() => go(shown)}>
+          <button type="button" className="ago atab" data-sfx onClick={() => go(shown)}>
             {ATTENTION.go}
             <span className="sr">: {continueOption(shown).label}</span>
           </button>
@@ -199,15 +201,23 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
   const launch = useRef(onLaunch);
   launch.current = onLaunch;
   const gesture = useRef<HoldGesture | null>(null);
+  const ticked = useRef(-1); // the last countdown tick played this press
   if (!gesture.current)
     gesture.current = new HoldGesture(
       {
-        progress: setP,
-        arm: () => sound.play("arm"),
-        cancel: () => sound.play("click"),
+        progress: (p) => {
+          setP(p);
+          // Countdown clank: a ratchet and a rising bell at each quarter of the hold
+          const tick = Math.min(3, Math.floor(p * 4));
+          if (p > 0 && tick > ticked.current) for (let i = ticked.current + 1; i <= tick; i++) sound.holdTick(i);
+          ticked.current = p > 0 ? Math.max(ticked.current, tick) : -1;
+        },
+        arm: () => { ticked.current = 0; sound.holdTick(0); },
+        cancel: () => { ticked.current = -1; sound.play("hold_cancel"); },
         confirm: (c) => setArmed(c !== null),
         launch: (c) => {
-          sound.play("click");
+          ticked.current = -1;
+          sound.play("hold_go");
           navigator.vibrate?.(60);
           launch.current(c);
         },
