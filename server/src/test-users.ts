@@ -74,7 +74,7 @@ export function testUserRoutes(app: Hono<any>): void {
         await seedTestUser(env, p);
         c.header("Set-Cookie", await createSession(env, { id: personaId(p), login: p }, c.req.header("user-agent") ?? null), { append: true });
       }
-      return c.redirect(p === "test-guest" ? "/?source=sim&scenario=first-run" : "/?source=live&onboard=repo", 303);
+      return c.redirect(p === "test-guest" ? "/?source=sim&scenario=first-run&repo=you/demo-shop" : "/?source=live&onboard=repo", 303);
     }
     if (!negative) return next();
     c.header("Cache-Control", "no-store");
