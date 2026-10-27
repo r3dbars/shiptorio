@@ -3,6 +3,18 @@ import { WebGLRenderer } from 'three';
 export const SCENE_REBUILD = 'shiptorio:scene-rebuild';
 export const RENDER_CRASH = 'shiptorio:render-crash';
 
+/** React cannot catch exceptions raised by an animation frame. */
+export function guardRender(frame: () => void): () => void {
+  let failed = false;
+  return () => {
+    if (failed) return;
+    try { frame(); } catch {
+      failed = true;
+      window.dispatchEvent(new Event(RENDER_CRASH));
+    }
+  };
+}
+
 /** Three rebuilds its renderer internals first; the owner then recreates GPU resources. */
 export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void): WebGLRenderer {
   const renderer = new WebGLRenderer({ canvas, antialias: false });

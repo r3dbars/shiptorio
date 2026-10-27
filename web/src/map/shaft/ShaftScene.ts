@@ -17,7 +17,7 @@ import type { FactoryState } from "@shiptorio/shared";
 
 import { buildoutOn } from "../../flags";
 import { submitWhenUnheld } from "../../ui/holdRender";
-import { recoverContext } from "../contextLoss";
+import { guardRender, recoverContext } from "../contextLoss";
 import { perf } from "../perf";
 import { GpuSubmission } from "../gpu-submission";
 import { FrameGovernor } from "../quality";
@@ -117,6 +117,7 @@ export class ShaftScene {
     labelRoot: HTMLElement,
     private readonly onPick?: (id: string) => void,
   ) {
+    this.loop = guardRender(this.loop);
     this.renderer = recoverContext(canvas, () => {
       if (this.disposed || !this.state) return;
       if (this.sp) this.rebuild(this.sp);
