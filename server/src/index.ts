@@ -1,3 +1,7 @@
+import { configuredAdmin } from "./admin-policy";
+import { auditAdmin } from "./admin-control";
+import { godRoutes } from "./admin-god";
+import { readAdminView, viewCookieValue } from "./admin-view";
 import { accountIdentity } from "./account-identity";
 import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
@@ -202,6 +206,13 @@ app.onError((err, c) => {
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  if (viewCookieValue(c.req.header('cookie') ?? null) && c.req.path.startsWith('/connect/')) return c.json({error:'Leave player view before managing credentials'},403);
+  if (viewCookieValue(c.req.header('cookie') ?? null) && !c.req.path.startsWith('/admin/') && !['GET','HEAD'].includes(c.req.method)) {
+    const view = await readAdminView(c.env,c.req.raw);
+    if (!view?.writable) return c.json({error:'Viewing as player is read-only. Enable write mode explicitly in God controls.'},403);
+    if (!c.req.path.startsWith('/api/repos/'+view.repo+'/')) return c.json({error:'Write mode is restricted to the selected factory'},403);
+    await auditAdmin(c.env.DB,(await signedIn(c))!.login,'view-write',view.repo,view.login,{method:c.req.method,path:c.req.path});
+  }
   await next();
 
 });
@@ -222,8 +233,9 @@ app.use("*", async (c, next) => {
     // Connector pages may disclose an inbound bearer URL or activate a mine on
     // GET; all connector management and repository mutations require writers.
     const authority = path.startsWith("/connect/") || !["GET", "HEAD"].includes(c.req.method) ? "write" : "read";
-    if (!validRepo(repo) || !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
-    if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
+    const view = await readAdminView(c.env,c.req.raw);
+    if (!validRepo(repo) || !(view?.repo === repo.toLowerCase() && (authority === "read" || view.writable)) && !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
+    if (!view && match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
   await next();
@@ -273,7 +285,8 @@ app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 app.get("/api/me", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
-  return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
+  const view = await readAdminView(c.env,c.req.raw);
+  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -293,7 +306,10 @@ app.put("/api/me/prefs", async (c) => {
 app.get("/api/me/progress", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
-  return c.json({ progress: await readProgress(c.env, user) });
+  const view = await readAdminView(c.env,c.req.raw);
+  const target=view ? {id:view.userId,login:view.login} : user;
+  const reset=await c.env.DB.prepare('SELECT version FROM admin_progress_resets WHERE user_id=?').bind(target.id).first<{version:number}>();
+  return c.json({ progress: await readProgress(c.env, target), resetVersion:reset?.version??0 });
 });
 
 app.put("/api/me/progress", async (c) => {
@@ -302,6 +318,8 @@ app.put("/api/me/progress", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
   if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
+  const reset=await c.env.DB.prepare('SELECT version FROM admin_progress_resets WHERE user_id=?').bind(user.id).first<{version:number}>();
+  if(reset && String(reset.version)!==c.req.header('x-progress-reset')) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
   if (!(await writeProgress(c.env, user, text))) return c.json({ error: "invalid progress" }, 400);
   return c.json({ ok: true });
 });
@@ -902,6 +920,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
 }
 
 adminRoutes(app, factory);
+godRoutes(app, factory);
 
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());

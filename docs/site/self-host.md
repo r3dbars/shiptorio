@@ -109,3 +109,15 @@ A passing dry run proves migrations and packaging. Live Cloudflare provisioning,
 Diagnostics and quota exemptions require an explicit `ADMIN_LOGINS` entry; an absent, empty or wildcard value grants no administrator role. Portable migrations do not enroll the hosted service owner. Production enrollment is a separate operation used only by the hosted `shiptorio` deployment.
 
 When updating an older self-host installation with another owner, rerun the wizard to quarantine the exact legacy migration-created maintainer grant. Other approvals are preserved. If you intentionally approved that account with the same legacy grant values, approve it again through your own admin settings after reconciliation. The preview password remains enabled.
+
+## Administrator testing and support
+
+The wizard's `ADMIN_LOGINS` owner can use `/admin` or Menu → God. No maintainer
+account is implied, and `*` never means administrator. View another installed
+factory as a player in read-only mode, then explicitly enable write mode if needed.
+Actions appear in the audit log. You can adjust progress/autonomy and daily limits,
+skip scheduling waits, or pause new Spark calls and runner handout for one factory
+or the whole installation. Limits include usage already spent; zero stops new work.
+Factory reset requires confirmation and refuses active builds/open PR work.
+Verification and the Launch/permit gate always apply, including administrator work.
+The preview password remains enabled.

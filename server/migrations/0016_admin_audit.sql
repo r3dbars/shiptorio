@@ -16,3 +16,5 @@ CREATE TABLE admin_user_limits (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   runs INTEGER, spark_calls INTEGER, spark_tokens INTEGER
 );
+-- Reject stale browser progress after an operator resets or grants a profile.
+CREATE TABLE admin_progress_resets (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, version INTEGER NOT NULL);

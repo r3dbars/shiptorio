@@ -93,12 +93,13 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
   const synced = on && profile.startsWith("github:") && profile !== "github:signed-out";
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pull = useRef(false);
+  const resetVersion = useRef(0);
   const push = useCallback(() => {
     if (!synced) return;
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
       if (!pull.current) return; // never overwrite the server copy before reading it
-      fetch("/api/me/progress", { method: "PUT", body: JSON.stringify(cur.current), headers: { "content-type": "application/json" } }).catch(() => {});
+      fetch("/api/me/progress", { method: "PUT", body: JSON.stringify(cur.current), headers: { "content-type": "application/json", "x-progress-reset": String(resetVersion.current) } }).catch(() => {});
     }, 3000);
   }, [synced]);
   useEffect(() => {
@@ -107,11 +108,15 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
     pull.current = false;
     fetch("/api/me/progress")
       .then((r) => (r.ok ? r.json() : null))
-      .then((body: { progress: Progress | null } | null) => {
+      .then((body: { progress: Progress | null; resetVersion?:number } | null) => {
         if (!live || !body) return;
         pull.current = true;
         const server = body.progress ? parseProgress(JSON.stringify(body.progress)) : null;
-        const next = server ? mergeProgress(cur.current, server) : cur.current;
+        resetVersion.current = body.resetVersion ?? 0;
+        const resetKey = key+":reset";
+        const changed = resetVersion.current > Number(store.get(resetKey) ?? 0);
+        const next = changed && server ? server : server ? mergeProgress(cur.current, server) : cur.current;
+        store.set(resetKey,String(resetVersion.current));
         cur.current = next;
         setP(next);
         store.set(key, JSON.stringify(next));

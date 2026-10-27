@@ -1,3 +1,4 @@
+import { GodControls } from "./ui/GodControls";
 import { QuotaCard } from "./ui/QuotaCard";
 import { SparkSpendChip } from "./ui/SparkSpend";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -54,7 +55,7 @@ const SLOTS = POWER.slots;
 // Two worlds on one map (docs/PRODUCT.md, Onboarding): Check in is "just show me what's stuck", Build is
 // "let me make the factory mine". Everyone starts on the map; the toggle switches any time.
 type World = "checkin" | "build";
-type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
+type Sheet = "god" | "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
 const WORLD_KEY = "shiptorio:world";
 const TOOLS_AT = 5; // rockets before Make it yours and Place show up on their own
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
@@ -232,6 +233,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // The default screen is the map, one card and two counters (Justin, 2026-10-27: "still a ton of shit just in my
   // face"). Every other tool waits behind one Menu button, and stays out while a sheet or the tray it opened is up.
   const [menu, setMenu] = useState(false);
+  const [admin, setAdmin] = useState(false);
+  const [viewing, setViewing] = useState<{login:string;writable:boolean}|null>(null);
+  useEffect(()=>{if(cfg.kind!=="live")return;let active=true;fetch('/api/me').then(r=>r.ok?r.json():null).then(d=>{if(active){setAdmin(d?.admin===true);setViewing(d?.viewingAs??null)}}).catch(()=>{});return()=>{active=false}},[cfg.kind]);
   const toolsOut = menu || !!sheet || tray;
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
@@ -560,6 +564,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </div>
 
+        {viewing && <div className="card" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
           <section className="card coachcard" aria-label={HUD.tour}>
             <Coach lesson={tour.lesson} step={tour.step} total={tour.total} repo={state?.repo ?? WORDS.yourRepo} onDismiss={tour.dismiss} onSkip={tour.skip} />
@@ -568,6 +573,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         {brief.show && progressing && !checkin && !sheet ? (
           <MorningBrief p={prog.p} deck={deck} onCheckin={() => { brief.close(); setCheckin(true); }} onClose={brief.close} />
+        ) : sheet === "god" && admin ? (
+          <GodControls onClose={()=>setSheet(null)} />
         ) : sheet === "progress" ? (
           <ProgressSheet p={prog.p} notify={nudge.notify} onNotify={nudge.toggleNotify} onEquip={prog.equip} onClose={() => setSheet(null)} />
         ) : source && state ? (
@@ -759,6 +766,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           )}
           <div className="row">
             <span className="eyebrow" aria-hidden="true">{HUD.dock.tools}</span>
+            {admin && <button type="button" className="tbtn" aria-pressed={sheet === "god"} onClick={()=>toggleSheet("god")}>God</button>}
             {/* Tools show up when they're needed, never as dead buttons waiting to unlock (2026-10-27). */}
             {show("line") && (
               <button type="button" className="tbtn" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")}>
