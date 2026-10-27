@@ -32,6 +32,12 @@ describe("researched checks in the gauntlet", () => {
     expect(back.scars?.at(-1)).toMatchObject({ station: "custom", check: "leftovers", strike: 1 });
     expect(back.inspection?.checks?.[1].state).toBe("pending"); // the rest never ran
     expect(reworkMove(back).title).toBe("Leftover sweeper sent #7 back");
+    // the second fail is a Steer: it says so, with the reason, and offers Try again
+    const twice = { ...back, scars: [...(back.scars ?? []), { ...back.scars!.at(-1)!, strike: 2, reason: "console.log left in cart.ts" }] };
+    const card = reworkMove(twice);
+    expect(card.title).toBe("#7 failed twice");
+    expect(card.why).toBe("Leftover sweeper: console.log left in cart.ts");
+    expect(card.options[0]).toMatchObject({ label: "Try again", recommended: true });
   });
 
   it("leave PRs past the verify bay alone", () => {

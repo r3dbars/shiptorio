@@ -7,8 +7,10 @@ import { Trophies } from "../src/map/shaft/trophies";
 const I = { stations: { "asm-1": { x: 0, y: 2, z: 0 }, "asm-2": { x: 10, y: 2, z: 0 }, gate: { x: 0, y: 20, z: -10 } } } as unknown as Iron;
 const machines = [{ id: "asm-1", type: "assembler" }, { id: "asm-2", type: "assembler" }, { id: "gate", type: "inspector" }];
 const st = (items: { id: string; state: string; machineId?: string }[]) => ({ machines, items } as unknown as FactoryState);
-const lamps = (t: Trophies) => t.group.children.length / 2;
-const lampXs = (t: Trophies) => t.group.children.filter((_, i) => i % 2).map((m) => Math.round(m.position.x));
+const kind = (t: Trophies, k: string) => t.group.children.filter((m) => m.userData.kind === k);
+const lamps = (t: Trophies) => kind(t, "lamp").length;
+const lampXs = (t: Trophies) => kind(t, "lamp").map((m) => Math.round(m.position.x));
+const banners = (t: Trophies) => kind(t, "banner").map((m) => m.userData.count as number);
 
 test("a shipped PR leaves a lamp in front of the assembler that built it, not the gate it left from", () => {
   const t = new Trophies();
@@ -26,13 +28,19 @@ test("a PR that shipped before this page saw it build stands at the first assemb
   expect(lampXs(t)[0]).toBeLessThan(5);
 });
 
-test("lamps cap at 24 per assembler and are rebuilt only when the count changes", () => {
+test("every 10 lamps fold into a brass banner with the count; rebuilt only when the count changes", () => {
   const t = new Trophies();
-  const many = Array.from({ length: 30 }, (_, i) => ({ id: `i${i}`, state: "launched" }));
-  t.sync(I, st(many));
-  expect(lamps(t)).toBe(24);
+  const ship = (n: number) => st(Array.from({ length: n }, (_, i) => ({ id: `i${i}`, state: "launched" })));
+  t.sync(I, ship(9));
+  expect([lamps(t), banners(t)]).toEqual([9, []]);
+  t.sync(I, ship(23));
+  expect([lamps(t), banners(t)]).toEqual([3, [10, 20]]);
   const first = t.group.children[0];
-  t.sync(I, st(many));
+  t.sync(I, ship(23));
   expect(t.group.children[0]).toBe(first);
+  t.sync(I, ship(137));
+  expect(lamps(t)).toBe(7);
+  expect(banners(t).length).toBe(10);
+  expect(banners(t).at(-1)).toBe(130); // the last banner carries the whole count
   t.dispose();
 });
