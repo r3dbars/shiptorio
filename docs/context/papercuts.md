@@ -4,11 +4,11 @@ Run: Oct 26, 2026, 9:22–10:08 PM CT. Read-only sweep completed a second rotati
 
 ## Summary
 
-- **1 fixed/merged; 0 verified deployed; 10 logged, not fixed yet** (8 queued product cuts, 2 protected-area/test issues).
+- **1 fixed/merged (included in the currently reported live SHA); 0 successful Deploy receipts for this fix; 10 logged, not fixed yet** (8 queued product cuts, 2 protected-area/test issues).
 - Merged: browser QA commands work after a clean install, [#302](https://github.com/r3dbars/shiptorio/pull/302). **Deploy blocked before any step by GitHub billing**; no live claim.
-- **Player-facing fixes deployed: none.** Only the browser-tool repair merged before the billing block; there are not five shipped player-facing fixes to list.
+- **Player-facing fixes from this sweep: none.** Only the browser-tool repair merged before the billing block; there are not five shipped player-facing fixes to list.
 - Highest-impact queued cuts: onboarding blank screen on a hung version probe; docs search remains empty after going back online; denied clipboard access produces an unhandled error; malformed scenario links crash the simulator.
-- **Human action required:** resolve GitHub Billing & plans. Deploy [40439556051](https://github.com/r3dbars/shiptorio/actions/runs/40439556051) never started: recent payments failed or spending limit must increase. Public `/api/version` remains `be3a81b`. New code fixes are blocked under the requested Deploy gate; read-only hunting/local checks continue. Protected UI and runner install/login remain untouched.
+- **Human action required:** resolve GitHub Billing & plans. Deploy [40439556051](https://github.com/r3dbars/shiptorio/actions/runs/40439556051) never started: recent payments failed or spending limit must increase. At 9:40 PM CT, public `/api/version` was `be3a81b`; the final check reports `402a1b9` (see below). New code fixes are blocked under the requested Deploy gate; read-only hunting/local checks continue. Protected UI and runner install/login remain untouched.
 
 ## Top unresolved (up to 10)
 
@@ -69,7 +69,7 @@ Run: Oct 26, 2026, 9:22–10:08 PM CT. Read-only sweep completed a second rotati
 - Rebased the report on latest merged code through `402a1b9` (#313); production build passed. Second pinned-build rotation completed **80 additional page checks**, all four viewport/motion profiles, with no new unexpected app errors, HTTP failures or document overflow. Total: **160 page checks**. Known 403/404 access/error responses and browser GPU/Canvas2D advisories remain classified separately.
 - Full mobile emulation for iPhone 390×844 and Pixel 412×915 (touch/coarse pointer enabled): Later advanced the check-in to a different card; no page errors or overflow. AudioContext count was zero before a gesture, running after touch, and suspended after mute. This proves activation/mute behavior, not an audible mix or physical-device sound review.
 - The committed keyboard harness remains red for the generic Launch-selector loop; no full keyboard first-run pass. Welcome tour plus first rocket was reached with keyboard-only input. All 14 axe screens were inspected via the temporary Menu-aware harness; 11 map-bearing screens share the protected chip-name mismatch, three entry screens pass.
-- GitHub billing is still unresolved; report PR #309 cannot pass its required check or update main. Public production remains at the last successful deployed version, rather than claiming #302 or later merges are live.
+- GitHub billing is still unresolved; report PR #309 cannot pass its required check or update main. Final `/api/version` check reports `402a1b94bd39196c2b65719e12228859aed6726e`; ancestry confirms it includes #302. This version advance was observed externally; this chat did not deploy it. Its Deploy run [40440788065](https://github.com/r3dbars/shiptorio/actions/runs/40440788065) still shows failure, and the latest #309 check is billing-blocked. **Live SHA inclusion is verified; a green Deploy workflow receipt is not.**
 
 ## Remaining work / resume
 
