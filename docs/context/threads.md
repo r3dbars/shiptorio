@@ -362,3 +362,10 @@ Codex: preserve the advertised 90-second public judge replay after ordinary sand
 ticks were slowed to 1.4 seconds. The unchanged iPhone end-to-end test caught the
 first tick failing to advance at 900 ms; only judge cadence returns to 900 ms.
 
+## Journey navigation readiness
+
+Codex: the desktop CI trace returned the correct factory document in 33 ms but
+delayed committing/booting it by about 29.5 seconds. Observe navigation commit
+explicitly, then retain URL, live snapshot, approval, PR, gauntlet and launch
+assertions. This is test synchronization, not a claim of improved product speed.
+
