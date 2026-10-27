@@ -56,12 +56,25 @@ export function report(error: unknown, event = 'exception', fields: Record<strin
   return Sentry.captureException(error);
 }
 export function sentryOptions(env: TelemetryEnv): Sentry.CloudflareOptions {
+  let entries: [string, unknown][] | undefined;
+  let redactor: Redactor | undefined;
+  const scrub = <T>(value: T): T => {
+    // Options may outlive an env mutation or key rotation. Match a fresh env redactor
+    // on each callback, but reuse its prepared variants while the bindings are unchanged.
+    // Redactor registration ignores non-string bindings (including wrapped D1 proxies).
+    const current = Object.entries(env).filter(([, value]) => typeof value === "string");
+    if (!entries || entries.length !== current.length || current.some(([key, value], i) => entries![i][0] !== key || entries![i][1] !== value)) {
+      entries = current;
+      redactor = new Redactor(Object.fromEntries(current));
+    }
+    return redactor!.value(redact(value));
+  };
   return {
     dsn: env.SHIPTORIO_SENTRY_DSN, enabled: !!env.SHIPTORIO_SENTRY_DSN,
     release: env.BUILD_SHA ?? 'development',
     // Bodies/headers may carry runner grants, source credentials or private code.
-    beforeSend(event) { delete event.request; if (event.user) delete event.user.ip_address; return new Redactor(env).value(redact(event)); },
-    beforeBreadcrumb(breadcrumb) { return new Redactor(env).value(redact(breadcrumb)); },
+    beforeSend(event) { delete event.request; if (event.user) delete event.user.ip_address; return scrub(event); },
+    beforeBreadcrumb(breadcrumb) { return scrub(breadcrumb); },
     tracesSampleRate: 0,
   };
 }
