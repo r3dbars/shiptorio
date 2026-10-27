@@ -406,3 +406,11 @@ Card tap log + eval: every dealt card, the planner's reason, the tap (Continue/o
 time to decide and the approved work's outcome go to D1 `card_taps`. `/admin/taps` shows yes rates by kind and
 area, model vs rules, most skipped and outcome quality; `signals/taps.ts` is the brain's taps collector and the
 game master reads a short `taps` brief. Doc: [taps.md](taps.md). Meta API audit: [meta-api.md](meta-api.md) (native structured output behind `SPARK_NATIVE_JSON=1`; native tools/Responses API deferred). Migration 0016 may need renumbering in the batch.
+## Vertical judge clock and suite completion
+
+Codex:72219fb fixed the desktop journey (hosted2.2m pass) but the separate
+shaft replay relied on real timers and missed scar1 within60s. Drive its same
+900ms ticks explicitly and capture verifiedbeat4 whilepaused; preserveevery
+assertion and180s testdeadline. Nine serial desktop cases overran the12min job
+as the failed report printed, so only the wholejob budget is18min to retain
+complete evidence. No production runtime or visual baselines change.

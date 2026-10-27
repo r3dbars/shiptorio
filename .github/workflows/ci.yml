@@ -64,7 +64,9 @@ jobs:
   browser:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Nine serial cases need room to finish and upload failure evidence on slow VMs.
+    # Per-test 180s and individual assertion deadlines remain unchanged.
+    timeout-minutes: 18
     # Each viewport keeps its serial fixture, without making all three 90s
     # replays and visual checks compete with one job's 12-minute deadline.
     strategy:
