@@ -47,7 +47,13 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   const checkin = async (instance = factory) => {
     const prior = (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair;
     (globalThis as unknown as { WebSocketPair: unknown }).WebSocketPair = class { 0 = {}; 1 = socket; };
-    try { const response = await instance.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } })); expect(response.status).toBe(101); }
+    try {
+      const response = await instance.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
+      expect(response.status).toBe(101);
+      // These scenarios start after initial deck frames reach the browser, which
+      // is now intentionally later than the handshake response.
+      await (instance as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
+    }
     finally { (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair = prior; }
   };
   const saved = () => data.get("state") as FactoryState;
