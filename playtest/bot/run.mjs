@@ -3,6 +3,7 @@ import { chromium } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
+import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
 const option = (key, fallback) => { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; };
@@ -68,7 +69,7 @@ try {
     if (preparingStaging) {
       let reset;
       for (let attempt = 0; attempt < 15; attempt++) {
-        const response = await context.request.post(`${url.origin}/test/reset`, { headers: { origin: url.origin } });
+        const response = await context.request.post(`${url.origin}/test/reset`, { headers: { origin: url.origin }, maxRetries: 2, timeout: 30000 });
         reset = { ok: response.ok(), status: response.status() };
         if (reset.status !== 409) break;
         await page.waitForTimeout(2000);
@@ -125,19 +126,19 @@ try {
   if (fixture && persona === "test-newbie" && fixture.stub.state.merges.length === 0) failures.push("Fixture loop did not reach a player-approved Launch");
   if (persona === "test-newbie" && !observedLaunch) failures.push("No new launched state arrived from the real factory socket");
 } catch (error) {
-  failures.push(String(error));
+  failures.push(safeReportFailure(error));
   if (lastPage && !lastPage.isClosed()) {
     failures.push(`Screen: ${(await lastPage.locator("body").innerText().catch(() => "unavailable")).slice(0, 1500)}`);
     await lastPage.screenshot({ path: join(out, "failure.png"), timeout: 5000 }).catch(() => {});
   }
 }
 finally {
-  const unique = [...new Set(failures)];
+  const unique = [...new Set(failures.map(safeReportFailure))];
   const fingerprint = createHash("sha256").update(unique.slice().sort().join("\n")).digest("hex").slice(0, 16);
   const report = { persona, origin: url.origin, fixture: local, fixturePRs: fixture?.stub.state.pulls.length ?? null,
     fixtureMerges: fixture?.stub.state.merges.length ?? null, observedLaunch, receiptAttached: fixture?.stub.state.pulls.some(pr => pr.body?.includes("shiptorio-proof:")) ?? false,
     steps, frictions, failures: unique, fingerprint, passed: !unique.length };
-  await writeFile(join(out, "report.json"), JSON.stringify(report, null, 2));
+  await writeFile(join(out, "report.json"), JSON.stringify(safeReportValue(report), null, 2));
   await writeFile(join(out, "report.md"), `# Player bot: ${persona}\n\nOrigin: ${url.origin}. ${local ? "Real local Worker with GitHub/Spark fixtures; not production proof." : "Staging browser run."}\n\n${unique.length ? "FAIL" : "PASS"}\n\n${unique.map(f => `- ${f}`).join("\n")}\n\n## Extra steps observed\n\n${frictions.length ? frictions.map(f => `- ${f}`).join("\n") : "None."}\n\n## Screenshots\n\n${steps.map(s => `- ${s.width}px: ${s.label} — [screenshot](${s.file})`).join("\n")}\n`);
   console.log(JSON.stringify({ report: join(out, "report.md"), failures: unique.length, fingerprint }));
   if (unique.length) process.exitCode = 1;
