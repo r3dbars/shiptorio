@@ -81,6 +81,7 @@ import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, 
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
+import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, legacyCredentialOwner, type CredsEnv, type MineKind } from "./sources/creds";
@@ -1438,7 +1439,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!(await this.load()) || !(await this.ctx.storage.get<boolean>("sentryLinked"))) return;
     if (!(await sentryCreds(this.env, this.credentialScope(), this.redactor)).clientSecret) return;
     await markUsed(this.env, "sentry", this.credentialScope()!);
-    for (const signal of normalizeSentry(this.redactor.value(payload), resource)) await this.ingestSignal(signal);
+    const signals = normalizeSentry(this.redactor.value(payload), resource);
+    // The brain's Sentry collector reads spikes off this hourly log. Assignments and resolves aren't errors.
+    if (resource !== "issue" || payload.action === "created" || payload.action === "unresolved") {
+      let pulses = (await this.ctx.storage.get<SentryPulse[]>(SENTRY_PULSES_KEY)) ?? [];
+      for (const signal of signals) if (signal.action === "upsert") pulses = recordSentryPulse(pulses, signal.externalId, signal.occurredAt, Date.now());
+      await this.accountPut(SENTRY_PULSES_KEY, pulses);
+    }
+    for (const signal of signals) await this.ingestSignal(signal);
   }
 
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
