@@ -179,3 +179,19 @@ explicit Launch. Do not implement the issue outside that runner path.
   regressions only, reuse existing imports, leave authentication setup/tests
   unchanged; preserve fail-on-base/pass-on-head and all checks. Requested a new
   Spark plan through the game. Acceptance remains incomplete.
+
+## Merge queue and external Actions blocker
+
+- Smaller retry1a81c386-111d-4445-af52-dffd5e8c6267 passed the patch policy
+  and reached supervised typecheck, which failed with exit2. Its stderr summary
+  omitted stdout diagnostics; an exact-base disposable replay is collecting the
+  actual failure without modifying the live job or issue patch. No #170 PR yet.
+- On Justin's request to merge PRs, reviewed-ready #305 and #308 merged with all
+  actual current-head gates green; #307 merged by its owner after green checks.
+  #287 closed as a duplicate of the already deployed #282 workflow fix.
+- New GitHub Actions jobs now fail before any steps due to account billing.
+  The authenticated Budgets page explicitly shows Actions budget0 and Usage
+  blocked. Asked Justin for a monthly Actions cap; no billing settings changed.
+- Deploy40440046398 (#305) and40440013675 (#308) failed before execution;
+  no Cloudflare deployment or rollback occurred. Live remains be3a81bc.
+  Pending/red/draft PRs remain unmerged. This is not an all-green release.
