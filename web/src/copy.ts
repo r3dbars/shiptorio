@@ -686,7 +686,7 @@ export const SHIP = {
 
 /** The coach card's one-liners, in the order a new player meets them. {repo} is filled in. */
 export const LESSON_COPY: Record<string, { title: string; text: string }> = {
-  island: { title: "Your factory", text: "This island is {repo}. One factory, one codebase. Each building is a folder, and it lights up when work lands there." },
+  island: { title: "Your factory", text: "This shaft is {repo}. One factory, one codebase. Work is mined at the bottom, built and checked on the way up, and launches from the top." },
   machines: { title: "Machines", text: "Machines do the work. The splitter sorts what comes in, the assembler builds the fix, the checks test it, the pad ships it." },
   power: { title: "Power", text: "Assemblers run on power, and power is your own Claude or ChatGPT sign-in. More sign-ins, more machines." },
   ore: { title: "Ore", text: "That's ore: each open issue is one chunk. It rides the belt in, and the Line list shows where every chunk is." },
@@ -719,7 +719,7 @@ export const BEAT_COPY: BeatCopy[] = [
   {
     kick: "Welcome",
     title: "Welcome *aboard*.",
-    body: "This floating island is a codebase. Every building is a folder. This sandbox runs a demo shop with sample changes; your repo comes next.",
+    body: "This factory is a codebase. Issues are mined at the bottom, built and checked on the way up, and launched from the top. This sandbox runs a demo shop with sample changes; your repo comes next.",
   },
   {
     kick: "AI builds now",
@@ -901,7 +901,7 @@ export const PROGRESS = {
   lastTime: (ships: number, cards: number, autoPct: number) =>
     `Last time: ${ships} shipped, ${cards} cards answered${autoPct ? `, ${autoPct}% launched on their own` : ""}.`,
   keepStreak: (n: number) => ` One move today keeps your streak at ${n}.`,
-  startStreak: "Answer a card or ship a PR every day to start a streak. Streaks unlock things for your island.",
+  startStreak: "Answer a card or ship a PR every day to start a streak. Streaks unlock things for your factory.",
   checkin: (n: number) => `Check in · ${n}`,
   twoMinutes: "about two minutes",
   later: "Later",

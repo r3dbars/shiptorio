@@ -61,7 +61,8 @@ export interface Carried {
 
 export class GameDriver implements Driver {
   readonly name = "game";
-  private state: FactoryState | null = null;
+  // the real factory as last synced; the launch floor's orbit watch and measure read it (modules/launch.js)
+  state: FactoryState | null = null;
   private real = new Map<string, Item>();
   private prev = new Map<string, Item["state"]>();
   private shown = new Map<string, number>(); // scars the line has already played out, per real item
