@@ -237,7 +237,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 .ci-act.do { color: var(--dark); background: var(--green); border-color: #000; }
 .ci-act.do .k { color: var(--dark); }
 .ci-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 78%; overflow-y: auto; z-index: 3; gap: 8px; background: var(--iron-panel-solid); animation: sheet-up 0.14s ease-out both; }
-.ci-details { overflow: hidden; }
+.ci-details { max-height: 100%; overflow: hidden; }
 .ci-details-head, .ci-options { flex: none; display: flex; flex-direction: column; gap: 8px; }
 .ci-review { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
 .ci-review > * { flex-shrink: 0; }
