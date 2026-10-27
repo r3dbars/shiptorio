@@ -47,7 +47,7 @@ test("the empire rechecks access before resolving factories from stale sign-in r
   // Stale membership rows still list both repos; without a current grant the
   // GitHub refresh fails closed (including provider outages and lost access).
   const original = globalThis.fetch;
-  globalThis.fetch = (async () => { throw new Error("GitHub unavailable"); }) as typeof fetch;
+  globalThis.fetch = (async () => { throw new Error("GitHub unavailable"); }) as unknown as typeof fetch;
   try {
     const response = await get(env, cookie);
     expect(response.status).toBe(200);
