@@ -5,6 +5,8 @@
 export type PrefKey = "intro" | "guideSeen" | "achievements"; // achievements: web/src/ui/Achievements.tsx reads and merges its own
 
 const LOCAL: Record<Exclude<PrefKey, "achievements">, string> = { intro: "shiptorio:intro", guideSeen: "shiptorio:guide-seen" };
+let accountReadOnly = false;
+export const setAccountReadOnly = (value:boolean) => { accountReadOnly = value; };
 const live = () => new URLSearchParams(location.search).get("source") === "live";
 
 /** Copies the account's settings into this browser. Guide progress only moves forward. */
@@ -20,6 +22,6 @@ export function seedPrefs(prefs: Partial<Record<PrefKey, string>> | undefined) {
 }
 
 export function savePref(key: PrefKey, value: string) {
-  if (!live()) return;
+  if (!live() || accountReadOnly) return;
   fetch("/api/me/prefs", { method: "PUT", body: JSON.stringify({ [key]: value }) }).catch(() => {});
 }

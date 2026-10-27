@@ -1,3 +1,7 @@
+import { configuredAdmin } from "./admin-policy";
+import { auditAdmin } from "./admin-control";
+import { godRoutes } from "./admin-god";
+import { readAdminView, viewCookieValue, adminViewCookie } from "./admin-view";
 import { accountIdentity } from "./account-identity";
 import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
@@ -39,11 +43,11 @@ import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, rev
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
-import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
+import { pairToken, readRunnerToken, expiredRunnerGrant, runnerGrantExpiry, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { installationToken } from "./github";
 import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
-import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
+import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
@@ -162,12 +166,20 @@ app.use("*", async (c, next) => {
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
-      return c.json({error:'runner authentication required'},401);
+      const expired = match && c.req.method === "POST" ? await expiredRunnerGrant(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "") : null;
+      if (expired && expired.repo === `${match![1]}/${match![2]}`.toLowerCase()) await (await factory(c.env, expired.repo)).rejectRunnerGrant(expired.pairId, "runner_grant_expired", expired.expires);
+      return c.json({error:'runner authentication required', code: expired ? 'runner_grant_expired' : 'runner_grant_invalid'},401);
     }
-    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo, "write")) return c.json({error:'repository access denied'},403);
+    let allowed: boolean;
+    try { allowed = !!identity.user && await signupAllowed(c.env, identity.user.login) && !!await repoAccess(c.env, identity.user, identity.repo, "write", true); }
+    catch { c.header("Retry-After", "60"); return c.json({error: "Repository access check temporarily unavailable"}, 503); }
+    if (!allowed) {
+      // Denied repository access must not invoke or mutate that repository's Durable Object.
+      return c.json({error:'repository access denied', code:'runner_access_revoked'},403);
+    }
     if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
-      return c.json({error:'runner pairing revoked'},401);
+      return c.json({error:'runner pairing revoked', code:'runner_pair_revoked'},401);
     }
 
     c.set("runner", identity);
@@ -202,6 +214,13 @@ app.onError((err, c) => {
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  if (viewCookieValue(c.req.header('cookie') ?? null) && c.req.path.startsWith('/connect/')) return c.json({error:'Leave player view before managing credentials'},403);
+  if (viewCookieValue(c.req.header('cookie') ?? null) && !c.req.path.startsWith('/admin/') && !['GET','HEAD'].includes(c.req.method)) {
+    const view = await readAdminView(c.env,c.req.raw);
+    if (!view?.writable) return c.json({error:'Viewing as player is read-only. Enable write mode explicitly in God controls.'},403);
+    if (!c.req.path.startsWith('/api/repos/'+view.repo+'/')) return c.json({error:'Write mode is restricted to the selected factory'},403);
+    await auditAdmin(c.env.DB,(await signedIn(c))!.login,'view-write',view.repo,view.login,{method:c.req.method,path:c.req.path});
+  }
   await next();
 
 });
@@ -222,8 +241,9 @@ app.use("*", async (c, next) => {
     // Connector pages may disclose an inbound bearer URL or activate a mine on
     // GET; all connector management and repository mutations require writers.
     const authority = path.startsWith("/connect/") || !["GET", "HEAD"].includes(c.req.method) ? "write" : "read";
-    if (!validRepo(repo) || !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
-    if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
+    const view = await readAdminView(c.env,c.req.raw);
+    if (!validRepo(repo) || !(view?.repo === repo.toLowerCase() && (authority === "read" || view.writable)) && !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
+    if (!view && match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
   await next();
@@ -261,8 +281,16 @@ app.post('/waitlist',async c => {
 });
 app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
 app.post('/admin',c=>adminSignup(c.req.raw,c.env));
-app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
-app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.get("/auth/callback", async (c) => {
+  const original=await authCallback(c.req.raw,new URL(c.req.url),c.env), response=new Response(original.body,original);
+  response.headers.append('Set-Cookie',adminViewCookie('',new URL(c.req.url).protocol==='https:'));
+  return response;
+});
+app.get("/auth/logout", async (c) => {
+  const original=await logout(c.req.raw,c.env), response=new Response(original.body,original);
+  response.headers.append('Set-Cookie',adminViewCookie('',new URL(c.req.url).protocol==='https:'));
+  return response;
+});
 // The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
 // already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
 app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
@@ -273,7 +301,8 @@ app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 app.get("/api/me", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
-  return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
+  const view = await readAdminView(c.env,c.req.raw);
+  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -293,7 +322,10 @@ app.put("/api/me/prefs", async (c) => {
 app.get("/api/me/progress", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
-  return c.json({ progress: await readProgress(c.env, user) });
+  const view = await readAdminView(c.env,c.req.raw);
+  const target=view ? {id:view.userId,login:view.login} : user;
+  const reset=await c.env.DB.prepare('SELECT version FROM admin_progress_resets WHERE user_id=?').bind(target.id).first<{version:number}>();
+  return c.json({ progress: await readProgress(c.env, target), resetVersion:reset?.version??0 });
 });
 
 app.put("/api/me/progress", async (c) => {
@@ -302,7 +334,9 @@ app.put("/api/me/progress", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
   if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
-  if (!(await writeProgress(c.env, user, text))) return c.json({ error: "invalid progress" }, 400);
+  if (!validProgress(text)) return c.json({error:'invalid progress'},400);
+  const version=Number(c.req.header('x-progress-reset') ?? '0');
+  if (!(await writeProgress(c.env, user, text, Date.now(), version))) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
   return c.json({ ok: true });
 });
 
@@ -482,9 +516,10 @@ app.post("/api/runner-device/join", async c => {
   if (!await resourceQuota(c.env, record.user.login, "repo", record.repo) || !await resourceQuota(c.env, record.user.login, "factory", record.repo)) return c.json({ error: "repository/factory quota reached" }, 429);
   const f = await factory(c.env, record.repo);
   await f.ensure(record.repo, installation);
-  const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+  const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(record.user);
   const token = await pairToken(c.env.SESSION_SECRET, { repo: record.repo, pairId, expires, user: record.user });
   await f.activateRunner(pairId);
+  await f.recordRunnerGrant(pairId, expires);
   return c.json({ repo: record.repo, token, expires });
 });
 app.on(["GET", "POST"], "/runner/pair", async c => {
@@ -506,10 +541,11 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
     if (!await admit(c.env, `pair:${user.id}`, 5, 600000, "repeated browser pairing requests")) return c.json({ error: "pairing throttled" }, 429);
     const f = await factory(c.env, repo);
     await f.ensure(repo, installation);
-    const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+    const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(user);
     const token = await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user });
     if (!await device(c.env, code).approveDevice({ repo, token, expires })) return c.html(runnerPage("Code expired or already used", "<p>Run shiptorio-runner pair for a new code.</p>"), 409, headers);
     await f.activateRunner(pairId);
+    await f.recordRunnerGrant(pairId, expires);
     await device(c.env, code).readyDevice();
     return c.html(runnerPage("Machine approved", `<p>Your terminal will confirm connection to <b>${htmlEscape(repo)}</b>. Return there to finish pairing, then <a href="/?source=live&repo=${encodeURIComponent(repo)}">open your factory</a>. The planner asks you to approve a plan before any code runs.</p>`), 200, headers);
   }
@@ -638,7 +674,8 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
-    const expires = Date.now() + 8 * 60 * 60 * 1000;
+    const expires = runnerGrantExpiry((await resolveUser(c.req.raw, c.env))!);
+    await f.recordRunnerGrant(pairId, expires);
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
   }
   if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
@@ -672,15 +709,16 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
-  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
+  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
   if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
   await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
   const identity = c.get("runner");
-  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
-  const expires = Date.now() + 8 * 60 * 60 * 1000;
+  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
+  const expires = runnerGrantExpiry(identity.user);
+  await (await factory(c.env, identity.repo)).recordRunnerGrant(identity.pairId, expires);
   return c.json({ token: await pairToken(c.env.SESSION_SECRET, { ...identity, expires }), expires });
 });
 
@@ -697,7 +735,9 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
 app.get("/api/repos/:owner/:repo/limits", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   const f = await factory(c.env, repo);
-  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, c.get("user")), f.runnerJobs(), f.planningRetries()]);
+  const view = await readAdminView(c.env,c.req.raw);
+  const viewer = view ? {id:view.userId,login:view.login} : c.get("user");
+  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, viewer, !!view), f.runnerJobs(), f.planningRetries()]);
   const active = jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length;
   c.header("Cache-Control", "no-store");
   return c.json({ ...status, retries, quotas: [...status.quotas, quota("jobs", "Concurrent jobs", active, budgetLimits(c.env).jobs, null, null)] });
@@ -706,6 +746,8 @@ app.get("/api/repos/:owner/:repo/limits", async c => {
 // Spend belongs to the stable payer, rather than every collaborator with map access.
 app.on(["GET", "POST"], "/api/repos/:owner/:repo/spend", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const view = await readAdminView(c.env,c.req.raw);
+  if(c.req.method === 'GET' && view?.repo === repo) return c.json(await factorySpend(c.env.DB,repo));
   if (await budgetAccount(c.env.DB, repo) !== `user:${c.get("user").id}`) return c.json({ error: "budget owner required" }, 403);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
@@ -742,7 +784,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = await factory(c.env, repo);
-  if (c.env.GITHUB_APP_ID) {
+  if (c.env.GITHUB_APP_ID && !await readAdminView(c.env,c.req.raw)) {
     const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }
@@ -902,6 +944,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
 }
 
 adminRoutes(app, factory);
+godRoutes(app, factory);
 
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());

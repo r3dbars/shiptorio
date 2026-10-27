@@ -1,5 +1,15 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Locked dedicated Keychain restart (Codex, 2026-10-27)
+
+- Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
+
+
+## Steam & iron sound picks (Claude, 2026-10-27)
+
+- Soundboard thread owns all SFX and music now (the gameplay thread handed over `claude/gameplay-sound`). Justin picked every sound on the A/B soundboard (https://claude.ai/artifact/EdGMjvx9LP9xTfzNv9Cwe3); recipes live in `web/src/sound/steamIron.ts` with the take each one is (`PICKS`).
+- Machine taps play when the camera flies in (`tapFor` in steamIron, called from `useFactorySound`); close-ups get a mood layer (working / stuck / rework / idle, `moodOf`); the hold-to-launch button is a 4-tick countdown clank; card Continue / Later, unlock, merged, caught a bug and ore arriving replaced the chiptune versions. Repair sounds (`repair_pry`, `repair_boiler`, `repair_cart`) are ready for the first-run repair slice.
+- Music: Justin hasn't picked tracks yet, so the current score stays.
 
 ## Give Spark tools and full understanding (Claude, 2026-10-27)
 
@@ -333,3 +343,58 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+## Runner overnight recovery
+
+Codex: eight-hour grant expiry plus final-hour, job-loop-only renewal explains the
+reproducible sleep gap left after #340's persistence fix. Extending bounded grants and
+renewing from the independent heartbeat; preserving revocation and saved work.
+
+
+## Codex merge helper
+
+- 2026-10-27: #342 head `1dbb4fc376a2cfe4673b66b770f31d689465ae71` passed required check/selfhost/Stranger and full manual browser/load [40564032048](https://github.com/r3dbars/shiptorio/actions/runs/40564032048). Squash merged as `7304199df5ed6259e7a8fff8d5402f21dfe67ab5`; [Deploy 40565415889](https://github.com/r3dbars/shiptorio/actions/runs/40565415889) green; live version matched and private factory returned 401 anonymously.
+- 2026-10-27: #346 was already merged. Updated its branch from main through merge commit `db5614982220d4eafeff107cf82e022b6c6f4501` (identical tree to deployed main at dispatch). Manual browser/load [40565878063](https://github.com/r3dbars/shiptorio/actions/runs/40565878063) passed all jobs. [Deploy 40566612966](https://github.com/r3dbars/shiptorio/actions/runs/40566612966) passed at verified descendant `1bdeeb4`; no second PR merge attempted.
+- 2026-10-27: #345 is already merged; updating the historical branch from main `1bdeeb4` returned a merge conflict. Owner notified in the PR; no code was edited. Its integrated code was covered by the green full manual run for #346.
+- 2026-10-27: #350 updated from main using GitHub update-branch, head `42b5bfcf1a64cf4fa1b16e4dd0aff3125d5bda82`. Full manual check [40567425171](https://github.com/r3dbars/shiptorio/actions/runs/40567425171) dispatched; merge awaits exact-head checks.
+- 2026-10-27: Justin replaced per-PR deployment with tested release batches every 30–60 minutes. Individual changes remain small reviewed PRs; a frozen combined batch gets full browser/load checks and one verified main deployment. The pending source-branch manual run for #350 was superseded, not counted as a pass.
+- First batch [#362](https://github.com/r3dbars/shiptorio/pull/362): #351 (`775d152`), #350 (`98be03e`), #352 (`4446c59`) and #353 (`e23ab13`) passed individual check/selfhost/Stranger and were squash-integrated into `release/2026-10-27-runner`. These are integration results, not production release claims.
+
+- Batch #362 also integrates #360 (overnight recovery) and this log. The combined runtime at `87ce41e` passed local full check: 993 passed, two existing platform skips, zero failures, plus types and builds. Final batch CI and production deployment remain pending.
+# Judge duration regression
+
+Codex: preserve the advertised 90-second public judge replay after ordinary sandbox
+ticks were slowed to 1.4 seconds. The unchanged iPhone end-to-end test caught the
+first tick failing to advance at 900 ms; only judge cadence returns to 900 ms.
+
+## Journey navigation readiness
+
+Codex: the desktop CI trace returned the correct factory document in 33 ms but
+delayed committing/booting it by about 29.5 seconds. Observe navigation commit
+explicitly, then retain URL, live snapshot, approval, PR, gauntlet and launch
+assertions. This is test synchronization, not a claim of improved product speed.
+
+
+## Preserve owner AI limits during deploy
+
+Codex: the operational production-owner upsert replaced raised call/token limits
+with NULL on every deploy. Preserve existing values, including explicit zero; a
+new owner row still uses normal defaults. Regression executes the actual deploy SQL
+twice and checks raised, zero and fresh-row cases. No usage ledger is reset.
+
+## Browser verification rendering mode
+
+Codex: the final release desktop trace spent tens of seconds on ordinary clicks
+and document readiness, leaving only six seconds for the final rocket assertion.
+Use Chromium WebGL-only SwiftShader fallback rather than SwANGLE for the whole
+compositor. Preserve actual 3D rendering and every test assertion, deadline and
+visual baseline. Extracted narrowly from the CI performance lane; full370 stays
+for the next batch. Failed40574810643 is retained.
+
+## Vertical judge clock and suite completion
+
+Codex:72219fb fixed the desktop journey (hosted2.2m pass) but the separate
+shaft replay relied on real timers and missed scar1 within60s. Drive its same
+900ms ticks explicitly and capture verifiedbeat4 whilepaused; preserveevery
+assertion and180s testdeadline. Nine serial desktop cases overran the12min job
+as the failed report printed, so only the wholejob budget is18min to retain
+complete evidence. No production runtime or visual baselines change.

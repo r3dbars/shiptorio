@@ -69,7 +69,7 @@ export interface Pop {
 }
 
 /** One player's progress, kept per browser profile ("sim" playtests never touch the real one). */
-export function useProgress(state: FactoryState | null, profile: string, repo: string, on: boolean) {
+export function useProgress(state: FactoryState | null, profile: string, repo: string, on: boolean, readOnly = false) {
   const key = `shiptorio:progress:${profile}`;
   // ?progress=demo in the sim: a week of play already behind you, to see the streak, unlocks and trend
   const [p, setP] = useState<Progress>(() =>
@@ -90,28 +90,33 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
   }, [key]);
 
   // Signed in: progress follows you across devices. Pull once, merge, and push changes a few seconds later.
-  const synced = on && profile.startsWith("github:") && profile !== "github:signed-out";
+  const synced = on && (profile.startsWith("github:") || profile.startsWith("admin-view:")) && profile !== "github:signed-out";
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pull = useRef(false);
+  const resetVersion = useRef(0);
   const push = useCallback(() => {
-    if (!synced) return;
+    if (!synced || readOnly) return;
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
       if (!pull.current) return; // never overwrite the server copy before reading it
-      fetch("/api/me/progress", { method: "PUT", body: JSON.stringify(cur.current), headers: { "content-type": "application/json" } }).catch(() => {});
+      fetch("/api/me/progress", { method: "PUT", body: JSON.stringify(cur.current), headers: { "content-type": "application/json", "x-progress-reset": String(resetVersion.current) } }).catch(() => {});
     }, 3000);
-  }, [synced]);
+  }, [synced,readOnly]);
   useEffect(() => {
     if (!synced) return;
     let live = true;
     pull.current = false;
     fetch("/api/me/progress")
       .then((r) => (r.ok ? r.json() : null))
-      .then((body: { progress: Progress | null } | null) => {
+      .then((body: { progress: Progress | null; resetVersion?:number } | null) => {
         if (!live || !body) return;
         pull.current = true;
         const server = body.progress ? parseProgress(JSON.stringify(body.progress)) : null;
-        const next = server ? mergeProgress(cur.current, server) : cur.current;
+        resetVersion.current = body.resetVersion ?? 0;
+        const resetKey = key+":reset";
+        const changed = resetVersion.current > Number(store.get(resetKey) ?? 0);
+        const next = readOnly ? server ?? parseProgress(null) : changed && server ? server : server ? mergeProgress(cur.current, server) : cur.current;
+        store.set(resetKey,String(resetVersion.current));
         cur.current = next;
         setP(next);
         store.set(key, JSON.stringify(next));
@@ -121,10 +126,11 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
     return () => {
       live = false;
     };
-  }, [synced, key, push]);
+  }, [synced, key, push, readOnly]);
 
   const apply = useCallback(
     (step: Step) => {
+      if (readOnly) return;
       cur.current = step.progress;
       setP(step.progress);
       store.set(key, JSON.stringify(step.progress));
@@ -133,7 +139,7 @@ export function useProgress(state: FactoryState | null, profile: string, repo: s
       setPop({ id: ++seq.current, gains: step.gains, levelUp: step.levelUp, unlocked: step.unlocked });
       if (step.levelUp || step.unlocked.length) sound.play("level_up");
     },
-    [key, push],
+    [key, push, readOnly],
   );
 
   useEffect(() => {

@@ -12,9 +12,16 @@ export function retryable(error: unknown): boolean {
 export class Backoff {
   private failures = 0;
   private until = 0;
+  private observed = 0;
   constructor(private random = Math.random) {}
-  ready(now = Date.now()) { return now >= this.until; }
+  ready(now = Date.now()) {
+    // A backwards clock correction after wake must not strand a retry in the future.
+    if (now < this.observed) this.until = now;
+    this.observed = now;
+    return now >= this.until;
+  }
   fail(now = Date.now()) {
+    this.observed = now;
     const cap = Math.min(60_000, 1000 * 2 ** Math.min(this.failures++, 6));
     const delay = Math.round(cap * (0.5 + this.random() * 0.5));
     this.until = now + delay;

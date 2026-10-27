@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { agentEnvironment } from "../src/policy";
 import { prepareAgentHome } from "../src/subscriptions";
-import { prepareAgentKeychain, unlockAgentKeychain } from "../src/keychain";
+import { prepareAgentKeychain } from "../src/keychain";
 import { checkSandbox } from "../src/sandbox";
 
 const run = async (args: string[], home?: string) => {
@@ -25,11 +25,12 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== 
     expect((await stat(keychain)).mode & 0o777).toBe(0o600);
     await run(["add-generic-password", "-a", "shiptorio-test", "-s", "shiptorio-test", "-w", "non-secret-canary"], home);
     expect((await run(["find-generic-password", "-s", "shiptorio-test", "-w"], home)).trim()).toBe("non-secret-canary");
-    await run(["lock-keychain", keychain], home);
-    await unlockAgentKeychain(home);
-    // A service restart reuses the exact encrypted store and password; it never rotates away the login.
     const saved = await readFile(password, "utf8");
-    await prepareAgentKeychain(home); expect(await readFile(password, "utf8")).toBe(saved);
+    await run(["lock-keychain", keychain], home);
+    // Start exactly as a restarted service does: prepare must unlock the existing store itself.
+    await prepareAgentKeychain(home);
+    expect((await readFile(password, "utf8")) === saved).toBe(true);
+    expect((await run(["find-generic-password", "-s", "shiptorio-test", "-w"], home)).trim()).toBe("non-secret-canary");
     const boundary = await checkSandbox(work, { home, executable: process.execPath });
     try {
       const credential = await boundary.run(["/usr/bin/security", "find-generic-password", "-s", "shiptorio-test", "-w"], work);

@@ -166,12 +166,18 @@ export async function readProgress(env: AccountsEnv, user: User): Promise<Progre
 }
 
 /** Stores a progress blob only if the shared schema accepts it, so a bad client can't park junk here. */
-export async function writeProgress(env: AccountsEnv, user: User, raw: string, now = Date.now()): Promise<boolean> {
+export async function writeProgress(env: AccountsEnv, user: User, raw: string, now = Date.now(), resetVersion = 0): Promise<boolean> {
   if (raw.length > MAX_PROGRESS_BYTES) return false;
   const p = validProgress(raw);
   if (!p) return false;
   if (user.dev) return true;
-  await env.DB.prepare("INSERT INTO user_progress (user_id, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
-    .bind(user.id, JSON.stringify(p), now).run();
-  return true;
+  if (!Number.isSafeInteger(resetVersion) || resetVersion < 0) return false;
+  // The version check and write are one SQL statement: an intervening admin reset
+  // cannot be overwritten by an already-open browser with an old profile.
+  const row = await env.DB.prepare(`INSERT INTO user_progress(user_id,value,updated_at)
+    SELECT ?,?,? WHERE COALESCE((SELECT version FROM admin_progress_resets WHERE user_id=?),0)=?
+    ON CONFLICT(user_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+    WHERE COALESCE((SELECT version FROM admin_progress_resets WHERE user_id=?),0)=?
+    RETURNING user_id`).bind(user.id,JSON.stringify(p),now,user.id,resetVersion,user.id,resetVersion).first();
+  return !!row;
 }
