@@ -61,6 +61,18 @@ const realClock: HoldClock = {
 
 // a build takes about 7 seconds; if the scene never says done (no WebGL, a stub), the card moves on anyway
 const BUILD_FALLBACK_MS = 9000;
+// A new card lands where the last hold was: the release of that press (a touch, mostly) must not tap it.
+const SETTLE_MS = 600;
+/** Drops taps that arrive within SETTLE_MS of this card (or this step) appearing. */
+function useSettled(key: string) {
+  const at = useRef(0);
+  useEffect(() => {
+    at.current = performance.now();
+  }, [key]);
+  return <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
+    if (performance.now() - at.current >= SETTLE_MS) fn(...a);
+  };
+}
 // sign in with GitHub, then pick a repo (the same path the play-first chip takes)
 const SIGN_IN = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
 const HOLD_BUILD_MS = 900;
@@ -266,6 +278,7 @@ function useAfterShip() {
 }
 
 function LookAround({ onGo }: { onGo: () => void }) {
+  const settled = useSettled("look");
   if (!useAfterShip()) return null;
   return (
     <section className="card bo-card bo-look" role="region" aria-label={BUILDOUT.label} data-buildout-card="">
@@ -274,7 +287,7 @@ function LookAround({ onGo }: { onGo: () => void }) {
         <h2 className="bo-title">{BUILDOUT.look.title}</h2>
         <p className="bo-line">{BUILDOUT.look.why}</p>
       </div>
-      <button type="button" className="bo-tab" data-buildout-action="continue" onClick={onGo} autoFocus>
+      <button type="button" className="bo-tab" data-buildout-action="continue" onClick={settled(onGo)} autoFocus>
         {BUILDOUT.look.go}
       </button>
     </section>
@@ -316,6 +329,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
       .catch(() => {});
     return () => { on = false; };
   }, [step.id, live, issueApi]);
+  const settled = useSettled(step.id);
   const name = BUILDOUT.name[step.id] ?? step.id;
   if (later === step.id) {
     return (
@@ -357,7 +371,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <a className="bo-tab" data-buildout-action="tap" href="/?onboard=repo&source=live">{BUILDOUT.real.pickRepo}</a>;
   } else if (live && step.id === "boiler") {
     // no fake power on your own repo: the boiler lights when your runner pairs
-    right = <button type="button" className="bo-tab" data-buildout-action="tap" aria-expanded={pairing} onClick={() => setPairing((v) => !v)}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
+    right = <button type="button" className="bo-tab" data-buildout-action="tap" aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
     if (pairing && repo) extra = <div className="bo-pair"><RunnerConnection repo={repo} /></div>;
   } else if (live && step.id === "builder") {
     // your builder rises when your runner brings its assembler online
@@ -369,7 +383,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
   } else if (live && step.id === "issue") {
     extra = <p className="bo-real" role="status">{starter === "done" ? BUILDOUT.real.starterFiled : starter === "failed" ? failLine || BUILDOUT.real.starterFailed : BUILDOUT.real.starterWhy}</p>;
     right = starter === "done" ? wait(BUILDOUT.real.issueWait) : (
-      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={starter === "busy"} onClick={() => void fileStarter()}>
+      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={starter === "busy"} onClick={settled(() => void fileStarter())}>
         {BUILDOUT.real.starter}
       </button>
     );
@@ -377,7 +391,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <BuildHold card={step.id} label={action} red={step.id === "launch"} onBuild={go} />;
   } else if (step.trigger === "tap" || step.trigger === "continue") {
     const waiting = step.id === "planner" && live && !state.move; // the real plan hasn't come back yet
-    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={waiting} onClick={go}>{action}</button>;
+    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={waiting} onClick={settled(go)}>{action}</button>;
   } else {
     // auto: nothing to press, the work happens on its own (real waits stay real)
     right = (
@@ -398,7 +412,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
 
   return (
     <section className="card bo-card" role="region" aria-label={BUILDOUT.label} data-buildout-card="" data-trigger={step.trigger}>
-      <button type="button" className="bo-later" onClick={() => setLater(step.id)} aria-label={`${BUILDOUT.later}: ${name}`}>
+      <button type="button" className="bo-later" onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
         {BUILDOUT.later}
       </button>
       <div className="bo-body">
