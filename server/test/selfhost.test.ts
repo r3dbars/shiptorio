@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { configuration, configureSecrets, provision, resourceId, validate, type IO, type State } from "../scripts/selfhost";
+import { configuration, configureSecrets, provision, resourceId, validate, legacyOwnerCleanup, type IO, type State } from "../scripts/selfhost";
 
 const fresh = (): State => ({ name: "shiptorio-alice", account: "a".repeat(32), subdomain: "alice", login: "alice", secrets: [] });
 const db = "12345678-1234-4234-8234-123456789012", kv = "b".repeat(32);
@@ -35,13 +35,14 @@ test("provision saves IDs immediately and resumes without creating duplicates", 
     ["d1", "create", "shiptorio-alice", "--update-config=false"],
     ["kv", "namespace", "create", "shiptorio-alice-cache", "--update-config=false"],
     ["d1", "migrations", "apply", "DB", "--remote"],
+    ["d1", "execute", "DB", "--remote", "--command", legacyOwnerCleanup],
   ]);
   expect(saved[0].databaseId).toBe(db);
   expect(saved[0].namespaceId).toBeUndefined();
   expect(saved[1].namespaceId).toBe(kv);
   calls.length = 0;
   await provision(state, io);
-  expect(calls.map(c => c.args)).toEqual([["d1", "migrations", "apply", "DB", "--remote"]]);
+  expect(calls.map(c => c.args)).toEqual([["d1", "migrations", "apply", "DB", "--remote"], ["d1", "execute", "DB", "--remote", "--command", legacyOwnerCleanup]]);
 });
 
 test("a KV failure preserves the D1 checkpoint and does not migrate or deploy", async () => {
@@ -96,4 +97,17 @@ test("GitHub App ID stays unset until the other credentials have uploaded", asyn
 test("the wizard opts into password bootstrap only until the GitHub App ID is uploaded", () => {
   expect(configuration(fresh()).vars.SELFHOST_SETUP).toBe("1");
   expect(configuration({ ...fresh(), secrets: ["GITHUB_APP_ID"] }).vars.SELFHOST_SETUP).toBe("0");
+});
+
+test("portable migrations admit no maintainer; legacy quarantine preserves unrelated approvals", async () => {
+  const {testD1} = await import("./d1-fixture");
+  const DB = testD1();
+  expect(await DB.prepare("SELECT * FROM signup_allowlist WHERE login = 'r3dbars'").first()).toBeNull();
+  await DB.prepare("INSERT INTO signup_allowlist(login,approved_by,updated_at,factories,repos,runs_daily) VALUES ('r3dbars','r3dbars',1,99999,99999,200),('alice','alice',1,3,3,20)").run();
+  await DB.prepare(legacyOwnerCleanup).run();
+  expect(await DB.prepare("SELECT enabled FROM signup_allowlist WHERE login = 'r3dbars'").first()).toEqual({enabled: 0});
+  expect(await DB.prepare("SELECT enabled FROM signup_allowlist WHERE login = 'alice'").first()).toEqual({enabled: 1});
+  await DB.prepare("UPDATE signup_allowlist SET approved_by = 'alice', enabled = 1 WHERE login = 'r3dbars'").run();
+  await DB.prepare(legacyOwnerCleanup).run();
+  expect(await DB.prepare("SELECT enabled FROM signup_allowlist WHERE login = 'r3dbars'").first()).toEqual({enabled: 1});
 });
