@@ -18,18 +18,26 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   const repo = `fixture/${info.project.name}`;
   let signedIn = false;
   const errors: string[] = [], wireErrors: string[] = [], messages: any[] = [];
+  const choices: { moveId: string; optionId: string }[] = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => {
     // Repo discovery and saving intro-seen before an account exists return 401.
     if (!signedIn && /\/api\/(repos|me\/prefs)$/.test(m.location().url) && m.text().includes('401')) return;
     if (m.type() === 'error' || m.text().includes('bad message from server')) errors.push(`${m.text()} ${m.location().url}`); });
-  page.on('websocket', ws => ws.on('framereceived', ({ payload }) => {
+  page.on('websocket', ws => {
+    ws.on('framesent', ({ payload }) => {
+      if (typeof payload !== 'string') return;
+      const raw = JSON.parse(payload);
+      if (raw.type === 'choose_move') choices.push({ moveId: raw.moveId, optionId: raw.optionId });
+    });
+    ws.on('framereceived', ({ payload }) => {
     if (typeof payload !== 'string') return;
     const raw = JSON.parse(payload);
     try { assertWire(raw); } catch (e) { wireErrors.push(String(e)); }
     messages.push(raw);
     if (raw.type === 'log' && raw.level === 'error') console.log('Worker:', raw.text);
-  }));
+    });
+  });
   const post = async (path: string, data?: unknown, token?: string) => {
     const res = await page.request.post(path, { data, headers: { origin: 'http://localhost:8799', ...(token ? { authorization: `Bearer ${token}` } : {}) } });
     expect(res.ok(), `${path}: ${await res.text()}`).toBe(true);
@@ -101,13 +109,53 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
     (window as any).__ships = [];
     window.addEventListener('shiptorio:ship', e => (window as any).__ships.push((e as CustomEvent).detail));
   });
-  await card.getByRole('button', { name: /Launch #99/ }).click();
+  const launch = card.getByRole('button', { name: /Hold to launch:.*Launch #99/ });
+  await expect(launch).toBeVisible();
+  const box = await launch.boundingBox();
+  expect(box).not.toBeNull();
+  const point = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+  // Use real Chromium touch input in the phone projects and a mouse on desktop.
+  const touch = info.project.name === 'desktop' ? null : await page.context().newCDPSession(page);
+  let held = false;
+  const press = async () => {
+    if (touch) await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, id: 0 }] });
+    else { await page.mouse.move(point.x, point.y); await page.mouse.down(); }
+    held = true;
+  };
+  const release = async () => {
+    if (!held) return;
+    if (touch) await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    else await page.mouse.up();
+    held = false;
+  };
+  const before = choices.length;
+  await page.clock.setFixedTime(fixedTime);
+  await page.clock.pauseAt(new Date(fixedTime.getTime() + 1));
+  try {
+    await press();
+    await page.clock.fastForward(200);
+    await release();
+    await expect(launch).not.toHaveClass(/\bdown\b/);
+    expect(choices).toHaveLength(before);
+    expect(messages.some(m => m.type === 'patch' && m.patch.items?.some((i: any) => i.state === 'launched' && i.prNumber === 99))).toBe(false);
+    await press();
+    // Each step delivers a frame; one long stalled frame must not count as a hold.
+    for (let i = 0; i < 10; i++) await page.clock.fastForward(100);
+    await expect.poll(() => choices.length).toBe(before + 1);
+    await release();
+  } finally {
+    await release();
+    await touch?.detach();
+    await page.clock.resume();
+    await page.clock.setFixedTime(fixedTime);
+  }
   await expect.poll(() => messages.some(m => m.type === 'patch' && m.patch.items?.some((i: any) => i.state === 'launched' && i.prNumber === 99))).toBe(true);
   await expect.poll(() => page.evaluate(() => (window as any).__ships.some((s: any) => s.prNumber === 99))).toBe(true);
   await expect(page.locator('.ship-cel').first()).toBeVisible();
   expect(wireErrors).toEqual([]);
   expect(errors).toEqual([]);
   await info.attach('wire-trace', { body: JSON.stringify(messages, null, 2), contentType: 'application/json' });
+  await info.attach('launch-consent', { body: JSON.stringify({ input: touch ? 'touch' : 'mouse', earlyReleaseMs: 200, choicesBefore: before, choicesAfter: choices.length }), contentType: 'application/json' });
 });
 
 test('sim rework scenario renders and responds', async ({ page }) => {
