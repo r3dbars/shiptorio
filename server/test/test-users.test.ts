@@ -50,7 +50,7 @@ test("negative sessions cannot hit real repos, connectors, runner or admin befor
   const unavailable = await f.app.request("http://localhost:8787/api/repos/test-fixture/test-midgame/factory", { headers: { cookie } }, f.env);
   expect(unavailable.status).toBe(503); expect(f.calls()).toBe(0);
   const me = await f.app.request("http://localhost:8787/api/me", { headers: { cookie } }, f.env);
-  expect((await me.json()).installUrl).toBe("/test/install");
+  expect((await me.json() as { installUrl: string }).installUrl).toBe("/test/install");
   expect((await f.app.request("http://localhost:8787/test/install", { headers: { cookie } }, f.env)).status).toBe(503);
   const production = await f.app.request("https://shiptorio.com/api/me", { headers: { cookie } }, { ...f.env, PUBLIC_URL: "https://shiptorio.com" });
   expect(production.status).toBe(404); expect(f.calls()).toBe(0);
