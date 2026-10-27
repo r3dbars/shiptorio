@@ -49,10 +49,10 @@ describe("brain eval grading", () => {
     expect(byId["goal-customers"].hit).toBe(false);
     // The bar the rule sets today. If it drops, a fixture or the loop changed: look before lowering it.
     expect(r.summary.hitRate).toBeGreaterThanOrEqual(0.8);
-    // Just over the floor, the rule always deals a card; only a model can say "quiet" there.
-    expect(byId["ci-creep"].nags.quietCard).toBe(true);
-    expect(byId["weekend-dip"].nags.quietCard).toBe(true);
-    expect(r.cases.filter(c => !["ci-creep", "weekend-dip"].includes(c.id)).every(c => !Object.values(c.nags).some(Boolean))).toBe(true);
+    // Just over the model's floor but under the rule's (BRAIN.ruleFloor): the rule stays quiet too.
+    expect(byId["ci-creep"].got.area).toBeNull();
+    expect(byId["weekend-dip"].got.area).toBeNull();
+    expect(r.summary.overNags).toBe(0);
     expect(r.summary.thinks).toBe(0);
   });
 
@@ -78,7 +78,7 @@ describe("brain eval grading", () => {
     // A quiet case with one signal nudged over the floor: a nagging brain raises it, a good one says quiet.
     const tempted = { ...quiet, signals: (now: number) => quiet.signals(now).map(s => s.kind === "ci_slow" ? { ...s, severity: 0.3 } : s) };
     const meter = () => ({ calls: 0, input: 0, output: 0, nanoUsd: 0, unmeasured: 0, ms: 0 });
-    const nagger = await runCase(tempted, async brief => ({ ...ruleDiagnosis(brief.signals, emptyMemory(), brief.now)!, reason: "always something" }), meter());
+    const nagger = await runCase(tempted, async brief => ({ ...ruleDiagnosis(brief.signals.map(s => ({ ...s, severity: 1 })), emptyMemory(), brief.now)!, reason: "always something" }), meter());
     expect(nagger.nags.quietCard).toBe(true);
     expect(summarize("x", "x", [nagger]).summary.overNags).toBeGreaterThan(0);
     const calm = await runCase(tempted, async () => ({ quiet: true as const, reason: "CI at 6 minutes is fine." }), meter());
