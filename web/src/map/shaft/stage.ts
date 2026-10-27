@@ -1,29 +1,19 @@
 // The stage the shaft stands on: the scene, the root group (turned 45deg like the mockup, so root +x runs
 // left to right on screen), the look (sky, fog, hemisphere, a sun whose shadow box follows the view), the
-// orthographic camera with its views, and the Black Iron finish. The dev harness (shaft.html) and the game's
+// orthographic camera with its views (framed by frame.ts), and the Black Iron finish. The dev harness (shaft.html) and the game's
 // ShaftScene both draw through this, so a screenshot in the harness is what players see.
 
 import * as THREE from "three";
 
-import type { Iron, IronItem, IronStation, Layout } from "./core";
+import type { Iron, IronItem, Layout } from "./core";
 import { FinishPass } from "./finish";
+import { floorFrame, followH, isFloorView, isPhone, stationFrame } from "./frame";
 
 export const YAW = Math.PI / 4;
 export const TILT = (30 * Math.PI) / 180;
 const D = 80;
 
 export type ShaftView = "stack" | "mine" | "build" | "checks" | "launch" | "line" | "station" | "follow" | "free";
-
-// [root x, y, z the view centers on, view height on a wide screen, the width it must fit]
-type Preset = { at: [number, number, number]; h: number; w: number; phone: { at: [number, number, number]; h: number } };
-const PRESETS: Record<"stack" | "mine" | "build" | "checks" | "launch" | "line", Preset> = {
-  stack: { at: [0, 5, -8.4], h: 62, w: 42, phone: { at: [0, 5, -8.4], h: 74 } },
-  mine: { at: [0, -10.5, 8.5], h: 18, w: 41, phone: { at: [-3, -10.5, 8.5], h: 22 } },
-  build: { at: [0, 2.2, 0.8], h: 14, w: 39, phone: { at: [-4, 2.2, 0.8], h: 18 } },
-  checks: { at: [1, 13.2, -9.4], h: 13, w: 38, phone: { at: [4, 13.2, -9.4], h: 18 } },
-  launch: { at: [0, 26, -21], h: 17, w: 32, phone: { at: [0, 26, -21], h: 22 } },
-  line: { at: [0, -4.5, 3.5], h: 30, w: 41, phone: { at: [-2, -4.5, 3.5], h: 36 } },
-};
 
 export class ShaftStage {
   readonly scene = new THREE.Scene();
@@ -98,7 +88,7 @@ export class ShaftStage {
   }
 
   get phone() {
-    return this.W < 760;
+    return isPhone(this.W);
   }
 
   setView(view: ShaftView, id?: string | null) {
@@ -116,23 +106,17 @@ export class ShaftStage {
   }
 
   presetGoal() {
-    const a = this.W / this.H;
     const v = this.view;
-    if (v in PRESETS) {
-      const P = PRESETS[v as keyof typeof PRESETS];
-      if (this.phone) {
-        this.rootToWorld(...P.phone.at, this.tgtGoal);
-        this.viewGoal = Math.max(P.phone.h, (P.w * 0.62) / a);
-      } else {
-        this.rootToWorld(...P.at, this.tgtGoal);
-        this.viewGoal = Math.max(P.h, P.w / a);
-      }
+    if (isFloorView(v)) {
+      const f = floorFrame(v, this.W, this.H);
+      this.rootToWorld(...f.at, this.tgtGoal);
+      this.viewGoal = f.h;
     } else if (v === "station" && this.focusId) {
       const st = this.I.stations[this.focusId];
       if (st) {
-        const small = st.type === "check" || st.type === "battery" || st.type === "dynamo";
-        this.rootToWorld(st.x, st.y + (small ? 1.6 : 2.6), st.z + 0.6, this.tgtGoal);
-        this.viewGoal = (small ? 7.5 : 11) * (this.phone ? 1.3 : 1);
+        const f = stationFrame(st, this.W);
+        this.rootToWorld(...f.at, this.tgtGoal);
+        this.viewGoal = f.h;
       }
     }
   }
@@ -153,7 +137,7 @@ export class ShaftStage {
       if (this.followItem) {
         this.followItem.mesh.getWorldPosition(this.tgtGoal);
         this.tgtGoal.y += 0.6;
-        this.viewGoal = this.phone ? 11 : 9;
+        this.viewGoal = followH(this.W);
       }
     } else if (this.view !== "free") this.presetGoal();
     const k = this.reduceMotion ? 1 : 1 - Math.exp(-dt * (this.view === "follow" ? 3 : 5));
@@ -226,12 +210,6 @@ export class ShaftStage {
   project(x: number, y: number, z: number): [number, number, number] {
     const v = this.rootToWorld(x, y, z, this.cv).project(this.camera);
     return [((v.x + 1) / 2) * this.W, ((1 - v.y) / 2) * this.H, v.z];
-  }
-
-  /** where a station's name chip sits: on the floor in front of it */
-  chipAnchor(st: IronStation): [number, number, number] {
-    const small = st.type === "check";
-    return [st.x, st.y + 0.1, st.z + (small ? 2.4 : 4.6)];
   }
 
   dispose() {

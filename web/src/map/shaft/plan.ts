@@ -22,12 +22,23 @@ export function oreMine(m: Machine): string {
   return "github";
 }
 
+// a pick key the game's panels open (districts and the drone have no panel)
+export const clickable = (key: string) => !!key && !key.startsWith("d:") && key !== "drone";
+
 export interface ShaftPlan {
   plan: Plan;
   key: string; // changes only when the shaft must be rebuilt
   labels: Record<string, string>; // chip names
   pick: Record<string, string>; // shaft station id -> the key the game's panels open ("ci-1", "m:assembler-1")
   mines: Record<string, string | undefined>; // mine -> its ore deposit machine id (absent: a ghost mine)
+}
+
+/** what a click on a mine opens: its ore deposit machine, nothing (connected, no machine), or "connect this source" */
+export function mineKey(sp: ShaftPlan, src: string): string | undefined {
+  const id = sp.mines[src];
+  if (id) return `m:${id}`;
+  if (src in sp.mines) return undefined;
+  return GHOST_KEY[src];
 }
 
 // The gauntlet in line order. Old servers without stations: guess from the inspector machines.

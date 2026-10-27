@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { createIron, type Iron } from "./core";
 import { defaultPlan, makeLayout, type Plan } from "./layout";
 import { bakeShaft, verifyDyn } from "./bake";
+import { chipAnchor } from "./frame";
 import { ShaftStage, type ShaftView } from "./stage";
 
 THREE.ColorManagement.enabled = false;
@@ -146,7 +147,7 @@ async function boot() {
         c.st.textContent = STATE_WORD[s] ?? s;
         c.det.textContent = det;
       }
-      const [x, y] = stage.project(...stage.chipAnchor(st));
+      const [x, y] = stage.project(...chipAnchor(st));
       const off = x < -100 || x > stage.W + 100 || y < -40 || y > stage.H + 40;
       c.el.style.visibility = off ? "hidden" : "visible";
       c.el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,0)`;
