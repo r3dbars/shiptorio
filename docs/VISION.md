@@ -62,6 +62,23 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 Start with code: issues, errors, PRs, the repo loop. Then grow into the rest of the business loop:
 marketing, customer acquisition, customer retention. Same game, more districts.
 
+## Current focus through Nov 4 (locked 2026-10-27)
+
+Justin approved this as the plan through the deadline (noon CT Wed Nov 4). Every thread and Codex follows it.
+Judges won't care about 20 features. They'll care about one real "oh wow" moment.
+
+1. **Prove the loop, then prove it again.** Ship r3dbars/Testing #5 for real, start to finish, then 5 to 10
+   more clean ships on Testing. Then show one autonomy level-up happening for real. That's the whole pitch.
+2. **Nail the vertical map.** Match Justin's Black Iron mockup closely (PR #204,
+   https://claude.ai/artifact/QR3JBEyauy8VAEGptsPGi9). No drift. Side-by-side screenshots before merging.
+3. **Build the judge experience.** A no-login demo mode plus a 2-minute demo video.
+4. **Feature freeze around Nov 1.** After that: bugs, polish and reliability only.
+5. **Park the big stuff until after.** Build mode, pricing, multi-repo empire and new mines stay behind
+   flags or on branches. Great for the post-hackathon story, not needed to win.
+
+**Codex points at reliability, not features:** deploy guardrail, E2E tests, runner reliability,
+limits/quota visibility, security. Hold the other feature prompts until after Nov 4.
+
 ## Current focus (Meta hackathon, submit by noon CT Wed Nov 4)
 
 - **First playable loop:** real GitHub issue → Spark → fix PR (player's agent) → CI inspect / rework →
@@ -76,6 +93,7 @@ marketing, customer acquisition, customer retention. Same game, more districts.
 
 Before starting something, check it against this list. Mostly-yes means go.
 
+- [ ] Is it on the **"through Nov 4" list** above (and is it before the ~Nov 1 freeze if it's a feature)?
 - [ ] Does it move the **current focus** loop closer to working end to end?
 - [ ] Does it make **play cascade into a real result** (PR, fix, reply, customer)?
 - [ ] Does it keep **Spark as the brain**, not the worker?
@@ -106,3 +124,6 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-26: Humans are the bottleneck in the agentic loop. Shiptorio always points at it, and a swipe
   check-in (8 to 12 cards, right = do it, left = later, down = never + why) lets you push the whole system
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
+- 2026-10-27: Plan locked through Nov 4: prove the loop with real clean ships on Testing + one real autonomy
+  level-up, nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1, park build
+  mode / pricing / empire / new mines. Codex on reliability prompts only. See "Current focus through Nov 4".
