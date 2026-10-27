@@ -16,7 +16,8 @@ on:
 jobs:
   deploy:
     # Off until the repo variable DEPLOY_ENABLED is set to "true" (see docs/SETUP.md).
-    if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    # Manual branch deploys support the rollback drill; never deploy pull_request events.
+    if: vars.DEPLOY_ENABLED == 'true' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     # one deploy at a time: the running one finishes, and only the newest waiting merge runs next (GitHub drops
     # older pending runs). Cancelling in-flight runs starved prod when merges landed faster than a deploy takes.
@@ -30,27 +31,50 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
-      - run: bun run deploy
+      # Capture the active version BEFORE mutation, not whichever version is second later.
+      # Refuse split traffic: rollback restores exactly one known 100% version.
+      - name: Capture rollback target
+        id: previous
+        working-directory: server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # Live smoke: the new commit is what shiptorio.com serves, the landing page is public, and the app gate still holds.
-      - name: Live smoke
         run: |
-          for i in $(seq 1 12); do
-            live=$(curl -fsS https://shiptorio.com/api/version | sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p' || true)
-            [ "$live" = "$GITHUB_SHA" ] && break
-            echo "live commit '$live', waiting for $GITHUB_SHA"; sleep 5
-          done
-          [ "$live" = "$GITHUB_SHA" ] || { echo "::error::shiptorio.com is not serving $GITHUB_SHA"; exit 1; }
-          landing=$(curl -s -o /dev/null -w '%{http_code}' https://shiptorio.com/)
-          [ "$landing" = "200" ] || { echo "::error::landing page returned $landing, expected 200"; exit 1; }
-          # Password mode currently serves 401 on the actual factory deep link. Future waitlist mode
-          # may serve login HTML with 200; the private repo API must still reject guests with 401.
-          gate=$(curl -s -o /dev/null -w '%{http_code}' 'https://shiptorio.com/?source=live&repo=r3dbars%2Fshiptorio')
-          [ "$gate" = "401" ] || { echo "::error::factory password gate returned $gate, expected 401"; exit 1; }
-          private_api=$(curl -s -o /dev/null -w '%{http_code}' https://shiptorio.com/api/repos)
-          [ "$private_api" = "401" ] || { echo "::error::private repo API returned $private_api, expected 401"; exit 1; }
-          http=$(curl -s -o /dev/null -w '%{http_code}' http://shiptorio.com/)
-          [ "$http" = "308" ] || [ "$http" = "301" ] || { echo "::error::http:// returned $http, expected a redirect to https"; exit 1; }
-          echo "Live: $live, landing 200, factory gate 401, private API 401, http $http"
+          bun x wrangler deployments list --name shiptorio --json > "$RUNNER_TEMP/deployments.json"
+          previous=$(jq -er 'sort_by(.created_on) | last | .versions | select(length == 1) | .[0] | select(.percentage == 100) | .version_id | select(test("^[0-9a-f-]{36}$"))' "$RUNNER_TEMP/deployments.json")
+          echo "version=$previous" >> "$GITHUB_OUTPUT"
+          commit=$(curl --fail --silent --show-error --max-time 15 https://shiptorio.com/api/version | jq -er '.commit | select(test("^[0-9a-f]{40}$"))')
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Rollback target: $previous ($commit)"
+      - name: Deploy
+        id: deploy
+        run: bun run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Live smoke
+        id: smoke
+        run: bun scripts/smoke/live.ts https://shiptorio.com "$GITHUB_SHA"
+      - name: Roll back failed deployment
+        if: ${{ always() && steps.previous.outcome == 'success' && (steps.deploy.outcome == 'failure' || steps.smoke.outcome == 'failure') }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS_VERSION: ${{ steps.previous.outputs.version }}
+          PREVIOUS_COMMIT: ${{ steps.previous.outputs.commit }}
+        run: |
+          echo "::error::Deployment $GITHUB_SHA failed. Rolling shiptorio back to $PREVIOUS_VERSION ($PREVIOUS_COMMIT)."
+          echo "## DEPLOY FAILED — automatic rollback" >> "$GITHUB_STEP_SUMMARY"
+          echo "Rejected $GITHUB_SHA; restoring $PREVIOUS_VERSION ($PREVIOUS_COMMIT)." >> "$GITHUB_STEP_SUMMARY"
+          if ! (cd server && bun x wrangler rollback "$PREVIOUS_VERSION" --name shiptorio --yes --message "Live smoke failed: $GITHUB_SHA"); then
+            echo "::error::ROLLBACK FAILED. shiptorio.com needs immediate manual recovery."
+            echo "ROLLBACK FAILED: manual recovery required." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          # Verify Cloudflare actually activated the saved version, then check the restored site.
+          (cd server && bun x wrangler deployments list --name shiptorio --json) > "$RUNNER_TEMP/restored.json"
+          jq -e --arg version "$PREVIOUS_VERSION" 'sort_by(.created_on) | last | .versions | length == 1 and .[0].version_id == $version and .[0].percentage == 100' "$RUNNER_TEMP/restored.json"
+          bun scripts/smoke/live.ts https://shiptorio.com "$PREVIOUS_COMMIT"
+          echo "Rollback verified; the deployment job remains FAILED." >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Rollback verified. Rejected deployment $GITHUB_SHA; fix the branch before redeploying."
+          exit 1
