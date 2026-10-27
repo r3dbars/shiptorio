@@ -21,6 +21,7 @@ import { Redactor } from "./redact";
 import * as Sentry from "@sentry/cloudflare";
 import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
 import { adminRoutes } from "./admin";
+import { tapsRoutes } from "./taps-admin";
 
 
 import { Hono, type Context, type Next } from "hono";
@@ -945,6 +946,7 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
 
 adminRoutes(app, factory);
 godRoutes(app, factory);
+tapsRoutes(app);
 
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());
