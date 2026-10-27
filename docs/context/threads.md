@@ -98,3 +98,4 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
   and a summary. Manual branch deploys share the production concurrency lock.
 - Local regression probes pass. Live deliberately broken branch rollback drill
   is pending; see scripts/smoke/README.md. No data/schema rollback is claimed.
+| Stranger E2E: browser runner pairing | in progress | Full browser journey exposed Chromium submitting the device approval form with opaque Origin under no-referrer, rejected by the same-origin guard. Pairing page now uses same-origin referrer policy; foreign and missing origins remain rejected. Day 4 runner checkpoint. |
