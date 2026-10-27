@@ -59,5 +59,6 @@ test('no-login judge replay: three mines → plan → rework gauntlet → permit
   await page.getByRole('button', { name: 'Replay', exact: true }).first().click();
   await expect(page.getByTestId('judge-rockets')).toHaveText('0');
   await expect(page.getByTestId('judge-autonomy')).toHaveText('Advisor');
-  await expect(story).toHaveAttribute('data-beat', '0');
+  // Beat 0 lasts under two seconds, so a slow runner may already be on beat 1: either means the story restarted.
+  await expect(story).toHaveAttribute('data-beat', /^[01]$/);
 });
