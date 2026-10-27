@@ -1,7 +1,7 @@
 import { sparkTestEnv } from "./budget-fixture";
 import { expect, test } from "bun:test";
 import { planLocalTask } from "../src/spark";
-test("foreman rejects unapproved tools/paths and premature assignment, and stops after five turns", async () => {
+test("foreman rejects unapproved tools/paths and premature assignment, and stops after eight turns", async () => {
   const original = globalThis.fetch;
   let calls = 0;
   let action: unknown;
@@ -13,8 +13,8 @@ test("foreman rejects unapproved tools/paths and premature assignment, and stops
       await expect(run()).rejects.toThrow("unavailable or unapproved");
     }
     calls = 0; action = { tool: "read_issue", reason: "keep reading" };
-    await expect(run()).rejects.toThrow("five-turn");
-    expect(calls).toBe(7); // five turns plus two free repeat reminders
+    await expect(run()).rejects.toThrow("8 planning turns");
+    expect(calls).toBe(10); // eight turns plus two free repeat reminders
     action = { tool: "ask_player", reason: "Need clarification" };
     await expect(run()).rejects.toThrow("player input");
   } finally { globalThis.fetch = original; }
@@ -41,7 +41,7 @@ test("a repeated read doesn't spend a planning turn or show up as a step", async
     const plan = await planLocalTask(sparkTestEnv(), { title: "Issue", body: "Evidence", district: "web" }, ["web/src/a.ts", "web/src/b.ts", "web/src/c.ts"], async () => "code", async s => { steps.push(s.tool); });
     expect(plan.plan).toContain("Fix all three");
     expect(steps).toEqual(["read_issue", "read_file", "read_file", "read_file", "assign_job"]);
-    expect(JSON.parse(JSON.parse(payloads[1].split("\n")[1])).alreadyRead).toEqual(["issue"]);
+    expect(JSON.parse(JSON.parse(payloads[1].split("\n")[1])).alreadyRead).toEqual(["read_issue"]);
   } finally { globalThis.fetch = original; }
 });
 

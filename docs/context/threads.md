@@ -1,5 +1,11 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+
+## Give Spark tools and full understanding (Claude, 2026-10-27)
+
+- Owns Spark's tool layer: `server/src/spark-tools.ts` (toolbox, planner loop, review loop) and `spark-context.ts` (what the tools see). The "Make Meta Muse Spark central" thread keeps the audit (docs/context/spark-audit.md); this thread owns the planner and review prompts.
+- Planner: 8 turns over 9 read-only tools; review: 6 turns, reads the repo at the PR head. Acceptance cases: Testing #12 (`--coupon` vs `argv[2]`) and #13 (`$50 or more` vs `> 50`).
+
 ## Claude private Keychain persistence (Codex, 2026-10-26)
 
 - Live Testing #2 acceptance found a gap after #274: the isolated HOME had no `Library/Preferences` or default Keychain. Claude saved account metadata, but a new status process had no credential; neither a fake provider nor a signed-out native startup test proved persistence.
