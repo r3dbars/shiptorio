@@ -3,6 +3,11 @@
 // (layout.js) and the art (modules/*.js) are the dev harness's (harness.ts); this adds the real driver (driver.ts),
 // a plan read off the real machines (plan.ts), the in-world HUD (hud.ts: chips, item tags, pings, floor buttons),
 // picking, and the game's camera asks (focus, overview, lift), framed by frame.ts.
+//
+// ?buildout=1 (web/src/buildout/CONTRACT.md): the first run builds the factory in front of you. The whole first-run
+// shaft is built once (buildout.fullPlan), what isn't built yet is gone (buildout.ts), each build plays its moment
+// here (construct.ts, burst.ts, the shiptorio:build event), and the camera is the director's (director.ts) until the
+// first rocket.
 
 import "./shaft.css";
 
@@ -10,13 +15,16 @@ import * as THREE from "three";
 
 import type { FactoryState } from "@shiptorio/shared";
 
+import { buildoutOn } from "../../flags";
 import { perf } from "../perf";
 import { FrameGovernor } from "../quality";
 import type { Cosmetics, Ping } from "../scene";
 import type { SatelliteSpec } from "../empire";
 import { bakeShaft } from "./bake";
 import { type Clog, clogOf, ClogView } from "./clog";
+import { Buildout, fullPlan } from "./buildout";
 import { createIron, type Iron } from "./core";
+import { Director } from "./director";
 import { GameDriver } from "./driver";
 import { FirstRunLight, LIT_LINE, litFloors } from "./firstRun";
 import { biasFor } from "./frame";
@@ -90,6 +98,9 @@ export class ShaftScene {
   private asked: string | null = null; // the last focus asked for, kept for a shaft that wasn't built yet
   private readonly trophies = new Trophies(); // a green lamp per shipped PR, by the assembler that built it
   private readonly clogs = new ClogView(); // the bottleneck, piling up where it lives (clog.ts)
+  // build as you go (?buildout=1): what's built stands, the rest is gone, and the camera is the director's
+  private readonly bo: Buildout | null;
+  private director: Director | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -110,6 +121,18 @@ export class ShaftScene {
       reframe: () => (this.governor.poke(), this.applyBias()),
     });
     this.hud.syncFloors(this.view.view);
+    this.bo = buildoutOn()
+      ? new Buildout(
+          {
+            park: (target) => this.director?.park(target),
+            light: (n) => this.litBy(n),
+            bake: (holder) => this.bakeOne(holder),
+            poke: () => (this.governor.poke(), (this.renderer.shadowMap.needsUpdate = true)),
+          },
+          this.reduceMotion,
+        )
+      : null;
+    if (this.bo) this.firstRun.bindRise(this.bo.rise);
     this.said = document.createElement("div");
     this.said.className = "sr";
     this.said.setAttribute("aria-live", "polite");
@@ -142,12 +165,13 @@ export class ShaftScene {
 
   zoomBy(factor: number) {
     this.governor.poke();
+    if (this.director?.locked) return; // the first run's camera is parked on what's being built
     this.stage?.zoomBy(factor);
   }
 
   panBy(dx: number, dy: number) {
     this.governor.poke();
-    if (!this.stage) return;
+    if (!this.stage || this.director?.locked) return;
     this.stage.panBy(dx, dy);
     this.view = { view: "free", id: null };
     this.hud.syncFloors("free");
@@ -156,23 +180,48 @@ export class ShaftScene {
   /** A drag ended. On a phone showing about one floor, the view settles on the nearest floor instead of stopping between two. */
   settle() {
     const stage = this.stage;
-    if (!stage || this.view.view !== "free" || !stage.phone) return;
+    if (!stage || this.view.view !== "free" || !stage.phone || this.director?.locked) return;
     const floor = stage.snapFloor();
     if (floor) this.setView(floor, null);
   }
 
   update(state: FactoryState) {
     this.state = state;
+    this.bo?.sync(state); // before a rebuild, so the new shaft stands as built
     if (!this.fns) return; // the art is still loading: build once it's here
-    const sp = planFromState(state);
+    // build as you go: the whole first-run shaft stands from the start (unbuilt parts gone), so builds never rebuild it
+    const sp = this.bo ? fullPlan(planFromState(state)) : planFromState(state);
     if (!this.sp || sp.key !== this.sp.key) this.rebuild(sp);
     else this.sp = sp;
     this.driver?.sync(state);
     if (this.I) this.trophies.sync(this.I, state);
     if (this.I) this.clogs.set(this.I, clogOf(state), this.reduceMotion);
     this.hud.read(state, this.sp!);
-    this.light(state);
+    if (!this.bo) this.light(state);
+    // every build done: free look (director.ts never touches the camera again)
+    else if (!this.bo.step && !this.bo.busy && this.director?.locked) this.director.unlock();
     this.startLapse();
+  }
+
+  // Build as you go: a build finished and its floor lights (no swoop, the director has the camera).
+  private litBy(n: number) {
+    const floor = this.firstRun.set(n, this.reduceMotion);
+    this.governor.poke();
+    if (floor) this.said.textContent = LIT_LINE[floor];
+  }
+
+  // A machine finished rising: merge it like the rest of the shaft was (bake.ts), on its own.
+  private bakeOne(holder: THREE.Object3D) {
+    const root = this.stage?.root, I = this.I;
+    if (!root || !I) return;
+    const one = {
+      children: [holder],
+      updateMatrixWorld: (force?: boolean) => root.updateMatrixWorld(force),
+      traverse: (fn: (o: THREE.Object3D) => void) => holder.traverse(fn),
+      worldToLocal: (v: THREE.Vector3) => root.worldToLocal(v),
+    };
+    bakeShaft(I, one as unknown as THREE.Group);
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   // A floor lit up: a quick swoop to it (a snap under reduced motion), unless you're looking somewhere yourself.
@@ -239,7 +288,7 @@ export class ShaftScene {
     const hit = this.ray.intersectObjects(targets, true).find((h) => h.object.visible && !(h.object.userData.noBake && (h.object as THREE.Mesh).material && ((h.object as THREE.Mesh).material as THREE.Material).transparent));
     if (!hit) return undefined;
     for (let o: THREE.Object3D | null = hit.object; o; o = o.parent) {
-      if (o.name.startsWith("station:")) return sp.pick[o.name.slice(8)];
+      if (o.name.startsWith("station:")) return this.bo?.hidden(o.name.slice(8)) ? undefined : sp.pick[o.name.slice(8)];
       if (o === mine) {
         // the nearest mine mouth to the hit
         const p = stage.root.worldToLocal(hit.point.clone());
@@ -249,19 +298,25 @@ export class ShaftScene {
           const dd = Math.hypot(p.x - m.x, (p.y - m.y) * 0.7);
           if (dd < d) (d = dd), (best = src);
         }
-        return d < 6 ? mineKey(sp, best) : undefined;
+        return d < 6 && !this.bo?.mineHidden(best) ? mineKey(sp, best) : undefined;
       }
     }
     return undefined;
   }
 
   pick(clientX: number, clientY: number, rect: DOMRect): string | undefined {
+    // a tap while something's being built hurries it along (the payoff always plays)
+    if (this.bo?.busy) {
+      this.bo.hurry();
+      return undefined;
+    }
     const key = this.keyAt(clientX, clientY, rect);
     return key && clickable(key) ? key : undefined;
   }
 
   private hoverAt = 0;
   hover(clientX: number, clientY: number, rect: DOMRect): boolean {
+    if (this.director?.locked) return false;
     const now = performance.now();
     if (now - this.hoverAt > 60) {
       this.hoverAt = now;
@@ -331,6 +386,7 @@ export class ShaftScene {
     this.teardown();
     this.trophies.dispose();
     this.clogs.dispose();
+    this.bo?.dispose();
     this.hud.dispose();
     this.said.remove();
     this.renderer.dispose();
@@ -364,9 +420,17 @@ export class ShaftScene {
     I.calm = this.reduceMotion; // core.js steadies the item halos
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
+    this.bo?.attach(I, stage.root, layout); // what isn't built stays out of the bake
     bakeShaft(I, stage.root);
-    if (this.firstRun.level < 0 && this.state) this.firstRun.set(litFloors(this.state), this.reduceMotion); // the first look: no swoop
-    this.firstRun.patch(stage.root);
+    const bo = this.bo;
+    if (bo) {
+      bo.afterBake();
+      this.director = new Director(stage, layout, { reduceMotion: this.reduceMotion });
+      if (!bo.step && !bo.busy) this.director.unlock();
+      else bo.repark();
+    }
+    if (this.firstRun.level < 0 && this.state) this.firstRun.set(bo ? bo.litFloors : litFloors(this.state), this.reduceMotion); // the first look: no swoop
+    this.firstRun.patch(stage.root, !!bo && !bo.complete);
     this.trophies.reset();
     stage.root.add(this.trophies.group);
     this.clogs.reset();
@@ -390,6 +454,7 @@ export class ShaftScene {
         advance: (sec: number) => {
           I.debug.advance(sec);
           this.t = I._t ?? this.t;
+          this.buildStep(sec);
           stage.camStep(sec);
           this.firstRun.step(this.t, sec, this.reduceMotion);
           this.clogs.step(this.t, sec, this.reduceMotion);
@@ -397,6 +462,9 @@ export class ShaftScene {
         clogs: this.clogs,
         clog: (c: Clog | null) => this.clogs.set(I, c, this.reduceMotion),
         firstRun: this.firstRun,
+        buildout: this.bo,
+        director: this.director,
+        scene: this, // tests feed it states of their own (scripts/shots)
         trophies: this.trophies,
         view: (v: ShaftView, id?: string) => (this.setView(v, id ?? null, true), this.applyBias()),
         render: () => {
@@ -404,6 +472,7 @@ export class ShaftScene {
           this.renderer.shadowMap.needsUpdate = true;
           stage.render(this.renderer);
           this.hud.place(this.W, this.H);
+          this.quietChips();
           return { calls: this.renderer.info.render.calls, triangles: this.renderer.info.render.triangles };
         },
       };
@@ -480,12 +549,36 @@ export class ShaftScene {
     this.last = now;
     this.t += dt;
     I.step(this.t, dt);
+    this.buildStep(dt);
     stage.camStep(dt);
     this.firstRun.step(this.t, dt, this.reduceMotion);
     this.clogs.step(this.t, dt, this.reduceMotion);
-    this.renderer.shadowMap.needsUpdate = this.governor.shadows();
+    const shadows = this.governor.shadows();
+    this.renderer.shadowMap.needsUpdate ||= shadows; // a build may have asked for one too
     stage.render(this.renderer);
     this.hud.place(this.W, this.H);
+    this.quietChips();
     perf.work(performance.now() - now);
   };
+
+  // Build as you go, each frame: the build playing, the pool of light on the next site, the director's camera.
+  private buildStep(dt: number) {
+    const bo = this.bo;
+    if (!bo) return;
+    bo.tick(this.t, dt);
+    this.firstRun.spotAt(bo.spot());
+    this.director?.step(this.t, dt);
+    if (bo.busy) this.governor.poke();
+  }
+
+  // No chip names a machine or mine that isn't built (hud.ts places them; this only takes the unbuilt ones away).
+  private quietChips() {
+    const bo = this.bo;
+    if (!bo || bo.complete) return;
+    const chips = (this.hud as unknown as { chips: { el: HTMLElement; station?: { id: string }; mine?: string; key?: string }[] }).chips;
+    for (const c of chips ?? []) {
+      const gone = c.station ? bo.hidden(c.station.id) : c.mine ? bo.mineHidden(c.mine) : c.key === "rework" && !bo.shown.has("checks");
+      if (gone && c.el.style.display !== "none") c.el.style.display = "none";
+    }
+  }
 }
