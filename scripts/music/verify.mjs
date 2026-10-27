@@ -7,7 +7,7 @@ const out = process.env.MUSIC_OUT ?? '/tmp/shiptorio-music';
 mkdirSync(out,{recursive:true});
 const browser = await chromium.launch();
 const results = {};
-const url = `${base}/?source=sim&scenario=quiet-morning&intro=0&tour=0&autolaunch=1&music=2`;
+const url = `${base}/?source=sim&scenario=quiet-morning&intro=0&tour=0&autolaunch=1`;
 try {
   for (const [name, device] of [['desktop',{viewport:{width:1440,height:900}}],['phone',devices['iPhone 13']]]) {
     console.log(`Checking ${name}`);
@@ -52,9 +52,21 @@ try {
     results[name]={url:page.url(),title:await page.title(),musicRequests:musicRequests(),playing,persisted:stored,offStopsScheduling:true,muteSuspends:true,errors};
     await context.close();
   }
+  // Explicit old-score comparison remains available after promoting the default.
+  const legacyContext=await browser.newContext();
+  const legacyPage=await legacyContext.newPage(); const legacyRequests=[];
+  legacyPage.on('request',r=>legacyRequests.push(r.url()));
+  await legacyPage.goto(`${base}/?source=sim&intro=0&tour=0&music=1`);
+  await legacyPage.locator('canvas').first().waitFor();
+  await legacyPage.mouse.click(10,10);
+  await legacyPage.waitForTimeout(500);
+  const legacy=await legacyPage.evaluate(async url=>{const {sound}=await import(url);return sound.musicState();},legacyRequests.find(u=>u.includes('/src/sound/engine.ts')));
+  if(legacy.version!==1 || legacy.state!=='legacy' || !legacy.attached || legacyRequests.some(u=>/foundry(Player|Score)/.test(u))) throw Error('Old score comparison failed');
+  results.legacy={version:legacy.version,state:legacy.state,attached:legacy.attached,noFoundryRequest:true};
+  await legacyContext.close();
   const benchContext=await browser.newContext(devices['iPhone 13']);
   const page=await benchContext.newPage();
-  await page.goto(`${base}/?source=sim&intro=0&tour=0&music=2&quality=2`);
+  await page.goto(`${base}/?source=sim&intro=0&tour=0&quality=2`);
   // Render the exact score/instruments offline and write a standard mono PCM WAV.
   console.log("Rendering audition");
   const pcm=await page.evaluate(async()=>{
@@ -78,7 +90,7 @@ try {
   if(pcm.peak>=1 || pcm.rms<0.01) throw Error('Audition clips or is inaudible');
   // Profile the music in isolation at 4x CPU, avoiding 3D map cost in attribution.
   await page.route('**/music-bench?*',r=>r.fulfill({contentType:'text/html',body:'<button>Start music</button>'}));
-  await page.goto(`${base}/music-bench?music=2&quality=2`);
+  await page.goto(`${base}/music-bench?quality=2`);
   await page.evaluate(async()=>{const {sound}=await import('/src/sound/engine.ts');window.musicProbe=sound;sound.install();sound.set({muted:false,music:true,musicVolume:0.8});sound.setMusic({moving:15,working:4,stationsBusy:5,rejected:4,bottleneck:{stage:'build',wip:8,ageMs:30000000}});});
   await page.getByRole('button',{name:'Start music',exact:true}).click();
   await page.waitForTimeout(500);

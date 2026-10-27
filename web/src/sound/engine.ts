@@ -204,7 +204,7 @@ class SoundEngine {
     this.musicLoading = true;
     try {
       // The v2 chunk is never requested by first-load rendering, or while music is off.
-      if (new URLSearchParams(location.search).get("music") === "2") {
+      if (new URLSearchParams(location.search).get("music") !== "1") {
         await this.ctx.resume();
         const { FoundryPlayer } = await import("./foundryPlayer");
         if (this.off || !this.settings.music || this.settings.musicVolume <= 0 || document.hidden) return;
@@ -238,7 +238,7 @@ class SoundEngine {
   musicState() {
     const m = this.music;
     return { intensity: m.intensity, tension: m.tension, layers: m.layers, chord: m.chord,
-      version: new URLSearchParams(location.search).get("music") === "2" ? 2 : 1,
+      version: new URLSearchParams(location.search).get("music") !== "1" ? 2 : 1,
       state: "debug" in m ? m.debug().state : "legacy", loadedStems: [],
       ...("debug" in m ? m.debug() : {}), attached: this.musicAttached };
   }

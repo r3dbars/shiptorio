@@ -46,7 +46,8 @@ the real factory for that repo.
 
 ## Original game music
 
-Compare the original score with the composed foundry theme using `?music=2`.
+The composed foundry theme plays by default. Use `?music=1` to compare the older score;
+`?music=2` links still select the foundry theme.
 Music starts after a gesture; its switch and separate volume are in Settings.
 “Up from the Mine”, its original synthesized instruments and generated audio are
 [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/); see
