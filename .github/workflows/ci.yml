@@ -1,9 +1,10 @@
 name: CI
 permissions:
   contents: read
-# Actions minutes are metered on this private repo: one run per branch at a time (a new push
-# cancels the old run), docs-only changes skip it, drafts skip it (agents run `bun run check` locally while
-# they work; CI runs once the PR is marked ready), and main is checked by the Deploy run instead.
+# One run per branch/event at a time; a new push cancels the previous run.
+# Every ready PR needs check/selfhost, including docs-only changes, because branch
+# protection requires them. Drafts skip CI; browser/load remain manual checks.
+# Main is checked by the Deploy run instead.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,13 +21,6 @@ on:
         default: ''
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    # docs/site/*.md is the public docs site (served at /docs), so it builds and deploys like code
-    paths:
-      - "**"
-      - "!**/*.md"
-      - "!docs/context/**"
-      - "!docs/playtest/**"
-      - "docs/site/**"
 jobs:
   check:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
