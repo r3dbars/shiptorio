@@ -1,11 +1,10 @@
 // The floor card and the ticker, laid out like the Black Iron mockup (docs/black-iron.html #hud and #ticker):
-// top left, THE FACTORY FLOOR over the wordmark, one row of numbers (a dim pixel label, a bold mono number),
+// top left, THE FACTORY FLOOR over SHIPTORIO in pixel type, one row of numbers (a dim pixel label, a bold mono number),
 // then the colored key of what rides the belts. Bottom left, the last lines of the floor log, colored by kind.
 
 import type { ReactNode } from "react";
 import type { LogLine } from "../store";
 import { HUD } from "../copy";
-import { Wordmark } from "./Logo";
 
 export interface Count {
   key: string;
@@ -18,11 +17,14 @@ export interface Count {
 
 const F = HUD.floor;
 
-export function FloorCard({ counts, extra, showKey }: { counts: Count[]; extra?: ReactNode; showKey: boolean }) {
+export function FloorCard({ counts, extra, showKey, repo }: { counts: Count[]; extra?: ReactNode; showKey: boolean; repo?: string }) {
   return (
     <section className="floorcard" aria-label={F.label}>
       <span className="eyebrow">{F.eyebrow}</span>
-      <Wordmark width={126} className="fc-mark" />
+      <h1>
+        SHIPTORIO
+        {repo && <span className="sr">: {repo}</span>}
+      </h1>
       {counts.length > 0 && (
         <dl className="counts">
           {counts.map((c) => (

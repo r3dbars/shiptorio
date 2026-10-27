@@ -390,9 +390,9 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 }
 .hudtop > * { pointer-events: auto; }
 .floorcard, .hudicons, .ctrl, .ticker { background: rgba(14, 10, 8, 0.9); border: 2px solid var(--iron-line); outline: 2px solid #000; border-radius: 0; }
-.floorcard { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 9px 12px; min-width: 0; max-width: 372px; }
+.floorcard { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 9px 12px; min-width: 0; max-width: 420px; }
 .floorcard .eyebrow, .ctrl .eyebrow { font: 400 9px/1.2 var(--pixel); letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
-.fc-mark { display: block; width: 118px; height: auto; }
+.floorcard h1 { margin: 0; font: 700 18px/1 var(--pixel); letter-spacing: 0.08em; color: var(--ink); }
 .counts { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; font-variant-numeric: tabular-nums; }
 .counts > div { display: flex; align-items: baseline; white-space: nowrap; }
 .counts dt { font: 400 9px/1 var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
@@ -401,6 +401,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 .counts .rw dd { color: var(--iron-bad); }
 .counts .need dd, .counts .amber dd { color: var(--amber); }
 .counts .aether dd { color: var(--iron-aether); }
+.floorcard .counts { flex-wrap: nowrap; }
 .counts .desk { display: none; }
 @media (min-width: 761px) { .counts .desk { display: flex; } }
 .fkey { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; font: 400 8px/1 var(--pixel); letter-spacing: 0.08em; color: var(--dim); }
@@ -502,7 +503,8 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
   .hudtop { top: calc(8px + var(--sat)); left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); gap: 8px; }
   .floorcard { padding: 6px 8px; gap: 4px; flex: 1 1 auto; max-width: none; }
   .floorcard .eyebrow, .fkey { display: none; }
-  .fc-mark { width: 100px; }
+  .floorcard h1 { font-size: 13px; }
+  .floorcard .counts { flex-wrap: wrap; }
   .counts { gap: 2px 8px; }
   .counts dd { font-size: 11px; }
   .hudicons { flex-wrap: nowrap; padding: 4px; }

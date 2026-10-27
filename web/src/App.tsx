@@ -255,9 +255,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
   if (show("line")) counts.push({ key: "rw", label: F.rework, value: items.filter((i) => i.state === "rejected").length, tone: "rw", title: F.reworkTitle });
   if (show("line")) counts.push({ key: "need", label: F.needs, value: waiting + blocked.length, tone: "need", title: F.needsTitle });
+  // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
+  const extras: Count[] = [];
   if (autonomy?.launches) {
     // Live: how much of the shipping runs itself. Shows up after the first rocket.
-    counts.push({
+    extras.push({
       key: "auto",
       label: autonomy.level === "advisor" ? HUD.automated : `${HUD.automated} · ${LEVEL_LABEL[autonomy.level]}`,
       value: `${Math.round((autonomy.automated ?? 0) * 100)}%`,
@@ -265,7 +267,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
       title: [permits.length ? HUD.automatedOn(permits.join(", ")) : HUD.automatedNone, autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : ""].join(" ").trim(),
     });
   } else if (show("autonomy") && autonomy) {
-    counts.push({
+    extras.push({
       key: "auto",
       label: autonomy.next ? HUD.toLevel(LEVEL_LABEL[autonomy.next.level]) : HUD.trust,
       value: autonomy.next ? `${autonomy.next.have}/${autonomy.next.need}` : LEVEL_LABEL[autonomy.level],
@@ -273,7 +275,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
       title: autonomy.next ? HUD.trustTo(autonomy.next.have, autonomy.next.need, autonomy.next.label, LEVEL_LABEL[autonomy.next.level]) : autonomy.level === "advisor" ? HUD.trustAdvisor : HUD.trustTop,
     });
   }
-  if (show("score") && metrics) counts.push({ key: "score", label: F.score, value: metrics.shipScore.toLocaleString(), tone: "amber", title: HUD.scoreTitle, desk: true });
+  if (show("score") && metrics) extras.push({ key: "score", label: F.score, value: metrics.shipScore.toLocaleString(), tone: "amber", title: HUD.scoreTitle });
 
   // The needs-you tray's other rows: the rest of the check-in deck, and any machine that stopped to ask.
   const needRows: NeedRow[] = [];
@@ -432,7 +434,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   return (
     <div className={panel ? "app picked" : "app"}>
       <main className="floor" ref={hv.host as Ref<HTMLElement>}>
-        <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>
+        {intro && <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>}
         <FactoryMap
           state={state}
           onPick={pickOnMap}
@@ -458,6 +460,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         <div className="hudtop" ref={hv.refs.top as Ref<HTMLDivElement>}>
           <FloorCard
             counts={counts}
+            repo={state?.repo}
             showKey={show("line")}
             extra={(progressing && !tour.on) || empire.on ? (<>
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
@@ -591,6 +594,16 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="cross" size={14} />
               </button>
             </div>
+            {extras.length > 0 && (
+              <dl className="counts">
+                {extras.map((c) => (
+                  <div key={c.key} className={c.tone} title={c.title}>
+                    <dt>{c.label}</dt>
+                    <dd>{c.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
             <h3>{LINE.onPad}</h3>
             {pad.length === 0 && <p className="empty">{LINE.padEmpty}</p>}
             {pad.map((i) => (
