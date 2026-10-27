@@ -150,3 +150,19 @@ test("guest export and deletion cover only the authenticated sample save", async
   expect(await currentGuest(env, first.cookie)).toBeNull();
   expect(await currentGuest(env, second.cookie)).not.toBeNull();
 });
+
+
+test("guest progress and preference writes share the existing IP move budget", async () => {
+  let moves = 0;
+  const env = { ...environment(), FACTORY: { idFromName: (name: string) => name,
+    get: () => ({ securityLimit: async (budget = "move") => ({ allowed: budget !== "move" || ++moves <= 2, retryAfter: 60 }) }) } };
+  const first = await browser(env);
+  expect((await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress())), env)).status).toBe(200);
+  expect((await app.fetch(req("/api/me/prefs", first.cookie, "PUT", JSON.stringify({ intro: "seen" })), env)).status).toBe(200);
+  const limited = await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress(30))), env);
+  expect(limited.status).toBe(429);
+  expect(limited.headers.get("retry-after")).toBe("60");
+  expect(moves).toBe(3);
+  const guest = await currentGuest(env, first.cookie);
+  expect(guest?.save.progress).toEqual(progress());
+});
