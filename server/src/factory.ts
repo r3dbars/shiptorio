@@ -75,7 +75,7 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import type { SparkStep, Toolbox } from "./spark-tools";
 import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
@@ -88,6 +88,7 @@ import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelT
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
+import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapContext, type TapOutcome } from "./taps";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
@@ -111,6 +112,8 @@ export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserS
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   HOSTED_SPARK_ASSEMBLER?: string;
+  /** "off" stops the card tap log (docs/context/taps.md). */
+  TAPS_LOG?: string;
   DB: D1Database;
   FACTORY: DurableObjectNamespace<Factory>;
 }
@@ -179,6 +182,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
+  /** Card ids on the deck that already have a card_taps row this showing (docs/context/taps.md); null until loaded. */
+  private tapsOpen: Set<string> | null = null;
+  private tapBriefCache: { at: number; brief: ReturnType<typeof tapBrief> } | null = null;
+  private tapsFailed = false;
 
   private accountErased = false;
 
@@ -193,8 +200,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         thoughts: state?.brain?.thoughts ?? [],
         approvals: await this.ctx.storage.get<{kind: string; scope: string; at: number; actionId: string}[]>("approvalEvents") ?? [],
         stages: await this.ctx.storage.get<StageHistory[]>("stageHistory") ?? [],
+        // docs/context/taps.md: every card this factory dealt and what was tapped.
+        taps: await this.accountTaps(),
       },
     });
+  }
+
+  /** This factory's card_taps rows, under its repo name or its retained repo-id key. */
+  private async accountTaps(): Promise<unknown[]> {
+    const meta = await this.ctx.storage.get<Meta>("meta");
+    const keys = [...new Set([meta?.repo, await this.ctx.storage.get<string>("githubDataKey")].filter((k): k is string => !!k))];
+    const rows: unknown[] = [];
+    for (const key of keys) rows.push(...(await this.env.DB.prepare("SELECT * FROM card_taps WHERE repo = ? ORDER BY shown_at").bind(key).all()).results);
+    return rows;
   }
 
   async accountConnectionStatus() {
@@ -225,7 +243,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
       this.state = null; this.meta = null;
-      this.openMoves = null; this.deckBook = null; this.deckRules = null;
+      this.openMoves = null; this.deckBook = null; this.deckRules = null; this.tapsOpen = null; this.tapBriefCache = null;
       this.running.clear();
     });
   }
@@ -386,6 +404,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     const previous = s.move;
     s.deck = deck; s.move = deck[0] ?? null;
+    await this.logDeck(deck);
     await this.accountPut("openMoves", this.openMoves);
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
@@ -542,9 +561,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       items: s.items.filter(i => i.state !== "launched").slice(0, 30).map(i => ({ id: i.id, title: i.title.slice(0, 120), kind: i.kind, state: i.state, district: i.district, scars: i.scars?.length ?? 0 })),
       cards: deck.map(m => ({ id: m.id, title: m.title.slice(0, 160), why: m.why.slice(0, 240), kind: m.kind, stage: m.stage, options: m.options.map(o => ({ id: o.id, label: o.label, recommended: o.recommended })) })),
       playerFeedback: plannerFeedback(this.deckBook!, this.deckRules!),
-    };
+    } as GameMasterBrief;
     const top = (id: string) => deck.find(m => m.id === id);
-    void this.rankBudgetLeft().then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
+    void this.rankBudgetLeft().then(async ok => { if (ok) brief.taps = await this.tapsForBrain(); return ok; }).then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
       () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
       .then(async call => { this.gm = { key, call, wip: brief.bottleneck?.wip }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
@@ -574,6 +593,69 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       this.openMoves = [...this.openMoves!.filter(m => moveKey(m) !== moveKey(move!)), move];
     } else if (this.state?.move) this.openMoves = this.openMoves!.filter(m => moveKey(m) !== moveKey(this.state!.move!));
     await this.refreshDecisions();
+  }
+
+  // ---------- the tap log (docs/context/taps.md): every card offered and what the player did ----------
+
+  /** The log is a side channel: a failing write is reported once per instance and never blocks a tap. */
+  private tapsError(error: unknown) {
+    if (!this.tapsFailed) report(error, "factory.taps_log_failed");
+    this.tapsFailed = true;
+  }
+
+  /** Logs cards new to the deck and closes the ones that left it untapped. Never breaks the deck. */
+  private async logDeck(deck: Move[]): Promise<void> {
+    if (!tapsEnabled(this.env) || !this.meta) return;
+    try {
+      const repo = this.meta.repo, now = Date.now();
+      if (!this.tapsOpen) { this.tapsOpen = new Set(await openCards(this.env.DB, repo)); await purgeTaps(this.env.DB, now); }
+      const ids = new Set(deck.map(m => m.id));
+      const fresh = deck.filter(m => !this.tapsOpen!.has(m.id));
+      const gone = [...this.tapsOpen].filter(id => !ids.has(id));
+      await offerCards(this.env.DB, await Promise.all(fresh.map(m => this.tapRow(m, now))));
+      await closeGone(this.env.DB, repo, gone, now);
+      this.tapsOpen = ids;
+    } catch (error) { this.tapsError(error); }
+  }
+
+  private async tapRow(move: Move, now: number) {
+    const s = this.state!, b = s.bottleneck;
+    // The model wrote it when the card carries the game master's reason or pick for it.
+    let by = this.gm && (this.gm.call.because[move.id] === move.because || this.gm.call.picks[move.id]) ? "spark" as const : "rule" as const;
+    const rank = s.brain?.thoughts.find(t => t.decision === "rank")?.reason;
+    const context: TapContext = { bottleneck: b ? { stage: b.stage, wip: b.wip, ageMinutes: Math.round(b.ageMs / 60000) } : null, ...(rank ? { rank } : {}) };
+    let play: string | undefined;
+    // Bottleneck-brain cards (`unlock:<bottleneckId>`, #388): grade them by play, with the signals the brain saw.
+    if (move.id.startsWith("unlock:")) {
+      const memory = await this.ctx.storage.get<{ current?: { bottleneck: { id: string; by: "spark" | "rule" }; unlock: { play: string } } }>("brainMemory");
+      const signals = await this.ctx.storage.get<{ signals: { id: string; severity: number }[] }>("brainSignals");
+      if (memory?.current && `unlock:${memory.current.bottleneck.id}` === move.id) { play = memory.current.unlock.play; by = memory.current.bottleneck.by; }
+      context.signals = (signals?.signals ?? []).slice(0, 10).map(x => ({ id: x.id, severity: Math.round(x.severity * 100) / 100 }));
+    }
+    return offeredRow(this.meta!.repo, move, moveScope(move, s), by, now, context, play);
+  }
+
+  private async logTap(card: Move, action: Exclude<TapAction, "gone">, optionId?: string, reason?: NeverReason): Promise<void> {
+    if (!tapsEnabled(this.env) || !this.meta) return;
+    try { await recordTap(this.env.DB, await this.tapRow(card, Date.now()), { action, optionId, reason }, Date.now()); }
+    catch (error) { this.tapsError(error); }
+  }
+
+  private async logOutcome(itemId: string, outcome: TapOutcome): Promise<void> {
+    if (!tapsEnabled(this.env) || !this.meta) return;
+    try { await recordOutcome(this.env.DB, this.meta.repo, itemId, outcome, Date.now()); } catch (error) { this.tapsError(error); }
+  }
+
+  /** The player's last 30 days of taps, boiled down for the game master. Cached 10 minutes. */
+  private async tapsForBrain(): Promise<ReturnType<typeof tapBrief> | undefined> {
+    if (!tapsEnabled(this.env) || !this.meta) return undefined;
+    if (this.tapBriefCache && Date.now() - this.tapBriefCache.at < 600000) return this.tapBriefCache.brief;
+    try {
+      const since = Date.now() - 30 * 86400000;
+      const brief = tapBrief(tapsReport(await loadTaps(this.env.DB, { repo: this.meta.repo, since, limit: 1000 }), since));
+      this.tapBriefCache = { at: Date.now(), brief };
+      return brief;
+    } catch (error) { this.tapsError(error); return undefined; }
   }
 
   private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong") {
@@ -1352,6 +1434,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.env.DB.batch([
       this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(key, meta.repo),
       this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(key, meta.repo),
+      this.env.DB.prepare("UPDATE card_taps SET repo = ? WHERE repo = ?").bind(key, meta.repo),
       this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`archived:${key}:installation:${meta.installationId}:repo:${meta.repo}`, `installation:${meta.installationId}:repo:${meta.repo}`),
     ]);
     await this.accountPut("githubDataKey", key);
@@ -1366,6 +1449,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.env.DB.batch([
         this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
         this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
+        this.env.DB.prepare("UPDATE card_taps SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
       ]);
       const archivedScope = `archived:${retainedKey}:installation:${this.meta!.installationId}:repo:${this.meta!.repo}`;
       if (repo === this.meta!.repo && installationId === this.meta!.installationId) await this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`installation:${installationId}:repo:${repo}`, archivedScope).run();
@@ -2228,6 +2312,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     if (!committed) return;
     const { next, launched, auto } = committed;
+    await this.logOutcome(launched.id, launched.scars?.length ? "shipped_after_rework" : "shipped_clean");
     this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations, brain: next.brain } });
     await this.scheduleOrbitDeadline();
     await this.refreshDecisions();
@@ -2534,6 +2619,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */
   private async noteRework(item: Item, why = `PR #${item.prNumber} needed rework`): Promise<void> {
+    await this.logOutcome(item.id, item.orbit?.state === "regressed" || /came back in orbit/.test(why) ? "came_back" : "rework");
     if (!item.lane) return;
     const { book, revoked } = recordRework(await this.permitBook(), item.lane);
     await this.savePermits(book);
@@ -2923,14 +3009,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (!card) return; // stale or forged card ids never execute
       const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) ?? Object.values(this.deckBook!.decisions).find(d => `${d.move.id}:deferred` === card.id)?.move : card;
       if (!original) return;
-      if (msg.type === "defer_move") { await this.swipe(original, "defer"); return; }
-      if (msg.type === "dismiss_move") { await this.swipe(original, msg.why); return; }
+      if (msg.type === "defer_move") { await this.logTap(card, "later"); await this.swipe(original, "defer"); return; }
+      if (msg.type === "dismiss_move") { await this.logTap(card, "never", undefined, msg.why); await this.swipe(original, msg.why); return; }
       const option = card.options.find(o => o.id === msg.optionId);
       if (!option) return;
       if (card.id.endsWith(":deferred")) {
+        await this.logTap(card, msg.optionId === "keep-later" ? "later" : "never", msg.optionId, msg.optionId === "never-kind" ? "kind" : msg.optionId === "decide-class" ? "spark" : undefined);
         await this.swipe(original, msg.optionId === "never-kind" ? "kind" : msg.optionId === "decide-class" ? "spark" : "defer"); return;
       }
       // Existing handlers validate their own job/revision/head. Select any visible deck card temporarily.
+      await this.logTap(card, option.recommended ? "continue" : "other", option.id);
       s.move = card;
       const action = option.actions[0];
       if (action?.tool === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
@@ -3185,6 +3273,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (meta) await this.env.DB.batch([
           this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(dataKey!),
           this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(dataKey!),
+          this.env.DB.prepare("DELETE FROM card_taps WHERE repo = ?").bind(dataKey!),
           ...(ownsName ? [this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo)] : []),
         ]);
         if (meta && dataKey?.startsWith("repo:")) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`archived:${dataKey}:installation:${meta.installationId}:repo:${meta.repo}`).run();

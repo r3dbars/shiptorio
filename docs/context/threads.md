@@ -399,3 +399,10 @@ Use Chromium WebGL-only SwiftShader fallback rather than SwANGLE for the whole
 compositor. Preserve actual 3D rendering and every test assertion, deadline and
 visual baseline. Extracted narrowly from the CI performance lane; full370 stays
 for the next batch. Failed40574810643 is retained.
+
+## See what players say yes and no to (Claude, Oct 27, 2026)
+
+Card tap log + eval: every dealt card, the planner's reason, the tap (Continue/other/Later/Never chip/untapped),
+time to decide and the approved work's outcome go to D1 `card_taps`. `/admin/taps` shows yes rates by kind and
+area, model vs rules, most skipped and outcome quality; `signals/taps.ts` is the brain's taps collector and the
+game master reads a short `taps` brief. Doc: [taps.md](taps.md). Meta API audit: [meta-api.md](meta-api.md) (native structured output behind `SPARK_NATIVE_JSON=1`; native tools/Responses API deferred). Migration 0016 may need renumbering in the batch.
