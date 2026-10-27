@@ -19,11 +19,9 @@ export async function localFactory(persona, origin) {
   const key = randomBytes(32).toString("hex"), hook = "bot-fixture-hook";
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" }, publicKeyEncoding: { type: "spki", format: "pem" } });
   let mf;
-  const stub = githubStub({ origin, webhookSecret: hook, worker: (url, init) => mf.dispatchFetch(url, init) });
   const index = ["test-newbie", "test-guest", "test-midgame", "test-broke", "test-blocked"].indexOf(persona);
-  stub.state.user = { id: -9001 - index, login: persona, name: persona, avatar_url: null };
-  stub.state.repo = `test-fixture/${persona}`;
-  stub.state.repoId = 990000 + Math.abs(stub.state.user.id);
+  const user = { id: -9001 - index, login: persona, name: persona, avatar_url: null };
+  const stub = githubStub({ origin, webhookSecret: hook, worker: (url, init) => mf.dispatchFetch(url, init), user, repo: `test-fixture/${persona}`, repoId: 990000 + Math.abs(user.id) });
   const spark = sparkStub();
   const bindings = { PUBLIC_URL: origin, TEST_USERS: "on", TEST_FACTORY_KEY: key, ALLOWED_LOGINS: persona,
     SESSION_SECRET: "isolated-bot-session", APP_PASSWORD: "isolated-bot-preview", GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: privateKey,

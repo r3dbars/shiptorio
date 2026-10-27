@@ -24,7 +24,7 @@ export async function seedTestUser(env: TestUsersEnv, p: TestPersona): Promise<v
   // INSERT OR IGNORE preserves the player's test progress across logins.
   const progress = { ...emptyProgress(), ...(p === "test-midgame" ? { xp: 60, streak: 3, best: 3 } : {}) };
   await env.DB.batch([
-    env.DB.prepare("INSERT OR IGNORE INTO signup_allowlist(login,enabled,approved_by,factories,repos,runs_daily,spark_calls_daily,spark_tokens_daily,updated_at) VALUES (?,1,'test-fixture',1,1,?,?,?,?)").bind(p, p === "test-broke" ? 0 : 20, p === "test-broke" ? 0 : null, p === "test-broke" ? 0 : null, now),
+    env.DB.prepare("INSERT OR IGNORE INTO signup_allowlist(login,enabled,approved_by,factories,repos,runs_daily,spark_calls_daily,spark_tokens_daily,updated_at) VALUES (?,1,'test-fixture',3,3,?,?,?,?)").bind(p, p === "test-broke" ? 0 : 20, p === "test-broke" ? 0 : null, p === "test-broke" ? 0 : null, now),
     env.DB.prepare("INSERT OR IGNORE INTO user_progress(user_id,value,updated_at) VALUES (?,?,?)").bind(id, JSON.stringify(progress), now),
   ]);
   if (p !== "test-newbie") {

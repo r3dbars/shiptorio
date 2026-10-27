@@ -60,6 +60,7 @@ try {
       const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
       const repo = page.getByRole("button", { name: new RegExp(`test-fixture/${persona}`) });
       const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
+      const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
       if (await visible(launch)) {
         await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
@@ -71,7 +72,8 @@ try {
       else if (fixture && await visible(install)) {
         const next = context.waitForEvent("page"); await install.first().click(); const tab = await next;
         await tab.getByRole("button", { name: "Install", exact: true }).click(); await tab.close(); await capture("installed-fixture");
-      } else if (await visible(go)) { await go.first().click(); await capture("continue"); }
+      } else if (await visible(closeSheet)) { await closeSheet.first().click(); await capture("return-to-factory"); }
+      else if (await visible(go)) { await go.first().click(); await capture("continue"); }
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
       else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
       await page.waitForTimeout(1000);
