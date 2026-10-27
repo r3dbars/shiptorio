@@ -62,6 +62,7 @@ import {
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
+import { initialFactoryState } from "./factory-initialization";
 import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
 import type { SparkStep, Toolbox } from "./spark-tools";
@@ -1885,17 +1886,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, installationId);
     const tree = await repoTree(token, repo);
     if (await this.githubStopped()) return;
-    this.state = {
-      repo,
-      baseBranch: tree.branch,
-      districts: layoutMap(tree.entries).zones,
-      ...starterLine(),
-      items: [],
-      science: { red: 0, green: 0, grey: 0, blue: 0 },
-      trust: 0.5,
-      tick: 0,
-      sources: [githubStatus(this.env)],
-    };
+    this.state = initialFactoryState(repo, tree, this.env);
     await this.save();
   }
 
