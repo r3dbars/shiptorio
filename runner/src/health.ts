@@ -1,6 +1,23 @@
 import type { Job } from "./messages";
-import type { Pairing } from "./pairing";
+import type { Pairing, GrantRejectionCode } from "./pairing";
 
+export class RunnerGrantRejected extends Error {
+  constructor(public code: GrantRejectionCode, public status: number) {
+    super("Runner connection needs re-pairing. Run shiptorio-runner pair.");
+  }
+}
+/** Only explicit permanent codes from the authenticated endpoint stop a connection. */
+export async function runnerResponseError(response: Response, repo: string, action: string): Promise<Error> {
+  let code: unknown;
+  if ([401, 403].includes(response.status) && response.headers.get("content-type")?.includes("application/json")) {
+    const text = await response.text();
+    if (text.length <= 4096) { try { code = JSON.parse(text).code; } catch {} }
+  }
+  if (typeof code === "string" && ["runner_grant_expired", "runner_grant_invalid", "runner_pair_revoked", "runner_access_revoked"].includes(code)) {
+    return new RunnerGrantRejected(code as GrantRejectionCode, response.status);
+  }
+  return Object.assign(new Error(`Runner ${repo} ${action} failed (${response.status})`), { status: response.status });
+}
 export type Subscription = Exclude<Job["harness"], "local">;
 /** Refresh with a day in hand, rather than relying on being awake in the final hour. */
 export const RENEW_BEFORE_MS = 24 * 3600_000;
@@ -46,7 +63,7 @@ export async function diagnose(options: {
   }
   if (!options.pairs.length) results.push({ check: "pairing", ok: false, detail: "No repositories paired. Run shiptorio-runner pair." });
   for (const pair of options.pairs) await check(`pairing:${pair.repo}`, async () => {
-    if (pair.expires <= Date.now()) throw Error();
+    if (pair.rejected || pair.expires <= Date.now()) throw Error();
     await options.pairing(pair);
   }, "Pairing expired/revoked or server unreachable. Check the network, then run shiptorio-runner pair if needed.");
   if (options.editHarness) {

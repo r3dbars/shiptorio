@@ -173,3 +173,15 @@ bundles could finish the browser step without a default Keychain to persist the
 credential. Reinstall the runner and repeat `login claude` once. Wait for the Terminal
 message `claude_code: installed and signed in for Shiptorio`. Your personal Claude
 credentials and macOS Keychain stay separate.
+
+### Sleeping, reconnecting and expired pairing
+
+The helper retries temporary network failures with backoff, including after the computer
+sleeps. It renews its connection while watching and during a build. A connection grant lasts
+up to seven days and never extends past the browser session that approved it.
+
+If Shiptorio explicitly reports a revoked or expired grant, the helper stops using that
+connection and tells you to run `shiptorio-runner pair`. Saved builds and receipts stay on
+your computer. A fresh pairing replaces the stopped connection. The factory's runner status
+also reports when re-pairing is needed; a generic network error or unclassified 401 alone
+does not erase or stop the saved pairing.

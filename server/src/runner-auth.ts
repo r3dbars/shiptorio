@@ -16,7 +16,7 @@ export async function pairToken(secret: string, identity: RunnerIdentity): Promi
   const body = encode(JSON.stringify({ ...identity, purpose: "runner" }));
   return `${body}.${await signature(secret, body)}`;
 }
-export async function readRunnerToken(secret: string, token: string, now = Date.now()): Promise<RunnerIdentity | null> {
+async function verifiedRunnerToken(secret: string, token: string): Promise<RunnerIdentity | null> {
   if (!secret || token.length > 2048) return null;
   try {
     const [body, given, extra] = token.split(".");
@@ -27,8 +27,18 @@ export async function readRunnerToken(secret: string, token: string, now = Date.
     for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
     if (diff) return null;
     const data = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
-    if (data.purpose !== "runner" || typeof data.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(data.repo) || typeof data.pairId !== "string" || !Number.isFinite(data.expires) || data.expires <= now) return null;
+    if (data.purpose !== "runner" || typeof data.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(data.repo) || typeof data.pairId !== "string" || !Number.isFinite(data.expires)) return null;
     if (data.user !== undefined && (!data.user || typeof data.user.login !== "string" || !Number.isFinite(data.user.expiresAt))) return null;
     return { repo: data.repo, pairId: data.pairId, expires: data.expires, ...(data.user ? { user: data.user } : {}) };
   } catch { return null; }
+}
+
+export async function readRunnerToken(secret: string, token: string, now = Date.now()): Promise<RunnerIdentity | null> {
+  const identity = await verifiedRunnerToken(secret, token);
+  return identity && identity.expires > now ? identity : null;
+}
+/** Diagnostic only: this never authorizes a request or renews an expired grant. */
+export async function expiredRunnerGrant(secret: string, token: string, now = Date.now()): Promise<RunnerIdentity | null> {
+  const identity = await verifiedRunnerToken(secret, token);
+  return identity && identity.expires <= now ? identity : null;
 }

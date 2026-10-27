@@ -46,3 +46,16 @@ After a one-minute warmup, once per minute the factory scans the 100 most recent
 Regression tests cover duplicate intake and DO completion replay; retry delay/exhaustion/permanent errors; a lost comment POST response; all nonterminal SLAs; one watchdog alert across restart; broken tick recovery; dead-letter retention and healthy subsequent work; missed merge/close/head/check reconciliation and single science credit. Existing runner rework, launch-permit and orbit suites remain required.
 
 Run `bun run check` before making the PR ready; then verify PR CI and the main Deploy workflow separately. Mocked external transports prove transition behavior, not an induced production outage.
+
+
+Permanent runner rejection is distinct from transport failure: the Worker returns explicit
+`runner_grant_expired`, `runner_grant_invalid`, `runner_pair_revoked`, or
+`runner_access_revoked` codes. The helper persists the rejection only for the exact grant
+that failed; late responses cannot stop a new pairing. Watching skips rejected grants after
+restart, keeps build/receipt evidence, and refuses publication if a rejection was observed
+during local work. Generic 401s keep their existing bounded retry behavior.
+
+Runner status exposes `needsRepair`, `repairReason`, and `repairCommand` without returning
+a credential. Revocation clears presence; new pairing clears repair status. Stored grant
+expiry also makes an expired offline machine's need to re-pair visible without waiting for
+another request. An older expired token cannot overwrite a newer grant's healthy status.

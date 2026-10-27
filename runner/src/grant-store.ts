@@ -1,4 +1,4 @@
-import { loadPairings, updatePairing, type Pairing } from "./pairing";
+import { loadPairings, updatePairing, type Pairing, type GrantRejectionCode } from "./pairing";
 
 // Decoding only compares local copies; the server still verifies signatures,
 // the live session, repository access and revocation on every authenticated call.
@@ -48,4 +48,13 @@ export async function persistRenewal(root: string, pair: Pairing, renewed: { tok
   });
   // A failed write must not leave the running process ahead of durable storage.
   Object.assign(pair, persisted);
+}
+
+/** Preserve recovery evidence, but never use a server-rejected grant again after restart. */
+export async function persistGrantRejection(root: string, pair: Pairing, code: GrantRejectionCode, now = Date.now()) {
+  await updatePairing(pair.repo, root, current => {
+    // A response for an older request cannot suspend a freshly paired connection.
+    if (!current || current.token !== pair.token) return current;
+    return { ...current, rejected: { code, at: now } };
+  });
 }

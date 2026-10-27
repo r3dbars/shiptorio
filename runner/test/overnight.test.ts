@@ -1,7 +1,12 @@
 import { expect, test } from "bun:test";
-import { maintainConnection, renewalDue } from "../src/health";
+import { maintainConnection, renewalDue, RunnerGrantRejected, runnerResponseError } from "../src/health";
 import { Backoff } from "../src/recovery";
-import { pairToken, readRunnerToken, runnerGrantExpiry } from "../../server/src/runner-auth";
+const authModule = "../../server/src/runner-auth";
+const { pairToken, readRunnerToken, runnerGrantExpiry } = await import(authModule) as {
+  pairToken(secret: string, identity: {repo: string; pairId: string; expires: number}): Promise<string>;
+  readRunnerToken(secret: string, token: string, now?: number): Promise<object | null>;
+  runnerGrantExpiry(user?: { expiresAt: number }, now?: number): number;
+};
 
 test("twelve hours asleep and ten minutes offline keep the same valid grant and reconnect", async () => {
   const start = 1700000000000;
@@ -53,4 +58,16 @@ test("backoff resumes after a backwards wall-clock correction", () => {
   retry.fail(100000);
   expect(retry.ready(100500)).toBe(false);
   expect(retry.ready(500)).toBe(true);
+});
+
+
+test("only explicit permanent grant failures stop a connection; generic 401 and network failures stay retryable", async () => {
+  for (const code of ["runner_grant_expired", "runner_grant_invalid", "runner_pair_revoked", "runner_access_revoked"]) {
+    const error = await runnerResponseError(Response.json({code}, {status: code === "runner_access_revoked" ? 403 : 401}), "fixture/repo", "heartbeat");
+    expect(error).toBeInstanceOf(RunnerGrantRejected);
+    expect(error.message).toContain("shiptorio-runner pair");
+  }
+  for (const response of [new Response("upstream auth", {status:401}), Response.json({error:"unauthorized"}, {status:401}), Response.json({code:"runner_pair_revoked"}, {status:500}), Response.json({code:["runner_pair_revoked"]}, {status:401})]) {
+    expect(await runnerResponseError(response, "fixture/repo", "heartbeat")).not.toBeInstanceOf(RunnerGrantRejected);
+  }
 });
