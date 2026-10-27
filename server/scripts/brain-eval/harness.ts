@@ -82,6 +82,7 @@ export function meterFetch(current: () => Meter): () => void {
 export function memoryBudget(): Pick<SparkEnv, "DB" | "budgetAccount"> {
   const db = new Database(":memory:");
   db.exec("CREATE TABLE spark_usage(account TEXT, day TEXT, calls INTEGER DEFAULT 0, tokens INTEGER DEFAULT 0, PRIMARY KEY(account, day))");
+  db.exec("CREATE TABLE admin_controls(scope TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0)"); // reserveSpark checks the admin pause (#353)
   return {
     budgetAccount: async () => "brain-eval",
     DB: { prepare(sql: string) {
