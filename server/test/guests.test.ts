@@ -27,7 +27,7 @@ const progress = (xp = 17) => ({ ...emptyProgress(), xp });
 
 test("first visit creates only an isolated signed guest save; reload retains progress and preferences", async () => {
   const env = environment(); let outbound = 0;
-  globalThis.fetch = (async () => { outbound++; throw Error("guest must not fetch a provider"); }) as typeof fetch;
+  globalThis.fetch = (async () => { outbound++; throw Error("guest must not fetch a provider"); }) as unknown as typeof fetch;
   const first = await browser(env);
   expect(await first.response.json()).toEqual({ login: null, guest: true, allowed: false, prefs: {}, installUrl: null });
   for (const part of ["HttpOnly", "Secure", "SameSite=Lax", "Path=/"]) expect(first.header).toContain(part);
@@ -35,7 +35,7 @@ test("first visit creates only an isolated signed guest save; reload retains pro
   expect((await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress())), env)).status).toBe(200);
   expect((await app.fetch(req("/api/me/prefs", first.cookie, "PUT", JSON.stringify({ intro: "seen", guideSeen: "yes" })), env)).status).toBe(200);
   expect(await (await app.fetch(req("/api/me/progress", first.cookie), env)).json()).toEqual({ progress: progress() });
-  expect((await (await app.fetch(req("/api/me", first.cookie), env)).json()).prefs).toEqual({ intro: "seen", guideSeen: "yes" });
+  expect(((await (await app.fetch(req("/api/me", first.cookie), env)).json()) as { prefs: unknown }).prefs).toEqual({ intro: "seen", guideSeen: "yes" });
   expect((await env.DB.prepare("SELECT count(*) n FROM guests").first<{ n: number }>())?.n).toBe(1);
   expect((await env.DB.prepare("SELECT count(*) n FROM users").first<{ n: number }>())?.n).toBe(0);
   expect(outbound).toBe(0);
@@ -58,14 +58,14 @@ test("preview password still gates guest creation; cookie tampering and cross-or
 test("guest cannot call real repo, Spark, runner or connector paths or disclose another save", async () => {
   const env = environment(), first = await browser(env), second = await browser(env);
   let outbound = 0;
-  globalThis.fetch = (async () => { outbound++; throw Error("guest must not fetch a provider"); }) as typeof fetch;
+  globalThis.fetch = (async () => { outbound++; throw Error("guest must not fetch a provider"); }) as unknown as typeof fetch;
   for (const [path, method] of [["/api/repos", "GET"], ["/api/repos/player/repo/factory", "GET"], ["/api/repos/player/repo/runner/jobs", "GET"], ["/api/repos/player/repo/runner/enqueue", "POST"], ["/api/sources?repo=player/repo", "GET"], ["/connect/sentry?repo=player/repo", "GET"], ["/runner/pair", "GET"]]) {
     const response = await app.fetch(req(path, first.cookie, method), env);
     expect(response.status).toBe(401);
-    expect((await response.json()).code).toBe("github_signin_required");
+    expect(((await response.json()) as { code: string }).code).toBe("github_signin_required");
   }
   await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress(33))), env);
-  const exported = await (await app.fetch(req("/api/account/export?guest=other", second.cookie), env)).json();
+  const exported = await (await app.fetch(req("/api/account/export?guest=other", second.cookie), env)).json() as { guest: boolean; progress: unknown };
   expect(exported.guest).toBe(true);
   expect(exported.progress).toBeNull();
   expect(outbound).toBe(0);
@@ -85,7 +85,7 @@ test("guest inactivity expires at 30 days and only stale records are swept; touc
   expect(await touchGuest(env, fresh, now + 1000)).toBe(false);
   expect(await touchGuest(env, fresh, now + 7 * 3600000)).toBe(true);
   expect(await touchGuest(env, fresh, now + 7 * 3600000)).toBe(false);
-  await worker.scheduled!({} as never, env as never, {} as never);
+  await worker.scheduled({} as never, env as never);
   expect(await currentGuest(env, await guestCookie(env, fresh.id), now)).not.toBeNull();
   expect((await env.DB.prepare("SELECT count(*) n FROM guests").first<{ n: number }>())?.n).toBe(1);
 });
@@ -121,7 +121,7 @@ test("real OAuth callback imports the guest and remains idempotent on a repeated
     if (url === "https://api.github.com/user") return Response.json({ id: 51, login: "player" });
     if (url.includes("/user/installations")) return Response.json({ installations: [] });
     throw Error(`unexpected provider path ${new URL(url).pathname}`);
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   const url = new URL("https://shiptorio.com/auth/callback?code=fixture&state=state");
   const request = new Request(url, { headers: { cookie: `${cookie}; shiptorio_oauth_state=state` } });
   const first = await authCallback(request, url, env as never);
@@ -138,7 +138,7 @@ test("real OAuth callback imports the guest and remains idempotent on a repeated
 test("guest export and deletion cover only the authenticated sample save", async () => {
   const env = environment(), first = await browser(env), second = await browser(env);
   await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress(16))), env);
-  const exported = await (await app.fetch(req("/api/account/export", first.cookie), env)).json();
+  const exported = await (await app.fetch(req("/api/account/export", first.cookie), env)).json() as { progress: unknown };
   expect(exported.progress).toEqual(progress(16));
   expect(exported).not.toHaveProperty("factories");
   const response = await app.fetch(req("/api/account/delete", first.cookie, "POST", "confirm=delete&guest=other"), env);
