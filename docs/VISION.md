@@ -131,7 +131,9 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   forward in two minutes. Cards favor growing automation, verifiability and inputs. Details: PRODUCT.md "Check-in".
 - 2026-10-27: The map goes vertical (principle 10). Work is mined underground, cascades down, rides up through
   refining and the checks, becomes a PR and launches from the top. The visual style is critical and must make
-  plain what each part does. Being built in `web/src/map/shaft/` behind `?world=shaft`.
+  plain what each part does. Lives in `web/src/map/shaft/`.
+- 2026-10-27: "This new artwork and vertical system needs to be the way this app works." The shaft is the map
+  for everyone (game, judge mode, tour, landing loop); the island stays behind `?world=iron` for one release.
 - 2026-10-27: Build mode (advanced, optional): players build and redesign the factory themselves, Factorio /
   RollerCoaster Tycoon style, on the Black Iron art. Every piece is a real pipeline part, so the layout is the
   pipeline config, and the gauntlet can be added to but never bypassed. Spec: `docs/BUILD-MODE.md`.

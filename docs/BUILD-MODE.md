@@ -18,7 +18,7 @@ Builds on:
   paths, carriers and the IDLE / WORKING / BLOCKED machine API). Every piece in build mode is the same mesh
   the live map draws. No new art style, no placeholder boxes.
 - **Map:** the vertical mine-to-launch shaft (thread "Rebuild the map as a vertical mine-to-launch factory",
-  `?world=shaft`). Its hand-tuned layout becomes the **default blueprint** below.
+  `web/src/map/shaft/`, the map since 2026-10-27). Its hand-tuned layout becomes the **default blueprint** below.
 - **Model:** `shared/src/model.ts` (`Machine`, `Belt`, `Station`, `PowerSource`, `Harness`), the gauntlet
   (`server/src/gauntlet.ts`), research checks (`shared/src/research.ts`), permits (`server/src/permits.ts`).
 

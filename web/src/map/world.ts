@@ -1,6 +1,6 @@
-// Which world the map draws. Black Iron (docs/art/IRON-STYLE.md §9) is the oily foundry look from
-// PR #204 and the default; "classic" is the sunny moss island it replaced, kept for one release
-// behind ?world=classic so anyone can compare (then this file and the classic branches go).
+// Which world the map draws. The shaft (SHAFT below) is the map. The island it replaced stays for one release so
+// anyone can compare: ?world=iron in Black Iron (docs/art/IRON-STYLE.md §9, the oily foundry look from PR #204),
+// ?world=classic as the sunny moss island before that. Then the island, this file's looks and the classic branches go.
 
 import * as THREE from "three";
 import type { Finish } from "./pixel";
@@ -19,17 +19,14 @@ function pick(): WorldStyle {
 export const WORLD: WorldStyle = pick();
 export const IRON = WORLD === "iron";
 
-// The shaft (?world=shaft): the vertical mine-to-launch factory (map/shaft/), behind a flag until it matches the
-// mockup. Remembered on this browser; ?world=iron or ?world=classic turns it off again.
-const SHAFT_KEY = "shiptorio:map";
+// The shaft: the vertical mine-to-launch factory (map/shaft/), the map everyone gets (Justin, 2026-10-27).
+// ?world=iron or ?world=classic shows the island for one more release (that page load only), then it goes.
 function pickShaft(): boolean {
   try {
     const w = new URLSearchParams(globalThis.location?.search ?? "").get("world");
-    if (w === "shaft") localStorage.setItem(SHAFT_KEY, "shaft");
-    else if (w) localStorage.removeItem(SHAFT_KEY);
-    return w === "shaft" || (!w && localStorage.getItem(SHAFT_KEY) === "shaft");
+    return w !== "iron" && w !== "classic";
   } catch {
-    return false; // no location or storage (tests)
+    return true; // no location (tests)
   }
 }
 export const SHAFT = pickShaft();

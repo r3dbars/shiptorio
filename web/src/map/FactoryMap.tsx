@@ -1,16 +1,17 @@
 import "./gauntlet.css";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import { FactoryScene, type Cosmetics, type Ping } from "./scene";
 import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
 
-// What FactoryMap asks of a map. The island (scene.ts) and the shaft (shaft/ShaftScene.ts, ?world=shaft) both do it.
+// What FactoryMap asks of a map. The shaft (shaft/ShaftScene.ts, the map) and the island (scene.ts, ?world=iron) both do it.
 type MapScene = Pick<
   FactoryScene,
   "setSize" | "setLift" | "zoomBy" | "panBy" | "update" | "pick" | "hover" | "clearHover" | "setTeachingKeys" | "setShowAllLabels" | "setPings" | "focus" | "setSatellites" | "backToLine" | "empireView" | "overview" | "setCosmetics" | "dispose"
 >;
+type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void) => MapScene;
 
 interface Props {
   state: FactoryState | null;
@@ -35,6 +36,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
+  const [crash, setCrash] = useState<{ e: unknown } | null>(null);
   const pickRef = useRef(onPick);
   pickRef.current = onPick;
   // the latest props, for a map that arrives late (the shaft loads its art first)
@@ -60,9 +62,16 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       else if (!p.focus && p.wide) scene.overview(p.wide);
       else if (p.focus) scene.focus(p.focus);
     };
+    const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id));
     // (a map whose effect was already cleaned up, like StrictMode's first mount, is never built)
-    if (SHAFT) void import("./shaft/ShaftScene").then(({ ShaftScene }) => dead || start(new ShaftScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), true));
-    else start(new FactoryScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), false);
+    if (SHAFT)
+      void import("./shaft/ShaftScene")
+        // the shaft's code didn't arrive (say a deploy swapped it out under an open tab): the island stands in
+        .then(({ ShaftScene }): MapCtor => ShaftScene, (): MapCtor => FactoryScene)
+        .then((Scene) => dead || start(make(Scene), true))
+        // no WebGL: the nearest error boundary hears about it, as it does when the island can't start
+        .catch((e: unknown) => dead || setCrash({ e }));
+    else start(make(FactoryScene), false);
     return () => {
       dead = true;
       off?.();
@@ -206,6 +215,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => sceneRef.current?.setPings(pings), [pingKey]);
 
+  if (crash) throw crash.e;
   return (
     <>
       <canvas
