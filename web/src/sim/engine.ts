@@ -1848,7 +1848,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   else if (sc.unplugged) later(TICK_MS * 1.5, askForPower);
   const timer = setInterval(tick, tickMs);
 
-  return {
+  const src: Source = {
     send(msg: WebToServer) {
       if (closed) return;
       switch (msg.type) {
@@ -1952,4 +1952,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       onStatus("offline");
     },
   };
+  // build-out e2e and screenshots (tests/e2e/buildout.pw.ts): drive the demo shop without the coach card
+  if (sc.buildout && typeof window !== "undefined") (window as unknown as { __shipSim?: Source }).__shipSim = src;
+  return src;
 }
