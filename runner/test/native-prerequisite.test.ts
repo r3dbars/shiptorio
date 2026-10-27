@@ -24,7 +24,7 @@ test("native fixture imports explicitly report local omissions and fail CI befor
       Bun.which = () => null;
       ${ci ? "process.env.CI = 'true'" : "delete process.env.CI"};
       process.env.SHIPTORIO_CHECK_SANDBOX = '1';
-      await import(${JSON.stringify(new URL("./native-prerequisite.ts", import.meta.url).pathname)});
+      await import(${JSON.stringify(new URL("./native-prerequisite.ts", import.meta.url).href)});
     `], { stdout: "pipe", stderr: "pipe" });
     const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
     expect(code === 0).toBe(!ci);
