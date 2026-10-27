@@ -35,7 +35,7 @@ describe("playbook", () => {
     const { SIGNAL_KINDS } = await import("@shiptorio/shared");
     for (const kind of Object.values(SIGNAL_KINDS).flat()) expect(playsFor(kind)[0].play).not.toBe("look_at_it");
     const tools = new Set(PLAYBOOK.flatMap(p => p.action ? [p.action(ci).tool] : []));
-    expect([...tools].sort()).toEqual(["connect_source", "inspect_bottleneck"]);
+    expect([...tools].sort()).toEqual(["ask_goal", "connect_source", "inspect_bottleneck"]);
     expect(new Set(PLAYBOOK.map(p => p.play)).size).toBe(PLAYBOOK.length);
   });
 
@@ -224,7 +224,7 @@ describe("one pass", () => {
 
 describe("collectors", () => {
   const state = { items: [], power: [] } as unknown as FactoryState;
-  const ctx = (jam: SignalContext["jam"]["bottleneck"]): SignalContext => ({ state, env: {} as SignalContext["env"], jam: { bottleneck: jam, stages: [] } });
+  const ctx = (jam: SignalContext["jam"]["bottleneck"]): SignalContext => ({ state, env: {} as SignalContext["env"], storage: { get: async () => undefined }, jam: { bottleneck: jam, stages: [] } });
 
   it("the factory collector turns the queue jam into a signal", async () => {
     const jam = { stage: "inspect" as const, stationId: "review-1", wip: 3, ageMs: 3 * 3_600_000, throughputPerHour: 0, valueAtRisk: 9, summary: "3 items waiting at AI review. Oldest wait: 3 h." };
@@ -235,6 +235,7 @@ describe("collectors", () => {
     expect(fresh.severity).toBeLessThan(0.4);
     expect((await factoryCollector.read(ctx({ ...jam, stage: "resources" }), T))[0].kind).toBe("no_agent");
     expect(await factoryCollector.read(ctx(null), T)).toEqual([]);
+    expect(await factoryCollector.read(ctx({ ...jam, stage: "pad" }), T)).toEqual([]); // repo:approve_queue covers the launch pile
   });
 
   it("reads only due collectors, survives a broken one and drops stale signals", async () => {

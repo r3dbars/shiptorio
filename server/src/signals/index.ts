@@ -7,6 +7,7 @@ import type { Bottleneck, BrainSignal, FactoryState, SignalCollector, SignalSour
 import { signalId } from "@shiptorio/shared";
 import type { StageMetrics } from "../bottleneck";
 import type { FactoryEnv } from "../factory";
+import type { postHogCreds } from "../sources/creds";
 
 /** What every collector gets. Read-only: collectors look, they never change the factory. */
 export interface SignalContext {
@@ -15,6 +16,10 @@ export interface SignalContext {
   env: FactoryEnv;
   /** This tick's queue-jam read (server/src/bottleneck.ts), so the factory collector doesn't recompute it. */
   jam: { bottleneck: Bottleneck | null; stages: StageMetrics[] };
+  /** Read-only view of the factory's own storage (e.g. the Sentry pulse log). */
+  storage: { get<T>(key: string): Promise<T | undefined> };
+  /** The linked PostHog credentials ({} when not linked). Factory-private, so it's a thunk. */
+  posthogCreds?: () => ReturnType<typeof postHogCreds>;
   /** A GitHub installation token for the repo, when the factory has one. Memoized: call it freely. */
   githubToken?: () => Promise<string>;
 }
@@ -43,7 +48,7 @@ export const factoryCollector: Collector = {
       out.push({ ...fresh, id: signalId("factory", "no_agent"), source: "factory", kind: "no_agent", severity: 0.9, title: `${jam.wip} ${jam.wip === 1 ? "change is" : "changes are"} waiting for an agent to build ${jam.wip === 1 ? "it" : "them"}.`, metric: { value: jam.wip, unit: "items" }, evidence: [{ label: jam.summary.slice(0, 120) }] });
     } else if (jam?.stage === "power") {
       out.push({ ...fresh, id: signalId("factory", "no_power"), source: "factory", kind: "no_power", severity: 0.8, title: `Your agents are out of power with ${jam.wip} ${jam.wip === 1 ? "change" : "changes"} waiting.`, metric: { value: jam.wip, unit: "items" }, evidence: [{ label: jam.summary.slice(0, 120) }] });
-    } else if (jam) {
+    } else if (jam && jam.stage !== "pad") { // PRs waiting on the player to launch are repo:approve_queue's
       // A fresh pile is normal flow; a pile that sits for hours is the jam. Value at risk tips it.
       const hours = jam.ageMs / 3_600_000;
       const severity = clamp(0.15 + 0.12 * Math.min(jam.wip, 5) + 0.12 * Math.min(hours, 4) + 0.02 * Math.min(jam.valueAtRisk, 10));
