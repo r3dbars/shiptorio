@@ -5,6 +5,7 @@
 import type { ReactNode } from "react";
 import type { LogLine } from "../store";
 import { HUD } from "../copy";
+import { Wordmark } from "./Logo";
 
 export interface Count {
   key: string;
@@ -22,7 +23,7 @@ export function FloorCard({ counts, extra, showKey, repo }: { counts: Count[]; e
     <section className="floorcard" aria-label={F.label}>
       <span className="eyebrow">{F.eyebrow}</span>
       <h1>
-        SHIPTORIO
+        <Wordmark width={250} />
         {repo && <span className="sr">: {repo}</span>}
       </h1>
       {counts.length > 0 && (

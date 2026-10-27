@@ -1,0 +1,6 @@
+/* Shiptorio Foundry: local type and reusable metalwork. All title artwork is vector. */
+@font-face{font-family:Rajdhani;font-weight:600;font-display:swap;src:url(/fonts/rajdhani-600.woff2) format('woff2')}
+@font-face{font-family:Teko;font-weight:300 700;font-display:swap;src:url(/fonts/teko.woff2) format('woff2')}
+:root{--foundry-title:Teko,'Arial Narrow',sans-serif;--foundry-label:Rajdhani,'Arial Narrow',sans-serif;--foundry-brass:#c49a60;--foundry-cream:#f5dfb5;--foundry-enamel:#101b1d}
+.foundry-wordmark{display:block;max-width:100%;height:auto;image-rendering:auto}
+.foundry-tagline{font:400 clamp(19px,2.3vw,29px)/1.4 Georgia,serif;letter-spacing:.045em;color:var(--foundry-cream);text-wrap:balance}
