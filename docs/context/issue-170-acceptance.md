@@ -31,3 +31,21 @@ explicit Launch. Do not implement the issue outside that runner path.
   inspect and tap; no agent approval or manual implementation substitutes for it.
 - Independent current-main reproduction returned `assignedResolved: upsert`,
   confirming the defect remains real before the runner build.
+
+## Runtime blocker before execution
+
+- With the fresh plan awaiting human approval, the isolated runner began receiving
+  500/503 from claim, and authenticated read-only runner/status also failed.
+  Stopped only this temporary watcher; Testing's launchd helper is unchanged.
+- Filtered Worker tail confirmed top-level `exceededCpu` outcomes at 10 ms CPU
+  (~330 ms wall time), not evidence of a rejected approval or failed Codex build.
+  The Cloudflare dashboard shows Free allowances; read-only script settings show
+  no explicit CPU limit. Paid checkout offers 30 s/request, $5/month minimum plus
+  usage overages at account scope. No billing/terms acceptance was submitted.
+- Independent redactor profiling found quadratic scans on long untrusted tokens.
+  PR #247 adds token-start boundaries and an original-fails/fixed-passes watchdog
+  regression, without weakening secret redaction. This is a confirmed code-side
+  issue, not proof it alone caused every live CPU-limit failure.
+- PR #246's linear JSON repair is separately deployed. Recheck runner endpoints
+  after the redactor release before claiming the live-loop blocker resolved.
+  Human approval, local build, real PR, gauntlet, Launch and rocket remain pending.
