@@ -110,16 +110,20 @@ export function closeTruncated(raw: string): string {
  * any other quote is part of the text.
  */
 export function escapeStrayQuotes(json: string): string {
-  let out = "", inString = false;
+  // Linear: slicing the rest of the reply at every quote made long replies cost O(n²) CPU.
+  const out: string[] = [];
+  let inString = false;
   for (let i = 0; i < json.length; i++) {
     const c = json[i];
-    if (inString && c === "\\") { out += c + (json[++i] ?? ""); continue; }
-    if (c !== '"') { out += c; continue; }
-    if (!inString) { inString = true; out += c; continue; }
-    const next = json.slice(i + 1).match(/^\s*(.)/)?.[1];
-    if (next === undefined || ',:}]"'.includes(next)) { inString = false; out += c; } else out += '\\"';
+    if (inString && c === "\\") { out.push(c + (json[++i] ?? "")); continue; }
+    if (c !== '"') { out.push(c); continue; }
+    if (!inString) { inString = true; out.push(c); continue; }
+    let j = i + 1;
+    while (j < json.length && /\s/.test(json[j])) j++;
+    const next = json[j];
+    if (next === undefined || ',:}]"'.includes(next)) { inString = false; out.push(c); } else out.push('\\"');
   }
-  return out;
+  return out.join("");
 }
 
 const issues = (e: z.ZodError) => e.issues.slice(0, 3).map(i => `${i.path.join(".") || "reply"}: ${i.message}`).join("; ");

@@ -140,10 +140,13 @@ export function useIntroTour(state: FactoryState | null, send: (m: WebToServer) 
   const rockets = state?.metrics?.rockets ?? 0;
 
   // the map pings and labels wear the tour's caution paint while it runs (styles.css "Welcome tour")
+  // (the hook always runs; App passes a null state outside the intro, so only paint while the tour is live)
+  const live = !!state;
   useEffect(() => {
+    if (!live) return;
     document.documentElement.dataset.tour = "1";
     return () => void delete document.documentElement.dataset.tour;
-  }, []);
+  }, [live]);
 
   // each beat's cue for the sim, once
   const cued = useRef(new Set<number>());
