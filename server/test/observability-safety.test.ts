@@ -38,7 +38,7 @@ test('nested errors, causes, cycles, headers, cookies and opaque query parameter
   const cause = Object.assign(new Error(`Cookie: ${secrets[0]}`), {
     headers: { 'x-custom-header': secrets[1] }, cookie: secrets[2], query: { innocuous: secrets[3] },
     url: `https://example.test/path?ordinary=${secrets[4]}`,
-    calllog: `Call log:\n - "Cookie": "${secrets[5]}"`,
+    calllog: `Call log:\n - x-custom-header: ${secrets[5]}` ,
   });
   const error = new Error('outer', { cause });
   Object.assign(cause, { cause: error });
@@ -81,4 +81,11 @@ test('sanitizing application state preserves long text and lists; diagnostics dr
   const secret = canary();
   const output = redactor.diagnostic({ toJSON() { return secret; }, nested: { toJSON() { return secret; } } });
   hidden(output, [secret]);
+});
+
+test('shared application objects are copied rather than mistaken for cycles', () => {
+  const move = { id: 'move', title: 'Continue' };
+  const state = { move, deck: [move] };
+  expect(new Redactor().value(state)).toEqual(state);
+  expect(redact(state)).toEqual(state);
 });

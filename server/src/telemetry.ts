@@ -62,7 +62,9 @@ export function telemetryTags(fields: Record<string, unknown> = {}): Record<stri
 }
 export function capture(error: unknown, fields: Record<string, unknown> = {}): string {
   // beforeSend scrubs the final SDK payload, including linked Error causes.
-  return Sentry.captureException(asError(error), { tags: telemetryTags(fields) });
+  const trace = currentTrace();
+  const tags = { ...telemetryTags(fields), repo: fields.repo ?? trace?.repo, itemId: fields.itemId ?? trace?.itemId };
+  return Sentry.captureException(asError(error), { tags: Object.fromEntries(Object.entries(tags).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) });
 }
 export function report(error: unknown, event = 'exception', fields: Record<string, unknown> = {}): string {
   log('error', event, { ...fields, error });
