@@ -31,22 +31,36 @@ export function redact<T>(value: T): T {
 /** One sanitizer for logs, errors and browser output. Never serialize raw Error objects. */
 export class Redactor {
   private secrets = new Set<string>();
+  private orderedSecrets?: string[];
+  private variants = new Map<string, string[]>();
+  private addSecret(value: string): void {
+    if (this.secrets.has(value)) return;
+    this.secrets.add(value);
+    this.orderedSecrets = undefined;
+  }
   constructor(values: unknown = {}) { this.register(values); }
   register(values: unknown): void {
     if (!values || typeof values !== "object") return;
     for (const [key, value] of Object.entries(values)) {
       if (typeof value === "string" && value && /secret|token|password|private.?key|api.?key|master.?key|previous.?keys/i.test(key)) {
-        this.secrets.add(value);
+        this.addSecret(value);
         if (key === "CRED_PREVIOUS_KEYS") {
-          try { for (const previous of Object.values(JSON.parse(value))) if (typeof previous === "string" && previous) this.secrets.add(previous); } catch { /* Invalid config is never printed. */ }
+          try { for (const previous of Object.values(JSON.parse(value))) if (typeof previous === "string" && previous) this.addSecret(previous); } catch { /* Invalid config is never printed. */ }
         }
       }
     }
   }
   text(value: string): string {
     let result = value;
-    for (const secret of [...this.secrets].sort((a, b) => b.length - a.length)) {
-      for (const variant of new Set([secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1)])) result = result.split(variant).join("[REDACTED]");
+    // Preserve raw-secret length ordering and each secret's raw/URI/JSON Set order.
+    const ordered = this.orderedSecrets ??= [...this.secrets].sort((a, b) => b.length - a.length);
+    for (const secret of ordered) {
+      let variants = this.variants.get(secret);
+      if (!variants) {
+        variants = [...new Set([secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1)])];
+        this.variants.set(secret, variants);
+      }
+      for (const variant of variants) result = result.split(variant).join("[REDACTED]");
     }
     return redactText(result).replace(/\b(?:ph[a-z]_|gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED]")
       .replace(/\bBearer\s+[^\s"',}]+/gi, "Bearer [REDACTED]");
