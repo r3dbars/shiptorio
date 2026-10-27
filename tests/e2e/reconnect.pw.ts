@@ -1,7 +1,17 @@
 import { createHmac } from 'node:crypto';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import WebSocket from 'ws';
 import type { FactoryState, Move } from '../../shared/src';
+
+// Freeze wall time before pausing: an absolute host deadline can already be in
+// the past when a busy renderer receives pauseAt. Restore advancing Date after
+// the pause so outage durations still exercise the real reconnect thresholds.
+async function pauseReconnectClock(page: Page) {
+  const anchor = new Date();
+  await page.clock.setFixedTime(anchor);
+  await page.clock.pauseAt(anchor);
+  await page.clock.setSystemTime(anchor);
+}
 
 test('60s offline while a PR ships → snapshot in 2s, one celebration, no replay', async ({ page, context }, info) => {
   const repo = `fixture/reconnect-${info.project.name}`;
@@ -73,9 +83,7 @@ test('60s offline while a PR ships → snapshot in 2s, one celebration, no repla
     // The map's accessible description is driven by the same applied FactoryState.
     const map = page.locator('#map-summary');
     await expect(map).toContainText('0 shipped');
-    const clock = new Date();
-    await page.clock.install({ time: clock });
-    await page.clock.pauseAt(new Date(clock.getTime() + 1000));
+    await pauseReconnectClock(page);
     playerOnline = false;
     await context.setOffline(true);
     // The Worker remains online; only the player's browser network is cut.
@@ -121,9 +129,7 @@ test('a 1s blip never shows reconnect UI; a long outage shows a quiet notice', a
   }));
   await page.goto(`/?source=live&repo=${repo}&tour=0`);
   await expect(page.locator('#map-summary')).toContainText(repo);
-  const clock = new Date();
-  await page.clock.install({ time: clock });
-  await page.clock.pauseAt(new Date(clock.getTime() + 1000));
+  await pauseReconnectClock(page);
   await page.evaluate(() => {
     (window as any).__notices = [];
     new MutationObserver(() => {
