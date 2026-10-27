@@ -12,6 +12,7 @@
 // =====================================================================
 
 import { artPass } from '../backdrop-kit.js';
+import { FLOOR_IDS, FLOORS } from '../floors';
 import { oldCity } from './city-old.js';
 
 // 5px-tall pixel font (Silkscreen-like). Canvas text can't count on the web font being loaded at build time.
@@ -39,6 +40,8 @@ function pixText(g, text, x, y, s, col) {
   g.fillStyle = col; let cx = x;
   for (const ch of text) { const gl = glyph(ch); const w = gl[0].length; for (let r = 0; r < 5; r++) for (let c = 0; c < w; c++) if (gl[r][c] === '1') g.fillRect(cx + c * s, y + r * s, s, s); cx += (w + 1) * s; }
 }
+// BASE: the floor that stands from the start of a first run (floors.ts); the backdrop city and the airships sit on it
+const BASE = FLOORS.find((f) => f.always).id;
 function srand(s) { return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; }
 
 export default function install(IRON) {
@@ -67,7 +70,7 @@ export default function install(IRON) {
     const R = () => rnd() - 0.5;
     const pick = (a) => a[Math.floor(rnd() * a.length)];
     const fails = [];
-    const sect = (name, fn) => { try { fn(); } catch (e) { fails.push(name); console.error('[SHAFT] world/' + name + ':', e); } };
+    const sect = (name, fn, floor) => { try { if (floor) onFloor(floor, fn); else fn(); } catch (e) { fails.push(name); console.error('[SHAFT] world/' + name + ':', e); } };
 
     IRON.look({
       sky: { top: '#1c120c', bottom: '#7a3a16', fog: '#3a2416', fogNear: 84, fogFar: 156 },
@@ -332,10 +335,34 @@ export default function install(IRON) {
       return !blocked(x, z, r, y, y + (h || 1));
     }
 
-    const S = K.group(root); S.name = 'static'; // everything static (merged per material at the end, see PRE-MERGE)
+    // everything static (merged per material at the end, see PRE-MERGE). S is the current floor's static group while a
+    // section builds (see FLOORS); this one only catches parts built outside a floor, and should stay empty.
+    const S0 = K.group(root); S0.name = 'static'; let S = S0;
     // the far backdrop (city, skyline blocks, crane, gasometer): batches of its own (it neither casts nor catches
     // shadows), a handful of draw calls
     const FAR = K.group(root); FAR.name = 'far'; FAR.userData.noBake = true;
+
+    // ================= FLOORS =================
+    // Every part belongs to one floor (floors.ts) so a floor can bake on its own and stay hidden until it's built.
+    // Each floor gets a group 'floor:<id>' at the root origin: its static parts in a 'static' child (merged per floor),
+    // its movers beside it. onFloor(id, fn) builds fn's parts into that floor; every object under it, and anything it
+    // put in FAR, gets userData.floor = id. Smoke, steam and drips only come out of floors that are showing.
+    const F = {};
+    for (const id of FLOOR_IDS) { const g = K.group(root); g.name = 'floor:' + id; const s = K.group(g); s.name = 'static'; F[id] = { g, s }; }
+    let floorNow = null;
+    const tagFloor = (o, id) => o.traverse((c) => (c.userData.floor = id));
+    function onFloor(id, fn) {
+      const was = [S, floorNow], kids = new Set(root.children), far = new Set(FAR.children);
+      S = F[id].s; floorNow = id;
+      try { fn(); } finally {
+        [S, floorNow] = was;
+        for (const c of [...root.children]) if (!kids.has(c)) F[id].g.add(c); // movers built on root (all at the origin frame)
+        for (const c of FAR.children) if (!far.has(c)) tagFloor(c, id);
+        tagFloor(F[id].g, id);
+      }
+    }
+    const here = (a) => { a.floor = floorNow; return a; }; // an emitter (smoke, steam, drip) on the floor being built
+    const live = (a) => !a.floor || F[a.floor].g.visible;
     const noCast = []; // noCast: small movers whose shadows nobody would see
     const DEC = 0.012; // decals sit this far above a deck top
     function decal(tier, x, z, w, d, m, ry, lift) { const b = K.box(w, 0.01, d, m, x, tier.y + 0.1 + (lift === undefined ? DEC : lift), z, S); b.rotation.y = ry || 0; b.castShadow = false; return b; }
@@ -485,7 +512,7 @@ export default function install(IRON) {
         const sp = K.cyl(0.09, 0.09, 0.55, M.copperD, 8, x, top - 0.72, FZ + 0.32, S); sp.rotation.x = Math.PI / 2;
         K.cyl(0.12, 0.12, 0.08, M.brassD, 8, x, top - 0.72, FZ + 0.1, S).rotation.x = Math.PI / 2;
         noShadow(K.box(0.14, 0.4, 0.01, M.oil, x, top - 0.95, FZ + 0.02, S));
-        spouts.push([x, top - 0.75, FZ + 0.6]);
+        spouts.push(here([x, top - 0.75, FZ + 0.6]));
       }
       // glowing vent slits (the furnace inside the slab)
       for (let x = tier.x0 + 2.4; x < tier.x1 - 1; x += 3.3 + rnd() * 2.4) {
@@ -522,7 +549,7 @@ export default function install(IRON) {
       for (const sx of [-1, 1]) { K.box(0.12, h * 0.5, 0.18, M.iron, sx * (w * 0.32), 0, -0.12, g); for (const sy of [-1, 1]) K.box(0.08, 0.08, 0.05, M.brassL, sx * (w / 2 + 0.03), sy * (h / 2 + 0.03), 0.04, g); }
       return g;
     }
-    sect('decks', () => { deck('build', TB); deck('checks', TC); deck('launch', TL); });
+    sect('decks', () => { onFloor('build', () => deck('build', TB)); onFloor('checks', () => deck('checks', TC)); onFloor('launch', () => deck('launch', TL)); });
 
     // build deck front: worn stone curb with a hazard band, low chain railing (gap where the ore belt crosses)
     sect('curb', () => {
@@ -542,7 +569,7 @@ export default function install(IRON) {
       const flush = (x1) => { if (!run || x1 - run < 1) { run = null; return; } const L = x1 - run, cx = (run + x1) / 2; for (const dz of [-0.34, 0.34]) { K.box(L, 0.03, 0.07, M.ironL, cx, top + 0.015, RZ + dz, S); K.box(L, 0.02, 0.03, railTop, cx, top + 0.035, RZ + dz, S); } for (let x = run + 0.2; x < x1 - 0.1; x += 0.55) decal(TB, x, RZ, 0.14, 0.9, M.woodD, 0, 0.004); run = null; };
       for (let x = TB.x0 + 2.2; x <= TB.x1 - 0.7; x += 0.25) { const ok = !blocked(x, RZ, 0.42, top, top + 0.3); if (ok && run === null) run = x; if (!ok) flush(x - 0.25); }
       flush(TB.x1 - 0.7);
-    });
+    }, 'build');
 
     // ================= RISER WALLS + BACK WALL: brick foundry facades =================
     const winFlick = M.winFlick; const sils = [], wallGears = [], needles = [], leaks = [], clocks = [], papers = [];
@@ -705,13 +732,13 @@ export default function install(IRON) {
       for (const x of [-3.9, 7.35, 11.95]) downPipe(x, y0 + 3.45, RC.y1 - 0.6, zf, 0.09, M.copperD);
       downPipe(-3.9, y0 + 0.2, y0 + 3.45, zf, 0.09, M.copperD);
       needles.push(gauge(S, -8.2, y0 + 3.95, zf + 0.2, 0.17), gauge(S, 6.1, y0 + 3.95, zf + 0.2, 0.17), gauge(S, 15.0, y0 + 3.95, zf + 0.2, 0.2));
-      leaks.push([-10.6, y0 + 3.45, zf + 0.25], [5.2, y0 + 3.45, zf + 0.25], [14.1, y0 + 3.45, zf + 0.25]);
+      leaks.push(here([-10.6, y0 + 3.45, zf + 0.25]), here([5.2, y0 + 3.45, zf + 0.25]), here([14.1, y0 + 3.45, zf + 0.25]));
       cableRun(-17.6, -14.2, RC.y1 - 1.25, zf, 0.3); cableRun(-4.6, 1.2, RC.y1 - 1.05, zf, 0.25); cableRun(9.8, 15.4, RC.y1 - 1.25, zf, 0.3);
       // gear train between the planner and the first assembler, a station clock on the pilaster between the assemblers
       gearCluster(-6.94, y0 + 6.1, zf, [[-0.7, 0, 1.1, M.brassD, 1], [0.95, 0.85, 0.58, M.copperD, -1], [0.75, -0.95, 0.42, M.brassD, -1]]);
       wallClock(4.625, y0 + 6.45, zf + 0.2, 0.58);
       noticeBoard(5.8, y0 + 1.95, zf + 0.04, 1.05, 0.9);
-    });
+    }, 'checks');
     // ---- LAUNCH RISER: the wall behind the checks floor ----
     sect('launch riser', () => {
       const zf = RL.zf, y0 = RL.y0;
@@ -727,7 +754,7 @@ export default function install(IRON) {
       for (const x of [-6.3, 4.4]) valveWheel(x, y0 + 3.45, zf + 0.32, 0.2);
       for (const x of [-3.9, 7.35]) downPipe(x, y0 + 3.45, RL.y1 - 0.6, zf, 0.09, M.copperD);
       needles.push(gauge(S, -1.2, y0 + 3.95, zf + 0.2, 0.17), gauge(S, 6.4, y0 + 6.3, zf + 0.2, 0.3));
-      leaks.push([-8.0, y0 + 3.45, zf + 0.25], [3.0, y0 + 3.45, zf + 0.25]);
+      leaks.push(here([-8.0, y0 + 3.45, zf + 0.25]), here([3.0, y0 + 3.45, zf + 0.25]));
       cableRun(-14.4, -10.6, RL.y1 - 1.25, zf, 0.3); cableRun(-1.6, 3.6, RL.y1 - 1.1, zf, 0.25);
       gearCluster(-7.5, y0 + 6.0, zf, [[0.6, 0.1, 1.15, M.brassD, -1], [-1.05, 0.95, 0.55, M.brassD, 1], [-0.95, -0.85, 0.46, M.copperD, 1]]);
       // the notice board and the furnace hatch sit between the lower windows of the two middle bays; the hatch takes the
@@ -740,7 +767,7 @@ export default function install(IRON) {
       K.box(0.8, 0.14, 0.04, M.hatchGlow, 0, 0.18, 0.09, fh);
       for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; K.box(0.08, 0.08, 0.05, M.brassL, Math.cos(a) * 0.64, Math.sin(a) * 0.64, 0.09, fh); }
       K.box(0.6, 0.08, 0.08, M.ironL, 0.5, -0.25, 0.12, fh);
-    });
+    }, 'launch');
 
     // ---- LAUNCH BACK WALL (the mockup's back wall on the top floor) ----
     sect('back wall', () => {
@@ -764,10 +791,10 @@ export default function install(IRON) {
       for (const x of [-6.75, 9.3]) { const v = K.torus(0.28, 0.05, M.valve, 6, 14, x, y0 + 1.6, zf + 0.82, S); v.rotation.x = Math.PI / 2; }
       for (const x of [-11, -2.6, 3.4, 12.6]) { const v = K.torus(0.2, 0.04, M.valve, 6, 12, x, y0 + 0.72, zf + 0.33, S); }
       needles.push(gauge(S, -6.35, y0 + 2.2, zf + 0.72, 0.17), gauge(S, 9.7, y0 + 2.0, zf + 0.72, 0.17));
-      leaks.push([-6.75, y0 + 2.95, zf + 0.55], [9.3, y0 + 2.7, zf + 0.55]);
+      leaks.push(here([-6.75, y0 + 2.95, zf + 0.55]), here([9.3, y0 + 2.7, zf + 0.55]));
       cableRun(-14.2, -8.6, y0 + 2.75, zf, 0.25); cableRun(10.0, 14.2, y0 + 2.5, zf, 0.25);
       gearCluster(1.5, y0 + 1.9, zf, [[0.35, 0, 0.82, M.brassD, 1], [-0.65, 0.85, 0.45, M.copperD, -1]]);
-    });
+    }, 'launch');
 
     // ================= FRAMING: buttresses, columns, fire escapes, ladders =================
     // lattice panel facing the camera: two chords, struts, X braces, gusset plates
@@ -819,7 +846,7 @@ export default function install(IRON) {
     sect('buttresses', () => {
       // lower: build + checks levels, outside both ends of the checks riser (y -1.4 -> past the checks deck)
       const zb = RC.zf + 0.05, yb0 = TB.y - 1.4, yb1 = TC.y + 1.6;
-      for (const s of [-1, 1]) {
+      onFloor('checks', () => { for (const s of [-1, 1]) {
         const xin = s < 0 ? TC.x0 - 0.15 : TC.x1 + 0.15, xout = xin + s * 1.75;
         lattice(Math.min(xin, xout), Math.max(xin, xout), yb0, yb1, zb, M.iron, 0.26);
         column(xout, yb0, yb1 + 0.4, zb - 0.05, 0.46);
@@ -830,10 +857,10 @@ export default function install(IRON) {
         for (const sx of [-0.2, 0.2]) K.box(0.05, TC.y - yb0 - 0.2, 0.05, M.iron, (xin + xout) / 2 + sx, (yb0 + TC.y) / 2, zb + 0.4, S);
         for (let y = yb0 + 0.4; y < TC.y; y += 0.32) K.box(0.4, 0.04, 0.04, M.ironL, (xin + xout) / 2, y, zb + 0.4, S);
         towerDeck(Math.min(xin, xout + s * 0.3) - (s < 0 ? 0 : 0.15), Math.max(xin, xout + s * 0.3) + (s < 0 ? 0.15 : 0), TC.y + 0.1, zb - 0.45, zb + 0.75, s);
-      }
+      } });
       // upper: lattice towers beside the launch riser, past the freight lift (left) and the sent-back drop (right)
       const zu = RL.zf - 0.1, yu0 = TC.y + 0.1, yu1 = TL.y + 1.6;
-      for (const s of [-1, 1]) {
+      onFloor('launch', () => { for (const s of [-1, 1]) {
         let x = s < 0 ? TL.x0 - 2.8 : TL.x1 + 2.8;
         for (let k = 0; k < 8 && blocked(x, zu, 0.5, yu0, yu1); k++) x += s * 0.3;
         const xo = x + s * 1.3;
@@ -848,11 +875,11 @@ export default function install(IRON) {
         const xs = s < 0 ? TL.x0 : TL.x1, gz = zu - 0.35;
         K.box(Math.abs(x - xs), 0.34, 0.2, M.ironM, (x + xs) / 2, TL.y - 1.0, gz, S);
         const L = Math.hypot(x - xs, 4.2), br = K.box(0.14, L, 0.14, M.iron, (x + xs) / 2, TL.y - 1.0 - 2.1, gz, S); br.rotation.z = Math.atan2(xs - x, 4.2) * -1;
-      }
+      } });
       // catwalks along the outside of the checks deck's sides, from each lower tower's platform back to the foot of
       // the upper tower's ladder (pushed out past anything running along the deck edge, e.g. the gate-return belt)
       const zc0 = zb - 0.45, zc1 = zu + 0.3, cw = 0.85;
-      for (const s of [-1, 1]) {
+      onFloor('checks', () => { for (const s of [-1, 1]) {
         const edge = s < 0 ? TC.x0 : TC.x1;
         let xi = edge;
         const hit = (xi) => { for (let z = zc1 + 0.2; z < Math.min(zc0, TC.z1 - 1.7); z += 0.5) if (blocked(xi + s * cw / 2, z, cw / 2, TC.y + 0.1, TC.y + 1.1)) return true; return false; };
@@ -862,7 +889,7 @@ export default function install(IRON) {
         // close the lower platform's back edge between its outer railing and the catwalk's
         const pOut = s < 0 ? TC.x0 - 0.15 - 1.75 - 0.3 : TC.x1 + 0.15 + 1.75 + 0.3, a = Math.min(pOut, xo), b = Math.max(pOut, xo);
         if (b - a > 0.1) { for (const yy of [0.5, 0.95]) K.box(b - a, 0.05, 0.05, M.ironL, (a + b) / 2, TC.y + 0.1 + yy, zc0 + 0.02, S); K.box(0.05, 0.95, 0.05, M.iron, (a + b) / 2, TC.y + 0.57, zc0 + 0.02, S); }
-      }
+      } });
     });
     // switchback fire escape against a riser wall: flights (stringers, treads, handrail), grated landings, then a
     // ladder up the slab rim to the deck above
@@ -902,8 +929,8 @@ export default function install(IRON) {
       extraKeep.push([Math.min(xa, xb) - 0.9, Math.max(xa, xb) + 0.9, zf, zf + 0.2 + D + 0.1, y0 - 0.2, y1 + 2]);
     }
     sect('fire escapes', () => {
-      fireEscape(fe.checks[0], fe.checks[1], RC.y0, RC.y1 - 0.62, RC.zf, TC.y + 0.1);
-      fireEscape(fe.launch[1], fe.launch[0], RL.y0, RL.y1 - 0.62, RL.zf, TL.y + 0.1);
+      onFloor('checks', () => fireEscape(fe.checks[0], fe.checks[1], RC.y0, RC.y1 - 0.62, RC.zf, TC.y + 0.1));
+      onFloor('launch', () => fireEscape(fe.launch[1], fe.launch[0], RL.y0, RL.y1 - 0.62, RL.zf, TL.y + 0.1));
     });
 
     // ================= SKYLINE: behind the launch floor =================
@@ -915,7 +942,7 @@ export default function install(IRON) {
       K.cyl(r * 1.25, r * 1.25, 0.1, M.brassD, 10, x, y1 - 0.6, z, P);
       K.cyl(r * 1.04, r * 1.04, 0.9, M.grimeL, 10, x, y1 - 0.2, z, P);
       if (P === S) for (let y = y1 - h * 0.55; y < y1 - 0.6; y += 0.32) K.box(0.12, 0.03, 0.05, M.iron, x, y, z + r * 1.1 - (y - y0) * 0.2 / h * r, P);
-      if (smoke !== false) chimTops.push([x, y1 + 0.3, z, r, smoke === 'far']);
+      if (smoke !== false) chimTops.push(here([x, y1 + 0.3, z, r, smoke === 'far']));
     }
     sect('skyline', () => {
       const yb = TL.y - 3.5; // bases hide behind the back wall
@@ -926,7 +953,7 @@ export default function install(IRON) {
         const m = rnd() < 0.5 ? M.sil : M.silD;
         K.box(w, top - base, 2, m, x + w / 2, (top + base) / 2, z, FAR);
         for (let i = 0; i < Math.floor(w / 0.7); i++) { const tr = K.box(0.7, 0.5, 2, M.sil, x + 0.35 + i * 0.7, top + 0.2, z, FAR); tr.rotation.z = 0.55; tr.scale.y = 0.8; }
-        if (rnd() < 0.55) { const cx = x + w * rnd(); K.cyl(0.18, 0.22, 1.8, M.silD, 6, cx, top + 0.9, z, FAR); chimTops.push([cx, top + 1.8, z, 0.18, true]); }
+        if (rnd() < 0.55) { const cx = x + w * rnd(); K.cyl(0.18, 0.22, 1.8, M.silD, 6, cx, top + 0.9, z, FAR); chimTops.push(here([cx, top + 1.8, z, 0.18, true])); }
         for (let i = 0; i < 5; i++) if (rnd() < 0.55) K.box(0.2, 0.24, 0.05, rnd() < 0.7 ? M.cityWin : M.cityWin2, x + 0.4 + rnd() * (w - 0.8), top - 0.5 - rnd() * 3.2, z + 1.03, FAR);
         x += w + 0.2;
       }
@@ -941,7 +968,7 @@ export default function install(IRON) {
       K.cyl(2.8, 2.8, 3.2, M.gasoM, 16, 0, 1.6, 0, gaso);
       for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; K.box(0.14, 4.4, 0.14, M.silL, Math.cos(a) * 2.95, 2.2, Math.sin(a) * 2.95, gaso); }
       for (const y of [1.4, 2.8, 4.2]) K.torus(2.95, 0.06, M.silL, 4, 24, 0, y, 0, gaso).rotation.x = Math.PI / 2;
-    });
+    }, 'launch');
 
     // ---- BLAST FURNACE (left, behind the back wall): brick shaft, charging skip, hot-blast stoves, downcomer ----
     let skip = null, furnaceTop = null, mouthM = null;
@@ -973,8 +1000,8 @@ export default function install(IRON) {
       for (const sz of [-0.32, 0.32]) K.tube([[3.4, 0, sz], [2.3, 4.0, sz], [0.6, 8.2, sz]], 0.07, M.iron, inc, 10, 4);
       for (let i = 0; i < 9; i++) { const u = i / 8; K.box(0.08, 0.08, 0.7, M.ironM, 3.4 - 2.8 * u, 8.2 * u, 0, inc); }
       skip = K.dyn(K.group(bf, 4.8, 0.6, 0.9)); K.box(0.5, 0.38, 0.5, M.rust, 0, 0, 0, skip); for (let i = 0; i < 4; i++) K.rock(0.09, M.coal, R() * 0.26, 0.22, R() * 0.26, skip);
-      furnaceTop = [FX, y0 + 8.2, FZ];
-    });
+      furnaceTop = here([FX, y0 + 8.2, FZ]);
+    }, 'launch');
 
     // ---- WATER TOWER (back right of the launch floor, or behind the wall when the floor is full) ----
     sect('water tower', () => {
@@ -988,7 +1015,7 @@ export default function install(IRON) {
       K.cone(1.1, 0.7, M.roofIron, 14, 0, 5.45, 0, wt); K.box(0.4, 0.3, 0.05, M.hazard, 0, 4.4, 1.02, wt);
       K.tube([[0.8, 3.6, 0.3], [1.0, 2.0, 0.6], [1.0, 0.3, 0.6]], 0.06, M.copperD, wt, 10, 5);
       K.box(0.05, 2.0, 0.05, M.iron, -0.3, 4.4, 1.02, wt); for (let y = 3.6; y < 5.2; y += 0.25) K.box(0.24, 0.03, 0.03, M.ironL, -0.18, y, 1.04, wt);
-    });
+    }, 'launch');
 
     // ================= THE CITY ON BOTH SIDES (hazy towers rising from the depths) =================
     // modules/city-old.js (the floating city, ?artpass=1, keeps only its landmarks: see ART-PASS.md)
@@ -996,7 +1023,7 @@ export default function install(IRON) {
       const landmarks = artPass() ? K.group(FAR) : null;
       if (landmarks) { landmarks.name = 'city-landmarks'; landmarks.userData.noBake = true; }
       oldCity({ K, THREE, M, rnd, chimney, hazeTex, FAR, chimTops, landmarks, artPass: artPass() });
-    });
+    }, BASE);
 
     // ================= AIRSHIPS =================
     let ship = null, prop = null, ship2 = null;
@@ -1021,7 +1048,7 @@ export default function install(IRON) {
     sect('airships', () => {
       const a = airship(1.2, true); ship = a.sh; prop = a.pr;
       const b = airship(0.85, false); ship2 = b.sh; ship2.rotation.y = Math.PI;
-    });
+    }, BASE);
 
     // ================= DECK DRESSING: markings, grime, puddles, scrap, props =================
     const sheens = [], steamVents = [], manholes = [];
@@ -1081,18 +1108,18 @@ export default function install(IRON) {
         const x = tier.x0 + 1.5 + rnd() * (W - 3), z = tier.z0 + 1 + rnd() * (D - 2); if (!free(tier, x, z, 0.5, 0.6)) continue; k++;
         K.cyl(0.46, 0.46, 0.04, M.iron, 16, x, top + 0.02, z, S); K.torus(0.42, 0.03, M.ironL, 4, 18, x, top + 0.045, z, S).rotation.x = Math.PI / 2;
         for (let j = 0; j < 4; j++) { const b = K.box(0.7, 0.012, 0.05, M.ironM, x, top + 0.048, z, S); b.rotation.y = j * Math.PI / 4; }
-        manholes.push([x, top, z]);
+        manholes.push(here([x, top, z]));
       }
       for (let i = 0, k = 0; i < 30 && k < 3; i++) {
         const x = tier.x0 + 1.5 + rnd() * (W - 3), z = tier.z0 + 1 + rnd() * (D - 2); if (!free(tier, x, z, 0.45, 0.6)) continue; k++;
         K.box(0.7, 0.06, 0.7, M.ironM, x, top + 0.03, z, S); for (let j = 0; j < 4; j++) K.box(0.6, 0.07, 0.05, M.soot, x, top + 0.05, z - 0.24 + j * 0.16, S);
-        steamVents.push([x, top, z]);
+        steamVents.push(here([x, top, z]));
       }
     }
     M.paintR = K.mat(0xc03a24, { op: 0.6, depthWrite: false });
-    sect('dress build', () => dressDeck(TB, 'build'));
-    sect('dress checks', () => dressDeck(TC, 'checks'));
-    sect('dress launch', () => dressDeck(TL, 'launch'));
+    sect('dress build', () => dressDeck(TB, 'build'), 'build');
+    sect('dress checks', () => dressDeck(TC, 'checks'), 'checks');
+    sect('dress launch', () => dressDeck(TL, 'launch'), 'launch');
 
     // props: try each candidate, keep the ones that are clear on this plan
     function place(tier, x, z, r, h, fn) { if (!free(tier, x, z, r, h)) return false; fn(x, tier.y + 0.1, z); return true; }
@@ -1121,7 +1148,7 @@ export default function install(IRON) {
       for (const [x, z] of [[-10.7, -3.7], [7.3, -4.0], [14.6, -3.7]]) place(t, x, z, 0.4, 1, (px, py, pz) => barrel(px, py, pz, rnd() < 0.5 ? M.copperD : M.wood));
       place(t, -15.6, -2.5, 0.7, 1.3, (px, py, pz) => gasBottles(px - 0.45, py, pz, 4));
       place(t, 11.2, -3.75, 0.95, 1.9, (px, py, pz) => rack(px, py, pz));
-    });
+    }, 'build');
     sect('props checks', () => {
       const t = TC;
       for (const x of [-11.5, -4.9, 6.0]) place(t, x, -14.6, 0.35, 3.2, (px, py, pz) => lampPost(px, py, pz, 2.6)); // -4.9: beside the furnace hatch, on the pilaster
@@ -1130,7 +1157,7 @@ export default function install(IRON) {
       place(t, -7.4, -14.9, 0.7, 1.3, (px, py, pz) => gasBottles(px - 0.45, py, pz, 4));
       place(t, -17.6, -14.6, 0.45, 0.5, (px, py, pz) => toolbox(px, py, pz, 0.4));
       for (const [x, z] of [[-6.3, -14.4], [5.2, -14.5]]) place(t, x, z, 0.95, 1.9, (px, py, pz) => rack(px, py, pz));
-    });
+    }, 'checks');
     sect('props launch', () => {
       const t = TL;
       for (const x of [-12.8, -1.3]) place(t, x, -25.0, 0.35, 3.2, (px, py, pz) => lampPost(px, py, pz, 2.6));
@@ -1140,7 +1167,7 @@ export default function install(IRON) {
         const nc = K.group(S, -12.6, t.y + 0.1 + 0.45, -23.4); nc.rotation.set(0, 0.3, Math.PI / 2);
         K.lathe([[0.42, 0], [0.36, 0.5], [0.2, 0.9], [0.04, 1.15]], M.copperD, 12, 0, 0, 0, nc); for (const s of [-0.3, 0.3]) K.box(0.12, 0.42, 0.6, M.woodD, 0, s, 0, nc).rotation.z = Math.PI / 2;
       }
-    });
+    }, 'launch');
 
     // ================= WORKERS (they walk their beats) =================
     const walkers = [];
@@ -1157,10 +1184,9 @@ export default function install(IRON) {
       walkers.push(wk); return wk;
     }
     sect('workers', () => {
-      walkerOn(TB, 6.05, -15.5, -6.2, 0x4a3a2c, 'crate');
-      walkerOn(TB, 2.4, 14.0, 17.6, 0x3a4a52, null);
-      walkerOn(TC, -14.0, -12.5, 9.0, 0x5a4a3a, 'board');
-      walkerOn(TL, -25.0, -3.0, 1.2, 0x3e4a5a, null);
+      onFloor('build', () => { walkerOn(TB, 6.05, -15.5, -6.2, 0x4a3a2c, 'crate'); walkerOn(TB, 2.4, 14.0, 17.6, 0x3a4a52, null); });
+      onFloor('checks', () => walkerOn(TC, -14.0, -12.5, 9.0, 0x5a4a3a, 'board'));
+      onFloor('launch', () => walkerOn(TL, -25.0, -3.0, 1.2, 0x3e4a5a, null));
     });
 
     // ---- crows on the chimney tops (perch, bob, hop, sometimes take a lap) ----
@@ -1179,7 +1205,7 @@ export default function install(IRON) {
         c.rotation.y = rnd() * 6;
         crows.push({ c, body, hd, wings, home, state: 'perch', t: 6 + rnd() * 20, ang: 0, rad: 2 + rnd() * 1.5, cy: home.y + 2 + rnd() * 1.5 });
       });
-    });
+    }, 'launch');
 
     // ================= LIGHTS (2): the floors with the fewest machine lamps =================
     const lights = [];
@@ -1190,7 +1216,7 @@ export default function install(IRON) {
       lights.push({ L: K.light(0xff8a3a, 1.6, 7, -2.5, TC.y + 1.0, RL.zf + 0.7, root), base: 1.6, k: 0 });
       lights.push({ L: K.light(0xffae60, 1.5, 6, -11.2, TC.y + 0.45, RL.zf + 0.45, root), base: 1.5, k: 2 });
       lightsLeft = 0;
-    });
+    }, 'launch');
 
     // ================= PALETTE BATCHING =================
     // Every flat-colored part draws with one of four shared materials whose color comes from a 16x16 palette
@@ -1260,10 +1286,9 @@ export default function install(IRON) {
 
     // ================= PRE-MERGE =================
     // Merge my static parts per material myself, before the core turns off shadows on tiny parts (that would split
-    // all the iron into a casting and a non-casting mesh): one batch per material for the whole structure, one for
-    // the backdrop, one per moving object. Not split per floor: every view shows two or three floors' worth of my
-    // walls and framing anyway, so floor bands would save few triangles (the whole structure is ~130k) and cost a
-    // draw call per material per floor. The results are tagged noBake so the shaft's bake leaves them as they are.
+    // all the iron into a casting and a non-casting mesh): one batch per material per floor (so a floor still hides
+    // on its own), one per floor for the backdrop, one per moving object. The results keep their floor and are
+    // tagged noBake so the shaft's bake leaves them as they are.
     sect('premerge', () => {
       root.updateMatrixWorld(true);
       const mtx = new THREE.Matrix4(), inv = new THREE.Matrix4();
@@ -1273,7 +1298,7 @@ export default function install(IRON) {
           for (const c of o.children) {
             if (!c.visible || c.userData.dyn || c.userData.noBake) continue;
             if (c.isMesh && c.constructor === THREE.Mesh && !Array.isArray(c.material) && c.geometry.attributes.position) {
-              const key = c.material.uuid + '|' + c.castShadow + '|' + c.receiveShadow;
+              const key = c.material.uuid + '|' + c.castShadow + '|' + c.receiveShadow + '|' + c.userData.floor;
               (buckets.get(key) || buckets.set(key, []).get(key)).push(c);
             }
             walk(c);
@@ -1301,11 +1326,12 @@ export default function install(IRON) {
           geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
           geo.computeBoundingSphere();
           const m = new THREE.Mesh(geo, list[0].material); m.castShadow = list[0].castShadow; m.receiveShadow = list[0].receiveShadow;
-          m.name = 'world-merged'; m.userData.noBake = true; anchor.add(m);
+          m.name = 'world-merged'; m.userData.noBake = true; m.userData.floor = list[0].userData.floor; anchor.add(m);
           for (const o of list) o.parent.remove(o);
         }
       };
-      merge(S);
+      merge(S0);
+      for (const id of FLOOR_IDS) merge(F[id].s);
       merge(FAR);
       { const lm = FAR.getObjectByName('city-landmarks'); if (lm) merge(lm); } // ?artpass=1 only
       const movers = [];
@@ -1371,17 +1397,17 @@ export default function install(IRON) {
       });
       // smoke from chimneys + furnace, steam from vents/manholes/leaks, oil drips off the rims
       tCh -= dt;
-      if (tCh <= 0) { tCh = 0.3; chimTops.forEach(([x, y, z, r, far]) => { if (far && Math.random() < 0.8) return; K.spawn(root, x + K.R() * r, y, z + K.R() * r, 0.35 + K.R() * 0.2, 0.7 + Math.random() * 0.3, K.R() * 0.2, Math.random() < 0.5 ? 0x3a302a : 0x4e443a, far ? 3 : 4.4, far ? 0.26 : 0.55, -0.08); }); }
+      if (tCh <= 0) { tCh = 0.3; chimTops.forEach((c) => { const [x, y, z, r, far] = c; if (!live(c) || (far && Math.random() < 0.8)) return; K.spawn(root, x + K.R() * r, y, z + K.R() * r, 0.35 + K.R() * 0.2, 0.7 + Math.random() * 0.3, K.R() * 0.2, Math.random() < 0.5 ? 0x3a302a : 0x4e443a, far ? 3 : 4.4, far ? 0.26 : 0.55, -0.08); }); }
       tFur -= dt;
-      if (furnaceTop && tFur <= 0) { tFur = 0.2; K.spawn(root, furnaceTop[0] + K.R() * 0.6, furnaceTop[1], furnaceTop[2] + K.R() * 0.6, 0.3 + K.R() * 0.2, 0.9, K.R() * 0.2, Math.random() < 0.5 ? 0x2a221e : 0x3a302a, 4, 0.5, -0.08); if (Math.random() < 0.3) K.spawn(root, furnaceTop[0] + K.R() * 0.4, furnaceTop[1] - 0.2, furnaceTop[2] + 0.7, K.R() * 0.6, 1.4, 0.4, 0xffa030, 0.8, 0.06, 2, true); }
+      if (furnaceTop && live(furnaceTop) && tFur <= 0) { tFur = 0.2; K.spawn(root, furnaceTop[0] + K.R() * 0.6, furnaceTop[1], furnaceTop[2] + K.R() * 0.6, 0.3 + K.R() * 0.2, 0.9, K.R() * 0.2, Math.random() < 0.5 ? 0x2a221e : 0x3a302a, 4, 0.5, -0.08); if (Math.random() < 0.3) K.spawn(root, furnaceTop[0] + K.R() * 0.4, furnaceTop[1] - 0.2, furnaceTop[2] + 0.7, K.R() * 0.6, 1.4, 0.4, 0xffa030, 0.8, 0.06, 2, true); }
       tV -= dt;
-      if (tV <= 0 && steamVents.length) { tV = 0.35; const sv = steamVents[Math.floor(Math.random() * steamVents.length)]; for (let i = 0; i < 3; i++) puff(sv[0], sv[1] + 0.1, sv[2], 0xb0a490, 0.18, 0.9, 0.4, 1.6); }
+      if (tV <= 0 && steamVents.length) { tV = 0.35; const sv = steamVents[Math.floor(Math.random() * steamVents.length)]; if (live(sv)) for (let i = 0; i < 3; i++) puff(sv[0], sv[1] + 0.1, sv[2], 0xb0a490, 0.18, 0.9, 0.4, 1.6); }
       tMh -= dt;
-      if (tMh <= 0 && manholes.length) { tMh = 0.3; const [x, y, z] = manholes[Math.floor(Math.random() * manholes.length)]; const a = Math.random() * Math.PI * 2; K.spawn(root, x + Math.cos(a) * 0.42, y + 0.08, z + Math.sin(a) * 0.42, Math.cos(a) * 0.15 + 0.1, 0.55 + Math.random() * 0.3, Math.sin(a) * 0.15, 0xb8ae9c, 2.0, 0.1, -0.1); }
+      if (tMh <= 0 && manholes.length) { tMh = 0.3; const mh = manholes[Math.floor(Math.random() * manholes.length)], [x, y, z] = mh; const a = Math.random() * Math.PI * 2; if (live(mh)) K.spawn(root, x + Math.cos(a) * 0.42, y + 0.08, z + Math.sin(a) * 0.42, Math.cos(a) * 0.15 + 0.1, 0.55 + Math.random() * 0.3, Math.sin(a) * 0.15, 0xb8ae9c, 2.0, 0.1, -0.1); }
       tLeak -= dt;
-      if (tLeak <= 0 && leaks.length) { tLeak = 0.22; const l = leaks[Math.floor(Math.random() * leaks.length)]; K.spawn(root, l[0], l[1], l[2] + 0.2, K.R() * 0.5, 0.6, 0.5, 0xc8bca8, 1.1, 0.1, -0.15); }
+      if (tLeak <= 0 && leaks.length) { tLeak = 0.22; const l = leaks[Math.floor(Math.random() * leaks.length)]; if (live(l)) K.spawn(root, l[0], l[1], l[2] + 0.2, K.R() * 0.5, 0.6, 0.5, 0xc8bca8, 1.1, 0.1, -0.15); }
       tDrip -= dt;
-      if (tDrip <= 0 && spouts.length) { tDrip = 0.5; const s = spouts[Math.floor(Math.random() * spouts.length)]; K.spawn(root, s[0], s[1], s[2], 0, -0.2, 0, 0x0a0806, 1.6, 0.06, 5); }
+      if (tDrip <= 0 && spouts.length) { tDrip = 0.5; const s = spouts[Math.floor(Math.random() * spouts.length)]; if (live(s)) K.spawn(root, s[0], s[1], s[2], 0, -0.2, 0, 0x0a0806, 1.6, 0.06, 5); }
     } };
   });
 }
