@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 224" role="img"><title>Shiptorio — S rocket seal</title><defs>
+<linearGradient id="brass" x2=".2" y2="1"><stop stop-color="#ffe4a3"/><stop offset=".18" stop-color="#c59750"/><stop offset=".48" stop-color="#ead098"/><stop offset=".65" stop-color="#ab763b"/><stop offset="1" stop-color="#67401e"/></linearGradient>
+<linearGradient id="face" x2=".25" y2="1"><stop stop-color="#fff2d3"/><stop offset=".42" stop-color="#f1dbaf"/><stop offset=".76" stop-color="#dfbe88"/><stop offset="1" stop-color="#b98c51"/></linearGradient>
+<linearGradient id="edge" x2="0" y2="1"><stop stop-color="#f6d797"/><stop offset=".5" stop-color="#a06b30"/><stop offset="1" stop-color="#3b2111"/></linearGradient>
+<radialGradient id="enamel"><stop stop-color="#142a2b"/><stop offset="1" stop-color="#080e10"/></radialGradient>
+<linearGradient id="ember" x2="0" y2="1"><stop stop-color="#e9b76d"/><stop offset="1" stop-color="#773e18" stop-opacity=".2"/></linearGradient>
+</defs><path d="M110 12 195 61V159L110 208 25 159V61Z" fill="#0b1416" stroke="#d3ad70" stroke-width="12"/>
+<path d="M110 42 135 99Q143 119 127 143Q134 124 114 116Q92 107 97 89Z M92 101Q88 115 107 123Q129 132 113 157L109 166L104 145L92 150L81 137L66 150L83 114Z M138 116L154 150L141 145L132 133Z" fill="#d3ad70"/></svg>
