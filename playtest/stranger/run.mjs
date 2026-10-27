@@ -177,6 +177,8 @@ async function clickMove(name) {
 }
 let runnerToken, job;
 const t0 = Date.now();
+// Failure detail stays bounded and fixture-only: scalars as-is, objects as their type and size, never request/env objects.
+const scalar = (v) => (v === null || typeof v !== "object" ? v : `[${Array.isArray(v) ? `array(${v.length})` : "object"}]`);
 async function step(name, fn) {
   const start = Date.now();
   try {
@@ -185,7 +187,11 @@ async function step(name, fn) {
     console.log(`PASS ${name}`);
     await page.screenshot({ path: join(out, `${String(steps.length).padStart(2, "0")}-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
   } catch (error) {
-    steps.push({ name, ms: Date.now() - start, ok: false, error: String(error).split("\n")[0] });
+    // Keep the whole failure: the first line alone loses an assertion's actual/expected and its source line.
+    const detail = { message: String(error?.message ?? error), stack: error?.stack, actual: scalar(error?.actual), expected: scalar(error?.expected), operator: error?.operator };
+    const state = { deck: factoryState?.deck?.map(m => ({ id: m.id, title: m.title, options: m.options?.map(o => o.label) })), move: factoryState?.move?.id, pulls: stub.state.pulls.length, merges: stub.state.merges.length, cards: await page.locator(".acard .att").allTextContents().catch(() => []) };
+    steps.push({ name, ms: Date.now() - start, ok: false, error: String(error).split("\n")[0], detail, state });
+    console.error(`FAIL ${name}\n${detail.stack ?? detail.message}\nactual: ${JSON.stringify(detail.actual)}\nexpected: ${JSON.stringify(detail.expected)}\nstate: ${JSON.stringify(state)}`);
     await page.screenshot({ path: join(out, `FAIL-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
     throw error;
   }
