@@ -435,9 +435,9 @@ Decided with Justin 2026-10-26 (playable mockup `docs/onboarding-mockup.html`, b
   beats. You're the approve button today; **verify, then automate** (two beats taught by doing: swipe a
   verified PR, then let a whole kind of work ship on its own); the bottleneck moves; every source is a new
   mine; "It runs itself". Plays once per browser, Skip always there.
-- **Two worlds, one map.** After the scan, a first read (the bottleneck in one line) and one soft question:
-  **Check in** ("show me what's stuck": the deck is the game) or **Build** ("let me build": the line, power,
-  machines). A toggle at the top switches any time.
+- **Two worlds, one map.** Everyone starts on the map. The **Check in** view ("show me what's stuck": the deck is
+  the game) and the **Build** view (the line, power, machines) are a toggle at the bottom that switches any time.
+  The first run no longer asks which one before the player has seen a machine (new-player walkthrough, 2026-10-27).
 - **Power is asked at the first build**, not at signup. Watching and merging work without it.
 - **Sentry and PostHog are empty mines on the map**, asked when they pay off (after a rocket: did that help
   anyone?), never a connect screen at signup.
