@@ -333,3 +333,10 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+
+## See what players say yes and no to (Claude, Oct 27, 2026)
+
+Card tap log + eval: every dealt card, the planner's reason, the tap (Continue/other/Later/Never chip/untapped),
+time to decide and the approved work's outcome go to D1 `card_taps`. `/admin/taps` shows yes rates by kind and
+area, model vs rules, most skipped and outcome quality; `signals/taps.ts` is the brain's taps collector and the
+game master reads a short `taps` brief. Doc: [taps.md](taps.md). Migration 0016 may need renumbering in the batch.
