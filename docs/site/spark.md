@@ -38,7 +38,7 @@ Planning is a tool loop with a hard budget of **five turns**. Each turn Spark ca
 
 It has to read the issue and at least one file before it can assign the job. Re-reading something doesn't cost a turn. Ask for a tool it doesn't have, or run out of turns, and the job stops. No silent retries.
 
-Failed plans spend no build runs. Each issue can fail planning at most three times per UTC day: the first two failures wait one and two minutes, then planning pauses until midnight UTC. The cooldown survives factory restarts. A build run is charged when your runner claims a ready plan.
+Failed plans spend no build runs. Each issue can fail planning at most three times per UTC day: the first two failures wait one and two minutes, then planning pauses until midnight UTC. A GitHub rate limit waits until GitHub's retry time instead of spending a failed try; older rate-limit pauses also recover at that time. The cooldown survives factory restarts. A build run is charged when your runner claims a ready plan.
 
 Every step shows up in the floor log, and the plan is posted as a comment on the issue, so you can check its work on GitHub.
 

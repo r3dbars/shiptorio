@@ -2136,7 +2136,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         continue;
       }
       if (item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-") && item.scars?.length) {
-        if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) continue;
+        // Offered once per scar, unless the card was dropped (a planning hold drops plan cards) and nothing
+        // took its place: then the rework would wait forever behind a card nobody can see.
+        if ((await this.ctx.storage.get<number>(`gauntletOffered:${item.id}`)) === item.scars.length) {
+          await this.decisionData();
+          const jobs = await this.runnerJobs();
+          const waiting = this.openMoves!.some(m => m.itemId === item.id && m.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"))) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status));
+          if (waiting || planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
+        }
         await this.accountPut(`gauntletOffered:${item.id}`, item.scars.length);
         const last = (await this.runnerJobs()).filter(j => j.itemId === item.id).at(-1)?.harness ?? "codex";
         // A scarred job never goes back to geothermal: the retry takes a subscription.

@@ -51,6 +51,20 @@ where the first fix doesn't really fix the bug, so AI review fails it and the re
 | 10-26 22:52 | First claim of #5 lost in transit | https://github.com/r3dbars/shiptorio/pull/230 | F13: job "running" with nobody on it |
 | 10-26 23:10 | #5 re-handed to the runner, Codex dies in the Mac sandbox | https://github.com/r3dbars/shiptorio/pull/235 | F14 |
 | 10-26 23:20 | Spark daily budget used up | https://github.com/r3dbars/shiptorio/pull/240 | F15: game master retries ate about half of it |
+| 10-27 00:09 | Prod 500s: Worker over the Free plan's 10ms CPU cap | https://github.com/r3dbars/shiptorio/pull/246 · https://github.com/r3dbars/shiptorio/pull/249 · https://github.com/r3dbars/shiptorio/pull/253 | F18. Justin moved to Workers Paid at ~01:00 |
+| 10-27 00:50 | Owner daily run quota (20) used up by planning retries | https://github.com/r3dbars/shiptorio/pull/284 | F19. Raised to 200 at ~02:00 |
+| 10-27 01:07 | Spark may scope new Markdown docs a task needs | https://github.com/r3dbars/shiptorio/pull/261 | #10's CHANGELOG.md was "unapproved file selection" before |
+| 10-27 01:52 | **First real runner PR**: Testing#12 closes #5 | https://github.com/r3dbars/Testing/pull/12 | CI green, verify bay "docs-only", AI review passed |
+| 10-27 01:52 | AI review passes a broken README example on #12 | https://github.com/r3dbars/shiptorio/pull/285 | F22. `--coupon SAVE10` but src/index.ts reads argv[2] |
+| 10-27 02:17 | Testing factory DO resets ("blockConcurrencyWhile waited too long") | | F21. Cleared by itself by 02:20 |
+| 10-27 02:18 | Autopilot found frozen since 01:32 | https://github.com/r3dbars/shiptorio/pull/312 | F20 |
+| 10-27 02:26 | Second runner PR: Testing#13 (#7, new docs/SHIPPING.md) | https://github.com/r3dbars/Testing/pull/13 | #261's new-file scope works end to end |
+| 10-27 ~02:20 | **Rework catch**: manual verification sends #12 back | https://github.com/r3dbars/Testing/pull/12 | 3 scars, item rejected |
+| 10-27 02:30 | No launch card for #13, no rework card for #12 | https://github.com/r3dbars/shiptorio/pull/307 | F23. Deck starvation |
+| 10-27 02:40 | GitHub Actions stops assigning runners repo-wide | | F24. #307 merged but not deployed |
+| 10-27 02:41 | #13's doc contradicts the code (bug #2): launch held | https://github.com/r3dbars/shiptorio/pull/312 | Not a clean ship. `AUTOPILOT_HOLD=gh-7` |
+| 10-27 02:50 | Live `spark:loop`: 8/8 after the re-plan fix, 9/9 on the toolbox branch | https://github.com/r3dbars/shiptorio/pull/310 · https://github.com/r3dbars/shiptorio/pull/314 | Review now catches #12 and #13 offline |
+| 10-27 03:03 | #12 rework tap refused while gh-1 holds the one job slot | https://github.com/r3dbars/shiptorio/pull/312 | F25 |
 
 ## Friction log
 
@@ -110,3 +124,25 @@ Format: what hurt, how bad, what we did. Fixed items stay for the record.
   cards whose recommended option is "Later" (Spark picked Later on #6/#7/#9; #240 stops that). *By design
   for ask_player; the question is now kept on the job.*
 - **F17. GitHub 304s logged as errors and sent to Sentry** (about 20 per 15 min on Testing). Fixed in #230.
+- **F18. The Free plan's 10ms CPU cap took prod down.** Spark JSON repair (`escapeStrayQuotes`) was quadratic,
+  and big state saves went over 10ms, so `exceededCpu` 500s hit claims and sockets. #246 made the repair linear,
+  #249/#253 trimmed hot paths, and Justin moved to Workers Paid. No `exceededCpu` since.
+- **F19. Planning retries burned the owner's daily run quota (20).** The fix to raise it at /admin/signup failed in
+  Chromium (`no-referrer` made the Origin opaque, so 403). Fixed in #284, and the limit is now 200.
+- **F20. The autopilot froze for 46 minutes.** It was started in the background with stdin on a terminal, so it got
+  stopped (state `T`) on its first read. Start it with `</dev/null` (command in #312).
+- **F21. Transient Durable Object resets.** Around 02:17, `/factory` and `/limits` got "blockConcurrencyWhile()
+  waited for too long" for a few minutes, and runner heartbeats 500'd. A 90s tail right after showed nothing over
+  ~1s, so it was probably startup after a deploy. Worth watching: `claimRunner` does D1, quota and deck work inside
+  `blockConcurrencyWhile`.
+- **F22. AI review checked the diff, not whether it's true.** #12's README example (`--coupon SAVE10`) can't work
+  and #13's doc says "$50 or more" where the code says `> 5000`. Review passed both. #285 gives review the
+  referenced files, and #310/#314 add a tool-loop reviewer. Offline `spark:loop` now catches both cases.
+- **F23. Fresh launch and rework cards fell out of the deck.** Ranking is value × minutes since the item changed, so
+  a PR that just went green lost to 11 issues that had waited hours, and the 12-card cap dropped it. #307 keeps
+  every merge-gate card in the deck.
+- **F24. GitHub Actions stopped running jobs (~02:40).** Every job failed in 3s with no runner (billing or spending
+  limit). Nothing merged after #302 deployed, which includes #307.
+- **F25. One job slot plus a plan cap stalled rework.** While gh-1 was planning, the #12 rework tap was refused
+  ("Factory job budget reached"), and the autopilot counted each refused tap toward its 3-plan cap. #312 counts only
+  plans that started.
