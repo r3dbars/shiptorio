@@ -23,7 +23,7 @@ export type SignalKind = z.infer<typeof SignalKind>;
 
 export const SIGNAL_KINDS: Record<SignalSource, readonly string[]> = {
   factory: ["queue_jam", "no_power", "no_agent", "rework_loop"],
-  repo: ["prs_stale", "issues_untriaged", "no_tests", "big_prs", "backlog_empty", "ship_rate_drop"],
+  repo: ["prs_stale", "issues_untriaged", "no_tests", "big_prs", "backlog_empty", "ship_rate_drop", "prs_waiting_on_you", "branches_stale", "backlog_growing", "slow_merge", "prs_dropped", "approve_queue", "repo_missing"],
   ci: ["ci_slow", "ci_flaky", "ci_red_main", "ci_queue", "ci_missing"],
   sentry: ["errors_piling", "error_spike", "regression", "errors_unowned"],
   posthog: ["usage_flat", "funnel_drop", "no_users", "feature_unused", "no_analytics"],
