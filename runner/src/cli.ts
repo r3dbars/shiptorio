@@ -1,3 +1,4 @@
+import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
@@ -21,6 +22,15 @@ import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
 import { redactText } from "../../server/src/redact";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
+// Resolve the installation origin before provider probes or authenticated runner calls.
+// Pre-self-host installations have no server-url file and belong to shiptorio.com.
+const originFile = Bun.file(resolve(root, "server-url"));
+const pinnedOrigin = await originFile.exists() ? (await originFile.text()).trim() : (await loadPairings(root)).length ? "https://shiptorio.com" : undefined;
+const base = runnerOrigin(process.env.SHIPTORIO_URL || pinnedOrigin || "https://shiptorio.com", pinnedOrigin);
+async function pinPairingOrigin() {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await Bun.write(originFile, base + "\n", { mode: 0o600 });
+}
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
 const authHome = await prepareAgentHome(root);
@@ -68,8 +78,6 @@ async function loginHarness(h: Job["harness"]) {
   // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
   if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
-const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
-if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{4,5}$/.test(base)) throw new Error("Unsupported Shiptorio origin");
 if (process.argv[2] === "doctor") {
   const args = process.argv.slice(3);
   if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
@@ -114,7 +122,7 @@ if (process.argv[2] === "doctor") {
 }
 if (["setup", "login"].includes(process.argv[2])) {
   await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
-  if (!available.length) throw new Error("Install Codex CLI or Claude Code first, then rerun the installer. See https://shiptorio.com/docs/runner");
+  if (!available.length) throw new Error(`Install Codex CLI or Claude Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
     const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
     if (!h || !available.includes(h)) throw new Error("Use login codex or login claude, with that CLI installed");
@@ -134,6 +142,7 @@ if (["setup", "login"].includes(process.argv[2])) {
 }
 const action = process.argv[2] ?? "watch";
 if (action === "pair") {
+  await pinPairingOrigin();
   if (process.argv[3] === "--join") await joinMachine(base, process.argv[4] ?? "", root); else await pairMachine(base, root);
   process.exit(0);
 }
@@ -310,7 +319,7 @@ async function connections() {
 }
 await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 let pairs = await connections();
-if (!pairs.length) { await pairMachine(base, root); pairs = await connections(); }
+if (!pairs.length) { await pinPairingOrigin(); await pairMachine(base, root); pairs = await connections(); }
 if (action === "retry") {
   const id = process.argv[3]; if (!/^[a-f0-9-]{36}$/.test(id ?? "")) throw new Error("Expected job UUID");
   const receipt = await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json();

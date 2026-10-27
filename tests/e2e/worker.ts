@@ -3,6 +3,8 @@ import app, { Factory as ProductionFactory, type Env } from '../../server/src/in
 import { makeSessionCookie } from '../../server/src/session';
 import { createSession, upsertUser, saveReach } from '../../server/src/accounts';
 const knownRepos = new Set<string>();
+// Match the production collaborator cache window; D1 revocation checks still run on every frame.
+const loadGrantTtlSeconds = 5 * 60;
 const installationId = (repo: string) => repo === 'load/crowd' ? 1000
   : repo.startsWith('load/factory-') ? 1001 + Number(repo.slice('load/factory-'.length)) : 1;
 const repositoryId = (repo: string) => [...repo].reduce((id, c) => (Math.imul(id, 31) + c.charCodeAt(0)) >>> 0, 1) + 100000;
@@ -43,7 +45,8 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
     const dev = body.messages[0].content as string;
     let out: unknown;
-    if (dev.includes('ONE tool per turn')) {
+    if (dev.includes('AI review station')) out = { tool: 'verdict', verdict: 'pass', reason: 'Regression covers the fix', findings: [] };
+    else if (dev.includes('ONE tool per turn')) {
       const brief = promptJson(body.messages[1].content);
       const read = brief.alreadyRead as string[];
       out = !read.includes('issue') ? { tool: 'read_issue', reason: 'Read issue' }
@@ -66,7 +69,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p === '/user/installations/1/repositories') return reply({ repositories: [...knownRepos].map(full_name => ({ full_name, default_branch: 'main' })) });
   const collaborator = p.match(/\/collaborators\/fixture([1-5])?\/permission$/);
   if (collaborator) return reply({ permission: 'write', user: { id: 123 + Number(collaborator[1] ?? 0) } });
-  if (p.endsWith('/access_tokens')) return reply({ token: `public-test-installation-${p.split('/')[3]}-token` });
+  if (p.endsWith('/access_tokens')) return reply({ token: `public-test-installation-${p.split('/')[3]}-token`, expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
   if (/^\/app\/installations\/\d+$/.test(p)) return reply({ permissions, account: { login: 'fixture', type: 'User' } });
   if (p.endsWith('/installation')) return reply({ id: installationId(p.split('/').slice(2, 4).join('/')) });
   if (p.includes('/git/trees/')) return reply({ sha: BASE, tree: files.map(f => ({ path: f.filename, type: 'blob', size: 100 })), truncated: false });
@@ -95,7 +98,7 @@ export default {
       // The load target is DO fan-out, not GitHub's upstream request queue. Model
       // already-warm provider permission grants; D1 membership/session checks still run.
       await Promise.all([...knownRepos].flatMap(repo => Array.from({ length: 5 }, (_, i) =>
-        env.CACHE.put(`access:v2:${installationId(repo)}:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }))));
+        env.CACHE.put(`access:v2:${installationId(repo)}:${repo}:${124 + i}`, JSON.stringify({ expiresAt: Date.now() + loadGrantTtlSeconds * 1000 }), { expirationTtl: loadGrantTtlSeconds }))));
       return reply({ ok: true });
     }
     if (url.pathname === '/__test/access' || url.pathname === '/__test/session') {
@@ -108,7 +111,7 @@ export default {
       // Explicitly grant the load accounts enough factories; production quotas still execute.
       await env.DB.prepare('INSERT OR REPLACE INTO signup_allowlist (login, enabled, approved_by, factories, repos, runs_daily, updated_at) VALUES (?, 1, ?, 51, 51, 20, ?)').bind(user.login, 'test-fixture', Date.now()).run();
       await saveReach(env, user.id, { installations: [...new Set([...knownRepos].map(installationId))].map(id => ({ id, account: 'fixture' })), repos: [...knownRepos].map(repo => ({ repo, installationId: installationId(repo), defaultBranch: 'main' })) });
-      if (index) await Promise.all([...knownRepos].map(repo => env.CACHE.put(`access:v2:${installationId(repo)}:${repo}:${user.id}`, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 })));
+      if (index) await Promise.all([...knownRepos].map(repo => env.CACHE.put(`access:v2:${installationId(repo)}:${repo}:${user.id}`, JSON.stringify({ expiresAt: Date.now() + loadGrantTtlSeconds * 1000 }), { expirationTtl: loadGrantTtlSeconds })));
       const session = await createSession(env, user, 'load fixture');
       return reply({ cookie: `${session.split(';')[0]}; ${preview.split(';')[0]}` });
     }

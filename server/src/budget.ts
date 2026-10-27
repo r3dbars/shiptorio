@@ -7,7 +7,7 @@ export interface BudgetEnv {
   FACTORY_CONCURRENT_JOBS?: string;
 }
 export const limit = (value: string | undefined, fallback: number) => value !== undefined && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : fallback;
-export const budgetLimits = (env: BudgetEnv) => ({ calls: limit(env.SPARK_DAILY_CALLS, 200), tokens: limit(env.SPARK_DAILY_TOKENS, 500000), output: Math.min(limit(env.SPARK_MAX_OUTPUT_TOKENS, 6144), 16384), jobs: limit(env.FACTORY_CONCURRENT_JOBS, 1), disabled: env.SPARK_DISABLED === "1" });
+export const budgetLimits = (env: BudgetEnv) => ({ calls: limit(env.SPARK_DAILY_CALLS, 400), tokens: limit(env.SPARK_DAILY_TOKENS, 1000000), output: Math.min(limit(env.SPARK_MAX_OUTPUT_TOKENS, 6144), 16384), jobs: limit(env.FACTORY_CONCURRENT_JOBS, 1), disabled: env.SPARK_DISABLED === "1" });
 export class BudgetError extends Error {}
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 export async function budgetAccount(db: D1Database, repo: string): Promise<string> {
