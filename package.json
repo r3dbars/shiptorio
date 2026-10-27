@@ -21,6 +21,7 @@
     "deploy": "bun run build && bun run --filter './server' deploy",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
+    "test:storage": "bun server/scripts/test-storage-host.ts",
     "test:parallel": "bun test --parallel=2",
     "check": "bun run lint:observability && bun run typecheck && bun test && bun run build",
     "spark:check": "bun server/scripts/spark-check.ts",

@@ -43,6 +43,8 @@ jobs:
           # GitHub's disposable Ubuntu VM restricts user namespaces by default.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun test
+      - name: Verify real Durable Object storage on host
+        run: bun run test:storage
       - run: bun run playtest --check
       - run: bun run build
   selfhost:
