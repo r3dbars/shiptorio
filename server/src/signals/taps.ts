@@ -5,7 +5,7 @@
 // The return type mirrors BrainSignal in shared/src/signals.ts structurally, so this file doesn't wait on
 // that contract landing; once it's on main, swap TapSignal for the shared type.
 
-import type { TapRow } from "../taps";
+import { loadTaps, type TapRow } from "../taps";
 
 export interface TapSignal {
   id: string;
@@ -57,3 +57,16 @@ export function tapSignals(rows: readonly TapRow[], now: number): TapSignal[] {
 
   return out.sort((a, b) => b.severity - a.severity || a.id.localeCompare(b.id));
 }
+
+/**
+ * The registry entry (server/src/signals/index.ts, #388): `bind(tapsCollector, c => ({ db: c.env.DB, repo: c.repo }))`.
+ * Reads every 10 minutes; taps only change when the player is around.
+ */
+export const tapsCollector = {
+  source: "taps" as const,
+  everyMs: 10 * 60_000,
+  async read(ctx: { db: D1Database; repo?: string }, now: number): Promise<TapSignal[]> {
+    if (!ctx.repo) return [];
+    return tapSignals(await loadTaps(ctx.db, { repo: ctx.repo, since: now - WEEK, limit: 500 }), now);
+  },
+};

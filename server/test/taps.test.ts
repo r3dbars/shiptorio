@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { Move } from "@shiptorio/shared";
 import { signedInCookie, testD1 } from "./d1-fixture";
 import { closeGone, loadTaps, offerCards, offeredRow, purgeTaps, recordOutcome, recordTap, tapBrief, tapsReport, TAPS_RETENTION_MS, type TapRow } from "../src/taps";
-import { tapSignals } from "../src/signals/taps";
+import { tapSignals, tapsCollector } from "../src/signals/taps";
 
 const card = (id: string, over: Partial<Move> = {}): Move => ({ id, title: `Card ${id}`, why: "x", createdAt: 1, kind: "verify", options: [{ id: "go", label: "Go", recommended: true, actions: [] }, { id: "alt", label: "Alt", recommended: false, actions: [] }], ...over });
 const row = (over: Partial<TapRow>): TapRow => ({ ...offeredRow("o/r", card("c"), "district:web", "rule", 1000), ...over });
@@ -64,6 +64,16 @@ describe("card tap log", () => {
     expect(signals.find(s => s.kind === "later_streak")).toMatchObject({ title: "You set aside the last 3 verify cards.", source: "taps", freshUntil: now + 30 * 60000 });
     expect(signals.every(s => s.evidence.length >= 1 && s.title.length <= 160)).toBe(true);
     expect(tapSignals(rows.slice(0, 2), now)).toEqual([]);
+  });
+
+  it("reads one factory's last week through the collector registry shape", async () => {
+    const db = testD1(), now = Date.now();
+    for (const id of ["a", "b", "c"]) await offerCards(db, [offeredRow("o/r", card(id), "district:web", "rule", now - 3600000)]);
+    await closeGone(db, "o/r", ["a", "b", "c"], now - 60000);
+    await offerCards(db, [offeredRow("other/repo", card("x"), "district:web", "rule", now - 3600000)]);
+    expect(tapsCollector).toMatchObject({ source: "taps", everyMs: 600000 });
+    expect((await tapsCollector.read({ db, repo: "o/r" }, now)).map(s => s.id)).toEqual(["taps:card_ignored:repo"]);
+    expect(await tapsCollector.read({ db }, now)).toEqual([]);
   });
 });
 
