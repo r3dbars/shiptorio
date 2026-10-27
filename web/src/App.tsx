@@ -670,7 +670,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                     {!(cfg.kind === "live" && p.kind === "solar") && <span className="meter" role="meter" aria-label={`${p.name} headroom`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
                       <i style={{ width: `${pct}%`, background: POWER_COLOR[p.kind] }} />
                     </span>}
-                    <span className="plant-num">{cfg.kind === "live" && p.kind === "solar" ? (p.online ? "Signed in · usage depends on your plan" : POWER.offline) : p.online ? `${pct}% left` : POWER.offline}</span>
+                    <span className="plant-num">{cfg.kind === "live" && p.kind === "solar" ? (p.online ? "Signed in" : POWER.offline) : p.online ? `${pct}% left` : POWER.offline}</span>
                     <span className="plant-num">
                       {p.jobs} {p.kind === "steam" ? (p.jobs === 1 ? "decision" : "decisions") : p.jobs === 1 ? "job" : "jobs"}
                     </span>
