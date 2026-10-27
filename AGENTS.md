@@ -6,12 +6,13 @@ before you change anything.
 **North star first: read [`docs/VISION.md`](docs/VISION.md) before deciding what to build next.** It's Justin's
 high-level goals on one page, with a "how to decide what's next" checklist.
 
-**Plan through Nov 4 (locked 2026-10-27, [`docs/VISION.md`](docs/VISION.md#current-focus-through-nov-4-locked-2026-10-27)):**
-(1) prove the loop: Testing #5 shipped for real, then 5 to 10 more clean ships, then one real autonomy level-up;
-(2) nail the vertical map to Justin's Black Iron mockup (PR #204), side-by-side screenshots before merge;
-(3) judge mode (no login) + 2-min demo video; (4) feature freeze ~Nov 1, then bugs/polish/reliability only;
-(5) park build mode, pricing, empire, new mines. Codex: reliability prompts only (deploy guardrail, E2E tests,
-runner reliability, limits/quota visibility, security).
+**Current focus (Justin, 2026-10-27, [`docs/VISION.md`](docs/VISION.md#current-focus-a-great-player-experience-justin-2026-10-27-1050)):**
+(1) make the core loop great to play on phone and desktop (`docs/GAMEPLAY.md`);
+(2) prove real clean ships on Testing and one real autonomy level-up;
+(3) match the vertical map to Justin's Black Iron mockup (PR #204), side-by-side screenshots before merge;
+(4) polish and reliability over new surfaces; (5) judge mode stays as it is;
+(6) park build mode, pricing, empire and new mines. Codex: reliability prompts only (deploy guardrail, E2E tests,
+runner reliability, limits/quota visibility, security). This supersedes the earlier judge-first Nov 4 plan.
 
 **Shared context (decisions, open items, plan export, memory, design refs) lives in
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
