@@ -333,3 +333,8 @@ The rejected production saves left all original account limits intact.
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
 Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+
+## Codex merge helper
+
+- 2026-10-27: #342 head `1dbb4fc376a2cfe4673b66b770f31d689465ae71` passed required check/selfhost/Stranger and full manual browser/load [40564032048](https://github.com/r3dbars/shiptorio/actions/runs/40564032048). Squash merged as `7304199df5ed6259e7a8fff8d5402f21dfe67ab5`; [Deploy 40565415889](https://github.com/r3dbars/shiptorio/actions/runs/40565415889) green; live version matched and private factory returned 401 anonymously.
+- 2026-10-27: #346 was already merged. Updated its branch from main through merge commit `db5614982220d4eafeff107cf82e022b6c6f4501` (identical tree to deployed main at dispatch). Manual browser/load [40565878063](https://github.com/r3dbars/shiptorio/actions/runs/40565878063) pending; no second PR merge attempted.
