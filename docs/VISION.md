@@ -95,6 +95,22 @@ follows this order:
 
 **Codex points at reliability:** deploy guardrail, E2E tests, runner reliability, limits/quota visibility, security.
 
+## Gameplay picks (Justin, 2026-10-27)
+
+Round 1 of the A/B picks is in (`docs/GAMEPLAY.md` has all of them). The ones that shape everything:
+
+- **Setup is play:** you start in an abandoned foundry; picking the repo, connecting your AI and picking the first
+  issue are three repairs you watch happen. Locked parts are visible but broken (only the next one or two), you fix
+  them by tapping them, and a repair costs one real action, never points. Trust shows as lamps up the lift tower.
+- **Moving and looking:** the camera snaps to floors, opens on whatever needs you, tags show only on tap / hover,
+  tapping a machine opens a small callout on it.
+- **Deciding:** one card, always at the bottom. Later on the left, Continue on the right, every card swipes. Launch is
+  a big red hold button on the right with sound and a real press. Autonomy level-ups come as a card.
+- **Feel:** first rocket gets the full camera cut, later ones a corner flash; caught bugs show as a scar on the work;
+  a soft foundry hum is on by default.
+- **Refining:** gameplay is tuned through short A/B rounds on real game art that narrow in each time
+  (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR). New gameplay builds behind the `play` flag.
+
 ## The loop today
 
 - **Playable loop:** real GitHub issue → Spark → fix PR (player's agent) → CI inspect / rework → human merge → rocket.
@@ -156,3 +172,6 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
 - 2026-10-27 10:50: Focus less on the judges, more on making the web app a great experience. Player experience is
   now the main track (gameplay mechanics, world interactions, repair-and-unlock progression); judge mode is frozen
   as is. See "Current focus".
+- 2026-10-27 11:17: Round 1 gameplay picks in (abandoned-foundry start, repairs by tapping the broken thing, Later
+  left / Continue right on every card, big red hold-to-launch button). A/B rounds are how gameplay gets refined from
+  now on. See "Gameplay picks" and `docs/GAMEPLAY.md`.
