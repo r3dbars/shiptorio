@@ -31,6 +31,8 @@ and install your agent inside WSL.
    open GitHub issue and request Spark's plan. Review the files and steps in the plan
    card before approving a build.
 
+During browser approval, the runner retries dropped polling requests and temporary 429/5xx responses while the code remains valid. Authorization and expiry failures still stop pairing. Starting pairing and failures while reading a reply are outside this retry.
+
 macOS needs Apple Command Line Tools (`xcode-select --install`). Linux needs
 bubblewrap (`sudo apt install bubblewrap`) and working unprivileged user namespaces.
 The runner refuses jobs if the OS sandbox is unavailable.

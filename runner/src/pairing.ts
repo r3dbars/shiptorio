@@ -22,7 +22,7 @@ export async function loadPairings(root = runnerHome()): Promise<Pairing[]> {
   }));
 }
 export async function removePairing(repo: string, root = runnerHome()) { await rm(resolve(root, "pairings", encodeURIComponent(repo.toLowerCase()) + ".json"), { force: true }); }
-export async function pairMachine(base: string, root = runnerHome()) {
+export async function pairMachine(base: string, root = runnerHome(), pollMs = 3000) {
   const start = await fetch(`${base}/api/runner-device/start`, { method: "POST", signal: AbortSignal.timeout(30000) });
   if (!start.ok) throw new Error(`Could not start pairing (${start.status})`);
   const { code, secret, expires, verificationUri } = await start.json() as { code: string; secret: string; expires: number; verificationUri: string };
@@ -31,8 +31,10 @@ export async function pairMachine(base: string, root = runnerHome()) {
   const opener = process.platform === "darwin" ? "open" : "xdg-open";
   if (Bun.which(opener)) { const child = Bun.spawn([opener, verificationUri], { stdout: "ignore", stderr: "ignore" }); await child.exited; }
   while (Date.now() < expires) {
-    await Bun.sleep(3000);
-    const response = await fetch(`${base}/api/runner-device/poll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, secret }), signal: AbortSignal.timeout(30000) });
+    await Bun.sleep(pollMs);
+    // A dropped connection or a busy server mid-wait shouldn't burn the code the person is about to approve.
+    const response = await fetch(`${base}/api/runner-device/poll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, secret }), signal: AbortSignal.timeout(30000) }).catch(() => null);
+    if (!response || response.status === 429 || response.status >= 500) continue;
     if (!response.ok) throw new Error(`Pairing failed (${response.status}); run pair again`);
     const result = await response.json() as Pairing & { status: string };
     if (result.status === "approved") { await savePairing(result, root); console.log(`Connected to ${result.repo}. Your agent sign-ins stay on this computer.`); return; }
