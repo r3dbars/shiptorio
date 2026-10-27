@@ -21,13 +21,61 @@ soundscape, and you see it if you look.
 | Kind | Color | Means | Example | Can ping your phone? |
 | --- | --- | --- | --- | --- |
 | **APPROVE** | amber `--iron-amber`, caution stripe | Work is parked until you say yes. The answer is pre-picked (Suggested) and the proof is attached. | "Launch #142", "Approve this plan", "Send this reply" | Yes, after it waits 30 min |
-| **STEER** | red `--iron-bad` | The line is stuck and the factory can't pick for you. It needs a call, not a yes. | "#88 failed twice at Verify", "Your runner is offline and 3 builds are waiting" | Yes, after 10 min |
+| **STEER** | red `--iron-bad` | The line is stuck. The factory has a best guess, but it isn't sure enough to act alone. | "#88 failed twice at Verify", "Your runner is offline and 3 builds are waiting" | Yes, after 10 min |
 | **SUGGESTED** | aether `--iron-aether` | A good idea. Nothing is waiting on it. | "Research Type check", "Connect Sentry", "Let /web ship on its own?" | **Never** |
 
 The test for each new card: **is anything parked?** Parked and the answer is obvious → Approve. Parked and it
 isn't → Steer. Nothing parked → Suggested. Nothing for the player to decide → ambient (or ops, not the player).
 
 Player copy never says "Spark" (principle 8). The kind word is the label: APPROVE, STEER, SUGGESTED.
+
+## One card, two buttons (Justin, 2026-10-27 01:29)
+
+"Down to a simple swipe or a continue button, later button." Every card in the game, all three kinds, has the
+same shape and the same two actions:
+
+```
+┌─ APPROVE ─────────────────────────────── /web ─┐
+│ Launch #142: dark mode toggle                  │  title: what happens on Continue
+│ CI ✓  Verify ✓  Review ✓                       │  proof, or one line of why
+│ Suggested because you shipped 4 like it clean  │  the "because" line: which of your taps led here
+│ [ CONTINUE ]                        [ Later ]  │
+└────────────────────────────────────────────────┘
+```
+
+- **Continue** (or swipe right) does the suggested option. There is always exactly one suggested option, so
+  Continue is never a guess about what it will do: the title says it.
+- **Later** (or swipe left) parks the card for 24 hours. That's it.
+- **Tap the card** for the details: the plan, the files, the proof, and any other options. Other options never
+  sit on the card face. A Steer card's "pick a different fix" lives here.
+- **After Later, one optional row of chips** slides in for 3 seconds: *Not now* · *Stop showing these* ·
+  *You decide these* · *Wrong call*. Ignore it and it's a plain Later. These are today's `defer_move` /
+  `dismiss_move` reasons (`once`, `kind`, `spark`, `wrong`), so the server already handles them.
+- The old 3-button cards, the down swipe and the up swipe go away. Down = never becomes the *Stop showing
+  these* chip; up = details becomes a tap.
+
+## Every tap steers what comes next
+
+The point of the two buttons isn't speed. Each tap is a vote that the planner reads before it suggests
+anything else, and the card says so out loud, so the player sees the loop working.
+
+| You do | The planner learns | What you see next |
+| --- | --- | --- |
+| Continue | This kind of card, in this lane, was right | Similar cards rank higher. After 5 Continues in a row on one kind in one lane: a Suggested card "You've said yes to 5 plans in /web. Let these run on their own?" (feeds the autonomy ladder) |
+| Later | Not now, no judgment | Back in 24 h, ranked a bit lower. Three Laters on one kind in a lane and it drops to the check-in only |
+| *Stop showing these* | Mute this kind here | A muted rule (existing `move_kind_rules`), with undo for 5 min |
+| *You decide these* | The player trusts the factory on this kind | Recorded as an approval (existing `recordApproval`); counts toward the next autonomy level |
+| *Wrong call* | The suggestion itself was wrong | A correction note in `playerFeedback`; the next plan for it says "Respects your past calls" |
+
+Make the loop visible in three places:
+
+1. **The "because" line** on every card (`Move.because`, already from the game master) cites your own taps when
+   it can: "Suggested because you continued the last 3 lint fixes", "Ranked low: you said Later twice".
+2. **A one-line echo** after each tap, in the ticker: "Got it. Fewer cards like this in /docs."
+3. **The digest** counts it: "Your 9 taps this week turned into 2 new autonomy offers and 1 muted card type."
+
+So the player's choices steer the recommendations, and the recommendations steer the player toward more
+automation. Continue enough times on the same thing and the game offers to stop asking.
 
 ### Three more rules that keep it honest
 
@@ -184,6 +232,10 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
   above (tool + kind + id prefix). The client infers it the same way when it's missing, so sim and old states work.
 - `Move.waitingSince` for the push thresholds, and `Move.batchKey` (`kind:lane`) for stacking.
 - Deck ranking: Steer > Approve > Suggested, then today's `deckScore`.
+- Continue sends `choose_move` with the recommended option; Later sends `defer_move`; the chips send `dismiss_move`.
+  New on the server: a Continue streak per `kind` + `moveScope` in the deck book, a small rank nudge from Continues
+  and Laters in `deckScore`, and the "let these run on their own?" card when a streak hits 5.
+- `Move.because` cites the player's own taps when they drove the ranking (game master prompt gets the streak counts).
 - Client: one `useAttention(deck)` hook owns the tray row, the chime throttle and the push rules
   (replaces `useBottleneckNudge`). Quiet hours and push mode live in prefs (`savePref`).
 - Flag: `attention` (default off) until Justin has played it.
