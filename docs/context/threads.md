@@ -11,12 +11,12 @@
 
 Real Spark and the local Codex runner opened [Testing #12](https://github.com/r3dbars/Testing/pull/12)
 for issue #5. CI, docs verify and AI review passed, but executing the README coupon example
-on the exact PR head found an ignored flag. A genuine failing manual status now blocks that
-head. Testing #13 also completed a real docs-only Spark/local Codex run and is on the pad.
-The fresh Launch/rework card starvation fix (#307) merged after CI/Stranger passed, but
-Actions billing blocks deployment. A local deployment candidate is built and dry-run
-verified, awaiting Justin's explicit deploy approval under AGENTS.md. Rework and the
-actual server-issued Launch remain pending. No bot PR has been merged directly.
+on the exact PR head found an ignored flag; the run published a genuine failing manual status.
+Testing #13 also completed a real docs-only Spark/local Codex run. Both PRs remained open and
+unmerged in the read-only 2026-10-27 11:53 UTC recheck. The earlier Actions billing block and
+local deployment handoff are historical: Shiptorio Deploy40498676438 succeeded at61ef296.
+The receipt does not certify current runner/process state or a completed rework and in-game
+Launch. No factory PR was merged directly by this documentation run.
 [Evidence and remaining proof](testing-live-acceptance.md).
 
 ## Stranger E2E: latest status (2026-10-26)
