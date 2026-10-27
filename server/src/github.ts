@@ -1,3 +1,4 @@
+import { hmacSigningKey } from "./hmac-key";
 import { githubCooldown, RateLimitError } from "./rate-limit";
 import { observedFetch } from "./telemetry";
 import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./sources/credential-crypto";
@@ -66,9 +67,7 @@ export async function appJwt(appId: string, privateKeyPem: string, now = Date.no
 
 export async function verifyWebhookSignature(secret: string, body: string, header: string | null): Promise<boolean> {
   if (!secret || !header?.startsWith("sha256=")) return false;
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
+  const key = await hmacSigningKey(secret);
   const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(body)));
   const expected = "sha256=" + [...mac].map((b) => b.toString(16).padStart(2, "0")).join("");
   if (expected.length !== header.length) return false;
