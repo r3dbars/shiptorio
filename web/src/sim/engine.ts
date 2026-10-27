@@ -1512,14 +1512,15 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     propose(
       {
         title: "Plug in power to start building",
-        why: "The repo's read and the first fix is lined up, but nothing can build yet. Your own subscriptions power the assemblers.",
+        // The demo shop can't really sign in to anything, so it says so: on your own repo this is your real subscription.
+        why: "The repo's read and the first fix is lined up, but nothing can build yet. On your own repo, your Claude or ChatGPT subscription powers the builders. Here in the demo, just pick one.",
         stage: "resources",
         kind: "input",
         focus: "assembler-1",
         grows: ["+1 POWER PLANT", "ASSEMBLERS ON"],
         options: [
-          { id: "claude_code", label: "Sign in with Claude", recommended: true, actions: [] },
-          { id: "codex", label: "Sign in with ChatGPT", recommended: false, actions: [] },
+          { id: "claude_code", label: "Use Claude (demo)", recommended: true, actions: [] },
+          { id: "codex", label: "Use ChatGPT (demo)", recommended: false, actions: [] },
         ],
       },
       (opt) => plugIn(opt === "codex" ? "codex" : "claude_code"),

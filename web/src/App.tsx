@@ -721,7 +721,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                   </span>
                   {opt && state?.move ? (
                     <button type="button" className="btn rec" style={{ flex: "none" }} onClick={() => send({ type: "choose_move", moveId: state.move!.id, optionId: opt.id })}>
-                      {POWER.signIn}
+                      {cfg.kind === "sim" ? POWER.useDemo : POWER.signIn}
                     </button>
                   ) : (
                     <span className="pill" title={POWER.pairTitle}>
