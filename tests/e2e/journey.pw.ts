@@ -47,7 +47,11 @@ test('intro → sign in → repo → approve → PR → gauntlet → launch → 
   const welcome = page.getByRole('region', { name: 'Welcome to Shiptorio' });
   await expect(welcome).toBeVisible();
   await expect(welcome).toHaveScreenshot('sign-in.png');
+  // OAuth navigates to a new document before it discovers the signed-in repos.
+  // Assert that real response before giving the rendered repo its own UI wait.
+  const discovery = page.waitForResponse(response => new URL(response.url()).pathname === '/api/repos' && response.status() === 200);
   await page.getByRole('button', { name: 'SIGN IN WITH GITHUB' }).click();
+  expect((await (await discovery).json()).repos).toContainEqual(expect.objectContaining({ fullName: repo }));
   await expect(page.getByRole('button', { name: repo })).toBeVisible();
   signedIn = true;
   await page.getByRole('button', { name: repo }).click();
