@@ -1340,3 +1340,6 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .arest span { font: 700 9px var(--pixel); letter-spacing: .1em; text-transform: uppercase; }
 .arest button { font: 700 9px var(--pixel); letter-spacing: .1em; text-transform: uppercase; background: none; border: 0; color: var(--amber); cursor: pointer; padding: 4px; }
 @media (prefers-reduced-motion: reduce) { .acard { transition: none; } }
+
+/* The default screen is the map, one card and two counters: the shaft's floor buttons come out with the Menu. */
+.app:not(.tools-out) .maplabels.shaft .shaftfloors { display: none; }

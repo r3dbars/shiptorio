@@ -31,7 +31,7 @@ import type { SourceConfig } from "./source";
 import { Research, researchReady } from "./ui/Research";
 import { AchievementToast, AchievementsSheet, useAchievements, type ProgressLink } from "./ui/Achievements";
 import { checkStationId } from "@shiptorio/shared";
-import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress, XpPop } from "./ui/Progress";
+import { cosmeticsOf, DayTally, DeckTrend, MorningBrief, ProgressChip, ProgressSheet, progressOn, progressProfile, useBottleneckNudge, useBrief, useProgress } from "./ui/Progress";
 import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
@@ -55,6 +55,7 @@ const SLOTS = POWER.slots;
 type World = "checkin" | "build";
 type Sheet = "line" | "power" | "guide" | "yours" | "thinks" | "research" | "progress" | "empire" | "achievements" | "status";
 const WORLD_KEY = "shiptorio:world";
+const TOOLS_AT = 5; // rockets before Make it yours and Place show up on their own
 const GUIDE_SEEN_KEY = "shiptorio:guide-seen";
 function readWorld(): World | null {
   try {
@@ -214,6 +215,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   };
   const [tray, setTray] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
+  // The default screen is the map, one card and two counters (Justin, 2026-10-27: "still a ton of shit just in my
+  // face"). Every other tool waits behind one Menu button, and stays out while a sheet or the tray it opened is up.
+  const [menu, setMenu] = useState(false);
+  const toolsOut = menu || !!sheet || tray;
   const items = state?.items ?? [];
   const pad = items.filter((i) => i.state === "on_pad" || i.state === "passed");
   const inFlight = items.filter((i) => !["on_pad", "passed", "launched"].includes(i.state));
@@ -257,18 +262,14 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const unpowered = [...deck, state?.move].some((m) => m?.stage === "resources" || m?.stage === "power");
   const blocked = unpowered ? [] : state?.machines.filter((m) => m.state === "blocked") ?? [];
 
-  // The floor card's one row of numbers, in the mockup's order: mined, on line, shipped, rework, needs you.
+  // The floor card shows two numbers, nothing else: what's waiting on you, and what you've shipped (Justin, 2026-10-27:
+  // "show only two counters"). Mined, on line and rework are on the map and in the Line sheet.
   const F = HUD.floor;
   const counts: Count[] = [];
-  if (show("line")) {
-    counts.push({ key: "mined", label: F.mined, value: items.length, title: F.minedTitle });
-    counts.push({ key: "line", label: F.onLine, value: items.filter((i) => ON_LINE.has(i.state)).length, title: F.onLineTitle });
-  }
-  if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
-  if (show("line")) counts.push({ key: "rw", label: F.rework, value: items.filter((i) => i.state === "rejected").length, tone: "rw", title: F.reworkTitle });
-  // Calm: "Needs you" counts only what's parked on you (approve + steer), never ideas.
+  // Calm: "Waiting on you" counts only what's parked on you (approve + steer), never ideas.
   const needs = calm ? deck.filter((m) => attentionOf(m) !== "suggest").length : waiting + blocked.length;
   if (show("line")) counts.push({ key: "need", label: F.needs, value: needs, tone: "need", title: F.needsTitle });
+  if (show("score")) counts.push({ key: "ship", label: F.shipped, value: metrics?.rockets ?? shipped, tone: "ship", title: HUD.shippedTitle });
   // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
   const extras: Count[] = [];
   if (autonomy?.launches) {
@@ -310,6 +311,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     if (next) launchItem(next);
   };
   const slot = state ? buildSlot(state) : null;
+  // Place shows up when building is what's holding the line up, or once the player has shipped enough to tinker.
+  const placeNeeded = show("build") && (state?.bottleneck?.stage === "build" || (metrics?.rockets ?? shipped) >= TOOLS_AT);
   // the planner never codes: a new assembler runs on a subscription you've signed in with
   const plugged = SLOTS.find((sl) => state?.power.some((p) => p.id === `solar-${sl.harness}` && p.online));
   const build = () => {
@@ -446,7 +449,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   );
 
   return (
-    <div className={panel ? "app picked" : "app"}>
+    <div className={`app${panel ? " picked" : ""}${toolsOut ? " tools-out" : ""}`}>
       <QuotaCard repo={cfg.kind === "live" ? cfg.repo : undefined} onBudget={() => toggleSheet("thinks")} />
       <main className="floor" ref={hv.host as Ref<HTMLElement>}>
         {intro && <h1 className="sr">Shiptorio{state ? `: ${state.repo}` : ""}</h1>}
@@ -476,7 +479,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           <FloorCard
             counts={counts}
             repo={state?.repo}
-            showKey={show("line")}
+            showKey={false}
             extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" ? (<>
               <SparkSpendChip expanded={sheet === "thinks"} repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
@@ -484,7 +487,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </>) : undefined}
           />
           <div className="hudicons">
-            {state && (
+            <button type="button" className="tbtn ico menu-btn" aria-expanded={toolsOut} aria-label={HUD.menuLabel} title={HUD.menuTitle} onClick={() => { if (toolsOut) { setMenu(false); setSheet(null); setTray(false); } else setMenu(true); }}>
+              <Icon name="list" size={16} />
+            </button>
+            {toolsOut && state && (
               <button
                 type="button"
                 className="tbtn ico"
@@ -496,7 +502,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="eye" size={16} />
               </button>
             )}
-            <button
+            {toolsOut && <button
               type="button"
               className={`tbtn ico guide-btn${met.size > seenGuide ? " new" : ""}`}
               aria-pressed={sheet === "guide"}
@@ -505,9 +511,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
               title={HUD.guideTitle(met.size)}
             >
               <Icon name="book" size={16} />
-            </button>
-            {state && shipped > 0 && (
-              // Research shows up after the first ship: that's the first science pack to spend.
+            </button>}
+            {toolsOut && state && (researchReady(state) || (state.research?.done.length ?? 0) > 0) && (
+              // Research shows up once there's enough science to buy a check, not before.
               <button
                 type="button"
                 className={`tbtn ico research-btn${researchReady(state) ? " new" : ""}`}
@@ -519,7 +525,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="flask" size={16} />
               </button>
             )}
-            {ach.count > 0 && (
+            {toolsOut && ach.count > 0 && (
               // Achievements show up with the first one earned.
               <button
                 type="button"
@@ -532,10 +538,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                 <Icon name="medal" size={16} />
               </button>
             )}
-            <button type="button" className="tbtn ico" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
+            {toolsOut && <button type="button" className="tbtn ico" aria-label={HUD.activityLabel(waiting)} aria-expanded={tray} onClick={() => setTray((v) => !v)}>
               {waiting > 0 && <span className="n">{waiting}</span>}
               <Icon name="bell" size={16} />
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -720,9 +726,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         )}
 
-        {show("log") && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
+        {toolsOut && show("log") && <Ticker log={log} className={trayUp ? undefined : "covered"} />}
 
-        {!checkin && (
+        {!checkin && toolsOut && (
         <nav className="ctrl" aria-label={HUD.dock.label} ref={hv.refs.ctrl as Ref<HTMLElement>}>
           {world && (
             <div className="row" role="group" aria-label={HUD.view}>
@@ -737,29 +743,34 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           )}
           <div className="row">
             <span className="eyebrow" aria-hidden="true">{HUD.dock.tools}</span>
-            <button type="button" className="tbtn" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")} disabled={!show("line")}>
-              {show("line") && inFlight.length + pad.length > 0 && <span className="cnt">{inFlight.length + pad.length}</span>}
-              {HUD.dock.line}
-            </button>
-            {world !== "checkin" && show("build") && (metrics?.rockets ?? shipped) > 0 && (
+            {/* Tools show up when they're needed, never as dead buttons waiting to unlock (2026-10-27). */}
+            {show("line") && (
+              <button type="button" className="tbtn" aria-pressed={sheet === "line"} onClick={() => toggleSheet("line")}>
+                {inFlight.length + pad.length > 0 && <span className="cnt">{inFlight.length + pad.length}</span>}
+                {HUD.dock.line}
+              </button>
+            )}
+            {world !== "checkin" && show("build") && (metrics?.rockets ?? shipped) >= TOOLS_AT && (
               <button type="button" className="tbtn" aria-pressed={sheet === "yours"} onClick={() => toggleSheet("yours")}>
                 {HUD.dock.yours}
               </button>
             )}
-            {world !== "checkin" && (
-              <button type="button" className="tbtn" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")} disabled={cfg.kind !== "live" && !show("power")}>
+            {world !== "checkin" && (cfg.kind === "live" || show("power")) && (
+              <button type="button" className="tbtn" aria-pressed={sheet === "power"} onClick={() => toggleSheet("power")}>
                 {HUD.dock.power}
               </button>
             )}
-            <button type="button" className={pad.length > 0 && show("launch") ? "tbtn hot" : "tbtn"} onClick={launch} disabled={!show("launch") || pad.length === 0} aria-label={HUD.dock.launchLabel} title={HUD.dock.launchTitle}>
-              {HUD.dock.launch}
-            </button>
+            {show("launch") && (
+              <button type="button" className={pad.length > 0 ? "tbtn hot" : "tbtn"} onClick={launch} disabled={pad.length === 0} aria-label={HUD.dock.launchLabel} title={HUD.dock.launchTitle}>
+                {HUD.dock.launch}
+              </button>
+            )}
             {world === "checkin" ? (
               <button type="button" className="tbtn hot" onClick={() => setCheckin(true)} disabled={deck.length === 0} aria-label={HUD.dock.checkinLabel(deck.length)}>
                 {deck.length > 0 && <span className="cnt">{deck.length}</span>}
                 {HUD.checkin}
               </button>
-            ) : (
+            ) : placeNeeded && (
               <button
                 type="button"
                 className="tbtn ok"
@@ -779,7 +790,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
 
         {panel && state && (panel === "m:ore-inbox" && state.support ? <SupportPanel state={state} send={send} reviewTicket={supportReview} onClose={() => setPanel(null)} /> : <StationPanel id={panel} state={state} log={log} send={send} onClose={() => setPanel(null)} jobs={powerJobs.current} live={cfg.kind === "live"} />)}
 
-        {progressing && <XpPop pop={prog.pop} />}
 
         {tray && (
           <ActivityTray
