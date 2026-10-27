@@ -14,6 +14,10 @@ const PASS: Verdict = { pass: true, reason: null };
 // how far along the line each real state is (0 mine, 1 planner, 2 builders, 3 checks, 4 launch floor, 5 the pad)
 const REAL_STAGE: Record<Item["state"], number> = { ore: 0, queued: 1, working: 2, inspecting: 3, rejected: 3, passed: 4, on_pad: 4, launched: 5 };
 const UPSTREAM_CAP = 6; // lumps on their way up to the planner at once; the rest wait in the mine
+// how much faster an item rides and gets worked when the real factory is that many stages ahead of it: the demo sim
+// finishes a PR in seconds, the trip up the shaft takes about a minute at full speed
+const MAX_HURRY = 10;
+const catchUp = (gap: number) => Math.min(MAX_HURRY, Math.max(1, 1 + gap * 2.25));
 const BLOCKING_KINDS = new Set(["ship", "build", "unblock"]);
 const BLOCKING_STAGES = new Set(["pad", "build", "power", "resources"]);
 const SORTED = 0x7af0d8; // the flash on a lump the planner has read (ore -> queued)
@@ -27,14 +31,33 @@ export function tagText(r: Item): string {
   return gh ? `#${gh[1]}` : WORD[r.source] ?? "ITEM";
 }
 
+// the paths from the mines up to the planner's tray, and the rework line back down to it
+const minePath = (n: string) => n.startsWith("cart-") || n.startsWith("chute-") || n === "collector" || n === "lift";
+const reworkPath = (n: string) => n === "rw-in" || n === "rw-drop" || n === "rework" || n.startsWith("drop-") || n.startsWith("gate-");
+
+// how far up the line a path is, 0 (a mine) to 5 (the pad), finer than the real states so the gap to the real item
+// says how much of the trip is left
 function stageOfPath(name: string): number {
-  if (name.startsWith("cart-") || name.startsWith("chute-") || name === "collector" || name === "lift") return 0;
-  if (name === "ore" || name === "rw-in" || name === "rw-drop" || name === "rework" || name.startsWith("drop-") || name.startsWith("gate-")) return 1;
-  if (name.startsWith("feed-") || name.startsWith("spur-")) return 2;
-  if (name.startsWith("tube-") || name === "header" || name === "ci-feed" || name.startsWith("lane-")) return 3;
-  return 4; // to-lift, freight, to-gate, to-pad
+  if (minePath(name)) return name === "lift" ? 0.5 : 0;
+  if (name === "ore" || reworkPath(name)) return 1;
+  if (name.startsWith("feed-") || name.startsWith("spur-")) return 1.5;
+  if (name.startsWith("tube-") || name === "header" || name === "ci-feed") return 2.5;
+  if (name.startsWith("lane-")) return 3;
+  if (name === "to-lift" || name === "freight") return 3.5;
+  if (name === "to-gate") return 3.75;
+  return 4.5; // to-pad
 }
 const STAGE_OF_TYPE: Record<string, number> = { planner: 1, assembler: 2, ci: 3, check: 3, verify: 3, review: 3, gate: 4, launch: 5 };
+
+// an item on the line, kept across a rebuild of the shaft (a mine connected, a check researched, a builder placed)
+export interface Carried {
+  ref: string;
+  src: string;
+  kind: IronItem["kind"];
+  path: string | null; // the path it was on, or the one into the machine working on it
+  frac: number;
+  dest: string | null;
+}
 
 export class GameDriver implements Driver {
   readonly name = "game";
@@ -64,6 +87,39 @@ export class GameDriver implements Driver {
     });
     I.on("take", ({ item }: { item: IronItem }) => this.verdicts.delete(item));
     I.on("ship", ({ item }: { item: IronItem }) => item.ref && this.launched.add(item.ref));
+  }
+
+  /** every item on the line and what this driver remembers about them, before the shaft is torn down */
+  carry(): { items: Carried[]; shown: Map<string, number>; lastAsm: Map<string, string>; launched: Set<string>; prev: Map<string, Item["state"]> } {
+    const into = (id: string) => this.I.pathList.find((p) => p.port === id + ".in" && !p.rework)?.name ?? null;
+    const items: Carried[] = [];
+    for (const it of this.I.items) {
+      if (!it.ref || it.gone || it.hidden) continue;
+      if (it.path) items.push({ ref: it.ref, src: it.src, kind: it.kind, path: it.path.name, frac: it.s / it.path.L, dest: it.dest });
+      else if (it.owner) items.push({ ref: it.ref, src: it.src, kind: it.kind, path: into(it.owner), frac: 0.92, dest: it.dest });
+      // still coming out of a mine: the new shaft mines it again
+    }
+    return { items, shown: this.shown, lastAsm: this.lastAsm, launched: this.launched, prev: this.prev };
+  }
+
+  /** put the line back the way it was after a rebuild (before the first sync, which would warm-start it instead) */
+  restore(c: ReturnType<GameDriver["carry"]>, state: FactoryState) {
+    this.shown = c.shown;
+    this.lastAsm = c.lastAsm;
+    this.launched = c.launched;
+    this.prev = c.prev;
+    this.state = state;
+    this.real = new Map(state.items.map((r) => [r.id, r]));
+    this.warmed = true;
+    for (const x of c.items) {
+      const r = this.real.get(x.ref);
+      if (!r || !x.path || !this.I.paths[x.path]) continue;
+      let it: IronItem | null = null;
+      for (const f of [x.frac, x.frac - 0.08, x.frac + 0.08, x.frac - 0.16]) if (!it && f > 0 && f < 1) it = this.I.put(x.src, x.path, f, x.kind, this.ident(r));
+      if (!it) continue;
+      it.dest = x.dest && this.asms.includes(x.dest) ? x.dest : null;
+      this.I.relabel(it, { label: tagTextFn(r) });
+    }
   }
 
   /** a new FactoryState: remember it, work out who is waiting on the player, place the line on the first one */
@@ -129,11 +185,25 @@ export class GameDriver implements Driver {
         continue;
       }
       const vs = this.stageOf(it);
-      const goingBack = r.state === "rejected" || this.pending(r) > 0;
-      const gap = goingBack && vs >= 3 ? 0 : REAL_STAGE[r.state] - vs;
-      it.boost = gap >= 2 ? 3 : gap >= 1 ? 1.8 : 1;
+      const pend = this.pending(r);
+      // where the visual is headed: a caught item rides back to the planner; one with a catch still to play heads for
+      // that check, and if the real item is already past it, the whole loop is still ahead (hurry)
+      const target = pend > 0 ? (r.state === "rejected" ? 3 : 2 * MAX_HURRY) : r.state === "rejected" ? 1 : REAL_STAGE[r.state];
+      it.boost = catchUp(target - vs);
     }
     this.unjam();
+  }
+
+  // how fast a machine works on this item: hurried like the item, but a catch the real factory made plays at full
+  // length (it's the moment the player should see), and so does the rocket
+  hurry(st: IronStation, it: IronItem): number {
+    if (st.type === "launch") return 1;
+    const r = it.ref ? this.real.get(it.ref) : undefined;
+    if (r && this.pending(r) > 0) {
+      const scar = r.scars![this.shown.get(r.id) ?? 0];
+      if (scar && this.stationOfScar(scar) === st.id) return 1;
+    }
+    return it.boost;
   }
 
   admit(st: IronStation, it: IronItem): boolean {
@@ -262,7 +332,7 @@ export class GameDriver implements Driver {
       const tray = this.I.paths[trayName];
       const front = tray?.items.find((x) => x.atEnd);
       if (!front || !front.ref || this.admit(this.I.stations[pl.id], front)) continue;
-      const chain = trayName === "ore" ? (n: string) => stageOfPath(n) === 0 || n === "ore" : (n: string) => stageOfPath(n) === 1 && n !== "ore";
+      const chain = trayName === "ore" ? (n: string) => minePath(n) || n === "ore" : reworkPath;
       const building = this.state!.items.filter((r) => r.state === "working").sort((a, b) => a.updatedAt - b.updatedAt);
       for (const r of building) {
         const v = this.I.items.find((x) => x.ref === r.id);
@@ -290,19 +360,23 @@ export class GameDriver implements Driver {
     const ids = new Set(this.I.stationList.map((s) => s.id));
     const gate = this.layout.gate?.id;
     const planner = this.layout.planner.id;
+    const stationOfMachine = new Map((state.stations ?? []).filter((s) => s.machineId).map((s) => [s.machineId!, s.id]));
     const moves = [state.move, ...(state.deck ?? [])].filter((m): m is Move => !!m);
     const seen = new Set<string>();
     for (const m of moves) {
       if (seen.has(m.id) || !(BLOCKING_KINDS.has(m.kind ?? "") || BLOCKING_STAGES.has(m.stage ?? ""))) continue;
       seen.add(m.id);
       const focus = m.focus?.replace(/^m:/, "");
-      let at = focus && ids.has(focus) ? focus : undefined;
+      let at = focus && ids.has(focus) ? focus : focus && ids.has(stationOfMachine.get(focus) ?? "") ? stationOfMachine.get(focus) : undefined;
+      // a power plant: the builder it feeds stops
+      if (!at && focus) at = state.machines.find((mc) => mc.powerId === focus && ids.has(mc.id))?.id;
+      // about a mine or a customer (a support reply, a source to connect): the HUD's tray asks, no machine stops
+      if (!at && focus && (/^(ore-|src:|d:)/.test(focus) || m.stage === "impact")) continue;
       if (!at) at = m.kind === "ship" || m.stage === "pad" ? gate : m.kind === "build" || m.stage === "build" ? planner : m.stage === "power" || m.stage === "resources" ? this.asms[0] : undefined;
       if (!at || out.has(at)) continue;
       const rec = m.options.find((o) => o.recommended);
       out.set(at, rec && /#\d/.test(rec.label) ? rec.label : m.title);
     }
-    const stationOfMachine = new Map((state.stations ?? []).filter((s) => s.machineId).map((s) => [s.machineId!, s.id]));
     for (const mc of state.machines) {
       if (mc.state !== "blocked") continue;
       const id = ids.has(mc.id) ? mc.id : stationOfMachine.get(mc.id);

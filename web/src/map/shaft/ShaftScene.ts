@@ -242,6 +242,7 @@ export class ShaftScene {
 
   private rebuild(sp: ShaftPlan) {
     const keep = this.stage ? { zoom: this.stage.zoom } : null;
+    const carried = this.driver?.carry() ?? null; // the work on the line stays where it is
     this.teardown();
     const I = createIron();
     for (const f of this.fns ?? []) {
@@ -260,6 +261,7 @@ export class ShaftScene {
     I.build(stage.scene, stage.root, layout, { labels: sp.labels, warm: false });
     stage.applyLook();
     bakeShaft(I, stage.root);
+    if (carried && this.state) driver.restore(carried, this.state);
     this.I = I;
     this.stage = stage;
     this.driver = driver;

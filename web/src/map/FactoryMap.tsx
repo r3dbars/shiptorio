@@ -60,7 +60,8 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       else if (!p.focus && p.wide) scene.overview(p.wide);
       else if (p.focus) scene.focus(p.focus);
     };
-    if (SHAFT) void import("./shaft/ShaftScene").then(({ ShaftScene }) => start(new ShaftScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), true));
+    // (a map whose effect was already cleaned up, like StrictMode's first mount, is never built)
+    if (SHAFT) void import("./shaft/ShaftScene").then(({ ShaftScene }) => dead || start(new ShaftScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), true));
     else start(new FactoryScene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id)), false);
     return () => {
       dead = true;

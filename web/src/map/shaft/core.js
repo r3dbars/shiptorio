@@ -507,6 +507,7 @@ export function createIron(opts) {
   //   judge(st, item)       a check's verdict { pass, reason } or null (not decided yet; ask again next frame)
   //   decision(st)          a NEEDS YOU text while the real station waits on the player, else null
   //   admit(st, item)       may this station take this waiting item? (false: it stays on the belt; optional)
+  //   hurry(st, item)       how much faster the station works on this item (optional; default its boost)
   //   power(st)             { level 0..1, online } for power stations
   //   step(dt)              per-frame bookkeeping
   // =====================================================================
@@ -822,7 +823,8 @@ export function createIron(opts) {
     stepPaths(dt);
     stepStations(dt);
     I.updaters.forEach(({ name, u }) => { try { u.update(t, dt); } catch (e) { if (!u._err) { console.error('[SHAFT] ' + name + ' update:', e); u._err = 1; } } });
-    for (const st of I.stationList) { try { st.inst.update(t, dt); } catch (e) { if (!st._err) { console.error('[SHAFT] ' + st.id + ' update:', e); st._err = 1; } } }
+    // a machine hurries an item the real factory is already past (the driver says how much) so the line keeps pace
+    for (const st of I.stationList) { const k = !st.item ? 1 : I.driver.hurry ? I.driver.hurry(st, st.item) : st.type !== 'launch' ? st.item.boost || 1 : 1; try { st.inst.update(t, dt * k); } catch (e) { if (!st._err) { console.error('[SHAFT] ' + st.id + ' update:', e); st._err = 1; } } }
     for (const st of I.stationList) {
       const a = st.aura; if (!a) continue;
       const s = st.blocked ? 'BLOCKED' : st.state;
