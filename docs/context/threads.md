@@ -1,5 +1,14 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Stranger E2E: latest status (2026-10-26)
+
+| PR | State | Result |
+| --- | --- | --- |
+| #252 | merged after CI + Stranger passed | Fix Chromium runner approval submitting opaque Origin under no-referrer; retain exact-origin checks. |
+| #260 | merged after CI + Stranger passed | Preserve the password gate script nonce on fast and wrapped paths while retaining the other global CSP restrictions. |
+| #256 | full E2E suite | Signup → App install → repo → signed issue/retry → Spark plan → browser approval → runner PR → stale/current CI → verify + AI review → visible Launch → merge/rocket. Every PR to main runs the suite, including drafts and docs-only changes, and retains screenshots, timing/state and browser trace. GitHub, Spark and runner build results are fixtures; no real bot PR merges. Local 16-step run passed in 60.9s. Fixture runner heartbeats keep slow CI render time from simulating an unplugged machine. |
+
+
 What each thread in the Claude "Shiptorio" project did. Threads live on claude.ai, so this
 is the only copy agents outside it (Codex) can see.
 
@@ -161,9 +170,3 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
 | Stranger E2E: preview gate CSP | in progress | Browser console assertion caught the outer security middleware replacing the preview gate nonce policy, blocking the gate animation script. Carry the server-generated gate nonce into the global script rule on both fast and wrapped paths, retaining all other global restrictions; application-page policies remain unchanged. Separate fix for the first-day signup checkpoint. |
 
-- Local regression probes pass. Live deliberately broken branch rollback drill
-  is pending; see scripts/smoke/README.md. No data/schema rollback is claimed.
-| Stranger E2E: browser runner pairing | merged #252 | Full browser journey exposed Chromium submitting the device approval form with opaque Origin under no-referrer, rejected by the same-origin guard. Pairing page now uses same-origin referrer policy; foreign and missing origins remain rejected. Day 4 runner checkpoint. |
-
-| Stranger full E2E suite | PR #256 | Extends `bun run stranger` from the real onboarding browser through device pairing, Spark fixture planning, player-approved runner job/PR, stale/current CI, verify + AI review, visible Launch and merge/rocket. GitHub, Spark and runner build results are fixtures; no real bot PR merges. Workflow runs every PR to main, saves timings/screenshots/trace. Separate pairing bug fix: #252. |
-| Stranger E2E: preview gate CSP | PR #260 | Browser console assertion caught the outer security middleware replacing the preview gate nonce policy, blocking the gate animation script. Carry the server-generated gate nonce into the global script rule on both fast and wrapped paths, retaining all other global restrictions; application-page policies remain unchanged. Separate fix for the first-day signup checkpoint. |
