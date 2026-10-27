@@ -7,9 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { continueOption, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { HoldGesture, type HoldClock } from "./holdLaunch";
 import { RunnerConnection } from "./RunnerConnection";
-import { signInUrl } from "../account";
 import { sound } from "../sound/engine";
-import { LOOK, STEPS, lineFor, onBuild, phaseAt, stepFrom, STARTER_ISSUE, type BuildPhase, type Step } from "../buildout/journey";
+import { BUILD_MS, LOOK, STEPS, lineFor, onBuild, phaseAt, stepFrom, STARTER_ISSUE, type BuildPhase, type Step } from "../buildout/journey";
 import "./buildout.css";
 
 /** The card's own words. Coach lines and button text come from the journey. */
@@ -41,6 +40,8 @@ export const BUILDOUT = {
     starterWhy: `No small issue yet. Tap to file one: "${STARTER_ISSUE.title}".`,
     starterFiled: "Filed. It's coming up the tunnel.",
     starterFailed: "Couldn't file it. Try again in a bit.",
+    builderWait: "Waiting on your AI",
+    issueWait: "Coming up the tunnel",
   },
   look: {
     kicker: "Factory online",
@@ -60,6 +61,8 @@ const realClock: HoldClock = {
 
 // a build takes about 7 seconds; if the scene never says done (no WebGL, a stub), the card moves on anyway
 const BUILD_FALLBACK_MS = 9000;
+// sign in with GitHub, then pick a repo (the same path the play-first chip takes)
+const SIGN_IN = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
 const HOLD_BUILD_MS = 900;
 
 /** Hold to build: the same consent rules as the big red launch button (holdLaunch.ts), with its own words. */
@@ -134,35 +137,75 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
   );
 }
 
-/** The build moment playing right now (the scene's shiptorio:build events): which piece, and its phase. */
-function useBuildMoment() {
+/** What the scene's shiptorio:build events say (CONTRACT.md): the build playing now and its phase, and every step
+ *  whose build has fired done. Phases follow the events, never this card's own clock: a build is timed on frames,
+ *  so on a slow device it takes longer than its 7 s. */
+function useScene() {
   const [moment, setMoment] = useState<{ id: string; phase: BuildPhase } | null>(null);
+  const [built, setBuilt] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     let at = 0;
     let id = "";
     let timer = 0;
+    // between start and burst, phaseAt from the start, held at construct until the burst really comes
     const tick = () => {
-      // the payoff is over: the moment ends even if the scene never says done
       const phase = phaseAt(performance.now() - at);
-      if (phase === "done") window.clearInterval(timer);
-      setMoment(phase === "done" ? null : { id, phase });
+      setMoment({ id, phase: phase === "chalk" ? "chalk" : "construct" });
     };
     const off = onBuild((d) => {
       window.clearInterval(timer);
-      if (d.phase === "done") return setMoment(null);
+      // React may run these updaters after the next event, so each one captures its own id
+      const was = id;
+      const now = String(d.id);
+      id = now;
       if (d.phase === "start") {
-        id = String(d.id);
         at = performance.now();
-      } else if (String(d.id) === id) at = Math.min(at, performance.now() - 4500); // burst: at least the burst phase
-      tick();
-      timer = window.setInterval(tick, 250);
+        tick();
+        timer = window.setInterval(tick, 200);
+      } else if (d.phase === "burst") {
+        setMoment({ id: now, phase: "burst" });
+        // the payoff (the brass plate) follows the burst on the contract's clock until the scene says done
+        timer = window.setTimeout(() => setMoment((m) => (m && m.id === now && m.phase === "burst" ? { id: now, phase: "payoff" } : m)), BUILD_MS.payoff - BUILD_MS.burst);
+      } else {
+        setMoment({ id: now, phase: "done" });
+        setBuilt((b) => new Set(b).add(now));
+        if (was && was !== now) setBuilt((b) => new Set(b).add(was));
+      }
     });
     return () => {
       off();
       window.clearInterval(timer);
     };
   }, []);
-  return moment;
+  return { moment, built };
+}
+
+// A step the factory has passed whose build never started (no scene: WebGL off, or the step reveals nothing new)
+// counts as built after this long, so the card can never wait forever on art that isn't coming.
+const NO_START_MS = 4000;
+
+/** The step the card shows: the first whose build hasn't fired done, never ahead of the factory (CONTRACT.md). */
+function useShownStep(state: FactoryState) {
+  const where = stepFrom(state);
+  const { moment, built } = useScene();
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => new Set());
+  let index = 0;
+  while (index < where.index) {
+    const st = STEPS[index];
+    // issue and build reveal nothing, so they're built as soon as the factory passes them
+    if (st.reveals.length === 0 || built.has(st.id) || skipped.has(st.id)) index++;
+    else break;
+  }
+  const waitingOn = index < where.index ? STEPS[index].id : null; // passed, but its build hasn't finished
+  // while any build plays, the scene is busy: the one we wait on may simply be queued behind it
+  const busy = !!moment && (moment.id === waitingOn || moment.phase !== "done");
+  useEffect(() => {
+    if (!waitingOn || busy) return;
+    const t = window.setTimeout(() => setSkipped((s) => new Set(s).add(waitingOn)), NO_START_MS);
+    return () => window.clearTimeout(t);
+  }, [waitingOn, busy]);
+  const step = STEPS[index] ?? null;
+  return { id: step ? step.id : LOOK, index, step, factory: where, moment, waitingOn };
 }
 
 export interface BuildoutProps {
@@ -176,28 +219,30 @@ export interface BuildoutProps {
 
 /** The root every slice keys off (CONTRACT.md DOM hooks): data-buildout, data-step, data-phase while a build plays. */
 export function Buildout({ state, live, repo, free, send, onLookAround }: BuildoutProps) {
-  const where = stepFrom(state);
-  const moment = useBuildMoment();
-  // asked: you finished the hold for this step, so the card folds until the scene builds it (or a fallback passes)
+  const shown = useShownStep(state);
+  const { moment } = shown;
+  // asked: you finished the hold for this step, so the card folds until the scene starts building it
   const [asked, setAsked] = useState<string | null>(null);
   useEffect(() => {
     if (!asked) return;
     const t = window.setTimeout(() => setAsked(null), BUILD_FALLBACK_MS);
     return () => window.clearTimeout(t);
   }, [asked]);
-  useEffect(() => setAsked(null), [where.id]);
-  const building = (moment && moment.phase !== "done") || asked === where.id;
+  useEffect(() => setAsked(null), [shown.id]);
+  const playing = !!moment && moment.phase !== "done";
+  const building = playing || asked === shown.id || !!shown.waitingOn;
+  const busyName = BUILDOUT.name[playing ? moment!.id : shown.id] ?? BUILDOUT.name[shown.id];
   return (
-    <div className="bo-root" data-buildout="" data-step={where.id} data-phase={moment?.phase}>
-      {where.id === LOOK ? (
+    <div className="bo-root" data-buildout="" data-step={shown.id} data-phase={moment?.phase}>
+      {shown.id === LOOK ? (
         !free && <LookAround onGo={onLookAround} />
       ) : building ? (
         <div className="bo-chip building" role="status">
           <span className="bo-dot" aria-hidden="true" />
-          {BUILDOUT.name[moment?.id ?? where.id] ?? BUILDOUT.name[where.id]} · {BUILDOUT.building}
+          {busyName} · {BUILDOUT.building}
         </div>
       ) : (
-        where.step && <BuildCard step={where.step} n={where.index + 1} state={state} live={live} repo={repo} send={send} onAsked={() => setAsked(where.id)} />
+        shown.step && <BuildCard step={shown.step} n={shown.index + 1} state={state} live={live} repo={repo} send={send} onAsked={() => setAsked(shown.id)} />
       )}
     </div>
   );
@@ -229,25 +274,26 @@ function LookAround({ onGo }: { onGo: () => void }) {
         <h2 className="bo-title">{BUILDOUT.look.title}</h2>
         <p className="bo-line">{BUILDOUT.look.why}</p>
       </div>
-      <button type="button" className="bo-tab" data-buildout-action="" onClick={onGo} autoFocus>
+      <button type="button" className="bo-tab" data-buildout-action="continue" onClick={onGo} autoFocus>
         {BUILDOUT.look.go}
       </button>
     </section>
   );
 }
 
-/** The ask behind each build: messages that already exist, so the sim (slice 7) and the server need no new protocol. */
+/** The ask behind each build, as messages that already exist. In the demo shop station_action("buildout", step) builds
+ *  it (slice 7's sim only). On your own repo every step completes from real state, so only the plan and the launch
+ *  send anything, and the launch is launch_pr: the in-game Launch is the only merge path. */
 function ask(step: Step, state: FactoryState, live: boolean, send: (m: WebToServer) => void) {
   const move = state.move;
   const pick = move && continueOption(move);
-  if (step.id === "tunnel" && !live) send({ type: "connect_source", kind: "github" });
-  else if (step.id === "planner" && move && pick) send({ type: "choose_move", moveId: move.id, optionId: pick.id });
+  if (step.id === "planner" && move && pick) send({ type: "choose_move", moveId: move.id, optionId: pick.id });
   else if (step.id === "launch") {
     const item = state.items.find((i) => i.state === "on_pad") ?? state.items.find((i) => i.state === "passed");
-    if (!item) return;
-    if (live) item.prUrl && window.open(item.prUrl, "_blank", "noreferrer");
-    else send({ type: "launch_pr", itemId: item.id });
-  } else send({ type: "station_action", stationId: "buildout", action: step.id });
+    if (item) send({ type: "launch_pr", itemId: item.id });
+  } else if (live) return;
+  else if (step.id === "tunnel") send({ type: "connect_source", kind: "github" });
+  else send({ type: "station_action", stationId: "buildout", action: step.id });
 }
 
 function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; n: number; state: FactoryState; live: boolean; repo?: string; send: (m: WebToServer) => void; onAsked: () => void }) {
@@ -297,24 +343,33 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     }
   };
 
+  const wait = (text: string) => (
+    <div className="bo-wait" role="status">
+      <span className="bo-dot" aria-hidden="true" />
+      {text}
+    </div>
+  );
   // The right side: the build itself, or on your own repo the real thing it needs first.
   let right: React.ReactNode;
   let extra: React.ReactNode = null;
   const action = step.action ?? "";
   if (live && step.id === "tunnel") {
-    right = <a className="bo-tab" data-buildout-action="" href="/?onboard=repo&source=live">{BUILDOUT.real.pickRepo}</a>;
+    right = <a className="bo-tab" data-buildout-action="tap" href="/?onboard=repo&source=live">{BUILDOUT.real.pickRepo}</a>;
   } else if (live && step.id === "boiler") {
     // no fake power on your own repo: the boiler lights when your runner pairs
-    right = <button type="button" className="bo-tab" data-buildout-action="" aria-expanded={pairing} onClick={() => setPairing((v) => !v)}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
+    right = <button type="button" className="bo-tab" data-buildout-action="tap" aria-expanded={pairing} onClick={() => setPairing((v) => !v)}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
     if (pairing && repo) extra = <div className="bo-pair"><RunnerConnection repo={repo} /></div>;
+  } else if (live && step.id === "builder") {
+    // your builder rises when your runner brings its assembler online
+    right = wait(BUILDOUT.real.builderWait);
   } else if (live && step.id === "issue" && pickLine !== null) {
-    // there's a good small issue already: hold to roll it out
+    // there's a good small issue already: it rides up the tunnel on its own
     if (pickLine) extra = <p className="bo-real">{pickLine}</p>;
-    right = <BuildHold card={step.id} label={action} onBuild={go} />;
+    right = wait(BUILDOUT.real.issueWait);
   } else if (live && step.id === "issue") {
     extra = <p className="bo-real" role="status">{starter === "done" ? BUILDOUT.real.starterFiled : starter === "failed" ? failLine || BUILDOUT.real.starterFailed : BUILDOUT.real.starterWhy}</p>;
-    right = starter === "done" ? <div className="bo-wait"><span className="bo-dot" aria-hidden="true" />{BUILDOUT.building}</div> : (
-      <button type="button" className="bo-tab" data-buildout-action="" disabled={starter === "busy"} onClick={() => void fileStarter()}>
+    right = starter === "done" ? wait(BUILDOUT.real.issueWait) : (
+      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={starter === "busy"} onClick={() => void fileStarter()}>
         {BUILDOUT.real.starter}
       </button>
     );
@@ -322,7 +377,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <BuildHold card={step.id} label={action} red={step.id === "launch"} onBuild={go} />;
   } else if (step.trigger === "tap" || step.trigger === "continue") {
     const waiting = step.id === "planner" && live && !state.move; // the real plan hasn't come back yet
-    right = <button type="button" className="bo-tab" data-buildout-action="" disabled={waiting} onClick={go}>{action}</button>;
+    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={waiting} onClick={go}>{action}</button>;
   } else {
     // auto: nothing to press, the work happens on its own (real waits stay real)
     right = (
@@ -336,7 +391,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     // the demo shop's tunnel is preset; your own repo is one tap away (play first, #359)
     extra = (
       <p className="bo-real">
-        <a href={signInUrl()}>{BUILDOUT.real.useRepo} ›</a>
+        <a href={SIGN_IN}>{BUILDOUT.real.useRepo} ›</a>
       </p>
     );
   }
