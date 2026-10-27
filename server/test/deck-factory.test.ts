@@ -202,3 +202,28 @@ describe("durable live check-in decisions", () => {
     } finally { globalThis.fetch = originalFetch; }
   });
 });
+
+describe("runner approval survives concurrent deck selection changes", () => {
+  for (const boundary of ["before-handler", "inside-lock"] as const) it(`binds the selected plan at ${boundary} and preserves unrelated cards`, async () => {
+    const { issueRevision } = await import("../src/runner-job");
+    const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "A scoped fix", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
+    const other = card("unrelated", { kind: "unblock", stage: "intake" });
+    const approval = card("approval-58", { kind: "build", stage: "build", itemId: item.id, options: [{ id: "approve", label: "Approve plan", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: "job-58" }, reason: "Player approves the scoped plan" }] }] });
+    const f = fixture([other, approval], { items: [item] });
+    f.data.set("runnerJob:job-58", { id: "job-58", repo: "r3dbars/demo", itemId: item.id, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-test", status: "awaiting_approval", approvalMoveId: approval.id,
+      inputRevision: await issueRevision(item.title, JSON.stringify({ body: item.body, failure: "", scars: [] })) });
+    await f.factory.debugSnapshot();
+    const internal = f.factory as unknown as { state: FactoryState; runnerJobs: typeof f.factory.runnerJobs; ctx: { blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> } };
+    if (boundary === "before-handler") {
+      const original = internal.runnerJobs.bind(f.factory); let changed = false;
+      internal.runnerJobs = async () => { const jobs = await original(); if (!changed) { changed = true; internal.state.move = other; } return jobs; };
+    } else {
+      const original = internal.ctx.blockConcurrencyWhile.bind(internal.ctx);
+      internal.ctx.blockConcurrencyWhile = fn => original(async () => { internal.state.move = other; return fn(); });
+    }
+    await f.send({ type: "choose_move", moveId: approval.id, optionId: "approve" });
+    expect(f.data.get("runnerJob:job-58")).toMatchObject({ status: "ready", approvedAt: expect.any(Number), allowedPaths: ["server/src/engine.ts"] });
+    expect((f.data.get("openMoves") as Move[]).some(m => m.id === other.id)).toBe(true);
+    expect((f.data.get("openMoves") as Move[]).some(m => m.id === approval.id)).toBe(false);
+  });
+});
