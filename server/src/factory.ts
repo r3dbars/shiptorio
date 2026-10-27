@@ -29,7 +29,7 @@ import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
-import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import {
@@ -1757,11 +1757,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private broadcastQueue: Promise<void> = Promise.resolve();
+  private browserFrames = new BrowserFrames(this.ctx.storage);
 
   private broadcast(msg: ServerToWeb) {
-    const text = JSON.stringify(this.redactor.value(msg));
+    const frame = this.browserFrames.frame(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
+      const text = await frame;
       // A player may have many sockets. Share the same revocable session check only
       // within this frame; the next frame must query D1 again (no authorization TTL).
       const access = new Map<string, Promise<boolean>>();
@@ -2644,10 +2646,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
     const state = await this.load();
-    if (!adminView && state && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
-    else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
+    else if (state) {
+      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
+      server.send(await this.browserFrames.frame(snapshot, false));
+    }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    // Restoring the map must not wait for a new planner turn (or provider latency).
+    if (!adminView && state) this.ctx.waitUntil((async () => {
+      if (!(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+    })());
     // The initial snapshot was authorized above. Other sockets may still be
     // revalidating queued frames; they must not hold this handshake open.
     return new Response(null, { status: 101, webSocket: client });
@@ -2668,7 +2677,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
-    if (typeof raw !== "string" || raw === "ping") return;
+    if (typeof raw !== "string" || browserHeartbeat(ws, raw)) return;
     if (raw.length > 16384) return;
     for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
