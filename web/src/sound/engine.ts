@@ -41,6 +41,7 @@ export type Sfx =
 import { SCAPES, type Focus } from "./scapes";
 import { MusicPlayer } from "./musicPlayer";
 import type { MusicInput } from "./music";
+import type { FoundryPlayer } from "./foundryPlayer";
 
 export const SFX_EVENT = "shiptorio:sfx";
 export interface SfxEvent {
@@ -49,16 +50,16 @@ export interface SfxEvent {
 }
 
 export type { Focus };
-type Settings = { muted: boolean; volume: number; music: boolean };
+type Settings = { muted: boolean; volume: number; music: boolean; musicVolume: number };
 const KEY = "shiptorio.sound";
 const MIN_GAP_MS = 90; // same effect can't stack faster than this
 
 function load(): Settings {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    if (s && typeof s.muted === "boolean" && typeof s.volume === "number") return { music: true, ...s };
+    if (s && typeof s.muted === "boolean" && typeof s.volume === "number") return { music: true, ...s, musicVolume: typeof s.musicVolume === "number" && Number.isFinite(s.musicVolume) ? Math.max(0, Math.min(1, s.musicVolume)) : 0.8 };
   } catch {}
-  return { muted: false, volume: 0.5, music: true };
+  return { muted: false, volume: 0.5, music: true, musicVolume: 0.8 };
 }
 
 class SoundEngine {
@@ -70,7 +71,11 @@ class SoundEngine {
   private floorLp: BiquadFilterNode | null = null;
   private near: GainNode | null = null;
   private musicBus: GainNode | null = null;
-  private music = new MusicPlayer(this);
+  private music: MusicPlayer | FoundryPlayer = new MusicPlayer(this);
+  private musicLevel: GainNode | null = null;
+  private musicLoading = false;
+  private musicAttached = false;
+  private musicInput: MusicInput = { moving: 0, working: 0, stationsBusy: 0, rejected: 0 };
   private focus: Focus | null = null;
   private scapeStop: (() => void) | null = null;
   private step = 0;
@@ -103,8 +108,11 @@ class SoundEngine {
     });
     document.addEventListener("visibilitychange", () => {
       if (!this.ctx) return;
-      if (document.hidden) void this.ctx.suspend();
-      else if (!this.off) void this.ctx.resume();
+      if (document.hidden) {
+        this.syncMusic();
+        void this.ctx.suspend();
+      }
+      else if (!this.off) { void this.ctx.resume(); void this.startMusic(); }
     });
   }
 
@@ -125,7 +133,8 @@ class SoundEngine {
     this.near.gain.value = 0;
     this.near.connect(this.master);
     this.musicBus = ctx.createGain();
-    this.musicBus.connect(this.master);
+    this.musicLevel = ctx.createGain();
+    this.musicBus.connect(this.musicLevel).connect(this.master);
     this.applyVolume();
     // 1s of white noise, sampled at a low rate later for that crunchy 8-bit texture
     const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -135,7 +144,7 @@ class SoundEngine {
     this.startHum();
     this.workTimer = window.setInterval(() => this.workTick(), 260);
     window.setInterval(() => this.scapeTick(), 125);
-    this.music.attach(this.musicBus);
+    void this.startMusic();
     const f = this.focus;
     this.focus = null;
     this.setFocus(f);
@@ -146,10 +155,13 @@ class SoundEngine {
   set(next: Partial<Settings>) {
     this.settings = { ...this.settings, ...next };
     this.settings.volume = Math.max(0, Math.min(1, this.settings.volume));
+    this.settings.musicVolume = Number.isFinite(this.settings.musicVolume) ? Math.max(0, Math.min(1, this.settings.musicVolume)) : 0.8;
     try {
       localStorage.setItem(KEY, JSON.stringify(this.settings));
     } catch {}
     this.applyVolume();
+    this.syncMusic();
+    void this.startMusic();
     this.listeners.forEach((f) => f());
   }
 
@@ -165,6 +177,7 @@ class SoundEngine {
   private applyVolume() {
     if (!this.ctx || !this.master) return;
     const ctx = this.ctx;
+    this.musicLevel?.gain.setTargetAtTime(this.settings.music && !this.off ? this.settings.musicVolume : 0, ctx.currentTime, 0.03);
     const v = this.off ? 0 : this.settings.volume ** 2 * 0.6; // squared feels linear to the ear
     this.master.gain.setTargetAtTime(v, ctx.currentTime, 0.03);
     // muted: once the fade is done, suspend the whole context so the drones and the music pad stop costing battery
@@ -182,8 +195,32 @@ class SoundEngine {
 
   // ---------- music ----------
 
+  private syncMusic() {
+    if ("sync" in this.music) this.music.sync();
+  }
+
+  private async startMusic() {
+    if (!this.ctx || !this.musicBus || this.musicAttached || this.musicLoading || this.off || !this.settings.music || this.settings.musicVolume <= 0 || document.hidden) return;
+    this.musicLoading = true;
+    try {
+      // The v2 chunk is never requested by first-load rendering, or while music is off.
+      if (new URLSearchParams(location.search).get("music") === "2") {
+        await this.ctx.resume();
+        const { FoundryPlayer } = await import("./foundryPlayer");
+        if (this.off || !this.settings.music || this.settings.musicVolume <= 0 || document.hidden) return;
+        this.music = new FoundryPlayer(this);
+      }
+      this.music.setInput(this.musicInput);
+      this.music.attach(this.musicBus);
+      this.musicAttached = true;
+    } catch (error) {
+      console.warn("Music could not start", error);
+    } finally { this.musicLoading = false; }
+  }
+
   // What the adaptive score listens to. See music.ts for how this becomes layers and tension.
   setMusic(i: MusicInput) {
+    this.musicInput = i;
     this.music.setInput(i);
   }
 
@@ -200,7 +237,10 @@ class SoundEngine {
   // For tests and the dev overlay: what the score is doing right now.
   musicState() {
     const m = this.music;
-    return { intensity: m.intensity, tension: m.tension, layers: m.layers, chord: m.chord };
+    return { intensity: m.intensity, tension: m.tension, layers: m.layers, chord: m.chord,
+      version: new URLSearchParams(location.search).get("music") === "2" ? 2 : 1,
+      state: "debug" in m ? m.debug().state : "legacy", loadedStems: [],
+      ...("debug" in m ? m.debug() : {}), attached: this.musicAttached };
   }
 
   // ---------- ambience ----------

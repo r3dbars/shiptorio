@@ -143,6 +143,7 @@ Only what Codex has pushed is visible here, not its live session. Codex commits 
 | PR | What | State |
 | --- | --- | --- |
 | #13 | Private preview (password gate), hardened issue → Spark → PR → inspector/rework loop, bounded alarm jobs, stale-check handling | merged. Supersedes #4's fixes |
+| Game music | PR #263; merge authorized after green CI | Original 16-bar foundry score, activity layers, blocked brass and launch fanfare; separate persisted music volume, CC0, no audio downloads/decoded stems. Desktop/phone controls and two 65s recordings verified. **Keep behind `?music=2`**; existing score stays default. Code: `web/src/sound/foundryScore.ts`; evidence: `docs/evidence/music/`. |
 | #19, #21 | Auto-deploy of `main` verified, `/api/version` shows the live SHA, shiptorio.com + shiptorio.dev live | merged |
 | #3, #4 | Old protocol / factory drafts on the pre-#1 scaffold | superseded by #13 and the #14/#17 contract. Close them |
 | Add real user accounts and sign-in | working | D1 `users`/`sessions`/`user_installations`/`user_repos`/`user_prefs` (migration 0004), revocable sessions, repo membership on every factory route, per-repo Sentry/PostHog keys + per-repo Sentry webhook, `requireUser` helper. Password gate stays in front. Next: web install link + prefs sync |

@@ -193,3 +193,22 @@ its runner token in `~/.config/shiptorio/runner.json` and reconnects on start.
   open an issue on the demo repo, watch `job_event` logs, confirm a PR from `shiptorio[bot]` appears.
 - Day 2: open the web app, confirm districts match the repo tree and the PR appears on the launch pad live.
 - Local helper: run `--mode local`, confirm `hello` lists `claude` and `codex`, place a Codex assembler, get a PR.
+
+### Adaptive foundry music (Day 2 feel checkpoint)
+
+`?music=2` opts into “Up from the Mine”, a 16-bar original theme. The default remains
+PR #182's procedural score for comparison. `music.ts` maps factory activity into idle,
+working, blocked and launch states with hysteresis. `foundryPlayer.ts` retains one
+transport, schedules eighths ahead, and changes arrangements on bar boundaries with
+0.48s equal-power crossfades. `foundryScore.ts` holds the reproducible score and cached
+additive instrument waves: harmonium, low strings/brass, celesta and metal/piston groove.
+Launch resolves over three bars (~7.8s), ducked under the existing rocket roar.
+The explicit intro flag gets the same motif as a title arrangement.
+
+The v2 module loads only after audio unlock with music on. No recordings/stems are
+fetched, decoded or retained (0 audio payload, 0 decoded PCM); `quality=2` reduces voices.
+The service worker caches the hashed score module only after its first request.
+Master mute/visibility suspend audio, music off fades queued notes, and the separate
+persisted music gain sits before master volume, preserving focus and launch ducking.
+`musicState()` includes state, arrangement, loaded stems (empty), voice count and bar.
+The score/waveforms and generated auditions are CC0; inventory: `web/public/music/LICENSES.md`.
