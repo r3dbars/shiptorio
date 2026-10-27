@@ -69,6 +69,8 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       await expect(action.first(), `${id} has an action`).toBeVisible();
       await expect(card).toBeVisible();
       await shot(`${n}-${id}-card.png`);
+      if (await card.getAttribute('data-trigger') === 'hold')
+        await expect(action.first(), `${id} advertises a real hold`).toHaveAttribute('data-buildout-action', 'hold');
       const kind = await action.first().getAttribute('data-buildout-action'); // hold, tap or continue
       if (kind === 'hold') await hold(page, info, action.first(), async () => await started() || await next());
       else await action.first().click();
@@ -78,7 +80,7 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       if (!(await started())) { await shot(`${n}-${id}-after.png`); continue; }
     }
     await expect.poll(started, { timeout: 90_000, message: `${id} starts building` }).toBe(true);
-    if (!opts.reduced) {
+    if (!opts.reduced && !NO_PIECES.has(id)) {
       await expect(root).toHaveAttribute('data-phase', 'construct', { timeout: 3_000 }).catch(() => {});
       await shot(`${n}-${id}-construct.png`);
     }
@@ -87,8 +89,10 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     await shot(`${n}-${id}-online.png`);
     const log = (await builds(page)).filter(b => b.id === id);
     const ms = log.find(b => b.phase === 'done')!.at - log.find(b => b.phase === 'start')!.at;
-    // Payoff always plays. Full motion is ~7s; reduced motion swaps construct for a 1s fade.
-    if (opts.reduced) expect(ms, `${id} reduced build ms`).toBeLessThan(4_500);
+    // Logical steps reveal no piece (CONTRACT.md): their optional markers are
+    // synchronous. Physical construction still keeps its original duration bounds.
+    if (NO_PIECES.has(id)) expect(log.map(b => b.phase), `${id} logical markers`).toEqual(['start', 'burst', 'done']);
+    else if (opts.reduced) expect(ms, `${id} reduced build ms`).toBeLessThan(4_500);
     else expect(ms, `${id} build ms`).toBeGreaterThan(3_000);
     // One build at a time, in order, each exactly once.
     const doneIds = (await builds(page)).filter(b => b.phase === 'done').map(b => b.id);
@@ -109,8 +113,6 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
 }
 
 test.describe('build as you go', () => {
-  // 1440 (desktop) and 390 (iphone-14); pixel-7 adds nothing the phone run doesn't.
-  test.beforeEach(({}, info) => test.skip(info.project.name === 'pixel-7', 'covered by iphone-14'));
   test.setTimeout(360_000);
 
   test('dark to rocket, one build at a time', async ({ page }, info) => {

@@ -44,8 +44,6 @@ function shooter(page: Page, info: TestInfo) {
 }
 
 test.describe('floors grow with the build-as-you-go run', () => {
-  // 1440 (desktop) and 390 (iphone-14); pixel-7 adds nothing the phone run doesn't.
-  test.beforeEach(({}, info) => test.skip(info.project.name === 'pixel-7', 'covered by iphone-14'));
   test.setTimeout(420_000);
 
   test('dark to rocket: each floor rises right before the build that sits on it', async ({ page }, info) => {
