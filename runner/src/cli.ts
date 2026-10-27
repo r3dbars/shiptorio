@@ -8,7 +8,7 @@ import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, val
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
-import { runnerHome, loadPairings, savePairing, pairMachine, type Pairing } from "./pairing";
+import { runnerHome, loadPairings, savePairing, pairMachine, joinMachine, type Pairing } from "./pairing";
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
@@ -133,7 +133,10 @@ if (["setup", "login"].includes(process.argv[2])) {
   process.exit(0);
 }
 const action = process.argv[2] ?? "watch";
-if (action === "pair") { await pairMachine(base, root); process.exit(0); }
+if (action === "pair") {
+  if (process.argv[3] === "--join") await joinMachine(base, process.argv[4] ?? "", root); else await pairMachine(base, root);
+  process.exit(0);
+}
 if (action === "uninstall") {
   console.log("Stop other runner terminals first. Removing standalone runner and local pairings.");
   const { rm } = await import("node:fs/promises");
