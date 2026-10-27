@@ -8,6 +8,7 @@ import type { Env } from './index';
 import type { Factory } from './factory';
 import { currentTrace, recentLogs, report } from './telemetry';
 import { currentUser } from './accounts';
+import { testerLinks } from "./test-users";
 import { ironPage } from './ironPage';
 
 // Deliberately independent of ALLOWED_LOGINS: adding a player never grants diagnostics.
@@ -20,7 +21,7 @@ export function adminRoutes(app: Hono<any>, factory: (env: Env, repo: string) =>
     c.header('X-Content-Type-Options', 'nosniff');
     await next();
   });
-  app.get('/admin', async c => c.req.query('format') === 'json' ? c.json({ ...await budgetReport(c.env), spend: await spendReport(c.env.DB) }) : c.html(ADMIN_HTML));
+  app.get('/admin', async c => c.req.query('format') === 'json' ? c.json({ ...await budgetReport(c.env), spend: await spendReport(c.env.DB) }) : c.html(ADMIN_HTML.replace("</body>", `${testerLinks(c.env, new URL(c.req.url))}</body>`)));
   app.get('/admin/god.js', c=>{c.header('Content-Type','application/javascript; charset=utf-8');return c.body(GOD_JS)});
   app.get('/admin/app.js', c => { c.header('Content-Type', 'application/javascript; charset=utf-8'); return c.body(ADMIN_JS); });
   app.get('/admin/data', async c => {

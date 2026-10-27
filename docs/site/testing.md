@@ -34,6 +34,19 @@ Local runs start the real Worker, D1 and Factory Durable Object in Miniflare. Gi
 
 ## Staging boundary
 
-Test factory requests require a `TEST_FACTORY` service binding to a separate isolated Worker using those provider stubs. Without it they fail with an explicit unavailable response **before** reaching a real factory. Do not point this binding at production or an unrestricted network proxy. The service must share the test-only session identity configuration, accept only reserved tester IDs and the matching fixture repo, and refuse other routes and hosts. Local Miniflare supplies a private service hop and blocks all unstubbed outbound requests.
+Test factory requests require a `TEST_FACTORY` service binding to the private `shiptorio-fixture` Worker. Without that binding and a test-only signing key they fail before reaching a real factory. Production still refuses negative IDs, even when someone accidentally sets `TEST_USERS=on`.
 
-The Player bot workflow runs locally on manual dispatch and nightly. Staging stays disabled until its isolated service is deployed and `TEST_USERS_STAGING_READY=true` is set. Add the staging preview password as the Actions secret `SHIPTORIO_TEST_PASSWORD`; never put it in a command, report or commit. Staging failures create one `bot-bug` issue per stable failure fingerprint, with the workflow’s screenshot artifact linked. No workflow deploys or changes production.
+The staging frontend verifies the normal tester session, then signs the request's exact persona, method, path and body for sixty seconds. It strips browser cookies and authorization headers before the service hop. The private backend has its own D1, KV and Durable Objects, creates its own session, and restricts all provider calls to the existing GitHub and Spark fixtures. It has no public route or workers.dev URL, no real API credentials, and no native-network fallback. The fixture runner handles one labeled build receipt per persona; it is not a real Codex execution. Repeated sign-ins preserve progress rather than resetting a completed game.
+
+Prepare and inspect the resource plan without changing Cloudflare:
+
+```sh
+node playtest/staging/setup.mjs
+node playtest/staging/check.mjs
+```
+
+The second command tests the real private Worker in Miniflare: signed delegation, isolated storage, same-origin install, signed webhook, inventory and runner pairing, with zero native provider egress. Unit tests cover tampering, expiry, blocked hosts, durable runner state and one-job limits. The local player bot separately proves the actual plan/approval/gauntlet/Launch journey.
+
+After explicit approval to create the additional staging resources, `node playtest/staging/setup.mjs --apply` creates only `shiptorio-fixture`, its D1 database and KV namespace. `--activate-stage` additionally binds the existing `shiptorio-staging` Worker to it. Neither option changes `shiptorio.com` or other Workers. Generated resource IDs and fresh test-only keys live under ignored `.fixture-setup/`, with directory mode 0700 and file mode 0600. Review the plan and deployment configuration before using these flags. Do not reuse production databases, keys or passwords for this backend.
+
+The Player bot workflow runs locally on manual dispatch and nightly. Staging stays disabled until its isolated service is deployed and `TEST_USERS_STAGING_READY=true` is set. Add the existing staging preview password as the Actions secret `SHIPTORIO_TEST_PASSWORD`; never put it in a command, report or commit. Staging failures create one `bot-bug` issue per stable failure fingerprint, with the workflow’s screenshot artifact linked. No workflow deploys or changes production.
