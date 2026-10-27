@@ -233,9 +233,7 @@ export class ShaftHud {
       }
       const hot = t.s === "BLOCKED";
       const teaching = this.teaching.has(c.key);
-      // an idle machine's chip waits for a hover or tap: the default screen only names what's working or needs you
-      const pointed = !!c.key && (c.key === this.hovered || c.key === this.selected);
-      const shown = hot || teaching || this.showAll || pointed || (c.always ? t.s !== "IDLE" : c.key === "rework" && this.reworkCount > 0);
+      const shown = c.always ? !(c.key === "rework" && !this.reworkCount) : hot || teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected)) || (c.key === "rework" && this.reworkCount > 0);
       c.el.classList.toggle("teaching", teaching);
       c.el.classList.toggle("sel", !!c.key && c.key === this.selected);
       const [x, y] = stage.project(...c.at());
