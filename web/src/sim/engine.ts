@@ -50,7 +50,7 @@ import {
 import type { Listener, Source, StatusListener } from "../source";
 import { simSupport, SUPPORT_MAIL, type SimMail } from "./support";
 
-const TICK_MS = 900;
+const TICK_MS = 1400; // a calm floor: one beat every 1.4s (was 0.9s, Justin's playtest 2026-10-27: "slow everything down")
 
 interface SparkLine {
   tool: string;
@@ -574,7 +574,7 @@ const shipScore = (m: Metrics) => m.usersUnblocked + 10 * m.customersAnswered + 
 
 export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: StatusListener, repo?: string): Source {
   const sc: Scenario = SCENARIOS[name];
-  const tickMs = sc.intro ? 450 : TICK_MS;
+  const tickMs = sc.intro ? 700 : TICK_MS;
   const script: Ore[] = [...sc.ores];
   const s = initialState(sc);
   if (repo) s.repo = repo;

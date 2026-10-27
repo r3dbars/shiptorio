@@ -9,6 +9,7 @@ import { celebrateShip } from "./ship";
 import type { MusicInput } from "./music";
 import { accentsFor, freshAccentMemory, LAUNCH_IRON_DELAY_S, limitAccents } from "./accents";
 import { tapFor, type MachineMood } from "./steamIron";
+import { calmSounds, freshCalm } from "./calm";
 
 // Each gauntlet station's verdict sounds: [pass, fail].
 const STATION_SFX: Record<Station["kind"], [pass: Sfx, fail: Sfx]> = {
@@ -216,6 +217,7 @@ export function diffSounds(prev: FactoryState, next: FactoryState): Sfx[] {
 export function useFactorySound(state: FactoryState | null, focus?: string | null, calm = false) {
   const prev = useRef<FactoryState | null>(null);
   const accentMem = useRef(freshAccentMemory());
+  const calmMem = useRef(freshCalm());
   const focused = state ? focusFor(focus, state) : null;
   useEffect(() => {
     sound.setFocus(focused);
@@ -236,7 +238,7 @@ export function useFactorySound(state: FactoryState | null, focus?: string | nul
     if (!p || p.repo !== state.repo) return;
     // so the art's station effects (stamp flash, ram slam, gate swing) can land on the same beat
     for (const v of stationVerdicts(p, state)) window.dispatchEvent(new CustomEvent<StationVerdict>(STATION_EVENT, { detail: v }));
-    const sfx = diffSounds(p, state);
+    const sfx = calmSounds(diffSounds(p, state), performance.now(), calmMem.current);
     // docs/ATTENTION.md: suggestions never make a sound
     sfx.filter((s) => !(calm && s === "suggest")).forEach((s, i) => s !== "launch" && sound.play(s, i * 0.08, !!focused && SFX_FROM[s] === focused.kind));
     if (sfx.some((s) => CAUGHT.includes(s))) sound.musicAlert();
