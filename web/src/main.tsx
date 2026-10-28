@@ -1,6 +1,6 @@
 import { initTelemetry } from "./telemetry";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { loadFeatureFlags } from "./flags";
+import { buildoutOn, loadFeatureFlags } from "./flags";
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Judge } from "./judge/Judge";
@@ -16,7 +16,10 @@ sound.install();
 
 // The demo shop a signed-out player plays in. Signing in with GitHub (the floor card's chip, or the card after
 // the first rocket) is the unlock that brings their own repo.
-const SANDBOX = `?source=sim&scenario=first-run&repo=${encodeURIComponent(SANDBOX_REPO)}`;
+// Build as you go (?buildout=1) is its own first run, so a bare visit with it lands on the empty rock instead.
+const SANDBOX = buildoutOn()
+  ? `?buildout=1&source=sim&scenario=buildout&repo=${encodeURIComponent(SANDBOX_REPO)}`
+  : `?source=sim&scenario=first-run&repo=${encodeURIComponent(SANDBOX_REPO)}`;
 
 // Play first, sign in later. A bare visit plays the welcome tour once, then drops a signed-out player
 // straight into the demo shop; a signed-in one goes to their repos. `?onboard=repo` resumes after the

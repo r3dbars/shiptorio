@@ -18,12 +18,12 @@ export interface Count {
 
 const F = HUD.floor;
 
-export function FloorCard({ counts, extra, showKey, repo }: { counts: Count[]; extra?: ReactNode; showKey: boolean; repo?: string }) {
+export function FloorCard({ counts, extra, showKey, repo, compact }: { counts: Count[]; extra?: ReactNode; showKey: boolean; repo?: string; compact?: boolean }) {
   return (
-    <section className="floorcard" aria-label={F.label}>
-      <span className="eyebrow">{F.eyebrow}</span>
+    <section className={compact ? "floorcard compact" : "floorcard"} aria-label={F.label}>
+      {!compact && <span className="eyebrow">{F.eyebrow}</span>}
       <h1>
-        <Wordmark width={250} />
+        <Wordmark width={compact ? 116 : 250} />
         {repo && <span className="sr">: {repo}</span>}
       </h1>
       {counts.length > 0 && (
