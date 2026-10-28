@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#2a1410" />
+    <title>Deck grows (dev)</title>
+    <!-- dev only (thread "Animate the platform growing"): the 2D deck growing small -> medium -> large, in the real
+         deck engine with the grow/ layer (src/deck2d/grow/). Press Grow, or:
+           ?size=medium            start at that size
+           ?from=small&to=medium&at=2.1   freeze 2.1 s into that grow (screenshots)    ?speed=0.25 slow motion
+         window.GROW: { grow(), reset(), seek(from, to, t), size } for the console and screenshots. -->
+    <link rel="preload" href="/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      #grow-ctrl { position: fixed; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 8px; z-index: 5; }
+      #grow-ctrl button { font: inherit; font-size: 14px; color: #f6e3c0; padding: 10px 14px; cursor: pointer; background: linear-gradient(180deg, #2b2526, #1d1a1c); border: 3px solid #0c0a0b; border-radius: 4px; box-shadow: inset 0 0 0 2px #c98a32; }
+      #grow-ctrl button:disabled { opacity: 0.5; cursor: default; }
+      #grow-ctrl button:focus-visible { outline: 3px solid #ffc35a; outline-offset: 2px; }
+      #grow-size { position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); font-size: 12px; color: #c9b08c; text-shadow: 0 2px 0 #000; }
+    </style>
+  </head>
+  <body>
+    <canvas id="world" aria-label="The floating deck, growing as you build"></canvas>
+    <p id="grow-size" aria-live="polite"></p>
+    <div id="grow-ctrl">
+      <button id="grow-reset" type="button">Reset</button>
+      <button id="grow-go" type="button">Grow &rarr;</button>
+    </div>
+    <script type="module" src="/src/deck2d/grow/preview.ts"></script>
+  </body>
+</html>
