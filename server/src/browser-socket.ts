@@ -21,7 +21,7 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
   if (!session) return null;
   let user: Awaited<ReturnType<typeof currentUser>> = null;
   if (env.DB) {
-    user = await currentUser({...env,DB:env.DB},cookie,new URL(request.url),now);
+    user = await currentUser({...env,DB:env.DB},cookie,null,now);
     if (!user) return null;
   } else if (!isAllowed(env.ALLOWED_LOGINS ?? '',session.login)) return null;
 
