@@ -34,10 +34,11 @@ async function security(home: string, args: string[], secret?: string) {
   return out;
 }
 const LOCK_SETTINGS = ["-l", "-u", "-t", "1800"];
-/** Both independent flags matter: a stored timeout alone does not enable idle locking. */
+/** Native security output uses timeout= only when idle locking is enabled. */
 export function protectedAgentKeychain(info: KeychainCommandResult): boolean {
-  const words = new Set(`${info.out} ${info.err}`.split(/\s+/));
-  return !info.failed && words.has("lock-on-sleep") && words.has("use-lock-interval") && words.has("timeout=1800s");
+  // Anchor the native settings suffix: a path containing flag words is not policy.
+  return !info.failed && `${info.out}\n${info.err}`.split(/\r?\n/)
+    .some(line => /^Keychain "[^\r\n]*" lock-on-sleep timeout=1800s$/.test(line.trim()));
 }
 /** A failed write is safe only when a fresh read proves the existing protection. */
 export async function ensureLockSettings(home: string, keychain: string,

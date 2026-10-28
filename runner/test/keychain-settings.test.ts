@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { ensureLockSettings, KeychainUnavailable, protectedAgentKeychain, type KeychainCommandResult } from "../src/keychain";
 
-const secure: KeychainCommandResult = { out: "", err: 'Keychain "private": lock-on-sleep use-lock-interval timeout=1800s\n', failed: false };
+const secure: KeychainCommandResult = { out: "", err: 'Keychain "private" lock-on-sleep timeout=1800s\n', failed: false };
 const failed: KeychainCommandResult = { out: "", err: "set failed", failed: true };
-const unsecured: KeychainCommandResult = { out: "", err: 'Keychain "private": timeout=1800s\n', failed: false };
+const unsecured: KeychainCommandResult = { out: "", err: 'Keychain "private" lock-on-sleep no-timeout\n', failed: false };
 function sequence(...responses: KeychainCommandResult[]) {
   const calls: string[][] = [];
   return { calls, invoke: async (_home: string, args: string[]) => {
@@ -21,7 +21,8 @@ test("native settings require sleep locking, enabled idle locking and the exact 
     unsecured,
     { ...secure, failed: true },
     { ...secure, err: secure.err.replace("lock-on-sleep", "no-lock-on-sleep") },
-    { ...secure, err: secure.err.replace("use-lock-interval ", "") },
+    { ...secure, err: secure.err.replace("lock-on-sleep ", "") },
+    { ...secure, err: 'Keychain "lock-on-sleep timeout=1800s" no-timeout\n' },
     { ...secure, err: secure.err.replace("1800s", "18000s") },
     { ...secure, err: "unreadable settings" },
   ]) expect(protectedAgentKeychain(info)).toBe(false);
