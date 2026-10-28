@@ -24,15 +24,15 @@ const shippyMods = import.meta.glob<Record<string, unknown>>("../shippy/index.ts
   const view = (): DeckView => {
     const act = layer.build.shippyAct();
     return {
-      stops: STOPS.map((id) => ({ id, built: id === "launch" || built.has(id), locked: id !== "launch" && !built.has(id), state: "idle", automated: false, items: [] })),
+      stops: STOPS.map((id) => ({ id, built: id === "launch" || built.has(id), locked: id !== "launch" && !built.has(id), building: layer.build.progress(id) ?? undefined, state: "idle", automated: false, items: [] })),
       jam: null, card: null, shipped: 0, caption: null,
-      shippy: act ? ({ at: act.at, pose: act.pose } as unknown as DeckView["shippy"]) : { pose: "folded", at: "corner" },
+      shippy: act ?? { pose: "folded", at: "corner" }, // the engine overrides this from shippyAct() anyway
       deck: { size: "large", island: "built" },
     } as DeckView;
   };
-  const build = (s: StopId) => { built.add(s); engine.focus(s); };
+  const build = (s: StopId) => { built.add(s); };
   (window as unknown as { deckWhere: typeof engine.where }).deckWhere = (s) => engine.where(s); // shots crop around a stop
-  const lockAll = () => { built.clear(); built.add("repo"); engine.focus(null); };
+  const lockAll = () => { built.clear(); built.add("repo"); };
 
   const bar = document.getElementById("bar")!;
   for (const s of BUILDABLE) {
@@ -49,7 +49,6 @@ const shippyMods = import.meta.glob<Record<string, unknown>>("../shippy/index.ts
   const auto = params.get("stop") as StopId | null;
   let autoT = 0.8;
   const loop = params.get("loop") === "1";
-  const stage = document.getElementById("stage")!;
   await art.ready();
   let last = 0;
   const frame = (now: number) => {
@@ -59,8 +58,6 @@ const shippyMods = import.meta.glob<Record<string, unknown>>("../shippy/index.ts
       else { build(auto); autoT = loop ? STAGE_AT.gone + 1.2 : Infinity; }
     }
     engine.frame(view(), dt);
-    const k = layer.build.shake();
-    stage.style.transform = k > 0.3 ? `translate(${(Math.random() - 0.5) * k}px, ${(Math.random() - 0.5) * k}px)` : "";
     if (!document.body.dataset.deckReady) document.body.dataset.deckReady = "1";
     requestAnimationFrame(frame);
   };

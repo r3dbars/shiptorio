@@ -15,18 +15,13 @@
 //   5.40 done      the engine draws the normal idle sprite again
 // A stop with <stop>-build-1..4 sprites (builder today) plays those stages; others reveal their idle sprite instead.
 
-import { BELT_Y, STOP_X, type ArtLoader, type DeckBus, type DeckView, type Stop, type StopId } from "../contract";
+import { BELT_Y, LOOK, STOP_X, type ArtLoader, type DeckBus, type DeckView, type Stop, type StopId } from "../contract";
 
 export type BuildStage = "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check";
 export const STAGE_AT = { unlock: 0, plot: 0.45, scaffold: 1.0, frame: 1.6, panels: 2.5, top: 3.6, land: 4.25, burst: 4.55, check: 5.0, done: 5.4, gone: 7.6 } as const;
 const STAGES: BuildStage[] = ["plot", "scaffold", "frame", "panels", "top", "burst", "check"];
 
-/** How the engine draws each station (engine.ts LOOK): drawn height, and feet below the belt line. */
-export const LOOK: Record<StopId, { h: number; drop: number }> = {
-  repo: { h: 190, drop: 46 }, planner: { h: 190, drop: 42 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
-  review: { h: 140, drop: 44 }, gate: { h: 168, drop: 44 }, launch: { h: 168, drop: 44 },
-};
-const SPRITE_OF: Partial<Record<StopId, string>> = { planner: "builder", launch: "gate" };
+const SPRITE_OF: Partial<Record<StopId, string>> = { launch: "gate" };
 /** <stop>-build-N frames are padded taller than the idle sprite (room for the hanging top); this scale lines their bodies up. */
 const STAGED_SCALE = 1.08;
 
