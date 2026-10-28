@@ -1,5 +1,15 @@
 # Public landing page (shiptorio.com)
 
+## Approved landing refresh (2026-10-28)
+
+- Justin selected the transparent brass wordmark, “Build the factory, ship the code.” and one brass “Join the waitlist” button over full-screen gameplay. The email field and Join action open in a native dialog; Escape or the backdrop dismisses it.
+- Compact video and sound controls sit together at the top right. Video starts muted; music and effects require an explicit click. Reduced motion and Save-Data retain the poster until playback is requested.
+- The subtle footer link opens the existing production password gate at `/access?next=%2F`; signup and authentication handling are unchanged.
+- Desktop (1600×900) and phone (600×800) clips were recorded from the game renderer at main `c5e23309f221b4e4397bfc63d497e81a1648ea40`, using its seeded demo driver. The completed merge gate and rocket launch are visible. The 10-second loops crossfade their seam. Audio is a separate 32-second recording of that revision’s procedural music, ambience and sound effects, with staged effect cues. These are game previews, not recordings of real PR activity.
+- The refresh is scoped to `web/public/welcome/` and its logo asset; it does not replace the app/password-page branding in PR #467 or the separate layout workshop in #469. Justin explicitly requested this web work outside Codex’s usual backend lane. Checkpoint: October 28 landing-page polish.
+
+## Previous implementation
+
 Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind the preview password.
 
 - **Page:** `web/public/welcome/index.html`, plain static HTML (no React bundle), inline CSS. Vite copies `web/public/` to `web/dist/` as-is.
