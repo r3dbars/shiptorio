@@ -34,6 +34,8 @@ The full gauntlet runs on PRs your runner built (`shiptorio/runner-*` branches).
 
 Researched checks (like the Secret scanner) slot in right after CI. See [Research](/docs/research).
 
+Ready proof gets priority over background polling: each tick can advance up to two stations on the same unchanged PR. Each station still refreshes current-head evidence, and a hold, rejection or replaced inspection stops the burst. Background reconciliation keeps running after that bounded work.
+
 ## Verify bay
 
 **Tag: done means evidence.** The verify bay wants proof that the fix works, not just that it compiles.
