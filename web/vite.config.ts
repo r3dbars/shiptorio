@@ -73,7 +73,7 @@ export default defineConfig({
           // transfer bytes and dependency round trips on a cold phone connection.
           if (/\/web\/src\/(main\.tsx|chunkReload\.ts)$/.test(id)) return;
           // The alternate island renderer is loaded only on selection or shaft fallback.
-          if (id.endsWith("/web/src/map/scene.ts")) return;
+          if (/\/web\/src\/map\/(scene|models|itemlab|empire)\.(ts|js)$/.test(id)) return;
           // These two pure layout helpers are also used by the initial station panel.
           if (/\/web\/src\/map\/shaft\/(waiting|plan)\.ts$/.test(id)) return "factory";
           if (/\/web\/src\/(judge\/|lab\/|map\/shaft\/|ui\/(Onboarding|IslandBackdrop|CheckIn|HowItThinks)\.tsx$|sound\/foundryPlayer\.ts$|source\/live\.ts$)/.test(id)) return;
