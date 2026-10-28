@@ -13,19 +13,33 @@ jobs:
   stranger:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      # A docs-only PR has no new-user path to walk (scripts/ci/docs-only.sh).
+      - name: Docs-only change?
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/ci/docs-only.sh
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: steps.scope.outputs.code == 'true'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.scope.outputs.code == 'true'
         with:
           node-version: '22'
       - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.code == 'true'
       # runner-images configures this signed Ubuntu mirrorlist with Azure first. Its package
       # downloads can stall without failing over; retain the official archive/security entries.
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/configure-apt-sources.sh
       - name: Prefer official Ubuntu mirrors
+        if: steps.scope.outputs.code == 'true'
         run: |
           mirrors=/etc/apt/apt-mirrors.txt
           test -f "$mirrors"
@@ -34,14 +48,17 @@ jobs:
           ! grep -q 'azure.archive.ubuntu.com' "$mirrors"
           cat "$mirrors"
       - run: bun x playwright install chromium
+        if: steps.scope.outputs.code == 'true'
       - name: Check browser libraries
+        if: steps.scope.outputs.code == 'true'
         run: |
           node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
       - run: bun run stranger
+        if: steps.scope.outputs.code == 'true'
         env:
           STRANGER_OUT: ${{ runner.temp }}/stranger
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
+        if: always() && steps.scope.outputs.code == 'true'
         with:
           name: stranger-evidence
           path: ${{ runner.temp }}/stranger/

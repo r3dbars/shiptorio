@@ -34,7 +34,7 @@ jobs:
           sudo apt-get install -y bubblewrap
           # Match CI and Deploy: the runner sandbox tests need user namespaces.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: bun test
+      - run: bun test --parallel
       - run: bun run build
       - name: Verify real Durable Object storage on host
         run: bun run test:storage
