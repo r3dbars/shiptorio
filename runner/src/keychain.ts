@@ -11,6 +11,7 @@ async function regular(path: string) {
   if (!info.isFile() || await realpath(path) !== path) throw new Error("Dedicated Keychain files must not be links");
   await chmod(path, 0o600);
 }
+export type KeychainCommandResult = { out: string; err: string; failed: boolean };
 async function run(home: string, args: string[], secret?: string) {
   // Passwords go through security's stdin command parser, never argv, logs, or child environments.
   const child = Bun.spawn(["/usr/bin/security", ...(secret ? ["-i"] : args)], { env: agentEnvironment({}, home), stdin: "pipe", stdout: "pipe", stderr: "pipe" });
@@ -33,12 +34,19 @@ async function security(home: string, args: string[], secret?: string) {
   return out;
 }
 const LOCK_SETTINGS = ["-l", "-u", "-t", "1800"];
-/** Re-installs reuse the store, so only touch auto-lock when it isn't already right, and never let it block setup. */
-async function ensureLockSettings(home: string, keychain: string) {
-  const info = await run(home, ["show-keychain-info", keychain]);
-  if (!info.failed && /lock-on-sleep/.test(info.out + info.err) && /timeout=1800s/.test(info.out + info.err)) return;
-  const set = await run(home, ["set-keychain-settings", ...LOCK_SETTINGS, keychain]);
-  if (set.failed) console.error("Note: couldn't set the private Keychain's auto-lock timer. Setup continues; your agent sign-ins are unaffected.");
+/** Both independent flags matter: a stored timeout alone does not enable idle locking. */
+export function protectedAgentKeychain(info: KeychainCommandResult): boolean {
+  const words = new Set(`${info.out} ${info.err}`.split(/\s+/));
+  return !info.failed && words.has("lock-on-sleep") && words.has("use-lock-interval") && words.has("timeout=1800s");
+}
+/** A failed write is safe only when a fresh read proves the existing protection. */
+export async function ensureLockSettings(home: string, keychain: string,
+  invoke: (home: string, args: string[]) => Promise<KeychainCommandResult> = run) {
+  if (protectedAgentKeychain(await invoke(home, ["show-keychain-info", keychain]))) return;
+  const set = await invoke(home, ["set-keychain-settings", ...LOCK_SETTINGS, keychain]);
+  if (set.failed && !protectedAgentKeychain(await invoke(home, ["show-keychain-info", keychain]))) {
+    throw new KeychainUnavailable("Dedicated Keychain auto-lock policy could not be verified");
+  }
 }
 export async function unlockAgentKeychain(home: string): Promise<void> {
   if (process.platform !== "darwin") return;
