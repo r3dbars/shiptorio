@@ -62,7 +62,7 @@ export interface CardView {
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
 }
 
-export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed";
+export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry";
 export interface ShippyView {
   pose: ShippyPose;
   at: StopId | "corner"; // corner = folded up in the top-left of the screen
@@ -139,13 +139,13 @@ export const art = (name: string) => `${ART_BASE}${name}.webp`;
 export const SPRITES = {
   scene: ["sky", "clouds", "deck", "pad", "boiler-off", "boiler-on"],
   rocket: ["rocket", "flame"],
-  stations: ["repo", "builder", "checks", "review", "gate"].flatMap((s) => ["idle", "working", "jammed", "auto"].map((st) => `${s}-${st}`)),
+  stations: ["repo", "planner", "builder", "checks", "review", "gate"].flatMap((s) => ["idle", "working", "jammed", "auto"].map((st) => `${s}-${st}`)),
   line: ["belt", "crate-plain", "crate-ok", "crate-bad", "crate-glow", "crate-wait", "beacon", "plate"],
   lever: ["lever-up", "lever-down", "lever-glow"],
   // shippy-0..5 = unfold strip: 0 closed box eye off, 1 eye on, 2 legs out, 3 standing, 4 arm out, 5 walking.
   // Poses are separate files, their own sizes: lever (pulling, includes the lever), happy, alarm, peek.
-  shippy: ["shippy-0", "shippy-1", "shippy-2", "shippy-3", "shippy-4", "shippy-5", "shippy-lever", "shippy-happy", "shippy-alarm", "shippy-peek"],
-  ui: ["ui-panel", "ui-btn", "ui-btn-glow"], // 9-slice frames for the card and its two buttons
+  shippy: ["shippy-0", "shippy-1", "shippy-2", "shippy-3", "shippy-4", "shippy-5", "shippy-lever", "shippy-happy", "shippy-alarm", "shippy-peek", "shippy-weld-0", "shippy-weld-1", "shippy-carry-0", "shippy-carry-1"],
+  ui: ["ui-panel", "ui-btn", "ui-btn-glow", "logo"], // 9-slice frames for the card and its two buttons
 } as const;
 
 /** Loads sprites once; the engine passes its loader to modules so nothing loads twice. */

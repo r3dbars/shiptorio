@@ -4,7 +4,7 @@ import { STOPS, type DeckSource, type DeckView, type Item, type ShippyView, type
 // starts waiting on your call, three yeses make it automatic. story/ replaces this; keep it dumb.
 export function createDemo(): DeckSource {
   const SVC: Record<StopId, number> = { repo: 0.2, planner: 1, builder: 1.1, checks: 0.9, review: 0.6, gate: 0.4, launch: 0.6 };
-  const SHOW: Record<StopId, number> = { repo: 0, planner: 99, builder: 1, checks: 2, review: 3, gate: 3, launch: 0 };
+  const SHOW: Record<StopId, number> = { repo: 0, planner: 1, builder: 1, checks: 2, review: 3, gate: 3, launch: 0 };
   const q: Record<StopId, (Item & { t: number; approved?: boolean })[]> = Object.fromEntries(STOPS.map((s) => [s, []])) as never;
   let t = 0, spawnT = 0.5, n = 0, shipped = 0, approvals = 0, auto = false, laterUntil = 0;
   let caption: string | null = "Software is a factory.", captionT = 3;

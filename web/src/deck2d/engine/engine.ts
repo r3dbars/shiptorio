@@ -14,7 +14,7 @@ const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: 670 };
 const SPEED = 170, GAP = 50, CRATE = 42;
 /** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */
 const LOOK: Record<StopId, { h: number; drop: number }> = {
-  repo: { h: 190, drop: 46 }, planner: { h: 190, drop: 42 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
+  repo: { h: 190, drop: 46 }, planner: { h: 165, drop: 40 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
   review: { h: 140, drop: 44 }, gate: { h: 168, drop: 44 }, launch: { h: 0, drop: 0 },
 };
 const LEVER = { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
