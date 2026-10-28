@@ -1,5 +1,5 @@
 import {
-  BELT_Y, FLOOR_Y, LAUNCH_Y, STOPS, STOP_X,
+  BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 
@@ -12,11 +12,6 @@ const BRIDGE_Y = PAD.y + PAD.s * 560;
 const ORB = { x: 1043, y: 578 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: 670 };
 const SPEED = 170, GAP = 50, CRATE = 42;
-/** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */
-const LOOK: Record<StopId, { h: number; drop: number }> = {
-  repo: { h: 190, drop: 46 }, planner: { h: 165, drop: 40 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
-  review: { h: 140, drop: 44 }, gate: { h: 168, drop: 44 }, launch: { h: 0, drop: 0 },
-};
 const LEVER = { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
 // The belt: along the deck, down onto the bridge, out to the launch circle.

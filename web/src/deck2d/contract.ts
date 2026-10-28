@@ -131,6 +131,11 @@ export const STOP_X: Record<StopId, number> = {
 export const LAUNCH_Y = 250; // the launch circle on the rocket island
 /** Where things stand: a sprite's feet sit on this y at a stop (slightly in front of the belt). */
 export const FLOOR_Y = BELT_Y + 42;
+/** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */
+export const LOOK: Record<StopId, { h: number; drop: number }> = {
+  repo: { h: 190, drop: 46 }, planner: { h: 165, drop: 40 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
+  review: { h: 140, drop: 44 }, gate: { h: 168, drop: 44 }, launch: { h: 0, drop: 0 },
+};
 
 // ---------- art ----------
 export const ART_BASE = "/deck/art/";
