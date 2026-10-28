@@ -163,7 +163,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // First run teaches one concept at a time and hides the HUD it hasn't introduced yet. ?tour=0 turns it off.
   // One thing talks at a time: a rocket's celebration, then a lesson, then a badge, then the card (bug hunt, 2026-10-27).
   const [celebrating, setCelebrating] = useState(false);
-  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0", celebrating || !!ach.toast);
+  // The welcome tour (or Build as you go) is the one teaching path, so lessons stay quiet unless ?lessons=1 asks for them.
+  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0", celebrating || !!ach.toast, new URLSearchParams(location.search).get("lessons") !== "1");
   const { show } = tour;
   // Coming back after hours away: a few seconds of what really shipped meanwhile, then the launch waiting on you.
   const [reduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
