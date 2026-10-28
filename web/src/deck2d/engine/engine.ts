@@ -216,7 +216,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function crate(c: Crate) {
     const [x, y] = at(c.d);
-    if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.25 + 0.2 * Math.sin(t * 6));
+    if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
     cx.globalAlpha = c.fade;
     put("crate-" + c.look, x, y + 12, CRATE);
     cx.globalAlpha = 1;
@@ -226,15 +226,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (!s.built || id === "launch") return;
     if (layers.some((l) => l.owns?.(s))) return;
     const e = 1 - drop[id], fall = -420 * e * e; // drops in from the sky
-    const bob = s.state === "working" && Math.sin(t * 20) > 0.5 ? -1.5 : 0;
+    const bob = 0; // calm: working stations don't jitter; the belt and crates show the work
     const L = LOOK[id];
     cx.globalAlpha = Math.min(1, drop[id] * 3);
     put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
     if (s.state === "jammed") {
-      const x = STOP_X[id], top = BELT_Y + L.drop - L.h, blink = Math.sin(t * 8) > -0.2;
-      glow(x, top, 130, "255,60,40", blink ? 0.35 : 0.12);
-      if (blink) put("beacon", x, top + 18, 54);
+      // the one marker on the deck: a steady beacon with a slow breath, not a strobe
+      const x = STOP_X[id], top = BELT_Y + L.drop - L.h;
+      glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4));
+      put("beacon", x, top + 18, 54);
       if (s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
         cx.fillStyle = "#2b1a0a"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.font = "15px Silkscreen, monospace";
         const [a, b] = s.waiting.split(" ");
@@ -304,7 +305,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     islandUp = island >= 1; islandIn = island > 0;
     slot("deck");
     put("boiler-on", 112, 182, 168);
-    glow(ORB.x, ORB.y, 100, "120,240,255", 0.3 + 0.2 * Math.sin(t * 2), true);
+    glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
     belt();
     slot("line");
     rocketDraw();
