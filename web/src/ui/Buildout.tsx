@@ -3,7 +3,7 @@
 // build. Later is on the left, the build on the right. On your own repo the steps that need something real (the
 // repo, your AI, an issue) open the repo picker, runner pairing or sign-in instead of pretending. The counters stay
 // hidden until the first rocket, then a "Look around" card frees the camera and turns them on.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { continueOption, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { HoldGesture, type HoldClock } from "./holdLaunch";
 import { RunnerConnection } from "./RunnerConnection";
@@ -63,15 +63,26 @@ const realClock: HoldClock = {
 const BUILD_FALLBACK_MS = 9000;
 // A new card lands where the last hold was: the release of that press (a touch, mostly) must not tap it.
 const SETTLE_MS = 600;
-/** Drops taps that arrive within SETTLE_MS of this card (or this step) appearing. */
-function useSettled(key: string) {
-  const at = useRef(0);
-  useEffect(() => {
-    at.current = performance.now();
-  }, [key]);
-  return <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
-    if (performance.now() - at.current >= SETTLE_MS) fn(...a);
+/** Disabled until the carried release is safe; readiness belongs to this occurrence, even A → B → A. */
+export function useSettled(key: string) {
+  const generation = useMemo(() => ({ key }), [key]);
+  const active = useRef<typeof generation | null>(null);
+  const [settled, setSettled] = useState<typeof generation | null>(null);
+  useLayoutEffect(() => {
+    active.current = generation;
+    const timer = window.setTimeout(() => {
+      if (active.current === generation) setSettled(generation);
+    }, SETTLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      if (active.current === generation) active.current = null;
+    };
+  }, [generation]);
+  const ready = settled === generation;
+  const run = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
+    if (ready && active.current === generation) fn(...a);
   };
+  return { ready, run };
 }
 // sign in with GitHub, then pick a repo (the same path the play-first chip takes)
 const SIGN_IN = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
@@ -278,7 +289,7 @@ function useAfterShip() {
 }
 
 function LookAround({ onGo }: { onGo: () => void }) {
-  const settled = useSettled("look");
+  const { ready, run: settled } = useSettled("look");
   if (!useAfterShip()) return null;
   return (
     <section className="card bo-card bo-look" role="region" aria-label={BUILDOUT.label} data-buildout-card="">
@@ -287,7 +298,7 @@ function LookAround({ onGo }: { onGo: () => void }) {
         <h2 className="bo-title">{BUILDOUT.look.title}</h2>
         <p className="bo-line">{BUILDOUT.look.why}</p>
       </div>
-      <button type="button" className="bo-tab" data-buildout-action="continue" onClick={settled(onGo)} autoFocus>
+      <button type="button" className="bo-tab" data-buildout-action="continue" disabled={!ready} onClick={settled(onGo)} autoFocus>
         {BUILDOUT.look.go}
       </button>
     </section>
@@ -329,7 +340,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
       .catch(() => {});
     return () => { on = false; };
   }, [step.id, live, issueApi]);
-  const settled = useSettled(step.id);
+  const { ready, run: settled } = useSettled(step.id);
   const name = BUILDOUT.name[step.id] ?? step.id;
   if (later === step.id) {
     return (
@@ -371,7 +382,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <a className="bo-tab" data-buildout-action="tap" href="/?onboard=repo&source=live">{BUILDOUT.real.pickRepo}</a>;
   } else if (live && step.id === "boiler") {
     // no fake power on your own repo: the boiler lights when your runner pairs
-    right = <button type="button" className="bo-tab" data-buildout-action="tap" aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
+    right = <button type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready} aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
     if (pairing && repo) extra = <div className="bo-pair"><RunnerConnection repo={repo} /></div>;
   } else if (live && step.id === "builder") {
     // your builder rises when your runner brings its assembler online
@@ -383,7 +394,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
   } else if (live && step.id === "issue") {
     extra = <p className="bo-real" role="status">{starter === "done" ? BUILDOUT.real.starterFiled : starter === "failed" ? failLine || BUILDOUT.real.starterFailed : BUILDOUT.real.starterWhy}</p>;
     right = starter === "done" ? wait(BUILDOUT.real.issueWait) : (
-      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={starter === "busy"} onClick={settled(() => void fileStarter())}>
+      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready || starter === "busy"} onClick={settled(() => void fileStarter())}>
         {BUILDOUT.real.starter}
       </button>
     );
@@ -391,7 +402,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <BuildHold card={step.id} label={action} red={step.id === "launch"} onBuild={go} />;
   } else if (step.trigger === "tap" || step.trigger === "continue") {
     const waiting = step.id === "planner" && live && !state.move; // the real plan hasn't come back yet
-    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={waiting} onClick={settled(go)}>{action}</button>;
+    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={!ready || waiting} onClick={settled(go)}>{action}</button>;
   } else {
     // auto: nothing to press, the work happens on its own (real waits stay real)
     right = (
@@ -412,7 +423,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
 
   return (
     <section className="card bo-card" role="region" aria-label={BUILDOUT.label} data-buildout-card="" data-trigger={step.trigger}>
-      <button type="button" className="bo-later" onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
+      <button type="button" className="bo-later" disabled={!ready} onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
         {BUILDOUT.later}
       </button>
       <div className="bo-body">
