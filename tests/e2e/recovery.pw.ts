@@ -141,8 +141,24 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
     test('a context that never restores gets a fresh canvas and current factory', async ({ page }) => {
       await observeGpu(page);
       await openShaft(page);
-      await page.evaluate(() => { (window as any).__originalCanvas = (window as any).__gpu.canvas; (window as any).__gpu.extension.loseContext(); });
-      await expect.poll(() => page.evaluate(() => (window as any).__gpu.canvas !== (window as any).__originalCanvas), { timeout: 6000 }).toBe(true);
+      // The old host poll could receive an already-true browser result after
+      // trace capture consumed its deadline. Keep the six-second product limit
+      // on the real lost-event clock, with a separate transport hang bound.
+      const replacement = await test.step('replace lost canvas within browser budget', () => page.evaluate(() => new Promise<{ replaced: boolean; elapsed: number }>(resolve => {
+        const gpu = (window as any).__gpu, original = gpu.canvas as HTMLCanvasElement;
+        (window as any).__originalCanvas = original;
+        original.addEventListener('webglcontextlost', () => {
+          const started = performance.now();
+          const poll = () => {
+            const elapsed = performance.now() - started;
+            if (gpu.canvas !== original || elapsed >= 6000) resolve({ replaced: gpu.canvas !== original, elapsed });
+            else requestAnimationFrame(poll);
+          };
+          requestAnimationFrame(poll);
+        }, { once: true });
+        gpu.extension.loseContext();
+      })), { timeout: 30000 });
+      expect(replacement.replaced).toBe(true); expect(replacement.elapsed).toBeLessThan(6000);
       const before = await page.evaluate(() => (window as any).__gpu.draws);
       await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws)).toBeGreaterThan(before);
       await expect(page.locator('.crash')).toHaveCount(0);
