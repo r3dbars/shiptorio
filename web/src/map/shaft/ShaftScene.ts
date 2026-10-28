@@ -124,7 +124,8 @@ export class ShaftScene {
       this.renderer.shadowMap.needsUpdate = true;
       this.update(this.state);
       this.governor.poke();
-      this.stage?.render(this.renderer);
+      // The existing RAF owns GL admission and physical-hold yielding.
+      // A restored context must not queue a second, unguarded factory frame.
     });
     this.gpu = new GpuSubmission(this.renderer.getContext(), canvas);
     perf.submissions(this.gpu.stats());
