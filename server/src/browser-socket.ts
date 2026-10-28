@@ -19,8 +19,9 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
   const cookie = request.headers.get("cookie");
   const session = await readSessionDetails(env.SESSION_SECRET, cookie, now);
   if (!session) return null;
+  let user: Awaited<ReturnType<typeof currentUser>> = null;
   if (env.DB) {
-    const user = await currentUser({...env,DB:env.DB},cookie,new URL(request.url),now);
+    user = await currentUser({...env,DB:env.DB},cookie,new URL(request.url),now);
     if (!user) return null;
   } else if (!isAllowed(env.ALLOWED_LOGINS ?? '',session.login)) return null;
 
@@ -34,7 +35,11 @@ export async function browserSocketAuth(request: Request, env: BrowserSocketEnv,
     if (!preview) return null;
     expiresAt = Math.min(expiresAt, preview.expiresAt);
   }
-  return { issuedAt: session.issuedAt, login: session.login, expiresAt, rateSubject:ipSubject(request), epoch: await browserSocketEpoch(env), ...(session.ref ? {sessionHash:await hash(session.ref.sid),userId:session.ref.uid} : {}) };
+  const sessionHash = session.ref ? await hash(session.ref.sid) : undefined;
+  // This principal belongs only to this verified upgrade. Repository access still
+  // performs its own current membership/session check before any snapshot is sent.
+  const principal = user && sessionHash ? Object.freeze({ ...user, expiresAt: session.expiresAt, sessionHash }) : undefined;
+  return { ...(principal ? { user: principal } : {}), issuedAt: session.issuedAt, login: session.login, expiresAt, rateSubject:ipSubject(request), epoch: await browserSocketEpoch(env), ...(session.ref ? {sessionHash:sessionHash!,userId:session.ref.uid} : {}) };
 
 }
 

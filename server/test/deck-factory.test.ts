@@ -69,6 +69,31 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
 }
 
 describe("durable live check-in decisions", () => {
+  it("checks the upgrade principal once per request and rechecks repository access and revocation", async () => {
+    const f = fixture([]);
+    const internal = f.factory as unknown as { env: { DB: { prepare(sql: string): any } }; githubStopped(): Promise<boolean> };
+    internal.githubStopped = async () => true;
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    let reads = 0, revoked = false;
+    internal.env.DB.prepare = (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith("SELECT u.id, u.login FROM sessions")) return statement;
+      return { ...statement, bind: (...args: unknown[]) => {
+        const bound = statement.bind(...args);
+        return { ...bound, first: async () => { reads++; return revoked ? null : bound.first(); } };
+      } };
+    };
+    await f.checkin();
+    // One principal read plus the independent repository authorization read.
+    expect(reads).toBe(2);
+    reads = 0;
+    await f.checkin();
+    expect(reads).toBe(2); // Never reuse the prior request's authority.
+    revoked = true;
+    const response = await f.factory.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
+    expect(response.status).toBe(401);
+  });
+
   it("retries an unchanged decision after a transient cursor write failure", async () => {
     const f = fixture([card("first"), card("second")]);
     await f.checkin();

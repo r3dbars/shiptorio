@@ -30,7 +30,7 @@ import { purgeInstallationTokens } from "./github";
 import { flagEnabled, flagOptedOut } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
-import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv, type BrowserSocketAuth } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
 import { unlockMove, signalWeight, type Diagnosis } from "@shiptorio/shared";
@@ -3223,14 +3223,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request, auth));
   }
 
-  private async socketFetch(request: Request): Promise<Response> {
+  private async socketFetch(request: Request, auth: BrowserSocketAuth | null): Promise<Response> {
 
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
-    const auth = await browserSocketAuth(request, this.env);
-    const user = await requireUser(request, this.env);
+    const user = auth?.user;
     if (!auth || !user) return new Response("login required", { status: 401 });
     const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
     const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
