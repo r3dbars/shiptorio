@@ -10,7 +10,7 @@ permissions:
 # Main is checked by the Deploy run instead.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.head_ref, 'release/') }}
+  cancel-in-progress: ${{ !startsWith(github.head_ref, 'release/') && !startsWith(github.ref, 'refs/heads/release/') }}
 on:
   workflow_dispatch:
     inputs:
