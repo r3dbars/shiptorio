@@ -40,3 +40,26 @@ always know what the bottleneck is and how to stop being it.
 5. **Everything else is behind the menu.**
 
 Code: `web/src/ui/TaskTray.tsx`, `web/src/ui/slowSpot.ts`, `ShaftHud.quiet` in `web/src/map/shaft/hud.ts`.
+
+## Journey picks (Justin, 2026-10-28 15:06)
+
+From https://claude.ai/artifact/8ceP1bPLxWcxKrFf5ab1Km (answers in its `picks/journey` db doc).
+
+| # | Question | Pick | Where it lives |
+| --- | --- | --- | --- |
+| 1 | First open | C: no tour, learn by doing | `?simple=1` turns off the first-run tutorial, build-as-you-go and the morning brief |
+| 2 | Connect your repo | C: play first, setup cards later | the demo shop; signing in is a card after a rocket (#359) |
+| 3 | Plug in your Mac | B: a setup card with one command | the agent card's Go opens the Power sheet's one-line install |
+| 4 | Is my Mac working? | B: a small lamp by the counters | `MachineLight` (#474) inside the compact floor card |
+| 5 | Dim the rest | C: hard spotlight | default `data-look="glass hard"` |
+| 6 | Solid or see-through | B: glass | same |
+| 7 | Shipping a PR | A: hold the red button | `HoldLaunch` on launch cards |
+| 8 | Phone, 30 seconds | A: map + one card | the tray opens on its own when there's a card |
+| 9 | Desktop | A: same as the phone | one layout |
+| 10 | New tools over time | none: "for v0 this needs to be drastically simplified" | nothing new shows up on the simple screen; extras stay in the menu |
+| 11 | How much the agent does alone | none: "the magic sauce" | thread "Teach the factory to automate what you approve" |
+
+Pick 11, in Justin's words: the agent runs the game and keeps its own evals of what you approve as-is, change, push
+Later or dismiss. A dismiss is a chance to tweak the task or suggest something else. Over time it suggests what you
+actually take. Start very simple: a dots meter on the card (●●○) with one plain sentence, like "2 more yeses and the
+factory does this for you". The meter sits on the approve card where the `.tearn` line is now.

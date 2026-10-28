@@ -22,9 +22,11 @@ interface Props {
   onFocus: (focus: string | null) => void; // fly the camera to what the shown card is about
   onPower?: () => void; // live local-agent setup opens Power, never a server connector action
   autonomy?: FactoryState["autonomy"];
+  // the "what's next" idea when nothing waits on you: how the simple screen teaches by doing (no tour, journey pick 1)
+  nudge?: { kicker: string; title: string; cta: string; onGo: () => void } | null;
 }
 
-export function TaskTray({ deck, send, onFocus, onPower, autonomy }: Props) {
+export function TaskTray({ deck, send, onFocus, onPower, autonomy, nudge }: Props) {
   const [gone, setGone] = useState<Set<string>>(() => new Set()); // answered here; hidden before the server agrees
   const tasks = taskOrder(deck).filter((m) => !gone.has(m.id));
   const [curId, setCurId] = useState<string | null>(null);
@@ -50,7 +52,23 @@ export function TaskTray({ deck, send, onFocus, onPower, autonomy }: Props) {
   useEffect(() => onFocusRef.current(focus), [focus, card?.id]);
   useEffect(() => () => onFocusRef.current(null), []);
 
-  if (!card) return null;
+  if (!card) {
+    if (!nudge) return null;
+    return (
+      <div className="needs tasktray" role="region" aria-label={TASKS.label}>
+        <section className="acard suggest tabbed task" aria-label={`${TASKS.kind.suggest}: ${nudge.title}`}>
+          <div className="abody">
+            <div className="atop"><b>{TASKS.kind.suggest}</b><span>{nudge.kicker}</span></div>
+            <span className="att">{nudge.title}</span>
+          </div>
+          <button type="button" className="ago atab" data-sfx onClick={nudge.onGo}>
+            {nudge.cta}
+            <span aria-hidden="true"> →</span>
+          </button>
+        </section>
+      </div>
+    );
+  }
   const step = (by: number) => {
     if (tasks.length < 2) return;
     sound.play("card_later");
