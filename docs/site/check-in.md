@@ -65,6 +65,12 @@ While your local runner is planning or handling an approved build, the general b
 
 Every swipe can be undone for five minutes. Push a card to **Later** three times and it comes back asking "Never, or let the factory decide?"
 
+## Teach the factory
+
+Plan cards and plan approvals carry a row of dots: **●●○ Approve 1 more like this and then it's automatic.** Each Continue on that kind of card, in that folder, fills a dot. Fill all three and the factory starts and approves those plans on its own from then on. **Later**, picking another option, or **Never** empties the dots again, and **Just this one** also tells the planner to try a different version or something else next time.
+
+Launching is never learned: the red button always waits for you. If work the factory started on its own comes back from the gauntlet, that kind of card goes back to asking you. See everything it learned in **Make it yours**, where **Ask me again** turns one off.
+
 ## Swipe right only on proof
 
 A ship card shows its gauntlet stamps: ✓ or ✕ for CI, the verify bay and AI review. If any stamp hasn't passed, the card is **locked**: "No merge on swipe · not proven yet." Swiping right runs the missing check instead of merging. That rule is what makes fast swiping safe.

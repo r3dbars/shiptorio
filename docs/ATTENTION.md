@@ -249,8 +249,8 @@ Classified from `web/src/ui`, `web/src/App.tsx`, `web/src/sound` and the server 
   on, each one adds 4 to `deckScore` (max 20), the card says "You said yes to the last N like this.", and the
   planner sees `playerYesStreaks` in `playerFeedback`.
 
-Not yet: the "let these run on their own?" offer at 5 in a row (needs real per-class autonomy; today "You decide
-these" is only recorded), the digest, push modes and quiet-hours settings, the coach lessons for the three kinds.
+Since 2026-10-28 (docs/LEARN.md): 3 Continues in a row on a plan or plan-approval card class teaches the factory to
+do that class on its own (flag `learn`), with a dots meter on the card. Not yet: the digest, push modes and quiet-hours settings, the coach lessons for the three kinds.
 
 ## Contract sketch (for the build, later)
 

@@ -93,6 +93,7 @@ import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, reco
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
+import { dismissNote, forget, forgetOnComeback, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
@@ -413,6 +414,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
     const yes = await flagEnabled(this.env, "attention") ? this.deckBook!.yes : undefined;
+    const learning = await flagEnabled(this.env, "learn");
     this.kickBrain(derived, now);
     const brainCard = await this.brainCard(derived);
     const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
@@ -427,15 +429,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (decision && decision.count >= 3) return thirdDefer(m);
       // Say out loud when the player's own taps put a card here, unless the game master already explained it.
       const streak = yes?.[yesKey(m.kind ?? "unblock", moveScope(m, s))] ?? 0;
-      return streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
+      const card = streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
+      // docs/LEARN.md: the dots. How many more yeses until the factory does this kind on its own.
+      const learn = learning ? learnMeter(this.deckBook!, m, moveScope(m, s)) : undefined;
+      return learn ? { ...card, learn } : card;
     });
     const previous = s.move;
     s.deck = deck; s.move = deck[0] ?? null;
+    s.learned = learning ? learnedList(this.deckBook!) : [];
     await this.logDeck(deck);
     await this.accountPut("openMoves", this.openMoves);
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
-    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck } });
+    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, learned: s.learned } });
     // Unchanged decisions need no new transport frame. Every frame we do publish
     // retains broadcast's fresh session/membership checks; tick and queue telemetry
     // keep flowing even when the cards are unchanged.
@@ -675,8 +681,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async logOutcome(itemId: string, outcome: TapOutcome): Promise<void> {
+    if (outcome === "rework" || outcome === "came_back") await this.unlearnOnComeback(itemId);
     if (!tapsEnabled(this.env) || !this.meta) return;
     try { await recordOutcome(this.env.DB, this.meta.repo, itemId, outcome, Date.now()); } catch (error) { this.tapsError(error); }
+  }
+
+  /** docs/LEARN.md: work the factory started on its own came back, so that kind of card asks the player again. */
+  private async unlearnOnComeback(itemId: string): Promise<void> {
+    try {
+      await this.decisionData();
+      if (!forgetOnComeback(this.deckBook!, itemId)) return;
+      await this.accountPut("deckBook", this.deckBook);
+      this.log("warn", "Something the factory did on its own came back. It asks you about these again.");
+    } catch (error) { report(error, "factory.unlearn_failed"); }
   }
 
   /** The player's last 30 days of taps, boiled down for the game master. Cached 10 minutes. */
@@ -709,6 +726,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           this.deckRules!.push(rule); undo.rule = rule;
         }
       }
+      // docs/LEARN.md: a plain dismiss is a lesson too. The planner tries another version or something else next time.
+      if (why === "once") { undo.noteId = id; book.notes.push({ id, text: dismissNote(move, scope) }); book.notes = book.notes.slice(-100); }
       if (why === "wrong") { undo.noteId = id; book.notes.push({ id, text: `Player correction for ${move.kind ?? "unblock"} in ${scope}: ${move.title}. Reason: wrong call; reconsider this proposal.` }); book.notes = book.notes.slice(-100); }
       if (why === "spark") await this.recordApproval(move.kind ?? "unblock", scope, id);
       book.undos = [...book.undos.filter(u => u.expiresAt > Date.now()), undo].slice(-100);
@@ -2137,6 +2156,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
+    if (p.learned) s.learned = p.learned;
     if (p.support) s.support = p.support;
     // Station piles follow the items, so every item change re-counts the gauntlet.
     if (p.items || p.removed || p.research || p.experiments) p = { ...p, stations: (s.stations = liveStations(s)) };
@@ -2760,6 +2780,46 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     }
   }
 
+  /**
+   * docs/LEARN.md: cards the player taught the factory (3 yeses in a row on one kind) get answered on their own, through
+   * the same handlers a player's tap uses. One card per tick, logged as approvedBy "autonomy". Only plans and plan
+   * approvals (learn.ts learnOption): nothing here can launch or merge.
+   */
+  private async runLearned(): Promise<void> {
+    if (!(await flagEnabled(this.env, "learn"))) return;
+    await this.decisionData();
+    const s = this.state!, book = this.deckBook!;
+    if (!Object.keys(book.auto ?? {}).length) return;
+    for (const card of [...this.openMoves!]) {
+      const optionId = learnOption(card);
+      const key = learnKey(card, moveScope(card, s));
+      if (!optionId || !isLearned(book, key) || suppressed(book, card)) continue;
+      const label = card.options.find(o => o.id === optionId)?.label ?? optionId;
+      s.move = card;
+      const before = JSON.stringify(await this.runnerJobs());
+      await this.chooseRunnerMove(card, optionId);
+      const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
+      if (consumed) {
+        noteAutoRun(book, card.itemId, key);
+        await this.logTap(card, "auto", optionId);
+        await this.accountPut("deckBook", book);
+      }
+      await this.refreshDecisions();
+      if (!consumed) continue;
+      this.broadcast({ type: "log", level: "info", text: `${card.title}: ${label}`, at: Date.now(), itemId: card.itemId, actor: "spark", tool: card.options.find(o => o.id === optionId)?.actions[0]?.tool, approvedBy: "autonomy", reason: "You taught it this one. Turn it off in Make it yours." });
+      return;
+    }
+  }
+
+  /** The player wants to be asked again for this kind of card. */
+  private async unlearn(key: string): Promise<void> {
+    await this.decisionData();
+    if (!forget(this.deckBook!, key)) return;
+    await this.accountPut("deckBook", this.deckBook);
+    this.log("info", "Got it. The factory asks you about these again.");
+    await this.refreshDecisions();
+  }
+
   /** The player turned the factory's level down. Going up only happens on the card. */
   private async setLevel(level: AutonomyLevel): Promise<void> {
     const book = lowerLevel(await this.permitBook(), level);
@@ -3053,6 +3113,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (msg.type === "set_autonomy" && msg.permit && !(await flagEnabled(this.env, "permits", auth.login))) return;
     const s = this.state!;
     if (msg.type === "undo") { await this.undoDecision(msg.actionId); return; }
+    if (msg.type === "unlearn") { await this.unlearn(msg.key); return; }
     if (msg.type === "choose_move" || msg.type === "defer_move" || msg.type === "dismiss_move") {
       await this.decisionData();
       const card = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
@@ -3087,6 +3148,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (consumed && option.recommended) {
           await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
           noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
+          if (await flagEnabled(this.env, "learn") && learnFromYes(this.deckBook!, card, moveScope(card, s), Date.now()))
+            this.broadcast({ type: "log", level: "success", text: "Learned. The factory does these on its own now.", at: Date.now(), itemId: card.itemId, actor: "player", reason: "You said yes 3 times in a row. Turn it off in Make it yours." });
+          await this.accountPut("deckBook", this.deckBook);
+        } else if (consumed && learnOption(card)) {
+          // Edit: the player changed the suggestion, so the streak starts over.
+          resetYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
           await this.accountPut("deckBook", this.deckBook);
         }
       }
@@ -3402,6 +3469,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.guard("offerResearchMove", () => this.offerResearchMove());
     await this.guard("offerRunnerPlan", () => this.offerRunnerPlan());
     await this.guard("runLevel", () => this.runLevel());
+    await this.guard("runLearned", () => this.runLearned());
     const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");
     const busy = s.items.some((i) => i.attempts < MAX_ATTEMPTS && ((i.state === "ore" && hasMachine(s, "splitter")) || i.state === "rejected" || (i.state === "queued" && this.env.HOSTED_SPARK_ASSEMBLER === "1" && sparkConfigured(this.env) && !!pickAssembler(s, i))));
     if ((busy || this.ctx.getWebSockets("web").length > 0 || presence && Date.now() - presence.seenAt < 22000) && (await this.ctx.storage.getAlarm()) == null) await this.accountAlarm(Date.now() + TICK_MS);

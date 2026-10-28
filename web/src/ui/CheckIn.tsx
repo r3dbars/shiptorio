@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import type { Autonomy, Move, WebToServer } from "@shiptorio/shared";
 import { ATTENTION, CHECKIN, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { Icon } from "./icons";
+import { LearnDots } from "./LearnDots";
 
 type Gesture = "right" | "left" | "down" | "up";
 type Why = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -302,6 +303,7 @@ export function CheckIn({ deck, autonomy, send, onFocus, onClose, onAnswered, en
                   </div>
                   <div className="ci-title">{m.title}</div>
                   <p className="ci-why">{m.why}</p>
+                  <LearnDots learn={m.learn} />
                   {zoomed && because(m) && <p className="why-line"><b>{THINKS.why}</b> {because(m)}</p>}
                   {m.evidence && (
                     <div className="ci-stamps">
