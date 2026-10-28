@@ -30,14 +30,18 @@ test("temporary bindings stay inside admitted draws and shared originals survive
   expect(originalDisposals).toBe(0);
 });
 
-test("material/layout groups progress without re-wrapping promoted originals", () => {
-  const root = new THREE.Group(), a = mesh(), b = mesh(); root.add(a, b);
-  const originals = [a.material, b.material];
-  const recovery = new RecoveryMaterials(); recovery.begin(root);
-  recovery.prepare(); recovery.advance(); recovery.prepare(); recovery.advance();
-  recovery.prepare(); expect(a.material).toBe(originals[0]); expect(b.material).not.toBe(originals[1]);
-  recovery.advance(); recovery.prepare(); recovery.advance();
-  expect(b.material).toBe(originals[1]); expect(recovery.pending).toBe(0);
+test("at most eight exact groups are promoted per admitted frame, including new and detached meshes", () => {
+  const root = new THREE.Group(), objects = Array.from({ length: 20 }, () => mesh()); root.add(...objects);
+  const originals = objects.map(o => o.material), recovery = new RecoveryMaterials(); recovery.begin(root);
+  recovery.prepare(); recovery.advance(); // cheap only; no originals promoted yet
+  recovery.prepare(); expect(objects.every((o, i) => o.material !== originals[i])).toBe(true); recovery.advance();
+  recovery.prepare(); expect(objects.filter((o, i) => o.material === originals[i])).toHaveLength(8); recovery.advance();
+  // A new exact material joins while an obsolete pending group disappears.
+  objects[19].removeFromParent(); const added = mesh(), addedOriginal = added.material; root.add(added);
+  recovery.prepare(); expect(objects.slice(0, 16).every((o, i) => o.material === originals[i])).toBe(true);
+  expect(added.material).not.toBe(addedOriginal); recovery.advance();
+  recovery.prepare(); expect(added.material).toBe(addedOriginal); recovery.advance();
+  expect(recovery.active).toBe(false); expect(recovery.pending).toBe(0);
 });
 
 test("temporary materials preserve maps, alpha, depth, clipping, custom hooks and skin geometry", () => {
@@ -98,7 +102,8 @@ test("temporary visibility uses the real FirstRun shader while original hooks re
   object.material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
   expect(shader.vertexShader).toContain("frPiece");
   expect(shader.fragmentShader).toContain("if (vFrGone > 0.5) discard");
-  expect(shader.fragmentShader).toContain("frShade");
+  expect(shader.fragmentShader).not.toContain("frShade");
+  expect(shader.vertexShader).not.toContain("vFrPos");
   expect(original.onBeforeCompile).toBe(hook);
   recovery.cancel(); expect(object.material).toBe(original);
 });
@@ -162,4 +167,28 @@ test("ordinary unlit meshes share the temporary family without inventing emissiv
   expect(temporary.uniforms.alphaTest.value).toBe(0.4); expect(temporary.opacity).toBe(0.7); expect(temporary.side).toBe(THREE.DoubleSide);
   expect(temporary.transparent).toBe(true); expect(material.onBeforeCompile).toBe(hook);
   recovery.advance(); expect(object.material).toBe(material); recovery.cancel(); expect(disposed).toBe(0);
+});
+
+test("finishing draws current originals even when animation introduces another material every frame", () => {
+  const root = new THREE.Group(); root.add(mesh()); const recovery = new RecoveryMaterials(); recovery.begin(root);
+  recovery.prepare(); recovery.advance(); recovery.prepare(); recovery.advance();
+  const added = mesh(), original = added.material; root.add(added);
+  recovery.prepare(); expect(added.material).toBe(original); recovery.advance(); expect(recovery.active).toBe(false);
+});
+test("baked vertex palette remains compiled into the unified family, with the uniform switch for uncolored geometry", () => {
+  const root = new THREE.Group(), object = mesh(new THREE.MeshPhongMaterial({ vertexColors: true })); root.add(object);
+  object.geometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(object.geometry.getAttribute("position").count * 3).fill(0.25), 3));
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  const temporary = object.material as unknown as THREE.ShaderMaterial;
+  expect(temporary.defines).toHaveProperty("USE_COLOR"); expect(temporary.defines).toHaveProperty("USE_COLOR_ALPHA");
+  expect(temporary.uniforms.recoveryVertexColor.value).toBe(1);
+  expect(temporary.vertexShader).toContain("vColor *= mix(vec4(1.0), color, recoveryVertexColor)");
+  recovery.cancel();
+});
+
+test("normal FirstRun materials retain full floor-light shading", () => {
+  const root = new THREE.Group(), object = mesh(); root.add(object); const light = new FirstRunLight(); light.set(1, true); light.patch(root, true);
+  const shader = { uniforms: {}, vertexShader: "#include <common>\n#include <project_vertex>", fragmentShader: "#include <common>\n#include <clipping_planes_fragment>\n#include <tonemapping_fragment>" };
+  object.material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
+  expect(shader.fragmentShader).toContain("if (vFrGone > 0.5) discard"); expect(shader.fragmentShader).toContain("frShade"); expect(shader.vertexShader).toContain("vFrPos");
 });

@@ -149,6 +149,7 @@ export class FirstRunLight {
         seen.add(m);
         m.userData.firstRun = true;
         const tags = hide;
+        const visibilityOnly = !!m.userData.recoveryVisibility;
         const before = m.onBeforeCompile;
         m.onBeforeCompile = (sh, r) => {
           before.call(m, sh, r);
@@ -162,6 +163,7 @@ export class FirstRunLight {
               .replace("#include <common>", "#include <common>\nvarying float vFrGone;")
               .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vFrGone > 0.5) discard;");
           }
+          if (visibilityOnly) return; // Temporary unlit recovery keeps piece masks, not cold floor lighting.
           sh.vertexShader = sh.vertexShader
             .replace("#include <common>", "#include <common>\nuniform mat4 frRootInv;\nvarying vec3 vFrPos;")
             .replace(

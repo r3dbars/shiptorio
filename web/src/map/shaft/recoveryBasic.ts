@@ -17,7 +17,7 @@ export function recoveryBasic(source: LitMaterial, white: THREE.Texture): THREE.
   material.alphaTest = 0;
   material.fog = true;
   material.clipping = !!source.clippingPlanes?.length;
-  material.defines = { USE_MAP: "", USE_ALPHAMAP: "", USE_ALPHATEST: "", USE_COLOR_ALPHA: "", MAP_UV: uv(source.map), ALPHAMAP_UV: uv(source.alphaMap) };
+  material.defines = { USE_MAP: "", USE_ALPHAMAP: "", USE_ALPHATEST: "", USE_COLOR: "", USE_COLOR_ALPHA: "", MAP_UV: uv(source.map), ALPHAMAP_UV: uv(source.alphaMap) };
   for (const texture of [source.map, source.alphaMap]) if (texture?.channel) material.defines[`USE_UV${texture.channel}`] = "";
   material.uniforms.recoveryVertexColor = { value: source.vertexColors ? 1 : 0 };
   material.uniforms.recoveryFog = { value: source.fog ? 1 : 0 };

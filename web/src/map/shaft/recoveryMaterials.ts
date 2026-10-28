@@ -39,6 +39,9 @@ export class RecoveryMaterials {
 
   /** Include newly arrived/current-state meshes without re-wrapping promoted ones. */
   prepare() {
+    // The final frame uses ALL current originals, including newly animated meshes.
+    // Chasing new per-frame material identities here would keep recovery alive forever.
+    if (this.finishing) { this.originalLighting = true; this.groups.clear(); return; }
     for (const [source, basic] of this.basics) syncRecoveryBasic(basic, source as LitMaterial, this.white!);
     this.groups.clear();
     this.originalLighting = false;
@@ -93,8 +96,7 @@ export class RecoveryMaterials {
     this.restoreBindings();
     if (this.finishing) { this.cancel(); return; }
     if (++this.frames < 2) return;
-    const first = this.groups.values().next().value;
-    if (first !== undefined) { this.groups.delete(first); this.warmed.add(first); }
+    for (const key of Array.from(this.groups).slice(0, 8)) { this.groups.delete(key); this.warmed.add(key); }
     if (!this.groups.size) this.finishing = true;
   }
 
