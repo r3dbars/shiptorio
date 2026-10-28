@@ -339,7 +339,8 @@ it("Later survives reconnect but unrelated machine writes are not replayed", () 
   const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
   source.send({type:"defer_move",moveId:"plan-1"}); source.send({type:"set_goal",text:"not replayable"});
   h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot());
-  expect(fresh.sent).toEqual([JSON.stringify({type:"defer_move",moveId:"plan-1"})]); source.close();
+  expect(fresh.sent).toHaveLength(1);
+  expect(JSON.parse(fresh.sent[0])).toMatchObject({type:"defer_move",moveId:"plan-1",intentId:expect.stringMatching(/^[a-f0-9-]{36}$/)}); source.close();
 }));
 it("pong cannot hide an unacknowledged decision; replay is bounded and visibly asks for retry", () => transportTest(h => {
   const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
@@ -391,4 +392,16 @@ it("offline nonreplayable choices request an explicit retry and never run after 
   source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
   expect(h.messages.at(-1)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")});
   h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(JSON.stringify(state));expect(fresh.sent).toEqual([]);source.close();
+}));
+
+it("Later reuses one correlation ID after ack loss; a fresh later tap gets a new ID", () => transportTest(h => {
+  const source=h.connect(),first=h.sockets[0];first.open();first.message(decisionSnapshot());
+  source.send({type:"defer_move",moveId:"plan-1"});source.send({type:"defer_move",moveId:"plan-1"});
+  expect(first.sent).toHaveLength(1);const original=JSON.parse(first.sent[0]);expect(original.intentId).toMatch(/^[a-f0-9-]{36}$/);
+  first.close();h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(decisionSnapshot());
+  expect(JSON.parse(fresh.sent[0])).toEqual(original);
+  fresh.message(JSON.stringify({type:"deck",deck:[],seq:1}));
+  fresh.message(JSON.stringify({type:"deck",deck:[decisionCard()],seq:2}));
+  source.send({type:"defer_move",moveId:"plan-1"});
+  expect(JSON.parse(fresh.sent[1]).intentId).not.toBe(original.intentId);source.close();
 }));

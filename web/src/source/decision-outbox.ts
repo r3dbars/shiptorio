@@ -2,15 +2,15 @@ import type { Move, ServerToWeb, WebToServer } from "@shiptorio/shared";
 
 type Decision = Extract<WebToServer, {type:"choose_move"|"defer_move"|"dismiss_move"}>;
 export const isDecision = (message: WebToServer): message is Decision => ["choose_move", "defer_move", "dismiss_move"].includes(message.type);
-// Include the entire offered action scope/plan, not just a reusable move ID. Display-only
-// ranking/wording changes do not authorize a different tool, file scope or PR head.
+// Include the complete offered options and plan, matching the server receipt scope.
+// A reusable card ID alone cannot authorize a different plan, tool or PR head.
 const fingerprint = (move: Move) => JSON.stringify([move.itemId, move.stage, move.kind, move.plan, move.locked,
-  move.options.map(option => [option.id, option.actions])]);
+  move.options]);
 
 /** Memory belongs to this one source/repo lifetime. No localStorage, credentials or optimistic state. */
 export class DecisionOutbox {
   private cards = new Map<string, Move>();
-  private pending = new Map<string, { message: Decision; scope: string; sentOn?: object; attempts: number; queuedAt: number }>();
+  private pending = new Map<string, { message: Decision; scope: string; sentOn?: object; attempts: number; queuedAt: number; request: string }>();
   constructor(private readonly changed: (reason: "changed" | "unconfirmed") => void) {}
 
   observe(message: ServerToWeb) {
@@ -41,9 +41,13 @@ export class DecisionOutbox {
     const card = this.cards.get(message.moveId);
     if (!card || message.type === "choose_move" && !card.options.some(o => o.id === message.optionId)) { this.changed("changed"); return; }
     const prior = this.pending.get(message.moveId);
-    if (prior && JSON.stringify(prior.message) === JSON.stringify(message)) return;
+    const request = JSON.stringify(message);
+    if (prior?.request === request) return;
     if (!prior && this.pending.size >= 12) { this.changed("changed"); return; }
-    this.pending.set(message.moveId, { message: structuredClone(message), scope: fingerprint(card), attempts: 0, queuedAt: Date.now() });
+    // Correlation is created once for this player intent and reused on every resend.
+    // The server still authenticates the player/card/scope; the UUID grants nothing.
+    const wire = message.type === "defer_move" ? {...message, intentId: crypto.randomUUID()} : message;
+    this.pending.set(message.moveId, { message: structuredClone(wire), scope: fingerprint(card), attempts: 0, queuedAt: Date.now(), request });
   }
 
   get hasPending() { return this.pending.size > 0; }
