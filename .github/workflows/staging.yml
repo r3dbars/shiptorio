@@ -1,16 +1,26 @@
 name: Staging
 permissions:
   contents: read
+# The dev branch deploys to shiptorio.dev on every push (docs/context/branches.md).
 on:
+  push:
+    branches: [dev]
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/context/**"
+      - "!docs/playtest/**"
+      - "docs/site/**"
   workflow_dispatch:
 jobs:
   deploy:
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Finish the running deploy; only the newest waiting push deploys next.
     concurrency:
       group: deploy-staging
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

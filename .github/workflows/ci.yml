@@ -2,12 +2,12 @@ name: CI
 permissions:
   contents: read
 # One run per branch/event at a time. A new push cancels the previous run, except on
-# release/* branches, where an in-flight full run always finishes (a fix landing
-# mid-run used to throw away 10+ minutes of browser/load evidence).
-# Every ready PR runs everything: check/selfhost plus the browser and load suites.
-# When all four pass, the full-suite job posts the release-validation status that
-# main requires, so nobody has to dispatch and stamp it by hand. Drafts skip CI.
-# Main is checked by the Deploy run instead.
+# release/* branches, where an in-flight full run always finishes.
+# Two lanes (docs/context/branches.md):
+# - PRs into dev (where agents land work): check + selfhost only, so they merge in minutes.
+# - PRs into main (dev -> main promotions): also the browser and load suites. When all
+#   four pass, the full-suite job posts the release-validation status main requires.
+# Drafts skip CI. Main and dev are checked again by their deploy runs.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.head_ref, 'release/') && !startsWith(github.ref, 'refs/heads/release/') }}
@@ -75,7 +75,7 @@ jobs:
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
   browser:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.base_ref != 'dev')
     runs-on: ubuntu-latest
     # Split each viewport's files across two jobs as browser coverage grows.
     # Existing per-test and individual assertion deadlines remain unchanged.
@@ -122,7 +122,7 @@ jobs:
             tests/e2e/baselines/linux/
           retention-days: 7
   load:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.base_ref != 'dev')
     runs-on: ubuntu-latest
     # Up to three load runs (see tests/load/repeat.ts).
     timeout-minutes: 20
