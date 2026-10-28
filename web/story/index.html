@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#18233a">
+<meta name="description" content="Play the Shiptorio story in one minute. Agents build. You clear the bottleneck. Rockets ship.">
+<title>One small factory · Shiptorio</title>
+<style>
+  * { box-sizing: border-box; }
+  :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #18233a; color: #f5efdf; }
+  body { margin: 0; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 3px solid #6fb2ff; outline-offset: 5px; }
+  [hidden] { display: none !important; }
+  main { max-width: 460px; min-height: 100svh; margin: auto; padding: max(20px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; justify-content: space-between; font-size: 14px; letter-spacing: .04em; }
+  header a { color: inherit; text-decoration: none; font-weight: 800; }
+  #pause { border: 1px solid #566078; color: #c3cadd; background: transparent; border-radius: 24px; min-height: 44px; padding: 0 16px; }
+  .track { height: 3px; margin: 22px 0 30px; background: #354059; }
+  #progress { height: 100%; width: 0; background: #f2a93b; }
+  h1 { font-size: clamp(32px, 8.5vw, 42px); letter-spacing: -.055em; line-height: 1.08; margin: 0; font-weight: 800; }
+  #caption { color: #b9c3d6; font-size: 16px; line-height: 1.5; margin: 14px 0 0; min-height: 48px; }
+  #scene { width: 100%; flex: 1; min-height: 200px; max-height: 360px; margin: 8px 0; overflow: visible; }
+  svg text { font-family: system-ui, sans-serif; font-size: 12px; fill: #b9c3d6; text-anchor: middle; }
+  .machine { fill: #6fb2ff; }
+  .crate { fill: #f2a93b; stroke: #18233a; stroke-width: 3; }
+  #you { fill: #f2a93b; }
+  #you-label { fill: #f5efdf; font-size: 17px; font-weight: 800; }
+  #action { min-height: 180px; display: flex; flex-direction: column; justify-content: center; }
+  .primary { width: 100%; border: 0; border-radius: 16px; background: #f2a93b; color: #18233a; padding: 20px; font-size: 17px; font-weight: 800; text-align: center; text-decoration: none; }
+  .hint { font-size: 12px; color: #b9c3d6; text-align: center; margin: 14px 0 0; }
+  #card { touch-action: pan-y; user-select: none; width: 100%; text-align: left; padding: 20px; background: #f5efdf; color: #18233a; border: 0; border-radius: 16px; }
+  #card small { display: block; color: #42516a; font-size: 12px; margin-bottom: 10px; }
+  #card strong { display: block; font-size: 20px; letter-spacing: -.025em; }
+  #card span { display: block; margin-top: 16px; font-size: 14px; font-weight: 750; color: #386447; }
+  #receipt { text-align: center; color: #5bd18b; font-size: 24px; font-weight: 800; }
+  #receipt small { display: block; color: #b9c3d6; font-size: 14px; font-weight: 400; margin-top: 12px; }
+  #replay { color: #b9c3d6; border: 0; background: transparent; padding: 16px; min-height: 44px; }
+  footer { text-align: center; color: #8f9cb5; font-size: 11px; margin-top: 18px; }
+  @media (max-height: 700px) { .track { margin: 14px 0 20px; } #scene { min-height: 160px; max-height: 240px; } #action { min-height: 152px; } }
+</style>
+</head>
+<body>
+<main>
+  <header><a href="/">SHIPTORIO</a><button id="pause" hidden>Pause</button></header>
+  <div class="track" role="progressbar" aria-label="Story progress" aria-valuemin="0" aria-valuemax="60" aria-valuenow="0"><div id="progress"></div></div>
+  <section aria-live="polite" aria-atomic="true"><h1 id="title">Big things start<br>with a small line.</h1><p id="caption">A factory. A few agents. Something ready to ship.</p></section>
+  <svg id="scene" viewBox="0 0 360 300" role="img" aria-label="Agents send crates through your approval station to a rocket launch pad">
+    <defs>
+      <g id="box"><rect class="crate" width="23" height="23" rx="3"/><path d="M8 2v7h7V2" fill="#18233a"/></g>
+      <g id="bot"><rect class="machine" width="45" height="46" rx="9"/><rect x="7" y="11" width="31" height="14" rx="5" fill="#18233a"/><circle cx="15" cy="18" r="3" fill="#f5efdf"/><circle cx="30" cy="18" r="3" fill="#f5efdf"/><path d="M14 36h17M23 0v-8" stroke="#18233a" stroke-width="3"/></g>
+      <g id="rocket"><path d="M0 0Q-13 12-13 33L-20 44H20L13 33Q13 12 0 0" fill="#f5efdf"/><circle cy="23" r="5" fill="#6fb2ff"/><path d="M-6 47L0 65L6 47" fill="#f2a93b"/></g>
+    </defs>
+    <path d="M32 188H326" stroke="#354059" stroke-width="26" stroke-linecap="round"/>
+    <path d="M32 188H326" stroke="#75829b" stroke-width="2" stroke-dasharray="3 10"/>
+    <use href="#bot" x="30" y="122"/><use id="agent2" href="#bot" x="90" y="122"/>
+    <text x="82" y="226">Agents</text>
+    <path id="gate" d="M218 168v39" stroke="#f2a93b" stroke-width="7"/>
+    <circle id="you" cx="218" cy="139" r="12"/><path d="M199 166q0-16 19-16t19 16" fill="#f2a93b"/>
+    <text id="you-label" x="218" y="230">You</text>
+    <text id="queue-label" x="218" y="251">One yes away.</text>
+    <path d="M293 185h44" stroke="#5bd18b" stroke-width="6"/>
+    <g id="rockets"></g><g id="crates"></g><g id="pile"></g>
+    <text x="315" y="226">Ship</text>
+    <text id="shipped" x="315" y="251">0 shipped</text>
+  </svg>
+  <div id="action">
+    <button id="start" class="primary">Play the 60-second story <span aria-hidden="true">→</span></button>
+    <div id="approval" hidden><button id="card" aria-label="Approve the ready changes. Swipe right, or press Enter or right arrow."><small>CHECKS PASSED · READY TO MERGE</small><strong>Let the good work through.</strong><span>Swipe right to approve →</span></button><p class="hint">One thumb. One yes. Or tap to approve.</p></div>
+    <p id="receipt" hidden>That's the bottleneck.<small>The agents are ready. The line is waiting for you.</small></p>
+    <a id="cta" class="primary" href="/" hidden>See my real factory →</a>
+    <button id="replay" hidden>Play again</button>
+    <p id="intro" class="hint">Sound off. Thumb ready.</p>
+  </div>
+  <footer>AN INTERACTIVE STORY · NO REPO CONNECTED</footer>
+</main>
+<script src="/story/story.js" defer></script>
+</body>
+</html>

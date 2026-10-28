@@ -6,6 +6,8 @@ import { docsSite } from "./docs-site";
 
 // The art pages live in docs/ (one source of truth) and are served at /art/ on the site.
 const ART: Record<string, string> = {
+  "story/index.html": "story/index.html", // standalone SVG story; deliberately bypasses the game entry
+  "story/story.js": "story/story.js",
   "art/item-lab.html": "../docs/item-lab.html",
   "art/prototype.html": "../docs/art-prototype.html",
   "art/spark.html": "../docs/spark.html", // judge-facing: how Meta Muse Spark runs the factory
@@ -22,9 +24,9 @@ function artPages(): Plugin {
     name: "shiptorio-art",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        const path = req.url?.split("?")[0].replace(/^\//, "").replace(/^art\/?$/, "art/index.html") ?? "";
+        const path = req.url?.split("?")[0].replace(/^\//, "").replace(/^art\/?$/, "art/index.html").replace(/^story\/?$/, "story/index.html") ?? "";
         if (!(path in ART)) return next();
-        res.setHeader("content-type", "text/html; charset=utf-8");
+        res.setHeader("content-type", path.endsWith(".js") ? "text/javascript; charset=utf-8" : "text/html; charset=utf-8");
         res.end(read(path));
       });
     },
