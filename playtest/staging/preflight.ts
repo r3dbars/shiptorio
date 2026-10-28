@@ -24,7 +24,7 @@ export async function inspectExistingFixture(account: string, token: string, sen
   assert(/^[a-f0-9]{32}$/.test(account) && token, "Cloudflare deployment credentials unavailable");
   const get = async (path: string, label: string): Promise<any> => {
     let response: Response;
-    try { response = await send(`https://api.cloudflare.com/client/v4/accounts/${account}/${path}`, { headers: { authorization: `Bearer ${token}` } }); }
+    try { response = await send(`https://api.cloudflare.com/client/v4${path.startsWith("/zones/") ? path : `/accounts/${account}/${path}`}`, { headers: { authorization: `Bearer ${token}` } }); }
     catch { throw new Error(`Fixture preflight ${label}: metadata request failed`); }
     assert(response.ok, `Fixture preflight ${label}: HTTP ${response.status}`);
     let body: { success?: boolean; result?: unknown };
@@ -43,6 +43,15 @@ export async function inspectExistingFixture(account: string, token: string, sen
   }
   const exposure = await get(`workers/scripts/${FIXTURE.worker}/subdomain`, "private entry");
   assert(exposure?.enabled === false && exposure.previews_enabled === false, "Existing fixture has public subdomain access");
+  const domains = await get("workers/domains", "custom domains");
+  assert(Array.isArray(domains) && !domains.some(d => d.service === FIXTURE.worker), "Existing fixture has a custom domain");
+  // This token is scoped to the two Shiptorio zones. Do not claim visibility into unrelated zones.
+  for (const hostname of ["shiptorio.com", "shiptorio.dev"]) {
+    const domain: { zone_id: string } | undefined = domains.find(d => d.hostname === hostname);
+    assert(domain && /^[a-f0-9]{32}$/.test(domain.zone_id), "Shiptorio zone metadata unavailable");
+    const routes = await get(`/zones/${domain.zone_id}/workers/routes`, hostname);
+    assert(Array.isArray(routes) && !routes.some(r => r.script === FIXTURE.worker), "Existing fixture has a Shiptorio zone route");
+  }
 }
 
 if (import.meta.main) {

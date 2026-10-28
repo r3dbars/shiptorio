@@ -1,4 +1,4 @@
 {
   "compilerOptions": { "target": "es2022", "module": "es2022", "moduleResolution": "bundler", "jsx": "react-jsx", "lib": ["es2022", "dom"], "types": ["bun"], "strict": true, "noEmit": true, "skipLibCheck": true },
-  "include": ["src", "test"]
+  "include": ["src", "test", "staging/preflight.ts", "staging/probe.ts", "staging/deployment.test.ts"]
 }
