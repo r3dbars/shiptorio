@@ -10,7 +10,11 @@ import { ART_PX, BELT_Y, LOOK, PALETTE as P, STOP_X, type StopId, type StopState
 import { STAGE_AT } from "./timeline";
 
 export type DrawStation = (ctx: CanvasRenderingContext2D, id: StopId, state: StopState, t?: number) => void;
-const stations = import.meta.glob<{ drawStation?: DrawStation; stationSize?: (id: StopId) => { w: number; h: number } }>("../stations/index.ts", { eager: true });
+type StationsModule = { drawStation?: DrawStation; stationSize?: (id: StopId) => { w: number; h: number } };
+// Vite rewrites the glob at build time; plain bun (the tests) has no import.meta.glob, so fall back to the stand-in.
+const stations: Record<string, StationsModule> = (() => {
+  try { return import.meta.glob<StationsModule>("../stations/index.ts", { eager: true }); } catch { return {}; }
+})();
 const external = (): DrawStation | undefined => Object.values(stations)[0]?.drawStation;
 /** How tall the finished machine is in art px (feet = row 0). */
 const heightOf = (stop: StopId) => Object.values(stations)[0]?.stationSize?.(stop).h ?? 38;
