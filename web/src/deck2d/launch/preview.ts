@@ -1,6 +1,5 @@
-// Dev preview for the launch build: /deck.html?launch=preview. A play button and a scrubber pinned bottom-left,
-// so the whole island -> bridge -> tower -> rocket sequence can be watched (or parked on any frame) without the story.
-// Also ?launch=preview&at=0.4 starts parked at that progress (screenshots), ?launch=preview&play=1 autoplays.
+// Controls for the launch preview page (/launch.html): a play button and a scrubber pinned bottom-left. It plays on
+// its own; ?at=0.4 parks at that progress instead (screenshots), ?play=0 waits for the button.
 
 export interface Preview {
   /** Advance by dp if playing; returns the progress to show (0..1). */
@@ -9,7 +8,7 @@ export interface Preview {
 
 export function mountPreview(): Preview {
   const q = new URLSearchParams(location.search);
-  let p = Math.max(0, Math.min(1, Number(q.get("at")) || 0)), playing = q.get("play") === "1";
+  let p = Math.max(0, Math.min(1, Number(q.get("at")) || 0)), playing = !q.has("at") && q.get("play") !== "0";
   const bar = document.createElement("div");
   bar.setAttribute("style", [
     "position:fixed", "left:calc(12px + env(safe-area-inset-left,0px))", "bottom:calc(12px + env(safe-area-inset-bottom,0px))", "z-index:20",

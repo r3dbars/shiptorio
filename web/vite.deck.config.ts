@@ -9,6 +9,6 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: false,
     manifest: "deck-manifest.json",
-    rollupOptions: { input: { deck: resolve(__dirname, "deck.html") } },
+    rollupOptions: { input: { deck: resolve(__dirname, "deck.html"), launch: resolve(__dirname, "launch.html") } },
   },
 });
