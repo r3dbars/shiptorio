@@ -144,9 +144,54 @@ test("a swipe down asks why once and sends exactly one never for the card it sta
     await t.ptr(t.title(), "pointermove", 100, 300);
     await t.ptr(t.title(), "pointerup", 100, 300);
     const why = [...t.host.querySelectorAll<HTMLButtonElement>(".tnever button")];
-    expect(why.map((b) => b.textContent)).toEqual(["Wrong idea", "Do it differently next time"]);
+    expect(why.map((b) => b.textContent)).toEqual(["Wrong idea", "Try it another way"]);
     await t.act(() => why[0].click());
     expect(t.sent).toEqual([{ type: "dismiss_move", moveId: "A", why: "wrong" }]);
     expect(t.title().textContent).toBe("Build C");
   } finally { await t.unmount(); }
+});
+
+test("Later parks a card: the tray says caught up with it parked, and Bring back puts it on top again", async () => {
+  const { act, useState } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  const { TaskTray } = await import("../src/ui/TaskTray");
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const sent: WebToServer[] = [];
+  function Host() {
+    const [parked, setParked] = useState<ReadonlySet<string>>(() => new Set());
+    return <TaskTray deck={[build("A")]} send={(m) => sent.push(m)} onFocus={() => {}} parked={parked} onPark={(id) => setParked((p) => new Set(p).add(id))} onBringBack={() => setParked(new Set())} />;
+  }
+  try {
+    await act(() => root.render(<Host />));
+    await act(() => (host.querySelector("button.alater") as HTMLButtonElement).click());
+    expect(sent).toEqual([{ type: "defer_move", moveId: "A" }]);
+    expect(host.querySelector(".caught .att")?.textContent).toBe("Nothing's moving right now.");
+    expect(host.querySelector(".tparked")?.textContent).toBe("1 parked for later");
+    await act(() => (host.querySelector(".caught button.alater") as HTMLButtonElement).click());
+    expect(host.querySelector(".tasktray .att")?.textContent).toBe("Build A");
+  } finally {
+    await act(() => root.unmount());
+    host.remove();
+  }
+});
+
+test("plugging in a builder leads the tray as a setup card, and a launch holds a Shipped moment before the next card", async () => {
+  const power: Move = { id: "P", createdAt: 1, stage: "resources", attention: "suggest", title: "Your computer writes the code. Plug it in to start building.",
+    options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "test" }] }] };
+  const t = await mount([build("A"), power]);
+  try {
+    expect(t.title().textContent).toBe(power.title);
+    expect(t.card().querySelector(".atop b")?.textContent).toBe("Setup first");
+    expect(t.card().className).toContain("steer");
+  } finally { await t.unmount(); }
+  const u = await mount([launch("L"), build("B")]);
+  try {
+    await u.ptr(u.title(), "pointerdown", 10, 100);
+    await u.ptr(u.title(), "pointermove", 900, 100);
+    await u.ptr(u.title(), "pointerup", 900, 100);
+    expect(u.sent).toEqual([{ type: "choose_move", moveId: "L", optionId: "ship" }]);
+    expect(u.host.querySelector(".shipped .att")?.textContent).toBe("Launch L"); // not "Build B" yet
+  } finally { await u.unmount(); }
 });

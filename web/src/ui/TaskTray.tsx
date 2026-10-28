@@ -5,21 +5,23 @@
 // (with an optional one-tap why, the factory's feedback signal). A launch still merges real code, so it takes the held
 // red button or a swipe all the way across. Every gesture has a button too.
 
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { attentionOf, continueOption, type FactoryState, type Item, type Move, type WebToServer } from "@shiptorio/shared";
 import { NEXT_MOVE, STAGE_LABEL, STATE_WORD, TASKS, THINKS, WORDS } from "../copy";
 import { HoldLaunch, isLaunch, plugsInAgent } from "./Attention";
+import { LearnDots } from "./LearnDots";
 import { because } from "./because";
 import { openUnlockLink } from "./unlockLink";
 import { sound } from "../sound/engine";
-import { taskOrder, type SlowSpot } from "./slowSpot";
+import { isSetup, taskOrder, type SlowSpot } from "./slowSpot";
 import { moving } from "./moving";
 import "./TaskTray.css";
 
 const SWIPE_PX = 70;
 const LAUNCH_SHARE = 0.55; // a launch swipe has to cross over half the card
-const ASK_MS = 6000; // how long the optional "why" waits after a never before it goes as a plain never
-const RIDE_MS = 8000; // following the work: how long the camera rides one item before it moves on to the next
+const ASK_MS = 12000; // how long the optional "why" waits after a never before it goes as a plain never
+const RIDE_MS = 8000;
+const SHIP_MS = 3500; // after a launch the tray holds the "Shipped" card and the camera rides the rocket this long // following the work: how long the camera rides one item before it moves on to the next
 const WENT_KEY = "shiptorio:simple-went"; // set on the first Continue: until then the Go tab glows
 
 type Never = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -34,10 +36,14 @@ interface Props {
   onFocus: (focus: string | null) => void; // fly the camera to what the shown card is about
   onPower?: () => void; // live local-agent setup opens Power, never a server connector action
   onCaughtUp?: () => void; // you answered the last card
-  autonomy?: FactoryState["autonomy"];
   items?: Item[]; // the work on the line, for "follow them" once you're all caught up
   // the "what's next" idea when nothing waits on you: how the simple screen teaches by doing (no tour, journey pick 1)
-  nudge?: { kicker: string; title: string; cta: string; onGo: () => void } | null;
+  // (no cta: a line that only says what this is, for a brand-new factory)
+  nudge?: { kicker: string; title: string; cta?: string; onGo?: () => void } | null;
+  // Later parks a card here (App owns it, so the counter agrees with the tray); "Bring back" empties it
+  parked?: ReadonlySet<string>;
+  onPark?: (id: string) => void;
+  onBringBack?: () => void;
 }
 
 const wentBefore = () => {
@@ -48,9 +54,10 @@ const wentBefore = () => {
   }
 };
 
-export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, items, nudge }: Props) {
+export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, items, nudge, parked, onPark, onBringBack }: Props) {
   const [gone, setGone] = useState<Set<string>>(() => new Set()); // answered here; hidden before the server agrees
-  const tasks = taskOrder(deck).filter((m) => !gone.has(m.id));
+  const tasks = taskOrder(deck).filter((m) => !gone.has(m.id) && !parked?.has(m.id));
+  const parkedHere = deck.filter((m) => parked?.has(m.id)).length;
   const [curId, setCurId] = useState<string | null>(null);
   const lastAt = useRef(0); // where the shown card sat, so answering it shows the one that slid into its place
   let at = tasks.findIndex((m) => m.id === curId);
@@ -84,6 +91,14 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
   const [asking, setAsking] = useState<Move | null>(null); // a never waiting on its optional why
   const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answeredHere = useRef(false);
+  const [touched, setTouched] = useState(false); // answered anything this visit: only then is it "all caught up"
+  // a launch you just let go: its moment holds the tray for a few seconds while the camera rides it up
+  const [shipped, setShipped] = useState<Move | null>(null);
+  useEffect(() => {
+    if (!shipped) return;
+    const t = setTimeout(() => setShipped(null), SHIP_MS);
+    return () => clearTimeout(t);
+  }, [shipped]);
   // all caught up: the work in flight, and which one the camera is riding (null = not following)
   const said = useRef<string | null>(null); // the item your last yes was about, so the ride starts there
   const flight = moving(items, said.current);
@@ -105,10 +120,10 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
   }, [deck, gone]);
   useEffect(() => setOpen(false), [card?.id]);
   // the camera follows the card; with no card it goes back to where the player was
-  const focus = card ? (card.focus ?? null) : ride ? `item:${ride.id}` : null;
+  const focus = shipped ? (shipped.itemId ? `item:${shipped.itemId}` : shipped.focus ?? null) : card ? (card.focus ?? null) : ride ? `item:${ride.id}` : null;
   const onFocusRef = useRef(onFocus);
   onFocusRef.current = onFocus;
-  useEffect(() => onFocusRef.current(focus), [focus, card?.id]);
+  useEffect(() => onFocusRef.current(focus), [focus, card?.id, shipped?.id]);
   useEffect(() => () => onFocusRef.current(null), []);
   // answering the last card zooms out on everything that's moving (journey round 3, pick 8)
   const left = tasks.length;
@@ -131,12 +146,18 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
 
   const answered = (move: Move) => {
     answeredHere.current = true;
+    setTouched(true);
     setGone((g) => new Set(g).add(move.id));
     setCurId(null); // the next card slides into this one's place
   };
   const later = (move: Move) => {
     sound.play("card_later");
-    answered(move);
+    if (onPark) {
+      answeredHere.current = true;
+      setTouched(true);
+      setCurId(null);
+      onPark(move.id);
+    } else answered(move);
     send({ type: "defer_move", moveId: move.id });
   };
   const never = (move: Move) => {
@@ -160,6 +181,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
     if (onPower && plugsInAgent(option)) return onPower();
     said.current = move.itemId ?? null;
     answered(move);
+    if (isLaunch(move)) setShipped(move);
     openUnlockLink(move, option);
     send({ type: "choose_move", moveId: move.id, optionId: option.id });
   };
@@ -175,27 +197,31 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
     </div>
   );
 
+  if (shipped) return <Shipped move={shipped} ask={ask} />;
   if (!card && ride) return <Riding item={ride} at={riding} of={flight.length} hop={hop} stop={() => setRideId(null)} />;
-  if (!card && flight.length) {
-    // all caught up with work in flight: follow it through the factory (round 3 pick 8); the next idea waits beside it
+  if (!card && (flight.length || parkedHere) && (touched || !nudge)) {
+    // all caught up: follow what's in flight through the factory (round 3 pick 8), and bring back what you parked
     const n = flight.length;
     return (
       <div className="needs tasktray" role="region" aria-label={TASKS.label}>
         {ask}
-        <section className="acard suggest tabbed task caught" aria-label={TASKS.caught}>
+        <section className={`acard suggest${n ? " tabbed" : ""} task caught`} aria-label={TASKS.caught}>
           <div className="abody">
             <div className="atop"><b>{TASKS.caught}</b></div>
-            <span className="att">{TASKS.inFlight(n)}</span>
-            {nudge && (
+            <span className="att">{n ? TASKS.inFlight(n) : TASKS.nothingMoving}</span>
+            {parkedHere > 0 && (
               <div className="aacts">
-                <button type="button" className="alater" data-sfx onClick={nudge.onGo}>{nudge.cta}</button>
+                <span className="tparked">{TASKS.parked(parkedHere)}</span>
+                <button type="button" className="alater" data-sfx onClick={() => onBringBack?.()}>{TASKS.bringBack}</button>
               </div>
             )}
           </div>
-          <button type="button" className="ago atab" data-sfx onClick={() => setRideId(flight[0].id)}>
-            {TASKS.follow(n)}
-            <span aria-hidden="true"> →</span>
-          </button>
+          {n > 0 && (
+            <button type="button" className="ago atab" data-sfx onClick={() => setRideId(flight[0].id)}>
+              {TASKS.follow(n)}
+              <span aria-hidden="true"> →</span>
+            </button>
+          )}
         </section>
       </div>
     );
@@ -205,15 +231,17 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
     return (
       <div className="needs tasktray" role="region" aria-label={TASKS.label}>
         {ask}
-        <section className="acard suggest tabbed task" aria-label={`${TASKS.kind.suggest}: ${nudge.title}`}>
+        <section className={`acard suggest${nudge.onGo ? " tabbed" : ""} task`} aria-label={`${nudge.kicker}: ${nudge.title}`}>
           <div className="abody">
-            <div className="atop"><b>{TASKS.kind.suggest}</b><span>{nudge.kicker}</span></div>
+            <div className="atop"><b>{nudge.onGo ? TASKS.kind.suggest : nudge.kicker}</b>{nudge.onGo && <span>{nudge.kicker}</span>}</div>
             <span className="att">{nudge.title}</span>
           </div>
-          <button type="button" className={`ago atab${went ? "" : " glow"}`} data-sfx onClick={nudge.onGo}>
-            {nudge.cta}
-            <span aria-hidden="true"> →</span>
-          </button>
+          {nudge.onGo && (
+            <button type="button" className={`ago atab${went ? "" : " glow"}`} data-sfx onClick={nudge.onGo}>
+              {nudge.cta}
+              <span aria-hidden="true"> →</span>
+            </button>
+          )}
         </section>
       </div>
     );
@@ -227,11 +255,10 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
   const kind = attentionOf(card);
   const option = continueOption(card);
   const launch = isLaunch(card);
+  const setup = isSetup(card); // nothing builds until this is done: it leads, and it looks like the blocker it is
   const others = card.options.filter((o) => o.id !== option.id && o.actions.length);
   const why = because(card);
   const where = card.stage && STAGE_LABEL[card.stage];
-  const next = autonomy?.next;
-  const earn = kind === "approve" && next && next.need > next.have ? TASKS.earn(next.need - next.have, next.label) : null;
 
   // what letting go right now would do, shown on the card while you drag
   const w = drag.current?.w ?? 360;
@@ -268,8 +295,8 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
       {ask}
       <section
         key={card.id}
-        className={`acard ${kind} tabbed task${open ? " open" : ""}${intent ? ` will-${intent}` : ""}`}
-        aria-label={`${TASKS.kind[kind]}: ${card.title}`}
+        className={`acard ${setup ? "steer" : kind} tabbed task${open ? " open" : ""}${intent ? ` will-${intent}` : ""}`}
+        aria-label={`${setup ? TASKS.setup : TASKS.kind[kind]}: ${card.title}`}
         aria-live="polite"
         style={d.x || d.y ? { transform: horiz ? `translateX(${d.x}px) rotate(${d.x / 40}deg)` : `translateY(${d.y}px)` } : undefined}
         title={TASKS.swipeHint}
@@ -292,11 +319,11 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
         {intent && <span className="tintent" aria-hidden="true">{TASKS.drag[intent]}</span>}
         <div className="abody">
           <div className="atop">
-            <b>{TASKS.kind[kind]}</b>
+            <b>{setup ? TASKS.setup : TASKS.kind[kind]}</b>
             {where && <span>{where}</span>}
           </div>
           <span className="att">{card.title}</span>
-          {earn && <span className="tearn">{earn}</span>}
+          <LearnDots learn={card.learn} />
           {open && (
             <div className="amore">
               {card.why && <p className="aw tw">{card.why}</p>}
@@ -386,6 +413,21 @@ function Riding({ item, at, of, hop, stop }: { item: Item; at: number; of: numbe
           </div>
         </div>
         <button type="button" className="ago atab" data-sfx onClick={stop}>{TASKS.stop}</button>
+      </section>
+    </div>
+  );
+}
+
+/** The moment after a launch: the tray holds this while the camera rides the rocket up, then the next card comes in. */
+function Shipped({ move, ask }: { move: Move; ask: ReactNode }) {
+  return (
+    <div className="needs tasktray" role="region" aria-label={TASKS.shipped}>
+      {ask}
+      <section className="acard approve task shipped" aria-live="polite">
+        <div className="abody">
+          <div className="atop"><b>{TASKS.shipped}</b></div>
+          <span className="att">{move.title}</span>
+        </div>
       </section>
     </div>
   );
