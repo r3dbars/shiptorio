@@ -17,7 +17,7 @@ describe("same-origin redirects", () => {
   it("does not preserve a malicious OAuth destination in its callback cookie", async () => {
     for (const next of unsafe) {
       const url = new URL("/auth/login", origin); url.searchParams.set("next", next);
-      const response = await login(url, { GITHUB_CLIENT_ID: "test" } as never);
+      const response = await login(url, { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "fixture-secret" } as never);
       expect(response.headers.getSetCookie().find(c => c.startsWith("shiptorio_next="))).toStartWith("shiptorio_next=%2F;");
     }
   });
