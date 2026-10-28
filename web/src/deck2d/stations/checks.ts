@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift } from "./px";
-import { BRASS, IRON, STEEL, ball, bezel, blotch, cylH, cylV, drop, face, noise, rivet, smoke, strap, tone, type Ramp } from "./shade";
+import { BRASS, COPPER, IRON, STEEL, ball, bezel, blotch, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Checks: a domed iron cabinet with one big glass porthole in a riveted brass bezel, a dark tank with brass bands
@@ -15,7 +15,7 @@ const LIT: Record<StopState, Ramp> = {
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "ok-2", "white"],
 };
 const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
-const GLASS: Ramp = ["soot", "steel-0", "steel-1", "steel-2", "energy-1", "energy-3", "white"];
+const GLASS: Ramp = ["soot", "steel-0", "steel-1", "steel-2", "energy-0", "energy-1", "energy-3", "white"];
 
 export const checks: StationDef = {
   w: 50, h: 64,
@@ -29,11 +29,18 @@ export const checks: StationDef = {
 
     // --- left tank, dark iron with brass bands
     cylV(g, 1, 15, 9, 28, IRON, { amb: 0.12, gloss: 0.7 });
+    for (let y = 10; y < 15; y++) for (let x = 1; x < 10; x++) { // its rounded top
+      const dx = (x + 0.5 - 5.5) / 4.5, dy = (y + 0.5 - 15) / 5, d = dx * dx + dy * dy;
+      if (d <= 1) tone(g, x, y, IRON, 0.15 + 0.5 * Math.max(0, dx * 0.6 - dy * 0.5 + Math.sqrt(1 - d) * 0.4));
+    }
     for (const y of [15, 25, 34, 41]) cylV(g, 0, y, 11, 2, BRASS, { amb: 0.2 });
-    cylV(g, 3, 12, 5, 3, BRASS, { amb: 0.25 });
+    cylV(g, 4, 8, 3, 3, BRASS, { amb: 0.25, gloss: 0.9 }); // valve on top
+    cylH(g, 7, 8, 6, 3, COPPER, { amb: 0.1, gloss: 0.9 }); // a copper pipe from the valve into the dome
 
     // --- right side face and the indicator panel
     for (let y = 17; y < 46; y++) for (let x = 38; x < 41; x++) tone(g, x, y, IRON, 0.5 + (x - 38) * 0.07 + (noise(x, y, 6) - 0.5) * 0.08);
+    cylH(g, 38, 21, 7, 3, COPPER, { amb: 0.1, gloss: 0.9 }); cylV(g, 43, 21, 3, 10, COPPER, { amb: 0.1, gloss: 1 }); // pipe down into the panel
+    cylV(g, 42, 26, 5, 1, BRASS, { amb: 0.3 }); g.set(46, 26, "brass-5");
     drop(g, 40, 31, 7, 11);
     face(g, 40, 31, 7, 11, IRON, 0.36, { seed: 31, grime: 1 });
     strap(g, 40, 31, 7, 2, BRASS); strap(g, 40, 40, 7, 2, BRASS, 0, false); strap(g, 45, 33, 2, 7, BRASS, 0, false);
@@ -44,6 +51,8 @@ export const checks: StationDef = {
     strap(g, 11, 17, 27, 2, BRASS, 4);
     strap(g, 11, 19, 2, 26, BRASS, 5);
     strap(g, 36, 19, 2, 26, BRASS, 5);
+    bracket(g, 11, 44, 0, 1); bracket(g, 37, 44, 1, 1);
+    for (const [x, y, n] of [[12, 21, 4], [37, 30, 5], [15, 19, 3], [33, 19, 4]] as const) streak(g, x, y, n);
 
     // dome cap over the top, brass rim, iron crown, sitting on the body
     for (let y = 7; y < 18; y++) for (let x = 12; x < 40; x++) {
@@ -54,10 +63,11 @@ export const checks: StationDef = {
     }
     strap(g, 13, 15, 25, 2, BRASS, 4, false);
     // knob post + ball
-    cylH(g, 22, 6, 7, 2, BRASS, { amb: 0.25 });
-    cylV(g, 24, 2, 3, 5, BRASS, { amb: 0.2 });
-    ball(g, 25.5, 1, 2.4, s === "idle" ? STEEL : lit, { amb: s === "idle" ? 0.3 : 0.4 });
-    if (glow) g.glowDisc(25.5, 1, 4, glow, 0.25);
+    drop(g, 19, 6, 13, 2); cylH(g, 19, 6, 13, 2, BRASS, { amb: 0.2, gloss: 0.8 }); // a stepped brass crown
+    cylV(g, 21, 3, 9, 3, IRON, { amb: 0.15, gloss: 0.8 });
+    cylH(g, 22, 1, 7, 2, BRASS, { amb: 0.3, gloss: 0.9 }); g.set(30, 6, "brass-5");
+    ball(g, 25.5, -1, 2.4, s === "idle" ? STEEL : lit, { amb: s === "idle" ? 0.3 : 0.4 });
+    if (glow) g.glowDisc(25.5, -1, 4, glow, 0.25);
 
     // the porthole: brass bezel, riveted, convex glass with a hot glint
     const px = 24.5, py = 29;
@@ -69,7 +79,7 @@ export const checks: StationDef = {
       if (d > 1) continue;
       if (d > 0.82) { g.set(x, y, dx - dy > 0 ? "steel-0" : "soot"); continue; } // the deep edge of the glass
       const nz = Math.sqrt(1 - d);
-      let v = 0.42 + 0.28 * (dx * 0.6 - dy * 0.6) + 0.2 * nz - d * 0.15;
+      let v = 0.46 + 0.3 * (dx * 0.6 - dy * 0.6) + 0.2 * nz - d * 0.15;
       if (Math.hypot(dx - 0.35, dy + 0.38) < 0.22) v = 1; // hot glint, upper right
       else if (Math.hypot(dx + 0.4, dy - 0.45) < 0.16) v = 0.72; // second reflection, lower left
       tone(g, x, y, GLASS, v);
