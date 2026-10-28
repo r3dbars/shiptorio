@@ -741,3 +741,8 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 - Root-approved narrow `accounts.ts/currentUser` change: after the fresh session lookup, read revocation and admission concurrently on every request. Both results remain required, known revocation still denies before any admission error, and revocation lookup failures still propagate. No mutable authority caching, boundary sharing, fixture policy change or frontend edits.
 - Deterministic held-read tests pin overlapping requests and waiting for both results; real SQLite tests pin next-request deletion/revocation/admission changes, failure precedence, explicit pending-account behavior and production rejection of negative testers. Live cold/warm timing remains pending deployment; required cold GitHub verification is not bypassed.
+
+### Codex isolated-fixture reset diagnostics
+
+- Reported reset409 naturally advanced from provider-busy to Factory wipe-pending after lease expiry; no cleanup bug was established and no guard was relaxed. Busy resets now report only fixed reason labels, bounded counts and the latest bounded lease retry interval through a validating private wrapper. Unknown/malformed provider failures remain generic; credentials/UUIDs/provider headers are never forwarded.
+- Fixed-clock tests cover pending receipt + outer lease expiry, ordinary in-flight work rejection and sanitized errors. No live fixture call/reset was performed from this lane; root owns the continuing hosted test.

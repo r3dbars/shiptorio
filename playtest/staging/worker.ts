@@ -1,5 +1,6 @@
 import { PRIVATE_SOCKET_TIMING, PrivateSocketTiming } from "../../server/src/private-socket-timing";
 import { settleFixtureLease } from "./request-lease";
+import { sanitizedResetFailure } from "./reset-busy";
 // PRIVATE, isolated test backend. Production/staging application entries never import this file.
 import { app } from "../../server/src/index";
 import { fixtureSession, clearFixtureSession } from "./session";
@@ -54,7 +55,7 @@ export default {
       const repo = personaRepo(persona), id = personaId(persona), installation = 9000 + Math.abs(id);
       const provider = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(persona));
       const stopped = await provider.fetch(new Request("http://fixture.internal/reset", { method: "POST", headers: { "x-test-persona": persona } }));
-      if (!stopped.ok) return new Response("Fixture reset failed", { status: stopped.status === 409 ? 409 : 503 });
+      if (!stopped.ok) return sanitizedResetFailure(stopped);
       const factory = env.FACTORY.get(env.FACTORY.idFromName(`repo:${990000 + Math.abs(id)}`)) as unknown as Factory;
       const reset = await factory.prepareFixtureReset();
       if (!reset.complete) return new Response("Fixture reset pending", { status: 409 });
