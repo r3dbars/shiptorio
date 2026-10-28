@@ -20,8 +20,8 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     const f = (x - x0) / Math.max(1, g(bx) - x0), y = g(ay + (by - ay) * f) - Math.floor(BELT_H / 2);
     const end = x === x0 || x === x1 - 1;
     px(cx, x, y, 1, 1, C.soot[0]);
-    px(cx, x, y + 1, 1, 1, end ? C.brass[3] : x % 12 === 0 ? C.brass[5] : C.brass[4]); // sunlit rail edge, a glint now and then
-    px(cx, x, y + 2, 1, 1, C.brass[2]);
+    px(cx, x, y + 1, 1, 1, end ? C.brass[3] : x % 12 === 0 ? C.brass[4] : C.steel[3]); // cool iron rail, sunlit edge; brass only glints
+    px(cx, x, y + 2, 1, 1, x % 12 === 0 ? C.brass[2] : C.steel[1]);
     // belt surface: mid, dark, darker toward the front (it curves away over the roller)
     px(cx, x, y + 3, 1, 1, C.iron[2]); px(cx, x, y + 4, 1, 1, C.iron[1]); px(cx, x, y + 5, 1, 1, C.iron[1]);
     // chevrons every 8 px: ">" over the 3 surface rows, lit on top, shaded below
@@ -33,8 +33,8 @@ export function beltRun(cx: CanvasRenderingContext2D, ax: number, ay: number, bx
     if (((x - shift) % 16 + 16) % 16 === 0) px(cx, x, y + 3, 1, 3, C.soot[0]);
     px(cx, x, y + 6, 1, 1, C.soot[0]); // lip shadow where the belt rolls under
     // front face: copper-dark frame with rivets, a bevel line on top
-    px(cx, x, y + 7, 1, 1, x % 6 === 3 ? C.brass[3] : C.copper[0]);
-    px(cx, x, y + 8, 1, 1, x % 6 === 3 ? C.brass[1] : C.iron[1]);
+    px(cx, x, y + 7, 1, 1, x % 6 === 3 ? C.brass[3] : C.steel[1]);
+    px(cx, x, y + 8, 1, 1, x % 6 === 3 ? C.brass[1] : C.steel[0]);
     px(cx, x, y + 9, 1, 1, C.soot[0]);
   }
   // cast shadow on the deck below (light layer, sun from the upper right)
@@ -79,8 +79,8 @@ export function halo(cx: CanvasRenderingContext2D, ax: number, ay: number, r: nu
 export function lever(cx: CanvasRenderingContext2D, x: number, base: number, mode: "up" | "down" | "glow") {
   const ax = g(x) - 3, ay = g(base) - 12;
   // riveted base box: lit top, dark front, rivet glints
-  px(cx, ax, ay + 8, 7, 4, C.soot[0]); px(cx, ax + 1, ay + 8, 5, 1, C.iron[4]); px(cx, ax + 1, ay + 9, 5, 2, C.iron[2]);
-  px(cx, ax + 5, ay + 9, 1, 2, C.iron[3]); px(cx, ax + 1, ay + 10, 1, 1, C.brass[3]); px(cx, ax + 5, ay + 10, 1, 1, C.brass[4]);
+  px(cx, ax, ay + 8, 7, 4, C.soot[0]); px(cx, ax + 1, ay + 8, 5, 1, C.steel[3]); px(cx, ax + 1, ay + 9, 5, 2, C.steel[1]);
+  px(cx, ax + 5, ay + 9, 1, 2, C.steel[2]); px(cx, ax + 1, ay + 10, 1, 1, C.brass[3]); px(cx, ax + 5, ay + 10, 1, 1, C.brass[4]);
   px(cx, ax + 2, ay + 8, 3, 1, C.soot[0]); // the slot
   if (mode === "down") {
     // pulled toward you: short shaft, knob low and right
