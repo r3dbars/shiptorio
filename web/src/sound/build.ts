@@ -170,7 +170,7 @@ function out(): AudioNode {
   return bus;
 }
 
-function play(cue: Cue, delay = 0) {
+export function play(cue: Cue, delay = 0) {
   if (!sound.canPlay) return;
   const o = out();
   const t = sound.now + delay;

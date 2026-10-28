@@ -80,3 +80,21 @@ test("the rocket rumbles on the pad, then climbs all the way", () => {
   expect(launchRise(0.6)).toBeLessThan(launchRise(0.9));
   expect(launchRise(1)).toBe(1);
 });
+
+test("a staged build uses the quiet construction kit and doesn't ring twice", () => {
+  const played: string[] = [];
+  const d = new DeckSound((s) => played.push(s), () => 0, (c) => played.push(`build:${c}`));
+  d.fire({ type: "build-start", stop: "checks" });
+  for (const stage of ["plot", "scaffold", "frame", "burst", "check"] as const) d.fire({ type: "build-stage", stop: "checks", stage });
+  d.fire({ type: "station-built", stop: "checks" });
+  expect(played).toEqual(["place", "build:chalk", "build:ratchet", "build:rivet", "build:crackle", "build:thunk", "build:bell"]);
+  // a station that just appears (no stages) still lands with a drop
+  d.fire({ type: "station-built", stop: "review" });
+  expect(played.at(-1)).toBe("station_drop");
+});
+
+test("the deck growing and the launch island have sounds", () => {
+  for (const phase of ["beams", "plates", "rails", "glow", "rocks", "done"] as const) expect(cuesFor({ type: "deck-grow", size: "medium", phase }).length).toBeGreaterThan(0);
+  for (const stage of ["island-rising", "island-up", "bridge", "bridge-done", "tower", "rocket-lowering", "rocket-seated"] as const)
+    expect(cuesFor({ type: "launch-stage", stage }).length).toBeGreaterThan(0);
+});

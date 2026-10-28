@@ -25,3 +25,5 @@ div.djuice-flame {
   background: radial-gradient(ellipse 50% 60% at 50% 20%, #fff6c0 0%, #ffcf3a 30%, #ff7a1a 60%, transparent 75%);
   filter: drop-shadow(0 0 8px #ff8a2a);
 }
+/* host = document.body: effects sit on the viewport (where() gives screen px) */
+.djuice-viewport > .djuice { position: fixed; }
