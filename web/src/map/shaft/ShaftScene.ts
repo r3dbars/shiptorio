@@ -21,6 +21,7 @@ import { guardRender, recoverContext, restoreMaterials } from "../contextLoss";
 import { perf } from "../perf";
 import { GpuSubmission } from "../gpu-submission";
 import { FrameGovernor } from "../quality";
+import { RecoveryMaterials } from "./recoveryMaterials";
 import type { Cosmetics, Ping } from "../scene";
 import type { SatelliteSpec } from "../empire";
 import { bakeShaft } from "./bake";
@@ -110,6 +111,7 @@ export class ShaftScene {
   // build as you go (?buildout=1): what's built stands, the rest is gone, and the camera is the director's
   private readonly bo: Buildout | null;
   private director: Director | null = null;
+  private readonly recovery = new RecoveryMaterials();
   private readonly trust = new TrustLamps(); // trust in levels up the launch lift's tower
 
   constructor(
@@ -124,9 +126,10 @@ export class ShaftScene {
       this.renderer.shadowMap.needsUpdate = true;
       this.update(this.state);
       this.governor.poke();
+      if (this.stage) this.recovery.begin(this.stage.scene);
       // The existing RAF owns GL admission and physical-hold yielding.
       // A restored context must not queue a second, unguarded factory frame.
-    });
+    }, () => this.recovery.cancel());
     this.gpu = new GpuSubmission(this.renderer.getContext(), canvas);
     perf.submissions(this.gpu.stats());
     this.renderer.setPixelRatio(1);
@@ -475,6 +478,7 @@ export class ShaftScene {
   private rebuild(sp: ShaftPlan) {
     // A new shaft cannot carry the old driver's replay timer. End it before carrying the real line.
     if (this.lapsing) this.finishLapse();
+    const restoring = this.recovery.active;
     const keep = this.stage ? { zoom: this.stage.zoom } : null;
     const carried = this.driver?.carry() ?? null; // the work on the line stays where it is
     this.teardown();
@@ -529,6 +533,7 @@ export class ShaftScene {
     if (this.asked && !this.home) this.focus(this.asked); // asked before the shaft stood (coming back parks on a launch)
     this.applyBias();
     this.renderer.shadowMap.needsUpdate = true;
+    if (restoring) this.recovery.begin(stage.scene);
     if (import.meta.env.DEV)
       (window as unknown as { __shaft?: unknown }).__shaft = {
         I, stage, layout, sp, driver, renderer: this.renderer,
@@ -560,6 +565,7 @@ export class ShaftScene {
   }
 
   private teardown() {
+    this.recovery.cancel();
     this.hud.clear();
     this.trophies.group.removeFromParent(); // its meshes outlive the shaft; I.dispose frees what's under the root
     this.clogs.group.removeFromParent();
@@ -644,6 +650,7 @@ export class ShaftScene {
     // yields while a native hold is active; simulation and camera still step.
     submitWhenUnheld(() => {
       this.gpu.submit(() => {
+        if (this.recovery.active) { this.recovery.prepare(); this.governor.poke(); }
         // Only sustained severe-device evidence selects the smaller internal
         // scene target. Canvas/DOM size, camera, shadows and explicit pins stay put.
         if (this.governor.severe) stage.pixel = 2;
@@ -651,11 +658,13 @@ export class ShaftScene {
         // RAFs must not latch every-other-frame shadows into every drawn frame.
         const shadowFrame = ++this.submittedShadowFrame;
         this.renderer.shadowMap.needsUpdate ||= this.tier === 0 || shadowFrame % 2 === 0;
-        if (this.warmPending && this.bo) {
+        if (this.warmPending && this.bo && !this.recovery.active) {
           this.warmPending = false;
           this.bo.precompile((holders) => this.warm(stage, holders));
         }
         stage.render(this.renderer);
+        this.recovery.advance();
+        perf.recovery(this.recovery.active, this.recovery.pending, this.recovery.epoch);
         perf.dimensions({
           bufferWidth: this.renderer.domElement.width, bufferHeight: this.renderer.domElement.height,
           sceneWidth: stage.finish.target.width, sceneHeight: stage.finish.target.height,

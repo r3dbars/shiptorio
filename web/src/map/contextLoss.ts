@@ -24,7 +24,7 @@ export function restoreMaterials(root: Object3D) {
 }
 
 /** Three rebuilds its renderer internals first; the owner then recreates GPU resources. */
-export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void): WebGLRenderer {
+export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, discard: () => void = () => {}): WebGLRenderer {
   const renderer = new WebGLRenderer({ canvas, antialias: false });
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lost = false;
@@ -39,6 +39,7 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void): W
     event.preventDefault();
     if (dead || lost) return;
     lost = true;
+    discard();
     timer = setTimeout(() => {
       timer = undefined;
       if (!dead && lost) canvas.dispatchEvent(new Event(SCENE_REBUILD));

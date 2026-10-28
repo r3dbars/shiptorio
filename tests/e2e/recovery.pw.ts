@@ -59,6 +59,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         await page.evaluate(() => (window as any).__gpu.extension.restoreContext());
         await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 2000, intervals: [25, 50] }).toBeGreaterThan(before);
         await expect(page.locator('.crash')).toHaveCount(0);
+        // The first usable frame keeps the original two-second budget; full lighting
+        // follows in bounded submissions and must also finish, without navigating.
+        await expect.poll(() => page.evaluate(() => (window as any).__shipPerf().recoveryActive)).toBe(false);
       }
       expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
       expect(errors).toEqual([]);
