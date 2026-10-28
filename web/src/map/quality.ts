@@ -49,7 +49,7 @@ export class FrameGovernor {
     this.lastDraw = now;
     this.n++;
     const foreground = typeof document === "undefined" || document.visibilityState === "visible";
-    const stalled = !capped && foreground && this.avg !== -Infinity && now - this.born > WARMUP
+    const stalled = this.tier < 2 && foreground && this.avg !== -Infinity && now - this.born > WARMUP
       && gap >= STALL_MIN && gap <= STALL_MAX;
     this.stalledFrames = stalled ? this.stalledFrames + 1 : 0;
     if (this.stalledFrames >= 2) this.tier = 2;

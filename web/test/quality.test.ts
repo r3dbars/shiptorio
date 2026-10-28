@@ -92,3 +92,16 @@ test("normal good-device look, ordinary average fallback and shadow cadence rema
   expect(frame(slow, 10)).toBe(false);
   expect(frame(slow, 25)).toBe(true);
 });
+
+// Coach-card input does not poke the canvas governor: an idle phone still needs
+// the catastrophic path when an otherwise harmless 30fps cap cannot be met.
+test("normal phone idle cap stays unchanged but catastrophic idle stalls fall back", () => {
+  const g = new FrameGovernor(true);
+  frame(g, 3100);
+  for (let i = 0; i < 50; i++) frame(g, 34);
+  expect(g.tier).toBe(0);
+  expect(frame(g, 10)).toBe(false);
+  expect(frame(g, 24)).toBe(true);
+  frame(g, 600); expect(g.tier).toBe(0);
+  frame(g, 1200); expect(g.tier).toBe(2);
+});
