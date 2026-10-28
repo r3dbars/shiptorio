@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#2a1410" />
+    <title>Deck stations (dev)</title>
+    <!-- dev only (thread "Draw the deck stations in code"): the six stations drawn in code (src/deck2d/stations/),
+         every state, next to Justin's mockup sprites, plus a strip of the line on the 640x360 art grid.
+           ?k=4      art px -> screen px (whole numbers only)     ?t=0.5   freeze the clock (screenshots)
+           ?only=code  hide the mockups -->
+    <link rel="preload" href="/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; background: #181211; color: #eed3c5; font: 12px/1.4 Silkscreen, monospace; }
+      main { padding: 16px; display: grid; gap: 20px; }
+      h1, h2 { font-size: 14px; margin: 0 0 6px; color: #fdc727; font-weight: 400; }
+      .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+      .cell { display: grid; gap: 4px; justify-items: center; }
+      .cell span { color: #c0988e; font-size: 10px; }
+      canvas, img { image-rendering: pixelated; display: block; }
+      .pair { display: grid; grid-template-columns: auto auto; gap: 18px; align-items: end; padding: 10px; background: #291b17; border: 2px solid #0a0604; box-shadow: inset 0 0 0 1px #6d370c; }
+      .pair > div > b { display: block; color: #c98115; font-weight: 400; margin-bottom: 4px; }
+      #strip { max-width: 100%; height: auto; border: 2px solid #0a0604; }
+    </style>
+  </head>
+  <body>
+    <main id="out"></main>
+    <script type="module" src="/src/deck2d/stations/preview.ts"></script>
+  </body>
+</html>

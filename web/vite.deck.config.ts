@@ -10,6 +10,6 @@ export default defineConfig({
     emptyOutDir: false,
     manifest: "deck-manifest.json",
     // deckbuild = the construction preview
-    rollupOptions: { input: { deck: resolve(__dirname, "deck.html"), launch: resolve(__dirname, "launch.html"), deckbuild: resolve(__dirname, "deckbuild.html") } },
+    rollupOptions: { input: { deck: resolve(__dirname, "deck.html"), launch: resolve(__dirname, "launch.html"), deckbuild: resolve(__dirname, "deckbuild.html"), stations: resolve(__dirname, "stations.html") } }, // stations = the code-drawn machines next to the mockups
   },
 });
