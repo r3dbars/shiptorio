@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import type { Px } from "./px";
-import { BRASS, COPPER, IRON, ball, bezel, blotch, cylH, cylV, drop, face, noise, rivet, smoke, strap, tone } from "./shade";
+import { BRASS, COPPER, IRON, ball, bezel, blotch, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone } from "./shade";
 import { shift } from "./px";
 import type { StationDef } from "./types";
 
@@ -26,13 +26,13 @@ function gear(g: Px, cx: number, cy: number, turn: number) {
     const R = Math.cos(a * 8) > 0.1 ? 7.4 : 5.4;
     if (d > R) continue;
     const k = (dx - dy) / (d || 1); // -1.4 shadow side .. 1.4 lit side
-    let c: Color = k > 0.2 ? "haze-2" : "iron-4";
-    if (d > R - 1 && k > 0.6) c = "haze-3";
-    if (d > R - 1 && k < -0.6) c = "iron-3";
-    if (d < 3.4) c = d < 1.2 ? "brass-3" : d < 2.2 ? "brass-1" : k > 0.3 ? "iron-2" : "iron-0";
+    let c: Color = "steel-3"; // a flat machined face, lit at the rim that faces the sun, shadowed opposite
+    if (d > R - 1.2) c = k > 0.3 ? "haze-2" : k < -0.5 ? "steel-2" : "steel-3";
+    if (d > 3.4 && d < 4.4) c = k < 0 ? "steel-2" : "iron-3"; // the web's inner lip
+    if (d < 3.4) c = d < 1.2 ? "brass-3" : d < 2.2 ? "brass-1" : k > 0.3 ? "steel-1" : "iron-0";
     g.set(x, y, c);
   }
-  g.set(cx + 1.5, cy - 2.5, "haze-3"); // glint on the hub collar
+  g.set(cx + 1.5, cy - 2.5, "haze-3"); g.set(cx + 4.5, cy - 4.5, "haze-3"); // glints on the hub collar and the lit rim
 }
 
 export const builder: StationDef = {
@@ -70,6 +70,8 @@ export const builder: StationDef = {
     strap(g, 8, 22, 2, 31, BRASS);
     strap(g, 38, 22, 2, 31, BRASS);
     g.vline(35, 35, 13, "iron-0"); rivet(g, 34, 37, "iron-4", "soot"); rivet(g, 34, 45, "iron-4", "soot");
+    for (const [x, y, n] of [[12, 21, 4], [27, 21, 3], [34, 39, 5], [9, 33, 6], [36, 21, 2]] as const) streak(g, x, y, n); // rust run off the bands
+    bracket(g, 8, 19, 0, 0); bracket(g, 39, 19, 1, 0); bracket(g, 8, 53, 0, 1); bracket(g, 39, 53, 1, 1);
 
     // vent panel + latch (upper left)
     drop(g, 11, 22, 7, 11);
@@ -103,9 +105,12 @@ export const builder: StationDef = {
     gear(g, gx, gy, s === "working" ? (f % 4) / 4 : 0);
 
     // --- copper tank on the right, its elbow into the top, a brass cap out the side
-    cylV(g, 40, 18, 9, 32, COPPER, { amb: 0.12, gloss: 1.3 });
-    for (const y of [21, 36, 49]) for (let x = 40; x < 49; x++) g.set(x, y, x < 44 ? "soot" : "brass-0"); // shadows under the bands
-    for (const y of [18, 33, 46]) cylV(g, 39, y, 11, 3, BRASS, { amb: 0.18 });
+    for (const [y, h, w] of [[20, 13, 9], [35, 11, 8], [48, 3, 9]] as const) { // stacked segments, each its own cylinder
+      cylV(g, 40, y, w, h, COPPER, { amb: 0.09, gloss: 1.0 });
+      for (let x = 40; x < 40 + w; x++) { tone(g, x, y, COPPER, 0.55 + (x - 40) * 0.05); g.set(x, y + h - 1, x < 44 ? "soot" : "copper-0"); } // lit lip, dark foot
+    }
+    for (const y of [18, 33, 46]) { cylV(g, 39, y, 11, 2, BRASS, { amb: 0.2, gloss: 0.9 }); g.set(48, y, "brass-5"); } // brass rings, a glint where the sun hits
+    for (let x = 40; x < 49; x++) g.set(x, 20, x < 44 ? "soot" : "brass-0"); // shadow under the top ring
     cylH(g, 35, 13, 10, 5, COPPER, { amb: 0.18 });
     cylV(g, 41, 13, 6, 6, COPPER, { amb: 0.18 });
     cylV(g, 49, 34, 2, 6, BRASS, { amb: 0.3 });
@@ -114,12 +119,13 @@ export const builder: StationDef = {
     for (const fx of [8, 32]) { strap(g, fx, 49, 8, 3, BRASS, 3); cylH(g, fx, 52, 8, 2, BRASS, { amb: 0.15 }); }
 
     // --- chimney on a riveted collar
-    drop(g, 17, 10, 18, 5, "soot");
-    cylH(g, 17, 10, 18, 5, BRASS, { amb: 0.16, gloss: 0.6 });
-    for (let x = 18; x < 34; x += 3) rivet(g, x, 12);
-    cylV(g, 20, 3, 11, 8, BRASS, { amb: 0.12 });
-    cylV(g, 19, 0, 13, 3, BRASS, { amb: 0.3, gloss: 0.9 }); // lip
-    g.hline(21, 1, 9, "soot"); g.hline(22, 0, 7, "iron-0"); // the dark opening
+    drop(g, 21, 12, 12, 3, "soot");
+    cylH(g, 21, 12, 12, 3, BRASS, { amb: 0.16, gloss: 0.6 });
+    for (let x = 22; x < 33; x += 3) rivet(g, x, 13);
+    cylV(g, 23, 4, 8, 9, IRON, { amb: 0.1, gloss: 0.8 }); // iron stack
+    cylV(g, 23, 8, 8, 1, BRASS, { amb: 0.3 }); // a brass band round it
+    cylV(g, 22, 1, 10, 3, BRASS, { amb: 0.3, gloss: 1.1 }); // lip
+    g.hline(24, 1, 6, "soot"); g.hline(25, 2, 4, "iron-0"); g.set(30, 1, "brass-5"); // the dark opening, a glint on the rim
 
     // --- the lever: brass rod on a plate, ball knob on top
     strap(g, 10, 13, 6, 2, BRASS);
@@ -130,8 +136,8 @@ export const builder: StationDef = {
     raw.outline();
 
     // --- life: smoke leaves the chimney (after the outline: smoke has no hard edge)
-    if (s === "working") smoke(g, 24, -1, f / 8);
-    if (s === "jammed") smoke(g, 24, -1, f / 8, true);
+    if (s === "working") smoke(g, 26, -1, f / 8);
+    if (s === "jammed") smoke(g, 26, -1, f / 8, true);
   },
 };
 
