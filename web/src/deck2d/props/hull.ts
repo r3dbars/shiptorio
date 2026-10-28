@@ -3,6 +3,7 @@ import type { Color } from "../stations/palette";
 import { Px, shift } from "../stations/px";
 import { BRASS, GOLD, IRON, ball, blotch, cylH, cylV, noise, rivet, strap, tone, type Ramp } from "../stations/shade";
 import { CU, tube } from "../../bakeoff/boiler2d";
+import { dressFloor } from "./clutter";
 
 // The large deck's hull drawn in code on the art grid (contract HULL): warm iron floor plates, a perimeter rail with
 // brass-capped posts and lanterns, a riveted front skirt with brass bands and brackets, a rock underside with cyan
@@ -292,6 +293,7 @@ export function hullCanvas(w: number): HTMLCanvasElement {
   floor(g, w);
   backRail(g, w);
   sideRails(g, w);
+  dressFloor(raw, g, w, PAD, TOP);
   frontRail(g, w);
   endCap(g, w);
   raw.outline();
