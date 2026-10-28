@@ -21,6 +21,7 @@
 // The page: web/deck.html (vite dev: http://localhost:5173/deck.html) mounts web/src/deck2d/main.ts.
 // Sprites: web/public/deck/art/*.webp, cleaned from Justin's ChatGPT sheets (names below).
 // Change this file only with the hub thread; add fields, don't rename them.
+import { pixelOn } from "../flags";
 
 // ---------- the line ----------
 export type StopId = "repo" | "planner" | "builder" | "checks" | "review" | "gate" | "launch";
@@ -138,10 +139,19 @@ export function createBus(): DeckBus {
 // The bridge + rocket island sits to the right; launch is the middle of its pad.
 export const DECK = { w: 2039, h: 657 } as const;
 export const BELT_Y = 236;
-export const STOP_X: Record<StopId, number> = {
-  repo: 210, planner: 480, builder: 740, checks: 990, review: 1250, gate: 1560, launch: 2834,
-};
+/** Pixel mode lays the line out wider (Justin 2026-10-28: "spread out a bit more"): the deck is DECK_DX longer, the
+ * boiler gets its own bay at the left end, every stop gets room for crates either side, and the bridge + island move
+ * right with the deck's end. Anything placed relative to the deck's right end adds DECK_DX. */
+export const DECK_DX = pixelOn() ? 940 : 0;
+export const DECK_END = 2039 + DECK_DX;
+export const STOP_X: Record<StopId, number> = DECK_DX
+  ? { repo: 640, planner: 1040, builder: 1440, checks: 1840, review: 2240, gate: 2640, launch: 2834 + DECK_DX }
+  : { repo: 200, planner: 500, builder: 800, checks: 1100, review: 1400, gate: 1700, launch: 2834 };
 export const LAUNCH_Y = 250; // the launch circle on the rocket island
+/** The large deck's hull in world units (pixel mode draws it in code, hull/). The floor runs back..front; the belt row
+ * (BELT_Y) and the stations' feet sit in the front half, the back half is open floor for the boiler and props. The
+ * front rail stays at y 318 so the bridge still meets the deck at its right end. */
+export const HULL = { x0: 0, x1: DECK_END, back: 40, front: 318, skirt: 390, bottom: 600, orb: { x: DECK_DX ? 1500 : 1043, y: 578 } } as const;
 /** Where things stand: a sprite's feet sit on this y at a stop (slightly in front of the belt). */
 export const FLOOR_Y = BELT_Y + 42;
 /** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */
@@ -246,7 +256,8 @@ export type AttachJuice = (bus: DeckBus, host: HTMLElement, where: (stop: StopId
  */
 export type LayerSlot = "sky-far" | "deck" | "line" | "stations" | "front";
 export interface DeckLayer {
-  replaces?: ("deck" | "island" | "rocket")[];
+  /** Engine pieces this layer draws itself: the engine skips them. props/ takes "boiler" and "orb" (the core under the deck). */
+  replaces?: ("deck" | "island" | "rocket" | "boiler" | "orb")[];
   update(dt: number, view: DeckView): void;
   draw(ctx: CanvasRenderingContext2D, slot: LayerSlot): void;
   /** build/: true while this layer draws the stop itself (locked tarp, mid-construction); the engine skips its sprite. */
@@ -257,9 +268,9 @@ export interface DeckLayer {
   build?: { shake?(): number; shippyAct?(): { at: StopId; pose: ShippyPose } | null };
 }
 export type CreateLayer = (art: ArtLoader, bus: DeckBus) => DeckLayer;
-// Entries: grow/index.ts, build/index.ts, launch/index.ts each `export const createLayer: CreateLayer`.
+// Entries: grow/index.ts, build/index.ts, launch/index.ts, juice/index.ts, props/index.ts each `export const createLayer: CreateLayer`.
 /** World geometry layers need: the deck's right edge right now (it grows), and the launch spot. */
-export const LAUNCH = { x: 2834, y: 250 } as const;
+export const LAUNCH = { x: 2834 + DECK_DX, y: 250 } as const;
 
 // ---------- page hooks (screenshots, clips) ----------
 // <body data-deck-ready> is set once sprites loaded and the first frame drew.

@@ -1,4 +1,4 @@
-import { ART_PX, LAUNCH, PALETTE, type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
+import { ART_PX, DECK_DX, LAUNCH, PALETTE, type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import type { Preview } from "./preview";
 import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
 
@@ -17,7 +17,7 @@ const RING = { x: A(LAUNCH.x), y: A(LAUNCH.y + 14) };
 const SEAT = A(LAUNCH.y + 20); // rocket feet
 const ISLAND = { x: RING.x - 53, y: RING.y - 24 }; // island-3 top-left; its ring centre sits on RING
 const TOWER_PAD = 71; // tower frames: rows from the top to the pad centre
-const BRIDGE = { x0: A(1958), x1: RING.x - 47, floor: A(353) - 4 }; // deck edge -> island rim; floor = top of the planks
+const BRIDGE = { x0: A(1958 + DECK_DX), x1: RING.x - 47, floor: A(353) - 4 }; // deck edge -> island rim; floor = top of the planks
 const PLANK = 8;
 const CLOUD = 128; // art y of the cloud tops the island comes up through
 const FPS = 10; // stepped motion: positions update at this rate

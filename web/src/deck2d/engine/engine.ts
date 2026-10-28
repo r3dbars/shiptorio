@@ -1,10 +1,11 @@
 import {
-  ART_PX, BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
+  ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
+import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number) => void;
@@ -14,15 +15,19 @@ const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { ea
 // It draws whatever DeckView it's handed and animates the in-between (crates sliding stop to stop by item id,
 // stations dropping in, the rocket going up), and emits DeckEvents for juice/ by diffing views.
 
-const PAD = { x: 1905, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
+const PAD = { x: 1905 + DECK_DX, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
 const BRIDGE_Y = PAD.y + PAD.s * 560;
-const ORB = { x: 1043, y: 578 };
-const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: 670 };
+const ORB = HULL.orb;
+/** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
+ * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
+const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
+const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: DECK_DX ? 740 : 670 }; // pixel mode: the whole underside, lanterns and all
 const SPEED = 170, GAP = 50, CRATE = 42;
-const LEVER = { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
+// pixel mode: the lever stands on the floor in front of Review (Shippy pulls it from review + 150, facing left)
+const LEVER = DECK_DX ? { x: STOP_X.review + 92, base: 312, h: 78 } : { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
 // The belt: along the deck, down onto the bridge, out to the launch circle.
-const PATH: [number, number][] = [[STOP_X.repo + 60, BELT_Y], [1915, BELT_Y], [1995, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
+const PATH: [number, number][] = [[STOP_X.repo + 60, BELT_Y], [1915 + DECK_DX, BELT_Y], [1995 + DECK_DX, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
 const SEGS: { ax: number; ay: number; bx: number; by: number; len: number; at: number; a: number }[] = [];
 let PATH_LEN = 0;
 for (let i = 1; i < PATH.length; i++) {
@@ -65,7 +70,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
   let prev: DeckView | null = null, lever = 0;
 
-  let deckW = 2039, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
+  let deckW = DECK_END, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
 
   // ---------- camera ----------
   const cam = { x: 1400, y: 300, s: 0.3, manual: 0, all: false, pin: null as StopId | null };
@@ -95,7 +100,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (cam.all) return all;
     // Desktop fits everything, except it leans in on a station while it's being built (construction reads small otherwise).
     const site = !portrait() && !v.card ? v.stops.find((x) => x.id !== "launch" && (x.building !== undefined || (x.built && layers.some((l) => l.owns?.(x))))) : undefined;
-    if (!portrait() && !site) return all;
+    if (!portrait() && !site) {
+      // Pixel mode snaps the zoom to whole art px, so on a desktop the wide layout can come out wider than the screen.
+      // Then frame the deck itself (the left end, the boiler bay, every stop), and slide right to the island only while
+      // it's building or a rocket is going up.
+      if (!px) return all;
+      const k = Math.max(1, Math.round(all.s * ART_PX * DPR)), vw = W / (k / (ART_PX * DPR));
+      if (vw >= right() - BOUNDS.x0) return all;
+      const toIsland = (islandIn && !islandUp) || rocket.mode === "count" || rocket.mode === "up";
+      return { ...all, x: toIsland ? right() - vw / 2 : BOUNDS.x0 - 40 + vw / 2 };
+    }
     const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
     if (site) return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, STOP_X[site.id])), y: 230, s };
     return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, focusX(v))), y: 250, s };
@@ -321,7 +335,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).
     const dk = v.deck ?? { size: "large", island: "built" };
     const reach = { small: 0.42, medium: 0.7, large: 1 }[dk.size];
-    deckW += ((reach + (dk.growing ?? 0) * 0.28) * 2039 - deckW) * Math.min(1, dt * 3);
+    deckW += ((reach + (dk.growing ?? 0) * 0.28) * DECK_END - deckW) * Math.min(1, dt * 3);
     const deck = img("deck");
     if (deck && !owned.has("deck")) { cx.save(); cx.beginPath(); cx.rect(-50, -100, deckW + 50, 900); cx.clip(); cx.drawImage(deck, 0, 0); cx.restore(); }
     const island = dk.island === "built" ? 1 : dk.island === "building" ? dk.islandProgress ?? 0 : 0;
@@ -333,8 +347,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     islandUp = island >= 1; islandIn = island > 0;
     slot("deck");
-    put("boiler-on", 112, 182, 168);
-    glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
+    if (owned.has("boiler")) { /* props/ draws it */ }
+    else if (px) cx.drawImage(boilerFrame(t), snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
+    else put("boiler-on", 112, 182, 168);
+    if (!owned.has("orb")) glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
     belt();
     slot("line");
     rocketDraw();

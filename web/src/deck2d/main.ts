@@ -9,7 +9,7 @@ import { fallbackCard, fallbackShippy } from "./engine/fallbacks";
 // Each module lives in its own folder and is picked up here when it exists, so threads can land independently.
 type Mod = Record<string, unknown>;
 // Each folder's entry: index.ts, or the one file named after the folder's job (card/card.ts, data/source.ts).
-const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
+const mods = import.meta.glob<Mod>(["./{story,data,shippy,card,juice,grow,build,launch,props}/index.ts", "./card/card.ts", "./data/source.ts", "./shippy/shippy.ts", "./story/story.ts"]);
 const load = async (folder: string, name: string) => {
   for (const [path, get] of Object.entries(mods)) if (path.startsWith(`./${folder}/`)) { const m = await get(); if (m[name]) return m; }
   return null;
@@ -34,7 +34,7 @@ const seed = Number(params.get("seed")) || 0;
   const shippy = ((shippyMod?.createShippy as CreateShippy | undefined) ?? fallbackShippy)(art);
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
-  for (const f of ["grow", "build", "launch", "juice"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
+  for (const f of ["grow", "build", "launch", "juice", "props"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const engine = createEngine(cv, art, bus, shippy, layers);
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;

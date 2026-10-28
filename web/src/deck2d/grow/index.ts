@@ -12,7 +12,7 @@
 //   rails   back rail drops down, front rail rises
 //   glow    the new seams glow gold, then cool
 //   done    one dust puff as it locks in (the story caption says what changed)
-import { PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
+import { PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, HULL } from "../contract";
 import { pixelOn } from "../../flags";
 
 export type DeckSize = "small" | "medium" | "large";
@@ -22,7 +22,7 @@ const SIZES: DeckSize[] = ["small", "medium", "large"];
 // ---------- the three decks ----------
 // All numbers but s/dy are sprite pixels: cap = where the right end cap starts, floor = back edge .. front rail
 // of the floor, skirt = bottom of the front iron skirt.
-// s scales each one to fit its stations (small ~1000 wide holds builder, medium ~1500 holds review, large = the
+// s scales each one to fit its stations (small ~1000 wide holds builder, medium ~1700 holds review, large = the
 // old 2039 so the bridge meets it at x 1905); dy puts every front rail at world y 318 so the belt (y 236) and
 // the stations' feet stay put as it grows.
 interface Geo { s: number; dy: number; w: number; h: number; cap: number; floor: [number, number]; skirt: number }
@@ -33,7 +33,7 @@ const geo = (w: number, h: number, width: number, cap: number, floor: [number, n
 };
 export const DECKS: Record<DeckSize, Geo> = {
   small: geo(1413, 642, 1000, 1120, [112, 285], 400),
-  medium: geo(2068, 596, 1500, 1700, [128, 278], 375),
+  medium: geo(2068, 596, 1700, 1700, [128, 278], 375),
   large: geo(2077, 517, 2039, 1690, [105, 248], 322),
 };
 const TILE = 80; // one new floor column, world px
@@ -77,6 +77,8 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   // 1 px = 1 art px and snapped to the 48 colors (scripts/pixel/pixelize.py). The growth is drawn in code on the
   // art grid: whole art px, palette colors, no fades.
   const PX = pixelOn();
+  // props/ draws the hull itself in code in pixel mode; then this layer only keeps the camera bounds and the dust.
+  const CODE_HULL = PX && Object.keys(import.meta.glob("../props/index.ts")).length > 0;
   const sprite = (z: DeckSize) => (PX ? `deck-${z}-px` : `deck-${z}`);
   const pxGeo: Partial<Record<DeckSize, Geo>> = {};
   /** The geometry for a size: in pixel mode, measured off the pixel hull once it has loaded. */
@@ -171,6 +173,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   }
 
   function drawDeck(ctx: CanvasRenderingContext2D) {
+    if (CODE_HULL) return;
     if (!g) return drawWhole(ctx, now());
     const gr = g, G = geoOf(gr.to), im = art.get(sprite(gr.to));
     if (!im) return drawWhole(ctx, gr.from);
@@ -355,7 +358,8 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
       else if (slot === "front") drawFront(ctx);
     },
     bounds() {
-      const deckEnd = g ? capX() + capW(g.to) : endAt(now());
+      // pixel mode's wide layout (contract DECK_DX): the full deck runs to HULL.x1, drawn by props/
+      const deckEnd = g ? capX() + capW(g.to) : now() === "large" ? Math.max(endAt("large"), HULL.x1) : endAt(now());
       return { x0: -20, x1: deckEnd + 20 }; // just the deck; the engine frames the island itself once it's up
     },
     seek(from: DeckSize, to: DeckSize, t: number) {
