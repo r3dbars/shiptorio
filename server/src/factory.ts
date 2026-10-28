@@ -2584,6 +2584,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
     } catch (e) {
       if (e instanceof BudgetError || e instanceof RateLimitError) {
+        if (e instanceof RateLimitError) this.githubRest(e.retryAt);
         this.log("warn", `Station paused: ${e.message}`, item.id);
         return; // Keep pending proof; resource waiting is not a failed code review.
       }
@@ -3422,6 +3423,24 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     try { await run(); } catch (error) { await this.reliabilityFailure(operation, error); }
   }
 
+  /**
+   * GitHub-bound tick work rests until a cooldown passes. Retrying every 2s tick kept a short-term limit alive and
+   * re-raised it with a fresh deadline each time, so nothing moved for as long as anyone watched.
+   */
+  private githubRestUntil = 0;
+  private async githubGuard(operation: string, run: () => Promise<unknown>): Promise<void> {
+    if (Date.now() < this.githubRestUntil) return;
+    try { await run(); } catch (error) {
+      if (error instanceof RateLimitError) { this.githubRest(error.retryAt); return; }
+      await this.reliabilityFailure(operation, error);
+    }
+  }
+  private githubRest(retryAt: number) {
+    if (retryAt <= this.githubRestUntil) return;
+    if (this.githubRestUntil < Date.now()) this.log("warn", `GitHub is busy. The factory waits until ${new Date(retryAt).toISOString().slice(11, 19)} UTC before asking again.`);
+    this.githubRestUntil = retryAt;
+  }
+
   private async reliabilityFailure(operation: string, error: unknown, itemId?: string): Promise<void> {
     this.log("error", `${operation}: ${String(error)}`, itemId);
     await this.accountPut(`reliabilityFailure:${operation}`, { at: Date.now(), error: String(error).slice(0, 500), itemId });
@@ -3556,9 +3575,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!(await this.load())) return;
     await this.guard("pollPostHog", () => this.pollPostHog());
     await this.guard("tickSupport", () => this.tickSupport());
-    await this.guard("retryReviewComments", () => this.retryReviewComments());
+    await this.githubGuard("retryReviewComments", () => this.retryReviewComments());
     await this.guard("planRunnerJobs", () => this.planRunnerJobs());
-    await this.guard("reconcileGitHub", () => this.reconcileGitHub());
+    await this.githubGuard("reconcileGitHub", () => this.reconcileGitHub());
     await this.guard("watchdog", () => this.watchdog());
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
@@ -3630,7 +3649,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       break;
     }
 
-    await this.guard("runGauntlet", () => this.runGauntlet());
+    await this.githubGuard("runGauntlet", () => this.runGauntlet());
     await this.guard("orbitExpire", () => this.orbitExpire());
     await this.guard("autoLaunchPermitted", () => this.autoLaunchPermitted());
     await this.guard("offerGauntletMove", () => this.offerGauntletMove());
@@ -3638,7 +3657,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.guard("offerLevelMove", () => this.offerLevelMove());
     await this.guard("offerGoalMove", () => this.offerGoalMove());
     await this.guard("offerResearchMove", () => this.offerResearchMove());
-    await this.guard("offerRunnerPlan", () => this.offerRunnerPlan());
+    await this.githubGuard("offerRunnerPlan", () => this.offerRunnerPlan());
     await this.guard("runLevel", () => this.runLevel());
     await this.guard("runLearned", () => this.runLearned());
     const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");

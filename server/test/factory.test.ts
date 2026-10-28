@@ -733,6 +733,25 @@ it("GitHub cooldown preserves durable deliveries without exhausting processing r
   expect(f.data.has("failed:delivery:rate-limited")).toBe(false);
 });
 
+it("a GitHub cooldown rests GitHub-bound tick work until it passes instead of retrying every tick", async () => {
+  const { RateLimitError } = await import("../src/rate-limit");
+  const f = fixture();
+  const internals = f.factory as unknown as { reconcileGitHub(): Promise<void>; offerRunnerPlan(): Promise<void>; githubRestUntil: number };
+  let reconciles = 0, offers = 0;
+  internals.reconcileGitHub = async () => { reconciles++; throw new RateLimitError(Date.now() + 60000); };
+  internals.offerRunnerPlan = async () => { offers++; };
+  await f.factory.alarm();
+  await f.factory.alarm();
+  await f.factory.alarm();
+  expect(reconciles).toBe(1);
+  expect(offers).toBe(0);
+  expect(f.data.has("reliabilityFailure:reconcileGitHub")).toBe(false);
+  internals.githubRestUntil = 0;
+  internals.reconcileGitHub = async () => { reconciles++; };
+  await f.factory.alarm();
+  expect([reconciles, offers]).toEqual([2, 1]);
+});
+
 for (const outcome of ["pass", "error", "comment"] as const) {
   it(`discards an old-head AI review when the head moves during ${outcome === "comment" ? "comment publication" : outcome === "error" ? "a failed review" : "review"}`, async () => {
     const keys = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
