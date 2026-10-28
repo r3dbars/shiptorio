@@ -1,3 +1,4 @@
+import { DecisionOutbox, isDecision } from "./decision-outbox";
 import { socketDisconnected } from "../telemetry";
 import { parseLiveMessage } from "./schemas";
 import type { Listener, Source, StatusListener } from ".";
@@ -18,6 +19,12 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
   let retry: ReturnType<typeof setTimeout> | undefined;
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let notice: HTMLElement | undefined;
+  const outbox = new DecisionOutbox(() => onMessage({type:"log", level:"warn", text:"The available decision changed. Review the current card before trying again.", at:Date.now()}));
+  const flushDecisions = () => {
+    const socket = ws;
+    if (closed || !synced || !socket || socket.readyState !== WebSocket.OPEN) return;
+    try { outbox.flush(socket, message => socket.send(JSON.stringify(message))); } catch { lost(); }
+  };
 
   // Preserve the last good map through short interruptions; no red offline flash.
   const waiting = () => {
@@ -113,9 +120,10 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       if (msg.type === "snapshot") { msg.state.deck?.forEach(local); local(msg.state.move); }
       if (msg.type === "deck") msg.deck.forEach(local);
       if (msg.type === "move") local(msg.move);
+      outbox.observe(msg);
       onMessage(msg);
       if (!current()) return;
-      if (msg.type === "snapshot") ready();
+      if (msg.type === "snapshot") { ready(); flushDecisions(); }
       if (current()) heartbeat = setTimeout(() => ping(socket), HEARTBEAT_MS);
     };
     socket.onclose = (event) => {
@@ -151,6 +159,8 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
 
   return {
     send: (msg) => {
+      if (closed) return;
+      if (isDecision(msg)) { outbox.enqueue(msg); flushDecisions(); return; }
       if (!closed && synced && ws?.readyState === WebSocket.OPEN) {
         try { ws.send(JSON.stringify(msg)); } catch { lost(); }
       }
@@ -158,6 +168,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     close: () => {
       if (closed) return;
       closed = true;
+      outbox.clear();
       detach(); clearTimeout(retry); clearNotice();
       if (typeof window !== "undefined") {
         window.removeEventListener("online", resume);

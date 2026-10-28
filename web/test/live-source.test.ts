@@ -282,3 +282,32 @@ it("gives a returning tab a fresh three-second notice grace and never flashes on
   h.advance(3001); expect(h.notices.size).toBe(0);
   source.close(); expect(h.tasks.size).toBe(0);
 }));
+
+const decisionCard = (head = "a") => ({ id: "plan-1", title: "Approve this plan", why: "Scoped", itemId: "gh-1", createdAt: 1,
+  plan: [`Base ${head}`], options: [{id:"approve",label:"Approve",recommended:true,actions:[{tool:"approve_runner_job",args:{jobId:`job-${head}`},reason:"Exact plan"}]}] });
+const decisionSnapshot = (head = "a", seq = 0) => JSON.stringify({ ...JSON.parse(snapshot), seq, state: {...snapshotMessage.state, move:decisionCard(head), deck:[decisionCard(head)]} });
+it("retains an offline tap and sends it only after a fresh matching snapshot", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  h.advance(300); const fresh = h.sockets[1]; fresh.open();
+  expect(fresh.sent).toEqual([]);
+  fresh.message(decisionSnapshot());
+  expect(fresh.sent).toEqual([JSON.stringify({type:"choose_move",moveId:"plan-1",optionId:"approve"})]);
+  source.close();
+}));
+it("replays an unacknowledged tap once per connection but never replays changed plan authority", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  const tap = {type:"choose_move" as const,moveId:"plan-1",optionId:"approve"};
+  source.send(tap); source.send(tap); expect(first.sent).toHaveLength(1);
+  first.close(); h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot("b"));
+  expect(fresh.sent).toEqual([]); source.close();
+}));
+it("authoritative resolution clears pending decisions and disposal cannot send them for another player", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  source.send({type:"defer_move",moveId:"plan-1"});
+  first.message(JSON.stringify({type:"deck",deck:[],seq:1}));
+  first.close(); h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot("a",2));
+  expect(fresh.sent).toEqual([]);
+  source.close(); source.send({type:"dismiss_move",moveId:"plan-1",why:"once"});
+  h.win.dispatchEvent(new Event("online")); expect(h.sockets).toHaveLength(2);
+}));
