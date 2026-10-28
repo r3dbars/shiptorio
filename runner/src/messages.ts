@@ -11,7 +11,10 @@ export const JobAssignment = z.object({
   allowedPaths: z.array(path).min(1).max(10), plan: z.string().min(1).max(50000),
   lease: z.string().uuid(), token: z.string().min(1).max(2048), deadline: z.number().int().positive(),
   reworkPr: z.number().int().positive().optional(), verifyBaseSha: sha.optional(),
+  refreshBase: z.object({ expectedHeadSha: sha }).strict().optional(),
   prTestFiles: z.array(path).max(100).optional(),
+}).superRefine((job, ctx) => {
+  if (job.refreshBase && (!job.reworkPr || job.verifyBaseSha !== job.baseSha || job.refreshBase.expectedHeadSha === job.baseSha)) ctx.addIssue({ code: "custom", message: "Invalid approved base refresh" });
 });
 export type Job = z.infer<typeof JobAssignment>;
 export const ClaimResponse = z.object({ job: JobAssignment.nullable() }).strict();
