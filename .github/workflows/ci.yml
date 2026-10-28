@@ -1,13 +1,16 @@
 name: CI
 permissions:
   contents: read
-# One run per branch/event at a time; a new push cancels the previous run.
-# Every ready PR needs check/selfhost, including docs-only changes, because branch
-# protection requires them. Drafts skip CI; browser/load remain manual checks.
+# One run per branch/event at a time. A new push cancels the previous run, except on
+# release/* branches, where an in-flight full run always finishes (a fix landing
+# mid-run used to throw away 10+ minutes of browser/load evidence).
+# Every ready PR runs everything: check/selfhost plus the browser and load suites.
+# When all four pass, the full-suite job posts the release-validation status that
+# main requires, so nobody has to dispatch and stamp it by hand. Drafts skip CI.
 # Main is checked by the Deploy run instead.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.head_ref, 'release/') }}
 on:
   workflow_dispatch:
     inputs:
@@ -21,9 +24,11 @@ on:
         default: ''
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  # Ready for GitHub's merge queue on main.
+  merge_group:
 jobs:
   check:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -48,7 +53,7 @@ jobs:
       - run: bun run playtest --check
       - run: bun run build
   selfhost:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -70,7 +75,7 @@ jobs:
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
   browser:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     # Split each viewport's files across two jobs as browser coverage grows.
     # Existing per-test and individual assertion deadlines remain unchanged.
@@ -92,7 +97,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun x playwright install chromium
       # Hosted runners normally have Chrome's OS libraries. Avoid minutes of apt
-      # work on every manual run; install missing libraries only if launch fails.
+      # work on every run; install missing libraries only if launch fails.
       - name: Check browser libraries
         run: |
           node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
@@ -117,9 +122,10 @@ jobs:
             tests/e2e/baselines/linux/
           retention-days: 7
   load:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Up to three load runs (see tests/load/repeat.ts).
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -129,10 +135,32 @@ jobs:
         with:
           node-version: '22'
       - run: bun install --frozen-lockfile
-      - run: bun run test:load
+      - run: bun run test:load:ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: load-evidence
           path: test-results/load*
           retention-days: 7
+  # Never name this job release-validation: a skipped job counts as a passing check,
+  # so the status is posted explicitly, only after every suite passed on this head.
+  full-suite:
+    needs: [check, selfhost, browser, load]
+    if: >-
+      always() && needs.check.result == 'success' && needs.selfhost.result == 'success' &&
+      needs.browser.result == 'success' && needs.load.result == 'success' &&
+      !inputs.update_baselines && inputs.browser_grep == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      statuses: write
+    steps:
+      - name: Post release-validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state=success -f context=release-validation -f target_url="$RUN_URL" \
+            -f description="CI passed check, selfhost, all browser shards and load on this head."
