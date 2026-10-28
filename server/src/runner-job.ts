@@ -18,6 +18,8 @@ export interface RunnerJob {
   inputRevision?: string;
   route?: string; // which power plant builds it, and why (geothermal guard + planner pick)
   reworkPr?: number;
+  // Explicit player-approved replacement of the same factory PR branch on a newer base.
+  refreshBase?: { expectedHeadSha: string };
   verifyBaseSha?: string;
   prTestFiles?: string[];
   headSha?: string;

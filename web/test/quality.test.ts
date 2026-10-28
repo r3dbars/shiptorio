@@ -105,3 +105,36 @@ test("normal phone idle cap stays unchanged but catastrophic idle stalls fall ba
   frame(g, 600); expect(g.tier).toBe(0);
   frame(g, 1200); expect(g.tier).toBe(2);
 });
+
+test("only sustained severe foreground frames already at tier 2 earn the sticky scene budget", () => {
+  const g = warmed();
+  frame(g, 600); frame(g, 600); expect(g.tier).toBe(2); expect(g.severe).toBe(false);
+  for (let i = 0; i < 3; i++) { frame(g, 250); expect(g.severe).toBe(false); }
+  frame(g, 2000); expect(g.severe).toBe(true);
+  frame(g, 34); hidden = true; frame(g, 1000); expect(g.severe).toBe(true); // no quality flicker
+});
+test("a normal frame, hidden interval, suspension or clock reversal breaks severe evidence", () => {
+  for (const interruption of ["normal", "hidden", "sleep", "reverse"] as const) {
+    hidden = false; const g = warmed(); g.tier = 2;
+    frame(g, 600); frame(g, 600); frame(g, 600);
+    if (interruption === "normal") frame(g, 249);
+    if (interruption === "hidden") { hidden = true; frame(g, 100); hidden = false; }
+    if (interruption === "sleep") frame(g, 12 * 60 * 60 * 1000);
+    if (interruption === "reverse") { frame(g, -100); frame(g, 100); }
+    frame(g, 600); expect(g.severe).toBe(false);
+  }
+});
+test("warm-up, healthy capped phones and explicit quality pins never select a severe budget", () => {
+  const warm = new FrameGovernor(false); warm.tier = 2;
+  for (let i = 0; i < 5; i++) frame(warm, 500);
+  expect(warm.severe).toBe(false);
+  const phone = warmed(); phone.tier = 2;
+  for (let i = 0; i < 100; i++) frame(phone, 34);
+  expect(phone.severe).toBe(false);
+  for (const tier of [0, 1, 2]) {
+    location.search = `?quality=${tier}`;
+    const pin = warmed();
+    for (let i = 0; i < 10; i++) frame(pin, 600);
+    expect(pin.tier).toBe(tier); expect(pin.severe).toBe(false);
+  }
+});

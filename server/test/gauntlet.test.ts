@@ -28,6 +28,26 @@ describe("gauntlet rules", () => {
     expect(item.inspection?.state).toBe("passed");
     expect(nextGate(item)).toBeNull();
   });
+  it("cannot reach the pad when a required station is missing or duplicated", () => {
+    for (const missing of ["ci", "verify", "ai"] as const) {
+      const item = pr();
+      item.inspection!.stages = item.inspection!.stages.filter(s => s.gate !== missing).map(s => ({ ...s, state: "passed" }));
+      const result = setStage(item, "human", "passed", "tap");
+      expect(result.state).not.toBe("on_pad");
+      expect(result.inspection?.state).not.toBe("passed");
+    }
+    const item = pr();
+    item.inspection!.stages = item.inspection!.stages.flatMap(s => [{ ...s, state: "passed" as const }, { ...s, state: "passed" as const }]);
+    expect(setStage(item, "ai", "passed", "duplicate").state).not.toBe("on_pad");
+  });
+  it("does not start downstream review with missing proof or a failed researched check", () => {
+    const item = setStage(pr(), "ci", "passed", "green");
+    item.inspection!.stages = item.inspection!.stages.filter(s => s.gate !== "verify");
+    expect(nextGate(item)).toBeNull();
+    const failed = setStage(pr(), "ci", "passed", "green");
+    failed.inspection!.checks = [{ id: "typecheck", state: "rework", reason: "failed" }];
+    expect(nextGate(failed)).toBeNull();
+  });
   it("sends fails back with a scar tag that counts strikes", () => {
     const once = setStage(setStage(pr(), "ci", "passed", "green"), "ai", "rework", "Hides the error");
     expect(once.state).toBe("rejected");
@@ -75,7 +95,7 @@ describe("live gauntlet in the Factory", () => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
-      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       calls.push(`${init?.method ?? "GET"} ${url.replace("https://api.github.com", "")}`);
       const json = (v: unknown) => Response.json(v);
@@ -84,7 +104,7 @@ describe("live gauntlet in the Factory", () => {
       if (url.endsWith("/chat/completions")) return json({ choices: [{ message: { content: '{"verdict":"pass","reason":"Fixes the empty cart crash.","findings":[]}' } }] });
       if (url.endsWith("/issues/99/comments")) return ++commentTries <= 2 ? new Response("forbidden", { status: 403 }) : json({ id: 1 });
       if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); return json({ merged: true }); }
-      if (url.endsWith("/pulls/99")) return json({ head: { sha: head }, merged: false });
+      if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged: false });
       throw new Error(`unexpected ${url}`);
     }) as typeof fetch;
     try {

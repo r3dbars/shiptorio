@@ -1,5 +1,6 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { assertBuildEventPrefix, BUILDOUT_STEPS as STEPS } from '../contract/buildout-events';
+import { buildoutObserver, readBuildout, type BuildoutObservation } from './buildout-observation';
 import { observeManualLaunch, type LaunchObservation } from '../contract/launch-observation';
 
 // Build As You Go (?buildout=1): the demo shop starts dark and empty, and every piece
@@ -11,14 +12,13 @@ import { observeManualLaunch, type LaunchObservation } from '../contract/launch-
 // (the cart rolls, then rides into the builder), so they may advance without a build moment.
 const AUTO = new Set<string>(['build', 'checks']);
 const NO_PIECES = new Set<string>(['issue', 'build']);
-type Build = { id: string; phase: 'start' | 'burst' | 'done'; at: number };
+const perfEvidence = new WeakMap<TestInfo, Pick<BuildoutObservation, 'at' | 'step' | 'phase' | 'perf'>[]>();
 
 const watchBuilds = (page: Page) => page.addInitScript(() => {
   const w = window as any;
   w.__builds = [];
   window.addEventListener('shiptorio:build', e => w.__builds.push({ ...(e as CustomEvent).detail, at: performance.now() }));
 });
-const builds = (page: Page): Promise<Build[]> => page.evaluate(() => (window as any).__builds);
 
 // Hold with a real mouse on desktop and real touch on phones, like the launch hold.
 async function hold(page: Page, info: TestInfo, button: ReturnType<Page['locator']>, until: () => Promise<boolean>, beforePress?: () => Promise<void>) {
@@ -53,7 +53,15 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
   // Dark and empty: no counters, no free look, nothing built yet.
   await expect(page.getByText(/waiting on you/i)).toHaveCount(0);
   await expect(page.getByText(/^shipped$/i)).toHaveCount(0);
-  expect(await builds(page)).toEqual([]);
+  const samples: Pick<BuildoutObservation, 'at' | 'step' | 'phase' | 'perf'>[] = [];
+  perfEvidence.set(info, samples);
+  const observed = buildoutObserver(async () => {
+    const snapshot = await readBuildout(page);
+    const { at, step, phase, perf } = snapshot;
+    samples.push({ at, step, phase, perf });
+    return snapshot;
+  });
+  expect((await observed.refresh()).events).toEqual([]);
   const shot = async (name: string) => {
     if (!opts.shoot) return;
     await info.attach(name, { body: await page.screenshot(), contentType: 'image/png' });
@@ -62,13 +70,13 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
 
   for (const [i, id] of STEPS.entries()) {
     const n = String(i + 1).padStart(2, '0');
-    const done = async () => (await builds(page)).some(b => b.id === id && b.phase === 'done');
-    const started = async () => (await builds(page)).some(b => b.id === id && b.phase === 'start');
-    const next = async () => (await root.getAttribute('data-step')) !== id;
+    const done = () => observed.phase(id, 'done');
+    const started = () => observed.phase(id, 'start');
+    const startedOrNext = () => observed.phaseOr(id, 'start', snapshot => snapshot.step !== id);
     // Automatic work can finish before the poller observes its transient card.
     // Manual decisions still require their exact step and real player action.
     if (AUTO.has(id))
-      await expect.poll(async () => await done() || await root.getAttribute('data-step') === id,
+      await expect.poll(() => observed.phaseOr(id, 'done', snapshot => snapshot.step === id),
         { timeout: 60_000, message: `step ${n} is ${id} or already completed` }).toBe(true);
     else await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
     // Steps 6 (build runs) and 7 (checks) build themselves; the rest wait on the player.
@@ -77,15 +85,16 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       await expect(action.first(), `${id} has an action`).toBeVisible();
       await expect(card).toBeVisible();
       await shot(`${n}-${id}-card.png`);
-      if (await card.getAttribute('data-trigger') === 'hold')
+      const actionState = await observed.refresh();
+      if (actionState.trigger === 'hold')
         await expect(action.first(), `${id} advertises a real hold`).toHaveAttribute('data-buildout-action', 'hold');
-      const kind = await action.first().getAttribute('data-buildout-action'); // hold, tap or continue
-      if (kind === 'hold') await hold(page, info, action.first(), async () => await started() || await next(),
+      const kind = actionState.actionKind; // hold, tap or continue
+      if (kind === 'hold') await hold(page, info, action.first(), startedOrNext,
         id === 'launch' ? async () => { launchCard = await observeManualLaunch(page); } : undefined);
       else await action.first().click();
     }
     if (NO_PIECES.has(id)) {
-      await expect.poll(async () => await started() || await next(), { timeout: 90_000, message: `${id} moves on` }).toBe(true);
+      await expect.poll(startedOrNext, { timeout: 90_000, message: `${id} moves on` }).toBe(true);
       if (!(await started())) { await shot(`${n}-${id}-after.png`); continue; }
     }
     await expect.poll(started, { timeout: 90_000, message: `${id} starts building` }).toBe(true);
@@ -93,10 +102,13 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       await expect(root).toHaveAttribute('data-phase', 'construct', { timeout: 3_000 }).catch(() => {});
       await shot(`${n}-${id}-construct.png`);
     }
-    await expect.poll(async () => (await builds(page)).some(b => b.id === id && b.phase === 'burst'), { timeout: 15_000, message: `${id} bursts online` }).toBe(true);
+    await expect.poll(() => observed.phase(id, 'burst'), { timeout: 15_000, message: `${id} bursts online` }).toBe(true);
     await expect.poll(done, { timeout: 15_000, message: `${id} finishes` }).toBe(true);
     await shot(`${n}-${id}-online.png`);
-    const log = (await builds(page)).filter(b => b.id === id);
+    // Fresh after the screenshot: this same complete history proves durations and
+    // order, including any automatic steps that arrived while capturing evidence.
+    const history = (await observed.refresh()).events;
+    const log = history.filter(b => b.id === id);
     const ms = log.find(b => b.phase === 'done')!.at - log.find(b => b.phase === 'start')!.at;
     // Logical steps reveal no piece (CONTRACT.md): their optional markers are
     // synchronous. Physical construction still keeps its original duration bounds.
@@ -105,7 +117,7 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     else expect(ms, `${id} build ms`).toBeGreaterThan(3_000);
     // Even if the next automatic step has arrived, every captured phase must be
     // one ordered, non-overlapping journey; duplicates and replay still fail.
-    assertBuildEventPrefix(await builds(page));
+    assertBuildEventPrefix(history);
   }
 
   // The rocket went: counters and the "Look around" card come out, then free look.
@@ -119,11 +131,15 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
   await expect(card).toHaveCount(0);
   await expect(page.getByText(/waiting on you/i).first()).toBeVisible();
   await shot('10-look-around.png');
+  assertBuildEventPrefix((await observed.refresh()).events);
   expect(errors).toEqual([]);
 }
 
 test.describe('build as you go', () => {
   test.setTimeout(360_000);
+  test.afterEach(async ({}, info) => {
+    await info.attach('buildout-perf.json', { body: JSON.stringify(perfEvidence.get(info) ?? [], null, 2), contentType: 'application/json' });
+  });
 
   test('dark to rocket, one build at a time', async ({ page }, info) => {
     await firstRun(page, info, { reduced: false, shoot: true });

@@ -299,3 +299,26 @@ replace the runtime, widen the sandbox or resume a process using an old PID/sess
   automation policy. [Fix #443](https://github.com/r3dbars/shiptorio/pull/443)
   reserves one non-merge slot while retaining every pending decision and all
   Launch priority; its release and the human approval are separate checkpoints.
+
+## Personally approved build reached the real PR (October 28)
+
+- Justin approved job `8a104da4-fa7f-4b02-a370-b19c7c74483c` in the game. The
+  resulting [factory PR #463](https://github.com/r3dbars/shiptorio/pull/463) has head
+  `a07cf40ab45786e9158e49a9f4bb4fbe3b2cc274`, changing only
+  `server/src/sources/sentry.ts` and `server/test/mines.test.ts`.
+- The trusted local receipt attached to that PR records regression proof against
+  `eb6a820539b55e6e95eab4fd9eb79532d9178015`: 16 passed / one failed on base,
+  17 passed / zero failed on head. Local typecheck/test/build and scope checks passed.
+- [PR CI](https://github.com/r3dbars/shiptorio/actions/runs/40686342736) passed
+  check/selfhost; [Stranger](https://github.com/r3dbars/shiptorio/actions/runs/40686345745)
+  and [CodeQL](https://github.com/r3dbars/shiptorio/actions/runs/40686342748) passed.
+  Browser/load were skipped on PR CI and are not claimed as full-matrix acceptance.
+- [AI review](https://github.com/r3dbars/shiptorio/pull/463#issuecomment-6468877453)
+  passed on that exact head. The real game offered its Launch card, but GitHub
+  reports the branch behind main. Root did not tap Launch or directly merge it.
+- [#464](https://github.com/r3dbars/shiptorio/pull/464) holds the card when GitHub
+  is blocked/behind. [#466](https://github.com/r3dbars/shiptorio/pull/466) adds a
+  separate freshly approved same-PR base refresh, exact branch lease and new proof.
+  Both are integrated into release #445, pending combined release acceptance.
+  Updating the base requires a new visible player approval; the old approval is
+  not reused. The final human Launch, issue closure and live ship remain unproven.

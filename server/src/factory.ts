@@ -1,3 +1,4 @@
+import { assertRefreshItem, ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "./runner-refresh";
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
 import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
@@ -71,7 +72,7 @@ import {
   type GoalGuess,
   type Goals,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, pullRequestReadiness, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { initialFactoryState } from "./factory-initialization";
@@ -83,7 +84,7 @@ import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePa
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
@@ -396,7 +397,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
-      if (proposing && item && (heldIssues.has(item.id) || item.priority === "park" || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
+      const refreshing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" && a.args.refreshBase === true));
+      if (proposing && item && (heldIssues.has(item.id) || item.priority === "park" || !runnerIssue(item) || !(refreshing ? ["on_pad", "passed", "inspecting", "rejected"] : ["ore", "queued", "rejected"]).includes(item.state) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
       const boundScars = move.options.flatMap(o => o.actions).find(a => typeof a.args.scarCount === "number")?.args.scarCount;
       if (proposing && item && boundScars !== undefined && boundScars !== (item.scars?.length ?? 0)) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
@@ -802,7 +804,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private runnerApprovalMove(job: RunnerJob, item: Item): Move {
-    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before ${job.harness === "local" ? "your computer's local model" : `your local ${harnessLabel(job.harness)}`} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.route ? [`Power: ${job.route}`] : []), ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${harnessLabel(job.harness)}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
+    return { id: job.approvalMoveId ?? crypto.randomUUID(), title: `Build #${item.id.slice(3)}: ${item.title}`, why: `Review the plan and ${job.allowedPaths.length} files before ${job.harness === "local" ? "your computer's local model" : `your local ${harnessLabel(job.harness)}`} starts.`, itemId: item.id, stage: "build", kind: "build", focus: "assembler-1", createdAt: Date.now(), plan: [`Files: ${job.allowedPaths.join(", ")}`, `Base commit: ${job.baseSha}`, ...(job.refreshBase ? [`Update existing PR #${job.reworkPr}: replace branch ${job.branch} only if its head is still ${job.refreshBase.expectedHeadSha}.`, "This replaces the old fix commit with a new scoped commit on the base shown above. Your agent runs fresh base-failing/head-passing proof; CI and review restart. Nothing merges until Launch."] : []), ...(job.route ? [`Power: ${job.route}`] : []), ...(job.plan ?? "").split("\n").filter(Boolean), "Checks run before a PR opens. You still decide when to merge."], options: [{ id: "approve", label: `Approve and build with ${harnessLabel(job.harness)}`, recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: job.id, ...(job.refreshBase ? { refreshBase: true } : {}) }, reason: "Approve this exact plan, file scope and base commit." }] }, { id: "decline", label: "Not now", recommended: false, actions: [] }] };
   }
 
   private async offerRunnerPlan(): Promise<void> {
@@ -817,6 +819,24 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     // One plan card at a time: the next issue is dealt once this one is planned, built or set aside.
     if (s.deck?.some(proposesPlan)) return;
+    // A base update is a separate explicit plan, never an automatic rework or a Launch shortcut.
+    const refreshChecked = await this.ctx.storage.get<number>("runnerRefreshCheckedAt") ?? 0;
+    const refreshCandidates = s.items.filter(i => runnerIssue(i) && i.prNumber && i.branch?.startsWith("shiptorio/runner-") && ["on_pad", "passed", "inspecting"].includes(i.state) && canRework(i) && jobs.some(j => j.itemId === i.id && j.branch === i.branch && !!j.approvedAt && !!j.headSha));
+    if (Date.now() - refreshChecked >= 30000 && this.meta && refreshCandidates.length) {
+      await this.accountPut("runnerRefreshCheckedAt", Date.now());
+      const token = await installationToken(this.env, this.meta.installationId);
+      const cursor = (await this.ctx.storage.get<number>("runnerRefreshCursor") ?? 0) % refreshCandidates.length;
+      await this.accountPut("runnerRefreshCursor", (cursor + 3) % refreshCandidates.length);
+      for (const item of [...refreshCandidates.slice(cursor), ...refreshCandidates.slice(0, cursor)].slice(0, 3)) {
+        if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
+        const target = await refreshTarget(token, this.meta.repo, item.prNumber!, item.branch!, s.baseBranch);
+        if (!target || !ownsRefreshPr(jobs, item, this.meta.repo, target.headSha)) continue;
+        const harness = presence.harnesses.includes("codex") ? "codex" : presence.harnesses.find(h => h !== "local");
+        if (!harness) continue;
+        await this.publishRunnerMove({ id: `refresh-base:${item.id}:${target.headSha}:${target.baseSha}`, title: `Update #${item.prNumber} to latest ${target.baseBranch}`, why: "The main branch advanced. Review a fresh plan before your local agent rebuilds and verifies the same PR.", stage: "build", kind: "build", itemId: item.id, createdAt: Date.now(), options: [{ id: "refresh-base", label: "Plan update and verify again", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness, refreshBase: true }, reason: "Request a new plan; replacing the existing branch requires your separate approval." }] }, { id: "decline", label: "Later", recommended: false, actions: [] }] });
+        return;
+      }
+    }
     await this.decisionData();
     const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     for (const item of lineOrder(s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber))) {
@@ -842,14 +862,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const moveId = move.id;
     if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
     const item = this.state!.items.find(i => i.id === move.itemId);
-    if (!item || item.prNumber && item.state !== "rejected" || !["ore", "queued", "rejected"].includes(item.state)) return;
+    const refreshMove = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" && a.args.refreshBase === true)) || (await this.runnerJobs()).some(j => j.approvalMoveId === moveId && !!j.refreshBase);
+    const available = (candidate: Item) => refreshMove ? !!candidate.prNumber && ["on_pad", "passed", "inspecting", "rejected"].includes(candidate.state) : (!candidate.prNumber || candidate.state === "rejected") && ["ore", "queued", "rejected"].includes(candidate.state);
+    if (!item || !available(item)) return;
     const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo === this.meta?.repo && j.status === "awaiting_approval");
     if (job) {
       await this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
         if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return;
         const currentItem = this.state?.items.find(i => i.id === stored.itemId);
-        if (!currentItem || currentItem.prNumber && currentItem.state !== "rejected" || !["ore", "queued", "rejected"].includes(currentItem.state)) return;
+        if (!currentItem || !available(currentItem)) return;
         if (stored.inputRevision !== await workRevision(currentItem)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.accountPut(`runnerJob:${stored.id}`, stored);
@@ -857,7 +879,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           this.log("warn", stored.error, item.id);
           return;
         }
-        if (optionId === "approve") { stored.status = "ready"; stored.approvedAt = Date.now(); }
+        if (optionId === "approve") {
+          if (stored.refreshBase) {
+            try { assertRefreshItem(stored, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), stored.repo, stored.reworkPr!, stored.branch, stored.baseBranch!, { headSha: stored.refreshBase.expectedHeadSha, baseSha: stored.baseSha!, baseBranch: stored.baseBranch! }); }
+            catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return; }
+          }
+          stored.status = "ready"; stored.approvedAt = Date.now();
+        }
         else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${currentItem.id}`, currentItem.updatedAt); }
         else return;
         await this.accountPut(`runnerJob:${stored.id}`, stored);
@@ -870,7 +898,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const action = move.options.find(o => o.id === optionId)?.actions[0];
     if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
     try {
-      await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true });
+      await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true, refreshBase: action.args.refreshBase === true });
       await this.resolveRunnerMove(move);
       this.log("info", "Reading the issue and code to prepare your plan. No build has started.", item.id);
     } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); }
@@ -1031,7 +1059,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return this.redactor.value([...rows.entries()].flatMap(([key, retry]) => planningHold(retry) ? [{ itemId: key.slice("planningRetry:".length), ...retry }] : []));
   }
 
-  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
+  async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean; refreshBase?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
     // Expected planning denials must leave the atomic callback normally: a throw
@@ -1039,8 +1067,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const result = await this.ctx.blockConcurrencyWhile(async () => {
       if (!(await this.load()) || !this.meta) return new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
-      const rework = !!item?.prNumber && item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-");
-      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) return new Error("Item is not available to build");
+      const refresh = input.refreshBase === true && !!item?.prNumber && ["on_pad", "passed", "inspecting", "rejected"].includes(item.state) && item.branch?.startsWith("shiptorio/runner-");
+      const rework = refresh || !!item?.prNumber && item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-");
+      if (input.refreshBase && !refresh) return new Error("Factory PR is not available for a base update");
+      if (!item || !runnerIssue(item) || !refresh && !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) return new Error("Item is not available to build");
       if (rework && (!input.needsApproval || !canRework(item))) return new Error("This PR requires player escalation, not another automatic rework offer");
       if (!input.allowedPaths.every(runnerPathAllowed)) return new Error("Unsafe approved path");
       const jobs = await this.runnerJobs();
@@ -1062,8 +1092,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) return new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
 
       const id = crypto.randomUUID();
-      const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
+      const { refreshBase: _refreshBase, ...approvedInput } = input;
+      const job: RunnerJob = { ...approvedInput, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
       if (rework) { job.reworkPr = item.prNumber; job.branch = item.branch!; }
+      if (refresh) {
+        const target = await refreshTarget(await installationToken(this.env, this.meta.installationId), job.repo, item.prNumber!, item.branch!, this.state!.baseBranch);
+        if (!target || !ownsRefreshPr(jobs, item, job.repo, target.headSha)) return new Error("Only an approved runner PR behind its base can be refreshed");
+        job.refreshBase = { expectedHeadSha: target.headSha }; job.baseSha = target.baseSha; job.verifyBaseSha = target.baseSha; job.baseBranch = target.baseBranch;
+      }
       if (currentTrace()) await this.accountPut(`trace:${item.id}`, currentTrace());
       await this.accountPut(`runnerJob:${id}`, job);
       await this.accountPut("runnerLastJobId", id);
@@ -1120,16 +1156,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const beforeRefresh = await workRevision(item);
       const token = await installationToken(this.env, this.meta.installationId);
       const tree = await repoTree(token, this.meta.repo);
-      job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
+      if (!job.refreshBase) job.baseSha = (await gh<{ object: { sha: string } }>(`/repos/${job.repo}/git/ref/heads/${tree.branch}`, token)).object.sha;
       job.verifyBaseSha = job.baseSha;
-      job.baseBranch = tree.branch;
+      if (!job.refreshBase) job.baseBranch = tree.branch;
       let changedFiles: Awaited<ReturnType<typeof prFiles>> = [];
       if (job.reworkPr) {
         const pr = await gh<{ head: { sha: string; ref: string }; base: { sha: string; ref: string }; state: string; merged: boolean }>(`/repos/${job.repo}/pulls/${job.reworkPr}`, token);
         if (pr.merged || pr.state !== "open" || pr.head.ref !== job.branch) throw new Error("Rework PR is no longer available");
-        job.baseSha = pr.head.sha;
-        job.verifyBaseSha = pr.base.sha;
-        job.baseBranch = pr.base.ref;
+        if (job.refreshBase) {
+          await refreshTarget(token, job.repo, job.reworkPr, job.branch, job.baseBranch!, { headSha: job.refreshBase.expectedHeadSha, baseSha: job.baseSha!, baseBranch: job.baseBranch! });
+        } else { job.baseSha = pr.head.sha; job.verifyBaseSha = pr.base.sha; job.baseBranch = pr.base.ref; }
         changedFiles = await prFiles(token, job.repo, job.reworkPr);
         job.prTestFiles = changedFiles.filter(f => f.status !== "removed" && runnerPathAllowed(f.filename) && /(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$/i.test(f.filename)).map(f => f.filename);
       }
@@ -1154,7 +1190,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       // Spark plans with the whole factory in reach: repo search and reads, the issue thread, the rework PR and its CI, scars, permits and mines.
       const box = await this.sparkToolbox(token, item, job.baseSha!, [...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)],
-        job.reworkPr ? { headSha: job.baseSha!, diff: async () => diffText(changedFiles) } : undefined);
+        job.reworkPr ? { headSha: job.refreshBase?.expectedHeadSha ?? job.baseSha!, diff: async () => diffText(changedFiles) } : undefined);
       const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
         box, async step => {
           job.steps!.push(step);
@@ -1230,6 +1266,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.accountPut(`runnerJob:${job.id}`, job);
         return null;
       }
+      if (job.refreshBase) {
+        try { assertRefreshItem(job, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), job.repo, job.reworkPr!, job.branch, job.baseBranch!, { headSha: job.refreshBase.expectedHeadSha, baseSha: job.baseSha!, baseBranch: job.baseBranch! }); }
+        catch { job.status = "failed"; job.error = "Factory head or base changed before dispatch; review a fresh plan."; await this.accountPut(`runnerJob:${job.id}`, job); return null; }
+      }
       // Charge only a validated plan actually dispatched to the runner. Lost-claim recovery above never charges twice.
       const account = job.runAccount ?? await this.runAccount();
       if (!account) return null;
@@ -1274,9 +1314,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       return { prUrl: job.prUrl }; // lost acknowledgment
     }
-    if (job.status === "failed" && !receipt.ok && job.pairId === pairId && job.lease === receipt.lease) return { status: "failed" };
+    if (job.status === "failed" && (!receipt.ok || job.refreshBase && job.headSha === receipt.sha && job.proof?.headSha === receipt.sha) && job.pairId === pairId && job.lease === receipt.lease) return { status: "failed" };
     if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
     const item = this.state.items.find(i => i.id === job.itemId)!;
+    if (job.refreshBase) assertRefreshItem(job, item);
     if (!receipt.ok) {
       job.status = "failed"; job.error = "Local build failed; player must approve another attempt.";
       await this.accountPut(`runnerJob:${job.id}`, job);
@@ -1293,6 +1334,21 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (diff.files.some(f => typeof f.patch !== "string" || f.patch.split("\n").filter(l => /^[+-]/.test(l)).length !== f.changes)) throw new Error("Missing complete patch evidence");
     validatePatch(diff.files.map(f => f.filename), job.allowedPaths, diff.files.map(f => `+++ b/${f.filename}\n${f.patch}`).join("\n"));
     if (receipt.proof && (receipt.proof.headSha !== receipt.sha || receipt.proof.baseSha !== (job.verifyBaseSha ?? job.baseSha))) throw new Error("Verify proof is not bound to this base/head");
+    if (job.refreshBase) {
+      if (!job.approvedAt || !receipt.proof?.failsOnBase || !receipt.proof.passesOnHead || job.verifyBaseSha !== job.baseSha) throw new Error("Base refresh requires fresh approved regression proof");
+      const commit = await gh<{ parents: { sha: string }[] }>(`/repos/${job.repo}/git/commits/${receipt.sha}`, token);
+      if (commit.parents.length !== 1 || commit.parents[0].sha !== job.baseSha) throw new Error("Base refresh commit must have exactly the approved base parent");
+      try { await refreshTarget(token, job.repo, job.reworkPr!, job.branch, job.baseBranch!, { headSha: receipt.sha, baseSha: job.baseSha!, baseBranch: job.baseBranch! }); }
+      catch (error) {
+        if (!(error instanceof RefreshBaseMoved)) throw error;
+        // Keep audited publication identity for a NEW plan; this proof never completes the gauntlet.
+        Object.assign(job, { status: "failed", error: error.message, headSha: receipt.sha, proof: receipt.proof, prUrl: `https://github.com/${job.repo}/pull/${job.reworkPr}` });
+        await this.accountPut(`runnerJob:${job.id}`, job);
+        this.log("warn", "The base advanced during publication. Review a fresh update plan before verification can continue.", item.id);
+        await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(receipt.sha), failure: error.message, updatedAt: Date.now() }] });
+        return { status: "failed" };
+      }
+    }
     const evidence = receipt.proof ? proofComment(receipt.proof) : "";
     let pr: { number: number; html_url: string };
     if (job.reworkPr) {
@@ -2272,10 +2328,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, this.meta.installationId);
     for (const item of this.state!.items) {
       if (!["inspecting", "on_pad", "passed"].includes(item.state) || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
-      const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
+      const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha, this.state!.baseBranch);
       if (result.stale) continue;
       if (result.state === "pending") {
-        if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed") {
+        if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed" || item.inspection?.headSha !== result.headSha) {
           await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha), updatedAt: Date.now() }] });
         }
         continue;
@@ -2287,8 +2343,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (result.state === "passed") {
         if (item.branch?.startsWith("shiptorio/runner-")) {
           // Every check run reports in; only a new head (or the first green) restarts the gauntlet.
-          if (stageOf(item, "ci")?.state === "passed" && (!headSha || headSha === item.inspection?.headSha)) continue;
-          const fresh = { ...item, inspection: freshInspection(result.headSha) };
+          if (stageOf(item, "ci")?.state === "passed" && result.headSha === item.inspection?.headSha) continue;
+          const fresh = { ...item, state: "inspecting" as const, inspection: freshInspection(result.headSha) };
           await this.patch({ items: [setStage(fresh, "ci", "passed", result.summary)] });
           this.log("success", `CI inspector passed PR #${item.prNumber}. On to the verify bay.`, item.id);
           await this.scheduleTick();
@@ -2400,24 +2456,33 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
     this.gauntletRunning = true;
     const pr = item.prNumber!;
-    const headSha = item.inspection!.headSha;
+    const inspection = item.inspection!;
+    const headSha = inspection.headSha;
     // Any await can let a webhook/reconciliation replace this inspection. Results
     // belong only to the commit and station that started the run.
-    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection?.headSha === headSha && nextGate(i) === gate);
+    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection === inspection && nextGate(i) === gate);
     try {
       const token = await installationToken(this.env, this.meta.installationId);
+      const evidence = await inspectPullRequest(token, this.meta.repo, pr, headSha, this.state.baseBranch);
+      if (evidence.stale || evidence.state !== "passed") return;
       const files = await prFiles(token, this.meta.repo, pr);
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
+      if (jobs.some(j => j.refreshBase && j.headSha === headSha && j.status !== "completed") && !jobs.some(j => j.status === "completed" && j.headSha === headSha)) {
+        return;
+      }
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
       const lane = laneOf(files.map((f) => f.filename)) ?? undefined;
-      const currentInLane = () => {
+      const currentInLane = async () => {
+        if (!current()) return;
+        const refreshed = await inspectPullRequest(token, this.meta!.repo, pr, headSha, this.state!.baseBranch);
+        if (refreshed.stale || refreshed.state !== "passed") return;
         const now = current();
         return now ? { ...now, lane } : now;
       };
       if (gate === "checks") {
-        const now = currentInLane();
+        const now = await currentInLane();
         if (!now) return;
         const { item: checked, ran } = runChecks(now, files);
         await this.patch({ items: [checked] });
@@ -2425,7 +2490,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
-        const now = currentInLane();
+        const now = await currentInLane();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
@@ -2443,10 +2508,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
           v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
-        const now = currentInLane();
+        const now = await currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
-        const afterComment = currentInLane();
+        const afterComment = await currentInLane();
         if (!afterComment) return;
         await this.patch({ items: [setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
@@ -2509,8 +2574,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const now = Date.now();
     for (const item of s.items) {
       if (!item.prNumber || (await this.ctx.storage.get<number>(`gauntletDeferred:${item.id}`) ?? 0) > now) continue;
-      if (item.state === "on_pad" && item.inspection?.state === "passed") {
-        await this.publishGauntletMove(launchMove(item, now));
+      if (item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection)) {
+        const inspection = item.inspection;
+        let readiness = { ready: false, reason: "Waiting for GitHub to confirm this PR is ready to merge." };
+        try {
+          const token = await installationToken(this.env, this.meta!.installationId);
+          readiness = await pullRequestReadiness(token, this.meta!.repo, item.prNumber, inspection.headSha, s.baseBranch);
+        } catch (error) { this.log("warn", "GitHub merge readiness is unavailable; Launch is waiting.", item.id); report(error, "factory.merge_readiness_unavailable"); }
+        if (!this.state!.items.some(i => i.id === item.id && i.inspection === inspection && i.state === "on_pad")) continue;
+        // Replace carried Launch cards too. A transient GitHub hold must not erase
+        // completed runner/AI receipts or invent a rework scar.
+        await this.decisionData();
+        this.openMoves = this.openMoves!.filter(m => !(m.itemId === item.id && m.stage === "pad") || m.kind === (readiness.ready ? "ship" : "unblock"));
+        const move = launchMove(item, now);
+        await this.publishGauntletMove(readiness.ready ? move : {
+          ...move, title: `PR #${item.prNumber} is waiting on GitHub`, why: readiness.reason, kind: "unblock",
+          options: [{ id: "later", label: "Later", recommended: true, actions: [] }],
+        });
         await this.refreshDecisions();
         continue;
       }
@@ -2548,7 +2628,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return true;
     }
     if (optionId.startsWith("rework-") && move.options.some(o => o.id === optionId)) return false;
-    const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed";
+    const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection);
     const overrule = optionId === "overrule" && item.state === "rejected";
     if (!ready && !overrule) return true;
     await this.launch(item, overrule ? "overrule" : "player");
@@ -2559,15 +2639,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
     if (by === "autonomy" && !(await flagEnabled(this.env, "permits"))) return;
     if (!item.prNumber || !this.meta) return;
+    const launchingInspection = this.state!.items.find(current => current.id === item.id)?.inspection;
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
       if (by !== "overrule") {
+        if (!stationsPassed(item.inspection)) throw new Error("Current checks require complete station receipts.");
         if (item.inspection?.headSha !== head) {
           await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
           throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
         }
-        const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head);
+        const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
         if (checks.state !== "passed") {
           const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
@@ -2588,6 +2670,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           throw new Error("The PR changed its permitted lane. A player must review the launch.");
         }
         await this.accountPut(`autoLaunch:${item.id}`, item.prNumber);
+      }
+      // Even an explicit overrule cannot bypass GitHub repository policy.
+      const readiness = await pullRequestReadiness(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
+      if (!readiness.ready) {
+        await this.offerGauntletMove();
+        throw new Error(`Current checks: ${readiness.reason}`);
+      }
+      if (by !== "overrule" && !this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === head && current.state === "on_pad" && stationsPassed(current.inspection))) {
+        throw new Error("Current checks changed while launch was being refreshed.");
       }
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";

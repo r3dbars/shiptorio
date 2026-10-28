@@ -1,15 +1,18 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { inspectPullRequest, openIssues, openPullRequest } from "../src/github";
 
-async function inspection(checks: unknown[], statuses: unknown[] = [], eventSha = "current") {
+async function inspection(checks: unknown[], statuses: unknown[] = [], eventSha = "current", options: { required?: { context: string; app_id?: number }[]; rules?: unknown[]; policyStatus?: number; latestHead?: string; latestBase?: string; base?: string; expectedBase?: string } = {}) {
+  let reads = 0;
   const fetcher = spyOn(globalThis, "fetch").mockImplementation((async (url: RequestInfo | URL) => {
     const path = String(url);
-    const value = path.includes("check-runs") ? { total_count: checks.length, check_runs: checks }
+    if (path.includes("/protection/required_status_checks")) return options.policyStatus ? new Response("unavailable", { status: options.policyStatus }) : Response.json({ checks: options.required ?? [{ context: "test", app_id: 15368 }] });
+    if (path.includes("/rules/branches/")) return Response.json(options.rules ?? []);
+    const value = path.includes("check-runs") ? { total_count: checks.length, check_runs: checks.map(c => ({ head_sha: "current", app: { id: 15368 }, ...c as object })) }
       : path.endsWith("/status?per_page=100") ? { total_count: statuses.length, statuses }
-      : { head: { sha: "current" } };
+      : { state: "open", merged: false, head: { sha: ++reads > 1 ? options.latestHead ?? "current" : "current" }, base: { ref: reads > 1 ? options.latestBase ?? options.base ?? "main" : options.base ?? "main", sha: "base" } };
     return Response.json(value);
   }) as unknown as typeof fetch);
-  try { return await inspectPullRequest("test-token", "a/b", 1, eventSha); } finally { fetcher.mockRestore(); }
+  try { return await inspectPullRequest("test-token", "a/b", 1, eventSha, options.expectedBase ?? "main"); } finally { fetcher.mockRestore(); }
 }
 
 describe("current-commit inspection", () => {
@@ -44,6 +47,13 @@ describe("current-commit inspection", () => {
   it("requires all reported checks and legacy statuses to succeed", async () => {
     expect((await inspection([{ name: "test", status: "completed", conclusion: "success" }])).state).toBe("passed");
     expect((await inspection([{ name: "test", status: "completed", conclusion: "success" }], [{ context: "deploy", state: "pending" }])).state).toBe("pending");
+  });
+  it("rejects a force push during refresh, changed base, and evidence for another head", async () => {
+    const checks = [{ name: "test", status: "completed", conclusion: "success" }];
+    expect((await inspection(checks, [], "current", { latestHead: "force-pushed" })).stale).toBe(true);
+    expect((await inspection(checks, [], "current", { latestBase: "release" })).stale).toBe(true);
+    expect((await inspection(checks, [], "current", { base: "release" })).state).toBe("pending");
+    expect((await inspection([{ ...checks[0], head_sha: "old" }])).state).toBe("pending");
   });
   it("recovers a PR accepted by GitHub before a worker restart instead of duplicating it", async () => {
     let calls = 0;

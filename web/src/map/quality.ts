@@ -16,6 +16,10 @@ const WARMUP = 3000;
 // treated as suspension/clock jumps; one isolated stall never changes the look.
 const STALL_MIN = 500;
 const STALL_MAX = 2000;
+// Tier 2 alone can still overwhelm a severe device. Four continuously slow
+// foreground frames earn a smaller scene target; one stall or sleep never does.
+const SEVERE_MIN = 250;
+const SEVERE_FRAMES = 4;
 
 export class FrameGovernor {
   tier = 0;
@@ -25,6 +29,9 @@ export class FrameGovernor {
   private n = 0;
   private slowFrames = 0;
   private stalledFrames = 0;
+  private severeFrames = 0;
+  private severeDevice = false;
+  get severe() { return this.severeDevice; }
   private readonly born = performance.now();
 
   constructor(private readonly phone: boolean) {
@@ -45,10 +52,15 @@ export class FrameGovernor {
     const idle = this.phone && !moving && now - this.lastInput > IDLE_AFTER;
     const capped = this.tier >= 2 || idle;
     const gap = now - this.lastDraw;
+    const foreground = typeof document === "undefined" || document.visibilityState === "visible";
+    if (!foreground || !Number.isFinite(gap) || gap < 0 || gap > STALL_MAX) this.severeFrames = 0;
     if (capped && gap < CAP - 4) return false;
     this.lastDraw = now;
     this.n++;
-    const foreground = typeof document === "undefined" || document.visibilityState === "visible";
+    const severe = this.tier === 2 && foreground && this.avg !== -Infinity && now - this.born > WARMUP
+      && gap >= SEVERE_MIN && gap <= STALL_MAX;
+    this.severeFrames = severe ? this.severeFrames + 1 : 0;
+    if (this.severeFrames >= SEVERE_FRAMES) this.severeDevice = true;
     const stalled = this.tier < 2 && foreground && this.avg !== -Infinity && now - this.born > WARMUP
       && gap >= STALL_MIN && gap <= STALL_MAX;
     this.stalledFrames = stalled ? this.stalledFrames + 1 : 0;
