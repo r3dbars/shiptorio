@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import type { FactoryState } from "@shiptorio/shared";
 import { GameDriver } from "../src/map/shaft/driver";
+import { RecoveryMaterials } from "../src/map/shaft/recoveryMaterials";
 import type { Iron, IronItem } from "../src/map/shaft/core";
 import type { Layout } from "../src/map/shaft/layout";
 import type { Timelapse } from "../src/map/shaft/ShaftScene";
@@ -59,7 +60,7 @@ function fixture() {
   let completions = 0, holding = true;
   const lapse: Timelapse = { refs: ["shipped"], onStart: () => {}, onShip: () => {}, onOver: () => { completions++; holding = false; } };
   const scene = Object.assign(Object.create(Scene.prototype), {
-    I, driver, lapse: null, lapsing: false, stage: null, governor: { poke() {} }, setView() {},
+    I, driver, recovery: new RecoveryMaterials(), lapse: null, lapsing: false, stage: null, governor: { poke() {} }, setView() {},
     teardown() { throw STOP; },
   });
   let carried: ReturnType<GameDriver["carry"]> | undefined;

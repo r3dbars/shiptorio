@@ -1,5 +1,6 @@
-import * as Sentry from "@sentry/react";
-import type { ReactNode } from "react";
+import { renderCrashed } from "./telemetry";
+import { RENDER_CRASH } from "./map/contextLoss";
+import { Component, type ReactNode } from "react";
 import { CRASH } from "./copy";
 import "./crash.css";
 
@@ -39,7 +40,7 @@ export function Crash({ eventId }: { eventId?: string }) {
             <h1 id="crash-title">{CRASH.title}</h1>
             <p>{CRASH.body}</p>
             <p className="crash-hint">{CRASH.hint}</p>
-            <button type="button" className="iron-btn primary" onClick={() => location.reload()}>{CRASH.restart}</button>
+            <button type="button" className="iron-btn primary" onClick={() => location.reload()}>Reload</button>
             {eventId ? <div className="crash-ref">{CRASH.ref(eventId)}</div> : null}
           </div>
         </div>
@@ -48,6 +49,22 @@ export function Crash({ eventId }: { eventId?: string }) {
   );
 }
 
-export function ErrorBoundary({ children }: { children: ReactNode }) {
-  return <Sentry.ErrorBoundary fallback={({ eventId }) => <Crash eventId={eventId} />}>{children}</Sentry.ErrorBoundary>;
+// One committed boundary failure sends one event, even if React repeats a render.
+export class ErrorBoundary extends Component<{ children: ReactNode }, { crashed: boolean }> {
+  state = { crashed: false };
+  private reported = false;
+  static getDerivedStateFromError() { return { crashed: true }; }
+  private report = (reason: 'react_render' | 'webgl_render') => {
+    if (this.reported) return;
+    this.reported = true;
+    renderCrashed(reason);
+  };
+  private onRenderCrash = () => {
+    this.report('webgl_render');
+    this.setState({ crashed: true });
+  };
+  componentDidMount() { window.addEventListener(RENDER_CRASH, this.onRenderCrash); }
+  componentWillUnmount() { window.removeEventListener(RENDER_CRASH, this.onRenderCrash); }
+  componentDidCatch() { this.report('react_render'); }
+  render() { return this.state.crashed ? <Crash /> : this.props.children; }
 }

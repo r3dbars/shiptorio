@@ -2,6 +2,7 @@ import "./gauntlet.css";
 import { useEffect, useRef, useState } from "react";
 import type { FactoryState } from "@shiptorio/shared";
 import type { FactoryScene, Cosmetics, Ping } from "./scene";
+import { SCENE_REBUILD } from "./contextLoss";
 import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
@@ -17,7 +18,7 @@ type MapScene = Pick<
   timelapse?: (lapse: Timelapse) => void; // the shaft replays what shipped while you were away (ui/away.ts)
   endTimelapse?: () => void;
 };
-type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void) => MapScene;
+type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void, recovering?: boolean) => MapScene;
 
 interface Props {
   state: FactoryState | null;
@@ -44,6 +45,7 @@ const playLapse = (scene: MapScene, lapse: Timelapse) => (scene.timelapse ? scen
 const NO_SATS: SatelliteSpec[] = [];
 
 export function FactoryMap({ state, onPick, focus = null, showLabels = false, pings = NO_PINGS, teachingKeys = [], wide = null, lift = 0, cosmetics, satellites = NO_SATS, empire = false, summary, lapse = null, still = false }: Props) {
+  const [generation, setGeneration] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
@@ -59,9 +61,11 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   useEffect(() => {
     let off: (() => void) | null = null;
     let dead = false;
+    const rebuild = () => setGeneration(n => n + 1);
     const start = (scene: MapScene, late: boolean) => {
       if (dead) return scene.dispose();
       off = attach(scene);
+      canvasRef.current!.addEventListener(SCENE_REBUILD, rebuild, { once: true });
       if (stateRef.current) scene.update(stateRef.current);
       if (!late) return; // the effects below hand it the rest
       const p = propsRef.current;
@@ -76,7 +80,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       else if (p.focus) scene.focus(p.focus);
       if (p.lapse) playLapse(scene, p.lapse);
     };
-    const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id));
+    const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id), generation > 0);
     // (a map whose effect was already cleaned up, like StrictMode's first mount, is never built)
     const island = () => import("./scene").then(({ FactoryScene }) => FactoryScene);
     if (SHAFT)
@@ -89,9 +93,10 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     else void island().then((Scene) => dead || start(make(Scene), true)).catch((e: unknown) => dead || setCrash({ e }));
     return () => {
       dead = true;
+      canvasRef.current?.removeEventListener(SCENE_REBUILD, rebuild);
       off?.();
     };
-  }, []);
+  }, [generation]);
 
   // input and sizing for a map, once it exists; returns the teardown
   function attach(scene: MapScene) {
@@ -207,6 +212,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
   return (
     <>
       <canvas
+        key={generation}
         ref={canvasRef}
         className="map"
         tabIndex={0}

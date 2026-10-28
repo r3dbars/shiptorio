@@ -3,7 +3,6 @@
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
-
 ## Polished logo dev refresh (Codex, 2026-10-28)
 
 #467 updates the shared Wordmark, password gate and server-page brand image to the approved polished asset, with a quiet gate background. Password/session/CSRF code is untouched. The approved brass public welcome page remains byte-for-byte unchanged. Product-source local check: 1,421 passed, two existing skips, zero failures; lint/types/build green. Earlier Miniflare previews at 390×844 and 1440×900 verified image loading, full form visibility and wrong-password feedback. Refreshed onto dev; exact-head quick CI, Stranger and CodeQL govern merge. Production remains an explicit dev-to-main promotion.
@@ -78,6 +77,13 @@ Retains production-disabled negative-ID identities and scoped fixture delegation
 ## Mobile startup and stale chunk recovery (Codex, Oct 27, 2026)
 
 Entry-point splitting keeps judge off default factory startup and preserves current play-first Root/account callbacks; HTML preload hints start the required shaft art early; recovery installs before game/vendor imports and permits one session-guarded reload, then shows a refresh action. A manifest-based gzip budget includes startup's shaft art; `bun run --filter './web' test:chunks` covers transient/persistent missing chunks, preload errors, unavailable storage and unrelated errors. App.tsx remains untouched; a four-line FactoryMap exception defers the alternate island renderer to selection/fallback. Recovery cases resolve the current hashed game asset from a fresh build. The original 781,902-byte budget remains fixed; measurements and release checks are recorded in the PR.
+
+
+## GPU recovery investigation (Codex, 2026-10-28)
+
+#366 restores through normal GPU/physical-hold admission: the first two frames show real current geometry with temporary unlit palette/map/alpha materials and original unbuilt-piece masks, then at most 24 exact material/layout groups per admitted frame return to original lighting and finish. Original references return between draws; source textures remain caller-owned; loss/rebuild/disposal cancel the temporary resources. Cached live-context LINK checks fail closed before use, and the non-shadowed legacy loop retains the original shadow path.
+
+With the earlier 16-group cap, local SwiftShader repeated losses at 390×844 and 1440×900 produced completed first images in 0.86–1.06s and completed full-original frames in 12.96–15.94s. These are separate milestones, not instant full-lighting recovery. Native Metal: all 14 recovery/physical-hold/fresh-canvas/React/WebGL/invalid-vertex/invalid-fragment cases pass; trusted Menu input took 1–144ms from event timestamp to actual UI effect during recovery. Browser-clock deadlines remain 2s/30s; a separate host hang bound prevents tracing/snapshot transport latency from masquerading as product latency. Normal-art frozen native comparisons across six views differ at no more than 54 of 329,160 pixels (>3 channel delta), visually unchanged. Linux CI exposed a 33.1–33.7s full-original recovery at the 16-group cap and cold full-detail startup on replacement canvases. The 24-group cap reduces repeated warm-up draws; only SCENE_REBUILD generations now start with the recovery renderer, leaving ordinary startup unchanged. Product deadlines remain 2s first image, 6s replacement and 30s full originals; exact-head dev CI governs merge and production promotion is separate.
 
 ## Codex: pre-hackathon security pass (2026-10-26)
 
