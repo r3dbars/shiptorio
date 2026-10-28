@@ -5,7 +5,7 @@ export function compactPointLightLoop(source: string): string {
   if (source.includes("#if defined( IRON_LEGACY ) && ( NUM_POINT_LIGHT_SHADOWS == 0 )")) return source;
   const loop = /\t#pragma unroll_loop_start\n\tfor \( int i = 0; i < NUM_POINT_LIGHTS; i \+\+ \) \{[\s\S]*?\t#pragma unroll_loop_end/;
   return source.replace(loop, original => {
-    const compact = original.replace(/\t#pragma unroll_loop_(start|end)/g, "");
+    const compact = original.replace(/\t#pragma unroll_loop_(start|end)/g, "").replaceAll("UNROLLED_LOOP_INDEX", "0");
     return `#if defined( IRON_LEGACY ) && ( NUM_POINT_LIGHT_SHADOWS == 0 )\n${compact}\n#else\n${original}\n#endif`;
   });
 }

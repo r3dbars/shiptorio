@@ -1,4 +1,5 @@
 import { WebGLRenderer, type Object3D, type Mesh } from 'three';
+import { ProgramLinks } from './programLinks';
 
 export const SCENE_REBUILD = 'shiptorio:scene-rebuild';
 export const RENDER_CRASH = 'shiptorio:render-crash';
@@ -30,6 +31,17 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
   let lost = false;
   let dead = false;
   let failed = false;
+  const links = new ProgramLinks();
+  const gl = renderer.getContext(), useProgram = gl.useProgram;
+  const used = new Set<WebGLProgram>();
+  // Three queries compiler logs even after successful compilation. Keep failure
+  // detection, but validate newly used programs after their uniforms are ready.
+  renderer.debug.checkShaderErrors = false;
+  const trackProgram: typeof gl.useProgram = (program) => {
+    useProgram.call(gl, program);
+    if (program) used.add(program);
+  };
+  gl.useProgram = trackProgram;
   const fail = () => {
     if (dead || failed) return;
     failed = true;
@@ -39,6 +51,7 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
     event.preventDefault();
     if (dead || lost) return;
     lost = true;
+    links.reset(); used.clear();
     discard();
     timer = setTimeout(() => {
       timer = undefined;
@@ -48,6 +61,7 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
   const onRestored = () => {
     if (dead || !lost) return;
     lost = false;
+    links.reset(); used.clear();
     clearTimeout(timer);
     timer = undefined;
     try { redraw(); } catch { fail(); }
@@ -59,11 +73,17 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
   const render = renderer.render.bind(renderer);
   renderer.render = (...args) => {
     if (dead || lost || failed) return;
-    try { render(...args); } catch { fail(); }
+    try {
+      render(...args);
+      for (const program of used) if (!links.valid(gl, program)) { fail(); break; }
+      used.clear();
+    } catch { used.clear(); fail(); }
   };
   const dispose = renderer.dispose.bind(renderer);
   renderer.dispose = () => {
     dead = true;
+    if (gl.useProgram === trackProgram) gl.useProgram = useProgram;
+    links.reset(); used.clear();
     clearTimeout(timer);
     canvas.removeEventListener('webglcontextlost', onLost);
     canvas.removeEventListener('webglcontextrestored', onRestored);

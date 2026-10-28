@@ -16,8 +16,9 @@ test("only legacy point lights without shadow samplers use the compact lighting 
   const compact = result.slice(start, split);
   expect(compact).not.toContain("#pragma unroll_loop");
   // In this outer NUM_POINT_LIGHT_SHADOWS==0 branch the retained shadow block
-  // is preprocessor-dead (undefined UNROLLED_LOOP_INDEX is 0, and 0<0 is false).
-  expect(compact).toContain("UNROLLED_LOOP_INDEX < NUM_POINT_LIGHT_SHADOWS");
+  // is preprocessor-dead (literal 0<0); GLSL rejects an undefined unroll macro.
+  expect(compact).toContain("0 < NUM_POINT_LIGHT_SHADOWS");
+  expect(compact).not.toContain("UNROLLED_LOOP_INDEX");
   expect(compact).toContain("pointLight = pointLights[ i ]");
   expect(compact).toContain("getPointLightInfo( pointLight, geometryPosition, directLight )");
   expect(compact).toContain("RE_Direct( directLight, geometryPosition");
