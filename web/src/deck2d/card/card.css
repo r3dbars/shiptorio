@@ -55,6 +55,18 @@
   touch-action: manipulation;
 }
 .ic-btn span { font-size: 1.1em; }
+.ic-btn b { font-weight: inherit; position: relative; }
+.ic-btn span { position: relative; }
+/* a hold card (ships real code): Approve fills with molten gold while held, HOLD_MS in card.ts */
+.ic-fill { display: none; }
+.hold .ic-btn.approve { position: relative; overflow: hidden; }
+.hold .ic-fill {
+  display: block; position: absolute; inset: -4px auto -4px -14px; width: calc(100% + 28px); transform-origin: left;
+  transform: scaleX(0); background: linear-gradient(90deg, #ff8a1c99, #ffd76acc); transition: transform .18s ease-out; pointer-events: none;
+}
+.hold .ic-btn.approve.holding .ic-fill { transform: scaleX(1); transition: transform .8s linear; }
+.hold .ic-btn.approve.holding { animation: ic-shake .8s linear; }
+@keyframes ic-shake { 60%, 70%, 80%, 90% { translate: 1px 0; } 65%, 75%, 85%, 95% { translate: -1px 0; } }
 .ic-btn.approve { --lean: var(--lean-r, 0); border-image-source: url("/deck/art/ui-btn-glow.webp"); color: #fff4d6; filter: drop-shadow(0 0 calc(4px + var(--lean) * 14px) #ffb347aa) brightness(calc(1 + var(--lean) * .25)); }
 .ic-btn.later { --lean: var(--lean-l, 0); }
 .ic-btn.later.lit { border-image-source: url("/deck/art/ui-btn-glow.webp"); filter: drop-shadow(0 0 10px #ffb34788); }

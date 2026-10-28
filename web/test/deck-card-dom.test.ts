@@ -5,6 +5,7 @@ import { Window } from "happy-dom";
 import type { CardView } from "../src/deck2d/contract";
 
 const KEYS = ["window", "document", "navigator", "HTMLElement", "Element", "Node", "Event", "MouseEvent", "PointerEvent", "KeyboardEvent", "matchMedia"] as const;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const saved = new Map<string, PropertyDescriptor | undefined>();
 let win: Window;
 beforeAll(() => {
@@ -84,5 +85,33 @@ test("a swipe right past the line approves; a short drag snaps back", async () =
   expect(el.style.transform).toBe("");
   ptr("pointerdown", 100); ptr("pointermove", 200); ptr("pointermove", 400); ptr("pointerup", 400);
   expect(t.got).toEqual(["approve:d"]);
+  t.h.destroy();
+});
+
+test("yes/no labels show on the buttons", async () => {
+  const t = await mount();
+  t.h.show({ ...card("e"), yes: "Show me my repo", no: "Replay" } as CardView);
+  expect(t.live()!.querySelector(".ic-btn.approve")!.textContent).toContain("Show me my repo");
+  expect(t.live()!.querySelector(".ic-btn.later")!.textContent).toContain("Replay");
+  t.h.destroy();
+});
+
+test("a hold card needs a held press or a full swipe, never a tap or a flick", async () => {
+  const { swipeAnswer, HOLD_MS } = await import("../src/deck2d/card/card");
+  expect(swipeAnswer(150, 400, 3, true)).toBeNull(); // past the normal line, flicked: still no
+  expect(swipeAnswer(260, 400, 0, true)).toBe("approve");
+  expect(swipeAnswer(-150, 400, 0, true)).toBe("later"); // Later stays easy
+  const t = await mount();
+  t.h.show({ ...card("f"), hold: true } as CardView);
+  const approve = t.live()!.querySelector(".ic-btn.approve") as HTMLButtonElement;
+  const press = (type: string) => approve.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 2, isPrimary: true, button: 0, pointerType: "touch" }));
+  approve.click();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight" }));
+  window.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight" }));
+  press("pointerdown"); await sleep(HOLD_MS / 3); press("pointerup");
+  await sleep(HOLD_MS);
+  expect(t.got).toEqual([]);
+  press("pointerdown"); await sleep(HOLD_MS + 100);
+  expect(t.got).toEqual(["approve:f"]);
   t.h.destroy();
 });

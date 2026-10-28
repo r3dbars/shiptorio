@@ -5,6 +5,7 @@
 // button it is heading for. Letting go past the line answers: an approve pops the next dot, then the card flies off as
 // a ghost while the source deals the next one, which slides up from below. One answer per card, ever.
 // show(null) right after an answer says "All caught up" for a moment, then the card steps aside for the caption.
+// A hold card ships real code (a merge): Approve takes a held press (or held →), or a swipe nearly all the way across.
 
 import type { CardView, MountCard } from "../contract";
 import "./card.css";
@@ -16,19 +17,25 @@ const TILT_PER_PX = 0.06; // degrees
 const MAX_TILT = 14;
 const CAUGHT_UP_MS = 2200; // how long "All caught up" stays before the caption takes over
 const AFTER_ANSWER_MS = 900; // a show(null) this soon after an answer is the deck running dry, not a hide
+const HOLD_SWIPE_SHARE = 0.6; // a hold card's swipe has to cross most of the card, and a flick never counts
+export const HOLD_MS = 800; // how long a hold card's Approve has to be held
+
+// yes/no labels and hold are newer CardView fields (hub thread); read them so this works before and after they land
+type View = CardView & { yes?: string; no?: string; hold?: boolean };
 
 export type Answer = "approve" | "later";
 
 /** Which way a drag answers, if at all: past the line, or a quick flick that way. */
-export function swipeAnswer(dx: number, width: number, vx = 0): Answer | null {
+export function swipeAnswer(dx: number, width: number, vx = 0, hold = false): Answer | null {
   const line = Math.max(MIN_SWIPE_PX, width * SWIPE_SHARE);
-  if (dx > line || (dx > 40 && vx > FLICK)) return "approve";
+  if (hold ? dx > Math.max(MIN_SWIPE_PX, width * HOLD_SWIPE_SHARE) : dx > line || (dx > 40 && vx > FLICK)) return "approve";
   if (dx < -line || (dx < -40 && vx < -FLICK)) return "later";
   return null;
 }
 
 /** -1..1: how far a drag leans toward Later (-) or Approve (+). */
-export const leanOf = (dx: number, width: number) => Math.max(-1, Math.min(1, dx / Math.max(MIN_SWIPE_PX, width * SWIPE_SHARE)));
+export const leanOf = (dx: number, width: number, hold = false) =>
+  Math.max(-1, Math.min(1, dx / Math.max(MIN_SWIPE_PX, width * (hold && dx > 0 ? HOLD_SWIPE_SHARE : SWIPE_SHARE))));
 
 const still = () => {
   try {
@@ -52,6 +59,8 @@ interface Face {
   line: HTMLElement;
   later: HTMLButtonElement;
   approve: HTMLButtonElement;
+  no: HTMLElement;
+  yes: HTMLElement;
 }
 
 function face(): Face {
@@ -63,17 +72,22 @@ function face(): Face {
   const actions = el("div", "ic-actions");
   const later = el("button", "ic-btn later");
   later.type = "button";
-  later.innerHTML = '<span aria-hidden="true">←</span> Later';
+  later.innerHTML = '<span aria-hidden="true">←</span> <b>Later</b>';
   const approve = el("button", "ic-btn approve");
   approve.type = "button";
-  approve.innerHTML = 'Approve <span aria-hidden="true">→</span>';
+  approve.innerHTML = '<i class="ic-fill" aria-hidden="true"></i><b>Approve</b> <span aria-hidden="true">→</span>';
   actions.append(later, approve);
   root.append(title, dots, line, actions);
-  return { root, title, dots, line, later, approve };
+  return { root, title, dots, line, later, approve, no: later.querySelector("b")!, yes: approve.querySelector("b")! };
 }
 
-function fill(f: Face, card: CardView) {
+function fill(f: Face, card: View) {
   f.root.dataset.card = card.id;
+  f.no.textContent = card.no || "Later";
+  f.yes.textContent = card.yes || "Approve";
+  f.root.classList.toggle("hold", !!card.hold);
+  if (card.hold) f.approve.setAttribute("aria-label", `Hold to ${f.yes.textContent}`);
+  else f.approve.removeAttribute("aria-label");
   f.root.setAttribute("aria-label", card.title);
   f.title.textContent = card.title;
   f.line.textContent = card.line;
@@ -94,12 +108,27 @@ export const mountCard: MountCard = (host, handlers) => {
   wrap.setAttribute("aria-live", "polite");
   host.appendChild(wrap);
 
-  let shown: CardView | null = null;
+  let shown: View | null = null;
   let live: Face | null = null; // the card you can answer right now
   const answered = new Set<string>();
   let answeredAt = -Infinity;
   let caughtUp: { root: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
   let drag: { pointer: number; x0: number; y0: number; dx: number; dy: number; vx: number; lastX: number; t: number; w: number } | null = null;
+  let holding: { timer: ReturnType<typeof setTimeout>; f: Face } | null = null; // a hold card's Approve being held
+
+  const stopHold = () => {
+    if (!holding) return;
+    clearTimeout(holding.timer);
+    holding.f.approve.classList.remove("holding");
+    holding = null;
+  };
+  // a hold card answers only once the press has been held HOLD_MS; letting go early just drains the fill
+  const startHold = () => {
+    if (!live || !shown?.hold || holding) return;
+    const f = live;
+    f.approve.classList.add("holding");
+    holding = { f, timer: setTimeout(() => { if (holding?.f === f && live === f) { holding = null; f.approve.classList.remove("holding"); answer("approve"); } }, HOLD_MS) };
+  };
 
   const clearCaughtUp = () => {
     if (!caughtUp) return;
@@ -134,6 +163,7 @@ export const mountCard: MountCard = (host, handlers) => {
     live = null;
     shown = null;
     drag = null;
+    stopHold();
     // the ghost starts where the finger let go
     const m = f.root.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/);
     f.root.style.setProperty("--fx", `${m ? m[1] : 0}px`);
@@ -150,14 +180,18 @@ export const mountCard: MountCard = (host, handlers) => {
     (a === "approve" ? handlers.onApprove : handlers.onLater)(card.id);
   };
 
-  const mountLive = (card: CardView) => {
+  const mountLive = (card: View) => {
     const f = face();
     fill(f, card);
     f.root.classList.add("ic-in");
     // after an answer the next card waits for the ghost's dot pop before it slides up
     if (performance.now() - answeredAt < AFTER_ANSWER_MS) f.root.classList.add("after");
     f.later.addEventListener("click", () => answer("later"));
-    f.approve.addEventListener("click", () => answer("approve"));
+    f.approve.addEventListener("click", () => { if (!shown?.hold) answer("approve"); });
+    f.approve.addEventListener("pointerdown", (e) => { if (e.isPrimary && e.button === 0) startHold(); });
+    for (const type of ["pointerup", "pointerleave", "pointercancel"]) f.approve.addEventListener(type, stopHold);
+    f.approve.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && shown?.hold) { e.preventDefault(); if (!e.repeat) startHold(); } });
+    f.approve.addEventListener("keyup", (e) => { if (e.key === "Enter" || e.key === " ") stopHold(); });
     f.root.addEventListener("pointerdown", (e) => {
       if (!e.isPrimary || e.button !== 0 || (e.target as HTMLElement).closest("button") || live !== f) return;
       drag = { pointer: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, vx: 0, lastX: e.clientX, t: performance.now(), w: f.root.getBoundingClientRect().width || 320 };
@@ -174,11 +208,11 @@ export const mountCard: MountCard = (host, handlers) => {
       drag.dy = (e.clientY - drag.y0) * 0.2;
       const tilt = still() ? 0 : Math.max(-MAX_TILT, Math.min(MAX_TILT, drag.dx * TILT_PER_PX));
       f.root.style.transform = `translate(${drag.dx}px, ${drag.dy}px) rotate(${tilt}deg)`;
-      setLean(f, leanOf(drag.dx, drag.w));
+      setLean(f, leanOf(drag.dx, drag.w, !!shown?.hold));
     });
     const end = (e: PointerEvent, cancel: boolean) => {
       if (!drag || drag.pointer !== e.pointerId || live !== f) return;
-      const a = cancel ? null : swipeAnswer(drag.dx, drag.w, drag.vx);
+      const a = cancel ? null : swipeAnswer(drag.dx, drag.w, drag.vx, !!shown?.hold);
       if (a) return answer(a);
       drag = null;
       f.root.classList.remove("dragging");
@@ -196,10 +230,13 @@ export const mountCard: MountCard = (host, handlers) => {
     if (!live || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target as HTMLElement | null;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    if (e.key === "ArrowRight") { e.preventDefault(); answer("approve"); }
+    if (e.key === "ArrowRight") { e.preventDefault(); if (!shown?.hold) answer("approve"); else if (!e.repeat) startHold(); }
     else if (e.key === "ArrowLeft") { e.preventDefault(); answer("later"); }
   };
+  const onKeyUp = (e: KeyboardEvent) => { if (e.key === "ArrowRight") stopHold(); };
   window.addEventListener("keydown", onKey);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", stopHold);
 
   return {
     show(card) {
@@ -211,6 +248,7 @@ export const mountCard: MountCard = (host, handlers) => {
       }
       if (live) {
         // the source swapped or dropped the card underneath us (answered elsewhere): it steps down, unanswered
+        stopHold();
         leave(live.root, "down");
         live = null;
         drag = null;
@@ -230,6 +268,9 @@ export const mountCard: MountCard = (host, handlers) => {
     },
     destroy() {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", stopHold);
+      stopHold();
       clearCaughtUp();
       wrap.remove();
       live = null;
