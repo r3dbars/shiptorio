@@ -26,19 +26,18 @@ test("launch and automated always play in full, even in a busy beat", () => {
   d.fire({ type: "crate-arrive", stop: "builder", id: "x" });
   d.fire({ type: "launch" });
   d.fire({ type: "automated", stop: "review" });
-  expect(played).toEqual(["ore", "launch", "launch_iron", "permit_grant", "level_up"]);
+  expect(played).toEqual(["launch", "permit_grant"]);
 });
 
-test("routine sounds are a sparse texture", () => {
+test("a running deck is silent: crates, machines, Shippy walking", () => {
   const { d, played, at } = deck();
   for (let ms = 0; ms < 10_000; ms += 500) {
     at(ms);
     d.fire({ type: "crate-arrive", stop: "builder", id: "x" });
+    d.fire({ type: "station-state", stop: "builder", state: "working" });
     d.fire({ type: "shippy", pose: "walking" });
   }
-  // ten seconds of a busy belt: a handful of sounds, not forty
-  expect(played.length).toBeLessThanOrEqual(4);
-  expect(played.length).toBeGreaterThan(0);
+  expect(played).toEqual([]);
 });
 
 test("a flickering jam buzzes once", () => {
@@ -53,15 +52,14 @@ test("a flickering jam buzzes once", () => {
   expect(played).toEqual(["stamp_fail", "stamp_fail"]);
 });
 
-test("every event maps to something real or is deliberately silent", () => {
+test("every beat is one cue at most", () => {
   const all: DeckEvent[] = [
     ...(["idle", "working", "jammed", "auto"] as const).map((state) => ({ type: "station-state", stop: "checks", state }) as const),
     { type: "station-built", stop: "checks" }, { type: "crate-arrive", stop: "checks", id: "x" }, { type: "approve", cardId: "c" },
     { type: "later", cardId: "c" }, { type: "jam", stop: "review" }, { type: "launch" }, { type: "automated", stop: "review" },
     ...(["folded", "peek", "unfold", "walking", "lever", "happy", "alarmed"] as const).map((pose) => ({ type: "shippy", pose }) as const),
   ];
-  const silent = all.filter((e) => cuesFor(e).length === 0).map((e) => ("state" in e ? e.state : "pose" in e ? e.pose : e.type));
-  expect(silent).toEqual(["idle", "jammed", "auto", "peek"]);
+  for (const e of all) expect(cuesFor(e).length).toBeLessThanOrEqual(1);
 });
 
 test("shake decays to nothing and drift loops", () => {
@@ -81,20 +79,21 @@ test("the rocket rumbles on the pad, then climbs all the way", () => {
   expect(launchRise(1)).toBe(1);
 });
 
-test("a staged build uses the quiet construction kit and doesn't ring twice", () => {
+test("a staged build rings once, when it's done", () => {
   const played: string[] = [];
   const d = new DeckSound((s) => played.push(s), () => 0, (c) => played.push(`build:${c}`));
   d.fire({ type: "build-start", stop: "checks" });
-  for (const stage of ["plot", "scaffold", "frame", "burst", "check"] as const) d.fire({ type: "build-stage", stop: "checks", stage });
+  for (const stage of ["plot", "scaffold", "frame", "panels", "top", "burst", "check"] as const) d.fire({ type: "build-stage", stop: "checks", stage });
   d.fire({ type: "station-built", stop: "checks" });
-  expect(played).toEqual(["place", "build:chalk", "build:ratchet", "build:rivet", "build:crackle", "build:thunk", "build:bell"]);
+  expect(played).toEqual(["build:bell"]);
   // a station that just appears (no stages) still lands with a drop
   d.fire({ type: "station-built", stop: "review" });
   expect(played.at(-1)).toBe("station_drop");
 });
 
-test("the deck growing and the launch island have sounds", () => {
-  for (const phase of ["beams", "plates", "rails", "glow", "rocks", "done"] as const) expect(cuesFor({ type: "deck-grow", size: "medium", phase }).length).toBeGreaterThan(0);
-  for (const stage of ["island-rising", "island-up", "bridge", "bridge-done", "tower", "rocket-lowering", "rocket-seated"] as const)
-    expect(cuesFor({ type: "launch-stage", stage }).length).toBeGreaterThan(0);
+test("growing the deck and raising the island ring once per step, not per bolt", () => {
+  const grow = (["beams", "plates", "rails", "glow", "rocks", "done"] as const).flatMap((phase) => cuesFor({ type: "deck-grow", size: "medium", phase }));
+  expect(grow.length).toBe(1);
+  const island = (["island-rising", "island-up", "bridge", "bridge-done", "tower", "rocket-lowering", "rocket-seated"] as const).flatMap((stage) => cuesFor({ type: "launch-stage", stage }));
+  expect(island.length).toBe(2);
 });
