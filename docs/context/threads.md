@@ -625,6 +625,10 @@ check passes: 1,406 tests, two existing skips, zero failures; lint/types/build g
 Hosted comparative evidence remains pending. This is an unproven performance
 candidate, not a released fix. Root owns hosted verification, merging and deployment.
 
+### Codex durable pipeline and player decisions (2026-10-28)
+
+PR #517 adds a derived six-step `pipeline` snapshot/patch contract; current durable jobs/cards and exact-plan/head checks remain authoritative. Later replay counts once per check-in; concurrent Approve records one teaching event for one committed runner transition. Focused61 tests/350 assertions and full local check1,623 pass/two existing platform skips/no failures. One web reducer line is required contract glue; no layout/deck UI changes. Client decision delivery is separate #524. Exact-head hosted CI and Staging still required.
+
 ## Physical hold rendering lease (Codex, 2026-10-28)
 
 [#479](https://github.com/r3dbars/shiptorio/pull/479) extends #478 after the hosted
