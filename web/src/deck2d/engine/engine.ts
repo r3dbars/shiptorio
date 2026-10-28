@@ -60,6 +60,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const cam = { x: 1400, y: 300, s: 0.3, manual: 0, all: false, pin: null as StopId | null };
   const portrait = () => W / H <= 1.2;
   const grow = layers.find((l) => l.bounds);
+  const builder = layers.find((l) => l.build)?.build;
   const right = () => grow?.bounds?.().x1 ?? (islandUp ? BOUNDS.x1 : islandIn ? BOUNDS.x1 + 170 : deckW + 40); // the camera frames only what's been built (plus the crane while the island builds)
   const fitAll = () => {
     const bw = right() - BOUNDS.x0, bh = BOUNDS.y1 - BOUNDS.y0;
@@ -79,8 +80,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function target(v: DeckView) {
     const all = fitAll();
-    if (cam.all || !portrait()) return all;
-    const s = Math.max(all.s, W / 1050), half = W / 2 / s;
+    if (cam.all) return all;
+    // Desktop fits everything, except it leans in on a station while it's being built (construction reads small otherwise).
+    const site = !portrait() && !v.card ? v.stops.find((x) => x.building !== undefined && x.id !== "launch") : undefined;
+    if (!portrait() && !site) return all;
+    const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
+    if (site) return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, STOP_X[site.id])), y: 230, s };
     return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, focusX(v))), y: 250, s };
   }
   { const f = fitAll(); Object.assign(cam, f); }
@@ -270,14 +275,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const tg = target(v), k = first ? 1 : Math.min(1, dt * 1.8); first = false;
       cam.x += (tg.x - cam.x) * k; cam.y += (tg.y - cam.y) * k; cam.s += (tg.s - cam.s) * k;
     }
-    shippy.update(dt, v.shippy);
     for (const l of layers) l.update(dt, v);
+    const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld
+    shippy.update(dt, act ? { pose: act.pose, at: act.at } : v.shippy);
+    const quake = builder?.shake?.() ?? 0;
 
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
     cx.fillStyle = "#2a1410"; cx.fillRect(0, 0, W, H);
     sky();
-    cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - cam.x * cam.s), DPR * (H / 2 - cam.y * cam.s));
+    cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + (Math.random() - 0.5) * quake) * cam.s), DPR * (H / 2 - (cam.y + (Math.random() - 0.5) * quake) * cam.s));
     slot("sky-far");
     clouds(470, 1.1, 5, 0.85);
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).

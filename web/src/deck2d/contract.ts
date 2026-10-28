@@ -193,6 +193,8 @@ export interface DeckLayer {
   owns?(stop: Stop): boolean;
   /** grow/: the world x-range that's built right now; the camera fits it and the belt stops at its right edge. */
   bounds?(): { x0: number; x1: number };
+  /** build/ only: camera shake in world px right now, and where Shippy should be while a build runs (overrides view.shippy). */
+  build?: { shake?(): number; shippyAct?(): { at: StopId; pose: ShippyPose } | null };
 }
 export type CreateLayer = (art: ArtLoader, bus: DeckBus) => DeckLayer;
 // Entries: grow/index.ts, build/index.ts, launch/index.ts each `export const createLayer: CreateLayer`.
