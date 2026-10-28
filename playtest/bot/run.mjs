@@ -6,6 +6,7 @@ import { resolve, join } from "node:path";
 import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
 import { playerAction } from "./player-action.mjs";
+import { botAdmissionPath, prepareBotPersona } from "./setup.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
 const option = (key, fallback) => { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; };
 const persona = option("--persona", "test-newbie");
@@ -46,44 +47,18 @@ try {
       } catch { /* Non-JSON heartbeat frames have no game state. */ }
     }));
     let admitted = false;
+    const admissionPath = botAdmissionPath({ local, persona, width });
     page.on("pageerror", error => failures.push(`JS: ${error.message}`));
     page.on("console", msg => { if (msg.type() === "error" && (admitted || !/401/.test(msg.text()))) failures.push(`Console: ${msg.text()}`); });
-    page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400 && !(!admitted && response.status() === 401 && new URL(response.url()).pathname === "/test/login")) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
+    page.on("response", response => { if (response.url().startsWith(url.origin) && response.status() >= 400 && !(!admitted && response.status() === 401 && new URL(response.url()).pathname === admissionPath)) failures.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
     let lastChange = Date.now(), previous = "", number = 0;
     const capture = async label => {
       const file = `${width}-${String(++number).padStart(2, "0")}-${label.replace(/[^a-z0-9-]+/gi, "-").slice(0, 60)}.png`;
       console.log(`Capture ${width}px: ${label}`);
       await page.screenshot({ path: join(out, file), timeout: 60000 }); steps.push({ width, label, file, url: page.url() });
     };
-    await page.goto(`${url.origin}/test/login?as=${persona}`);
-    if (await page.getByLabel("Password", { exact: true }).count()) {
-      const password = local ? "isolated-bot-preview" : process.env.SHIPTORIO_TEST_PASSWORD;
-      if (!password) throw new Error("Staging preview password is required in SHIPTORIO_TEST_PASSWORD");
-      await page.getByLabel("Password", { exact: true }).fill(password);
-      await Promise.all([
-        page.waitForURL(current => current.pathname === "/" && current.searchParams.has("source"), { timeout: 20000 }),
-        page.getByRole("button", { name: /Enter the factory/ }).click(),
-      ]);
-    }
-    const preparingStaging = !local && persona !== "test-guest" && width === 390;
-    // Fixture reset is setup, before the real player mounts. Unmount the old picker so
-    // its inventory polling cannot race the deliberately locked reset boundary.
-    if (preparingStaging) await page.goto("about:blank");
-    const login = preparingStaging
-      ? await context.request.get(`${url.origin}/test/login?as=${persona}`, { maxRedirects: 0 })
-      : await page.goto(`${url.origin}/test/login?as=${persona}`);
-    if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
-    if (preparingStaging) {
-      let reset;
-      for (let attempt = 0; attempt < 15; attempt++) {
-        const response = await context.request.post(`${url.origin}/test/reset`, { headers: { origin: url.origin }, maxRetries: 2, timeout: 30000 });
-        reset = { ok: response.ok(), status: response.status() };
-        if (reset.status !== 409) break;
-        await page.waitForTimeout(2000);
-      }
-      if (!reset.ok) throw new Error(`Isolated staging reset unavailable: HTTP ${reset.status}`);
-      await page.goto(`${url.origin}/test/login?as=${persona}`);
-    }
+    await prepareBotPersona({ page, context, origin: url.origin, persona, local, width,
+      password: local ? "isolated-bot-preview" : process.env.SHIPTORIO_TEST_PASSWORD });
     admitted = true;
     if (fixture) { console.log("Seeding isolated persona"); await fixture.seed(); console.log("Persona seeded"); }
     await capture("signed-in");

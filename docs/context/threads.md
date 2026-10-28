@@ -657,6 +657,15 @@ Root owns hosted validation, release integration and deployment.
 - The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
 - Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
 
+### Codex inert bot staging setup — 2026-10-28
+
+The staging bot previously mounted the old game before resetting its fixture,
+allowing an in-flight runner/status request to overlap membership deletion. Setup
+now enters the real password UI through inert `/test/users`, then API login and
+reset before the first game mount. Strict HTTP/console capture, reset locking,
+local/guest behavior and gameplay assertions remain. Setup contract tests cover
+ordering and denied gate/login/reset; no live staging reset was performed here.
+
 ### Codex runner service pairing import — 2026-10-28
 
 Before: a valid standalone Testing pairing was absent from the running launchd
