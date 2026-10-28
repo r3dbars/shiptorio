@@ -69,3 +69,26 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("browser pairing keeps 
     expect((await loadPairings(root)).map(p => p.token)).toEqual(["cred"]);
   } finally { globalThis.fetch = realFetch; opener.mockRestore(); server.stop(true); await rm(root, { recursive: true, force: true }); }
 });
+
+test("an expired browser code hands out a fresh one instead of crashing, and gives up with the exact command", async () => {
+  const root = await mkdtemp(resolve(tmpdir(), "shiptorio-device-expired-"));
+  let starts = 0, approveOn = 2;
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) {
+    const base = new URL(req.url).origin, path = new URL(req.url).pathname;
+    if (path === "/api/runner-device/start") { starts++; return Response.json({ code: "AAAA-BBBB-CCCC", secret: String(starts), expires: Date.now() + 60000, verificationUri: `${base}/runner/pair` }); }
+    const { secret } = await req.json() as { secret: string };
+    return Number(secret) === approveOn ? Response.json({ status: "approved", repo: "you/repo", token: "cred", expires: Date.now() + 3600000 }) : Response.json({ status: "expired" });
+  } });
+  const base = `http://127.0.0.1:${server.port}`, realWhich = Bun.which.bind(Bun);
+  const opener = spyOn(Bun, "which").mockImplementation((name, options) => name === "open" || name === "xdg-open" ? null : realWhich(name, options));
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await pairMachine(base, root, 5);
+    expect(starts).toBe(2);
+    expect(log.mock.calls.some(([line]) => String(line).includes("here's a fresh one"))).toBe(true);
+    expect((await loadPairings(root)).map(p => p.token)).toEqual(["cred"]);
+    starts = 0; approveOn = 0;
+    await expect(pairMachine(base, root, 5)).rejects.toThrow("Run shiptorio-runner pair");
+    expect(starts).toBe(3);
+  } finally { log.mockRestore(); opener.mockRestore(); server.stop(true); await rm(root, { recursive: true, force: true }); }
+});

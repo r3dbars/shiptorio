@@ -48,12 +48,19 @@ export async function loadPairings(root = runnerHome()): Promise<Pairing[]> {
   }));
 }
 export async function removePairing(repo: string, root = runnerHome()) { await updatePairing(repo, root, () => null, true); }
-export async function pairMachine(base: string, root = runnerHome(), pollMs = 3000) {
+export async function pairMachine(base: string, root = runnerHome(), pollMs = 3000, attempts = 3) {
+  // A code that times out while someone is away from the keyboard just gets a fresh one, so re-running install isn't needed.
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (await pairOnce(base, root, pollMs, attempt > 1)) return;
+  }
+  throw new Error("Pairing timed out. Run shiptorio-runner pair when you're at your browser to get a fresh code.");
+}
+async function pairOnce(base: string, root: string, pollMs: number, retry: boolean): Promise<boolean> {
   const start = await fetch(`${base}/api/runner-device/start`, { method: "POST", signal: AbortSignal.timeout(30000) });
   if (!start.ok) throw new Error(`Could not start pairing (${start.status})`);
   const { code, secret, expires, verificationUri } = await start.json() as { code: string; secret: string; expires: number; verificationUri: string };
   if (new URL(verificationUri).origin !== base || !/^[A-F0-9]{4}(-[A-F0-9]{4}){2}$/.test(code) || !Number.isFinite(expires) || expires > Date.now() + 11 * 60_000 || typeof secret !== "string") throw new Error("Invalid device response");
-  console.log(`\nConnect your machine. Compare this code in your browser: ${code}\n${verificationUri}\nWaiting for your approval (10 minutes)…`);
+  console.log(`\n${retry ? "That code timed out, so here's a fresh one" : "Connect your machine"}. Compare this code in your browser: ${code}\n${verificationUri}\nWaiting for your approval (10 minutes)…`);
   const opener = process.platform === "darwin" ? "open" : "xdg-open";
   if (Bun.which(opener)) { const child = Bun.spawn([opener, verificationUri], { stdout: "ignore", stderr: "ignore" }); await child.exited; }
   while (Date.now() < expires) {
@@ -61,12 +68,12 @@ export async function pairMachine(base: string, root = runnerHome(), pollMs = 30
     // A dropped connection or a busy server mid-wait shouldn't burn the code the person is about to approve.
     const response = await fetch(`${base}/api/runner-device/poll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, secret }), signal: AbortSignal.timeout(30000) }).catch(() => null);
     if (!response || response.status === 429 || response.status >= 500) continue;
-    if (!response.ok) throw new Error(`Pairing failed (${response.status}); run pair again`);
+    if (!response.ok) throw new Error(`Pairing failed (${response.status}); run shiptorio-runner pair again`);
     const result = await response.json() as Pairing & { status: string };
-    if (result.status === "approved") { await savePairing(result, root); console.log(`Connected to ${result.repo}. Your agent sign-ins stay on this computer.`); return; }
-    if (result.status === "expired") break;
+    if (result.status === "approved") { await savePairing(result, root); console.log(`Connected to ${result.repo}. Your agent sign-ins stay on this computer.`); return true; }
+    if (result.status === "expired") return false;
   }
-  throw new Error("Pairing code expired or already used. Run shiptorio-runner pair again.");
+  return false;
 }
 /** One-paste setup: trade the single-use join code from the install command for this repo's credential. No browser step. */
 export async function joinMachine(base: string, join: string, root = runnerHome()) {
