@@ -35,3 +35,11 @@ test("a call back to the deck mid-leap drops him straight back down", () => {
   run(s, { at: "checks", pose: "lever" }, 8);
   expect(s.state).toMatchObject({ corner: "gone", world: "stand", x: STOP_X.checks + 150 });
 });
+
+test("build poses: he carries the beam while he walks, then welds at the stop", () => {
+  const s = createShippy(noArt, { reducedMotion: true });
+  run(s, { at: "builder", pose: "carry" }, 1.4);
+  expect(s.state).toMatchObject({ world: "walk", pose: "carry" });
+  run(s, { at: "builder", pose: "weld" }, 8);
+  expect(s.state).toMatchObject({ world: "stand", x: STOP_X.builder + 150, pose: "weld" });
+});

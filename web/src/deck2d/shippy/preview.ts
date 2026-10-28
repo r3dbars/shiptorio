@@ -2,7 +2,8 @@
 // for every place and pose. "Story" loops the job he was built for: unfold, walk to Review, pull the lever, cheer,
 // come home. ?speed=0.25 slows everything down to check frames.
 import { BELT_Y, DECK, STOP_X, art, type ArtLoader, type ShippyPose, type ShippyView, type StopId } from "../contract";
-import { createShippy } from "./shippy";
+import { BUILD_SPRITES } from "./frames";
+import { createShippy, type ShippyActPose, type ShippyActView } from "./shippy";
 
 function loader(names: string[]): ArtLoader {
   const imgs = new Map<string, HTMLImageElement>();
@@ -17,11 +18,11 @@ function loader(names: string[]): ArtLoader {
 
 const MACHINES: StopId[] = ["repo", "builder", "checks", "review", "gate"];
 const SHIPPY = ["0", "1", "2", "3", "4", "5", "lever", "happy", "alarm", "peek"].map((n) => `shippy-${n}`);
-const artLoader = loader(["deck", ...MACHINES.map((m) => `${m}-idle`), ...SHIPPY]);
+const artLoader = loader(["deck", ...MACHINES.map((m) => `${m}-idle`), ...SHIPPY, ...BUILD_SPRITES]);
 const shippy = createShippy(artLoader);
 const speed = Number(new URLSearchParams(location.search).get("speed")) || 1;
 
-let view: ShippyView = { pose: "folded", at: "corner" };
+let view: ShippyActView = { pose: "folded", at: "corner" };
 let story: number | null = null;
 
 // ---- controls ----
@@ -39,22 +40,23 @@ function group(label: string, items: [string, () => void, () => boolean][]) {
     buttons.push({ el, on });
   }
 }
-const set = (v: Partial<ShippyView>) => { view = { ...view, ...v }; };
+const set = (v: Partial<ShippyActView>) => { view = { ...view, ...v }; };
 const at = (a: ShippyView["at"]) => () => view.at === a;
-const pose = (p: ShippyPose) => () => view.pose === p;
+const pose = (p: ShippyActPose) => () => view.pose === p;
 group("Corner", [
   ["Home", () => set({ at: "corner", pose: "folded" }), at("corner")],
   ...(["peek", "happy", "alarmed"] as ShippyPose[]).map((p) => [p, () => set({ at: "corner", pose: p }), () => view.at === "corner" && view.pose === p] as [string, () => void, () => boolean]),
 ]);
 group("Go to", MACHINES.map((m) => [m, () => set({ at: m, pose: view.pose === "folded" ? "walking" : view.pose }), at(m)]));
-group("Pose", (["walking", "lever", "happy", "alarmed", "peek"] as ShippyPose[]).map((p) => [p, () => set({ pose: p }), pose(p)]));
+group("Pose", (["walking", "lever", "happy", "alarmed", "peek", "weld", "carry"] as ShippyActPose[]).map((p) => [p, () => set({ pose: p }), pose(p)]));
 group("Loop", [["Story", () => (story === null ? startStory() : stopStory()), () => story !== null]]);
 
 function stopStory() { if (story !== null) clearTimeout(story); story = null; }
 function startStory() {
-  const beats: [number, ShippyView][] = [
+  const beats: [number, ShippyActView][] = [
     [1.6, { at: "corner", pose: "peek" }], [0.8, { at: "corner", pose: "happy" }],
-    [4.2, { at: "review", pose: "walking" }], [2.8, { at: "review", pose: "lever" }], [1.4, { at: "review", pose: "happy" }],
+    [4.2, { at: "builder", pose: "carry" }], [2.2, { at: "builder", pose: "weld" }],
+    [3, { at: "review", pose: "walking" }], [2.8, { at: "review", pose: "lever" }], [1.4, { at: "review", pose: "happy" }],
     [2.2, { at: "gate", pose: "alarmed" }], [3, { at: "corner", pose: "folded" }],
   ];
   let i = 0;

@@ -10,6 +10,12 @@
 import { FLOOR_Y, STOP_X, type ArtLoader, type ShippyModule, type ShippyPose, type ShippyView, type StopId } from "../contract";
 import { ANCHOR, STRIP_H, UNFOLD, type ShippyFrame } from "./frames";
 
+/** The contract's poses plus the build poses: weld (torch + sparks) and carry (a steel beam, also while walking). */
+export type ShippyActPose = ShippyPose | "weld" | "carry";
+
+/** ShippyView with the build poses allowed too (the engine's ShippyView fits as is). */
+export type ShippyActView = Omit<ShippyView, "pose"> & { pose: ShippyActPose };
+
 export type ShippyOptions = {
   /** Strip-frame height in world units (the folded box is ~3/4 of it). */
   size?: number;
@@ -45,8 +51,10 @@ const wobble = (t: number, hz = 2.5) => Math.exp(-6 * t) * Math.cos(t * hz * Mat
 const clamp01 = (t: number) => Math.max(0, Math.min(1, t));
 
 export function createShippy(art: ArtLoader, options: ShippyOptions = {}): ShippyModule & {
+  /** Same as the contract's update, also taking the build poses. */
+  update(dt: number, view: ShippyActView): void;
   /** For previews and tests: what he's doing right now. */
-  readonly state: { corner: CornerMode; world: WorldMode; x: number; pose: ShippyPose };
+  readonly state: { corner: CornerMode; world: WorldMode; x: number; pose: ShippyActPose };
 } {
   const o = {
     size: 90, speed: 380, standDx: 150, entryX: STOP_X.repo - 150,
@@ -56,9 +64,9 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   };
   const still = o.reducedMotion;
   let clock = 0;
-  let view: ShippyView = { pose: "folded", at: "corner" };
-  const corner = { mode: "home" as CornerMode, t: 9, poseT: 9, pose: "folded" as ShippyPose };
-  const world = { mode: "off" as WorldMode, t: 0, x: o.entryX, tx: o.entryX, facing: 1 as 1 | -1, poseT: 0, pose: "walking" as ShippyPose };
+  let view: ShippyActView = { pose: "folded", at: "corner" };
+  const corner = { mode: "home" as CornerMode, t: 9, poseT: 9, pose: "folded" as ShippyActPose };
+  const world = { mode: "off" as WorldMode, t: 0, x: o.entryX, tx: o.entryX, facing: 1 as 1 | -1, poseT: 0, pose: "walking" as ShippyActPose };
   const worldPuffs: Puff[] = [];
   const cornerPuffs: Puff[] = []; // in box units: 0..1 across the corner box
   let landed = 9; // seconds since the corner box last clunked shut
@@ -76,7 +84,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   }
   const feet = (n: number, color?: string) => puff(worldPuffs, world.x, o.floorAt(world.x), n, o.size * 0.35, color);
 
-  function update(dt: number, next: ShippyView) {
+  function update(dt: number, next: ShippyActView) {
     dt = Math.min(dt, 0.1);
     clock += dt;
     landed += dt;
@@ -150,6 +158,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     const p = world.pose, t = world.poseT;
     if (p === "lever" && crossed(t % 1.4, dt, 0.55)) puff(worldPuffs, world.x + o.size * 1.35, o.floorAt(world.x) - o.size * 0.35, 5, o.size * 0.25, "255,190,90");
     if (p === "happy" && crossed(t % 0.5, dt, 0.49)) feet(3);
+    if (p === "weld" && crossed(t % 0.09, dt, 0.08)) puff(worldPuffs, world.x + o.size * 0.95, o.floorAt(world.x) - o.size * 0.05, 3, o.size * 0.18, "255,200,90", 0.6);
     if (p === "alarmed" && crossed(t % 0.14, dt, 0.13)) puff(worldPuffs, world.x + o.size * 0.15, o.floorAt(world.x) - o.size * 1.35, 1, o.size * 0.3, "120,110,105", 1.2);
   }
   function crossed(t: number, dt: number, at: number) { return t >= at && t - dt < at; }
@@ -160,7 +169,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
 
   // ---- poses ----
   /** A pose acted out in place: shared by the corner and the deck. u = one body-size in the space being drawn. */
-  function act(pose: ShippyPose, t: number, u: number, base: Draw): Draw {
+  function act(pose: ShippyActPose, t: number, u: number, base: Draw): Draw {
     switch (pose) {
       case "lever": {
         // reach, yank with a jolt, hold, let go; repeats while the view keeps him on the lever
@@ -180,6 +189,15 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
           x: base.x + (still ? 0 : Math.sin(t * 80) * u * 0.03), rot: still ? 0 : Math.sin(t * 61) * 0.025,
           glow: 0.6 + 0.4 * Math.sin(t * 16), color: RED,
         };
+      case "weld": {
+        // torch flickers between the two frames, a shower of sparks at the tip
+        const f = Math.floor(t / 0.09) % 2;
+        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", flip: false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
+      }
+      case "carry": {
+        const f = Math.floor(t / 0.6) % 2;
+        return { ...base, frame: f ? "shippy-carry-1" : "shippy-carry-0", sy: base.sy - (f ? 0.02 : 0) };
+      }
       case "peek": {
         // pop the lid, look around, little hop every couple of seconds: "a call is waiting on you"
         const pop = t < 0.25 ? wobble(t / 0.25, 1) * 0.12 : 0;
@@ -255,8 +273,10 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         if (still) return { ...base, frame: "shippy-5" };
         const ph = (t % 0.13) / 0.13;
         const bob = Math.abs(Math.sin(ph * Math.PI));
+        const beam = view.pose === "carry";
+        const legs = Math.floor(t / (beam ? 0.18 : 0.13)) % 2;
         return {
-          ...base, frame: Math.floor(t / 0.13) % 2 ? "shippy-3" : "shippy-5",
+          ...base, frame: beam ? (legs ? "shippy-carry-1" : "shippy-carry-0") : legs ? "shippy-3" : "shippy-5",
           y: floor - bob * u * 0.06, rot: Math.sin(t * Math.PI * 2 / 0.26) * 0.04 * world.facing,
           sx: 1 + bob * 0.03, sy: 1 - bob * 0.03,
         };
@@ -300,7 +320,8 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       const a = ANCHOR[d.frame];
       ctx.translate(d.x, d.y);
       ctx.rotate(d.rot);
-      ctx.scale((d.flip ? -1 : 1) * d.sx * k, d.sy * k);
+      const ks = k * (a.s ?? 1);
+      ctx.scale((d.flip ? -1 : 1) * d.sx * ks, d.sy * ks);
       ctx.drawImage(im, -a.ax, -a.ay);
     }
     ctx.restore();
