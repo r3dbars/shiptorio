@@ -561,3 +561,9 @@ activation and controller timing are unchanged. Cleanup/setup replay remains saf
 Focused tests pass (28 tests, 101 assertions); full check and original Pixel journeys
 are pending. This fixes input ordering, not the residual shader stall after release.
 Root owns hosted validation, release integration and deployment.
+
+## Root release repair — native hold lifetime and final batch
+
+- Integrated [#479](https://github.com/r3dbars/shiptorio/pull/479) runtime `34952d8af6aeaeca55c51d19d342183cbda2a772` after independent review: accepted native holds retain only their rendering lease until matching physical release, including card unmount. Lost-touch recovery uses primary pointer type, not reusable IDs. Consent timing/controller and assistive activation remain unchanged. Focused regressions: 29 passed / 105 assertions; final full check and hosted combined acceptance remain required.
+- The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
+- Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
