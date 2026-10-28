@@ -122,6 +122,7 @@ export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserS
 }
 
 const TICK_MS = 2000;
+const READINESS_POLL_MS = 30_000;
 const MAX_ATTEMPTS = 3;
 const RUNNER_LEASE_MS = 30 * 60 * 1000;
 // Longer than the runner's 30s request timeout, so an in-flight claim is never handed out twice.
@@ -1460,7 +1461,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await inTrace(delivery.trace ?? { requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
           if (delivery.source === "sentry") await this.handleSentry(delivery.event, delivery.payload as SentryPayload);
           else if (delivery.source === "support") await this.handleSupport(delivery.payload as unknown as SupportMessage);
-          else await this.handleGitHub(delivery.event, delivery.payload);
+          else {
+            await this.handleGitHub(delivery.event, delivery.payload);
+            await this.refreshReadinessPolls();
+          }
           log("info", "webhook.processed", { deliveryId: delivery.deliveryId ?? key.slice(9), webhookEvent: delivery.event });
         });
         await this.accountPut(`done:${key}`, Date.now() + 7 * 86400000);
@@ -2632,8 +2636,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async publishGauntletMove(move: Move | null): Promise<void> { await this.publishDecision(move); }
 
-  /** The merge gate: a green PR on the pad, or a PR the gauntlet sent back, becomes the Next Move. */
-  private async offerGauntletMove(): Promise<void> {
+  /** A GitHub delivery may have changed mergeability: re-ask on the next tick, unless a rate limit is cooling down. */
+  private async refreshReadinessPolls(): Promise<void> {
+    const polls = await this.ctx.storage.list<{ head: string; nextAt: number; limited?: boolean }>({ prefix: "gauntletReadiness:" });
+    for (const [key, poll] of polls) if (!poll.limited) await this.ctx.storage.delete(key);
+  }
+
+  /** The merge gate: a green PR on the pad, or a PR the gauntlet sent back, becomes the Next Move.
+   *  poll: the 2s tick. It re-asks GitHub about the same inspected head at most every READINESS_POLL_MS,
+   *  and waits out a rate limit, so one PR on the pad cannot fill the installation's shared GitHub queue. */
+  private async offerGauntletMove(poll = false): Promise<void> {
     const s = this.state;
     if (!s) return;
     const now = Date.now();
@@ -2641,11 +2653,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (!item.prNumber || (await this.ctx.storage.get<number>(`gauntletDeferred:${item.id}`) ?? 0) > now) continue;
       if (item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection)) {
         const inspection = item.inspection;
+        const pollKey = `gauntletReadiness:${item.id}`;
+        const polled = await this.ctx.storage.get<{ head: string; nextAt: number }>(pollKey);
+        if (poll && polled?.head === inspection.headSha && polled.nextAt > now) continue;
         let readiness = { ready: false, reason: "Waiting for GitHub to confirm this PR is ready to merge." };
+        let nextAt = now + READINESS_POLL_MS, limited = false;
         try {
           const token = await installationToken(this.env, this.meta!.installationId);
           readiness = await pullRequestReadiness(token, this.meta!.repo, item.prNumber, inspection.headSha, s.baseBranch);
-        } catch (error) { this.log("warn", "GitHub merge readiness is unavailable; Launch is waiting.", item.id); report(error, "factory.merge_readiness_unavailable"); }
+        } catch (error) {
+          if (error instanceof RateLimitError) { nextAt = Math.max(nextAt, error.retryAt); limited = true; }
+          this.log("warn", "GitHub merge readiness is unavailable; Launch is waiting.", item.id); report(error, "factory.merge_readiness_unavailable");
+        }
+        await this.accountPut(pollKey, { head: inspection.headSha, nextAt, limited });
         if (!this.state!.items.some(i => i.id === item.id && i.inspection === inspection && i.state === "on_pad")) continue;
         // Replace carried Launch cards too. A transient GitHub hold must not erase
         // completed runner/AI receipts or invent a rework scar.
@@ -3652,7 +3672,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.githubGuard("runGauntlet", () => this.runGauntlet());
     await this.guard("orbitExpire", () => this.orbitExpire());
     await this.guard("autoLaunchPermitted", () => this.autoLaunchPermitted());
-    await this.guard("offerGauntletMove", () => this.offerGauntletMove());
+    await this.guard("offerGauntletMove", () => this.offerGauntletMove(true));
     await this.guard("offerPermitMove", () => this.offerPermitMove());
     await this.guard("offerLevelMove", () => this.offerLevelMove());
     await this.guard("offerGoalMove", () => this.offerGoalMove());
