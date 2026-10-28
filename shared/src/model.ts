@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { HoldingBack } from "./signals";
 import { Goals } from "./goals";
+import { PipelineStep } from "./pipeline";
 
 // Science colors double as the kind of work an item is.
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
@@ -513,6 +514,7 @@ export const FactoryState = z.object({
   bottleneck: Bottleneck.nullable().optional(),
   holdingBack: HoldingBack.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
   move: Move.nullable().optional(), // the open Next Move card
+  pipeline: z.array(PipelineStep).length(6).optional(), // derived presentation; actions still use exact move IDs
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),
   learned: z.array(Learned).max(40).optional(), // docs/LEARN.md: card kinds the factory does on its own now
