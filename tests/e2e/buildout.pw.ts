@@ -1,6 +1,6 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { assertBuildEventPrefix, BUILDOUT_STEPS as STEPS } from '../contract/buildout-events';
-import { buildoutObserver, readBuildout } from './buildout-observation';
+import { buildoutObserver, readBuildout, type BuildoutObservation } from './buildout-observation';
 import { observeManualLaunch, type LaunchObservation } from '../contract/launch-observation';
 
 // Build As You Go (?buildout=1): the demo shop starts dark and empty, and every piece
@@ -12,6 +12,7 @@ import { observeManualLaunch, type LaunchObservation } from '../contract/launch-
 // (the cart rolls, then rides into the builder), so they may advance without a build moment.
 const AUTO = new Set<string>(['build', 'checks']);
 const NO_PIECES = new Set<string>(['issue', 'build']);
+const perfEvidence = new WeakMap<TestInfo, Pick<BuildoutObservation, 'at' | 'step' | 'phase' | 'perf'>[]>();
 
 const watchBuilds = (page: Page) => page.addInitScript(() => {
   const w = window as any;
@@ -52,7 +53,14 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
   // Dark and empty: no counters, no free look, nothing built yet.
   await expect(page.getByText(/waiting on you/i)).toHaveCount(0);
   await expect(page.getByText(/^shipped$/i)).toHaveCount(0);
-  const observed = buildoutObserver(() => readBuildout(page));
+  const samples: Pick<BuildoutObservation, 'at' | 'step' | 'phase' | 'perf'>[] = [];
+  perfEvidence.set(info, samples);
+  const observed = buildoutObserver(async () => {
+    const snapshot = await readBuildout(page);
+    const { at, step, phase, perf } = snapshot;
+    samples.push({ at, step, phase, perf });
+    return snapshot;
+  });
   expect((await observed.refresh()).events).toEqual([]);
   const shot = async (name: string) => {
     if (!opts.shoot) return;
@@ -129,6 +137,9 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
 
 test.describe('build as you go', () => {
   test.setTimeout(360_000);
+  test.afterEach(async ({}, info) => {
+    await info.attach('buildout-perf.json', { body: JSON.stringify(perfEvidence.get(info) ?? [], null, 2), contentType: 'application/json' });
+  });
 
   test('dark to rocket, one build at a time', async ({ page }, info) => {
     await firstRun(page, info, { reduced: false, shoot: true });
