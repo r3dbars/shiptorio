@@ -145,9 +145,14 @@ export async function readPrefs(env: AccountsEnv, user: User): Promise<Partial<R
   return Object.fromEntries(rows.results.filter((r) => isPrefKey(r.key)).map((r) => [r.key, r.value]));
 }
 
-export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<string, unknown>, now = Date.now()): Promise<boolean> {
+export function validPrefs(prefs: unknown, allowEmpty = false): prefs is Partial<Record<PrefKey, string>> {
+  if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) return false;
   const entries = Object.entries(prefs);
-  if (!entries.length || entries.some(([k, v]) => !isPrefKey(k) || typeof v !== "string" || v.length > PREF_LIMIT[k])) return false;
+  return (allowEmpty || entries.length > 0) && entries.every(([k, v]) => isPrefKey(k) && typeof v === "string" && v.length <= PREF_LIMIT[k]);
+}
+export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<string, unknown>, now = Date.now()): Promise<boolean> {
+  if (!validPrefs(prefs)) return false;
+  const entries = Object.entries(prefs);
   if (user.dev) return true;
   await env.DB.batch(entries.map(([k, v]) =>
     env.DB.prepare("INSERT INTO user_prefs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")

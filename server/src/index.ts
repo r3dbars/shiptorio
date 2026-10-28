@@ -2,12 +2,13 @@ import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
 import { godRoutes } from "./admin-god";
 import { readAdminView, viewCookieValue, adminViewCookie } from "./admin-view";
+import { clearGuestCookie, createGuest, currentGuest, guestCookie, sweepGuests, touchGuest, writeGuestPrefs, writeGuestProgress, type Guest } from "./guests";
 import { accountIdentity } from "./account-identity";
 import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
 import { budgetAccount, budgetLimits } from "./budget";
 import { byRepoId, repositoryFactory } from "./repository";
-import { deleteAccount, exportAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
+import { deleteAccount, exportAccount, deleteGuestAccount, exportGuestAccount, ownedRepos, factoryDeleted, accountRepos, accountFactory } from "./account-data";
 import { settingsPage, legalPage } from "./account-pages";
 import { lifecycleEvents } from "./github-lifecycle";
 import { factoryRpc } from "./factory-rpc";
@@ -98,7 +99,7 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 
 const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean; guest: Guest } };
 const app = new Hono<AppEnv>();
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
   const user = await signedIn(c);
@@ -228,6 +229,16 @@ app.use("*", async (c, next) => {
 
 });
 
+// A guest save is never an account principal. Block all non-sample APIs before any repo/provider work.
+app.use("*", async (c, next) => {
+  const allowed = ["/api/me", "/api/me/progress", "/api/me/prefs", "/api/account/export", "/api/account/delete", "/api/version", "/api/health"];
+  if ((c.req.path.startsWith("/api/") || c.req.path.startsWith("/connect/") || c.req.path === "/runner/pair") && !allowed.includes(c.req.path)
+    && !await signedIn(c) && await currentGuest(c.env, c.req.header("cookie") ?? null)) {
+    return c.json({ error: "Sign in with GitHub to use your own repo", code: "github_signin_required" }, 401);
+  }
+  await next();
+});
+
 app.use("*", async (c, next) => {
   const path = c.req.path;
   const match = path.match(/^\/api\/repos\/([^/]+)\/([^/]+)/);
@@ -304,7 +315,19 @@ app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 
 app.get("/api/me", async (c) => {
   const user = await signedIn(c);
-  if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
+  if (!user) {
+    let guest = await currentGuest(c.env, c.req.header("cookie") ?? null);
+    if (!guest) {
+      if (c.req.header("sec-fetch-site") === "cross-site") return c.json({ error: "invalid origin" }, 403);
+      if (!await admit(c.env, await ipScope(c.req.raw, "guest-create"), 10, 3600000, "guest creation flood")) return c.json({ error: "too many requests" }, 429);
+      guest = await createGuest(c.env);
+      c.header("Set-Cookie", await guestCookie(c.env, guest.id));
+    } else {
+      await touchGuest(c.env, guest);
+      c.header("Set-Cookie", await guestCookie(c.env, guest.id));
+    }
+    return c.json({ login: null, guest: true, allowed: false, prefs: guest.save.prefs, installUrl: null });
+  }
   const view = await readAdminView(c.env,c.req.raw);
   return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
@@ -312,19 +335,22 @@ app.get("/api/me", async (c) => {
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
 app.put("/api/me/prefs", async (c) => {
   const user = await signedIn(c);
-  if (!user) return c.json({ error: "login required" }, 401);
+  const guest = user ? null : await currentGuest(c.env, c.req.header("cookie") ?? null);
+  if (!user && !guest) return c.json({ error: "login required" }, 401);
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
   if (text.length > 6144) return c.json({ error: "too large" }, 413); // a bounded achievements record, with room for JSON escaping
   let body: unknown;
   try { body = JSON.parse(text); } catch { return c.json({ error: "invalid JSON" }, 400); }
-  if (!body || typeof body !== "object" || Array.isArray(body) || !(await writePrefs(c.env, user, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
+  if (!body || typeof body !== "object" || Array.isArray(body) || !(guest ? await writeGuestPrefs(c.env, guest, body as Record<string, unknown>) : await writePrefs(c.env, user!, body as Record<string, unknown>))) return c.json({ error: "invalid prefs" }, 400);
   return c.json({ ok: true });
 });
 
 // Progression (levels, streak, unlocks) follows the player across devices. The web merges, then writes the whole blob.
 app.get("/api/me/progress", async (c) => {
   const user = await signedIn(c);
+  const guest = user ? null : await currentGuest(c.env, c.req.header("cookie") ?? null);
+  if (guest) return c.json({ progress: guest.save.progress, resetVersion: 0 });
   if (!user) return c.json({ error: "login required" }, 401);
   const view = await readAdminView(c.env,c.req.raw);
   const target=view ? {id:view.userId,login:view.login} : user;
@@ -334,13 +360,18 @@ app.get("/api/me/progress", async (c) => {
 
 app.put("/api/me/progress", async (c) => {
   const user = await signedIn(c);
-  if (!user) return c.json({ error: "login required" }, 401);
+  const guest = user ? null : await currentGuest(c.env, c.req.header("cookie") ?? null);
+  if (!user && !guest) return c.json({ error: "login required" }, 401);
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
-  if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
+  if (new TextEncoder().encode(text).length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
+  if (guest) {
+    if (!await writeGuestProgress(c.env, guest, text)) return c.json({error:"invalid progress"},400);
+  } else {
   if (!validProgress(text)) return c.json({error:'invalid progress'},400);
   const version=Number(c.req.header('x-progress-reset') ?? '0');
-  if (!(await writeProgress(c.env, user, text, Date.now(), version))) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
+  if (!(await writeProgress(c.env, user!, text, Date.now(), version))) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
+  }
   return c.json({ ok: true });
 });
 
@@ -391,7 +422,13 @@ app.get("/api/sources", async (c) => {
 });
 
 // ---------- account controls ----------
-app.use("/api/account/*", requireUser);
+app.use("/api/account/*", async (c, next) => {
+  if (["/api/account/export", "/api/account/delete"].includes(c.req.path) && !await signedIn(c)) {
+    const guest = await currentGuest(c.env, c.req.header("cookie") ?? null);
+    if (guest) { c.set("guest", guest); await next(); return; }
+  }
+  return requireUser(c, next);
+});
 app.get("/settings", requireUser, async c => {
   const user = c.get("user");
   const repos = await accountRepos(c.env, user);
@@ -406,7 +443,7 @@ app.get("/settings", requireUser, async c => {
 });
 app.get("/api/account/export", async c => {
   c.header("Content-Disposition", 'attachment; filename="shiptorio-data.json"');
-  return c.json(await exportAccount(c.env, c.get("user")));
+  return c.json(c.get("guest") ? exportGuestAccount(c.get("guest")) : await exportAccount(c.env, c.get("user")));
 });
 app.post("/api/account/signout", async c => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
@@ -422,6 +459,11 @@ app.post("/api/account/delete", async c => {
   if (text.length > 16384) return c.json({ error: "too large" }, 413);
   const form = new URLSearchParams(text);
   if (form.get("confirm") !== "delete") return c.json({ error: "confirm deletion" }, 400);
+  const guest = c.get("guest");
+  if (guest) {
+    c.header("Set-Cookie", clearGuestCookie());
+    return c.json(await deleteGuestAccount(c.env, guest));
+  }
   const user = c.get("user");
   if (user.dev) return c.json({ error: "local development identity cannot be deleted" }, 403);
   const owned = await ownedRepos(c.env, user);
@@ -1007,6 +1049,7 @@ export async function accessFastPath(request: Request, env: Env): Promise<Respon
 }
 
 export default {
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> { await sweepGuests(env); },
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const response = await accessFastPath(request, env);
     if (response) return response;
