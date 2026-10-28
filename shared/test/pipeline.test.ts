@@ -11,7 +11,7 @@ test("six stable steps remain idle without inventing work or exposing runner det
   expect(result.every(s => s.state === "idle" && PipelineStep.safeParse(s).success)).toBe(true);
 });
 test("plan approval, offline approved build and running build follow authoritative job state", () => {
-  for (const [status, id, expected] of [["planning", "planner", "working"], ["awaiting_approval", "planner", "waiting_player"], ["ready", "builder", "stuck"], ["running", "builder", "working"]] as const) {
+  for (const [status, id, expected] of [["planning", "planner", "working"], ["awaiting_approval", "planner", "waiting_player"], ["ready", "builder", "stuck"], ["running", "builder", "stuck"]] as const) {
     expect(at(projectPipeline(state(), [{ itemId: "gh-1", status }], false), id).state).toBe(expected);
   }
   expect(at(projectPipeline(state(), [{ itemId: "gh-1", status: "failed" }, { itemId: "gh-1", status: "planning" }]), "planner").state).toBe("working");
@@ -39,4 +39,14 @@ test("fresh failed check or review overrides old successes without leaking provi
   expect(at(steps, "checks")).toMatchObject({ state: "stuck", cause: "checks_failed" });
   expect(at(steps, "review").state).toBe("idle");
   expect(JSON.stringify(steps)).not.toContain("secret-provider-token");
+});
+
+test("active examples outrank historical ships and action lists stay within the wire bound", () => {
+  const old = Array.from({length: 50}, (_, i) => item({ id: `old-${i}`, state: "launched" }));
+  const active = item({ id: "active" });
+  const cards: Move[] = Array.from({ length: 20 }, (_, i) => ({ id: `plan-${i}`, itemId: "active", title: "Plan", why: "", createdAt: 1, options: [{ id: "plan", label: "Plan", recommended: true, actions: [{tool: "plan_runner_job", args: {}, reason: "Prepare"}] }] }));
+  const result = projectPipeline(state([...old, active], cards), [{itemId:"active", status:"ready"}], false);
+  expect(at(result, "builder")).toMatchObject({state:"stuck", itemIds:["active"]});
+  expect(at(result, "planner").moveIds).toHaveLength(12);
+  expect(result.every(step => PipelineStep.safeParse(step).success)).toBe(true);
 });

@@ -4,7 +4,7 @@ import type { FactoryState, Item, Move } from "./model";
 export const PIPELINE_IDS = ["planner", "builder", "checks", "review", "gate", "launch"] as const;
 export const PIPELINE_REASONS = {
   no_work: "Waiting for work.", planning: "Reading the issue and preparing a plan.",
-  approval_required: "Review the plan before your agent builds.", building: "Your agent is building the approved change.",
+  plan_required: "Choose whether to prepare a plan for this issue.", approval_required: "Review the plan before your agent builds.", building: "Your agent is building the approved change.",
   runner_offline: "Reconnect your local agent to start the approved build.", build_failed: "The build needs attention.",
   checking: "Checking this PR's current revision.", checks_failed: "A check sent this change back for repair.",
   proof_required: "Current-revision verification is required before this change can advance.",
@@ -33,9 +33,9 @@ export function projectPipeline(state: Pick<FactoryState, "items" | "deck" | "mo
   const steps: PipelineStep[] = PIPELINE_IDS.map(id => ({ id, state: "idle", cause: "no_work", itemIds: [], moveIds: [] }));
   const mark = (id: StepId, status: PipelineStep["state"], cause: Cause, itemId?: string, moveId?: string) => {
     const step = steps.find(s => s.id === id)!;
-    if (rank[status] > rank[step.state]) { step.state = status; step.cause = cause; }
-    if (itemId && step.itemIds.length < 40 && !step.itemIds.includes(itemId)) step.itemIds.push(itemId);
-    if (moveId && !step.moveIds.includes(moveId)) step.moveIds.push(moveId);
+    if (rank[status] > rank[step.state]) { step.state = status; step.cause = cause; step.itemIds = []; }
+    if (itemId && status === step.state && step.itemIds.length < 40 && !step.itemIds.includes(itemId)) step.itemIds.push(itemId);
+    if (moveId && step.moveIds.length < 12 && !step.moveIds.includes(moveId)) step.moveIds.push(moveId);
   };
   const cards = state.deck ?? (state.move ? [state.move] : []);
   for (const item of state.items) {
@@ -47,7 +47,7 @@ export function projectPipeline(state: Pick<FactoryState, "items" | "deck" | "mo
     if (active?.status === "awaiting_approval") mark("planner", "waiting_player", "approval_required", item.id);
     if (active && ["ready", "running"].includes(active.status)) {
       mark("planner", "done", "complete", item.id);
-      mark("builder", active.status === "ready" && !runnerOnline ? "stuck" : "working", active.status === "ready" && !runnerOnline ? "runner_offline" : "building", item.id);
+      mark("builder", !runnerOnline ? "stuck" : "working", !runnerOnline ? "runner_offline" : "building", item.id);
     } else if (item.state === "working") mark("builder", "working", "building", item.id);
     if (failed && !item.prNumber) mark(failed.approvedAt ? "builder" : "planner", "stuck", "build_failed", item.id);
     const inspection = item.inspection;
@@ -71,7 +71,7 @@ export function projectPipeline(state: Pick<FactoryState, "items" | "deck" | "mo
     const approval = actions.find(a => a.tool === "approve_runner_job");
     if (approval && !jobs.some(j => j.id === approval.args.jobId && j.itemId === card.itemId && j.status === "awaiting_approval")) continue;
     const tools = actions.map(a => a.tool);
-    if (tools.some(t => ["plan_runner_job", "approve_runner_job"].includes(t))) mark("planner", "waiting_player", "approval_required", card.itemId, card.id);
+    if (tools.some(t => ["plan_runner_job", "approve_runner_job"].includes(t))) mark("planner", "waiting_player", approval ? "approval_required" : "plan_required", card.itemId, card.id);
     else if (tools.includes("request_merge")) {
       // A locked card explains missing proof; it cannot claim a ready launch.
       if (card.locked) mark("checks", "stuck", "proof_required", card.itemId, card.id);

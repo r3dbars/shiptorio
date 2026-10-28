@@ -477,6 +477,21 @@ describe("durable live check-in decisions", () => {
 });
 
 describe("runner approval survives concurrent deck selection changes", () => {
+  it("concurrent first-plan taps create and teach exactly one durable planning job", async () => {
+    const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
+    const move = card("plan-once", { kind: "build", stage: "build", itemId: item.id, options: [{ id: "codex", label: "Plan", recommended: true, actions: [{tool:"plan_runner_job", args:{harness:"codex"}, reason:"Prepare"}] }] });
+    const f = fixture([move], {items:[item]});
+    const internal = f.factory as any;
+    internal.runAccount = async () => "test-player";
+    internal.usage = async () => ({calls:0, tokens:0, limits:{calls:100,tokens:100000,disabled:false}});
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    internal.env.DB.prepare = (sql: string) => /SELECT runs_daily|SELECT count FROM signup_counters|SELECT runs FROM admin_user_limits/.test(sql) ? {bind:()=>({first:async()=>sql.startsWith("SELECT runs_daily") ? {runs_daily:20}:null})} : prepare(sql);
+    await f.checkin();
+    await Promise.all([f.send({type:"choose_move",moveId:move.id,optionId:"codex"}),f.send({type:"choose_move",moveId:move.id,optionId:"codex"})]);
+    const jobs = await f.factory.runnerJobs();
+    expect(jobs).toHaveLength(1); expect(jobs[0].status).toBe("planning");
+    expect(f.data.get("approvalEvents")).toHaveLength(1);
+  });
   it("replayed Approve commits one approval and one teaching event across reconnect", async () => {
     const { issueRevision } = await import("../src/runner-job");
     const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "Scoped", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
