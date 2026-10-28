@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#181211" />
+<title>Art bake-off: 2D vs 3D</title>
+<!-- dev only (thread "Pick 2D or 3D in an art bake-off"): one hard target per round, mockup | 2D code pixels | 3D tiny
+     render, same art grid and same whole-number scale. src/bakeoff/. ?t=1.2 freezes the clock for screenshots. -->
+<link rel="preload" href="/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin />
+<style>
+@font-face { font-family: "Silkscreen"; src: url("/fonts/silkscreen-400.woff2") format("woff2"); font-display: swap; }
+:root { color-scheme: dark; --bg: #181211; --panel: #291b17; --line: #0a0604; --trim: #6d370c; --fg: #eed3c5; --muted: #c0988e; --brass: #fdc727; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 16px max(16px, env(safe-area-inset-left)) 40px; }
+h1, h2 { font-family: Silkscreen, ui-monospace, monospace; font-weight: 400; color: var(--brass); margin: 0; letter-spacing: .03em; }
+h1 { font-size: 20px; }
+h2 { font-size: 15px; margin-top: 28px; }
+.lede, .why { color: var(--muted); max-width: 62ch; margin: 6px 0 12px; }
+.trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.panel { margin: 0; background: var(--panel); border: 2px solid var(--line); box-shadow: inset 0 0 0 1px var(--trim); padding: 8px; }
+.stage { display: flex; align-items: flex-end; justify-content: center; padding: 4px; background: #120c0b; }
+.stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+canvas.px { image-rendering: pixelated; display: block; }
+canvas.grab { cursor: grab; }
+canvas.grab:active { cursor: grabbing; }
+figcaption { display: grid; gap: 2px; margin-top: 8px; }
+figcaption b { font-family: Silkscreen, ui-monospace, monospace; font-weight: 400; font-size: 13px; }
+figcaption span { color: var(--muted); font-size: 12px; }
+.links { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
+.links a { font-family: Silkscreen, ui-monospace, monospace; color: var(--brass); text-decoration: none; display: inline-block; padding: 8px 0; }
+.links span { color: var(--muted); font-size: 12px; display: block; margin-top: -4px; }
+.mock { color: var(--fg); } .two { color: #fc8717; } .three { color: #41f3f7; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Art bake-off: 2D vs 3D</h1>
+  <p class="lede">Same target, same 48 colors, same pixel size. A is drawn pixel by pixel in code. B is real 3D geometry rendered tiny. Which one gets closer to the mockup?</p>
+  <div id="rounds"></div>
+  <h2>Play them</h2>
+  <ul class="links">
+    <li><a href="/deck.html?px=1">2D: the pixel deck</a> <span>the whole line, playable, same pixel density as A</span></li>
+    <li><a href="/deck3d.html">3D: the deck spike</a> <span>the whole deck in 3D, drag to look around</span></li>
+    <li><a href="/deck3d.html?focus=builder">3D: Builder close-up</a></li>
+    <li><a href="/stations.html">2D: all six stations</a> <span>every state, next to the mockups</span></li>
+  </ul>
+</main>
+<script type="module" src="/src/bakeoff/main.ts"></script>
+</body>
+</html>
