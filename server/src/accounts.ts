@@ -65,8 +65,17 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
   const row = await env.DB.prepare("SELECT u.id, u.login FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id_hash = ? AND s.user_id = ? AND s.expires_at > ?")
     .bind(await sha256(session.ref.sid), session.ref.uid, now)
     .first<{ id: number; login: string }>();
-  if (await authorizationRevoked(env.DB, session.login, session.issuedAt)) return null;
-  if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
+  // Both mutable policies are read afresh for this request. They are independent
+  // after the session lookup; overlap their D1 roundtrips without caching authority.
+  const [revoked, admitted] = await Promise.allSettled([
+    authorizationRevoked(env.DB, session.login, session.issuedAt),
+    row && !allowPending ? signupAllowed(env, row.login) : Promise.resolve(true),
+  ]);
+  // Preserve the original precedence: revocation denies even if admission failed.
+  if (revoked.status === "rejected") throw revoked.reason;
+  if (revoked.value || !row) return null;
+  if (admitted.status === "rejected") throw admitted.reason;
+  if (!admitted.value) return null;
   if (row.id < 0 && !testIdentityAllowed(env, row.id, row.login)) return null;
 
   return { id: row.id, login: row.login };
