@@ -399,3 +399,20 @@ test("the actual daily cap resets at midnight without erasing the previous day's
     expect(provider).toHaveBeenCalledTimes(2);
   } finally { clock?.mockRestore(); attempt.mockRestore(); provider.mockRestore(); }
 });
+
+test("parked plans stay parked under the kill switch, admin pause, or zero job capacity", async () => {
+  for (const stop of ['kill', 'admin', 'jobs'] as const) {
+    const { f, env, data } = await fixture();
+    await f.usage();
+    const job: RunnerJob = { id: 'parked', itemId: 'gh-1', repo: 'owner/repo', harness: 'codex', allowedPaths: ['src/cart.ts'], status: 'failed', branch: 'shiptorio/runner-parked' };
+    data.set('planningResume:parked', job);
+    if (stop === 'kill') env.SPARK_DISABLED = '1';
+    if (stop === 'jobs') env.FACTORY_CONCURRENT_JOBS = '0';
+    if (stop === 'admin') await env.DB.prepare("INSERT INTO admin_controls(scope,paused) VALUES('owner/repo',1)").run();
+    const methods = f as unknown as { planRunnerJobs(): Promise<void>; performRunnerPlan(job: RunnerJob): Promise<void> };
+    const attempt = spyOn(methods, 'performRunnerPlan');
+    try { await methods.planRunnerJobs(); expect(attempt).not.toHaveBeenCalled(); } finally { attempt.mockRestore(); }
+    expect(data.has('planningResume:parked')).toBe(true);
+    expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
+  }
+});

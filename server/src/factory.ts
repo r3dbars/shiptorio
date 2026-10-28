@@ -1121,13 +1121,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private async planRunnerJobs(): Promise<void> {
+    if (this.env.SPARK_DISABLED === "1" || await adminPaused(this.env.DB, this.meta?.repo)) return;
     const jobs = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
     let job = [...jobs.values()].find(j => j.status === "planning");
-    if (!job && ![...jobs.values()].some(j => ["ready", "running", "awaiting_approval"].includes(j.status))) {
+    if (!job && this.running.size < budgetLimits(this.env).jobs && ![...jobs.values()].some(j => ["ready", "running", "awaiting_approval"].includes(j.status))) {
       const parked = await this.ctx.storage.list<RunnerJob>({ prefix: "planningResume:" });
       for (const saved of parked.values()) {
         const item = this.state?.items.find(i => i.id === saved.itemId);
-        if (!item || item.priority === "park" || !["ore", "queued", "rejected"].includes(item.state) || await this.ctx.storage.get<number>(`runnerDeferred:${saved.itemId}`) === item.updatedAt) { await this.ctx.storage.delete(`planningResume:${saved.id}`); continue; }
+        if (!item || item.priority === "park" || !(saved.refreshBase ? ["on_pad", "passed", "inspecting", "rejected"] : ["ore", "queued", "rejected"]).includes(item.state) || await this.ctx.storage.get<number>(`runnerDeferred:${saved.itemId}`) === item.updatedAt) { await this.ctx.storage.delete(`planningResume:${saved.id}`); continue; }
         if (await this.plannerRest() || planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${saved.itemId}`))) continue;
         job = { ...saved, status: "planning", planningStarted: false, error: undefined, deadline: Date.now() + PLANNING_DEADLINE_MS };
         await this.accountPut(`runnerJob:${job.id}`, job);
@@ -2169,7 +2170,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     this.foreman(about.target ?? about.itemId, decision, true);
     try {
       const hold = await this.plannerRest();
-      if (hold && ["plan", "scope", "rank", "route"].includes(decision)) throw new Error("Planner resting");
+      if (hold && ["plan", "scope", "rank", "route", "diagnose"].includes(decision)) throw new Error("Planner resting");
       const out = await inTrace({ ...currentTrace(), requestId: currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta?.repo, itemId: about.itemId }, this.env, task => this.ctx.waitUntil(task), ask);
       const explanation = explain(out);
       if (this.env.DB && this.env.META_API_KEY) {

@@ -77,14 +77,14 @@ test("live deck, active move and reconnect snapshot all show the player's local 
     const retry = planningFailure(undefined, new Error('503'), now);
     const deck = plannerRestDeck([], retry, now);
     const expected = `Planner is resting until ${new Date(retry.retryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-    socket.onmessage!({ data: JSON.stringify({ type: 'deck', deck }) });
-    socket.onmessage!({ data: JSON.stringify({ type: 'move', move: deck[0] }) });
     const { FactoryState } = await import('@shiptorio/shared');
     const { starterLine } = await import('../src/engine');
     const state = FactoryState.parse({ repo: 'owner/repo', baseBranch: 'main', districts: [], ...starterLine(), items: [], science: { red: 0, green: 0, grey: 0, blue: 0 }, trust: 0.5, tick: 0, deck, move: deck[0] });
     socket.onmessage!({ data: JSON.stringify({ type: 'snapshot', state }) });
+    socket.onmessage!({ data: JSON.stringify({ type: 'deck', deck }) });
+    socket.onmessage!({ data: JSON.stringify({ type: 'move', move: deck[0] }) });
     expect(seen).toHaveLength(3);
-    const [update, move, snapshot] = seen as [{ deck: { title: string }[] }, { move: { title: string } }, { state: { deck: { title: string }[]; move: { title: string } } }];
+    const [snapshot, update, move] = seen as [{ state: { deck: { title: string }[]; move: { title: string } } }, { deck: { title: string }[] }, { move: { title: string } }];
     expect(update.deck[0].title).toBe(expected);
     expect(move.move.title).toBe(expected);
     expect(snapshot.state.deck[0].title).toBe(expected);
