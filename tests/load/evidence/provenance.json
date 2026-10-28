@@ -1,0 +1,53 @@
+{
+  "before": {
+    "build": {
+      "commit": "0136070464639630ec755355fb15ebcbc4c34f4e"
+    },
+    "workerVersionBeforeCleanup": "6a640c29-3f52-4fe2-8f37-356ff5d34ee6",
+    "observationWindow": [
+      "2026-10-27T20:21:50.341Z",
+      "2026-10-27T20:31:58.832Z"
+    ],
+    "initialAndFinalSockets": {
+      "judgeHttpViewers": 200,
+      "supplementalLiveObservers": 200,
+      "signedInFactorySockets": 50,
+      "connectedSnapshots": 57,
+      "openAtEnd": 0,
+      "unexpectedCloses": 57
+    },
+    "admissionIncludedAnalytics": true
+  },
+  "after": {
+    "build": {
+      "commit": "ed5b9fd4bd8141c473013d9886aaa5ad5d287dd0"
+    },
+    "workerVersionBeforeCleanup": "8bd5692a-44fb-42d7-a5bd-36d0bcd09fda",
+    "observationWindow": [
+      "2026-10-27T20:39:17.743Z",
+      "2026-10-27T20:49:17.751Z"
+    ],
+    "initialAndFinalSockets": {
+      "judgeHttpViewers": 200,
+      "supplementalLiveObservers": 200,
+      "signedInFactorySockets": 50,
+      "connectedSnapshots": 0,
+      "openAtEnd": 0,
+      "unexpectedCloses": 0
+    },
+    "admissionIncludedAnalytics": true
+  },
+  "scope": {
+    "origin": "https://shiptorio.dev",
+    "worker": "shiptorio-staging",
+    "namespace": "187f0a43e43d4e869e501e5192eec961",
+    "database": "82bf6646-ed06-4c4d-94c3-c9b747940a7e",
+    "productionTouched": false
+  },
+  "caveats": [
+    "Before grant-renewal helper stopped after20:23:36 successful renewal; all baseline clients had already closed by20:22. Renewal failure is retained, not hidden.",
+    "Candidate uses fresh disposable repo ID900000002 rather than900000001; controller/grant-health instrumentation evolved. This is a failed attempt comparison, not a clean claimed speedup.",
+    "After grants and source/auth-epoch checks stayed healthy. All250 handshakes failed within15s, so no fan-out percentile can be estimated.",
+    "Quiet baseline produced no metric rows; it is unavailable rather than zero."
+  ]
+}

@@ -643,3 +643,10 @@ only moves on a `dev → main` promotion, which runs the full suite and gets the
 - 2026-10-28 — Codex: #371 rebased onto dev, retaining admin stops, explicit base-refresh provenance, native model JSON formats and websocket sequence guards. Raised call/token/spend caps resume parked plans without refunding ambiguous paid calls; focused stop/quota/recovery tests cover the new dev integration.
 
 Retains production-disabled negative-ID identities and scoped fixture delegation while preserving current administrator controls and request redaction. The bot workflow now pins existing reviewed action SHAs and disables persisted checkout credentials. No fixture resources or configuration were changed. Local proof and exact-head dev CI are required before merge.
+## Hosted burst-load proof (Codex, 2026-10-27)
+
+Day 2 reliability: added a staging-only ten-minute HTTP/socket harness and production-target guards. Staging health passes but public `/judge` and `/api/version` return 401; signed-in staging fixtures/Cloudflare analytics are unavailable. No load acceptance or measured bottleneck fix claimed. Evidence and resume requirements: [reliability.md](reliability.md).
+
+## Hosted staging load follow-up (Codex, 2026-10-27)
+
+Provisioned scoped staging fixtures/analytics, restored public judge/version, and retained failed supplemental 250-socket stress receipts. Corrected the harness default to the actual 200 judge HTTP/sim + 50 factory-socket product profile; that isolated profile remains unmeasured and no acceptance verdict is claimed. #372 stays draft/out of batches. Local full check: 953 pass; staging lease returned and owned sessions/setup token revoked by 20:50 UTC. Details: [reliability.md](reliability.md).
