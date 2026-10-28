@@ -145,7 +145,7 @@ export class FirstRunLight {
       const mats = (o as THREE.Mesh).material;
       if (!mats) return;
       for (const m of Array.isArray(mats) ? mats : [mats]) {
-        if (seen.has(m) || (m as THREE.ShaderMaterial).isShaderMaterial || m.userData.firstRun) continue;
+        if (seen.has(m) || ((m as THREE.ShaderMaterial).isShaderMaterial && !m.userData.recoveryVisibility) || m.userData.firstRun) continue;
         seen.add(m);
         m.userData.firstRun = true;
         const tags = hide;

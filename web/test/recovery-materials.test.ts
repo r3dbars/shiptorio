@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import * as THREE from "three";
+import { FirstRunLight } from "../src/map/shaft/firstRun";
 import { RecoveryMaterials } from "../src/map/shaft/recoveryMaterials";
 
 const mesh = (m = new THREE.MeshPhongMaterial({ color: 0x987654 })) => new THREE.Mesh(new THREE.BoxGeometry(), m);
@@ -47,13 +48,13 @@ test("temporary materials preserve maps, alpha, depth, clipping, custom hooks an
   const object = new THREE.SkinnedMesh(new THREE.BoxGeometry(), material), root = new THREE.Group(); root.add(object);
   const geometry = object.geometry;
   const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
-  const basic = object.material as unknown as THREE.MeshBasicMaterial;
-  expect(basic.map).toBe(map); expect(basic.alphaMap).toBe(map);
-  expect(basic.opacity).toBe(0.4); expect(basic.alphaTest).toBe(0.2);
-  expect(basic.vertexColors).toBe(true); expect(basic.depthWrite).toBe(false); expect(basic.side).toBe(THREE.DoubleSide);
-  expect(basic.clippingPlanes).toEqual(material.clippingPlanes);
-  expect(basic.onBeforeCompile).toBe(material.onBeforeCompile);
-  expect(basic.customProgramCacheKey()).toBe("custom-visibility|recovery-basic");
+  const basic = object.material as unknown as THREE.ShaderMaterial;
+  expect(basic.uniforms.map.value).toBe(map); expect(basic.uniforms.alphaMap.value).toBe(map);
+  expect(basic.uniforms.opacity.value).toBe(0.4); expect(basic.uniforms.alphaTest.value).toBe(0.2);
+  expect(basic.uniforms.recoveryVertexColor.value).toBe(1); expect(basic.depthWrite).toBe(false); expect(basic.side).toBe(THREE.DoubleSide);
+  expect(basic.clippingPlanes).toEqual(material.clippingPlanes); expect(basic.clipping).toBe(true);
+  expect(basic.onBeforeCompile).not.toBe(material.onBeforeCompile);
+  expect(material.customProgramCacheKey()).toBe("custom-visibility");
   expect(object.geometry).toBe(geometry);
   recovery.cancel(); expect(object.material).toBe(material);
 });
@@ -86,4 +87,58 @@ test("sprites and line materials are left with their own shader programs", () =>
   const a = sprite.material, b = line.material, recovery = new RecoveryMaterials();
   recovery.begin(root); recovery.prepare(); recovery.advance(); recovery.prepare(); recovery.advance(); recovery.prepare(); recovery.advance();
   expect(sprite.material).toBe(a); expect(line.material).toBe(b); expect(recovery.active).toBe(false);
+});
+
+test("temporary visibility uses the real FirstRun shader while original hooks remain unchanged", () => {
+  const root = new THREE.Group(), object = mesh(); root.add(object);
+  const original = object.material, hook = original.onBeforeCompile;
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  const light = new FirstRunLight(); light.set(1, true); light.patch(root, true);
+  const shader = { uniforms: {}, vertexShader: "#include <common>\n#include <project_vertex>", fragmentShader: "#include <common>\n#include <clipping_planes_fragment>\n#include <tonemapping_fragment>" };
+  object.material.onBeforeCompile(shader as never, {} as THREE.WebGLRenderer);
+  expect(shader.vertexShader).toContain("frPiece");
+  expect(shader.fragmentShader).toContain("if (vFrGone > 0.5) discard");
+  expect(shader.fragmentShader).toContain("frShade");
+  expect(original.onBeforeCompile).toBe(hook);
+  recovery.cancel(); expect(object.material).toBe(original);
+});
+
+test("cheap-frame shader family is shared across map/color/alpha switches", () => {
+  const root = new THREE.Group(), a = mesh(), b = mesh(new THREE.MeshPhongMaterial({ map: new THREE.Texture(), alphaTest: 0.3, vertexColors: true })); root.add(a, b);
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  const one = a.material as unknown as THREE.ShaderMaterial, two = b.material as unknown as THREE.ShaderMaterial;
+  expect(one.vertexShader).toBe(two.vertexShader); expect(one.fragmentShader).toBe(two.fragmentShader);
+  expect(one.defines).toEqual(two.defines); expect(one.alphaTest).toBe(0); expect(two.alphaTest).toBe(0);
+  expect(two.uniforms.alphaTest.value).toBe(0.3); expect(one.uniforms.map.value).not.toBeNull();
+  recovery.cancel();
+});
+
+test("materials with special environment or displacement geometry are not approximated", () => {
+  const material = new THREE.MeshPhongMaterial({ displacementMap: new THREE.Texture() });
+  const object = mesh(material), root = new THREE.Group(); root.add(object);
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  expect(object.material).toBe(material); recovery.cancel();
+});
+
+test("only wholly unlit recovery draws defer shadows and restore flags even on throw", () => {
+  const root = new THREE.Group(), object = mesh(); root.add(object);
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  const shadow = { enabled: true, needsUpdate: true, autoUpdate: true };
+  const renderer = { shadowMap: shadow } as unknown as Pick<THREE.WebGLRenderer, "shadowMap">;
+  expect(() => recovery.render(renderer, () => {
+    expect(shadow.enabled).toBe(true); expect(shadow.needsUpdate).toBe(false); expect(shadow.autoUpdate).toBe(false);
+    throw new Error("draw failed");
+  })).toThrow("draw failed");
+  expect(shadow).toEqual({ enabled: true, needsUpdate: true, autoUpdate: true });
+  recovery.advance(); recovery.prepare(); recovery.advance(); recovery.prepare();
+  recovery.render(renderer, () => expect(shadow.needsUpdate).toBe(true));
+  recovery.cancel();
+});
+
+test("unsupported custom lit programs keep their shadow update during recovery", () => {
+  const root = new THREE.Group(); root.add(mesh(), new THREE.Mesh(new THREE.BoxGeometry(), new THREE.ShaderMaterial({ lights: true })));
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  const shadow = { enabled: true, needsUpdate: true, autoUpdate: false };
+  recovery.render({ shadowMap: shadow } as unknown as Pick<THREE.WebGLRenderer, "shadowMap">, () => expect(shadow.needsUpdate).toBe(true));
+  recovery.cancel();
 });

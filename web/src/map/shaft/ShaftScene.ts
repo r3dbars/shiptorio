@@ -650,7 +650,7 @@ export class ShaftScene {
     // yields while a native hold is active; simulation and camera still step.
     submitWhenUnheld(() => {
       this.gpu.submit(() => {
-        if (this.recovery.active) { this.recovery.prepare(); this.governor.poke(); }
+        if (this.recovery.active) { this.recovery.prepare(); this.firstRun.patch(stage.root, !!this.bo && !this.bo.complete); this.governor.poke(); }
         // Only sustained severe-device evidence selects the smaller internal
         // scene target. Canvas/DOM size, camera, shadows and explicit pins stay put.
         if (this.governor.severe) stage.pixel = 2;
@@ -662,7 +662,7 @@ export class ShaftScene {
           this.warmPending = false;
           this.bo.precompile((holders) => this.warm(stage, holders));
         }
-        stage.render(this.renderer);
+        this.recovery.render(this.renderer, () => stage.render(this.renderer));
         this.recovery.advance();
         perf.recovery(this.recovery.active, this.recovery.pending, this.recovery.epoch);
         perf.dimensions({
