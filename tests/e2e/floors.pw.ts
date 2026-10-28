@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { assertFloorChronology, floorStartsBeforeNextTrigger, RISES_AFTER } from '../contract/floor-events';
 import { assertBuildEventPrefix, type BuildEvent } from '../contract/buildout-events';
+import { observeManualLaunch, type LaunchObservation } from '../contract/launch-observation';
 
 // Floating-city art pass, slice 10 (web/src/map/shaft/modules/growth.js): under ?buildout=1&artpass=1 the island
 // starts as the rock and its boarded tunnel, and each floor goes up just before the build that sits on it: the build
@@ -27,8 +28,9 @@ const built = async (page: Page, id: string, phase = 'done') => (await events(pa
 
 // Hold from the keyboard (Space on the focused button): the same consent path as a pointer hold (holdLaunch.ts),
 // and it doesn't depend on pointer capture under software WebGL.
-async function hold(page: Page, button: ReturnType<Page['locator']>, until: () => Promise<boolean>) {
+async function hold(page: Page, button: ReturnType<Page['locator']>, until: () => Promise<boolean>, beforePress?: () => Promise<void>) {
   await button.focus();
+  await beforePress?.();
   await page.keyboard.down('Space');
   try { await expect.poll(until, { timeout: 20_000 }).toBe(true); } // software WebGL can run a few frames a second
   finally { await page.keyboard.up('Space'); }
@@ -49,6 +51,7 @@ test.describe('floors grow with the build-as-you-go run', () => {
 
   test('dark to rocket: each floor rises right before the build that sits on it', async ({ page }, info) => {
     const errors: string[] = [];
+    let launchCard: LaunchObservation | undefined;
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     await watch(page);
@@ -72,7 +75,9 @@ test.describe('floors grow with the build-as-you-go run', () => {
         await expect(action.first(), `${id} has an action`).toBeVisible();
         const kind = await action.first().getAttribute('data-buildout-action');
         const moved = async () => (await built(page, id, 'start')) || (await root.getAttribute('data-step')) !== id;
-        if (kind === 'hold' || (await action.first().getAttribute('class'))?.includes('bo-hold')) await hold(page, action.first(), moved);
+        if (id === 'launch') await expect(action.first()).toHaveAttribute('data-buildout-action', 'hold');
+        if (kind === 'hold' || (await action.first().getAttribute('class'))?.includes('bo-hold')) await hold(page, action.first(), moved,
+          id === 'launch' ? async () => { launchCard = await observeManualLaunch(page); } : undefined);
         else await action.first().click();
       }
       await expect.poll(() => built(page, id), { timeout: 90_000, message: `${id} finishes` }).toBe(true);
@@ -105,7 +110,8 @@ test.describe('floors grow with the build-as-you-go run', () => {
       const start = ev.find(e => e.kind === 'floor' && e.phase === 'start' && e.floor === floor)!.at;
       expect(start, `${floor} after ${after}`).toBeGreaterThanOrEqual(done);
     }
-    await expect(page.locator('.ship-cel').first()).toBeVisible({ timeout: 30_000 });
+    expect(launchCard, 'the manual Launch press started its actual-card visibility check').toBeDefined();
+    await launchCard!();
     await shot('floors-09-rocket.png');
     expect(errors).toEqual([]);
   });
