@@ -20,8 +20,9 @@ import "./TaskTray.css";
 const SWIPE_PX = 70;
 const LAUNCH_SHARE = 0.55; // a launch swipe has to cross over half the card
 const ASK_MS = 12000; // how long the optional "why" waits after a never before it goes as a plain never
-const RIDE_MS = 8000;
-const SHIP_MS = 3500; // after a launch the tray holds the "Shipped" card and the camera rides the rocket this long // following the work: how long the camera rides one item before it moves on to the next
+const RIDE_MS = 8000; // following the work: how long the camera rides one item before it moves on to the next
+const SHIP_MS = 3500; // once the server says a launch shipped, the tray holds the "Shipped" card this long
+const LAUNCH_WAIT_MS = 30000; // a launch the server never confirms stops waiting after this, and its card comes back
 const WENT_KEY = "shiptorio:simple-went"; // set on the first Continue: until then the Go tab glows
 
 type Never = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -92,13 +93,25 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, items, nudg
   const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answeredHere = useRef(false);
   const [touched, setTouched] = useState(false); // answered anything this visit: only then is it "all caught up"
-  // a launch you just let go: its moment holds the tray for a few seconds while the camera rides it up
-  const [shipped, setShipped] = useState<Move | null>(null);
+  // A launch you just let go holds the tray, with the camera on it, as "Launching" until the server's own item state
+  // says it shipped; only then does it say "Shipped" for a few seconds. A launch that bounces (the item goes anywhere
+  // but launched, or nothing is confirmed in time) clears quietly and its card can come back.
+  const [launching, setLaunching] = useState<{ move: Move; shipped: boolean } | null>(null);
+  const launchItem = launching?.move.itemId ? items?.find((it) => it.id === launching.move.itemId) : undefined;
   useEffect(() => {
-    if (!shipped) return;
-    const t = setTimeout(() => setShipped(null), SHIP_MS);
+    if (!launching || launching.shipped) return;
+    if (launchItem?.state === "launched") setLaunching({ ...launching, shipped: true });
+    else if (launchItem && launchItem.state !== "on_pad" && launchItem.state !== "passed") bounce(launching.move);
+  }, [launching, launchItem?.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!launching) return;
+    const t = setTimeout(() => (launching.shipped ? setLaunching(null) : bounce(launching.move)), launching.shipped ? SHIP_MS : LAUNCH_WAIT_MS);
     return () => clearTimeout(t);
-  }, [shipped]);
+  }, [launching]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bounce = (move: Move) => {
+    setLaunching(null);
+    setGone((g) => { const n = new Set(g); n.delete(move.id); return n; }); // if the server still deals it, it shows again
+  };
   // all caught up: the work in flight, and which one the camera is riding (null = not following)
   const said = useRef<string | null>(null); // the item your last yes was about, so the ride starts there
   const flight = moving(items, said.current);
@@ -120,10 +133,10 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, items, nudg
   }, [deck, gone]);
   useEffect(() => setOpen(false), [card?.id]);
   // the camera follows the card; with no card it goes back to where the player was
-  const focus = shipped ? (shipped.itemId ? `item:${shipped.itemId}` : shipped.focus ?? null) : card ? (card.focus ?? null) : ride ? `item:${ride.id}` : null;
+  const focus = launching ? (launching.move.itemId ? `item:${launching.move.itemId}` : launching.move.focus ?? null) : card ? (card.focus ?? null) : ride ? `item:${ride.id}` : null;
   const onFocusRef = useRef(onFocus);
   onFocusRef.current = onFocus;
-  useEffect(() => onFocusRef.current(focus), [focus, card?.id, shipped?.id]);
+  useEffect(() => onFocusRef.current(focus), [focus, card?.id, launching?.move.id]);
   useEffect(() => () => onFocusRef.current(null), []);
   // answering the last card zooms out on everything that's moving (journey round 3, pick 8)
   const left = tasks.length;
@@ -181,7 +194,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, items, nudg
     if (onPower && plugsInAgent(option)) return onPower();
     said.current = move.itemId ?? null;
     answered(move);
-    if (isLaunch(move)) setShipped(move);
+    if (isLaunch(move)) setLaunching({ move, shipped: false });
     openUnlockLink(move, option);
     send({ type: "choose_move", moveId: move.id, optionId: option.id });
   };
@@ -197,7 +210,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, items, nudg
     </div>
   );
 
-  if (shipped) return <Shipped move={shipped} ask={ask} />;
+  if (launching) return <Shipped move={launching.move} shipped={launching.shipped} ask={ask} />;
   if (!card && ride) return <Riding item={ride} at={riding} of={flight.length} hop={hop} stop={() => setRideId(null)} />;
   if (!card && (flight.length || parkedHere) && (touched || !nudge)) {
     // all caught up: follow what's in flight through the factory (round 3 pick 8), and bring back what you parked
@@ -418,14 +431,15 @@ function Riding({ item, at, of, hop, stop }: { item: Item; at: number; of: numbe
   );
 }
 
-/** The moment after a launch: the tray holds this while the camera rides the rocket up, then the next card comes in. */
-function Shipped({ move, ask }: { move: Move; ask: ReactNode }) {
+/** The moment after a launch: "Launching" until the server confirms it shipped, then "Shipped"; the next card waits. */
+function Shipped({ move, shipped, ask }: { move: Move; shipped: boolean; ask: ReactNode }) {
+  const word = shipped ? TASKS.shipped : TASKS.launching;
   return (
-    <div className="needs tasktray" role="region" aria-label={TASKS.shipped}>
+    <div className="needs tasktray" role="region" aria-label={word}>
       {ask}
-      <section className="acard approve task shipped" aria-live="polite">
+      <section className={`acard approve task ${shipped ? "shipped" : "launching"}`} aria-live="polite">
         <div className="abody">
-          <div className="atop"><b>{TASKS.shipped}</b></div>
+          <div className="atop"><b>{word}</b></div>
           <span className="att">{move.title}</span>
         </div>
       </section>
