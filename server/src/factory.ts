@@ -344,6 +344,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   // instance publishes its first deck/move, and each new socket still gets a snapshot.
   private publishedDeck?: string;
   private publishedMove?: string;
+  private publishedDecisionPolicy?: number;
 
   private async refreshDecisions() {
     if (!this.state || !this.meta || this.batchingDecisions) return;
@@ -418,6 +419,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // Unchanged decisions need no new transport frame. Every frame we do publish
     // retains broadcast's fresh session/membership checks; tick and queue telemetry
     // keep flowing even when the cards are unchanged.
+    const policyRevision = this.redactor.policyRevision;
+    if (policyRevision !== this.publishedDecisionPolicy) {
+      this.publishedDeck = undefined;
+      this.publishedMove = undefined;
+    }
     const deckPayload = JSON.stringify(deck), movePayload = JSON.stringify(s.move);
     if (deckPayload !== this.publishedDeck) {
       this.broadcast({ type: "deck", deck });
@@ -426,6 +432,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (s.move && movePayload !== this.publishedMove) this.broadcast({ type: "move", move: s.move });
     else if (!s.move && previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
     this.publishedMove = movePayload;
+    this.publishedDecisionPolicy = policyRevision;
   }
 
   // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------

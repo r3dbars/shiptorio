@@ -448,3 +448,6 @@ publication and every new socket's full snapshot remain; tick/bottleneck telemet
 continues. Every actual frame still revalidates the session and repository access.
 This removes duplicate publication work rather than caching authorization or changing
 load budgets. CI profile timing is sampled evidence, not billed production CPU.
+A newly registered redaction secret invalidates those publication stamps through a
+per-instance monotonic policy revision, so the same raw card is sent again with the
+new scrubbing policy. Registering the same secret twice does not trigger new frames.

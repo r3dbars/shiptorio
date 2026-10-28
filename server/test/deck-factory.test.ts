@@ -125,6 +125,26 @@ describe("durable live check-in decisions", () => {
     expect(closed).toBe(1);
   });
 
+  it("republishes unchanged cards under newly learned redaction policy without churning on duplicate registration", async () => {
+    const credential = "opaque provider credential 雪";
+    const f = fixture([card("first", { why: `Evidence includes ${credential}` })]);
+    await f.checkin();
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { why: `Evidence includes ${credential}` } });
+    const internal = f.factory as unknown as { redactor: { register(value: unknown): void }; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void> };
+    internal.redactor.register({ ACCESS_TOKEN: credential });
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+    expect(f.events.find(e => e.type === "deck")).toMatchObject({ deck: [{ why: "Evidence includes [REDACTED]" }] });
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { why: "Evidence includes [REDACTED]" } });
+    internal.redactor.register({ ACCESS_TOKEN: credential });
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]);
+  });
+
   it("returns an authorized handshake while another session frame authorization is held", async () => {
     const f = fixture([]);
     await f.factory.exportState();

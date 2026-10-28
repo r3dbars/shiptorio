@@ -53,6 +53,9 @@ export class Redactor {
   // Instance-local FIFO: <=128 pairs of <=256 UTF-16 units each, so <=128 KiB
   // of string payload plus Map overhead. Long/unbounded input is never retained.
   private shortText = new Map<string, string>();
+  // Registration only adds secrets. Consumers caching sanitized publications can
+  // invalidate in O(1) without seeing any credential or its prepared variants.
+  get policyRevision(): number { return this.secrets.size; }
   private addSecret(value: string): void {
     if (this.secrets.has(value)) return;
     this.secrets.add(value);
