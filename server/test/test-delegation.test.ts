@@ -18,3 +18,11 @@ test("delegation rejects production, other repos, runner writes, positive identi
   expect(delegateTestRequest(new Request(path), { ...user, id: 42 }, key)).rejects.toThrow();
   expect(delegateTestRequest(new Request(path, { method: "POST", body: "x".repeat(65537) }), user, key)).rejects.toThrow();
 });
+test("tester overview is a signed staging GET only", async () => {
+  const url = "https://shiptorio.dev/api/empire";
+  const delegated = await delegateTestRequest(new Request(url), user, key, 1000);
+  expect(await verifyTestDelegation(delegated, key, 1001)).toBe(user.login);
+  for (const request of [new Request(url, { method: "POST" }), new Request(url + "?repo=r3dbars/shiptorio"), new Request(url.replace(".dev", ".com"))]) {
+    expect(delegateTestRequest(request, user, key)).rejects.toThrow();
+  }
+});

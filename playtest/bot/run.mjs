@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { resolve, join } from "node:path";
 import { safeReportFailure, safeReportValue } from "./safe-report.mjs";
 import { localFactory } from "./local.mjs";
+import { playerAction } from "./player-action.mjs";
 const args = process.argv.slice(2).filter(x => x !== "--");
 const option = (key, fallback) => { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; };
 const persona = option("--persona", "test-newbie");
@@ -28,14 +29,20 @@ try {
     lastPage = page;
     page.setDefaultTimeout(60000);
     const seenItems = new Map();
+    let contextLaunched = false, confirmLaunch;
+    const launchConfirmed = new Promise(resolve => { confirmLaunch = resolve; });
     page.on("websocket", socket => socket.on("framereceived", frame => {
       try {
         const event = JSON.parse(String(frame.payload));
         const items = event.type === "snapshot" ? event.state?.items : event.type === "patch" ? event.patch?.items : [];
         for (const item of items ?? []) {
-          if (item.state === "launched" && seenItems.has(item.id) && seenItems.get(item.id) !== "launched") observedLaunch = true;
+          if (item.state === "launched") {
+            contextLaunched = true;
+            if (seenItems.has(item.id) && seenItems.get(item.id) !== "launched") observedLaunch = true;
+          }
           seenItems.set(item.id, item.state);
         }
+        if (observedLaunch && contextLaunched) confirmLaunch();
       } catch { /* Non-JSON heartbeat frames have no game state. */ }
     }));
     let admitted = false;
@@ -83,7 +90,7 @@ try {
     const deadline = Date.now() + Number(option("--duration", "180")) * 1000;
     while (Date.now() < deadline) {
       const text = await page.locator("body").innerText();
-      if (observedLaunch && new URL(page.url()).searchParams.has("repo")) { await capture("launch-confirmed-over-socket"); break; }
+      if (observedLaunch && contextLaunched && new URL(page.url()).searchParams.has("repo")) { await capture("launch-confirmed-over-socket"); break; }
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
@@ -96,6 +103,8 @@ try {
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
       const checkin = page.getByRole("button", { name: /^Check in/i });
       const menu = page.getByRole("button", { name: /^Menu:/ });
+      let stuck = false;
+      const completed = await playerAction(async () => {
       if (await visible(launch)) {
         await launch.first().focus(); await page.keyboard.down("Space"); await page.waitForTimeout(1000); await page.keyboard.up("Space"); await capture("held-launch");
       } else if (await visible(play)) { await play.first().click(); await capture("play"); }
@@ -116,7 +125,10 @@ try {
       else if (await visible(later)) { await later.first().click(); await capture("later"); }
       else if (await visible(checkin) && await checkin.first().isEnabled()) { friction(`${width}px: no direct card action was visible; opened Check in to find waiting work`); await checkin.first().click(); await capture("open-check-in"); }
       else if (await visible(menu) && await menu.first().getAttribute("aria-expanded") === "false") { friction(`${width}px: opened Menu to find the next player action`); await menu.first().click(); await capture("open-menu"); }
-      else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); break; }
+      else if (Date.now() - lastChange > 60_000) { failures.push(`Stuck for 60 seconds at ${width}px: ${text.slice(0, 500)}`); await capture("stuck"); stuck = true; }
+      }, launchConfirmed);
+      if (completed) { await capture("launch-confirmed-over-socket"); break; }
+      if (stuck) break;
       await page.waitForTimeout(1000);
     }
     await capture("final"); await context.close();

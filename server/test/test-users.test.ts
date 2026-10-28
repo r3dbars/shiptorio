@@ -5,6 +5,7 @@ import { currentUser, createSession, readProgress } from "../src/accounts";
 import { makeSessionCookie } from "../src/session";
 import { personaSnapshot } from "../../playtest/bot/personas";
 import { TEST_PERSONAS, personaId, seedTestUser, testUserRoutes, testUsersEnabled } from "../src/test-users";
+import { verifyTestDelegation } from "../src/test-delegation";
 
 const fixture = () => {
   const env = { DB: testD1(), SESSION_SECRET: "test-session-secret", APP_PASSWORD: "test-preview", ALLOWED_LOGINS: "", TEST_USERS: "on", PUBLIC_URL: "http://localhost:8787" };
@@ -109,4 +110,25 @@ test("explicit reset is production-disabled and bound to the signed tester and s
   expect(calls).toBe(0);
   expect((await f.app.request("https://shiptorio.dev/test/reset",{method:"POST",headers:{cookie,origin:"https://shiptorio.dev"}},env)).status).toBe(200);
   expect(calls).toBe(1);
+});
+
+test("tester overview uses only the private fixture and rejects mutations and repo overrides", async () => {
+  const f = fixture(); await seedTestUser(f.env, "test-midgame");
+  const cookie = (await createSession(f.env, { id: personaId("test-midgame"), login: "test-midgame" }, "test")).split(";")[0] + "; " + await preview();
+  expect((await f.app.request("http://localhost:8787/api/empire", { headers: { cookie } }, f.env)).status).toBe(503);
+  const key = "e".repeat(64); let calls = 0;
+  const env = { ...f.env, PUBLIC_URL: "https://shiptorio.dev", TEST_FACTORY_KEY: key, TEST_FACTORY: { fetch: async (request: Request) => {
+    calls++;
+    expect(request.headers.has("cookie")).toBe(false);
+    expect(await verifyTestDelegation(request, key)).toBe("test-midgame");
+    return Response.json({ islands: [{ repo: "test-fixture/test-midgame" }] });
+  } } };
+  const response = await f.app.request("https://shiptorio.dev/api/empire", { headers: { cookie } }, env);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ islands: [{ repo: "test-fixture/test-midgame" }] });
+  for (const [url, method] of [["https://shiptorio.dev/api/empire", "POST"], ["https://shiptorio.dev/api/empire?repo=r3dbars/shiptorio", "GET"]]) {
+    expect((await f.app.request(url!, { method, headers: { cookie, origin: "https://shiptorio.dev" } }, env)).status).toBe(403);
+  }
+  expect((await f.app.request("https://shiptorio.com/api/empire", { headers: { cookie } }, env)).status).toBe(404);
+  expect(calls).toBe(1); expect(f.calls()).toBe(0);
 });
