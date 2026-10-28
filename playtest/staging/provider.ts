@@ -1,5 +1,6 @@
 // Dedicated fixture deployment only. Provider traffic never falls through to the network.
 import { DurableObject } from "cloudflare:workers";
+import { fixtureBusyResponse, type ResetBlocker } from "./reset-busy";
 import { app } from "../../server/src/index";
 import { ISOLATED_TEST_CONTEXT } from "../../server/src/test-delegation";
 import { requireUser } from "../../server/src/authorization";
@@ -138,7 +139,17 @@ export class FixtureRuntime {
     if (this.record!.resetLocked && !this.resetting) return json({ reset: true });
     const runner = this.currentRunner();
     if (this.resetting || this.activeRequests || Object.keys(this.record!.requestLeases ?? {}).length || this.ticking || this.pairing || runner?.pending && runner.until > Date.now()) {
-      return json({ error: "Fixture work is still active; retry reset after it settles" }, 409);
+      const leases = Object.values(this.record!.requestLeases ?? {});
+      const blockers: ResetBlocker[] = [];
+      if (this.resetting) blockers.push("resetting");
+      if (this.activeRequests) blockers.push("provider_requests");
+      if (leases.length) blockers.push("request_leases");
+      if (this.ticking) blockers.push("runner_tick");
+      if (this.pairing) blockers.push("runner_pairing");
+      if (runner?.pending && runner.until > Date.now()) blockers.push("runner_receipt");
+      // Latest bounded lease expiry, not a promise that transient work is finished.
+      const until = leases.reduce((latest, expiry) => Math.max(latest, expiry), Math.max(Date.now(), runner?.pending ? runner.until : 0));
+      return fixtureBusyResponse(blockers, this.activeRequests, leases.length, until - Date.now());
     }
     this.resetting = true;
     try {
