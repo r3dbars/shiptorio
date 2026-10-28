@@ -96,12 +96,20 @@ export const checks: StationDef = {
     g.rect(17, 40, 16, 5, "iron-1"); g.box(17, 40, 16, 5, "brass-1"); g.hline(17, 40, 16, "brass-2");
     for (let i = 0; i < 3; i++) {
       const bx = 20 + i * 5, hot = s === "working" ? i === f % 3 : s !== "idle";
-      for (let y = 41; y <= 43; y++) for (let x = bx; x <= bx + 2; x++) tone(g, x, y, s === "idle" || (s === "working" && !hot) ? LIT.idle : lit, 0.5 + (x - bx) * 0.12 - (y - 42) * 0.12 + (hot ? 0.15 : 0));
+      g.set(bx - 1, 43, "soot"); g.set(bx + 3, 41, "brass-3"); // a little socket under each round button
+      ball(g, bx + 1.5, 42.5, 1.7, s === "idle" || (s === "working" && !hot) ? LIT.idle : lit, { amb: hot ? 0.35 : 0.2 });
       if (hot && glow) g.glowDisc(bx + 1.5, 42.5, 3, glow, 0.25, [bx, 41, 3, 3]);
     }
 
     // --- feet
-    for (const fx of [12, 31]) { strap(g, fx, 45, 7, 2, BRASS, 3); cylH(g, fx, 47, 7, 2, BRASS, { amb: 0.15 }); }
+    // chunky iron corner blocks, brass capped, like the mockup's
+    for (const fx of [10, 30]) {
+      drop(g, fx, 44, 9, 4);
+      face(g, fx, 44, 9, 4, IRON, 0.4, { seed: fx, grime: 1 });
+      strap(g, fx, 44, 9, 1, BRASS, 0, false); g.vline(fx + 8, 45, 3, "iron-3");
+      rivet(g, fx + 1, 46); rivet(g, fx + 6, 46);
+      cylH(g, fx + 1, 48, 7, 1, BRASS, { amb: 0.15 });
+    }
 
     raw.outline();
     if (s === "jammed") smoke(g, 33, 8, f / 8, true);

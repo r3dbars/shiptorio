@@ -1,4 +1,21 @@
-import { IDX, RGB, type Color } from "./palette";
+import { IDX, NAMES, RGB, type Color } from "./palette";
+
+// Edge light: the rim of a shape that faces the sun (up or right, open to the sky) is one step lighter along its
+// material's ramp, the rim facing away one step darker. It is what makes a flat sprite read as a lit solid.
+const CHAINS: Color[][] = [
+  ["soot", "iron-0", "iron-1", "iron-2", "iron-3", "iron-4", "haze-2"],
+  ["steel-0", "steel-1", "steel-2", "steel-3"],
+  ["brass-0", "brass-1", "brass-2", "brass-3", "brass-4", "brass-5"],
+  ["copper-0", "copper-1", "copper-2", "copper-3"],
+  ["plate-0", "plate-1", "plate-2", "plate-3", "plate-4"],
+  ["sun-0", "sun-1", "sun-2", "sun-3", "sun-4", "sun-5", "sun-6"],
+  ["haze-0", "haze-1", "haze-2", "haze-3"],
+];
+const UP = new Uint8Array(NAMES.length).map((_, i) => i), DOWN = new Uint8Array(NAMES.length).map((_, i) => i);
+for (const ch of CHAINS) ch.forEach((c, i) => {
+  UP[IDX[c]] = IDX[ch[Math.min(ch.length - 1, i + 1)]];
+  DOWN[IDX[c]] = IDX[ch[Math.max(0, i - 1)]];
+});
 
 // A tiny indexed pixel grid. Stations draw into it with whole art pixels and palette colors only, then it bakes
 // to a canvas the engine blits at integer scale. No arcs, no anti-aliasing; light-layer glows are the one exception
@@ -73,6 +90,14 @@ export class Px {
    * station's own dark ramp colors). Leave a 1px margin when drawing so it fits. */
   outline(c: Color = "soot") {
     const { w, h, d } = this, out: number[] = [];
+    const lit: number[] = [], shade: number[] = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (d[y * w + x] === EMPTY) continue;
+      if (!this.has(x + 1, y) || !this.has(x, y - 1)) lit.push(y * w + x);
+      else if (!this.has(x - 1, y) || !this.has(x, y + 1)) shade.push(y * w + x);
+    }
+    for (const i of lit) d[i] = UP[d[i]];
+    for (const i of shade) d[i] = DOWN[d[i]];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       if (d[y * w + x] !== EMPTY) continue;
       if (this.has(x - 1, y) || this.has(x + 1, y) || this.has(x, y - 1) || this.has(x, y + 1)) out.push(y * w + x);
