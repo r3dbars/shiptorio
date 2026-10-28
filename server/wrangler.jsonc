@@ -49,6 +49,8 @@
       "kv_namespaces": [{ "binding": "CACHE", "id": "eb151c15e208446482ca39062005f4d9" }],
       "vars": {
         "PUBLIC_URL": "https://shiptorio.dev",
+        // every feature flag defaults on here (server/src/flags.ts); production keeps FLAG_DEFAULTS
+        "FEATURES": "all",
         "ALLOWED_LOGINS": "r3dbars",
         "ADMIN_LOGINS": "r3dbars",
         "SPARK_BASE_URL": "https://api.meta.ai/v1",

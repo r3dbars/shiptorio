@@ -47,7 +47,7 @@ From https://claude.ai/artifact/8ceP1bPLxWcxKrFf5ab1Km (answers in its `picks/jo
 
 | # | Question | Pick | Where it lives |
 | --- | --- | --- | --- |
-| 1 | First open | C: no tour, learn by doing | `?simple=1` turns off the first-run tutorial, build-as-you-go and the morning brief |
+| 1 | First open | C: no tour, learn by doing | the simple screen (on at shiptorio.dev, `?simple=1` elsewhere) turns off the welcome tour, the first-run tutorial, build-as-you-go and the morning brief; `?simple=0` brings them back |
 | 2 | Connect your repo | C: play first, setup cards later | the demo shop; signing in is a card after a rocket (#359) |
 | 3 | Plug in your Mac | B: a setup card with one command | the agent card's Go opens the Power sheet's one-line install |
 | 4 | Is my Mac working? | B: a small lamp by the counters | `MachineLight` (#474) inside the compact floor card |
