@@ -29,6 +29,8 @@ export function thirdDefer(move: Move): Move {
 }
 export function deferCard(book: DeckBook, move: Move): void {
   const key = moveKey(move), prior = book.decisions[key];
+  // Duplicate deliveries of the same parked decision are not new player choices.
+  if (prior?.deferred || prior?.dismissed) return;
   book.decisions[key] = { key, move, count: (prior?.count ?? 0) + 1, deferred: true };
 }
 export const yesKey = (kind: string, scope: string) => `${kind}|${scope}`;

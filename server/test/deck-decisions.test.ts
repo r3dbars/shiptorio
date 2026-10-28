@@ -22,3 +22,16 @@ test("attention: Continue streaks count Continues per class, reset on Later, and
   resetYes(book, "build", "district:web");
   expect(JSON.parse(plannerFeedback(book, [])).playerYesStreaks).toBeUndefined();
 });
+
+test('replayed Later is one decision until the next check-in, including after storage reload', () => {
+  let book = emptyDeckBook();
+  deferCard(book, move);
+  deferCard(book, move); // Two socket deliveries can already hold the same visible card.
+  book = structuredClone(book);
+  deferCard(book, move);
+  expect(book.decisions[moveKey(move)].count).toBe(1);
+  expect(suppressed(book, move)).toBe(true);
+  beginCheckin(book);
+  deferCard(book, move);
+  expect(book.decisions[moveKey(move)].count).toBe(2);
+});
