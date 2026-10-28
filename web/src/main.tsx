@@ -13,15 +13,18 @@ installChunkReload();
 // route before mounting: an initially suspended root cannot commit with a frozen clock.
 async function boot() {
   const judgeRoute = /^\/judge\/?$/.test(location.pathname);
-  const [{ createElement: h, StrictMode, useEffect, useState }, { createRoot }, { ErrorBoundary }, { sound }] = await Promise.all([
-    import("react"), import("react-dom/client"), import("./ErrorBoundary"), import("./sound/engine"),
-  ]);
-  const [App, Onboarding, Judge, account] = await Promise.all([
+  const query = new URLSearchParams(location.search);
+  const needsOnboarding = !!query.get("onboard") || (!query.has("source") && !query.has("scenario"));
+  const routes = Promise.all([
     judgeRoute ? (() => null) : import("./App").then(m => m.App),
-    judgeRoute ? (() => null) : import("./ui/Onboarding").then(m => m.Onboarding),
+    judgeRoute || !needsOnboarding ? (() => null) : import("./ui/Onboarding").then(m => m.Onboarding),
     judgeRoute ? import("./judge/Judge").then(m => m.Judge) : (() => null),
     judgeRoute ? null : import("./account"),
   ]);
+  const [{ createElement: h, StrictMode, useEffect, useState }, { createRoot }, { ErrorBoundary }, { sound }] = await Promise.all([
+    import("react"), import("react-dom/client"), import("./ErrorBoundary"), import("./sound/engine"),
+  ]);
+  const [App, Onboarding, Judge, account] = await routes;
   const { SANDBOX_REPO, serverUp } = account ?? { SANDBOX_REPO: "", serverUp: async () => false };
   const initTelemetry = () => import("./telemetry").then(m => m.initTelemetry());
   const loadFeatureFlags = () => import("./flags").then(m => m.loadFeatureFlags());
