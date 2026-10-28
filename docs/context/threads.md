@@ -205,6 +205,10 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - Integrates the merged supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
 - Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. The full `doctor --edit codex` command reported PASS for Codex auth, sandbox, pairing and actual edit; it correctly exited nonzero for the separate missing Claude sign-in/sandbox. Integrated runner tests: 45 passed, 2 platform skips. Full `bun run check` passed after integration (726 tests, 2 platform skips; all workspace typechecks and production/web/standalone-runner build). CI/merge outcome is on PR #275.
 
+## Codex guest progress on dev — PR #355
+
+Rebased the guest-only save routes onto dev without replacing administrator view, write guards or progress reset versions. Guest GET progress reports resetVersion zero; signed-in stale reset writes still fail. Guest schema is migration0019 after admin/index/taps0016–0018. Full checks and exact-head dev CI are pending; password gate retained.
+
 ## Codex: self-host runner origin and live pairing (2026-10-26)
 
 - `codex/selfhost-runner-origin` fixes the Power panel install command to use the current origin and pass it to the shell side of the pipeline. The installer downloads that origin's bundle, saves its endpoint for later invocations, and rejects cross-server reuse of existing pairings. The CLI accepts self-hosted HTTPS origins and loopback-only HTTP.
@@ -604,7 +608,3 @@ only moves on a `dev → main` promotion, which runs the full suite and gets the
 - 2026-10-27 — Codex: planner outage recovery builds on #312 with classified cooldowns, a two-minute planning deadline, persisted automatic resumption (including raised caps without refunding unknown spend), one calm resting card, and deterministic bottleneck fallback. Small scope exceptions: factory.ts wires durable jobs/cards/alarms; web/src/source/live.ts formats the resting deadline in the browser's timezone. Moves the Oct 27 live-loop reliability checkpoint forward.
 
 - 2026-10-28 — Codex: #371 rebased onto dev, retaining admin stops, explicit base-refresh provenance, native model JSON formats and websocket sequence guards. Raised call/token/spend caps resume parked plans without refunding ambiguous paid calls; focused stop/quota/recovery tests cover the new dev integration.
-
-## Codex guest progress on dev — PR #355
-
-Rebased the guest-only save routes onto dev without replacing administrator view, write guards or progress reset versions. Guest GET progress reports resetVersion zero; signed-in stale reset writes still fail. Guest schema is migration0019 after admin/index/taps0016–0018. Full checks and exact-head dev CI are pending; password gate retained.
