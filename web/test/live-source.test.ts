@@ -311,3 +311,33 @@ it("authoritative resolution clears pending decisions and disposal cannot send t
   source.close(); source.send({type:"dismiss_move",moveId:"plan-1",why:"once"});
   h.win.dispatchEvent(new Event("online")); expect(h.sockets).toHaveLength(2);
 }));
+it("keeps a tap when send throws between readiness and socket transmission", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  first.send = () => { throw new Error("network disappeared"); };
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  h.advance(300); const fresh = h.sockets[1]; fresh.open(); expect(fresh.sent).toEqual([]);
+  fresh.message(decisionSnapshot()); expect(fresh.sent).toHaveLength(1); source.close();
+}));
+it("an explicit resolution acknowledges the intent even if the same card is offered again", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  source.send({type:"dismiss_move",moveId:"plan-1",why:"once"});
+  first.message(JSON.stringify({type:"move_resolved",moveId:"plan-1",actor:"player",seq:1}));
+  first.close(); h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot("a",2));
+  expect(fresh.sent).toEqual([]); source.close();
+}));
+it("changed tool scope under the same card and option ID requires a fresh player choice", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  const changed = JSON.parse(decisionSnapshot());
+  changed.state.deck[0].options[0].actions[0].args.headSha = "new-head";
+  h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(JSON.stringify(changed));
+  expect(fresh.sent).toEqual([]);
+  expect(h.messages.at(-2)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("decision changed")});
+  source.close();
+}));
+it("Later survives reconnect but unrelated machine writes are not replayed", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
+  source.send({type:"defer_move",moveId:"plan-1"}); source.send({type:"set_goal",text:"not replayable"});
+  h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot());
+  expect(fresh.sent).toEqual([JSON.stringify({type:"defer_move",moveId:"plan-1"})]); source.close();
+}));
