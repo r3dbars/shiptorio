@@ -13,14 +13,14 @@ const TOP = 4; // smoke headroom: the machine is laid out 10 rows down
 const FRAMES = 12, FPS = 6;
 
 const TANK: Ramp = ["soot", "steel-0", "iron-1", "steel-1", "iron-2", "steel-2", "iron-3", "steel-3", "haze-2"];
-const CU: Ramp = ["soot", "plate-0", "copper-0", "plate-2", "copper-1", "plate-3", "copper-2", "copper-3", "copper-4"];
+export const CU: Ramp = ["soot", "plate-0", "copper-0", "plate-2", "copper-1", "plate-3", "copper-2", "copper-3", "copper-4"];
 const SMOKE: Ramp = ["iron-3", "iron-4", "haze-2", "haze-3", "white"];
 const FIRE: Ramp = ["sun-0", "sun-1", "sun-2", "sun-3", "sun-4", "sun-5", "sun-6", "white"];
 
 // light up-right and toward the viewer, same as shade.ts
 const L = (() => { const v = [0.62, 0.48, 0.62]; const n = Math.hypot(...v); return v.map((c) => c / n); })();
 const H = (() => { const v = [L[0], L[1], L[2] + 1]; const n = Math.hypot(...v); return v.map((c) => c / n); })();
-function lit(nx: number, ny: number, nz: number, amb: number, gloss: number) {
+export function lit(nx: number, ny: number, nz: number, amb: number, gloss: number) {
   const n = Math.hypot(nx, ny, nz) || 1;
   nx /= n; ny /= n; nz /= n;
   const d = Math.max(0, nx * L[0] + ny * L[1] + nz * L[2]);
@@ -30,7 +30,7 @@ function lit(nx: number, ny: number, nz: number, amb: number, gloss: number) {
 
 /** A tube along a path with rounded corners: every pixel gets the normal of the real round cross-section, so elbows
  * shade like bent pipe, not like stacked boxes. Corners round off with radius `bend`. */
-function tube(g: Px, pts: [number, number][], r: number, ramp: Ramp, o: { amb?: number; gloss?: number; bend?: number } = {}) {
+export function tube(g: Px, pts: [number, number][], r: number, ramp: Ramp, o: { amb?: number; gloss?: number; bend?: number } = {}) {
   const amb = o.amb ?? 0.1, gloss = o.gloss ?? 0.9, bend = o.bend ?? 4;
   const path: [number, number][] = [pts[0]];
   for (let i = 1; i < pts.length - 1; i++) {
@@ -67,7 +67,7 @@ function tube(g: Px, pts: [number, number][], r: number, ramp: Ramp, o: { amb?: 
 
 /** A shape of revolution standing upright (tank, dome, chimney, band): radius R(y) per row. Shading uses the real
  * normal, tilted up wherever the radius grows downward (a dome's shoulder catches the sky). */
-function lathe(g: Px, cx: number, y0: number, y1: number, R: (y: number) => number, ramp: Ramp,
+export function lathe(g: Px, cx: number, y0: number, y1: number, R: (y: number) => number, ramp: Ramp,
   o: { amb?: number; gloss?: number; rust?: number; seed?: number; grime?: number } = {}) {
   const amb = o.amb ?? 0.08, gloss = o.gloss ?? 0.6, rust = o.rust ?? 0, seed = o.seed ?? 3, grime = o.grime ?? 0;
   for (let y = y0; y < y1; y++) {
