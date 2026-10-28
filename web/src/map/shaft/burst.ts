@@ -16,7 +16,8 @@ import * as THREE from "three";
 type P3 = [number, number, number];
 
 export const BURST_SECONDS = 1;
-const SECONDS = { big: BURST_SECONDS, small: 0.65, calm: 0.45 };
+export const BURST_REDUCED_SECONDS = 0.45;
+const SECONDS = { big: BURST_SECONDS, small: 0.65, calm: BURST_REDUCED_SECONDS };
 
 export interface BurstOpts {
   /** the first time this kind of piece comes online: the big burst */
