@@ -209,11 +209,39 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     cx.fillStyle = g; cx.fillRect(x - r, y - r, r * 2, r * 2);
     cx.globalCompositeOperation = "source-over";
   }
-  function sky(W: number, H: number, camS: number) {
+  // The sky picture has its cloud sea painted in from ~45% down (islands hang to ~57%), right where the deck hangs. In pixel mode we cut it
+  // there and drop the sea below the deck (`floor` = screen y the sea must start under), with sunset haze in the gap,
+  // so the deck floats in open air instead of sitting on the cloud tops.
+  const SEA = 0.47, FADE = 0.05;
+  let skyCut: { top: HTMLCanvasElement; sea: HTMLCanvasElement; haze: string } | null = null;
+  function cutSky(sk: HTMLImageElement) {
+    const nw = sk.naturalWidth, nh = sk.naturalHeight, cut = Math.round(nh * SEA), f = Math.round(nh * FADE);
+    const part = (y0: number, y1: number, fadeTop: boolean) => {
+      const c = document.createElement("canvas"); c.width = nw; c.height = y1 - y0;
+      const g = c.getContext("2d")!; g.drawImage(sk, 0, y0, nw, y1 - y0, 0, 0, nw, y1 - y0);
+      const m = g.createLinearGradient(0, fadeTop ? 0 : c.height - f, 0, fadeTop ? f * 2 : c.height);
+      m.addColorStop(0, fadeTop ? "rgba(0,0,0,0)" : "#000"); m.addColorStop(1, fadeTop ? "#000" : "rgba(0,0,0,0)");
+      g.globalCompositeOperation = "destination-in"; g.fillStyle = m; g.fillRect(0, 0, nw, c.height);
+      return c;
+    };
+    return { top: part(0, cut + f, false), sea: part(cut - f, nh, true), haze: "#e0703a" };
+  }
+  function sky(W: number, H: number, camS: number, floor?: number) {
     const sk = img("sky"); if (!sk) return;
     const s = Math.max(W / sk.naturalWidth, H / sk.naturalHeight) * 1.1, w = sk.naturalWidth * s, h = sk.naturalHeight * s;
     const ox = Math.max(-(w - W) / 2, Math.min((w - W) / 2, -(cam.x - 1400) * 0.04 * camS));
-    cx.drawImage(sk, Math.round((W - w) / 2 + ox), Math.round((H - h) / 2), Math.round(w), Math.round(h));
+    const x = Math.round((W - w) / 2 + ox), y = Math.round((H - h) / 2);
+    const drop = floor === undefined ? 0 : Math.round(Math.max(0, floor - (y + h * SEA)));
+    if (!drop) { cx.drawImage(sk, x, y, Math.round(w), Math.round(h)); return; }
+    skyCut ??= cutSky(sk);
+    const cut = y + h * SEA, fh = h * FADE;
+    // the haze: warm horizon glow fading to dusk violet just above the sea
+    const g = cx.createLinearGradient(0, cut - fh, 0, cut + drop + fh);
+    g.addColorStop(0, "#f08a32"); g.addColorStop(0.55, "#d8653c"); g.addColorStop(1, "#a65a5c");
+    cx.fillStyle = g; cx.fillRect(0, Math.floor(cut - fh), W, Math.ceil(drop + fh * 2) + 1);
+    cx.drawImage(skyCut.top, x, y, Math.round(w), Math.round(h * (SEA + FADE)));
+    cx.drawImage(skyCut.sea, x, Math.round(cut - fh + drop), Math.round(w), Math.round(h * (1 - SEA + FADE)));
+    if (y + drop + h < H) { cx.fillStyle = "#a65a5c"; cx.fillRect(0, Math.floor(y + drop + h), W, H); }
   }
   function clouds(y: number, scale: number, speed: number, alpha: number) {
     const c = img("clouds"); if (!c) return;
@@ -321,7 +349,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
       cx.setTransform(1, 0, 0, 1, 0, 0);
       cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);
-      sky(bw, bh, 1 / ART_PX);
+      // the sea starts a little under the deck's lowest rock (world y → buffer y through the world transform)
+      sky(bw, bh, 1 / ART_PX, world.d * (HULL.bottom + 170) + world.f);
       cx.setTransform(world);
     } else {
       cx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -331,7 +360,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + qx) * cam.s), DPR * (H / 2 - (cam.y + qy) * cam.s));
     }
     slot("sky-far");
-    clouds(470, 1.1, 5, 0.85);
+    // pixel mode: the deck floats in open air (Justin: the clouds looked attached to it), so the cloud sea sits well
+    // below the rocks and the orb; the near layer only fills the bottom of the frame
+    clouds(px ? 720 : 470, 1.1, 5, 0.85);
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).
     const dk = v.deck ?? { size: "large", island: "built" };
     const reach = { small: 0.42, medium: 0.7, large: 1 }[dk.size];
@@ -360,7 +391,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     leverDraw(v);
     shippy.drawWorld(cx);
     puffsDraw(dt);
-    clouds(600, 1.6, 12, 0.95);
+    clouds(px ? 900 : 600, 1.6, 12, 0.95);
     slot("front");
     if (px) { px.end(); cx = screen; cx.imageSmoothingEnabled = false; }
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
