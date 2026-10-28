@@ -184,18 +184,25 @@ export function bracket(g: Px, x: number, y: number, dx: 0 | 1, dy: 0 | 1, n = 4
   if (!dy && dx) g.set(x, y, "brass-5"); // the corner that faces the sun catches a glint
 }
 
+/** The right side face of a box in 3/4: a parallelogram d px wide starting at column x, stepping up ~3/4 px per px as
+ * it goes back. Its top edge catches the light. */
+export function side(g: Px, x: number, y: number, h: number, d: number, ramp: Ramp = IRON, base = 0.42, seed = 1) {
+  const up = Math.round(d * 0.75);
+  for (let i = 0; i < d; i++) {
+    const sx = x + i, lift = Math.round(((i + 1) * up) / d);
+    for (let yy = y - lift; yy < y + h - lift; yy++) {
+      const low = yy > y + h - lift - 4 ? -0.1 : 0;
+      tone(g, sx, yy, ramp, base + 0.06 * (i / d) + low + (blotch(sx, yy, 4, seed + 3) - 0.5) * 0.12);
+    }
+    tone(g, sx, y - lift, ramp, Math.min(1, base + 0.28));
+  }
+}
+
 /** A box seen in 3/4: the front face at (x, y, w, h), a lit top face and a right side face receding d px to the right
  * and about 3/4 d up. Brass trims the lit front-top edge; the front-right corner catches the sun. */
 export function box3q(g: Px, x: number, y: number, w: number, h: number, d: number, base = 0.34, opts: { rust?: number; grime?: number; seed?: number } = {}) {
   const up = Math.round(d * 0.75), seed = opts.seed ?? 1;
-  for (let i = 0; i < d; i++) { // side face, a parallelogram stepping up as it goes back
-    const sx = x + w + i, lift = Math.round(((i + 1) * up) / d);
-    for (let yy = y - lift; yy < y + h - lift; yy++) {
-      const low = yy > y + h - lift - 4 ? -0.1 : 0;
-      tone(g, sx, yy, IRON, 0.42 + 0.06 * (i / d) + low + (blotch(sx, yy, 4, seed + 3) - 0.5) * 0.12);
-    }
-    tone(g, sx, y - lift, IRON, 0.7); // its top edge catches the light
-  }
+  side(g, x + w, y, h, d, IRON, 0.42, seed);
   for (let j = 1; j <= up; j++) { // top face, lightest: it faces the sky
     const ty = y - j, sh = Math.round((j * d) / up);
     for (let xx = x + sh; xx < x + w + sh; xx++) tone(g, xx, ty, IRON, 0.7 + 0.12 * ((xx - x) / (w + d)) - j * 0.015 + (blotch(xx, ty, 4, seed + 5) - 0.5) * 0.12);

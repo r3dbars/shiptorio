@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift, type Px } from "./px";
-import { BRASS, IRON, blotch, cylH, cylV, drop, noise, rivet, strap, tone, type Ramp } from "./shade";
+import { BRASS, IRON, blotch, bracket, cylH, cylV, drop, noise, rivet, side, strap, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Planner: a brass-trimmed wooden drafting desk. A plan board pinned up at the back (three steps, three lamps along
@@ -95,29 +95,36 @@ export const planner: StationDef = {
 
     // --- desk top, papers spread out
     for (let k = 0; k < 3; k++) for (let x = 2 + (3 - k); x <= 45; x++) tone(g, x, 24 + k, WOOD, 0.62 + 0.15 * ((x - 2) / 43) - k * 0.05 + (blotch(x, 24 + k, 3, 3) - 0.5) * 0.15);
-    strap(g, 2, 27, 44, 2, BRASS, 5);
+    strap(g, 2, 27, 40, 2, BRASS, 5);
     for (let y = 22; y < 27; y++) for (let x = 17; x < 31; x++) if (!(y === 22 && x > 27)) tone(g, x, y, PAPER, 0.62 + (x - 17) * 0.015 - (y - 22) * 0.04);
     g.hline(19, 24, 7, "plate-3"); g.hline(19, 25, 5, "plate-3");
+    // a pen pot on the left of the desk, and a little brass-cornered box of parts on the right
+    cylV(g, 12, 21, 4, 3, IRON, { amb: 0.15, gloss: 0.8 }); g.hline(12, 21, 4, "iron-0");
+    for (const [x, h, c] of [[12, 3, "steel-2"], [13, 4, "copper-1"], [15, 2, "plate-3"]] as const) { g.vline(x, 21 - h, h, c); g.set(x, 21 - h, c === "copper-1" ? "copper-2" : "brass-3"); }
+    drop(g, 35, 21, 5, 3); for (let y = 21; y < 24; y++) for (let x = 35; x < 40; x++) tone(g, x, y, WOOD, 0.55 + (x - 35) * 0.06 - (y - 21) * 0.08);
+    g.set(35, 21, "brass-3"); g.set(39, 21, "brass-4"); g.hline(36, 22, 3, "plate-1");
     // inkpot + quill
     cylV(g, 32, 22, 3, 3, IRON, { amb: 0.2 }); g.set(34, 20, "haze-3"); g.set(34, 21, "haze-2"); g.set(33, 21, "haze-3");
 
     // --- desk body: drawers left and right, a dark kneehole, brass pulls
-    for (let y = 29; y < 41; y++) for (let x = 2; x < 46; x++) tone(g, x, y, WOOD, 0.4 + 0.1 * ((x - 2) / 44) - (y - 29) * 0.008 + (blotch(x, y, 4, 6) - 0.5) * 0.15);
-    for (const [x0, w] of [[4, 11], [33, 11]]) for (let r = 0; r < 2; r++) {
+    side(g, 42, 30, 12, 4, WOOD, 0.5, 6); // the desk's right end, seen in 3/4
+    for (let y = 29; y < 41; y++) for (let x = 2; x < 42; x++) tone(g, x, y, WOOD, 0.4 + 0.1 * ((x - 2) / 40) - (y - 29) * 0.008 + (blotch(x, y, 4, 6) - 0.5) * 0.15);
+    for (const [x0, w] of [[4, 11], [30, 10]]) for (let r = 0; r < 2; r++) {
       const y0 = 30 + r * 5;
       drop(g, x0, y0, w, 4, "plate-0");
       for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + w; x++) tone(g, x, y, WOOD, 0.5 + (y === y0 ? 0.2 : y === y0 + 3 ? -0.2 : 0) + (x - x0) * 0.01);
       cylH(g, x0 + Math.floor(w / 2) - 1, y0 + 1, 3, 2, BRASS, { amb: 0.4, gloss: 1 });
     }
-    for (let y = 30; y < 41; y++) for (let x = 17; x < 31; x++) g.set(x, y, y < 32 ? "plate-0" : "soot");
+    for (let y = 30; y < 41; y++) for (let x = 17; x < 29; x++) g.set(x, y, y < 32 ? "plate-0" : "soot");
     // a tool crate pushed into the kneehole: planks, a brass rim, handles sticking out
-    for (const [x, c] of [[20, "steel-2"], [22, "copper-1"], [25, "iron-3"], [27, "plate-3"]] as const) { g.vline(x, 32, 4, c); g.set(x, 32, x === 22 ? "copper-2" : "brass-3"); }
-    drop(g, 18, 35, 12, 6);
-    for (let y = 35; y < 41; y++) for (let x = 18; x < 30; x++) tone(g, x, y, WOOD, 0.42 + 0.15 * ((x - 18) / 12) + ((y - 35) % 3 === 2 ? -0.18 : 0) + (noise(x, y, 5) - 0.5) * 0.1);
-    strap(g, 18, 35, 12, 1, BRASS, 0, false); g.set(19, 37, "brass-3"); g.set(28, 37, "brass-3");
-    strap(g, 2, 29, 2, 12, BRASS, 0, false); strap(g, 44, 29, 2, 12, BRASS, 0, false);
-    for (const fx of [2, 40]) { cylH(g, fx, 41, 6, 2, BRASS, { amb: 0.15 }); }
-    g.hline(8, 41, 32, "plate-0");
+    for (const [x, c] of [[20, "steel-2"], [22, "copper-1"], [24, "iron-3"], [26, "plate-3"]] as const) { g.vline(x, 32, 4, c); g.set(x, 32, x === 22 ? "copper-2" : "brass-3"); }
+    drop(g, 18, 35, 10, 6);
+    for (let y = 35; y < 41; y++) for (let x = 18; x < 28; x++) tone(g, x, y, WOOD, 0.42 + 0.15 * ((x - 18) / 10) + ((y - 35) % 3 === 2 ? -0.18 : 0) + (noise(x, y, 5) - 0.5) * 0.1);
+    strap(g, 18, 35, 10, 1, BRASS, 0, false); g.set(19, 37, "brass-3"); g.set(26, 37, "brass-3");
+    strap(g, 2, 29, 2, 12, BRASS, 0, false); strap(g, 40, 29, 2, 12, BRASS, 0, false); bracket(g, 2, 29, 0, 0, 3); bracket(g, 41, 29, 1, 0, 3);
+    for (const fx of [2, 36]) { cylH(g, fx, 41, 6, 2, BRASS, { amb: 0.15 }); }
+    cylH(g, 41, 38, 4, 2, BRASS, { amb: 0.12 }); // the back foot, under the side
+    g.hline(8, 41, 28, "plate-0");
 
     // --- lantern on the right corner of the desk
     cylH(g, 40, 22, 5, 2, BRASS, { amb: 0.2 });
