@@ -97,3 +97,30 @@ test("growing the deck and raising the island ring once per step, not per bolt",
   const island = (["island-rising", "island-up", "bridge", "bridge-done", "tower", "rocket-lowering", "rocket-seated"] as const).flatMap((stage) => cuesFor({ type: "launch-stage", stage }));
   expect(island.length).toBe(2);
 });
+
+// ---- pixel mode (deck2d/juice/pixel.ts) ----
+import { PALETTE_48 } from "../src/deck2d/contract";
+import { effectsFor, plateWidth } from "../src/deck2d/juice/pixel";
+
+test("pixel effects only at the focal moments", () => {
+  expect(effectsFor({ type: "crate-arrive", stop: "builder", id: "x" })).toEqual([]);
+  expect(effectsFor({ type: "jam", stop: "review" })).toEqual([]);
+  expect(effectsFor({ type: "station-state", stop: "builder", state: "working" })).toEqual([]);
+  expect(effectsFor({ type: "station-built", stop: "checks" }).length).toBeGreaterThan(0);
+  expect(effectsFor({ type: "automated", stop: "review" }).length).toBeGreaterThan(0);
+  expect(effectsFor({ type: "launch" }).length).toBeGreaterThan(0);
+});
+
+test("pixel effects draw whole art px in palette colors, light layer at 25/50/75%, and end", () => {
+  const events: DeckEvent[] = [{ type: "station-built", stop: "checks" }, { type: "automated", stop: "review" }, { type: "launch" }];
+  for (const e of events)
+    for (const fx of effectsFor(e)) {
+      expect(fx.frames).toBeLessThanOrEqual(20); // under ~2.5s at 8 fps
+      for (let f = 0; f < fx.frames; f++)
+        fx.draw((ax, ay, c) => {
+          expect(Number.isInteger(ax) && Number.isInteger(ay)).toBe(true);
+          expect(PALETTE_48).toContain(c);
+        }, f, (a) => expect([0.25, 0.5, 0.75, 1]).toContain(a));
+    }
+  expect(plateWidth("AUTOMATED")).toBeLessThanOrEqual(44); // fits over a station
+});
