@@ -110,21 +110,32 @@ export function face(g: Px, x: number, y: number, w: number, h: number, ramp: Ra
   }
 }
 
-/** A raised brass strap/band: bevelled (light top + left edge inside, dark bottom + right), with rivets. */
+/** Cool steel for raised bands and frames (art direction: dark cool iron, brass only as jewelry). */
+export const BAND: Ramp = ["soot", "steel-0", "iron-1", "steel-1", "iron-2", "steel-2", "steel-3"];
+
+/** A raised strap/band. With the default (BRASS) it is a steel band whose lit top edge is a brass trim line and whose
+ * rivets are brass: brass is jewelry, not paint. Pass GOLD to get a solid brass band (collars, flanges). */
 export function strap(g: Px, x: number, y: number, w: number, h: number, ramp: Ramp = BRASS, rivetEvery = 0, shadow = true) {
   if (shadow) drop(g, x, y, w, h);
+  const solid = ramp !== BRASS, body = solid ? ramp : BAND;
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
-    let v = 0.4 + 0.08 * (i / Math.max(1, w - 1)) + (blotch(x + i, y + j, 3, 3) - 0.5) * 0.16;
-    if (j === 0) v += 0.2; else if (j === h - 1) v -= 0.3;
-    if (i === 0 && h > 2) v += 0.1; else if (i === w - 1 && w > 2 && h > 2) v -= 0.16;
-    tone(g, x + i, y + j, ramp, v);
+    const u = i / Math.max(1, w - 1);
+    let v = 0.42 + 0.12 * u + (blotch(x + i, y + j, 3, 3) - 0.5) * 0.16;
+    if (j === h - 1 && h > 1) v -= 0.3;
+    if (i === w - 1 && w > 2 && h > 2) v -= 0.12;
+    if (!solid && j === 0) { tone(g, x + i, y + j, BRASS, 0.38 + 0.35 * u); continue; } // the brass trim line, brighter toward the sun
+    if (!solid && i === w - 1 && h > 2 && w <= 3) { tone(g, x + i, y + j, BRASS, 0.55); continue; } // lit right edge of an upright
+    if (j === 0) v += 0.2;
+    tone(g, x + i, y + j, body, v);
   }
   if (rivetEvery) {
     const horiz = w >= h;
     const n = horiz ? w : h;
-    for (let k = Math.floor(rivetEvery / 2); k < n; k += rivetEvery) horiz ? rivet(g, x + k, y + Math.floor((h - 1) / 2)) : rivet(g, x + Math.floor((w - 1) / 2), y + k);
+    for (let k = Math.floor(rivetEvery / 2); k < n; k += rivetEvery) horiz ? rivet(g, x + k, y + Math.floor((h - 1) / 2) + (h > 2 ? 0 : 0)) : rivet(g, x + Math.floor((w - 1) / 2), y + k);
   }
 }
+/** Solid brass, for strap() when a part really is brass. */
+export const GOLD: Ramp = [...BRASS];
 
 /** Cast shadow of a raised part onto whatever is already drawn: 1px down and to the left (light is upper right). */
 export function drop(g: Px, x: number, y: number, w: number, h: number, c: Color = "iron-0") {
