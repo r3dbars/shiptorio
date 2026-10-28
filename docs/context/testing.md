@@ -110,7 +110,8 @@ raw JSON and CPU profiles are available from that run's artifacts.
 
 ## CI and evidence
 
-Every ready PR (and every merge-queue group) runs the whole suite on its own: check,
+PRs into `dev` run check and selfhost (plus Stranger and CodeQL). Every other ready PR, mainly
+`dev → main` promotions, and every merge-queue group runs the whole suite on its own: check,
 selfhost, the six browser shards and load (`bun run test:load:ci`, the same budget judged
 on the median of up to three runs). When all four pass, the `full-suite` job posts the
 `release-validation` status on the PR head, which main requires. Nobody dispatches or

@@ -589,3 +589,10 @@ load job judges the unchanged 5 s / 3 s budget on the median of up to three runs
 (first run alone when it passes) because one run on a shared VM swung 5.2 s → 8.2 s →
 pass on near-identical code. `release/*` runs are no longer cancelled by a later push.
 `merge_group` triggers are wired for when Justin turns on the merge queue.
+
+## dev / main split (Claude, 2026-10-28)
+
+Justin (16:31Z) picked the flow in `docs/context/branches.md`: every agent PR (Claude and Codex) now targets `dev`,
+runs only check/selfhost/Stranger/CodeQL, merges on green and auto-deploys shiptorio.dev. `main` = shiptorio.com and
+only moves on a `dev → main` promotion, which runs the full suite and gets the automatic `release-validation` status
+(#485). Release batches and release/* branches are retired. Promotions merge with a merge commit, never squash.
