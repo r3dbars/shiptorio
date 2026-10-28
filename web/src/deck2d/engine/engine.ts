@@ -1,5 +1,5 @@
 import {
-  ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
+  ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
@@ -226,6 +226,30 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     };
     return { top: part(0, cut + f, false), sea: part(cut - f, nh, true), haze: "#e0703a" };
   }
+  // the haze between deck and sea: flat palette bands (bright glow up top, deeper orange toward the clouds) with a
+  // checker dither between, plus a few long thin streaks of distant cloud. Exact palette colors so the quantizer
+  // leaves it alone; cached per size since it never moves.
+  let haze: HTMLCanvasElement | null = null;
+  function hazeBand(W: number, H: number) {
+    if (haze && haze.width === W && haze.height === H) return haze;
+    haze = document.createElement("canvas"); haze.width = W; haze.height = H;
+    const g = haze.getContext("2d")!, band = [PALETTE.sun[4], PALETTE.sun[3], PALETTE.sun[2], PALETTE.copper[2]];
+    const bh = H / band.length;
+    band.forEach((c, i) => { g.fillStyle = c; g.fillRect(0, Math.round(i * bh), W, Math.ceil(bh) + 1); });
+    for (let i = 1; i < band.length; i++) {
+      const y = Math.round(i * bh); g.fillStyle = band[i - 1];
+      for (let x = 0; x < W; x += 2) { g.fillRect(x, y, 1, 1); g.fillRect(x + 1, y + 1, 1, 1); }
+    }
+    let r = 7;
+    const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 6; i++) { // a wisp: lit top row, wider body, shadowed belly
+      const y = Math.round(bh * 0.8 + rnd() * (H - bh * 1.8)), x = Math.round(rnd() * W), w = Math.round(W * (0.03 + rnd() * 0.05));
+      g.fillStyle = PALETTE.sun[5]; g.fillRect(x + 3, y, w - 6, 1);
+      g.fillStyle = PALETTE.sun[4]; g.fillRect(x, y + 1, w, 2);
+      g.fillStyle = PALETTE.copper[3]; g.fillRect(x + 2, y + 3, w - 4, 1);
+    }
+    return haze;
+  }
   function sky(W: number, H: number, camS: number, floor?: number) {
     const sk = img("sky"); if (!sk) return;
     const s = Math.max(W / sk.naturalWidth, H / sk.naturalHeight) * 1.1, w = sk.naturalWidth * s, h = sk.naturalHeight * s;
@@ -235,13 +259,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (!drop) { cx.drawImage(sk, x, y, Math.round(w), Math.round(h)); return; }
     skyCut ??= cutSky(sk);
     const cut = y + h * SEA, fh = h * FADE;
-    // the haze: warm horizon glow fading to dusk violet just above the sea
-    const g = cx.createLinearGradient(0, cut - fh, 0, cut + drop + fh);
-    g.addColorStop(0, "#f08a32"); g.addColorStop(0.55, "#d8653c"); g.addColorStop(1, "#a65a5c");
-    cx.fillStyle = g; cx.fillRect(0, Math.floor(cut - fh), W, Math.ceil(drop + fh * 2) + 1);
+    const hy = Math.floor(cut - fh), hh = Math.ceil(drop + fh * 2) + 1;
+    cx.drawImage(hazeBand(W, hh), 0, hy);
     cx.drawImage(skyCut.top, x, y, Math.round(w), Math.round(h * (SEA + FADE)));
     cx.drawImage(skyCut.sea, x, Math.round(cut - fh + drop), Math.round(w), Math.round(h * (1 - SEA + FADE)));
-    if (y + drop + h < H) { cx.fillStyle = "#a65a5c"; cx.fillRect(0, Math.floor(y + drop + h), W, H); }
+    if (y + drop + h < H) { cx.fillStyle = PALETTE.copper[1]; cx.fillRect(0, Math.floor(y + drop + h), W, H); }
   }
   function clouds(y: number, scale: number, speed: number, alpha: number) {
     const c = img("clouds"); if (!c) return;
