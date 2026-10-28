@@ -106,7 +106,7 @@ describe("live gauntlet in the Factory", () => {
       if (url.endsWith("/chat/completions")) return json({ choices: [{ message: { content: '{"verdict":"pass","reason":"Fixes the empty cart crash.","findings":[]}' } }] });
       if (url.endsWith("/issues/99/comments")) return ++commentTries <= 2 ? new Response("forbidden", { status: 403 }) : json({ id: 1 });
       if (url.endsWith("/pulls/99/merge")) { mergedWith = JSON.parse(String(init?.body)); return json({ merged: true }); }
-      if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, merged: false });
+      if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged: false });
       throw new Error(`unexpected ${url}`);
     }) as typeof fetch;
     try {

@@ -100,7 +100,7 @@ describe("permits in the Factory", () => {
       if (url.endsWith("/comments")) return Response.json({ id: 1 });
       const m = url.match(/\/pulls\/(\d+)(\/merge)?$/);
       if (m?.[2]) { merged.push(m[1]); return Response.json({ merged: true }); }
-      if (m) return Response.json({ base: { ref: "main", sha: "base" }, head: { sha: head }, merged: false });
+      if (m) return Response.json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged: false });
       throw new Error(`unexpected ${url}`);
     }) as typeof fetch;
     try {

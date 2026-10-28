@@ -468,3 +468,18 @@ Measured hold/consent repairs: #457 (`0ca5fdfc`) yields only expensive scene sub
 Further retained evidence: [CI 40613954864](https://github.com/r3dbars/shiptorio/actions/runs/40613954864) passed check, selfhost, Stranger, CodeQL and every second browser shard; phone reduced journeys passed. It failed load tick p95 (5,340.79ms against 5,000ms), late celebration checks and desktop duration/overall time. #460 (`c27c1b20`) removes unchanged decision publications while preserving actual-frame authorization, reconnect snapshots, new-secret redaction invalidation, and identity-guarded retry after cursor storage failure. One controlled local pair measured tick p95 1,027→755ms on its earlier performance head; final correctness additions passed focused tests and full check. This is local evidence, not a prediction of CI or billed production CPU.
 
 #462 (`ecc09a38`) retains an actual visible shipped-card observation starting immediately before manual Launch, with the original 30-second bound. The captured Pixel trace shows the visible green SHIPPED card after manual input, before the old late poll; early/missing celebrations still fail. #461 (`7ce2ce73`) carries elapsed time through construction phases instead of dropping overshoot, stops before spending it on another queued build, and lets natural particle tails finish during payoff. Real-controller regressions cover slow frames, actual holders, cleanup, hurry and queue boundaries. The combined `097ecb02` full local check passed (1,362 passed, two existing skips, zero failures; lint/types/build green). The standalone runner bundle remains unchanged. A controlled three-build software-renderer comparison found no meaningful benefit from disabling trace screenshots, so full tracing is retained. Remote combined acceptance and deployment remain pending; production is still the verified rollback with the password gate enabled.
+
+## GitHub merge readiness guard (Codex, 2026-10-28)
+
+[#464](https://github.com/r3dbars/shiptorio/pull/464) reuses the permission-free first
+commit of #406 (complete station receipts and current-head/base fencing), excluding
+its held Administration-policy reader. Before: reported checks plus station passes
+could offer Launch while GitHub reports `behind` or `blocked`. A failing-before
+regression reproduces that false green. After: an uncached PR read requires an open,
+non-draft, explicitly mergeable `clean` PR on the inspected head and configured base.
+All other/missing states or API failures wait without discarding completed proof;
+carried Launch cards are withdrawn, and the final merge rechecks even an overrule.
+No new App permissions, direct factory merge, policy bypass or check-name list.
+This aggregate readiness snapshot does not enumerate required-check/App provenance;
+GitHub's SHA-bound merge endpoint remains the final authority. Root owns combined
+release validation and deployment; this draft is not production acceptance.

@@ -491,6 +491,25 @@ export async function openPullRequest(
   }, { shouldRetry: error => !(error instanceof RateLimitError) });
 }
 
+/** GitHub's own aggregate merge gate, not an inferred list of required check names.
+ * Only an explicitly clean, open PR for the inspected head/base may expose Launch.
+ * Unknown/unsupported states wait; the SHA-bound merge endpoint remains final authority.
+ */
+export async function pullRequestReadiness(token: string, repo: string, number: number, headSha: string, base: string) {
+  const pr = await gh<{ head?: { sha?: string }; base?: { ref?: string }; state?: string; merged?: boolean; draft?: boolean; mergeable?: boolean | null; mergeable_state?: string | null }>(
+    `/repos/${repo}/pulls/${number}`, token, { headers: { "cache-control": "no-store" } },
+  );
+  const mergeState = pr.mergeable_state ?? null;
+  if (pr.head?.sha !== headSha || pr.base?.ref !== base) return { mergeState, ready: false, reason: "The PR changed. Its current commit and target need fresh checks." };
+  if (pr.state !== "open" || pr.merged || pr.draft !== false) return { mergeState, ready: false, reason: "The PR must be open and ready for review before Launch." };
+  if (pr.mergeable === true && pr.mergeable_state === "clean") return { mergeState, ready: true, reason: "GitHub reports this PR ready to merge." };
+  const reason = pr.mergeable_state === "behind" ? "Waiting for the PR to include the latest base branch and pass fresh checks."
+    : pr.mergeable_state === "blocked" ? "Waiting for GitHub's required checks, reviews or repository rules."
+    : pr.mergeable_state === "dirty" ? "The PR has merge conflicts that must be resolved."
+    : "Waiting for GitHub to confirm this PR is ready to merge.";
+  return { mergeState, ready: false, reason };
+}
+
 /** Inspect all checks on the CURRENT PR commit. Never accept a moving head/base or a spoofed required check. */
 export async function inspectPullRequest(token: string, repo: string, number: number, eventSha?: string, expectedBase?: string) {
   type Pr = { head: { sha: string }; base: { ref: string; sha: string }; state: string; merged: boolean };

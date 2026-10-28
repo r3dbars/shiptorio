@@ -71,7 +71,7 @@ import {
   type GoalGuess,
   type Goals,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, pullRequestReadiness, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { initialFactoryState } from "./factory-initialization";
@@ -2471,7 +2471,22 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     for (const item of s.items) {
       if (!item.prNumber || (await this.ctx.storage.get<number>(`gauntletDeferred:${item.id}`) ?? 0) > now) continue;
       if (item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection)) {
-        await this.publishGauntletMove(launchMove(item, now));
+        const inspection = item.inspection;
+        let readiness = { ready: false, reason: "Waiting for GitHub to confirm this PR is ready to merge." };
+        try {
+          const token = await installationToken(this.env, this.meta!.installationId);
+          readiness = await pullRequestReadiness(token, this.meta!.repo, item.prNumber, inspection.headSha, s.baseBranch);
+        } catch (error) { this.log("warn", "GitHub merge readiness is unavailable; Launch is waiting.", item.id); report(error, "factory.merge_readiness_unavailable"); }
+        if (!this.state!.items.some(i => i.id === item.id && i.inspection === inspection && i.state === "on_pad")) continue;
+        // Replace carried Launch cards too. A transient GitHub hold must not erase
+        // completed runner/AI receipts or invent a rework scar.
+        await this.decisionData();
+        this.openMoves = this.openMoves!.filter(m => !(m.itemId === item.id && m.stage === "pad") || m.kind === (readiness.ready ? "ship" : "unblock"));
+        const move = launchMove(item, now);
+        await this.publishGauntletMove(readiness.ready ? move : {
+          ...move, title: `PR #${item.prNumber} is waiting on GitHub`, why: readiness.reason, kind: "unblock",
+          options: [{ id: "later", label: "Later", recommended: true, actions: [] }],
+        });
         await this.refreshDecisions();
         continue;
       }
@@ -2551,6 +2566,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           throw new Error("The PR changed its permitted lane. A player must review the launch.");
         }
         await this.accountPut(`autoLaunch:${item.id}`, item.prNumber);
+      }
+      // Even an explicit overrule cannot bypass GitHub repository policy.
+      const readiness = await pullRequestReadiness(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
+      if (!readiness.ready) {
+        await this.offerGauntletMove();
+        throw new Error(`Current checks: ${readiness.reason}`);
       }
       if (by !== "overrule" && !this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === head && current.state === "on_pad" && stationsPassed(current.inspection))) {
         throw new Error("Current checks changed while launch was being refreshed.");

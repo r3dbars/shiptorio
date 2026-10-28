@@ -358,7 +358,7 @@ describe("Factory lifecycle", () => {
       if (url.endsWith("/git/ref/heads/main")) return json({ object: { sha: base } });
       if (url.includes("/git/ref/heads/shiptorio/")) return json({ object: { sha: head } });
       if (url.includes("/compare/")) return json({ status: "ahead", ahead_by: 1, files: [{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }] });
-      if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, merged });
+      if (url.endsWith("/pulls/99")) return json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged });
       if (url.includes("/pulls/99/files?")) return json([{ filename: "server/src/engine.ts", status: "modified", changes: 4, patch: receiptPatch }]);
       if (url.includes("/issues/1/comments?")) { const hook = onFeedbackRead; onFeedbackRead = undefined; await hook?.(); return json([]); }
       if (url.endsWith("/issues/1/comments") && init?.method === "POST") return json({ id: 200 });

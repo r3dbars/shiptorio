@@ -54,6 +54,12 @@ Researched checks (like the Secret scanner) slot in right after CI. See [Researc
 
 ## Merge gate
 
+The launch pad also waits for GitHub to report the current PR ready to merge. A branch
+behind its base, missing required checks or reviews, merge conflicts, or an unknown
+GitHub state keeps the card waiting. Completed verification stays recorded; a changed
+commit still needs fresh verification. GitHub is checked again when you launch, and
+its repository rules remain the final merge gate.
+
 **Tag: you.** Once CI, every researched check, the verify bay and AI review pass, the PR moves to the launch pad and you get a **Launch card**:
 
 > **Launch #N: the PR title**
