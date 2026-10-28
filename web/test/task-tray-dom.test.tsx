@@ -3,7 +3,7 @@
 // took its place, launch cards included. Stray pointers, lost capture and a blurred window end the gesture too.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Window } from "happy-dom";
-import type { Move, WebToServer } from "@shiptorio/shared";
+import type { Item, Move, WebToServer } from "@shiptorio/shared";
 
 const KEYS = ["window", "document", "navigator", "localStorage", "HTMLElement", "Element", "Node", "Event", "CustomEvent", "MouseEvent", "PointerEvent", "KeyboardEvent", "FocusEvent", "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "IS_REACT_ACT_ENVIRONMENT"] as const;
 const saved = new Map<string, PropertyDescriptor | undefined>();
@@ -36,7 +36,7 @@ const launch = (id: string): Move => ({
   options: [{ id: "ship", label: `Launch ${id}`, recommended: true, actions: [{ tool: "request_merge", args: { itemId: `item-${id}` }, reason: "test" }] }],
 });
 
-async function mount(first: Move[]) {
+async function mount(first: Move[], firstItems?: Item[]) {
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { TaskTray } = await import("../src/ui/TaskTray");
@@ -45,8 +45,8 @@ async function mount(first: Move[]) {
   document.body.appendChild(host);
   const root = createRoot(host);
   const sent: WebToServer[] = [];
-  const render = (deck: Move[]) => act(() => root.render(<TaskTray deck={deck} send={(m) => sent.push(m)} onFocus={() => {}} />));
-  await render(first);
+  const render = (deck: Move[], items?: Item[]) => act(() => root.render(<TaskTray deck={deck} items={items} send={(m) => sent.push(m)} onFocus={() => {}} />));
+  await render(first, firstItems);
   const card = () => host.querySelector(".tasktray section.task") as HTMLElement;
   const title = () => card().querySelector(".att") as HTMLElement;
   const ptr = (target: Element, type: string, x: number, y: number, o: { id?: number; primary?: boolean; button?: number } = {}) =>
@@ -177,7 +177,7 @@ test("Later parks a card: the tray says caught up with it parked, and Bring back
   }
 });
 
-test("plugging in a builder leads the tray as a setup card, and a launch holds a Shipped moment before the next card", async () => {
+test("plugging in a builder leads the tray as a setup card", async () => {
   const power: Move = { id: "P", createdAt: 1, stage: "resources", attention: "suggest", title: "Your computer writes the code. Plug it in to start building.",
     options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "test" }] }] };
   const t = await mount([build("A"), power]);
@@ -186,12 +186,38 @@ test("plugging in a builder leads the tray as a setup card, and a launch holds a
     expect(t.card().querySelector(".atop b")?.textContent).toBe("Setup first");
     expect(t.card().className).toContain("steer");
   } finally { await t.unmount(); }
-  const u = await mount([launch("L"), build("B")]);
+});
+
+const item = (id: string, state: Item["state"]) => ({ id, state, title: id, updatedAt: 1 }) as Item;
+const swipeLaunch = async (u: Awaited<ReturnType<typeof mount>>) => {
+  await u.ptr(u.title(), "pointerdown", 10, 100);
+  await u.ptr(u.title(), "pointermove", 900, 100);
+  await u.ptr(u.title(), "pointerup", 900, 100);
+};
+
+test("a launch says Launching until the server's item state says it shipped, and only then Shipped", async () => {
+  const u = await mount([launch("L"), build("B")], [item("item-L", "on_pad")]);
   try {
-    await u.ptr(u.title(), "pointerdown", 10, 100);
-    await u.ptr(u.title(), "pointermove", 900, 100);
-    await u.ptr(u.title(), "pointerup", 900, 100);
+    await swipeLaunch(u);
     expect(u.sent).toEqual([{ type: "choose_move", moveId: "L", optionId: "ship" }]);
-    expect(u.host.querySelector(".shipped .att")?.textContent).toBe("Launch L"); // not "Build B" yet
+    expect(u.host.querySelector(".launching .atop b")?.textContent).toBe("Launching…");
+    expect(u.host.querySelector(".shipped")).toBeNull(); // sending is not shipping
+    await u.render([build("B")], [item("item-L", "on_pad")]);
+    expect(u.host.querySelector(".shipped")).toBeNull();
+    expect(u.host.querySelector(".launching .att")?.textContent).toBe("Launch L"); // the next card waits
+    await u.render([build("B")], [item("item-L", "launched")]);
+    expect(u.host.querySelector(".shipped .atop b")?.textContent).toBe("Shipped");
+  } finally { await u.unmount(); }
+});
+
+test("a launch the server bounces never says Shipped, and its card comes back if it's still dealt", async () => {
+  const u = await mount([launch("L"), build("B")], [item("item-L", "on_pad")]);
+  try {
+    await swipeLaunch(u);
+    expect(u.host.querySelector(".launching")).not.toBeNull();
+    await u.render([launch("L"), build("B")], [item("item-L", "rejected")]); // a check sent it back
+    expect(u.host.querySelector(".shipped")).toBeNull();
+    expect(u.host.querySelector(".launching")).toBeNull();
+    expect(u.title().textContent).toBe("Launch L");
   } finally { await u.unmount(); }
 });

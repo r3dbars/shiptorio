@@ -1115,6 +1115,7 @@ export const TASKS = {
   parked: (n: number) => `${n} parked for later`,
   bringBack: "Bring back",
   shipped: "Shipped",
+  launching: "Launching…",
   setup: "Setup first",
   welcome: "Welcome",
   intro: "Your code factory. Work comes in as cards: say yes and it gets built, checked and shipped.",
