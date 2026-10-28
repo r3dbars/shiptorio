@@ -61,3 +61,47 @@ test("assistive confirmation never pauses rendering", () => {
     expect(submitWhenUnheld(() => {})).toBe(true);
   } finally { r.dispose(); }
 });
+
+function physical() {
+  const win = new EventTarget(), doc = Object.assign(new EventTarget(), { visibilityState: "visible" });
+  const lease = holdRenderYield({ progress() {}, arm() {}, cancel() {}, confirm() {}, launch() {} }, { window: win, document: doc });
+  const fire = (type: string, props: Record<string, unknown> = {}) => win.dispatchEvent(Object.assign(new Event(type), props));
+  const complete = () => { lease.events.arm(); lease.events.launch("A"); lease.dispose(); };
+  return { win, doc, lease, fire, complete };
+}
+test("completed detached keyboard holds ignore wrong keys/repeats and recover a missed keyup on fresh keydown", () => {
+  const f = physical();
+  try {
+    expect(f.lease.keyDown(" ")).toBe(true); f.complete();
+    f.fire("keyup", { key: "Enter" }); expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("keydown", { key: " ", repeat: true }); expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("keydown", { key: " ", repeat: false }); expect(submitWhenUnheld(() => {})).toBe(true);
+  } finally { f.fire("blur"); }
+});
+test("completed detached pointer leases recover a missed up only on a matching fresh primary down", () => {
+  const f = physical();
+  try {
+    f.lease.pointerDown(7); f.complete();
+    f.fire("pointerdown", { pointerId: 8, isPrimary: true, button: 0 }); expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("pointerdown", { pointerId: 7, isPrimary: false, button: 0 }); expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("pointerdown", { pointerId: 7, isPrimary: true, button: 0 }); expect(submitWhenUnheld(() => {})).toBe(true);
+  } finally { f.fire("blur"); }
+});
+test("native cancel, window blur and hidden state release completed detached ownership without React callbacks", () => {
+  for (const finish of ["pointercancel", "blur", "hidden"]) {
+    const f = physical();
+    f.lease.pointerDown(7); f.complete();
+    if (finish === "hidden") { f.doc.visibilityState = "hidden"; f.doc.dispatchEvent(new Event("visibilitychange")); }
+    else f.fire(finish, { pointerId: 7 });
+    expect(submitWhenUnheld(() => {})).toBe(true);
+    expect(f.lease.pointerDown(7)).toBe(false); // disposed component cannot reacquire a stale token
+  }
+});
+test("effect cleanup/setup replay permits the same mounted controller to acquire a new lease", () => {
+  const f = physical();
+  f.lease.pointerDown(7); f.lease.events.arm(); f.lease.dispose();
+  expect(submitWhenUnheld(() => {})).toBe(true);
+  f.lease.mount(); expect(f.lease.keyDown("Enter")).toBe(true); f.lease.events.arm();
+  expect(submitWhenUnheld(() => {})).toBe(false); f.fire("keyup", { key: "Enter" });
+  expect(submitWhenUnheld(() => {})).toBe(true); f.lease.dispose();
+});

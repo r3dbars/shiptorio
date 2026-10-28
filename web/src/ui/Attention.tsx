@@ -239,6 +239,7 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
   const g = gesture.current;
   useEffect(() => g.retarget(card), [g, card]);
   useEffect(() => {
+    renderHold.current?.mount();
     const leave = () => g.cancel();
     const hidden = () => { if (document.visibilityState !== "visible") g.cancel(); };
     window.addEventListener("blur", leave);

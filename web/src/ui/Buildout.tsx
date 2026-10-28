@@ -142,6 +142,7 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
   const g = gesture.current;
   useEffect(() => g.retarget(card), [g, card]);
   useEffect(() => {
+    renderHold.current?.mount();
     const leave = () => g.cancel();
     const hidden = () => { if (document.visibilityState !== "visible") g.cancel(); };
     window.addEventListener("blur", leave);
