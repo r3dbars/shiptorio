@@ -62,7 +62,7 @@ export interface CardView {
   setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
 }
 
-export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed";
+export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed" | "weld" | "carry";
 export interface ShippyView {
   pose: ShippyPose;
   at: StopId | "corner"; // corner = folded up in the top-left of the screen
@@ -131,6 +131,11 @@ export const STOP_X: Record<StopId, number> = {
 export const LAUNCH_Y = 250; // the launch circle on the rocket island
 /** Where things stand: a sprite's feet sit on this y at a stop (slightly in front of the belt). */
 export const FLOOR_Y = BELT_Y + 42;
+/** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */
+export const LOOK: Record<StopId, { h: number; drop: number }> = {
+  repo: { h: 190, drop: 46 }, planner: { h: 165, drop: 40 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
+  review: { h: 140, drop: 44 }, gate: { h: 168, drop: 44 }, launch: { h: 0, drop: 0 },
+};
 
 // ---------- art ----------
 export const ART_BASE = "/deck/art/";
@@ -139,13 +144,13 @@ export const art = (name: string) => `${ART_BASE}${name}.webp`;
 export const SPRITES = {
   scene: ["sky", "clouds", "deck", "pad", "boiler-off", "boiler-on"],
   rocket: ["rocket", "flame"],
-  stations: ["repo", "builder", "checks", "review", "gate"].flatMap((s) => ["idle", "working", "jammed", "auto"].map((st) => `${s}-${st}`)),
+  stations: ["repo", "planner", "builder", "checks", "review", "gate"].flatMap((s) => ["idle", "working", "jammed", "auto"].map((st) => `${s}-${st}`)),
   line: ["belt", "crate-plain", "crate-ok", "crate-bad", "crate-glow", "crate-wait", "beacon", "plate"],
   lever: ["lever-up", "lever-down", "lever-glow"],
   // shippy-0..5 = unfold strip: 0 closed box eye off, 1 eye on, 2 legs out, 3 standing, 4 arm out, 5 walking.
   // Poses are separate files, their own sizes: lever (pulling, includes the lever), happy, alarm, peek.
-  shippy: ["shippy-0", "shippy-1", "shippy-2", "shippy-3", "shippy-4", "shippy-5", "shippy-lever", "shippy-happy", "shippy-alarm", "shippy-peek"],
-  ui: ["ui-panel", "ui-btn", "ui-btn-glow"], // 9-slice frames for the card and its two buttons
+  shippy: ["shippy-0", "shippy-1", "shippy-2", "shippy-3", "shippy-4", "shippy-5", "shippy-lever", "shippy-happy", "shippy-alarm", "shippy-peek", "shippy-weld-0", "shippy-weld-1", "shippy-carry-0", "shippy-carry-1"],
+  ui: ["ui-panel", "ui-btn", "ui-btn-glow", "logo"], // 9-slice frames for the card and its two buttons
 } as const;
 
 /** Loads sprites once; the engine passes its loader to modules so nothing loads twice. */
@@ -188,6 +193,8 @@ export interface DeckLayer {
   owns?(stop: Stop): boolean;
   /** grow/: the world x-range that's built right now; the camera fits it and the belt stops at its right edge. */
   bounds?(): { x0: number; x1: number };
+  /** build/ only: camera shake in world px right now, and where Shippy should be while a build runs (overrides view.shippy). */
+  build?: { shake?(): number; shippyAct?(): { at: StopId; pose: ShippyPose } | null };
 }
 export type CreateLayer = (art: ArtLoader, bus: DeckBus) => DeckLayer;
 // Entries: grow/index.ts, build/index.ts, launch/index.ts each `export const createLayer: CreateLayer`.

@@ -61,7 +61,8 @@ const seed = Number(params.get("seed")) || 0;
     const view = source.view();
     engine.frame(view, dt);
     card.show(view.card);
-    if (view.caption !== caption) { caption = view.caption; if (caption) toast.textContent = caption; toast.classList.toggle("on", !!caption); }
+    if (view.caption !== caption) { caption = view.caption; if (caption) toast.textContent = caption; }
+    toast.classList.toggle("on", !!caption && !view.card); // the card owns the bottom of the screen
     if (!document.body.dataset.deckReady) document.body.dataset.deckReady = "1";
     requestAnimationFrame(frame);
   };

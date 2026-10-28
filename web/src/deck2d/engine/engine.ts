@@ -1,5 +1,5 @@
 import {
-  BELT_Y, FLOOR_Y, LAUNCH_Y, STOPS, STOP_X,
+  BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 
@@ -12,11 +12,6 @@ const BRIDGE_Y = PAD.y + PAD.s * 560;
 const ORB = { x: 1043, y: 578 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: 670 };
 const SPEED = 170, GAP = 50, CRATE = 42;
-/** Drawn height of each station sprite (they come in at different scales) and how far below the belt its feet sit. */
-const LOOK: Record<StopId, { h: number; drop: number }> = {
-  repo: { h: 190, drop: 46 }, planner: { h: 190, drop: 42 }, builder: { h: 172, drop: 42 }, checks: { h: 172, drop: 42 },
-  review: { h: 140, drop: 44 }, gate: { h: 168, drop: 44 }, launch: { h: 0, drop: 0 },
-};
 const LEVER = { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
 // The belt: along the deck, down onto the bridge, out to the launch circle.
@@ -59,13 +54,15 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
   let prev: DeckView | null = null, lever = 0;
 
-  let deckW = 2039, islandUp = true; // how much platform is built (deck.size / deck.island)
+  let deckW = 2039, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
 
   // ---------- camera ----------
   const cam = { x: 1400, y: 300, s: 0.3, manual: 0, all: false, pin: null as StopId | null };
   const portrait = () => W / H <= 1.2;
   const grow = layers.find((l) => l.bounds);
-  const right = () => grow?.bounds?.().x1 ?? (islandUp ? BOUNDS.x1 : deckW + 40); // the camera frames only what's been built
+  const builder = layers.find((l) => l.build)?.build;
+  const deckEnd = () => grow?.bounds?.().x1 ?? deckW + 40;
+  const right = () => islandUp ? Math.max(BOUNDS.x1, deckEnd()) : islandIn ? Math.max(BOUNDS.x1 + 170, deckEnd()) : deckEnd(); // the camera frames only what's been built (plus the crane while the island builds)
   const fitAll = () => {
     const bw = right() - BOUNDS.x0, bh = BOUNDS.y1 - BOUNDS.y0;
     return { x: (BOUNDS.x0 + right()) / 2, y: (BOUNDS.y0 + BOUNDS.y1) / 2 + 30, s: Math.min(W / bw, (H * 0.9) / bh, 1.1) };
@@ -84,8 +81,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function target(v: DeckView) {
     const all = fitAll();
-    if (cam.all || !portrait()) return all;
-    const s = Math.max(all.s, W / 1050), half = W / 2 / s;
+    if (cam.all) return all;
+    // Desktop fits everything, except it leans in on a station while it's being built (construction reads small otherwise).
+    const site = !portrait() && !v.card ? v.stops.find((x) => x.id !== "launch" && (x.building !== undefined || (x.built && layers.some((l) => l.owns?.(x))))) : undefined;
+    if (!portrait() && !site) return all;
+    const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
+    if (site) return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, STOP_X[site.id])), y: 230, s };
     return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, focusX(v))), y: 250, s };
   }
   { const f = fitAll(); Object.assign(cam, f); }
@@ -134,7 +135,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     if (p && v.jam && v.jam !== p.jam) bus.emit({ type: "jam", stop: v.jam });
     if (p && v.shippy.pose !== p.shippy.pose) bus.emit({ type: "shippy", pose: v.shippy.pose });
-    if (p && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
+    if (p && islandUp && v.shipped > p.shipped && (rocket.mode === "ready" || rocket.mode === "down")) { rocket.mode = "count"; rocket.t = 0; }
 
     // crates: every item has a spot (its stop, minus its place in the queue); crates only ever slide forward
     const seen = new Set<string>();
@@ -206,7 +207,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const bh = 34, bw = b.naturalWidth * bh / b.naturalHeight, step = bw / 5; // the strip holds 5 chevron panels
     const off = (t * SPEED * 0.35) % step;
     for (const g of segs) {
-      const len = islandUp ? g.len : Math.min(g.len, deckW - 60 - g.ax);
+      const len = islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax);
       cx.save(); cx.translate(g.ax, g.ay); cx.rotate(g.a);
       cx.beginPath(); cx.rect(0, -bh / 2, len, bh); cx.clip();
       for (let x = off - step - bw; x < g.len; x += bw - 1) cx.drawImage(b, x, -bh / 2, bw, bh);
@@ -275,14 +276,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       const tg = target(v), k = first ? 1 : Math.min(1, dt * 1.8); first = false;
       cam.x += (tg.x - cam.x) * k; cam.y += (tg.y - cam.y) * k; cam.s += (tg.s - cam.s) * k;
     }
-    shippy.update(dt, v.shippy);
     for (const l of layers) l.update(dt, v);
+    const act = builder?.shippyAct?.(); // a running build calls Shippy over to weld
+    shippy.update(dt, act ? { pose: act.pose, at: act.at } : v.shippy);
+    const quake = builder?.shake?.() ?? 0;
 
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
     cx.fillStyle = "#2a1410"; cx.fillRect(0, 0, W, H);
     sky();
-    cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - cam.x * cam.s), DPR * (H / 2 - cam.y * cam.s));
+    cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + (Math.random() - 0.5) * quake) * cam.s), DPR * (H / 2 - (cam.y + (Math.random() - 0.5) * quake) * cam.s));
     slot("sky-far");
     clouds(470, 1.1, 5, 0.85);
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).
@@ -298,7 +301,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
       cx.drawImage(pad, PAD.x, PAD.y + (1 - island) * 260, pad.naturalWidth * PAD.s, pad.naturalHeight * PAD.s); // rises up out of the clouds
       cx.globalAlpha = 1;
     }
-    islandUp = island >= 1;
+    islandUp = island >= 1; islandIn = island > 0;
     slot("deck");
     put("boiler-on", 112, 182, 168);
     glow(ORB.x, ORB.y, 100, "120,240,255", 0.3 + 0.2 * Math.sin(t * 2), true);
