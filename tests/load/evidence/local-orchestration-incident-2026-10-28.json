@@ -1,0 +1,15 @@
+{
+  "classification": "possible unintended staging requests from a failed local test; not a load/capacity result",
+  "auditWindowUTC": { "turnStarted": "2026-10-28T16:57:12Z", "coordinatorNotified": "2026-10-28T17:10:53Z" },
+  "timePrecision": "Exact request timestamps were not retained. The window is bounded by the current task turn start and the first incident notification.",
+  "possibleHandshakeAttempts": 50,
+  "target": "wss://shiptorio.dev/api/repos/load-test/shiptorio-load-crowd/factory",
+  "confirmedRequestCount": null,
+  "realCredentialsProvided": false,
+  "requestSuccessVerified": false,
+  "productionTargeted": false,
+  "testFailure": { "name": "a source change stops all viewer timers promptly and cannot pass the load budget", "expectedSnapshots": 50, "observedSnapshots": 0 },
+  "diagnostic": "Bun's built-in ws preload mock did not replace the native adapter; a later identity check detected this and refused startup.",
+  "evidenceBoundary": "The failed assertion is in the chat tool transcript. Temporary local CLI reports were cleaned up, so no raw response/request headers or credentials are retained and server outcomes cannot be reconstructed from them.",
+  "containment": "Stopped the affected test path. Local tests now require numeric loopback targets, verify the explicit local adapter before startup, reject nonlocal targets before client construction, and mock HTTP only within that loopback origin."
+}
