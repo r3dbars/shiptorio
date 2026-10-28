@@ -223,3 +223,16 @@ for (const kind of ["launch", "build"] as const) test(`${kind}: completed physic
     up(41); expect(submitWhenUnheld(() => {})).toBe(true);
   } finally { up(41); if (!unmounted) await m.unmount(); }
 });
+
+for (const [card, sfx] of [["tunnel", "repair_pry"], ["boiler", "repair_boiler"], ["issue", "repair_cart"], ["builder", null]] as const) test(`build hold on ${card} plays ${sfx ?? "no repair"} when it completes`, async () => {
+  const { sound } = await import("../src/sound/engine");
+  const play = spyOn(sound, "play");
+  const c = fakeClock(), m = await mount(c.clock, card, "build");
+  try {
+    await m.act(() => m.button().dispatchEvent(new PointerEvent("pointerdown", { pointerId: 7, isPrimary: true, button: 0, bubbles: true })));
+    await m.act(() => c.to(1000));
+    expect(m.launched).toEqual([card]);
+    const repairs = play.mock.calls.map(([s]) => s).filter((s) => String(s).startsWith("repair_"));
+    expect(repairs).toEqual(sfx ? [sfx] : []);
+  } finally { window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 7, bubbles: true })); await m.unmount(); play.mockRestore(); }
+});

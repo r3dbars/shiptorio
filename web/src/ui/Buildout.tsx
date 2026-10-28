@@ -116,12 +116,17 @@ export function useSettled(key: string) {
 const SIGN_IN = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
 const HOLD_BUILD_MS = 900;
 
+// The three foundry repairs from Justin's soundboard picks (Crowbar, Ignite, Hammer) land when their hold completes.
+export const REPAIR_SFX: Partial<Record<string, "repair_pry" | "repair_boiler" | "repair_cart">> = { tunnel: "repair_pry", boiler: "repair_boiler", issue: "repair_cart" };
+
 /** Hold to build: the same consent rules as the big red launch button (holdLaunch.ts), with its own words. */
 export function BuildHold({ card, label, red, onBuild, clock = realClock }: { card: string; label: string; red?: boolean; onBuild: () => void; clock?: HoldClock }) {
   const [p, setP] = useState(0);
   const [armed, setArmed] = useState(false);
   const build = useRef(onBuild);
   build.current = onBuild;
+  const cardRef = useRef(card);
+  cardRef.current = card;
   const gesture = useRef<HoldGesture | null>(null);
   const renderHold = useRef<ReturnType<typeof holdRenderYield> | null>(null);
   if (!gesture.current) {
@@ -133,6 +138,8 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
         confirm: (c) => setArmed(c !== null),
         launch: () => {
           navigator.vibrate?.(40);
+          const repair = REPAIR_SFX[cardRef.current];
+          if (repair) sound.play(repair);
           build.current();
         },
       },
