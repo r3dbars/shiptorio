@@ -29,13 +29,13 @@ function lampBall(g: Px, cx: number, cy: number, r: number, ramp: Ramp) {
 
 /** Board icons, 5x5, drawn in the plan's blue ink: a gear, a little factory, a crate. */
 function icon(g: Px, x: number, y: number, k: number) {
-  const ink: Color = "steel-1", hi: Color = "steel-2";
   const rows = [
-    [".#.#.", "#####", "##.##", "#####", ".#.#."],
-    ["#...#", "##.##", "#####", "#.#.#", "#####"],
-    [".###.", "#####", "#.#.#", "#####", "#####"],
+    ["#.#.#", ".###.", "##.##", ".###.", "#.#.#"], // gear
+    ["#....", "#.#..", "#####", "#.#.#", "#####"], // factory
+    ["..#..", ".###.", ".###.", "#####", "#.#.#"], // rocket
   ][k];
-  rows.forEach((r, j) => [...r].forEach((c, i) => c === "#" && g.set(x + i, y + j, (i + j) % 3 === 0 ? hi : ink)));
+  g.box(x - 1, y - 1, 7, 7, "steel-2"); // each step sits in its own little frame, like the mockup's tiles
+  rows.forEach((r, j) => [...r].forEach((c, i) => c === "#" && g.set(x + i, y + j, "steel-1")));
 }
 
 export const planner: StationDef = {
