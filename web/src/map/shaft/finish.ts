@@ -26,7 +26,7 @@ const vertexShader = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec
 
 const fragmentShader = /* glsl */ `
   uniform sampler2D tDiffuse; uniform vec2 res; uniform float smoothMode, pxs, levels, dither, outline, thresh, sat, contrast, bloom, bloomThresh, vignette, grade, scan;
-  uniform vec3 ink, shadowT, highT; varying vec2 vUv;
+  uniform vec3 ink, shadowT, highT; uniform vec2 bloomDirections[TAPS]; varying vec2 vUv;
   float b2(vec2 a){ a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
   float b4(vec2 a){ return b2(0.5 * a) * 0.25 + b2(a); }
   float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -36,7 +36,8 @@ const fragmentShader = /* glsl */ `
     vec3 c = tap(uv); float l = lum(c);
     float n = max(max(lum(tap(uv + vec2(t.x, 0.0))), lum(tap(uv - vec2(t.x, 0.0)))), max(lum(tap(uv + vec2(0.0, t.y))), lum(tap(uv - vec2(0.0, t.y)))));
     vec3 acc = vec3(0.0); float br = 2.0 / pxs;
-    if (bloom > 0.0) { for (int i = 0; i < TAPS; i++) { float a = (float(i) + b4(p)) * (6.2832 / float(TAPS)); vec2 d = vec2(cos(a), sin(a));
+    if (bloom > 0.0) { float a = b4(p) * (6.2832 / float(TAPS)); vec2 r = vec2(cos(a), sin(a));
+      for (int i = 0; i < TAPS; i++) { vec2 b = bloomDirections[i]; vec2 d = vec2(b.x * r.x - b.y * r.y, b.x * r.y + b.y * r.x);
       vec3 s1 = tap(uv + d * t * 2.0 * br); vec3 s2 = tap(uv + d * t * 4.5 * br); vec3 s3 = tap(uv + d * t * 8.0 * br);
       acc += s1 * max(0.0, lum(s1) - bloomThresh) * 1.2 + s2 * max(0.0, lum(s2) - bloomThresh) * 0.8 + s3 * max(0.0, lum(s3) - bloomThresh) * 0.5; }
       acc *= 12.0 / float(TAPS); }
@@ -76,6 +77,7 @@ export class FinishPass {
     return new THREE.ShaderMaterial({
       defines: { TAPS: this.taps },
       uniforms: {
+        bloomDirections: { value: Array.from({ length: this.taps }, (_, i) => new THREE.Vector2(Math.cos(i * 6.2832 / this.taps), Math.sin(i * 6.2832 / this.taps))) },
         tDiffuse: { value: this.target.texture }, res: { value: new THREE.Vector2(2, 2) }, smoothMode: { value: 0 }, pxs: { value: 1 },
         levels: { value: 48 }, dither: { value: 0 }, outline: { value: 0.5 }, thresh: { value: 0.1 }, ink: { value: new THREE.Color(0) },
         sat: { value: 1 }, contrast: { value: 1 }, bloom: { value: 0.5 }, bloomThresh: { value: 0.6 }, vignette: { value: 0.3 },

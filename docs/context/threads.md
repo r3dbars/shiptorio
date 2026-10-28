@@ -3,6 +3,9 @@
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
+## GPU recovery investigation (Codex, 2026-10-28)
+
+#366 remains draft while its unchanged two-second recovery checks are repaired. Current native GPU recovery passes, SwiftShader fails. Profiling found a roughly 8.9-second stall at the first onscreen finish draw, versus about 434 ms total in program-info checks. Testing a mathematically equivalent bloom rotation that retains all 12/8 sample directions while removing repeated per-sample trigonometry. No assertion, deadline, retry or quality pin changes. Normal hold leases, adaptive budget and password gate are preserved.
 
 ## Polished logo dev refresh (Codex, 2026-10-28)
 
