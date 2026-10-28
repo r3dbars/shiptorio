@@ -703,3 +703,8 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 - Before: every reconnect awaited optional Sentry/PostHog discovery and loaded the factory twice. After: one load, then a durable `mineReconnectPending` marker consumed by the normal alarm after foreground gauntlet work; failures retain the marker for retry after eviction. First factory creation and GitHub reinitialization remain synchronous. No auth, quota, socket deadline, or frontend changes.
 - Focused regression: original source fails the provider-free reconnect test; updated source passes 22 tests / 111 assertions, including real mine connection on the next alarm, disconnect preservation, retry and current lifecycle/account/installation guards. The under-three-second live target remains unproven until this PR deploys and is measured.
+
+### Codex fresh sign-in policy roundtrips — PR #528
+
+- Root-approved narrow `accounts.ts/currentUser` change: after the fresh session lookup, read revocation and admission concurrently on every request. Both results remain required, known revocation still denies before any admission error, and revocation lookup failures still propagate. No mutable authority caching, boundary sharing, fixture policy change or frontend edits.
+- Deterministic held-read tests pin overlapping requests and waiting for both results; real SQLite tests pin next-request deletion/revocation/admission changes, failure precedence, explicit pending-account behavior and production rejection of negative testers. Live cold/warm timing remains pending deployment; required cold GitHub verification is not bypassed.
