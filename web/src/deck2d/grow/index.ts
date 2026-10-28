@@ -12,7 +12,8 @@
 //   rails   back rail drops down, front rail rises
 //   glow    the new seams glow gold, then cool
 //   done    one dust puff as it locks in (the story caption says what changed)
-import type { ArtLoader, CreateLayer, DeckBus, DeckLayer, DeckView, LayerSlot } from "../contract";
+import { PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
+import { pixelOn } from "../../flags";
 
 export type DeckSize = "small" | "medium" | "large";
 export type GrowPhase = "beams" | "plates" | "rocks" | "rails" | "glow" | "done";
@@ -35,10 +36,6 @@ export const DECKS: Record<DeckSize, Geo> = {
   medium: geo(2068, 596, 1500, 1700, [128, 278], 375),
   large: geo(2077, 517, 2039, 1690, [105, 248], 322),
 };
-const sprite = (z: DeckSize) => `deck-${z}`;
-const capAt = (z: DeckSize) => DECKS[z].cap * DECKS[z].s; // world x where a size's end cap starts
-const endAt = (z: DeckSize) => DECKS[z].w * DECKS[z].s; // world x where it ends
-const capW = (z: DeckSize) => endAt(z) - capAt(z);
 const TILE = 80; // one new floor column, world px
 
 // ---------- timeline, seconds from the start of a grow ----------
@@ -76,13 +73,37 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   let g: Growth | null = null;
   let puffs: Puff[] = [];
   const queue: DeckSize[] = [];
-  for (const n of [...SIZES.map(sprite), ...STAGE_ART, "grow-crane"]) art.get(n); // start loading now
+  // Pixel mode (?px=1, contract "the pixel canvas"): the hulls are deck-<size>-px.webp, the same art downscaled to
+  // 1 px = 1 art px and snapped to the 48 colors (scripts/pixel/pixelize.py). The growth is drawn in code on the
+  // art grid: whole art px, palette colors, no fades.
+  const PX = pixelOn();
+  const sprite = (z: DeckSize) => (PX ? `deck-${z}-px` : `deck-${z}`);
+  const pxGeo: Partial<Record<DeckSize, Geo>> = {};
+  /** The geometry for a size: in pixel mode, measured off the pixel hull once it has loaded. */
+  function geoOf(z: DeckSize): Geo {
+    const D = DECKS[z];
+    if (!PX) return D;
+    const done = pxGeo[z];
+    if (done) return done;
+    const im = art.get(sprite(z));
+    if (!im) return D;
+    const r = im.naturalWidth / D.w, q = (n: number) => Math.round(n * r);
+    const floor: [number, number] = [q(D.floor[0]), q(D.floor[1])];
+    return (pxGeo[z] = { s: 5, w: im.naturalWidth, h: im.naturalHeight, cap: q(D.cap), floor, skirt: q(D.skirt), dy: snap(FRONT_Y - floor[1] * 5) });
+  }
+  const capAt = (z: DeckSize) => geoOf(z).cap * geoOf(z).s; // world x where a size's end cap starts
+  const endAt = (z: DeckSize) => geoOf(z).w * geoOf(z).s; // world x where it ends
+  const capW = (z: DeckSize) => endAt(z) - capAt(z);
+  for (const n of [...SIZES.map(sprite), ...(PX ? [] : [...STAGE_ART, "grow-crane"])]) art.get(n); // start loading now
 
   const now = () => size ?? "large";
   // where the old deck's floor stops and the new section starts: the new cap first sits where the old deck ended
   const seamX = (gr: Growth) => endAt(gr.from) - capW(gr.to);
   // the new deck's end cap, world x: it rolls out from the seam during beams
-  const capX = () => (g ? seamX(g) + (capAt(g.to) - seamX(g)) * easeBack(span(g.t, T.beams)) : capAt(now()));
+  const capX = () => {
+    const x = g ? seamX(g) + (capAt(g.to) - seamX(g)) * easeBack(span(g.t, T.beams)) : capAt(now());
+    return PX ? snap(x) : x;
+  };
   const cols = (gr: Growth) => Math.max(1, Math.ceil((capAt(gr.to) - seamX(gr)) / TILE));
 
   // one soft dust puff along the new section when it locks in
@@ -107,7 +128,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
       g.t += dt;
       for (const p of PHASES) if (!g.fired.has(p) && g.t >= T[p][0]) { g.fired.add(p); bus.emit({ type: "deck-grow", size: g.to, phase: p }); }
       if (g.t >= GROW_SECONDS) {
-        if (fx) puff(seamX(g), capAt(g.to), wy(DECKS[g.to], DECKS[g.to].skirt));
+        if (fx) puff(seamX(g), capAt(g.to), wy(geoOf(g.to), geoOf(g.to).skirt));
         size = g.to; g = null;
         bus.emit({ type: "deck-grow", size, phase: "done" });
       }
@@ -126,8 +147,11 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
 
   // ---------- drawing ----------
   const wy = (G: Geo, y: number) => G.dy + y * G.s; // sprite y -> world y
-  const bandOf = (G: Geo, b: Band): [number, number] =>
-    b === "rail" ? [0, G.floor[0] + 8] : b === "floor" ? [G.floor[0], G.floor[1]] : b === "front" ? [G.floor[1] - 12, G.skirt] : [G.skirt - 10, G.h];
+  const bandOf = (G: Geo, b: Band): [number, number] => {
+    const u = G.s >= 5 ? 0.2 : 1; // the overlaps are in big-sprite px; a pixel hull needs about a fifth
+    const o = (n: number) => Math.round(n * u);
+    return b === "rail" ? [0, G.floor[0] + o(8)] : b === "floor" ? [G.floor[0], G.floor[1]] : b === "front" ? [G.floor[1] - o(12), G.skirt] : [G.skirt - o(10), G.h];
+  };
 
   /** Sprite columns from sx (sprite px) drawn at world x, w world px wide: one band (or all), offset and faded. */
   function blit(ctx: CanvasRenderingContext2D, im: HTMLImageElement, G: Geo, sx: number, x: number, w: number,
@@ -137,23 +161,25 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     ctx.drawImage(im, sx, y0, w / G.s, y1 - y0, x, wy(G, y0) + dy, w, (y1 - y0) * G.s);
     ctx.globalAlpha = 1;
   }
+  const hash = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
   // the new size's own art at world x (its sprite already shows the finished deck)
   const srcAt = (G: Geo, x: number) => x / G.s;
 
   function drawWhole(ctx: CanvasRenderingContext2D, z: DeckSize, alpha = 1) {
-    const im = art.get(sprite(z)), G = DECKS[z];
+    const im = art.get(sprite(z)), G = geoOf(z);
     if (im) blit(ctx, im, G, 0, 0, endAt(z), null, 0, alpha);
   }
 
   function drawDeck(ctx: CanvasRenderingContext2D) {
     if (!g) return drawWhole(ctx, now());
-    const gr = g, G = DECKS[gr.to], im = art.get(sprite(gr.to));
+    const gr = g, G = geoOf(gr.to), im = art.get(sprite(gr.to));
     if (!im) return drawWhole(ctx, gr.from);
-    const a = seamX(gr), cap = capX(), t = gr.t;
+    const a = PX ? snap(seamX(gr)) : seamX(gr), cap = capX(), t = gr.t;
     blit(ctx, im, G, 0, 0, a, null); // the new art's left part, as far as the old deck reached
-    if (STAGE_ART.every((n) => art.get(n))) drawStaged(ctx, gr, im, a, cap);
+    if (!PX && STAGE_ART.every((n) => art.get(n))) drawStaged(ctx, gr, im, a, cap);
     else drawColumns(ctx, gr, im, a, cap);
     blit(ctx, im, G, G.cap, cap, capW(gr.to), null); // the end cap, wherever it is right now
+    if (PX) return; // pixel mode: no crane picture, and the new hull swaps in whole (no fades on the art grid)
     drawCrane(ctx, gr, cap);
     if (t < SWAP) drawWhole(ctx, gr.from, 1 - t / SWAP); // the old art fades into the new
   }
@@ -202,18 +228,20 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
 
   // No stage art yet: build the new floor from the finished deck's own columns.
   function drawColumns(ctx: CanvasRenderingContext2D, gr: Growth, im: HTMLImageElement, a: number, cap: number) {
-    const G = DECKS[gr.to], n = cols(gr), t = gr.t;
+    const G = geoOf(gr.to), n = cols(gr), t = gr.t;
+    const off = (d: number) => (PX ? snap(d) : d), fade = (k: number) => (PX ? 1 : k); // whole art px, no fades on the grid
     // rock chunks drifting up toward the new section, before they fuse
     for (let i = 0; i < n; i++) {
       const k = stag(t, T.rocks, i, n, 0.5);
       if (k > 0 && k < 1) {
         const e = easeOut(k), x = a + i * TILE;
-        blit(ctx, im, G, srcAt(G, x), x, Math.min(TILE, capAt(gr.to) - x), "under", (1 - e) * 40, Math.min(1, k * 5));
+        blit(ctx, im, G, srcAt(G, x), x, Math.min(TILE, capAt(gr.to) - x), "under", off((1 - e) * 40), fade(Math.min(1, k * 5)));
       }
     }
     // beams: back + front girder, posts and a truss, out to wherever the cap is
     const yb = wy(G, G.floor[0]), yf = wy(G, G.floor[1]), ys = wy(G, G.skirt);
-    if (span(t, T.beams) > 0 && span(t, T.rails) < 1) {
+    if (PX && span(t, T.beams) > 0 && span(t, T.rails) < 1) drawBeamsPx(ctx, a, cap, yb, yf, ys);
+    else if (span(t, T.beams) > 0 && span(t, T.rails) < 1) {
       const w = cap - a + 6;
       ctx.globalAlpha = 1 - span(t, T.rails);
       ctx.fillStyle = "#2a1d14"; ctx.fillRect(a, yb - 8, w, 10); ctx.fillRect(a, yf - 8, w, ys - yf);
@@ -228,18 +256,65 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
       ctx.globalAlpha = 1;
     }
     for (let i = 0; i < n; i++) {
-      const x = a + i * TILE, w = Math.min(TILE, capAt(gr.to) - x) + 1, sx = srcAt(G, x);
-      if (w <= 1) continue;
-      if (stag(t, T.rocks, i, n, 0.5) >= 1) blit(ctx, im, G, sx, x, w, "under"); // fused rock
+      const x = a + i * TILE, w = Math.min(TILE, capAt(gr.to) - x) + (PX ? 0 : 1), sx = srcAt(G, x);
+      if (w <= (PX ? 0 : 1)) continue;
+      const ro = stag(t, T.rocks, i, n, 0.5); // fused rock
+      if (PX && ro > 0 && ro < 1) { // one art px column at a time, so the leading edge is ragged rock, not a cut
+        for (let c = 0; c * 5 < w; c++) if (ro >= 0.2 + 0.8 * hash(x / 5 + c)) blit(ctx, im, G, srcAt(G, x + c * 5), x + c * 5, 5, "under");
+      } else if (ro >= 1) blit(ctx, im, G, sx, x, w, "under");
       const pk = stag(t, T.plates, i, n); // plates drop in
-      if (pk > 0) blit(ctx, im, G, sx, x, w, "floor", -(1 - easeOut(pk)) * 60, Math.min(1, pk * 3));
+      if (pk > 0) blit(ctx, im, G, sx, x, w, "floor", off(-(1 - easeOut(pk)) * 60), fade(Math.min(1, pk * 3)));
       const rk = stag(t, T.rails, i, n, 0.5); // back rail drops, front rail rises
       if (rk > 0) {
-        const e = easeBack(rk), al = Math.min(1, rk * 3);
-        blit(ctx, im, G, sx, x, w, "rail", -(1 - e) * 70, al);
-        blit(ctx, im, G, sx, x, w, "front", (1 - e) * 50, al);
+        const e = PX ? easeOut(rk) : easeBack(rk), al = fade(Math.min(1, rk * 3));
+        blit(ctx, im, G, sx, x, w, "rail", off(-(1 - e) * 70), al);
+        blit(ctx, im, G, sx, x, w, "front", off((1 - e) * 50), al);
       }
     }
+  }
+
+  // pixel mode beams: dark cool steel, lit from the upper right, brass only as rivets (Justin's art direction).
+  // Each girder shows a top face and a bevelled front face with panel seams, rivets (light px over dark px) with a
+  // rust streak under every other one, and grime dithered along the bottom; posts are banded dark -> light left to
+  // right, with X braces between them down to where the rock fuses
+  function drawBeamsPx(ctx: CanvasRenderingContext2D, a: number, cap: number, yb: number, yf: number, ys: number) {
+    const P = 5, St = PALETTE.steel, Ru = PALETTE.copper[0], Br = PALETTE.brass[4], S = PALETTE.soot[0], Gr = PALETTE.iron[0];
+    const px = (x: number, y: number, c: string, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(x, y, w * P, h * P); };
+    const cols = Math.round((cap - a) / P);
+    const girder = (y: number, h: number) => { // h art px tall: 1 top-face row + front face
+      px(a, y - P, S, cols, h + 2);
+      px(a, y, St[3], cols); // top face, sunlit
+      px(a, y + P, St[2], cols); // bevel: light inner top edge
+      if (h > 3) px(a, y + 2 * P, St[1], cols, h - 3);
+      for (let c = 0; c < cols; c++) px(a + c * P, y + (h - 1) * P, (c & 1) ? Gr : St[0]); // grime checker
+      for (let c = 15; c < cols; c += 16) { px(a + c * P, y + P, St[0], 1, h - 2); px(a + (c + 1) * P, y + P, St[2], 1, h - 2); } // seams
+      const ry = y + Math.max(1, (h >> 1) - 1) * P;
+      for (let c = 3, k = 0; c < cols; c += 6, k++) {
+        px(a + c * P, ry, Br); px(a + c * P, ry + P, St[0]); // rivet
+        if (k & 1 && ry + 2 * P < y + (h - 1) * P) px(a + c * P, ry + 2 * P, Ru); // rust streak
+      }
+    };
+    const [g0, g1, g2] = [snap(yb) - 2 * P, snap(yf) - 2 * P, snap(ys) - P], h1 = 5, top = g1 + (h1 + 1) * P;
+    const posts: number[] = [];
+    for (let x = a; x < cap - 4 * P; x += TILE) posts.push(x);
+    // X braces first, so posts and girders sit on top of them
+    for (let k = 0; k + 1 < posts.length; k++) {
+      const x0 = posts[k] + 4 * P, x1 = posts[k + 1], n = Math.round((x1 - x0) / P), rows = Math.round((g2 - top) / P);
+      for (let c = 0; c < n; c++) {
+        const r = Math.round((c / Math.max(1, n - 1)) * (rows - 1));
+        px(x0 + c * P, top + r * P, St[1]); px(x0 + c * P, top + (r + 1) * P, S);
+        px(x0 + c * P, top + (rows - 1 - r) * P, St[2]); px(x0 + c * P, top + (rows - r) * P, S);
+      }
+    }
+    for (const x of posts) {
+      const rows = Math.round((g2 + 3 * P - g1) / P);
+      px(x - P, g1, S, 6, rows + 1);
+      St.forEach((c, k) => px(x + k * P, g1, c, 1, rows));
+      px(x, g1 + rows * P - P, St[0], 4); // dark foot, it sinks into the rock
+      for (let r = h1 + 3; r < rows - 2; r += 6) { px(x + 2 * P, g1 + r * P, Br); px(x + 2 * P, g1 + (r + 1) * P, St[0]); }
+    }
+    girder(g0, 3);
+    girder(g1, h1);
   }
 
   // the crane stands on the far end of the end cap, arm out over the sky (never over a station), and is gone
@@ -258,6 +333,11 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   }
 
   function drawFront(ctx: CanvasRenderingContext2D) {
+    if (PX) { // whole art px, solid haze, gone before it would need to fade
+      ctx.fillStyle = PALETTE.haze[3];
+      for (const p of puffs) if (p.t < p.life * 0.6) { const r = snap(p.r * (1 + p.t)); ctx.fillRect(snap(p.x - r / 2), snap(p.y - r / 2), r, r); }
+      return;
+    }
     for (const p of puffs) {
       const k = p.t / p.life, r = p.r * (1 + k * 1.5);
       ctx.fillStyle = `rgba(225,210,195,${0.5 * (1 - k)})`;

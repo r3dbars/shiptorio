@@ -1,5 +1,7 @@
 import { LAUNCH, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
+import { pixelOn } from "../../flags";
 import type { Preview } from "./preview";
+import { createPixelLaunch } from "./px";
 import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeBack, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
 
 // launch/: you earn the rocket. The island rises out of the clouds, a bridge is laid out to it from the deck, a
@@ -29,7 +31,7 @@ type Place = (im: HTMLImageElement) => [number, number, number];
 
 export const createLayer: CreateLayer = (art, bus) => {
   if (new URLSearchParams(location.search).get("launch") === "preview") location.replace(`/launch.html${location.search}`);
-  return createLaunchLayer(art, bus, null);
+  return pixelOn() ? createPixelLaunch(art, bus, null) : createLaunchLayer(art, bus, null); // ?px=1: the pixel deck (px.ts)
 };
 
 /** The layer itself; preview (launch.html) drives progress directly instead of reading it from the view. */

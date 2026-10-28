@@ -6,6 +6,10 @@ import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
 
+// stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
+type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number) => void;
+const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { eager: true }))[0] as { drawStation?: DrawStation } | undefined)?.drawStation;
+
 // The deck renderer: sky, clouds, deck, bridge + rocket island, belt, stations, crates, rocket, camera.
 // It draws whatever DeckView it's handed and animates the in-between (crates sliding stop to stop by item id,
 // stations dropping in, the rocket going up), and emits DeckEvents for juice/ by diffing views.
@@ -241,7 +245,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const bob = 0; // calm: working stations don't jitter; the belt and crates show the work
     const L = LOOK[id];
     cx.globalAlpha = Math.min(1, drop[id] * 3);
-    put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
+    if (px && drawStation) drawStation(cx, id, s.state, t, STOP_X[id], BELT_Y + L.drop + fall);
+    else put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
     if (s.state === "jammed") {
       // the one marker on the deck: a steady beacon with a slow breath, not a strobe

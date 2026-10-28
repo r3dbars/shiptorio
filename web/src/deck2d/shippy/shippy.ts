@@ -7,8 +7,10 @@
 //
 // Everything is driven by update(dt, view): the engine only says where he should be and what he's doing.
 // Times are seconds. World units are deck px (contract "world space").
-import { FLOOR_Y, STOP_X, type ArtLoader, type ShippyModule, type ShippyPose, type ShippyView, type StopId } from "../contract";
+import { ART_PX, FLOOR_Y, STOP_X, type ArtLoader, type ShippyModule, type ShippyPose, type ShippyView, type StopId } from "../contract";
+import { pixelOn } from "../../flags";
 import { ANCHOR, STRIP_H, UNFOLD, type ShippyFrame } from "./frames";
+import { PX_INK, drawPx, pxFrame, type PxFrame } from "./pixel";
 
 /** The contract's poses plus the build poses: weld (torch + sparks) and carry (a steel beam, also while walking). */
 export type ShippyActPose = ShippyPose | "weld" | "carry";
@@ -28,9 +30,12 @@ export type ShippyOptions = {
   /** Floor height under x, for decks that aren't flat (the bridge to the rocket island). */
   floorAt?: (x: number) => number;
   reducedMotion?: boolean;
+  /** Draw as code pixel art on the art grid (contract: the pixel canvas). Defaults to ?px=1 / the pixel feature. */
+  pixel?: boolean;
 };
 
-type Draw = { frame: ShippyFrame; x: number; y: number; sx: number; sy: number; rot: number; flip: boolean; glow: number; color: string; alpha: number };
+// px / pxFlip: the frame and facing when drawn as pixel art (?px=1); without px it follows `frame`.
+type Draw = { frame: ShippyFrame; x: number; y: number; sx: number; sy: number; rot: number; flip: boolean; glow: number; color: string; alpha: number; px?: PxFrame; pxFlip?: boolean };
 type Puff = { x: number; y: number; vx: number; vy: number; age: number; life: number; r: number; color: string };
 type CornerMode = "home" | "unfold" | "gone" | "fold";
 type WorldMode = "off" | "drop" | "walk" | "stand" | "leave";
@@ -60,6 +65,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     size: 90, speed: 380, standDx: 150, entryX: STOP_X.repo - 150,
     floorAt: (_x: number) => FLOOR_Y + 22, // just in front of the belt, so he never walks through a machine
     reducedMotion: globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
+    pixel: pixelOn(),
     ...options,
   };
   const still = o.reducedMotion;
@@ -174,7 +180,8 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         // reach, yank with a jolt, hold, let go; repeats while the view keeps him on the lever
         const k = (t % 1.4) / 1.4;
         const yank = k > 0.35 && k < 0.5 ? Math.sin(((k - 0.35) / 0.15) * Math.PI) : 0;
-        return { ...base, frame: k > 0.9 ? "shippy-4" : "shippy-lever", flip: false, x: base.x + yank * u * 0.05, sx: 1 + yank * 0.05, sy: 1 - yank * 0.08, glow: 0.6 + yank * 0.4 };
+        // pixel art: he faces the engine's lever (to his left) and the arm dips a px on the yank
+        return { ...base, frame: k > 0.9 ? "shippy-4" : "shippy-lever", px: yank > 0.3 ? "lever1" : "lever0", pxFlip: true, flip: false, x: base.x + yank * u * 0.05, sx: 1 + yank * 0.05, sy: 1 - yank * 0.08, glow: 0.6 + yank * 0.4 };
       }
       case "happy": {
         // two hops, then he stands there glowing green
@@ -192,12 +199,24 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
       case "weld": {
         // torch flickers between the two frames, a shower of sparks at the tip
         const f = Math.floor(t / 0.09) % 2;
-        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", flip: false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
+        return { ...base, frame: f ? "shippy-weld-1" : "shippy-weld-0", px: f ? "weld1" : "weld0", flip: false, x: base.x + (f ? u * 0.01 : 0), glow: 0.7 + 0.3 * f, color: AMBER };
       }
       case "carry": {
         const f = Math.floor(t / 0.6) % 2;
-        return { ...base, frame: f ? "shippy-carry-1" : "shippy-carry-0", sy: base.sy - (f ? 0.02 : 0) };
+        return { ...base, frame: f ? "shippy-carry-1" : "shippy-carry-0", px: "carry0", sy: base.sy - (f ? 0.02 : 0) };
       }
+      case "inspect":
+        // lean in with the eye wide, a slow look over the thing in front of him
+        return { ...base, frame: "shippy-4", px: Math.floor(t / 0.6) % 2 ? "inspect1" : "inspect0", y: base.y + u * 0.02 };
+      case "poke": {
+        const f = Math.floor(t / 0.25) % 2;
+        return { ...base, frame: "shippy-4", px: f ? "poke1" : "poke0", x: base.x + (f ? u * 0.04 : 0) };
+      }
+      case "skid":
+        return { ...base, frame: "shippy-5", px: "skid", x: base.x - u * 0.04 };
+      case "idle":
+        // a blink every few seconds, nothing else
+        return { ...base, frame: "shippy-3", px: t % 4 > 3.85 ? "idle1" : "idle0" };
       case "peek": {
         // pop the lid once with one little hop, then just the amber glow: "a call is waiting on you"
         const pop = t < 0.25 ? wobble(t / 0.25, 1) * 0.12 : 0;
@@ -277,6 +296,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         const legs = Math.floor(t / (beam ? 0.18 : 0.13)) % 2;
         return {
           ...base, frame: beam ? (legs ? "shippy-carry-1" : "shippy-carry-0") : legs ? "shippy-3" : "shippy-5",
+          px: `${beam ? "carry" : "walk"}${Math.floor(t * (beam ? 8 : 10)) % 6}` as PxFrame,
           y: floor - bob * u * 0.06, rot: Math.sin(t * Math.PI * 2 / 0.26) * 0.04 * world.facing,
           sx: 1 + bob * 0.03, sy: 1 - bob * 0.03,
         };
@@ -327,6 +347,40 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     }
     ctx.restore();
   }
+  /** Pixel-art frame for a Draw: the pose's own, else the closest match to the painted frame. */
+  const PX_OF: Record<ShippyFrame, PxFrame> = {
+    "shippy-0": "box0", "shippy-1": "box1", "shippy-2": "unfold2", "shippy-3": "unfold3", "shippy-4": "armout", "shippy-5": "stand",
+    "shippy-lever": "lever0", "shippy-happy": "happy", "shippy-alarm": "alarm", "shippy-peek": "peek",
+    "shippy-weld-0": "weld0", "shippy-weld-1": "weld1", "shippy-carry-0": "carry0", "shippy-carry-1": "carry3",
+  };
+  /** Pixel paint: whole art px only, no rotation or scaling; squash and stretch become nothing, hops become px steps. */
+  function paintPx(ctx: CanvasRenderingContext2D, d: Draw, unit: number, floorY: number, standing: boolean) {
+    if (d.alpha < 0.5) return;
+    const name = d.px ?? (standing && d.frame === "shippy-3" ? "stand" : PX_OF[d.frame]);
+    const snapU = (n: number) => Math.round(n / unit) * unit;
+    let x = snapU(d.x);
+    const y = snapU(d.y), fy = snapU(floorY);
+    if (name === "alarm" && !still) x += (Math.floor(clock * 10) % 2) * unit; // a 1 px rattle
+    const g = pxFrame(name);
+    // contact shadow: a soft iron row on the floor, down-left of him, shrinking as he lifts off
+    const lift = Math.round((fy - y) / unit);
+    const w = Math.max(2, g.maxX - g.minX + 1 - 2 - lift * 2);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = PX_INK.k;
+    ctx.fillRect(x + (g.minX + (g.maxX - g.minX + 1 - w) / 2 - 1 | 0) * unit, fy, w * unit, unit);
+    ctx.restore();
+    drawPx(ctx, name, x, y, unit, d.pxFlip ?? d.flip);
+  }
+  const PUFF_INK: Record<string, string> = { "200,180,150": PX_INK.h, "120,110,105": PX_INK.i, "255,190,90": PX_INK.e, "255,200,90": PX_INK.f };
+  function paintPuffsPx(ctx: CanvasRenderingContext2D, list: Puff[], map: (x: number, y: number) => [number, number], unit: number) {
+    for (const q of list) {
+      if (q.age > q.life * 0.7) continue;
+      const [x, y] = map(q.x, q.y);
+      ctx.fillStyle = PUFF_INK[q.color] ?? PX_INK.h;
+      ctx.fillRect(Math.round(x / unit) * unit, Math.round(y / unit) * unit, unit, unit);
+    }
+  }
   function paintPuffs(ctx: CanvasRenderingContext2D, list: Puff[], map: (x: number, y: number) => [number, number], unit: number) {
     for (const q of list) {
       const a = 1 - q.age / q.life;
@@ -342,11 +396,23 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
     update,
     drawWorld(ctx) {
       const d = worldDraw();
+      if (o.pixel) {
+        if (d) paintPx(ctx, d, ART_PX, o.floorAt(world.x), true);
+        paintPuffsPx(ctx, worldPuffs, (x, y) => [x, y], ART_PX);
+        return;
+      }
       if (d) paint(ctx, d, o.size / STRIP_H, o.size, o.floorAt(world.x));
       paintPuffs(ctx, worldPuffs, (x, y) => [x, y], 1);
     },
     drawCorner(ctx, x, y, size) {
       const d = cornerDraw(x, y, size);
+      if (o.pixel) {
+        // the same pixel art at a whole number of screen px per art px
+        const unit = Math.max(1, Math.floor(size / 24));
+        if (d) paintPx(ctx, d, unit, y + size * 0.9, false);
+        paintPuffsPx(ctx, cornerPuffs, (px, py) => [x + px * size, y + py * size], unit);
+        return;
+      }
       if (d) paint(ctx, d, (size * 0.8) / 282, size * 0.8, y + size * 0.9);
       paintPuffs(ctx, cornerPuffs, (px, py) => [x + px * size, y + py * size], size);
     },

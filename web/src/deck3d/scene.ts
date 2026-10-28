@@ -3,6 +3,7 @@
 // a rocky underside with copper pipes and a caged cyan orb, the Builder and Checks stations, a belt, one crate,
 // and Shippy as a box. Units: 1 = one deck tile. The line runs left to right along +x.
 import * as THREE from "three";
+import { buildBuilderHD } from "./builder";
 
 // colors straight from the Black Iron 48 palette so the palette snap barely moves them
 const C = {
@@ -193,26 +194,9 @@ function gear(r, teeth, mat) {
 }
 
 function buildBuilder(root) {
-  const g = new THREE.Group(); g.position.set(STOP.builder, 0, -1.0); root.add(g);
-  const iron = toon(C.iron), brass = toon(C.brass), brassHi = toon(C.brassHi), copper = toon(C.copper);
-  g.add(box(2.0, 1.8, 1.7, iron, 0, 0.9, 0));
-  // brass frame on every vertical edge + bands top and bottom
-  for (const [x, z] of [[-1, -0.85], [1, -0.85], [-1, 0.85], [1, 0.85]]) g.add(box(0.16, 1.72, 0.16, brass, x, 0.86, z));
-  for (const y of [0.08, 1.66]) { g.add(box(2.12, 0.14, 1.82, brass, 0, y, 0)); }
-  // chimney
-  const ch = cyl(0.32, 0.36, 0.8, brassHi, 10); ch.position.set(0.2, 2.1, -0.1); g.add(ch);
-  const lip = cyl(0.4, 0.4, 0.12, brass, 10); lip.position.set(0.2, 2.5, -0.1); g.add(lip);
-  // lever
-  g.add(box(0.06, 0.5, 0.06, toon(C.steelDk), -0.6, 1.95, -0.2));
-  const knob = new THREE.Mesh(new THREE.IcosahedronGeometry(0.1, 0), toon(C.rock)); knob.position.set(-0.6, 2.22, -0.2); g.add(knob);
-  // side pipes
-  for (const x of [-1.15, 1.15]) { const p = cyl(0.2, 0.2, 0.9, copper, 8); p.position.set(x, 0.7, 0.25); g.add(p); }
-  // amber window
-  const winMat = glow(C.amber, 0.6);
-  g.add(box(0.5, 0.42, 0.04, winMat, 0.5, 1.15, 0.87));
-  // gear on the front
-  const gr = gear(0.42, 9, toon(C.steel)); gr.position.set(-0.3, 0.72, 0.9); g.add(gr);
-  return { gear: gr, win: winMat, group: g };
+  const b = buildBuilderHD(root, { toon, glow, gear });
+  b.group.position.set(STOP.builder, 0, -1.0);
+  return b;
 }
 
 function buildChecks(root) {

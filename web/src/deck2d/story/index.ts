@@ -1,15 +1,14 @@
 // The scripted first run on the 2D deck (thread "Build the first-run story on the deck").
-// A DeckSource with no server: it plays Justin's locked story (2026-10-28) on the real line, ported from /story-b:
-//   1 Software is a factory: a small empty deck, stops build in one by one (construction, then a burst), the deck
-//     grows, the rocket island rises, crates roll and the first rockets go up.
-// ONE thing moves at a time (Justin, 2026-10-28: "shit flashing and pinging all over the place"): construction is a
-// strict serial script. Each build, grow and island plays to the end, then a short rest. A caption shows for ~2s and
-// rides over the camera move into the next build instead of adding its own pause. First card ~40s at speed 1.
-//   2 There's always a bottleneck: review and gate build in, the line speeds up, crates pile at Review waiting on
-//     your call ("REVIEW WAITING"). Never "the bottleneck is you".
-//   3 Swipe, and it moves: approving releases the pile and rockets launch.
+// A DeckSource with no server: it plays Justin's locked story (2026-10-28) on the real line, ported from /story-b.
+// North star: open it, see your one bottleneck within ~5s, swipe once, it clears. So the first card lands ~10s in:
+//   1 Software is a factory: a small working line is already running, crates roll, rockets go up.
+//   2 There's always a bottleneck: crates pile at Review, waiting on your call ("REVIEW WAITING"). Never "the
+//     bottleneck is you".
+//   3 Swipe, and it moves: approving releases the pile and rockets launch. The reward: a Gate builds in.
 //   4 Approve twice more and it's automatic: Shippy unfolds, walks to Review, takes the lever. Then the next jam
 //     shows up somewhere else, and the last card asks to connect the real repo.
+// ONE thing moves at a time (Justin, 2026-10-28: "shit flashing and pinging all over the place"): build-outs are a
+// strict serial script, each plays to the end, then a short rest; the line pauses new crates while one plays.
 // Pure sim: no DOM, no canvas. The engine draws view() and animates crates by item id.
 import { STAGE_AT } from "../build/build";
 import { GROW_SECONDS } from "../grow/index";
@@ -51,10 +50,13 @@ const BUILD_SEC = STAGE_AT.gone; // until the check and its afterglow are gone
 const GROW_SEC = GROW_SECONDS;
 // launch/ maps islandProgress to its picture, so the story can run it faster than its own preview clock.
 const ISLAND_SEC = Math.min(LAUNCH_BUILD_SECONDS, 8);
-const built = (id: StopId, line: string): Step[] => [{ build: id }, { rest: REST_SEC }, { say: line }];
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
-const CALL_PILE = 4; // crates waiting at Review before the first card slides up
+const CALL_PILE = 3; // crates waiting at Review before the first card slides up
 const PILE_CAP = 9; // stop adding crates past this so the heap stays readable
+
+// The small working line the story opens on: everything but the Gate, island up. Whenever the island is up the deck
+// must be large, or the bridge hangs over open sky past the deck's end.
+const START: StopId[] = ["repo", "planner", "builder", "checks", "review", "launch"];
 
 interface Live extends Item { t: number; approved: boolean }
 interface StopSim { built: boolean; q: Live[] }
@@ -80,12 +82,12 @@ export function createStory(opts: StoryOptions = {}): Story {
   function fresh() {
     const rand = rng(opts.seed ?? 1);
     const fixes = [...FIXES].sort(() => rand() - 0.5);
-    const st = Object.fromEntries(STOPS.map((id) => [id, { built: id === "repo", q: [] } as StopSim])) as Record<StopId, StopSim>;
+    const st = Object.fromEntries(STOPS.map((id) => [id, { built: START.includes(id), q: [] } as StopSim])) as Record<StopId, StopSim>;
     return {
       rand, fixes, st,
       t: 0, phase: "build" as StoryPhase, phaseT: 0,
-      spawnEvery: 0, spawnT: 0, nextId: 1, shipped: 0,
-      budget: null as number | null, // how many crates Review may still pass. null = no limit
+      spawnEvery: 1, spawnT: 0.9, nextId: 1, shipped: 0,
+      budget: 2 as number | null, // how many crates Review may still pass (the first two ship). null = no limit
       reviewSvc: SVC.review,
       approvals: 0, card: null as CardView | null, laterUntil: 0,
       autoReview: false, jam: null as StopId | null, nextJam: null as StopId | null,
@@ -93,8 +95,8 @@ export function createStory(opts: StoryOptions = {}): Story {
       caption: null as string | null, captionAt: 0,
       timers: [] as { at: number; fn: () => void }[],
       script: [] as Step[], stepT: 0, // the running step is script[0]; stepT = seconds into it
-      size: "small" as DeckSize,
-      island: "none" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
+      size: "large" as DeckSize, lastCallAt: -99,
+      island: "built" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
     };
   }
   const after = (sec: number, fn: () => void) => S.timers.push({ at: S.t + sec, fn });
@@ -103,8 +105,6 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   function spawn() {
     if (S.st.review.q.length >= PILE_CAP) return;
-    // Beat 1 is about the line being built, not a pile: keep a few crates on it while the island rises.
-    if (S.phase === "build" && STOPS.reduce((n, id) => n + S.st[id].q.length, 0) >= 3) return;
     const title = `Fix ${S.fixes[S.nextId % S.fixes.length]}`;
     S.st.repo.q.push({ id: `story-${S.nextId++}`, title, look: "plain", t: 0, approved: false });
   }
@@ -152,31 +152,22 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.shippy = { pose: "peek", at: "corner" };
   }
 
-  // Beat 1: the line builds itself, piece by piece, then the first crates roll.
-  const beat1 = (): Step[] => [
-    // The repo is already on the deck: it's yours, the factory gets built around it.
-    { rest: 0.6 }, { say: "Software is a factory." }, { rest: SAY_SEC },
-    { say: "Ideas land in your repo." },
-    ...built("planner", "A planner picks the next one."),
-    ...built("builder", "A builder writes the code."),
-    { grow: "medium" }, { rest: REST_SEC },
-    ...built("checks", "Checks catch what's broken."),
-    { island: true }, { rest: REST_SEC }, { say: "And then it ships." },
-    { run: () => { S.spawnEvery = 2.2; S.spawnT = 2.2; } },
-    { until: () => S.shipped >= 1 }, { say: "Ideas in, rockets out." }, { rest: REST_SEC },
-  ];
-  // Beat 2: the line drains and goes still, Review and Gate build in, then the pile starts.
-  const beat2 = (): Step[] => [
-    { run: () => { setPhase("bottleneck"); S.budget = 0; } },
-    { grow: "large" }, { rest: REST_SEC },
-    // Gate first, so the pile only starts once Review (the call) is on the line.
-    { build: "gate" }, { rest: REST_SEC },
-    { build: "review" }, { rest: REST_SEC },
-    { say: "There's always a bottleneck." }, { rest: SAY_SEC },
-    { run: () => { S.spawnEvery = 1.2; } },
+  // Beats 1-2: the line is running; it jams at Review within a few seconds.
+  const opening = (): Step[] => [
+    { rest: 0.4 }, { say: "Software is a factory." }, { rest: SAY_SEC },
+    { until: () => S.shipped >= 1 }, { say: "There's always a bottleneck." }, { rest: SAY_SEC },
     { until: () => S.st.review.q.length >= 2 },
-    { run: () => { S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; } },
+    { run: () => { setPhase("bottleneck"); S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; } },
     { say: "Right now, it's waiting on your call." }, { rest: SAY_SEC },
+  ];
+  // The first swipe's reward: the released crates ship, then the line goes still while a Gate builds in. Then crates
+  // roll again and pile for the next call.
+  const reward = (): Step[] => [
+    { until: () => !STOPS.slice(STOPS.indexOf("review") + 1).some((id) => S.st[id].q.length) && S.st.review.q.every((c) => !c.approved) },
+    { run: () => { S.spawnEvery = 0; } }, { rest: REST_SEC },
+    { build: "gate" }, { rest: REST_SEC },
+    { say: "The line grows as you go." }, { rest: SAY_SEC },
+    { run: () => { S.spawnEvery = 1; S.spawnT = 0.9; } },
   ];
 
   function play(dt: number) {
@@ -205,11 +196,9 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   function director() {
     const p = S.phase;
-    if (p === "build") {
-      if (idle()) S.script.push(...beat2());
-      return;
-    }
     if (p === "bottleneck" && idle() && S.st.review.q.length >= CALL_PILE) { setPhase("swipe"); showCall(); return; }
+    // The next call: once the pile is back and nothing is building, a beat after the last swipe.
+    if (p === "swipe" && !S.card && !S.laterUntil && idle() && S.approvals > 0 && S.t - S.lastCallAt >= 3 && S.st.review.q.length >= CALL_PILE) showCall();
     if (p === "swipe" && !S.card && S.laterUntil > 0 && S.t >= S.laterUntil) { S.laterUntil = 0; showCall(); }
   }
 
@@ -292,8 +281,9 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.shippy = { pose: "happy", at: "corner" };
     if (S.approvals >= 3) { goAuto(); return; }
     S.caption = S.approvals === 1 ? "Swipe, and it moves." : "One more like this and it's automatic.";
+    S.captionAt = S.t; S.lastCallAt = S.t;
+    if (S.approvals === 1) S.script.push(...reward());
     after(0.9, () => { S.shippy = { pose: "folded", at: "corner" }; });
-    after(3.2, () => { if (S.phase === "swipe" && !S.card) showCall(); });
   }
 
   function later(cardId: string) {
@@ -305,7 +295,7 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.laterUntil = S.t + 4;
   }
 
-  function reset() { S = fresh(); S.script = beat1(); fns.forEach((fn) => fn()); }
+  function reset() { S = fresh(); S.script = opening(); fns.forEach((fn) => fn()); }
   reset();
 
   return {
