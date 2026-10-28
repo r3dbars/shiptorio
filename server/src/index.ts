@@ -56,7 +56,7 @@ import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, h
 import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 
-import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
+import { ipSubject, rateLimit, RateLimitError, requestBudget } from "./rate-limit";
 
 
 export { Factory };
@@ -226,11 +226,17 @@ app.use("*", async (c, next) => {
     ? "public, max-age=300" : browserCacheControl(c.req.raw, c.res.status));
 });
 
-app.onError((err, c) => {
+export const appError = (err: Error, c: Context) => {
+  // A GitHub cooldown is a wait, not a crash: say when to come back so runners and clients pace themselves.
+  if (err instanceof RateLimitError) {
+    c.header("Retry-After", String(Math.max(1, Math.ceil((err.retryAt - Date.now()) / 1000))));
+    return c.json({ error: "GitHub is busy. Try again shortly.", retryAt: err.retryAt, requestId: currentTrace()?.requestId }, 503);
+  }
   report(err, "http.exception");
   return c.json({ error: "Something broke. Please reload.", requestId: currentTrace()?.requestId }, 500);
 
-});
+};
+app.onError(appError);
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
