@@ -261,7 +261,7 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
       onPointerDown={(e) => {
         if (!e.isPrimary || e.button !== 0) return;
         e.currentTarget.setPointerCapture?.(e.pointerId);
-        if (!g.holding && renderHold.current?.pointerDown(e.pointerId)) g.press(card);
+        if (!g.holding && renderHold.current?.pointerDown(e.pointerId, e.pointerType)) g.press(card);
       }}
       onPointerUp={() => g.release()}
       onPointerCancel={() => g.cancel()}

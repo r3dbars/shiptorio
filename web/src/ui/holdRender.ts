@@ -3,7 +3,7 @@ import type { HoldEvents } from "./holdLaunch";
 // Give genuine consent holds the main thread. Successful consent can replace its
 // button before the finger/key ends: that physical gesture still owns its lease.
 const active = new Set<object>();
-type Physical = { kind: "pointer"; id: number } | { kind: "key"; key: string };
+type Physical = { kind: "pointer"; id: number; pointerType: string } | { kind: "key"; key: string };
 type Surfaces = { window: EventTarget; document: EventTarget & { readonly visibilityState?: string } };
 export function holdRenderYield(events: HoldEvents, surfaces?: Surfaces) {
   const owner = {};
@@ -26,7 +26,7 @@ export function holdRenderYield(events: HoldEvents, surfaces?: Surfaces) {
     const fresh = (event: Event) => {
       if (!completed) return;
       const pointer = event as PointerEvent, key = event as KeyboardEvent;
-      if (physical?.kind === "pointer" && pointer.isPrimary && pointer.button === 0 && pointer.pointerId === physical.id ||
+      if (physical?.kind === "pointer" && pointer.isPrimary && pointer.button === 0 && (physical.pointerType ? pointer.pointerType === physical.pointerType : pointer.pointerId === physical.id) ||
           physical?.kind === "key" && !key.repeat && key.key === physical.key) clear();
     };
     const hidden = () => { if (target.document.visibilityState !== "visible") clear(); };
@@ -51,7 +51,7 @@ export function holdRenderYield(events: HoldEvents, surfaces?: Surfaces) {
   };
   return {
     mount() { disposed = false; }, // React StrictMode may replay effect cleanup/setup on the same controller.
-    pointerDown: (id: number) => begin({ kind: "pointer", id }),
+    pointerDown: (id: number, pointerType = "") => begin({ kind: "pointer", id, pointerType }),
     keyDown: (key: string) => begin({ kind: "key", key }),
     events: {
       ...events,

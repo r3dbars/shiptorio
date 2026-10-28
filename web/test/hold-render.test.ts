@@ -105,3 +105,18 @@ test("effect cleanup/setup replay permits the same mounted controller to acquire
   expect(submitWhenUnheld(() => {})).toBe(false); f.fire("keyup", { key: "Enter" });
   expect(submitWhenUnheld(() => {})).toBe(true); f.lease.dispose();
 });
+
+test("a fresh primary touch with a new pointer ID recovers missed touchend, but another type or secondary touch cannot", () => {
+  const f = physical();
+  try {
+    f.lease.pointerDown(7, "touch"); f.complete();
+    f.fire("pointerdown", { pointerId: 8, pointerType: "mouse", isPrimary: true, button: 0 });
+    expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("pointerdown", { pointerId: 8, pointerType: "touch", isPrimary: false, button: 0 });
+    expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("pointerup", { pointerId: 8, pointerType: "touch" });
+    expect(submitWhenUnheld(() => {})).toBe(false);
+    f.fire("pointerdown", { pointerId: 8, pointerType: "touch", isPrimary: true, button: 0 });
+    expect(submitWhenUnheld(() => {})).toBe(true);
+  } finally { f.fire("blur"); }
+});
