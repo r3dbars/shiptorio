@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Shippy (preview)</title>
+    <!-- dev only (vite dev server, like shaft.html): Shippy on a bare deck, every pose in the corner and on the deck (src/deck2d/shippy/preview.ts). -->
+    <style>
+@font-face { font-family: 'Silkscreen'; font-weight: 400; src: url('/fonts/silkscreen-400.woff2') format('woff2'); }
+:root { --bg: #0b0806; --ink: #f4ead8; --dim: #b8a48a; --line: #5a4434; --amber: #ffb020; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 'Silkscreen', 'Courier New', monospace; }
+body { display: flex; flex-direction: column; }
+canvas { flex: 1; width: 100%; min-height: 0; display: block; background: linear-gradient(#3a1c10, #c2501c 55%, #f08a2a); }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-top: 2px solid var(--line); background: #140e0a; }
+.bar span { color: var(--dim); align-self: center; margin: 0 4px 0 10px; }
+.bar span:first-child { margin-left: 0; }
+button { font: inherit; color: var(--ink); background: #2a1d14; border: 2px solid var(--line); border-radius: 4px; padding: 6px 10px; cursor: pointer; }
+button[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); }
+button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c" aria-label="Shippy on the deck"></canvas>
+    <div class="bar" id="bar"></div>
+    <script type="module" src="/src/deck2d/shippy/preview.ts"></script>
+  </body>
+</html>
