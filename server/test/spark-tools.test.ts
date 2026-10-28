@@ -194,6 +194,16 @@ describe("planner tools", () => {
     await expect(planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {}, { widen: true })).rejects.toThrow("explicit writable subset");
   });
 
+  it("may add a new test file that proves the fix when the player approves the scope, but never a secret path", async () => {
+    const plan = (files: string[]) => [found[0], { tool: "read_file", path: "README.md", reason: "r" }, { ...found[3], files }];
+    spark(plan(["README.md", "test/readme.test.ts"]));
+    expect((await planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {}, { widen: true })).files).toEqual(["README.md", "test/readme.test.ts"]);
+    spark(plan(["README.md", "test/readme.test.ts"]));
+    await expect(planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {})).rejects.toThrow("explicit writable subset");
+    spark(plan(["README.md", ".github/test/x.test.ts"]));
+    await expect(planLocalTask(sparkTestEnv(), { title: "README", body: "", district: "/" }, ["README.md"], box(), async () => {}, { widen: true })).rejects.toThrow("explicit writable subset");
+  });
+
   it("stops the loop on a secret path instead of letting it probe", async () => {
     spark([{ tool: "read_file", path: "server/.dev.vars", reason: "check config" }]);
     await expect(planLocalTask(sparkTestEnv(), { title: "x", body: "", district: "/" }, ["README.md"], box(), async () => {})).rejects.toThrow("unapproved");
