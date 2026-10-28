@@ -42,8 +42,7 @@ import { RunnerConnection } from "./ui/RunnerConnection";
 import { MachineLight } from "./ui/MachineLight";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn, buildoutOn, simpleOn } from "./flags";
-import { SlowSpotLine, TaskTray } from "./ui/TaskTray";
-import { slowSpot } from "./ui/slowSpot";
+import { TaskTray } from "./ui/TaskTray";
 import { moving } from "./ui/moving"; // with work in flight the tray's own card says all caught up and offers to follow it
 import { Buildout, useFreeLook } from "./ui/Buildout";
 import { BuildStamp } from "./ui/BuildStamp";
@@ -221,9 +220,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // The simple screen (?simple=1): one slow-spot line, one task tray, a map with no labels. The tray opens on its own
   // whenever there's a card; tapping the line opens or closes it.
   const simple = useState(simpleOn)[0] && !intro && !guided;
-  const [tasksAsked, setTasksAsked] = useState<boolean | null>(null);
-  const spot = slowSpot(deck, state?.bottleneck);
-  const ideas = deck.filter((m) => attentionOf(m) === "suggest").length;
+  // cards you pushed to Later: out of the tray and the count until you bring them back (playtest: no dead end)
+  const [parked, setParked] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    if ([...parked].some((id) => !deck.some((m) => m.id === id))) setParked((p) => new Set([...p].filter((id) => deck.some((m) => m.id === id))));
+  }, [deck, parked]);
   const [caughtUp, setCaughtUp] = useState(false); // you answered the last card: zoom out over everything moving
   useEffect(() => {
     if (!caughtUp) return;
@@ -231,7 +232,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     return () => clearTimeout(t);
   }, [caughtUp]);
   useEffect(() => { if (deck.length) setCaughtUp(false); }, [deck.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
-  const tasksOpen = tasksAsked ?? true; // one card at a time, or the "what's next" idea when nothing waits
   // the look Justin picked (journey picks 5 and 6): glass plates, a hard spotlight. ?look= tries others (soft, nospot)
   useEffect(() => {
     if (!simple) return;
@@ -339,7 +339,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const F = HUD.floor;
   const counts: Count[] = [];
   // Calm: "Waiting on you" counts only what's parked on you (approve + steer), never ideas.
-  const needs = calm ? deck.filter((m) => attentionOf(m) !== "suggest").length : waiting + blocked.length;
+  const needs = simple ? deck.filter((m) => attentionOf(m) !== "suggest" && !parked.has(m.id)).length
+    : calm ? deck.filter((m) => attentionOf(m) !== "suggest").length : waiting + blocked.length;
   if (show("line")) counts.push({ key: "need", label: F.needs, value: needs, tone: "need", title: F.needsTitle });
   if (show("score")) counts.push({ key: "ship", label: F.shipped, value: back.shipped(metrics?.rockets ?? shipped), tone: "ship", title: HUD.shippedTitle });
   // Trust and score live in the Line sheet's header, so the floor card's row stays the mockup's five.
@@ -393,6 +394,11 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // No card open: always offer a next move, so the factory never goes quiet after a rocket (#105).
   // The first-run coach does its own teaching, so it waits until the coach is done.
   const whatNext = state && !state.move && !tour.lesson ? whatsNext(state, { canPlace: world !== "checkin" && show("build") && !!slot && !!plugged && cfg.kind !== "live", live: cfg.kind === "live", sandbox }) : null;
+  // The simple screen keeps only the nudges that are a real next step for a new player (sign in to use your own repo,
+  // connect a mine); the rest belong to the full HUD. A brand-new factory with nothing to do says what this is instead.
+  const simpleNudge = !simple || !state ? null
+    : whatNext && (whatNext.id === "signin" || whatNext.id.startsWith("connect:")) ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) }
+    : !deck.length && !(metrics?.rockets ?? shipped) ? { kicker: TASKS.welcome, title: TASKS.intro } : null;
   const onNudge = (a: NudgeAction) => {
     if (a.do === "launch") {
       const item = state?.items.find((i) => i.id === a.itemId);
@@ -529,7 +535,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         <FactoryMap
           state={state}
           onPick={pickOnMap}
-          focus={intro ? tourly.cam.focus : (focusKey ?? panel ?? parkKey)}
+          focus={intro ? tourly.cam.focus : (focusKey ?? panel ?? (simple ? null : parkKey))}
           wide={intro ? tourly.cam.wide : simple && caughtUp ? 1 : null}
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
@@ -544,7 +550,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           still={intro || guided}
         />
         <SoundCaptions />
-        <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} onBusy={setCelebrating} />
+        {!simple && <ShipCelebration state={state} quiet={intro && tourly.quiet} high={intro} onBusy={setCelebrating} />}
         {(intro || guided) && <div className="tour-vignette" aria-hidden="true" />}
         {guided && state && <Buildout state={state} live={cfg.kind === "live"} repo={cfg.kind === "live" ? cfg.repo : undefined} free={free} send={send} onLookAround={lookAround} />}
         {guided && <BuildStamp />}
@@ -630,7 +636,6 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         </div>
 
         {simple && caughtUp && !moving(state?.items).length && <div className="caughtup" role="status">{TASKS.caughtUp(0)}</div>}
-        {simple && state && spot.who === "line" && <SlowSpotLine spot={spot} ideas={ideas} open={tasksOpen} onToggle={() => setTasksAsked(!tasksOpen)} />}
 
         {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
@@ -803,7 +808,9 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
           <div className={simple ? "needs-slot simple" : "needs-slot"} ref={hv.refs.needs as Ref<HTMLDivElement>}>
             {simple ? (
-              tasksOpen && <TaskTray deck={deck} items={state?.items} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} onCaughtUp={() => setCaughtUp(true)} autonomy={autonomy} nudge={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null} />
+              <TaskTray deck={deck} items={state?.items} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} onCaughtUp={() => setCaughtUp(true)}
+                parked={parked} onPark={(id) => setParked((p) => new Set(p).add(id))} onBringBack={() => setParked(new Set())}
+                nudge={simpleNudge} />
             ) : calm ? (
               <AttentionTray
                 deck={deck}

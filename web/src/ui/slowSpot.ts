@@ -2,7 +2,7 @@
 // When work is parked on the player it says so ("You · 3 waiting"); otherwise it names the jammed stage with the
 // bottleneck engine's own numbers; with nothing jammed, all clear. Ideas never make the player the slow spot.
 
-import { attentionOf, ATTENTION_RANK, type Bottleneck, type Move } from "@shiptorio/shared";
+import { attentionOf, ATTENTION_RANK, continueOption, type Bottleneck, type Move } from "@shiptorio/shared";
 import { STAGE_LABEL, TASKS } from "../copy";
 
 export interface SlowSpot {
@@ -18,7 +18,12 @@ export function slowSpot(deck: readonly Move[], bottleneck?: Bottleneck | null):
   return { who: "clear", text: TASKS.clear };
 }
 
-/** The tray's order: stuck work first, then work parked on a yes, then ideas, keeping deck order within a kind. */
+/** Plugging in a builder (Claude Code or Codex on your computer): nothing builds until it's done, whatever its kind says. */
+export const isSetup = (m: Move) => continueOption(m).actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+
+/** The tray's order: setup first (it blocks everything), then stuck work, then work parked on a yes, then ideas,
+ *  keeping deck order within a kind. */
 export function taskOrder(deck: readonly Move[]): Move[] {
-  return deck.map((m, i) => ({ m, i })).sort((a, b) => ATTENTION_RANK[attentionOf(a.m)] - ATTENTION_RANK[attentionOf(b.m)] || a.i - b.i).map((x) => x.m);
+  const rank = (m: Move) => (isSetup(m) ? -1 : ATTENTION_RANK[attentionOf(m)]);
+  return deck.map((m, i) => ({ m, i })).sort((a, b) => rank(a.m) - rank(b.m) || a.i - b.i).map((x) => x.m);
 }

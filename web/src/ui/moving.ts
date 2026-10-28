@@ -5,7 +5,8 @@
 
 import type { Item } from "@shiptorio/shared";
 
-const ALONG: Partial<Record<Item["state"], number>> = { on_pad: 0, passed: 1, inspecting: 2, rejected: 3, working: 4, queued: 5 };
+// a PR on the pad is waiting on you (a launch card), not moving, so following it would be a dead end
+const ALONG: Partial<Record<Item["state"], number>> = { passed: 1, inspecting: 2, rejected: 3, working: 4, queued: 5 };
 
 export function moving(items: readonly Item[] | undefined, first?: string | null): Item[] {
   const list = (items ?? []).filter((it) => it.state in ALONG).sort((a, b) => ALONG[a.state]! - ALONG[b.state]! || b.updatedAt - a.updatedAt);
