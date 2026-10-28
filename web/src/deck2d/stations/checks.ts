@@ -64,8 +64,10 @@ export const checks: StationDef = {
     drop(g, 19, 6, 13, 2); cylH(g, 19, 6, 13, 2, BRASS, { amb: 0.2, gloss: 0.8 }); // a stepped brass crown
     cylV(g, 21, 3, 9, 3, IRON, { amb: 0.15, gloss: 0.8 });
     cylH(g, 22, 1, 7, 2, BRASS, { amb: 0.3, gloss: 0.9 }); g.set(30, 6, "brass-5");
-    ball(g, 25.5, -1, 2.4, s === "idle" ? STEEL : lit, { amb: s === "idle" ? 0.3 : 0.4 });
-    if (glow) g.glowDisc(25.5, -1, 4, glow, 0.25);
+    cylV(g, 23, -1, 5, 2, BRASS, { amb: 0.25, gloss: 0.9 }); // the lamp's brass collar
+    ball(g, 25.5, -3.5, 3, s === "idle" ? STEEL : lit, { amb: s === "idle" ? 0.3 : 0.45 });
+    if (s !== "idle") g.set(26, -5, "white");
+    if (glow) { g.glowDisc(25.5, -3.5, 6.5, glow, 0.25); g.glowDisc(25.5, -3.5, 4, glow, 0.25); }
 
     // the porthole: brass bezel, riveted, convex glass with a hot glint
     const px = 24.5, py = 29;

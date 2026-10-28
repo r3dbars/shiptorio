@@ -18,13 +18,14 @@ const LIT: Record<StopState, Ramp> = {
   jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "ok-2", "white"],
 };
-const DIM: Ramp = ["soot", "plate-0", "plate-1", "plate-2", "plate-3"]; // unlit glass still shows a little colour
 const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
 
-function lampBall(g: Px, cx: number, cy: number, r: number, ramp: Ramp) {
+const STATUS: [Ramp, Color][] = [[LIT.auto, "ok-2"], [LIT.working, "sun-5"], [LIT.jammed, "jam-2"]];
+
+function lampBall(g: Px, cx: number, cy: number, r: number, ramp: Ramp, base = 0.55) {
   for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
     const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
-    if (d <= r) tone(g, x, y, ramp, 0.55 + 0.35 * (dx - dy) / r - d * 0.08);
+    if (d <= r) tone(g, x, y, ramp, base + 0.35 * (dx - dy) / r - d * 0.08);
   }
 }
 
@@ -76,8 +77,9 @@ export const planner: StationDef = {
     for (let k = 0; k < 3; k++) {
       const lx = 19.5 + k * 7;
       cylH(g, Math.round(lx) - 2, 5, 4, 2, BRASS, { amb: 0.25 });
-      lampBall(g, lx, 3.5, 1.9, s === "idle" ? DIM : lit);
-      if (glow) g.glowDisc(lx, 3.5, 3.5, glow, 0.25);
+      const [ramp, c] = STATUS[k], on = (s === "auto" && k === 0) || (s === "working" && k === 1) || (s === "jammed" && k === 2);
+      lampBall(g, lx, 3.5, 2.1, ramp, on ? 0.6 : 0.3); // the lamp for the current state burns, the others glow low
+      if (on) { g.set(Math.round(lx), 2, "white"); g.glowDisc(lx, 3.5, 4.5, c, 0.25); }
     }
 
     // --- desk lamp on a jointed arm (left), aimed down at the papers
@@ -86,8 +88,8 @@ export const planner: StationDef = {
     rivet(g, 8, 5);
     cylH(g, 13, 1, 6, 3, BRASS, { amb: 0.2, gloss: 0.9 });
     for (let x = 12; x < 20; x++) tone(g, x, 4, BRASS, 0.3 + (x - 12) * 0.06);
-    g.hline(13, 5, 6, s === "idle" ? "iron-1" : "sun-6");
-    if (s !== "idle") g.glow(14, 6, 10, 15, "sun-6", 0.25); // its pool of light on the board and papers
+    g.hline(13, 5, 6, "sun-6"); g.hline(14, 5, 4, "white"); // the desk lamp is always on, like the mockup
+    g.glow(14, 6, 10, 15, "sun-6", 0.25); // its pool of light on the board and papers
 
     // --- a stack of books (left), standing on the desk
     const books: [number, number, Color, Color][] = [[3, 15, "copper-1", "copper-2"], [6, 17, "steel-1", "steel-2"], [9, 14, "plate-2", "plate-3"]];

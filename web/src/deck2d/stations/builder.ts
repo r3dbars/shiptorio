@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import type { Px } from "./px";
-import { BRASS, COPPER, IRON, ball, bezel, box3q, bracket, cylH, cylV, drop, rivet, smoke, strap, streak, tone } from "./shade";
+import { BRASS, COPPER, IRON, ball, bezel, box3q, bracket, cylH, cylV, drop, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
 import { shift } from "./px";
 import type { StationDef } from "./types";
 
@@ -16,6 +16,8 @@ const GLASS: Record<StopState, readonly Color[]> = {
   jammed: ["jam-0", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-2", "ok-2", "white"],
 };
+
+const EMBER: Ramp = ["copper-0", "copper-1", "copper-2", "sun-2", "sun-3", "sun-4", "sun-5"];
 
 function gear(g: Px, cx: number, cy: number, turn: number) {
   // 8 square teeth; turn is in tooth-steps (0..1 loops). Machined steel: lit half light grey, shadow half mid grey,
@@ -62,8 +64,10 @@ export const builder: StationDef = {
     // vent panel + latch (upper left)
     drop(g, 11, 22, 7, 11);
     g.rect(11, 22, 7, 11, "iron-2"); g.box(11, 22, 7, 11, "brass-1"); g.hline(11, 22, 7, "brass-2"); g.vline(17, 22, 11, "brass-0"); g.set(17, 22, "brass-3");
-    g.rect(13, 24, 3, 7, "iron-0");
-    g.vline(13, 24, 7, "soot"); g.vline(15, 24, 7, "soot"); g.vline(14, 25, 6, "iron-3");
+    g.rect(12, 24, 5, 7, "soot");
+    for (let y = 24; y < 31; y++) for (const x of [12, 13, 15, 16]) tone(g, x, y, EMBER, (s === "working" ? 0.55 : 0.35) + (y - 24) * 0.07 + (x === 13 || x === 16 ? 0.12 : 0)); // two slots, hotter low down
+    g.vline(14, 24, 7, "iron-1"); g.hline(12, 24, 5, "iron-0");
+    g.glowDisc(14.5, 28, 5, "sun-4", 0.25, [12, 24, 5, 7]); // the furnace's light on the panel around it
     
 
     // the window: 3 x 2 cells behind a brass frame
