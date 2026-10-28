@@ -609,7 +609,7 @@ export class ShaftScene {
     const dt = Math.min(0.05, elapsed);
     this.last = now;
     this.t += dt;
-    I.step(this.t, dt);
+    I.step(this.t, dt, elapsed);
     this.buildStep(dt, elapsed);
     stage.camStep(dt);
     this.firstRun.step(this.t, dt, this.reduceMotion);

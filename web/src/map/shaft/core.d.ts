@@ -119,7 +119,8 @@ export interface Iron {
   perf?: { shadowCulled: number; lights: number };
   _t?: number;
   build(scene: THREE.Scene, root: THREE.Group, layout: Layout, opts?: { warm?: boolean; labels?: Record<string, string> }): void;
-  step(t: number, dt: number): void;
+  /** Optional wall time for render-only plugins; physics keeps dt. Legacy calls default to their scaled dt. */
+  step(t: number, dt: number, renderElapsed?: number): void;
   setDriver(d: Driver | null): void;
   on(ev: string, fn: (d: any) => void): void; // eslint-disable-line @typescript-eslint/no-explicit-any
   emit(ev: string, d?: unknown): void;
