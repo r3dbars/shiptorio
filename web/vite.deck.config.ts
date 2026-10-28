@@ -9,6 +9,6 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: false,
     manifest: "deck-manifest.json",
-    rollupOptions: { input: { deck: resolve(__dirname, "deck.html") } },
+    rollupOptions: { input: { deck: resolve(__dirname, "deck.html"), deckbuild: resolve(__dirname, "deckbuild.html") } }, // deckbuild = the construction preview
   },
 });
