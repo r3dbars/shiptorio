@@ -33,13 +33,15 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
   let failed = false;
   const links = new ProgramLinks();
   const gl = renderer.getContext(), useProgram = gl.useProgram;
-  const used = new Set<WebGLProgram>();
   // Three queries compiler logs even after successful compilation. Keep failure
-  // detection, but validate newly used programs after their uniforms are ready.
+  // detection, but validate new programs before their first GPU draw.
   renderer.debug.checkShaderErrors = false;
   const trackProgram: typeof gl.useProgram = (program) => {
+    if (program && !links.valid(gl, program)) {
+      fail();
+      throw new Error("GPU program did not link");
+    }
     useProgram.call(gl, program);
-    if (program) used.add(program);
   };
   gl.useProgram = trackProgram;
   const fail = () => {
@@ -51,7 +53,7 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
     event.preventDefault();
     if (dead || lost) return;
     lost = true;
-    links.reset(); used.clear();
+    links.reset();
     discard();
     timer = setTimeout(() => {
       timer = undefined;
@@ -61,7 +63,7 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
   const onRestored = () => {
     if (dead || !lost) return;
     lost = false;
-    links.reset(); used.clear();
+    links.reset();
     clearTimeout(timer);
     timer = undefined;
     try { redraw(); } catch { fail(); }
@@ -73,17 +75,13 @@ export function recoverContext(canvas: HTMLCanvasElement, redraw: () => void, di
   const render = renderer.render.bind(renderer);
   renderer.render = (...args) => {
     if (dead || lost || failed) return;
-    try {
-      render(...args);
-      for (const program of used) if (!links.valid(gl, program)) { fail(); break; }
-      used.clear();
-    } catch { used.clear(); fail(); }
+    try { render(...args); } catch { fail(); }
   };
   const dispose = renderer.dispose.bind(renderer);
   renderer.dispose = () => {
     dead = true;
     if (gl.useProgram === trackProgram) gl.useProgram = useProgram;
-    links.reset(); used.clear();
+    links.reset();
     clearTimeout(timer);
     canvas.removeEventListener('webglcontextlost', onLost);
     canvas.removeEventListener('webglcontextrestored', onRestored);

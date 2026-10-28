@@ -30,15 +30,15 @@ test("temporary bindings stay inside admitted draws and shared originals survive
   expect(originalDisposals).toBe(0);
 });
 
-test("at most eight exact groups are promoted per admitted frame, including new and detached meshes", () => {
-  const root = new THREE.Group(), objects = Array.from({ length: 20 }, () => mesh()); root.add(...objects);
+test("at most sixteen exact groups are promoted per admitted frame, including new and detached meshes", () => {
+  const root = new THREE.Group(), objects = Array.from({ length: 36 }, () => mesh()); root.add(...objects);
   const originals = objects.map(o => o.material), recovery = new RecoveryMaterials(); recovery.begin(root);
   recovery.prepare(); recovery.advance(); // cheap only; no originals promoted yet
   recovery.prepare(); expect(objects.every((o, i) => o.material !== originals[i])).toBe(true); recovery.advance();
-  recovery.prepare(); expect(objects.filter((o, i) => o.material === originals[i])).toHaveLength(8); recovery.advance();
+  recovery.prepare(); expect(objects.filter((o, i) => o.material === originals[i])).toHaveLength(16); recovery.advance();
   // A new exact material joins while an obsolete pending group disappears.
-  objects[19].removeFromParent(); const added = mesh(), addedOriginal = added.material; root.add(added);
-  recovery.prepare(); expect(objects.slice(0, 16).every((o, i) => o.material === originals[i])).toBe(true);
+  objects[35].removeFromParent(); const added = mesh(), addedOriginal = added.material; root.add(added);
+  recovery.prepare(); expect(objects.slice(0, 32).every((o, i) => o.material === originals[i])).toBe(true);
   expect(added.material).not.toBe(addedOriginal); recovery.advance();
   recovery.prepare(); expect(added.material).toBe(addedOriginal); recovery.advance();
   expect(recovery.active).toBe(false); expect(recovery.pending).toBe(0);

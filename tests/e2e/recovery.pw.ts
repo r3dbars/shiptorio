@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { installGpuObserver } from './gpu-observer';
 
 // Exercise native GPU recovery on macOS; Linux CI uses the configured software GPU.
 if (process.platform === 'darwin') test.use({ launchOptions: { args: ['--use-angle=metal', '--enable-webgl'] } });
@@ -10,28 +11,21 @@ test.beforeEach(async ({ page }) => {
 // Observe real GPU submissions in the production bundle; no dev-only scene hooks.
 async function observeGpu(page: Page) {
   await page.addInitScript(() => {
-    const getContext = HTMLCanvasElement.prototype.getContext;
-    (window as any).__gpu = { draws: 0, lost: 0, restored: 0 };
-    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: any[]) {
-      const gl = (getContext as any).apply(this, args);
-      if (args[0] === 'webgl2' && gl && !(gl as any).__observed) {
-        (gl as any).__observed = true;
-        (window as any).__gpu.gl = gl;
-        (window as any).__gpu.extension = gl.getExtension('WEBGL_lose_context');
-        (window as any).__gpu.canvas = this;
-        this.addEventListener('webglcontextlost', () => (window as any).__gpu.lost++);
-        this.addEventListener('webglcontextrestored', () => (window as any).__gpu.restored++);
-        for (const key of ['drawElements', 'drawArrays']) {
-          const draw = gl[key].bind(gl);
-          gl[key] = (...a: any[]) => {
-            draw(...a);
-            if (!gl.isContextLost() && gl.getParameter(gl.FRAMEBUFFER_BINDING) === null) (window as any).__gpu.draws++;
-          };
-        }
-      }
-      return gl;
-    } as typeof getContext;
+    const heartbeat = (window as any).__recoveryHeartbeat = { last: performance.now(), maxDrift: 0, active: false };
+    setInterval(() => { const now = performance.now(); if (heartbeat.active) heartbeat.maxDrift = Math.max(heartbeat.maxDrift, now - heartbeat.last - 50); heartbeat.last = now; }, 50);
+    document.addEventListener('pointerup', event => {
+      const gpu = (window as any).__gpu;
+      if (gpu?.watchRelease && event.isTrusted) { gpu.restoreStartedAt = event.timeStamp; gpu.watchRelease = false; gpu.releaseTrusted = true; }
+    }, true);
+    document.addEventListener('keydown', event => {
+      const target = event.target as HTMLElement | null;
+      if (event.key !== 'Enter' || !target?.matches('.menu-btn')) return;
+      const receipt = (window as any).__recoveryInput = { trusted: event.isTrusted, eventAt: event.timeStamp, receivedAt: performance.now(), duringRecovery: !!(window as any).__shipPerf?.().recoveryActive, effectAt: 0 };
+      const observer = new MutationObserver(() => { receipt.effectAt = performance.now(); observer.disconnect(); });
+      observer.observe(target, { attributes: true, attributeFilter: ['aria-expanded'] });
+    }, true);
   });
+  await page.addInitScript(installGpuObserver);
 }
 
 async function openShaft(page: Page) {
@@ -56,12 +50,51 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         await page.evaluate(() => (window as any).__gpu.extension.loseContext());
         await expect.poll(() => page.evaluate(() => (window as any).__gpu.lost)).toBe(cycle + 1);
         const before = await page.evaluate(() => (window as any).__gpu.draws);
-        await page.evaluate(() => (window as any).__gpu.extension.restoreContext());
-        await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 2000, intervals: [25, 50] }).toBeGreaterThan(before);
+        // Measure the product deadline in the browser: tracing can delay delivery
+        // of an already-successful CDP result by more than a second on software GPUs.
+        // The separate host bound detects a hung transport; it does not extend 2000ms.
+        const recovered = await test.step(`restore ${cycle + 1} within browser budget`, () => page.evaluate(epoch => new Promise<{ draws: number; first: { elapsed: number } | null }>(resolve => {
+          const gpu = (window as any).__gpu;
+          gpu.restoreStartedAt = performance.now();
+          const heartbeat = (window as any).__recoveryHeartbeat;
+          heartbeat.last = gpu.restoreStartedAt; heartbeat.maxDrift = 0; heartbeat.active = true;
+          gpu.extension.restoreContext();
+          const poll = () => {
+            const first = gpu.frames.find((frame: any) => frame.epoch === epoch);
+            if (first) resolve({ draws: gpu.draws, first });
+            else if (performance.now() - gpu.restoreStartedAt >= 2000) resolve({ draws: gpu.draws, first: null });
+            else requestAnimationFrame(poll);
+          };
+          requestAnimationFrame(poll);
+        }), cycle + 1), { timeout: 30000 });
+        expect(recovered.draws).toBeGreaterThan(before);
+        expect(recovered.first).not.toBeNull();
+        expect(recovered.first!.elapsed).toBeLessThan(2000);
         await expect(page.locator('.crash')).toHaveCount(0);
+        // Native input and actual UI effect are timed inside the browser too,
+        // independently of artifact capture/host transport latency.
+        const menu = page.locator('.menu-btn');
+        await expect(menu).toHaveAttribute('aria-expanded', 'false');
+        await menu.focus(); await page.keyboard.press('Enter');
+        await expect(menu).toHaveAttribute('aria-expanded', 'true');
+        const input = await page.evaluate(() => (window as any).__recoveryInput);
+        expect(input.trusted).toBe(true); expect(input.duringRecovery).toBe(true);
+        expect(input.effectAt).toBeGreaterThanOrEqual(input.receivedAt);
+        expect(input.effectAt - input.eventAt).toBeLessThan(2000);
+        await page.keyboard.press('Enter');
+        await expect(menu).toHaveAttribute('aria-expanded', 'false');
         // The first usable frame keeps the original two-second budget; full lighting
         // follows in bounded submissions and must also finish, without navigating.
         await expect.poll(() => page.evaluate(() => (window as any).__shipPerf().recoveryActive)).toBe(false);
+        // Every completion is tagged from the state at submission, not a later RAF.
+        await expect.poll(() => page.evaluate(n => (window as any).__gpu.frames.some((f: any) => f.epoch === n), cycle + 1)).toBe(true);
+        const first = await page.evaluate(n => (window as any).__gpu.frames.find((f: any) => f.epoch === n), cycle + 1);
+        expect(first.elapsed).toBeLessThan(2000);
+        await expect.poll(() => page.evaluate(n => (window as any).__gpu.frames.some((f: any) => f.epoch === n && f.original), cycle + 1)).toBe(true);
+        const original = await page.evaluate(n => (window as any).__gpu.frames.find((f: any) => f.epoch === n && f.original), cycle + 1);
+        expect(original.elapsed).toBeLessThan(30000);
+        const heartbeat = await page.evaluate(() => { const beat = (window as any).__recoveryHeartbeat; beat.active = false; return { maxDrift: beat.maxDrift }; });
+        await info.attach(`recovery-completion-${cycle + 1}`, { body: JSON.stringify({ first, original, input, heartbeat }), contentType: 'application/json' });
       }
       expect(await page.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
       expect(errors).toEqual([]);
@@ -77,6 +110,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       const box = await launch.boundingBox();
       expect(box).not.toBeNull();
       await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+      await page.evaluate(() => { (window as any).__gpu.watchRelease = true; });
       await page.mouse.down();
       let before = 0;
       try {
@@ -90,7 +124,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         expect(await page.evaluate(() => (window as any).__gpu.draws)).toBe(before);
       } finally { await page.mouse.up(); }
-      await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 2000, intervals: [25, 50] }).toBeGreaterThan(before);
+      const released = await test.step('physical release completes a scene within browser budget', () => page.evaluate(() => new Promise<{ draws: number; trusted: boolean; first: { elapsed: number } | null }>(resolve => {
+        const gpu = (window as any).__gpu;
+        const poll = () => {
+          const first = gpu.frames.find((frame: any) => frame.epoch === gpu.lost);
+          if (first || gpu.restoreStartedAt === undefined || performance.now() - gpu.restoreStartedAt >= 2000) resolve({ draws: gpu.draws, trusted: gpu.releaseTrusted, first: first ?? null });
+          else requestAnimationFrame(poll);
+        };
+        poll();
+      })), { timeout: 30000 });
+      expect(released.trusted).toBe(true); expect(released.draws).toBeGreaterThan(before);
+      expect(released.first).not.toBeNull(); expect(released.first!.elapsed).toBeLessThan(2000);
       await expect(page.locator('.crash')).toHaveCount(0);
     });
 
@@ -107,7 +151,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       await page.keyboard.press('ArrowDown');
     });
 
-    for (const failure of ['react', 'webgl', 'shader'] as const) test(`${failure} render failure shows one Reload button and one telemetry event`, async ({ page, baseURL }, info) => {
+    for (const failure of ['react', 'webgl', 'shader-vertex', 'shader-fragment'] as const) test(`${failure} render failure shows one Reload button and one telemetry event`, async ({ page, baseURL }, info) => {
       const events: any[] = [];
       await page.route('**/api/telemetry/config', route => route.fulfill({ json: { dsn: `${baseURL!.replace('://', '://public@')}/1`, release: 'recovery-test', userId: null, requestId: 'recovery' } }));
       await page.route('**/api/1/envelope/**', async route => {
@@ -124,20 +168,20 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
           return (getContext as any).apply(this, args);
         } as typeof getContext;
       });
-      if (failure === 'webgl') await observeGpu(page);
+      if (failure !== 'react') await observeGpu(page);
       await page.goto('/?source=sim&world=shaft');
       if (failure === 'webgl') {
         await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 90000 }).toBeGreaterThan(0);
         await page.evaluate(() => { (window as any).__gpu.gl.drawElements = () => { throw new Error('Forced GPU render failure'); }; });
       }
-      if (failure === 'shader') {
+      if (failure.startsWith('shader')) {
         await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 90000 }).toBeGreaterThan(0);
-        await page.evaluate(() => {
+        await page.evaluate(vertex => {
           const gl = (window as any).__gpu.gl as WebGL2RenderingContext;
           const source = gl.shaderSource.bind(gl);
-          gl.shaderSource = (shader, text) => source(shader, gl.getShaderParameter(shader, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER ? text + '\nINVALID_RECOVERY_FRAGMENT;' : text);
+          gl.shaderSource = (shader, text) => source(shader, gl.getShaderParameter(shader, gl.SHADER_TYPE) === (vertex ? gl.VERTEX_SHADER : gl.FRAGMENT_SHADER) ? text + '\nINVALID_RECOVERY_SHADER;' : text);
           (window as any).__gpu.extension.loseContext();
-        });
+        }, failure === 'shader-vertex');
         await expect.poll(() => page.evaluate(() => (window as any).__gpu.lost)).toBe(1);
         await page.evaluate(() => (window as any).__gpu.extension.restoreContext());
       }

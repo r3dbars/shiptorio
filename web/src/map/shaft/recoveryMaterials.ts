@@ -96,7 +96,7 @@ export class RecoveryMaterials {
     this.restoreBindings();
     if (this.finishing) { this.cancel(); return; }
     if (++this.frames < 2) return;
-    for (const key of Array.from(this.groups).slice(0, 8)) { this.groups.delete(key); this.warmed.add(key); }
+    for (const key of Array.from(this.groups).slice(0, 16)) { this.groups.delete(key); this.warmed.add(key); }
     if (!this.groups.size) this.finishing = true;
   }
 
