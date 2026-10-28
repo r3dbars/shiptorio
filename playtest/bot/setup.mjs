@@ -1,0 +1,37 @@
+/** Staging fixture reset is setup: no game may mount until it has completed. */
+export function botAdmissionPath({ local, persona, width }) {
+  return !local && persona !== "test-guest" && width === 390 ? "/test/users" : "/test/login";
+}
+
+export async function prepareBotPersona({ page, context, origin, persona, local, width, password }) {
+  const admissionPath = botAdmissionPath({ local, persona, width });
+  const preparingStaging = admissionPath === "/test/users";
+  const loginUrl = `${origin}/test/login?as=${persona}`;
+  await page.goto(preparingStaging ? `${origin}${admissionPath}` : loginUrl);
+  const passwordField = page.getByLabel("Password", { exact: true });
+  if (await passwordField.count()) {
+    if (!password) throw new Error("Staging preview password is required in SHIPTORIO_TEST_PASSWORD");
+    await passwordField.fill(password);
+    await Promise.all([
+      page.waitForURL(current => preparingStaging ? current.pathname === admissionPath : current.pathname === "/" && current.searchParams.has("source"), { timeout: 20000 }),
+      page.getByRole("button", { name: /Enter the factory/ }).click(),
+    ]);
+    // The inert gate redirects back to the same URL; URL equality alone does not
+    // prove the password form was submitted successfully.
+    await passwordField.waitFor({ state: "hidden", timeout: 20000 });
+  }
+  const login = preparingStaging
+    ? await context.request.get(loginUrl, { maxRedirects: 0 })
+    : await page.goto(loginUrl);
+  if (login && login.status() >= 400) throw new Error(`Test login unavailable: HTTP ${login.status()}`);
+  if (!preparingStaging) return;
+  let reset;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    const response = await context.request.post(`${origin}/test/reset`, { headers: { origin }, maxRetries: 2, timeout: 30000 });
+    reset = { ok: response.ok(), status: response.status() };
+    if (reset.status !== 409) break;
+    await page.waitForTimeout(2000);
+  }
+  if (!reset.ok) throw new Error(`Isolated staging reset unavailable: HTTP ${reset.status}`);
+  await page.goto(loginUrl);
+}
