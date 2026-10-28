@@ -277,6 +277,20 @@ Prompt packs for Justin live in the Claude project's files under `shiptorio/code
 - Tests: real SQLite concurrency, isolation, cached pricing, idempotent settlement, missing usage, midnight rollover, zero budget, pre-fetch denial, owner-only reads/writes and origin/amount validation; browser budget save/stop/resume and warning checks.
 | Stranger E2E: preview gate CSP | in progress | Browser console assertion caught the outer security middleware replacing the preview gate nonce policy, blocking the gate animation script. Carry the server-generated gate nonce into the global script rule on both fast and wrapped paths, retaining all other global restrictions; application-page policies remain unchanged. Separate fix for the first-day signup checkpoint. |
 
+## Codex merge helper — October 28, 14:33 UTC
+
+- Check-only: [#473](https://github.com/r3dbars/shiptorio/pull/473), exact head `5a944c875918d650e729cfd7ae090e6766772824`, had no manual browser/load run. Dispatched [CI 40707196857](https://github.com/r3dbars/shiptorio/actions/runs/40707196857); pending, not ready or merged. Regular check/selfhost were green.
+- #449 (`63a783cc`) and #388 (`54ec7483`) are already incorporated in root release #445; avoided competing owner dispatches. Root candidate `c851afaf` remains held after desktop buildout deadlines in [full CI 40702699687](https://github.com/r3dbars/shiptorio/actions/runs/40702699687); root diagnostic [40706832104](https://github.com/r3dbars/shiptorio/actions/runs/40706832104) is running on new diagnostic source, not accepted release evidence.
+- Drafts and factory PRs were excluded. No branch retarget, merge or Cloudflare mutation.
+
+- 14:43 UTC recheck: #473 remains at `5a944c875918d650e729cfd7ae090e6766772824`. In [40707196857](https://github.com/r3dbars/shiptorio/actions/runs/40707196857), check/selfhost and Pixel browser passed; load failed its budget and desktop/iPhone remain running. The owner already [commented once with the failing run](https://github.com/r3dbars/shiptorio/pull/473#issuecomment-6471950027). Preserved the failed head/run, no duplicate comment or retry, not marked ready. #449/#388 remain incorporated in root’s held batch; no competing dispatch.
+
+- 14:53 UTC final #473 receipt: [40707196857](https://github.com/r3dbars/shiptorio/actions/runs/40707196857) finished failed on the unchanged `5a944c87` head: desktop/iPhone browser and load failed; Pixel/check/selfhost passed. Regular Stranger and CodeQL passed. The owner already linked the [browser failure](https://github.com/r3dbars/shiptorio/pull/473#issuecomment-6472174282). No duplicate comment, unchanged-head rerun, merge or ready claim; root retains the failed evidence for its next changed-source release candidate.
+
+- 15:26 UTC check-only dispatches for newly ready Claude heads: [#477](https://github.com/r3dbars/shiptorio/pull/477) `785c1fd850a3b8eb9df3367bfeab13166b0691bb` → [40716107444](https://github.com/r3dbars/shiptorio/actions/runs/40716107444); [#480](https://github.com/r3dbars/shiptorio/pull/480) `a7fec674e94c8893df10fb27d708d8b4b10df25c` → [40716111907](https://github.com/r3dbars/shiptorio/actions/runs/40716111907). Neither had manual browser/load coverage at its exact head; dispatched sequentially, pending, not marked ready or merged. Both remain outside root’s frozen `272faa75` release. #473 failed run preserved; #449/#388 already incorporated, no competing dispatch.
+
+Historical check-only receipts above predate the dev-first flow; the ten-minute helper is stopped. Current work targets dev and does not use release batches or manual release-validation stamps.
+
 ## Codex: BYOK self-hosting (2026-10-26)
 
 - Branch `codex/selfhost`: `bun run selfhost` creates dedicated D1/KV through Wrangler, migrates, uploads Meta/GitHub/preview/session/encryption secrets, bootstraps the GitHub App setup page, deploys and prints the workers.dev URL. Uses an ignored owner config and resumable non-secret progress; never inherits production domains, IDs, users or mines.
