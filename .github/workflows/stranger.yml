@@ -1,7 +1,7 @@
 name: Stranger E2E
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   merge_group:
   workflow_dispatch:
 permissions:
