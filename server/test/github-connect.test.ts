@@ -26,7 +26,7 @@ test("cancelled OAuth keeps a clear path back without creating a session", async
 
 test("invalid state never contacts GitHub, even for a cancelled callback", async () => {
   let calls = 0;
-  globalThis.fetch = (async () => { calls++; throw new Error("should not call GitHub"); }) as typeof fetch;
+  globalThis.fetch = (async () => { calls++; throw new Error("should not call GitHub"); }) as unknown as typeof fetch;
   const target = new URL("https://shiptorio.dev/auth/callback?error=access_denied&state=wrong");
   expect((await authCallback(new Request(target, { headers: { cookie: "shiptorio_oauth_state=state" } }), target, env() as never)).status).toBe(400);
   expect(calls).toBe(0);
@@ -39,7 +39,7 @@ for (const failure of ["http", "json", "network", "timeout"] as const) test(`OAu
     if (failure === "json") return new Response("private-provider-detail");
     if (failure === "timeout") throw new DOMException("private-provider-detail", "TimeoutError");
     throw new Error("private-provider-detail");
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   const response = await authCallback(request(), url, e as never);
   expect(response.status).toBe(503);
   const body = await response.text();
@@ -55,7 +55,7 @@ test("repository discovery failure cannot silently sign in with an empty or part
     if (path.includes("/access_token")) return Response.json({ access_token: "connect-discovery-failure" });
     if (path.endsWith("/user")) return Response.json({ id: 53, login: "player" });
     return new Response("private-provider-detail", { status: 502 });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   const response = await authCallback(request(), url, e as never);
   expect(response.status).toBe(503);
   expect(await response.text()).toContain("Try again");
@@ -71,7 +71,7 @@ test("successful GitHub sign-in keeps normal session and repository discovery wi
     if (path.endsWith("/user")) return Response.json({ id: 54, login: "player" });
     if (path.includes("/user/installations")) return Response.json({ installations: [] });
     throw new Error("unexpected provider request");
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
   const response = await authCallback(request(), url, e as never);
   expect(response.status).toBe(302);
   expect(signals).toHaveLength(3);

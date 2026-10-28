@@ -105,13 +105,17 @@ const consoleWarnings = [];
 const socketMessages = [];
 let sawFactoryWork = false;
 let factoryState = {};
+let firstFactoryOpenedAt = 0, firstFactoryStateAt = 0;
 page.on("websocket", socket => {
   socket.on("framereceived", frame => {
     try {
       const decoded = decodeFactoryFrame(frame.payload);
       if (decoded.heartbeat) return;
       const value = decoded.message;
-      if (value.type === "snapshot") factoryState = value.state;
+      if (value.type === "snapshot") {
+        factoryState = value.state;
+        if (firstFactoryOpenedAt && !firstFactoryStateAt && value.state.repo === stub.state.repo) firstFactoryStateAt = Date.now();
+      }
       if (value.type === "move") factoryState.move = value.move;
       if (value.type === "move_resolved" && factoryState.move?.id === value.moveId) factoryState.move = null;
       if (value.type === "deck") factoryState.deck = value.deck;
@@ -239,8 +243,12 @@ try {
     await page.getByRole("button", { name: new RegExp(stub.state.repo) }).waitFor({ timeout: UI_TIMEOUT });
   });
   await step("open the factory", async () => {
+    firstFactoryOpenedAt = Date.now();
     await page.getByRole("button", { name: new RegExp(stub.state.repo) }).click();
     await page.waitForURL((u) => u.searchParams.get("repo") === stub.state.repo, { timeout: UI_TIMEOUT });
+    await until("first real factory snapshot", () => firstFactoryStateAt, 10000);
+    report.firstFactoryStateMs = firstFactoryStateAt - firstFactoryOpenedAt;
+    assert.ok(report.firstFactoryStateMs < 10000, `First factory state took ${report.firstFactoryStateMs}ms (budget 10000ms)`);
     // the live map is up when the floor card (top-left HUD) shows and the factory has its folders
     await page.locator(".floorcard").waitFor({ timeout: UI_TIMEOUT });
   });
