@@ -6,6 +6,7 @@ import { signupAllowed, addPending, redeemInvite } from './signup';
 import { gh, registerGithubCredential, convertManifestCode } from "./github";
 import { isAllowed, makeSessionCookie, ownerProof } from "./session";
 import { createSession, endSession, fetchReach, saveReach, upsertUser, type GitHubUser } from "./accounts";
+import { clearGuestCookie, mergeGuest } from "./guests";
 import { sameOriginPath } from "./redirect";
 import type { Env } from "./index";
 import { ironPage } from "./ironPage";
@@ -68,6 +69,7 @@ export async function authCallback(request: Request, url: URL, env: Env): Promis
   const next = request.headers.get('cookie')?.match(/(?:^|;\s*)shiptorio_next=([^;]+)/)?.[1];
   const headers = new Headers({location:allowed ? sameOriginPath(next && decodeURIComponent(next),url.origin) : '/waitlist'});
   headers.append('set-cookie',await createSession(env,{id:user.id,login:user.login},request.headers.get('user-agent')));
+  if (allowed && await mergeGuest(env, request.headers.get('cookie'), {id:user.id,login:user.login})) headers.append('set-cookie', clearGuestCookie());
   for (const name of ['shiptorio_invite','shiptorio_oauth_state','shiptorio_next']) headers.append('set-cookie',`${name}=; Path=/auth; HttpOnly; Secure; SameSite=Lax; Max-Age=0`);
   return new Response(null,{status:302,headers});
 }

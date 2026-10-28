@@ -40,14 +40,12 @@ bunx wrangler deploy --env staging --cwd server --var BUILD_SHA:$(git rev-parse 
 curl --fail https://shiptorio.dev/api/health
 ```
 
-Or Actions → **Staging** → Run workflow → choose the reviewed branch (including
-`staging` if maintained). CLI: `gh workflow run staging.yml --ref staging`.
-Manual dispatch is intentional: no push trigger, scheduled job or extra automatic
-CI minutes. Existing CI stays PR-only with docs skips and cancellation; production
-Deploy runs on main with the same checks, skips, cancellation and ten-minute bound.
+Every push to `dev` deploys staging automatically (Actions → **Staging**; docs-only pushes skip it).
+Manual Run workflow still works for any branch: `gh workflow run staging.yml --ref <branch>`. See
+`docs/context/branches.md` for the dev → main flow. Production Deploy runs on pushes to `main`.
 `DEPLOY_ENABLED=true` and the existing `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`
 Actions secrets are needed. Tokens must cover the two Shiptorio Workers and staging
-D1/KV; do not broaden access to unrelated Workers. Production: merge the reviewed PR
+D1/KV; do not broaden access to unrelated Workers. Production: promote `dev` to `main`
 on green CI, then verify the **Deploy** run and `/api/health`, not just the merge.
 
 Production used to also claim shiptorio.dev. The production config now claims only

@@ -1,7 +1,7 @@
 import "./gauntlet.css";
 import { useEffect, useRef, useState } from "react";
 import type { FactoryState } from "@shiptorio/shared";
-import { FactoryScene, type Cosmetics, type Ping } from "./scene";
+import type { FactoryScene, Cosmetics, Ping } from "./scene";
 import { SHAFT } from "./world";
 
 import type { SatelliteSpec } from "./empire";
@@ -78,14 +78,15 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
     };
     const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id));
     // (a map whose effect was already cleaned up, like StrictMode's first mount, is never built)
+    const island = () => import("./scene").then(({ FactoryScene }) => FactoryScene);
     if (SHAFT)
       void import("./shaft/ShaftScene")
         // the shaft's code didn't arrive (say a deploy swapped it out under an open tab): the island stands in
-        .then(({ ShaftScene }): MapCtor => ShaftScene, (): MapCtor => FactoryScene)
+        .then(({ ShaftScene }): MapCtor => ShaftScene, island)
         .then((Scene) => dead || start(make(Scene), true))
         // no WebGL: the nearest error boundary hears about it, as it does when the island can't start
         .catch((e: unknown) => dead || setCrash({ e }));
-    else start(make(FactoryScene), false);
+    else void island().then((Scene) => dead || start(make(Scene), true)).catch((e: unknown) => dead || setCrash({ e }));
     return () => {
       dead = true;
       off?.();

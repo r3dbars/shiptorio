@@ -1,10 +1,10 @@
-// Foundry title screen: original vector S-rocket, brass typography and the existing factory film.
+// Foundry title screen: polished brass wordmark on a quiet petrol background.
 // Authentication, CSRF and native form fallback stay in access.ts.
 import { IRON_FONTS, IRON_TOKENS } from "./iron-page";
 
 const CSS = `${IRON_FONTS}${IRON_TOKENS}
 *{box-sizing:border-box}html{background:#090e10}body{margin:0;min-height:100vh;min-height:100dvh;color:#f2e4cc;font:400 14px/1.5 var(--mono);overflow-x:hidden;background:#090e10}
-.world{position:fixed;inset:0;background:#141616 url(/brand/gate-poster.webp) center/cover no-repeat}.world video{width:100%;height:100%;object-fit:cover;pointer-events:none}.world video::-webkit-media-controls{display:none!important}
+.world{position:fixed;inset:0;background:#081414}
 .shade{position:fixed;inset:0;background:linear-gradient(180deg,rgba(5,10,12,.94),rgba(5,10,12,.15) 38%,rgba(5,10,12,.08) 62%,rgba(5,10,12,.95))}
 .door{position:relative;z-index:2;min-height:100vh;min-height:100dvh;max-width:1200px;margin:auto;padding:clamp(32px,5vh,64px) 24px 30px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:clamp(120px,25vh,300px)}
 .brand{text-align:center;width:min(940px,100%)}h1{margin:0;line-height:0}h1 img{display:block;width:100%;height:auto;filter:drop-shadow(0 5px 12px #000)}
@@ -18,18 +18,18 @@ button{width:100%;min-height:56px;display:flex;align-items:center;justify-conten
 button::after{content:'→';font-size:24px;line-height:1}button:hover{background:#f3d49d}button:active{transform:translateY(1px)}.busy button{opacity:.65;cursor:progress}
 .err{margin:12px 0 0;color:#ff9c86;font-size:14px}.err:empty{display:none}.bad input{border-color:#ff806b}.foot{margin:17px 0 0;font-size:12px;text-align:center;color:#baa98f}.foot a{color:#82d0c2;text-underline-offset:4px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.open .face{opacity:0}.open .shade{background:rgba(229,176,95,.35);transition:background .8s}
-@media(max-width:600px){.door{padding:52px 18px 26px;gap:clamp(160px,30vh,300px)}.face{padding:21px 18px 19px}.tag{margin-top:15px;font-size:20px}.world,.world video{object-position:50% 50%}.foot{font-size:11px}}
+@media(max-width:600px){.door{padding:52px 18px 26px;gap:clamp(160px,30vh,300px)}.face{padding:21px 18px 19px}.tag{margin-top:15px;font-size:20px}.foot{font-size:11px}}
 @media(max-height:560px){.door{padding-top:18px;gap:45px}.brand{max-width:600px}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}.world video{display:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}}
 `;
 
 const SCRIPT = `(()=>{const b=document.body,f=document.getElementById("gate"),e=document.getElementById("err"),s=document.getElementById("say");if(!f||!window.fetch||!window.DOMParser)return;const still=matchMedia("(prefers-reduced-motion: reduce)").matches,native=()=>HTMLFormElement.prototype.submit.call(f);f.addEventListener("submit",async(v)=>{v.preventDefault();if(b.classList.contains("busy")||b.classList.contains("open"))return;b.classList.remove("bad");b.classList.add("busy");e.textContent="";f.setAttribute("aria-busy","true");let r;try{r=await fetch(f.action,{method:"POST",body:new URLSearchParams(new FormData(f)),redirect:"manual",credentials:"same-origin"})}catch(x){return native()}if(r.type==="opaqueredirect"){b.classList.replace("busy","open");s.textContent="Password accepted. The gate is opening.";setTimeout(()=>location.assign("/access?check=1&next="+encodeURIComponent(f.elements.next.value)),still?250:1350);return}if(r.status!==401&&r.status!==403)return native();const d=new DOMParser().parseFromString(await r.text(),"text/html"),m=d.querySelector("[role=alert]"),c=d.querySelector("input[name=csrf]");if(c)f.elements.csrf.value=c.value;b.classList.remove("busy");f.removeAttribute("aria-busy");void b.offsetWidth;b.classList.add("bad");e.textContent=(m&&m.textContent)||"That password didn\\u2019t work.";f.elements.password.select()})})();`;
 
 /** `error` is trusted server text; `next` and `csrf` are escaped by the caller. */
 export const gatePage = (error: string, next: string, csrf: string, nonce: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#090e10"><meta name="robots" content="noindex"><title>Shiptorio · Enter the factory</title><link rel="icon" href="/brand/favicon.svg?v=foundry-s3" type="image/svg+xml"><style>${CSS}</style></head><body${error ? ' class="bad"' : ""}>
-<div class="world" aria-hidden="true"><video autoplay muted loop playsinline disablepictureinpicture preload="auto" poster="/brand/gate-poster.webp" tabindex="-1"><source src="/brand/gate-loop.webm" type="video/webm"><source src="/brand/gate-loop.mp4" type="video/mp4"></video></div><div class="shade" aria-hidden="true"></div>
+<div class="world" aria-hidden="true"></div><div class="shade" aria-hidden="true"></div>
 <main class="door">
-<header class="brand"><h1><img src="/brand/wordmark.svg?v=foundry-s3" alt="Shiptorio" width="1132" height="240"></h1><p class="tag">A little play. A lot shipped.</p></header>
+<header class="brand"><h1><img src="/brand/wordmark-polished.webp" alt="Shiptorio" width="2172" height="724"></h1><p class="tag">A little play. A lot shipped.</p></header>
 <div class="face"><form id="gate" method="post" action="/access"><input type="hidden" name="csrf" value="${csrf}"><input type="hidden" name="next" value="${next}">
 <label for="password">Password</label><div class="slot"><input id="password" name="password" type="password" autocomplete="current-password" autocapitalize="none" spellcheck="false" required autofocus></div>
 <button type="submit">Enter the factory</button><p id="err" class="err" role="alert">${error}</p></form>

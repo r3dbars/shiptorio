@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && bun ../scripts/bundle-budget.ts",
     "typecheck": "tsc --noEmit",
-    "a11y": "node test/a11y/audit.mjs && node test/a11y/keyboard.mjs"
+    "a11y": "node test/a11y/audit.mjs && node test/a11y/keyboard.mjs",
+    "test:chunks": "bun ../scripts/bundle-budget.ts --test"
   },
   "dependencies": {
     "@sentry/react": "^11.9.0",

@@ -38,9 +38,11 @@
     "SPARK_BASE_URL": "https://api.meta.ai/v1",
     "SPARK_MODEL": "muse-spark-1.3"
   },
+  "triggers": { "crons": ["17 4 * * *"] },
   "env": {
     "staging": {
       "name": "shiptorio-staging",
+      "triggers": { "crons": ["17 4 * * *"] },
       "routes": [{ "pattern": "shiptorio.dev", "custom_domain": true }],
       "durable_objects": { "bindings": [{ "name": "FACTORY", "class_name": "Factory" }] },
       "d1_databases": [{ "binding": "DB", "database_name": "shiptorio-staging", "database_id": "82bf6646-ed06-4c4d-94c3-c9b747940a7e", "migrations_dir": "migrations" }],

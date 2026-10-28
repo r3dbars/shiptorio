@@ -1,23 +1,41 @@
 name: Staging
 permissions:
   contents: read
+# The dev branch deploys to shiptorio.dev on every push (docs/context/branches.md).
 on:
+  push:
+    branches: [dev]
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/context/**"
+      - "!docs/playtest/**"
+      - "docs/site/**"
   workflow_dispatch:
 jobs:
   deploy:
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Finish the running deploy; only the newest waiting push deploys next.
     concurrency:
       group: deploy-staging
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck && bun test && bun run build
+      - run: bun run typecheck
+      - name: Install Linux runner verification boundary
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap
+          # Match CI and Deploy: the runner sandbox tests need user namespaces.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: bun test --parallel
+      - run: bun run build
       - name: Verify real Durable Object storage on host
         run: bun run test:storage
       - name: Deploy isolated staging

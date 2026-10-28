@@ -18,7 +18,7 @@ export async function budgetAccount(db: D1Database, repo: string): Promise<strin
     SELECT repo, user_id FROM user_repos WHERE repo = ? ORDER BY user_id LIMIT 1
     ON CONFLICT(repo) DO NOTHING`).bind(repo.toLowerCase()).run();
   const row = await db.prepare("SELECT user_id FROM factory_budget_owners WHERE repo = ?").bind(repo.toLowerCase()).first<{ user_id: number }>();
-  if (!row || !Number.isSafeInteger(row.user_id)) throw new BudgetError("Budget owner unavailable; sign in and connect this repo to resume Spark");
+  if (!row || !Number.isSafeInteger(row.user_id)) throw new BudgetError("Budget owner unavailable; sign in and connect this repo to resume planning");
   return `user:${row.user_id}`;
 }
 
@@ -26,7 +26,7 @@ export async function budgetAccount(db: D1Database, repo: string): Promise<strin
 export async function accountBudgetLimits(env: BudgetEnv, account: string) {
   const caps = budgetLimits(env);
   if (!account.startsWith("user:")) return caps;
-  if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
+  if (!env.DB) throw new BudgetError("Budget ledger unavailable; Planner paused");
   const row = await env.DB!.prepare(`SELECT a.spark_calls_daily, a.spark_tokens_daily FROM users u
     LEFT JOIN signup_allowlist a ON lower(a.login) = lower(u.login) WHERE u.id = ?`)
     .bind(Number(account.slice(5))).first<{ spark_calls_daily: number | null; spark_tokens_daily: number | null }>();
@@ -37,15 +37,15 @@ export async function accountBudgetLimits(env: BudgetEnv, account: string) {
 export async function reserveSpark(env: BudgetEnv, account: string, tokens: number) {
   const caps = await accountBudgetLimits(env, account), day = utcDay();
   if (!Number.isSafeInteger(tokens) || tokens <= 0) throw new BudgetError("Invalid token reservation");
-  if (await adminPaused(env.DB, env.budgetRepo)) throw new BudgetError("Administrator paused Spark for this factory");
-  if (caps.disabled) throw new BudgetError("Spark budget: global kill switch is on");
-  if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
+  if (await adminPaused(env.DB, env.budgetRepo)) throw new BudgetError("Administrator paused Planner for this factory");
+  if (caps.disabled) throw new BudgetError("Planner budget: global kill switch is on");
+  if (!env.DB) throw new BudgetError("Budget ledger unavailable; Planner paused");
   const row = await env.DB.prepare(`INSERT INTO spark_usage(account, day, calls, tokens)
     SELECT ?, ?, 1, ? WHERE ? >= 1 AND ? <= ?
     ON CONFLICT(account, day) DO UPDATE SET calls = calls + 1, tokens = tokens + excluded.tokens
     WHERE calls < ? AND tokens + excluded.tokens <= ? RETURNING calls, tokens`)
     .bind(account, day, tokens, caps.calls, tokens, caps.tokens, caps.calls, caps.tokens).first<{ calls: number; tokens: number }>();
-  if (!row) throw new BudgetError("Spark daily call/token budget exhausted; fixed rules or player input required");
+  if (!row) throw new BudgetError("Planner daily call/token budget exhausted; fixed rules or player input required");
   return { account, day, tokens };
 }
 export async function settleSpark(env: BudgetEnv, reservation: { account: string; day: string; tokens: number }, actual: unknown) {

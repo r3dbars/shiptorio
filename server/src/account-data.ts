@@ -1,3 +1,4 @@
+import { type Guest } from "./guests";
 import { accountIdentity } from "./account-identity";
 import { purgeInstallationTokens } from "./github";
 import { repoAccess, type AccessUser } from "./authorization";
@@ -182,4 +183,14 @@ export async function deleteAccount(env: Env, user: User, confirmations: string[
   statements.push(env.DB.prepare("INSERT INTO account_deletion_receipts (id, completed_at, factory_count) VALUES (?, ?, ?)").bind(receipt, now, repos.length));
   await env.DB.batch(statements);
   return { deleted: true, receipt, archive };
+}
+
+/** Guests can export/delete only the sample save authenticated by their own signed cookie. */
+export function exportGuestAccount(guest: Guest) {
+  return { format: "shiptorio-guest-v1", exportedAt: new Date().toISOString(), guest: true,
+    createdAt: guest.createdAt, lastSeenAt: guest.lastSeenAt, progress: guest.save.progress, preferences: guest.save.prefs };
+}
+export async function deleteGuestAccount(env: { DB: D1Database }, guest: Guest) {
+  await env.DB.prepare("DELETE FROM guests WHERE id = ?").bind(guest.id).run();
+  return { deleted: true, archive: exportGuestAccount(guest) };
 }

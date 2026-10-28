@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { GOAL_IDS, GOALS, type FactoryState, type Harness, type WebToServer } from "@shiptorio/shared";
 import { Icon } from "./icons";
-import { LEVEL_LABEL, MACHINE_NAME as NAME, SOURCE, WORDS, YOURS } from "../copy";
+import { LEARN, LEVEL_LABEL, MACHINE_NAME as NAME, SOURCE, WORDS, YOURS } from "../copy";
 
 const LEVELS = ["advisor", "floor", "build", "lights_out"] as const;
 
@@ -97,6 +97,21 @@ export function MakeItYours({ state, send, onClose }: { state: FactoryState; sen
               ))}
             </span>
           </div>
+        </>
+      )}
+
+      {!!state.learned?.length && (
+        <>
+          <h3>{LEARN.title}</h3>
+          <p className="empty">{LEARN.why}</p>
+          {state.learned.map((l) => (
+            <div className="lrow" key={l.key}>
+              <span className="tt">{l.label}</span>
+              <button type="button" className="btn" style={{ flex: "none", minHeight: 36 }} aria-label={LEARN.stopFor(l.label)} onClick={() => send({ type: "unlearn", key: l.key })}>
+                {LEARN.stop}
+              </button>
+            </div>
+          ))}
         </>
       )}
 

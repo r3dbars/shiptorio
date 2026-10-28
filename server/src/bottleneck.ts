@@ -49,7 +49,7 @@ const LABELS: Record<PipelineStage, string> = {
   intake: "waiting to be read", triage: "waiting for a plan", build: "waiting on a local agent", ci: "waiting at CI", verify: "waiting at the verify bay", review: "waiting at AI review", merge: "waiting on you to launch", release: "waiting for release", impact: "waiting for the customer result", power: "waiting for power", resources: "waiting for an agent connection",
 };
 function summary(metric: StageMetrics): string {
-  if (metric.stage === "resources") return "Plug in Claude or ChatGPT to start building.";
+  if (metric.stage === "resources") return "Your computer writes the code. Plug it in to start building.";
   if (metric.stage === "power") return "Your connected agents have no power. Recharge or connect another plant.";
   const age = metric.ageMs < 60_000 ? "less than a minute" : metric.ageMs < 3_600_000 ? `${Math.floor(metric.ageMs / 60_000)} min` : `${Math.floor(metric.ageMs / 3_600_000)} h`;
   return `${metric.wip} ${metric.wip === 1 ? "item" : "items"} ${LABELS[metric.stage]}. Oldest wait: ${age}.`;

@@ -104,6 +104,12 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(req.url);
+    if (url.pathname === '/__test/waitlist' && req.method === 'GET') {
+      const email = url.searchParams.get('email') ?? '';
+      if (!email.endsWith('@example.test')) return new Response('fixture email required', { status: 400 });
+      const rows = await env.DB.prepare('SELECT identity, kind, status FROM signup_waitlist WHERE identity = ? AND kind = ?').bind(email.toLowerCase(), 'email').all();
+      return reply(rows.results);
+    }
     if (url.pathname === '/__test/warm-load-grants') {
       // The load target is DO fan-out, not GitHub's upstream request queue. Model
       // already-warm provider permission grants; D1 membership/session checks still run.

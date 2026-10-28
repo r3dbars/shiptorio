@@ -10,6 +10,8 @@ dist/
 runner/.work/
 runner/local-model.json
 playtest-results/
+playtest/out/
+.fixture-setup/
 .test-runtime/
 test-results/
 playwright-report/
