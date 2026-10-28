@@ -1,53 +1,93 @@
-import { block, bulb, cylinder, halo, LAMP, pipeH, pipeV, plinth } from "./parts";
-import type { Px } from "./px";
+import type { StopState } from "../contract";
+import type { Color } from "./palette";
+import { shift, type Px } from "./px";
+import { BRASS, COPPER, IRON, blotch, cylH, cylV, drop, face, noise, rivet, smoke, strap, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
-// Gate: a tall iron cabinet the line runs through, a lantern on top, a slot window down its face, and a chevron
-// panel either side. Working: a bright notch slides down the slot. Auto: the slot splits open, green.
+// Gate: a tall riveted iron cabinet the line runs through, a brass lantern on top, a slot window down its face and
+// a chevron wing either side. Working: a bright notch slides down the slot. Jammed: red, smoke from the lantern.
+// Auto: the slot splits open, green at both edges.
 
-function chevronPanel(g: Px, x: number, y: number, w: number, h: number) {
-  block(g, x, y, w, h, 2);
-  g.rect(x + 2, y + 2, w - 4, h - 4, "iron-1");
-  const cx = x + Math.floor(w / 2) - 1, cy = y + Math.floor(h / 2);
-  for (let i = 0; i < 3; i++) { g.set(cx + i, cy - 2 + i, "brass-4"); g.set(cx + i, cy + 2 - i, "brass-4"); g.set(cx + i - 1, cy - 2 + i, "brass-3"); g.set(cx + i - 1, cy + 2 - i, "brass-3"); }
+const LIT: Record<StopState, Ramp> = {
+  idle: ["soot", "iron-1", "iron-2", "iron-3", "iron-4", "haze-2"],
+  working: ["sun-0", "sun-1", "sun-3", "sun-4", "sun-5", "sun-6"],
+  jammed: ["jam-0", "jam-0", "jam-1", "jam-1", "jam-2", "haze-3"],
+  auto: ["ok-0", "ok-0", "ok-1", "ok-1", "ok-2", "white"],
+};
+const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
+
+function wing(g: Px, x: number, w: number) {
+  const y = 26, h = 14;
+  drop(g, x, y, w, h);
+  for (let k = 0; k < 2; k++) for (let i = 0; i < w; i++) tone(g, x + i + (2 - k), y - 2 + k, IRON, 0.58 + 0.12 * (i / w)); // top face
+  face(g, x, y, w, h, IRON, 0.3, { seed: x + 3, grime: 2 });
+  strap(g, x, y, w, 2, BRASS, 4); strap(g, x, y + h - 2, w, 2, BRASS, 4, false);
+  strap(g, x, y + 2, 2, h - 4, BRASS, 0, false); strap(g, x + w - 2, y + 2, 2, h - 4, BRASS, 0, false);
+  // the chevron, painted brass with a dark edge under it
+  const cx = x + Math.floor(w / 2) - 2, cy = y + 7;
+  for (let i = 0; i < 4; i++) for (const sgn of [-1, 1]) {
+    const yy = cy + sgn * (3 - i);
+    tone(g, cx + i, yy, BRASS, 0.85); tone(g, cx + i + 1, yy, BRASS, 0.65); g.set(cx + i - 1, yy + 1, "iron-0");
+  }
 }
 
 export const gate: StationDef = {
-  w: 54, h: 46,
-  anim: (s) => (s === "working" ? { n: 4, fps: 4 } : { n: 1, fps: 0 }),
-  draw(g, s, f) {
-    const X = 20, Y = 15, W = 13, H = 26, D = 3;
-    chevronPanel(g, 3, 28, 17, 11);
-    chevronPanel(g, 36, 28, 15, 11);
-    // a copper pipe over the left shoulder
-    pipeH(g, 13, 17, 7); pipeV(g, 13, 17, 11); g.set(13, 17, "copper-1");
-    block(g, X, Y, W, H, D);
-    // a tank box on the lit side
-    g.rect(X + W + D, Y + 3, 3, 8, "iron-3"); g.vline(X + W + D + 2, Y + 3, 8, "brass-3"); g.hline(X + W + D, Y + 3, 3, "brass-4");
-    // lantern on top
-    const lx = X + 5;
-    g.rect(lx - 1, Y - D - 2, 7, 2, "brass-2"); g.hline(lx - 1, Y - D - 2, 7, "brass-4");
-    cylinder(g, lx, Y - D - 8, 5, 6, "brass");
-    const on = s !== "idle", lamp = LAMP[s];
-    g.rect(lx + 1, Y - D - 7, 3, 4, s === "idle" ? "iron-1" : on ? lamp[1] : lamp[0]);
-    if (s !== "idle" && (on)) { g.set(lx + 3, Y - D - 7, lamp[2]); halo(g, lx + 2.5, Y - D - 5, 5, s, s === "jammed"); }
-    g.rect(lx, Y - D - 10, 5, 2, "brass-2"); g.hline(lx + 1, Y - D - 11, 3, "brass-3"); g.set(lx + 2, Y - D - 12, "brass-4");
-    // slot window
-    const sx = X + 3, sy = Y + 4, sw = 7, sh = 17;
-    g.rect(sx, sy, sw, sh, "iron-0"); g.box(sx - 1, sy - 1, sw + 2, sh + 2, "brass-2"); g.hline(sx - 1, sy - 1, sw + 2, "brass-3"); g.vline(sx + sw, sy - 1, sh + 2, "brass-3");
-    if (s === "idle") { for (const yy of [sy + 3, sy + 8, sy + 13]) g.rect(sx + 2, yy, 3, 3, "steel-1"); }
-    else if (s === "auto") {
-      g.rect(sx, sy, 2, sh, lamp[1]); g.vline(sx + 1, sy, sh, lamp[2]);
-      g.rect(sx + sw - 2, sy, 2, sh, lamp[1]); g.vline(sx + sw - 2, sy, sh, lamp[2]);
-      halo(g, sx + 3.5, sy + sh / 2, 7, s);
+  w: 58, h: 62,
+  anim: (s) => (s === "working" ? { n: 4, fps: 3 } : s === "jammed" ? { n: 8, fps: 3 } : { n: 1, fps: 0 }),
+  draw(raw, s, f) {
+    // traced from Justin's gate art at 48 tall, 56 wide (wings and all); +1px outline margin, smoke headroom
+    const g = shift(raw, 1, 13);
+    const lit = LIT[s], glow = GLOW[s];
+
+    g.glow(3, 47, 50, 2, "iron-0", 0.5, true); // contact shadow
+
+    wing(g, 0, 18);
+    wing(g, 39, 17);
+
+    // copper pipe rising from the left wing and bending into the cabinet
+    cylV(g, 14, 16, 4, 10, COPPER, { amb: 0.14, gloss: 0.9 });
+    cylH(g, 14, 14, 7, 4, COPPER, { amb: 0.16, gloss: 0.9 });
+
+    // --- cabinet: top face, lit side with a little box, front
+    for (let k = 0; k < 3; k++) for (let x = 19 + (3 - k); x <= 41; x++) tone(g, x, 11 + k, IRON, 0.55 + 0.15 * ((x - 19) / 22) + (blotch(x, 11 + k, 3, 2) - 0.5) * 0.2);
+    for (let y = 13; y < 44; y++) for (let x = 39; x < 42; x++) tone(g, x, y, IRON, 0.5 + (x - 39) * 0.07 + (noise(x, y, 6) - 0.5) * 0.08);
+    drop(g, 41, 16, 6, 9);
+    face(g, 41, 16, 6, 9, IRON, 0.45, { seed: 5, grime: 1 }); strap(g, 41, 16, 6, 2, BRASS); g.vline(46, 18, 7, "brass-2");
+    face(g, 19, 14, 20, 30, IRON, 0.34, { rust: 0.05, grime: 4, seed: 51 });
+    strap(g, 19, 14, 20, 2, BRASS, 4);
+    strap(g, 19, 16, 3, 27, BRASS, 5);
+    strap(g, 36, 16, 3, 27, BRASS, 5);
+    strap(g, 19, 42, 20, 2, BRASS, 4, false);
+
+    // the slot window
+    drop(g, 24, 18, 10, 23);
+    g.rect(24, 18, 10, 23, "iron-1"); strap(g, 24, 18, 10, 2, BRASS, 0, false); g.vline(33, 18, 23, "brass-2"); g.vline(24, 18, 23, "brass-0"); g.hline(24, 40, 10, "brass-0");
+    g.rect(26, 20, 6, 19, "soot");
+    if (s === "idle") {
+      for (const y0 of [21, 27, 33]) for (let y = y0; y < y0 + 5; y++) for (let x = 27; x < 31; x++) tone(g, x, y, LIT.idle, 0.55 + (x - 27) * 0.1 - (y - y0) * 0.04);
+    } else if (s === "auto") { // split open
+      for (let y = 20; y < 39; y++) { tone(g, 26, y, lit, 0.7); tone(g, 27, y, lit, 1); tone(g, 30, y, lit, 0.7); tone(g, 31, y, lit, 1); g.set(28, y, "iron-0"); g.set(29, y, "iron-0"); }
     } else {
-      g.rect(sx + 2, sy + 1, 3, sh - 2, on ? lamp[1] : lamp[0]);
-      if (s === "working") g.rect(sx + 2, sy + 1 + f * 4, 3, 3, lamp[2]);
-      else if (on) g.vline(sx + 3, sy + 1, sh - 2, lamp[2]);
-      if (on) halo(g, sx + 3.5, sy + sh / 2, 7, s, s === "jammed");
+      for (let y = 21; y < 38; y++) for (let x = 27; x < 31; x++) tone(g, x, y, lit, 0.55 + (x - 27) * 0.1);
+      if (s === "working") for (let y = 21 + f * 4; y < 25 + f * 4; y++) for (let x = 27; x < 31; x++) tone(g, x, y, lit, 0.85 + (x - 27) * 0.05);
+      else for (let y = 21; y < 38; y++) tone(g, 29, y, lit, 1);
     }
-    bulb(g, X + W - 2, Y + 2.5, 0.9, s, on);
-    plinth(g, X - 1, Y + H, W + 2);
-    g.outline();
+    if (glow) g.glowDisc(29, 29.5, 8, glow, 0.25, [26, 20, 6, 19]);
+
+    // --- feet
+    for (const fx of [19, 33]) { strap(g, fx, 44, 6, 2, BRASS, 3); cylH(g, fx, 46, 6, 2, BRASS, { amb: 0.15 }); }
+
+    // --- the lantern on top: brass base, glass cage, cap and finial
+    cylH(g, 25, 9, 9, 3, BRASS, { amb: 0.16, gloss: 0.7 });
+    for (const x of [26, 29, 32]) rivet(g, x, 10);
+    cylV(g, 26, 3, 7, 6, BRASS, { amb: 0.15, gloss: 0.7 });
+    for (let y = 4; y < 9; y++) for (let x = 27; x < 32; x++) tone(g, x, y, lit, (s === "idle" ? 0.45 : 0.65) + (x - 27) * 0.08 - Math.abs(y - 6) * 0.05);
+    g.vline(29, 4, 5, "brass-1"); // cage bar
+    cylV(g, 25, 2, 9, 1, BRASS, { amb: 0.3, gloss: 0.9 });
+    cylV(g, 27, 0, 5, 2, BRASS, { amb: 0.2 });
+    if (glow) g.glowDisc(29.5, 6.5, 5, glow, 0.25, [27, 4, 5, 5]);
+
+    raw.outline();
+    if (s === "jammed") smoke(g, 30, -2, f / 8, true);
   },
 };

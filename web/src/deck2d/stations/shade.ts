@@ -6,7 +6,9 @@ import type { Px } from "./px";
 // between two steps. Round things get banded shading across the curve, a hot glint and a bounce px at the dark edge.
 
 export type Ramp = readonly Color[];
-export const IRON: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "iron-3", "iron-4"];
+// Iron interleaves the warm iron ramp with the cool steel one (they step up in brightness together), so mottled
+// faces read as the dark cool-grey iron of the mockups rather than brown.
+export const IRON: Ramp = ["soot", "iron-0", "steel-0", "iron-1", "steel-1", "iron-2", "steel-2", "iron-3", "iron-4"];
 // Ramps are tuned to Justin's painted art snapped to the 48: mostly the dark and middle steps, the top step only
 // for glints. (His builder snapped: soot, plate-0, iron-0, brass-0/1, iron-1/2, brass-2, plate-2; brass-4 is ~0.1%.)
 export const BRASS: Ramp = ["soot", "plate-0", "brass-0", "brass-1", "brass-2", "brass-3", "brass-4", "brass-5"];
