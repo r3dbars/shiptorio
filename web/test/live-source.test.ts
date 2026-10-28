@@ -341,3 +341,37 @@ it("Later survives reconnect but unrelated machine writes are not replayed", () 
   h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot());
   expect(fresh.sent).toEqual([JSON.stringify({type:"defer_move",moveId:"plan-1"})]); source.close();
 }));
+it("pong cannot hide an unacknowledged decision; replay is bounded and visibly asks for retry", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  for (let attempt = 0; attempt < 2; attempt++) {
+    h.sockets.at(-1)!.message("pong"); h.advance(10_300);
+    const fresh = h.sockets.at(-1)!; expect(fresh).not.toBe(first);
+    fresh.open(); fresh.message(decisionSnapshot()); expect(fresh.sent).toHaveLength(1);
+  }
+  h.sockets.at(-1)!.message("pong"); h.advance(10_001);
+  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")}));
+  expect(h.sockets.reduce((n,s) => n+s.sent.filter(raw=>raw.includes('"choose_move"')).length,0)).toBe(3);
+  source.close(); expect(h.tasks.size).toBe(0);
+}));
+it("same-card Launch cannot replay across a changed PR head", () => transportTest(h => {
+  const launch = JSON.parse(decisionSnapshot());
+  launch.state.deck[0].options[0].actions = [{tool:"request_merge",args:{headSha:"a"},reason:"Launch this exact revision"}];
+  const source = h.connect(), first=h.sockets[0];first.open();first.message(JSON.stringify(launch));first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  launch.state.deck[0].options[0].actions[0].args.headSha = "b";
+  h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(JSON.stringify(launch));
+  expect(fresh.sent).toEqual([]);source.close();
+}));
+it("offline intents expire rather than approving unexpectedly much later", () => transportTest(h => {
+  const source=h.connect(), first=h.sockets[0];first.open();first.message(decisionSnapshot());first.close();
+  source.send({type:"defer_move",moveId:"plan-1"}); h.advance(60_001);
+  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",text:expect.stringContaining("could not be confirmed")}));
+  const fresh=h.sockets.at(-1)!;fresh.open();fresh.message(decisionSnapshot());expect(fresh.sent).toEqual([]);source.close();
+}));
+it("never queues a card or option that this source has not received", () => transportTest(h => {
+  const source=h.connect(), first=h.sockets[0];
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  first.open();first.message(decisionSnapshot());expect(first.sent).toEqual([]);
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"forged"});expect(first.sent).toEqual([]);source.close();
+}));
