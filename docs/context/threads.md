@@ -651,3 +651,7 @@ only moves on a `dev → main` promotion, which runs the full suite and gets the
 - 2026-10-28 — Codex: #371 rebased onto dev, retaining admin stops, explicit base-refresh provenance, native model JSON formats and websocket sequence guards. Raised call/token/spend caps resume parked plans without refunding ambiguous paid calls; focused stop/quota/recovery tests cover the new dev integration.
 
 Retains production-disabled negative-ID identities and scoped fixture delegation while preserving current administrator controls and request redaction. The bot workflow now pins existing reviewed action SHAs and disables persisted checkout credentials. No fixture resources or configuration were changed. Local proof and exact-head dev CI are required before merge.
+
+### Codex socket handshake latency — PR #498
+
+Hosted isolated-fixture upgrades took 5.46–6.15s, longer than the unchanged client five-second deadline; snapshots followed open within 2ms. Reuse the verified immutable principal only within the same upgrade (four session reads become two), retaining independent repository authorization and later message revalidation. The private fixture tracks post-upgrade lease cleanup with waitUntil while preserving reset leases/TTL. Regression proves distinct requests and revoked sessions are rechecked; hosted improvement awaits deployment measurement.

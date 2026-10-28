@@ -11,6 +11,14 @@ const { Factory } = await import("../src/factory");
 
 const request = (cookie: string) => new Request("https://shiptorio.com/api/repos/owner/repo/factory", { headers: { cookie, upgrade: "websocket" } });
 describe("privileged browser socket lifetime", () => {
+  it("carries the actual session principal on localhost even when DEV_LOGIN is configured", async () => {
+    const env = { ...browserEnv, DEV_LOGIN: "local-debug", DB: authorizedDB({ prepare: () => { throw Error("Unexpected query"); } }) };
+    const auth = await browserSocketAuth(new Request("http://localhost/api/repos/owner/repo/factory", { headers: { cookie: await browserCookies() } }), env);
+    expect(auth?.user?.id).toBe(1);
+    expect(auth?.user?.login).toBe("test-player");
+    expect(Object.isFrozen(auth?.user)).toBe(true);
+  });
+
   it("requires both login and preview cookies and retains their earliest expiry", async () => {
     expect(await browserSocketAuth(request(""), browserEnv)).toBeNull();
     const login = (await makeSessionCookie(browserEnv.SESSION_SECRET, "test-player")).split(";")[0];
