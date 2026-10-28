@@ -67,9 +67,11 @@ const SETTLE_MS = 600;
 export function useSettled(key: string) {
   const generation = useMemo(() => ({ key }), [key]);
   const active = useRef<typeof generation | null>(null);
+  const pressed = useRef<{ generation: typeof generation; target: EventTarget; kind: "pointer" | "key"; key?: string } | null>(null);
   const [settled, setSettled] = useState<typeof generation | null>(null);
   useLayoutEffect(() => {
     active.current = generation;
+    pressed.current = null;
     const timer = window.setTimeout(() => {
       if (active.current === generation) setSettled(generation);
     }, SETTLE_MS);
@@ -79,10 +81,35 @@ export function useSettled(key: string) {
     };
   }, [generation]);
   const ready = settled === generation;
-  const run = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
-    if (ready && active.current === generation) fn(...a);
+  const owns = (target: EventTarget) => pressed.current?.generation === generation && pressed.current.target === target;
+  const activationKey = (key: string) => key === " " || key === "Enter";
+  const input = {
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (ready && e.isPrimary && e.button === 0)
+        pressed.current = { generation, target: e.currentTarget, kind: "pointer" };
+    },
+    onPointerCancel: () => { pressed.current = null; },
+    onBlur: (e: React.FocusEvent<HTMLElement>) => { if (owns(e.currentTarget)) pressed.current = null; },
+    onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => {
+      if (!activationKey(e.key)) return;
+      if (!ready || e.repeat) { if (!owns(e.currentTarget)) e.preventDefault(); return; }
+      pressed.current = { generation, target: e.currentTarget, kind: "key", key: e.key };
+    },
+    onKeyUp: (e: React.KeyboardEvent<HTMLElement>) => {
+      if (activationKey(e.key) && (!owns(e.currentTarget) || pressed.current?.kind !== "key" || pressed.current.key !== e.key))
+        e.preventDefault(); // suppress the native activation from another card's key release
+    },
   };
-  return { ready, run };
+  const run = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
+    if (!ready || active.current !== generation) return;
+    const event = a[0] as React.MouseEvent<HTMLElement> | undefined;
+    const native = event?.nativeEvent as (MouseEvent & { pointerType?: string }) | undefined;
+    if (((event?.detail ?? 0) > 0 || native?.pointerType) &&
+      (!event || !owns(event.currentTarget) || pressed.current?.kind !== "pointer")) return;
+    pressed.current = null;
+    fn(...a); // bare detail-0 assistive activation remains a supported explicit action
+  };
+  return { ready, run, input };
 }
 // sign in with GitHub, then pick a repo (the same path the play-first chip takes)
 const SIGN_IN = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
@@ -289,7 +316,7 @@ function useAfterShip() {
 }
 
 function LookAround({ onGo }: { onGo: () => void }) {
-  const { ready, run: settled } = useSettled("look");
+  const { ready, run: settled, input } = useSettled("look");
   if (!useAfterShip()) return null;
   return (
     <section className="card bo-card bo-look" role="region" aria-label={BUILDOUT.label} data-buildout-card="">
@@ -298,7 +325,7 @@ function LookAround({ onGo }: { onGo: () => void }) {
         <h2 className="bo-title">{BUILDOUT.look.title}</h2>
         <p className="bo-line">{BUILDOUT.look.why}</p>
       </div>
-      <button type="button" className="bo-tab" data-buildout-action="continue" disabled={!ready} onClick={settled(onGo)} autoFocus>
+      <button {...input} type="button" className="bo-tab" data-buildout-action="continue" disabled={!ready} onClick={settled(onGo)} autoFocus>
         {BUILDOUT.look.go}
       </button>
     </section>
@@ -340,7 +367,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
       .catch(() => {});
     return () => { on = false; };
   }, [step.id, live, issueApi]);
-  const { ready, run: settled } = useSettled(step.id);
+  const { ready, run: settled, input } = useSettled(step.id);
   const name = BUILDOUT.name[step.id] ?? step.id;
   if (later === step.id) {
     return (
@@ -382,7 +409,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <a className="bo-tab" data-buildout-action="tap" href="/?onboard=repo&source=live">{BUILDOUT.real.pickRepo}</a>;
   } else if (live && step.id === "boiler") {
     // no fake power on your own repo: the boiler lights when your runner pairs
-    right = <button type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready} aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
+    right = <button {...input} type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready} aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
     if (pairing && repo) extra = <div className="bo-pair"><RunnerConnection repo={repo} /></div>;
   } else if (live && step.id === "builder") {
     // your builder rises when your runner brings its assembler online
@@ -394,7 +421,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
   } else if (live && step.id === "issue") {
     extra = <p className="bo-real" role="status">{starter === "done" ? BUILDOUT.real.starterFiled : starter === "failed" ? failLine || BUILDOUT.real.starterFailed : BUILDOUT.real.starterWhy}</p>;
     right = starter === "done" ? wait(BUILDOUT.real.issueWait) : (
-      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready || starter === "busy"} onClick={settled(() => void fileStarter())}>
+      <button {...input} type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready || starter === "busy"} onClick={settled(() => void fileStarter())}>
         {BUILDOUT.real.starter}
       </button>
     );
@@ -402,7 +429,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <BuildHold card={step.id} label={action} red={step.id === "launch"} onBuild={go} />;
   } else if (step.trigger === "tap" || step.trigger === "continue") {
     const waiting = step.id === "planner" && live && !state.move; // the real plan hasn't come back yet
-    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={!ready || waiting} onClick={settled(go)}>{action}</button>;
+    right = <button {...input} type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={!ready || waiting} onClick={settled(go)}>{action}</button>;
   } else {
     // auto: nothing to press, the work happens on its own (real waits stay real)
     right = (
@@ -423,7 +450,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
 
   return (
     <section className="card bo-card" role="region" aria-label={BUILDOUT.label} data-buildout-card="" data-trigger={step.trigger}>
-      <button type="button" className="bo-later" disabled={!ready} onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
+      <button {...input} type="button" className="bo-later" disabled={!ready} onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
         {BUILDOUT.later}
       </button>
       <div className="bo-body">
