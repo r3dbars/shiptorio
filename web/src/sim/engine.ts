@@ -522,6 +522,20 @@ export const SCENARIOS = {
     buildout: true,
     ores: [],
   },
+  // The 2D deck's story (web/src/deck2d/data/CONTRACT.md): every bug asks before it builds, so you can say yes three
+  // times in a row and watch the builder go automatic. Software is a factory, it's waiting on your calls, swipe and it
+  // moves, approve twice more and it's automatic.
+  deck2d: {
+    districts: SHOP_DISTRICTS,
+    harness: "claude_code",
+    ores: [
+      { at: 2, title: "Fix checkout bug on Safari", kind: "bug", district: "checkout", ask: "Build the fix: await the payment intent before enabling the button." },
+      { at: 6, title: "Cart badge shows a stale count", kind: "bug", district: "cart", ask: "Build the fix: refresh the badge when the cart changes." },
+      { at: 10, title: "Coupon total off by a cent", kind: "bug", district: "cart", ask: "Build the fix: round once, at the end." },
+      { at: 14, title: "Timeout on /api/orders", kind: "bug", district: "api", ask: "Build the fix: page the orders query." },
+      { at: 18, title: "Fix typo in shipping FAQ", kind: "cleanup", district: "docs", ask: "Build it: one word in the FAQ." },
+    ],
+  },
 } satisfies Record<string, Scenario>;
 
 // The tour's ore, round and round: mostly docs, so a docs permit visibly drains the pile.
