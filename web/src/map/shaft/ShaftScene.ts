@@ -625,6 +625,9 @@ export class ShaftScene {
     // yields while a native hold is active; simulation and camera still step.
     submitWhenUnheld(() => {
       this.gpu.submit(() => {
+        // Only sustained severe-device evidence selects the smaller internal
+        // scene target. Canvas/DOM size, camera, shadows and explicit pins stay put.
+        if (this.governor.severe) stage.pixel = 2;
         // Count ordinary shadow cadence only on actual GPU submissions; skipped
         // RAFs must not latch every-other-frame shadows into every drawn frame.
         const shadowFrame = ++this.submittedShadowFrame;
@@ -634,6 +637,12 @@ export class ShaftScene {
           this.bo.precompile((holders) => this.warm(stage, holders));
         }
         stage.render(this.renderer);
+        perf.dimensions({
+          bufferWidth: this.renderer.domElement.width, bufferHeight: this.renderer.domElement.height,
+          sceneWidth: stage.finish.target.width, sceneHeight: stage.finish.target.height,
+          shadowWidth: stage.sun.shadow.map?.width ?? 0, shadowHeight: stage.sun.shadow.map?.height ?? 0,
+          internalPixel: stage.pixel, severeBudget: Number(this.governor.severe),
+        });
       });
       // DOM/input keeps following the game even while the GPU finishes a frame.
       this.hud.place(this.W, this.H);
