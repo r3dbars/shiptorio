@@ -1,5 +1,5 @@
 import {
-  ART_PX, BELT_Y, DECK_DX, DECK_END, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
+  ART_PX, BELT_Y, DECK_DX, DECK_END, HULL, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
@@ -17,7 +17,7 @@ const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { ea
 
 const PAD = { x: 1905 + DECK_DX, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
 const BRIDGE_Y = PAD.y + PAD.s * 560;
-const ORB = { x: 1043, y: 578 };
+const ORB = HULL.orb;
 /** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
  * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
