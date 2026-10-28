@@ -71,3 +71,19 @@ test("refresh recovery refuses a changed prior-head lease or base instead of reu
     await first.close();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("updating for refresh jobs still resumes an existing normal-job recovery journal", async () => {
+  const root = await realpath(await mkdtemp(resolve(tmpdir(), "shiptorio-legacy-recovery-")));
+  try {
+    const id = "12345678-1234-4234-8234-123456789abc";
+    const j = { ...assignment(), id, lease: id, deadline: 60000, branch: `shiptorio/runner-${id}` };
+    const first = await recoverWorkspace(root, j);
+    const path = resolve(root, ".recovery", `${id}.json`);
+    const journal = await Bun.file(path).json();
+    // Persisted identity from the runner before base refresh existed (no trailing new field).
+    journal.identity = '["12345678-1234-4234-8234-123456789abc","you/repo","12345678-1234-4234-8234-123456789abc","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","shiptorio/runner-12345678-1234-4234-8234-123456789abc","codex","Fix the bug",["value.ts"],60000,null,null,null]';
+    await Bun.write(path, JSON.stringify(journal));
+    expect((await recoverWorkspace(root, j)).directory).toBe(first.directory);
+    await first.close();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

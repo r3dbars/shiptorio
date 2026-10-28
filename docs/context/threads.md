@@ -480,3 +480,5 @@ server fixture covers fresh approval, same-PR completion and Launch, plus base c
 at approval/claim/finish. Full check and hosted status are recorded in the PR. Root
 owns batching, merge and Deploy; this chat does not merge. Narrow `publication.ts`
 exception extends merged #351's trusted boundary, without changing workspace code.
+Root authorized one narrow deck reservation exception: explicit same-PR refresh proposals
+and approvals keep a runner slot in a full deck; merge-gate priority stays intact.

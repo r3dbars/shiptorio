@@ -37,7 +37,7 @@ export async function atomicJson(path: string, value: unknown) {
 }
 
 // Journal stays outside the agent-visible job root. Never persist installation tokens.
-const identity = (job: Job) => JSON.stringify([job.id, job.repo, job.lease, job.baseSha, job.branch, job.harness, job.plan, job.allowedPaths, job.deadline, job.reworkPr, job.verifyBaseSha, job.prTestFiles, job.refreshBase]);
+const identity = (job: Job) => JSON.stringify([job.id, job.repo, job.lease, job.baseSha, job.branch, job.harness, job.plan, job.allowedPaths, job.deadline, job.reworkPr, job.verifyBaseSha, job.prTestFiles, ...(job.refreshBase ? [job.refreshBase] : [])]);
 export async function recoverWorkspace(root: string, job: Job) {
   job = JobAssignment.parse(job);
   const home = resolve(await realpath(root), ".recovery");
