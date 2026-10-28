@@ -179,3 +179,29 @@ test("cancel then re-arm resets the countdown and captions distinguish requests 
     expect(b.launched).toEqual(["launch:7"]);
   } finally { await b.unmount(); tick.mockRestore(); play.mockRestore(); }
 });
+
+test("mounted consent controls yield scene submission and unmount always releases it", async () => {
+  const { submitWhenUnheld } = await import("../src/ui/holdRender");
+  const { BuildHold } = await import("../src/ui/Buildout");
+  const { act } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  // Launch uses the existing real component fixture; both keyboard and pointer
+  // native presses enter the same unchanged HoldGesture consent controller.
+  const launch = await mount(fakeClock().clock);
+  try {
+    await launch.key("keydown");
+    expect(submitWhenUnheld(() => {})).toBe(false);
+  } finally { await launch.unmount(); }
+  expect(submitWhenUnheld(() => {})).toBe(true);
+
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  await act(() => root.render(<BuildHold card="tunnel" label="Build" clock={fakeClock().clock} onBuild={() => {}} />));
+  try {
+    await act(() => host.querySelector("button")!.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true, isPrimary: true, button: 0, pointerId: 1,
+    })));
+    expect(submitWhenUnheld(() => {})).toBe(false);
+  } finally { await act(() => root.unmount()); host.remove(); }
+  expect(submitWhenUnheld(() => {})).toBe(true);
+});
