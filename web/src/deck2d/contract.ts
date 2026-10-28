@@ -11,6 +11,13 @@
 //   card/     (card)   mountCard(host, handlers) -> CardHandle; the one iron swipe card, plain DOM.
 //   juice/    (juice)  attachJuice(bus, host, where) -> detach; sounds + effects driven by DeckEvents.
 //
+// Entry points main.ts looks for (each optional, picked up when the file exists):
+//   story/index.ts  export createStory(opts: { seed: number; speed: number }): DeckSource
+//   data/index.ts   export createLiveSource(): DeckSource | Promise<DeckSource>     (?source=live)
+//   shippy/index.ts export createShippy: CreateShippy
+//   card/index.ts   export mountCard: MountCard
+//   juice/index.ts  export attachJuice: AttachJuice
+//
 // The page: web/deck.html (vite dev: http://localhost:5173/deck.html) mounts web/src/deck2d/main.ts.
 // Sprites: web/public/deck/art/*.webp, cleaned from Justin's ChatGPT sheets (names below).
 // Change this file only with the hub thread; add fields, don't rename them.
@@ -39,6 +46,8 @@ export interface Stop {
   automated: boolean; // the player has handed this stop to Shippy
   items: Item[]; // crates queued at or inside this stop, front of the line first
   waiting?: string; // plate text when jammed, e.g. "REVIEW WAITING"
+  locked?: boolean; // shown as a tarp + padlock plot: a piece you haven't added yet (e.g. before GitHub is connected)
+  building?: number; // 0..1 while it's under construction (plot -> scaffolding -> machine); undefined when not building
 }
 
 export interface CardView {
@@ -47,6 +56,10 @@ export interface CardView {
   dots: { have: number; need: number } | null; // ●○○ toward automatic
   line: string; // "Approve 2 more like this and it's automatic."
   stop: StopId; // which stop the camera flies to
+  yes?: string; // button labels, default "Approve" / "Later" (e.g. "Show me my repo" / "Replay")
+  no?: string;
+  hold?: boolean; // ships real code (a merge): needs a held press or a full swipe, never a flick
+  setup?: boolean; // a "plug in an agent" / connect card rather than a decision on work
 }
 
 export type ShippyPose = "folded" | "peek" | "unfold" | "walking" | "lever" | "happy" | "alarmed";
@@ -63,6 +76,13 @@ export interface DeckView {
   shippy: ShippyView;
   shipped: number; // rockets launched so far
   caption: string | null; // one short line, shown at the bottom when no card is up ("Software is a factory.")
+  /** The platform grows with you. Omitted = full deck with the launch island built. */
+  deck?: {
+    size: "small" | "medium" | "large"; // small: repo + 1-2 stations; large: the whole line
+    growing?: number; // 0..1 while bolting on the next section
+    island: "none" | "building" | "built"; // bridge + rocket island; no rocket until it's built
+    islandProgress?: number; // 0..1 while building
+  };
 }
 
 /** Where a DeckView comes from: the scripted first run or the real factory. */
@@ -77,7 +97,8 @@ export interface DeckSource {
 // ---------- events (engine -> juice, shippy, anyone) ----------
 // The engine diffs views and emits these. Juice maps them to sounds and effects.
 export type DeckEvent =
-  | { type: "station-built"; stop: StopId }
+  | { type: "build-start"; stop: StopId } // construction zone appears (scaffolding, sparks, Shippy welding)
+  | { type: "station-built"; stop: StopId } // the payoff: glowing burst + green check, you added to your line
   | { type: "station-state"; stop: StopId; state: StopState }
   | { type: "crate-arrive"; stop: StopId; id: string }
   | { type: "jam"; stop: StopId }
@@ -85,7 +106,10 @@ export type DeckEvent =
   | { type: "later"; cardId: string }
   | { type: "launch" }
   | { type: "automated"; stop: StopId }
-  | { type: "shippy"; pose: ShippyPose };
+  | { type: "shippy"; pose: ShippyPose }
+  | { type: "deck-grow"; size: "small" | "medium" | "large"; phase: "beams" | "plates" | "rails" | "glow" | "rocks" | "done" } // grow/
+  | { type: "build-stage"; stop: StopId; stage: "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check" } // build/
+  | { type: "launch-stage"; stage: "island-rising" | "island-up" | "bridge" | "bridge-done" | "tower" | "rocket-lowering" | "rocket-seated" }; // launch/
 
 export interface DeckBus {
   on(fn: (e: DeckEvent) => void): () => void;
@@ -147,6 +171,28 @@ export type MountCard = (host: HTMLElement, handlers: { onApprove(id: string): v
 
 /** where(stop) gives the stop's position in CSS pixels on screen right now, for effects that sit on a machine. */
 export type AttachJuice = (bus: DeckBus, host: HTMLElement, where: (stop: StopId) => { x: number; y: number }) => () => void;
+
+/**
+ * A drawing layer that plugs into the engine's canvas: grow/ (the platform growing), build/ (construction zones),
+ * launch/ (bridge + island + tower + rocket). draw() is called once per slot, in world coords, in this order:
+ *   sky-far (after the sky, before back clouds) · deck (where the platform draws) · line (after belt, before crates)
+ *   · stations (after stations) · front (after front clouds).
+ * replaces = what the engine stops drawing itself when this layer is mounted, so the layer owns it outright.
+ */
+export type LayerSlot = "sky-far" | "deck" | "line" | "stations" | "front";
+export interface DeckLayer {
+  replaces?: ("deck" | "island" | "rocket")[];
+  update(dt: number, view: DeckView): void;
+  draw(ctx: CanvasRenderingContext2D, slot: LayerSlot): void;
+  /** build/: true while this layer draws the stop itself (locked tarp, mid-construction); the engine skips its sprite. */
+  owns?(stop: Stop): boolean;
+  /** grow/: the world x-range that's built right now; the camera fits it and the belt stops at its right edge. */
+  bounds?(): { x0: number; x1: number };
+}
+export type CreateLayer = (art: ArtLoader, bus: DeckBus) => DeckLayer;
+// Entries: grow/index.ts, build/index.ts, launch/index.ts each `export const createLayer: CreateLayer`.
+/** World geometry layers need: the deck's right edge right now (it grows), and the launch spot. */
+export const LAUNCH = { x: 2834, y: 250 } as const;
 
 // ---------- page hooks (screenshots, clips) ----------
 // <body data-deck-ready> is set once sprites loaded and the first frame drew.
