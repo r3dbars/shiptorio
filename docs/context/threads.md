@@ -540,6 +540,10 @@ actual submissions; urgent build invalidations stay latched. Unsupported/failed
 fences or a five-second unsignaled fence fall back to the previous rendering path;
 context loss/restoration and disposal release sync references. Existing perf frame
 metrics retain their logical-frame meaning, with separate passive submission/skip/
-failure counters. Fake-GL, hold and governor tests pass; local original desktop
-journey and comparative evidence are pending. This is an unproven performance
+failure counters. Fake-GL, hold and governor tests pass (17 tests/80 assertions).
+The unchanged original desktop dark-to-rocket journey passes locally in 1.5 minutes;
+111 passive samples ended at 947 submissions, six pending skips and zero fence
+failures. That low local skip rate does not establish a hosted speedup. Full local
+check passes: 1,406 tests, two existing skips, zero failures; lint/types/build green.
+Hosted comparative evidence remains pending. This is an unproven performance
 candidate, not a released fix. Root owns hosted verification, merging and deployment.
