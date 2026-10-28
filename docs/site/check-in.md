@@ -82,3 +82,9 @@ Each card scores **value × minutes waited**. Cards that **grow the loop** get a
 When the deck is empty you see "All clear" and a tally. The score isn't how many you cleared. It's how few need you tomorrow.
 
 Open the deck straight away with [?checkin](/?source=sim&scenario=checkin&checkin) on any factory URL.
+
+### Reliable decisions and step status
+
+A repeated Later delivery parks the same card once; it does not count as several decisions or teach automation. The next check-in can offer it again. Repeated approvals keep the same approved runner job and count one approval lesson. Reconnecting restores the saved cards and current job state; a tap alone never marks a build or launch complete.
+
+The optional `pipeline` snapshot/patch field summarizes planner, builder, checks, review, gate and launch. Each step has `state` (`idle`, `working`, `stuck`, `waiting_player`, `done`), a safe `cause` code, up to 40 example `itemIds`, and the current actionable `moveIds`. `PIPELINE_REASONS` in the shared package explains causes without copying provider errors. Patches replace all six entries. Snapshots recompute from durable jobs and current runner presence; this projection is presentation, not another stored state machine. Existing move/option IDs and server validation still control actions. Clients retain pending taps until authoritative state changes; the projection grants no approval or Launch permission.

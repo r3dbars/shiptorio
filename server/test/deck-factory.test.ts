@@ -293,6 +293,32 @@ describe("durable live check-in decisions", () => {
     expect(f.data.get("approvalEvents")).toEqual([expect.objectContaining({ kind: "verify" })]);
   });
 
+  it("concurrent Later deliveries count once and survive reconnect with the same next-check-in card", async () => {
+    const move = card("replayed-later");
+    const f = fixture([move]);
+    await f.checkin();
+    await Promise.all([f.send({ type: "defer_move", moveId: move.id }), f.send({ type: "defer_move", moveId: move.id })]);
+    expect((f.data.get("deckBook") as ReturnType<typeof emptyDeckBook>).decisions[moveKey(move)].count).toBe(1);
+    expect(f.saved().deck).toEqual([]);
+    const restarted = f.reload(); await f.checkin(restarted);
+    expect(f.saved().deck?.map(m => m.id)).toEqual([move.id]);
+    expect((f.data.get("deckBook") as ReturnType<typeof emptyDeckBook>).decisions[moveKey(move)].count).toBe(1);
+  });
+
+  it("reconnect derives pipeline from durable jobs instead of a stale stored projection", async () => {
+    const f = fixture([], { items: [{ id: "gh-1", kind: "bug", source: "github_issue", title: "A fix", district: "/", state: "queued", updatedAt: 1, attempts: 0 }] });
+    f.data.set("runnerJob:durable", { id: "durable", itemId: "gh-1", status: "ready", repo: "r3dbars/demo", harness: "codex", allowedPaths: [], branch: "shiptorio/runner-test", approvedAt: 1, lease: "never-public" });
+    await f.checkin();
+    const snapshot = f.events.find((e): e is Extract<ServerToWeb, {type:"snapshot"}> => e.type === "snapshot")!;
+    expect(snapshot.state.pipeline?.find(s => s.id === "builder")).toMatchObject({ state: "stuck", cause: "runner_offline", itemIds: ["gh-1"] });
+    expect(JSON.stringify(snapshot.state.pipeline)).not.toContain("never-public");
+    expect(f.saved().pipeline).toBeUndefined(); // Projection is not another durable state machine.
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    f.events.length = 0; await f.checkin(f.reload());
+    const fresh = f.events.find((e): e is Extract<ServerToWeb, {type:"snapshot"}> => e.type === "snapshot")!;
+    expect(fresh.state.pipeline?.find(s => s.id === "builder")).toMatchObject({ state: "working", cause: "building" });
+  });
+
   it("logs every card offered and what the player tapped, with the wait and the planner's reason", async () => {
     const f = fixture([card("yes", { because: "Two PRs wait on review." }), card("later", { kind: "input" }), card("wrong", { kind: "build" })]);
     await f.checkin();
@@ -451,6 +477,22 @@ describe("durable live check-in decisions", () => {
 });
 
 describe("runner approval survives concurrent deck selection changes", () => {
+  it("replayed Approve commits one approval and one teaching event across reconnect", async () => {
+    const { issueRevision } = await import("../src/runner-job");
+    const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "Scoped", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
+    const move = card("approval-once", { kind: "build", stage: "build", itemId: item.id, options: [{ id: "approve", label: "Approve", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: "job-once" }, reason: "Approve this plan" }] }] });
+    const f = fixture([move], { items: [item] });
+    f.data.set("runnerJob:job-once", { id: "job-once", itemId: item.id, repo: "r3dbars/demo", status: "awaiting_approval", harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-once", approvalMoveId: move.id, inputRevision: await issueRevision(item.title, JSON.stringify({ body: item.body, failure: "", scars: [] })) });
+    await f.checkin();
+    await Promise.all([f.send({ type: "choose_move", moveId: move.id, optionId: "approve" }), f.send({ type: "choose_move", moveId: move.id, optionId: "approve" })]);
+    const stored = structuredClone(f.data.get("runnerJob:job-once"));
+    expect(stored).toMatchObject({ status: "ready", approvedAt: expect.any(Number) });
+    expect(f.data.get("approvalEvents")).toHaveLength(1);
+    const reloaded = f.reload(); await f.checkin(reloaded);
+    await f.send({ type: "choose_move", moveId: move.id, optionId: "approve" }, reloaded);
+    expect(f.data.get("runnerJob:job-once")).toEqual(stored);
+    expect(f.data.get("approvalEvents")).toHaveLength(1);
+  });
   for (const boundary of ["before-handler", "real-refresh", "inside-lock", "revised-item", "rebound-job"] as const) it(`binds the selected plan at ${boundary} and preserves unrelated cards`, async () => {
     const { issueRevision } = await import("../src/runner-job");
     const item = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the guard", body: "A scoped fix", district: "/", state: "queued" as const, attempts: 0, updatedAt: 1 };
