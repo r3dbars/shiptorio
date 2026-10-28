@@ -11,7 +11,8 @@ async function regular(path: string) {
   if (!info.isFile() || await realpath(path) !== path) throw new Error("Dedicated Keychain files must not be links");
   await chmod(path, 0o600);
 }
-async function security(home: string, args: string[], secret?: string) {
+export type KeychainCommandResult = { out: string; err: string; failed: boolean };
+async function run(home: string, args: string[], secret?: string) {
   // Passwords go through security's stdin command parser, never argv, logs, or child environments.
   const child = Bun.spawn(["/usr/bin/security", ...(secret ? ["-i"] : args)], { env: agentEnvironment({}, home), stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   child.stdin.write(secret ? `${args[0]} ${args.slice(1).map(a => JSON.stringify(a === "PASSWORD" ? secret : a)).join(" ")}\n` : "");
@@ -19,12 +20,33 @@ async function security(home: string, args: string[], secret?: string) {
   const timer = setTimeout(() => child.kill(), 10000);
   try {
     const [out, err, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    if (code || /SecKeychain\w*:|error:|Usage:/i.test(err)) {
-      if (args[0] === "unlock-keychain") throw new KeychainUnavailable("Dedicated Keychain unlock failed");
-      throw new Error(`Dedicated Keychain ${args[0]} failed`);
-    }
-    return out;
+    return { out, err, failed: !!code || /SecKeychain\w*:|error:|Usage:/i.test(err) };
   } finally { clearTimeout(timer); }
+}
+async function security(home: string, args: string[], secret?: string) {
+  const { out, err, failed } = await run(home, args, secret);
+  if (failed) {
+    if (args[0] === "unlock-keychain") throw new KeychainUnavailable("Dedicated Keychain unlock failed");
+    // argv-only calls carry no secret, so their stderr is safe to show and is the only clue on someone else's Mac.
+    const detail = secret ? "" : err.trim().split("\n")[0]?.slice(0, 200);
+    throw new Error(`Dedicated Keychain ${args[0]} failed${detail ? `: ${detail}` : ""}`);
+  }
+  return out;
+}
+const LOCK_SETTINGS = ["-l", "-u", "-t", "1800"];
+/** Both independent flags matter: a stored timeout alone does not enable idle locking. */
+export function protectedAgentKeychain(info: KeychainCommandResult): boolean {
+  const words = new Set(`${info.out} ${info.err}`.split(/\s+/));
+  return !info.failed && words.has("lock-on-sleep") && words.has("use-lock-interval") && words.has("timeout=1800s");
+}
+/** A failed write is safe only when a fresh read proves the existing protection. */
+export async function ensureLockSettings(home: string, keychain: string,
+  invoke: (home: string, args: string[]) => Promise<KeychainCommandResult> = run) {
+  if (protectedAgentKeychain(await invoke(home, ["show-keychain-info", keychain]))) return;
+  const set = await invoke(home, ["set-keychain-settings", ...LOCK_SETTINGS, keychain]);
+  if (set.failed && !protectedAgentKeychain(await invoke(home, ["show-keychain-info", keychain]))) {
+    throw new KeychainUnavailable("Dedicated Keychain auto-lock policy could not be verified");
+  }
 }
 export async function unlockAgentKeychain(home: string): Promise<void> {
   if (process.platform !== "darwin") return;
@@ -61,6 +83,6 @@ export async function prepareAgentKeychain(home: string): Promise<void> {
   await security(home, ["default-keychain", "-d", "user", "-s", keychain]);
   // An existing store can be locked after sleep/restart; settings require it to be unlocked first.
   await unlockAgentKeychain(home);
-  await security(home, ["set-keychain-settings", "-l", "-u", "-t", "1800", keychain]);
+  await ensureLockSettings(home, keychain);
   if (!(await security(home, ["default-keychain", "-d", "user"])).includes(keychain)) throw new Error("Dedicated default Keychain did not persist");
 }

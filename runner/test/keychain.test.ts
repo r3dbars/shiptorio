@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { agentEnvironment } from "../src/policy";
 import { prepareAgentHome } from "../src/subscriptions";
-import { KeychainUnavailable, prepareAgentKeychain } from "../src/keychain";
+import { KeychainUnavailable, prepareAgentKeychain, protectedAgentKeychain } from "../src/keychain";
 import { checkSandbox } from "../src/sandbox";
 
 const run = async (args: string[], home?: string) => {
@@ -23,6 +23,12 @@ test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== 
     const keychain = join(home, "Library/Keychains/shiptorio.keychain-db"), password = join(root, ".agent-keychain-password");
     expect((await stat(password)).mode & 0o777).toBe(0o600);
     expect((await stat(keychain)).mode & 0o777).toBe(0o600);
+    // Verify the parser against security's actual native stdout/stderr, not a fixture string alone.
+    const settings = Bun.spawn(["/usr/bin/security", "show-keychain-info", keychain], {
+      env: agentEnvironment({}, home), stdin: "ignore", stdout: "pipe", stderr: "pipe",
+    });
+    const [out, err, code] = await Promise.all([new Response(settings.stdout).text(), new Response(settings.stderr).text(), settings.exited]);
+    expect(protectedAgentKeychain({ out, err, failed: code !== 0 })).toBe(true);
     await run(["add-generic-password", "-a", "shiptorio-test", "-s", "shiptorio-test", "-w", "non-secret-canary"], home);
     expect((await run(["find-generic-password", "-s", "shiptorio-test", "-w"], home)).trim()).toBe("non-secret-canary");
     const saved = await readFile(password, "utf8");
