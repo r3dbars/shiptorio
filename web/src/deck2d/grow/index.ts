@@ -77,6 +77,8 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   // 1 px = 1 art px and snapped to the 48 colors (scripts/pixel/pixelize.py). The growth is drawn in code on the
   // art grid: whole art px, palette colors, no fades.
   const PX = pixelOn();
+  // props/ draws the hull itself in code in pixel mode; then this layer only keeps the camera bounds and the dust.
+  const CODE_HULL = PX && Object.keys(import.meta.glob("../props/index.ts")).length > 0;
   const sprite = (z: DeckSize) => (PX ? `deck-${z}-px` : `deck-${z}`);
   const pxGeo: Partial<Record<DeckSize, Geo>> = {};
   /** The geometry for a size: in pixel mode, measured off the pixel hull once it has loaded. */
@@ -171,6 +173,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   }
 
   function drawDeck(ctx: CanvasRenderingContext2D) {
+    if (CODE_HULL) return;
     if (!g) return drawWhole(ctx, now());
     const gr = g, G = geoOf(gr.to), im = art.get(sprite(gr.to));
     if (!im) return drawWhole(ctx, gr.from);
