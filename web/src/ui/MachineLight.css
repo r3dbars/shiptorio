@@ -10,3 +10,4 @@
 .machine-light.wait .ml-lamp { animation: iron-blink 1.6s infinite; }
 .machine-light.off > span[role="status"] { color: var(--iron-dim); }
 @media (prefers-reduced-motion: reduce) { .machine-light .ml-lamp { animation: none !important; } }
+.machine-light.bare { padding: 6px; background: none; border: 0; }
