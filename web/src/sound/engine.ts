@@ -43,8 +43,10 @@ export type Sfx =
 
 import { SCAPES, type Focus } from "./scapes";
 import { MusicPlayer } from "./musicPlayer";
-import type { MusicInput } from "./music";
+import { musicFocus, type MusicInput } from "./music";
 import type { FoundryPlayer } from "./foundryPlayer";
+import type { SoundtrackPlayer } from "./soundtrackPlayer";
+
 import { ACCENT_RECIPE, type Accent } from "./accents";
 import { SteamKit, type MachineMood, type SteamSfx } from "./steamIron";
 
@@ -53,6 +55,8 @@ const STEAM_FOR: Partial<Record<Sfx, SteamSfx>> = { ore: "ore_pour", shipped: "m
 // Your own taps and presses play straight to the speakers, never muffled by a close-up.
 const UI_SFX = new Set<Sfx>(["tap_planner", "tap_assembler", "tap_checks", "tap_gate", "tap_pad", "tap_rocket", "tap_orbit", "tap_mine", "tap_lift", "card_go", "card_later", "hold_cancel", "hold_go", "repair_pry", "repair_boiler", "repair_cart"]);
 const STEAM = new Set<Sfx>([...UI_SFX, "unlock", "merged", "caught", "caught_ram", "ore_pour"]);
+
+const musicVersion = () => ({ "1": 1, "2": 2 })[new URLSearchParams(location.search).get("music") ?? ""] ?? 3;
 
 export const SFX_EVENT = "shiptorio:sfx";
 export interface SfxEvent {
@@ -82,7 +86,8 @@ class SoundEngine {
   private floorLp: BiquadFilterNode | null = null;
   private near: GainNode | null = null;
   private musicBus: GainNode | null = null;
-  private music: MusicPlayer | FoundryPlayer = new MusicPlayer(this);
+  private music: MusicPlayer | FoundryPlayer | SoundtrackPlayer = new MusicPlayer(this);
+  private firstRun = false;
   private musicLevel: GainNode | null = null;
   private musicLoading = false;
   private musicAttached = false;
@@ -225,12 +230,17 @@ class SoundEngine {
     if (!this.ctx || !this.musicBus || this.musicAttached || this.musicLoading || this.off || !this.settings.music || this.settings.musicVolume <= 0 || document.hidden) return;
     this.musicLoading = true;
     try {
-      // The v2 chunk is never requested by first-load rendering, or while music is off.
-      if (new URLSearchParams(location.search).get("music") !== "1") {
+      // Justin's soundtrack picks by default. ?music=2 is the "Up from the Mine" score, ?music=1 the first adaptive one.
+      // Neither chunk is requested by first-load rendering, or while music is off.
+      const version = musicVersion();
+      if (version !== 1) {
         await this.ctx.resume();
-        const { FoundryPlayer } = await import("./foundryPlayer");
+        const player = version === 2
+          ? new (await import("./foundryPlayer")).FoundryPlayer(this)
+          : new (await import("./soundtrackPlayer")).SoundtrackPlayer(this);
         if (this.off || !this.settings.music || this.settings.musicVolume <= 0 || document.hidden) return;
-        this.music = new FoundryPlayer(this);
+        this.music = player;
+        if ("setFocus" in player) { player.setFocus(this.focus); player.setFirstRun(this.firstRun); }
       }
       this.music.setInput(this.musicInput);
       this.music.attach(this.musicBus);
@@ -256,13 +266,17 @@ class SoundEngine {
     if (this.ctx) this.music.resolve(delay);
   }
 
+  // The first run and its repairs have their own track (Boiler Waltz).
+  setFirstRun(on: boolean) {
+    this.firstRun = on;
+    if ("setFirstRun" in this.music) this.music.setFirstRun(on);
+  }
+
   // For tests and the dev overlay: what the score is doing right now.
   musicState() {
     const m = this.music;
     return { intensity: m.intensity, tension: m.tension, layers: m.layers, chord: m.chord,
-      version: new URLSearchParams(location.search).get("music") !== "1" ? 2 : 1,
-      state: "debug" in m ? m.debug().state : "legacy", loadedStems: [],
-      ...("debug" in m ? m.debug() : {}), attached: this.musicAttached };
+      version: musicVersion(), ...("debug" in m ? m.debug() : { state: "legacy", loadedStems: [] }), attached: this.musicAttached };
   }
 
   // ---------- ambience ----------
@@ -368,7 +382,9 @@ class SoundEngine {
     const t = this.ctx.currentTime;
     this.floorLp.frequency.setTargetAtTime(f ? 650 : 18000, t, f ? 0.25 : 0.4);
     this.floor.gain.setTargetAtTime(f ? 0.35 : 1, t, f ? 0.25 : 0.4);
-    this.musicBus?.gain.setTargetAtTime(f ? 0.45 : 1, t, f ? 0.25 : 0.4);
+    // a close-up ducks the music, except the orbit watch and the mines, which have their own tracks
+    if ("setFocus" in this.music) this.music.setFocus(f);
+    this.musicBus?.gain.setTargetAtTime(f ? (musicFocus(f) ? 0.85 : 0.45) : 1, t, f ? 0.25 : 0.4);
     if (same) return this.setMood(f?.mood ?? null);
     this.setMood(null);
     // fade the old scape out, then start the new one

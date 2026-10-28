@@ -169,6 +169,12 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // The welcome tour (or Build as you go) is the one teaching path, so lessons stay quiet unless ?lessons=1 asks for them.
   const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0" && !simpleOn(), celebrating || !!ach.toast, new URLSearchParams(location.search).get("lessons") !== "1");
   const { show } = tour;
+  // the welcome tour, the first-run lessons and the guided build-out play the first-run track (Boiler Waltz)
+  const firstRun = intro || tour.on || guided;
+  useEffect(() => {
+    sound.setFirstRun(firstRun);
+    return () => sound.setFirstRun(false);
+  }, [firstRun]);
   // Coming back after hours away: a few seconds of what really shipped meanwhile, then the launch waiting on you.
   const [reduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
   const back = useComeback(state, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", !intro && !tour.on, reduced);
