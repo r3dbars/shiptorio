@@ -2736,10 +2736,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
    * approvals (learn.ts learnOption): nothing here can launch or merge.
    */
   private async runLearned(): Promise<void> {
-    if (!(await flagEnabled(this.env, "learn"))) return;
+    // Nothing learned yet is the common case: answer it from the cached deck book before reading the flag.
     await this.decisionData();
     const s = this.state!, book = this.deckBook!;
-    if (!Object.keys(book.auto ?? {}).length) return;
+    if (!Object.keys(book.auto ?? {}).length || !(await flagEnabled(this.env, "learn"))) return;
     for (const card of [...this.openMoves!]) {
       const optionId = learnOption(card);
       const key = learnKey(card, moveScope(card, s));
