@@ -18,10 +18,15 @@
 // are ~250 apart), no welding sparks or flashes mid-build, one small shake when the top lands, one burst at the end.
 // A stop with <stop>-build-1..4 sprites (builder today) plays those stages; others reveal their idle sprite instead.
 
+import { pixelOn } from "../../flags";
 import { BELT_Y, LOOK, STOP_X, type ArtLoader, type DeckBus, type DeckView, type Stop, type StopId } from "../contract";
+import { drawBuildPx, drawLockedPx } from "./pixel";
+import { STAGE_AT } from "./timeline";
+
+export { STAGE_AT };
 
 export type BuildStage = "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check";
-export const STAGE_AT = { unlock: 0, plot: 0.2, scaffold: 0.45, frame: 0.7, panels: 1.15, top: 1.65, land: 1.95, burst: 2.1, check: 2.3, done: 2.5, gone: 3.5 } as const;
+
 /** Half-width of a stop's slot in world px: scaffold, crane, dust and burst stay inside it. */
 const SLOT = 110;
 const STAGES: BuildStage[] = ["plot", "scaffold", "frame", "panels", "top", "burst", "check"];
@@ -81,6 +86,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   let clock = 0;
   let shakeAmp = 0;
   let first = true;
+  const pixel = pixelOn();
 
   const img = (name: string) => art.get(name);
   const feet = (stop: StopId) => BELT_Y + LOOK[stop].drop;
@@ -325,6 +331,12 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       for (let i = puffs.length - 1; i >= 0; i--) if ((puffs[i].t += dt) >= puffs[i].dur) puffs.splice(i, 1);
     },
     draw(ctx, slot) {
+      if (pixel) { // the pixel canvas (?px=1): same timeline, drawn in art px
+        const label = (s: StopId) => opts.label?.(s) ?? "CONNECT";
+        if (slot === "stations") for (const s of locked) drawLockedPx(ctx, s, label(s));
+        for (const j of jobs.values()) drawBuildPx(ctx, j.stop, j.t, slot, label(j.stop));
+        return;
+      }
       ctx0 = ctx;
       if (slot === "line") { for (const j of jobs.values()) drawPlot(j); return; }
       if (slot === "stations") {

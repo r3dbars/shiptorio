@@ -48,7 +48,7 @@ group("Corner", [
   ...(["peek", "happy", "alarmed"] as ShippyPose[]).map((p) => [p, () => set({ at: "corner", pose: p }), () => view.at === "corner" && view.pose === p] as [string, () => void, () => boolean]),
 ]);
 group("Go to", MACHINES.map((m) => [m, () => set({ at: m, pose: view.pose === "folded" ? "walking" : view.pose }), at(m)]));
-group("Pose", (["walking", "lever", "happy", "alarmed", "peek", "weld", "carry"] as ShippyActPose[]).map((p) => [p, () => set({ pose: p }), pose(p)]));
+group("Pose", (["walking", "lever", "happy", "alarmed", "peek", "weld", "carry", "inspect", "poke", "skid", "idle"] as ShippyActPose[]).map((p) => [p, () => set({ pose: p }), pose(p)]));
 group("Loop", [["Story", () => (story === null ? startStory() : stopStory()), () => story !== null]]);
 
 function stopStory() { if (story !== null) clearTimeout(story); story = null; }
