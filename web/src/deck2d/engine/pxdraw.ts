@@ -98,21 +98,34 @@ export function halo(cx: CanvasRenderingContext2D, ax: number, ay: number, r: nu
   cx.restore();
 }
 
-/** The review lever, 7 x 12, at world (x, base). down = just pulled, glow = waiting on you. */
+/** The review lever, 11 x 18, at world (x, base), like the mockup's: a riveted brass-trimmed iron box with a slot, a
+ * long iron shaft with a brass collar, and a big red ball. down = just pulled (toward you), glow = waiting on you. */
 export function lever(cx: CanvasRenderingContext2D, x: number, base: number, mode: "up" | "down" | "glow") {
-  const ax = g(x) - 3, ay = g(base) - 12;
-  // riveted base box: lit top, dark front, rivet glints
-  px(cx, ax, ay + 8, 7, 4, C.soot[0]); px(cx, ax + 1, ay + 8, 5, 1, C.steel[3]); px(cx, ax + 1, ay + 9, 5, 2, C.steel[1]);
-  px(cx, ax + 5, ay + 9, 1, 2, C.steel[2]); px(cx, ax + 1, ay + 10, 1, 1, C.brass[3]); px(cx, ax + 5, ay + 10, 1, 1, C.brass[4]);
-  px(cx, ax + 2, ay + 8, 3, 1, C.soot[0]); // the slot
+  const ax = g(x) - 5, ay = g(base) - 18;
+  // base box, 11 x 6: lit top face, dark front, brass trim line and corner rivets, the slot in the top
+  px(cx, ax, ay + 12, 11, 6, C.soot[0]);
+  px(cx, ax + 1, ay + 13, 9, 1, C.iron[3]); px(cx, ax + 7, ay + 13, 3, 1, C.iron[4]); // top face, sun on the right
+  px(cx, ax + 1, ay + 14, 9, 1, C.brass[3]); px(cx, ax + 8, ay + 14, 2, 1, C.brass[5]); // brass trim, glint
+  px(cx, ax + 1, ay + 15, 9, 2, C.iron[1]); px(cx, ax + 9, ay + 15, 1, 2, C.iron[2]); // front face, sun rim
+  px(cx, ax + 1, ay + 16, 2, 1, C.iron[0]); // grime low and left
+  px(cx, ax + 2, ay + 15, 1, 1, C.brass[2]); px(cx, ax + 8, ay + 15, 1, 1, C.brass[4]); // rivets
+  px(cx, ax + 4, ay + 13, 3, 1, C.soot[0]); // the slot
+  const ball = (bx: number, by: number) => { // a 4 x 4 red ball, lit up-right, with a white glint
+    px(cx, bx - 1, by - 1, 6, 6, C.soot[0]);
+    px(cx, bx, by, 4, 4, C.jam[1]); px(cx, bx, by + 3, 4, 1, C.jam[0]); px(cx, bx, by, 1, 4, C.jam[0]);
+    px(cx, bx + 2, by, 2, 1, C.jam[2]); px(cx, bx + 3, by + 1, 1, 1, C.jam[2]); px(cx, bx + 2, by, 1, 1, C.white[0]);
+  };
   if (mode === "down") {
-    // pulled toward you: short shaft, knob low and right
-    px(cx, ax + 3, ay + 6, 1, 2, C.brass[2]); px(cx, ax + 4, ay + 6, 1, 1, C.brass[4]);
-    px(cx, ax + 4, ay + 4, 3, 3, C.soot[0]); px(cx, ax + 5, ay + 5, 1, 1, C.jam[1]); px(cx, ax + 5, ay + 4, 1, 1, C.jam[2]);
+    // pulled toward you: the shaft leans out of the slot, the ball sits low and right
+    px(cx, ax + 5, ay + 10, 1, 3, C.iron[3]); px(cx, ax + 6, ay + 9, 1, 2, C.iron[4]); px(cx, ax + 4, ay + 12, 3, 1, C.brass[3]);
+    ball(ax + 6, ay + 5);
   } else {
-    px(cx, ax + 3, ay + 2, 1, 6, C.brass[2]); px(cx, ax + 4, ay + 3, 1, 5, C.brass[4]); px(cx, ax + 4, ay + 2, 1, 1, C.soot[0]); // shaft with its lit side
-    px(cx, ax + 2, ay - 1, 4, 4, C.soot[0]); px(cx, ax + 3, ay, 2, 2, C.jam[1]); px(cx, ax + 4, ay, 1, 1, C.jam[2]); px(cx, ax + 3, ay + 1, 1, 1, C.jam[0]); // ball knob
-    if (mode === "glow") halo(cx, ax + 4, ay + 1, 4, C.sun[4]);
+    // upright: iron shaft with a lit right side, a brass collar near the bottom
+    px(cx, ax + 4, ay + 3, 3, 10, C.soot[0]);
+    px(cx, ax + 5, ay + 4, 1, 9, C.iron[3]); px(cx, ax + 5, ay + 4, 1, 1, C.iron[4]);
+    px(cx, ax + 4, ay + 10, 3, 2, C.brass[3]); px(cx, ax + 6, ay + 10, 1, 1, C.brass[5]); // collar
+    ball(ax + 4, ay);
+    if (mode === "glow") halo(cx, ax + 6, ay + 2, 6, C.sun[4]);
   }
 }
 
