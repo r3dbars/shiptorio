@@ -61,7 +61,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const portrait = () => W / H <= 1.2;
   const grow = layers.find((l) => l.bounds);
   const builder = layers.find((l) => l.build)?.build;
-  const right = () => grow?.bounds?.().x1 ?? (islandUp ? BOUNDS.x1 : islandIn ? BOUNDS.x1 + 170 : deckW + 40); // the camera frames only what's been built (plus the crane while the island builds)
+  const deckEnd = () => grow?.bounds?.().x1 ?? deckW + 40;
+  const right = () => islandUp ? Math.max(BOUNDS.x1, deckEnd()) : islandIn ? Math.max(BOUNDS.x1 + 170, deckEnd()) : deckEnd(); // the camera frames only what's been built (plus the crane while the island builds)
   const fitAll = () => {
     const bw = right() - BOUNDS.x0, bh = BOUNDS.y1 - BOUNDS.y0;
     return { x: (BOUNDS.x0 + right()) / 2, y: (BOUNDS.y0 + BOUNDS.y1) / 2 + 30, s: Math.min(W / bw, (H * 0.9) / bh, 1.1) };
@@ -206,7 +207,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const bh = 34, bw = b.naturalWidth * bh / b.naturalHeight, step = bw / 5; // the strip holds 5 chevron panels
     const off = (t * SPEED * 0.35) % step;
     for (const g of segs) {
-      const len = islandUp ? g.len : Math.min(g.len, deckW - 60 - g.ax);
+      const len = islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax);
       cx.save(); cx.translate(g.ax, g.ay); cx.rotate(g.a);
       cx.beginPath(); cx.rect(0, -bh / 2, len, bh); cx.clip();
       for (let x = off - step - bw; x < g.len; x += bw - 1) cx.drawImage(b, x, -bh / 2, bw, bh);
