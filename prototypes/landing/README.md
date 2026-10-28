@@ -14,3 +14,13 @@ This exploration is stacked on #467 and stays separate from the public homepage.
 Choose a direction before moving selected code into the product. The initial visual
 concepts informed layout; coded icons and real product art intentionally replace
 decorative generated treatments for an honest, editable website prototype.
+
+## Verified locally
+
+At 1440×1050 and 390×844, all three layouts load without horizontal overflow or
+console/page errors. The layout switcher updates the heading, styling and URL.
+Play completes all five preview states; Connect opens its explicit preview dialog;
+Escape closes dialogs. In-app-browser approval-to-build navigation was also checked.
+Reviewed screenshot hierarchy, logo proportions, type, plain palette, process rail,
+CTA placement and phone stacking. Icons intentionally use editable vectors and the
+Factory option uses existing product art. No new image generation is needed to iterate.
