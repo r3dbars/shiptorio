@@ -1,10 +1,11 @@
 import {
-  ART_PX, BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
+  ART_PX, BELT_Y, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
 import * as pd from "./pxdraw";
+import { BOILER_H, BOILER_W, boilerFrame } from "../../bakeoff/boiler2d";
 
 // stations/ (its own thread) draws each machine in pixel code; until it lands, pixel mode shows the snapped webp.
 type DrawStation = (cx: CanvasRenderingContext2D, id: StopId, state: string, t: number, x: number, feetY: number) => void;
@@ -17,6 +18,9 @@ const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { ea
 const PAD = { x: 1905, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
 const BRIDGE_Y = PAD.y + PAD.s * 560;
 const ORB = { x: 1043, y: 578 };
+/** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
+ * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
+const BOILER = { x: 240, base: 182 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: 670 };
 const SPEED = 170, GAP = 50, CRATE = 42;
 const LEVER = { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
@@ -333,7 +337,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     islandUp = island >= 1; islandIn = island > 0;
     slot("deck");
-    put("boiler-on", 112, 182, 168);
+    if (px) cx.drawImage(boilerFrame(t), snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
+    else put("boiler-on", 112, 182, 168);
     glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
     belt();
     slot("line");
