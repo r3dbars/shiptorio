@@ -1,6 +1,11 @@
 name: Player bot
 on:
   workflow_dispatch:
+    inputs:
+      verify_staging:
+        description: Verify the existing private staging fixture before enabling nightly readiness
+        type: boolean
+        default: false
   schedule:
     - cron: '0 6 * * *'
 permissions:
@@ -32,7 +37,9 @@ jobs:
           path: playtest/out/
   staging:
     # Turn on only after TEST_FACTORY points at an isolated real Worker + provider stubs.
-    if: vars.TEST_USERS_STAGING_READY == 'true'
+    if: >-
+      (github.event_name == 'schedule' || github.ref == 'refs/heads/dev') &&
+      (vars.TEST_USERS_STAGING_READY == 'true' || (github.event_name == 'workflow_dispatch' && inputs.verify_staging))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -42,6 +49,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+          ref: dev
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
