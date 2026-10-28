@@ -2,7 +2,7 @@ import { afterEach, expect, it, spyOn } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 import { GitHubReadCache } from "../src/github-cache";
 import { githubLease } from "../src/github-concurrency";
-import { gh, openPullRequest, registerGithubCredential } from "../src/github";
+import { GITHUB_STEP_DEADLINE_MS, gh, openPullRequest, registerGithubCredential } from "../src/github";
 import { githubCooldown, RateLimitError } from "../src/rate-limit";
 import { budgetDb } from "./budget-fixture";
 
@@ -162,6 +162,30 @@ it("serializes replacement credentials, bounds queue pressure, and forwards Retr
   expect(results.filter(result => result.status === "rejected" && result.reason.retryAt > Date.now() + 170000)).toHaveLength(8);
   globalThis.fetch = (async () => new Response(null, { status: 429, headers: { "retry-after": "120" } })) as unknown as typeof fetch;
   await expect(openPullRequest(crypto.randomUUID(), "a/b", { title: "test", body: "test", base: "main", head: "fix" })).rejects.toBeInstanceOf(RateLimitError);
+});
+
+it("a hung step times out instead of wedging its scope queue", async () => {
+  const { db } = budgetDb();
+  const scope = `github:installation:hang-${crypto.randomUUID()}`;
+  const token = crypto.randomUUID();
+  await registerGithubCredential(token, db, scope);
+  // The first pacing read never settles, like a stuck D1 call in production.
+  const originalPrepare = db.prepare.bind(db);
+  let hung = false;
+  const prepare = spyOn(db, "prepare").mockImplementation((sql: string) => {
+    const statement = originalPrepare(sql);
+    if (hung || !sql.startsWith("SELECT next_at, failures")) return statement;
+    hung = true;
+    return { bind: () => ({ first: () => new Promise(() => {}) }) } as unknown as D1PreparedStatement;
+  });
+  const realSetTimeout = globalThis.setTimeout;
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) =>
+    realSetTimeout(fn, ms === GITHUB_STEP_DEADLINE_MS ? 0 : ms)) as typeof setTimeout);
+  globalThis.fetch = (async () => Response.json({ ok: true })) as unknown as typeof fetch;
+  try {
+    await expect(gh("/repos/a/b", token)).rejects.toBeInstanceOf(RateLimitError);
+    expect(await gh("/repos/a/c", token)).toEqual({ ok: true });
+  } finally { prepare.mockRestore(); timers.mockRestore(); }
 });
 
 it("secondary backoff increases while primary and HTTP-date deadlines are never shortened", () => {

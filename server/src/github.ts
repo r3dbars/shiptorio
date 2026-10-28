@@ -120,6 +120,14 @@ const queued = new Map<string, number>();
 const contexts = new Map<string, { db: D1Database; scope: string }>();
 const cooldowns = new Map<string, { next: number; failures: number }>();
 const readCache = new GitHubReadCache();
+// One hung D1, KV or body read must not hold its scope's queue (and the cap of 8) forever.
+// Paced delay (5s) + lease-bounded fetch (30s) fit well inside this.
+export const GITHUB_STEP_DEADLINE_MS = 45_000;
+function withDeadline<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new RateLimitError(Date.now() + 1000)), GITHUB_STEP_DEADLINE_MS); });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
 async function credentialKey(token: string) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -141,7 +149,8 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
   if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
   queued.set(scope, (queued.get(scope) ?? 0) + 1);
   const previous = queues.get(scope) ?? Promise.resolve();
-  const request = previous.catch(() => {}).then(async () => {
+  // The deadline starts on this call's turn, so waiting behind others never counts against it.
+  const request = previous.catch(() => {}).then(() => withDeadline((async () => {
     let state = cooldowns.get(scope) ?? { next: 0, failures: 0 };
     if (context) {
       const row = await context.db.prepare("SELECT next_at, failures FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number; failures: number }>();
@@ -204,7 +213,7 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
       // Keep the API outcome if release storage is unavailable; the lease expires.
       try { await lease?.release(); } catch { /* bounded crash recovery */ }
     }
-  });
+  })()));
   queues.set(scope, request);
   try { return await request; } finally {
     const left = (queued.get(scope) ?? 1) - 1;
