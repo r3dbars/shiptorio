@@ -166,3 +166,20 @@ export function smoke(g: Px, x: number, y: number, p: number, heavy = false) {
     }
   }
 }
+
+/** A rust streak running down from (x, y): water ran off a rivet or a seam and left a stain. Only on drawn pixels. */
+export function streak(g: Px, x: number, y: number, len: number) {
+  for (let j = 0; j < len; j++) if (g.has(x, y + j)) g.set(x, y + j, j < len / 2 ? "plate-1" : (x + y + j) & 1 ? "plate-0" : "iron-1");
+}
+
+/** An L-shaped brass corner bracket with a rivet, for the corners of a riveted box. dx/dy pick the corner (1 = right/bottom). */
+export function bracket(g: Px, x: number, y: number, dx: 0 | 1, dy: 0 | 1, n = 4) {
+  const sx = dx ? -1 : 1, sy = dy ? -1 : 1;
+  for (let i = 0; i < n; i++) {
+    tone(g, x + sx * i, y, BRASS, 0.5 + (dy ? -0.15 : 0.15) + i * 0.03);
+    tone(g, x, y + sy * i, BRASS, 0.5 + (dx ? 0.15 : -0.1));
+    if (i < n - 1) { tone(g, x + sx * i, y + sy, BRASS, 0.3); tone(g, x + sx, y + sy * i, BRASS, 0.3); }
+  }
+  rivet(g, x + sx, y + sy);
+  if (!dy && dx) g.set(x, y, "brass-5"); // the corner that faces the sun catches a glint
+}
