@@ -246,7 +246,8 @@ export type AttachJuice = (bus: DeckBus, host: HTMLElement, where: (stop: StopId
  */
 export type LayerSlot = "sky-far" | "deck" | "line" | "stations" | "front";
 export interface DeckLayer {
-  replaces?: ("deck" | "island" | "rocket")[];
+  /** Engine pieces this layer draws itself: the engine skips them. props/ takes "boiler" and "orb" (the core under the deck). */
+  replaces?: ("deck" | "island" | "rocket" | "boiler" | "orb")[];
   update(dt: number, view: DeckView): void;
   draw(ctx: CanvasRenderingContext2D, slot: LayerSlot): void;
   /** build/: true while this layer draws the stop itself (locked tarp, mid-construction); the engine skips its sprite. */
@@ -257,7 +258,7 @@ export interface DeckLayer {
   build?: { shake?(): number; shippyAct?(): { at: StopId; pose: ShippyPose } | null };
 }
 export type CreateLayer = (art: ArtLoader, bus: DeckBus) => DeckLayer;
-// Entries: grow/index.ts, build/index.ts, launch/index.ts each `export const createLayer: CreateLayer`.
+// Entries: grow/index.ts, build/index.ts, launch/index.ts, juice/index.ts, props/index.ts each `export const createLayer: CreateLayer`.
 /** World geometry layers need: the deck's right edge right now (it grows), and the launch spot. */
 export const LAUNCH = { x: 2834, y: 250 } as const;
 

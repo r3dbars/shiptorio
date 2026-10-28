@@ -337,9 +337,10 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     }
     islandUp = island >= 1; islandIn = island > 0;
     slot("deck");
-    if (px) cx.drawImage(boilerFrame(t), snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
+    if (owned.has("boiler")) { /* props/ draws it */ }
+    else if (px) cx.drawImage(boilerFrame(t), snap(BOILER.x - (BOILER_W * ART_PX) / 2), snap(BOILER.base - BOILER_H * ART_PX), BOILER_W * ART_PX, BOILER_H * ART_PX);
     else put("boiler-on", 112, 182, 168);
-    glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
+    if (!owned.has("orb")) glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
     belt();
     slot("line");
     rocketDraw();
