@@ -19,6 +19,8 @@ const watch = (page: Page) => page.addInitScript(() => {
   w.__ev = [];
   window.addEventListener('shiptorio:build', e => w.__ev.push({ kind: 'build', ...(e as CustomEvent).detail, at: performance.now() }));
   window.addEventListener('shiptorio:floor', e => w.__ev.push({ kind: 'floor', ...(e as CustomEvent).detail, at: performance.now() }));
+  // the SHIPPED! card is up for ~10 s, which a slow renderer can spend before the launch build reports done
+  new MutationObserver(() => { w.__cel ||= !!document.querySelector('.ship-cel'); }).observe(document, { childList: true, subtree: true });
 });
 const events = (page: Page): Promise<Ev[]> => page.evaluate(() => (window as any).__ev);
 const floors = async (page: Page) => (await events(page)).filter(e => e.kind === 'floor');
@@ -44,8 +46,7 @@ function shooter(page: Page, info: TestInfo) {
 }
 
 test.describe('floors grow with the build-as-you-go run', () => {
-  // 1440 (desktop) and 390 (iphone-14); pixel-7 adds nothing the phone run doesn't.
-  test.beforeEach(({}, info) => test.skip(info.project.name === 'pixel-7', 'covered by iphone-14'));
+  // runs on all three: 1440 (desktop), 390 (iphone-14) and pixel-7.
   test.setTimeout(420_000);
 
   test('dark to rocket: each floor rises right before the build that sits on it', async ({ page }, info) => {
@@ -65,7 +66,8 @@ test.describe('floors grow with the build-as-you-go run', () => {
     await shot('floors-00-rock.png');
 
     for (const [i, id] of STEPS.entries()) {
-      await expect(root, `step ${id}`).toHaveAttribute('data-step', id, { timeout: 90_000 });
+      // an auto step can come and go before we look, so it's checked by its build events alone
+      if (!AUTO.has(id)) await expect(root, `step ${id}`).toHaveAttribute('data-step', id, { timeout: 90_000 });
       if (!AUTO.has(id) && !(await built(page, id, 'start'))) {
         await expect(action.first(), `${id} has an action`).toBeVisible();
         const kind = await action.first().getAttribute('data-buildout-action');
@@ -77,9 +79,11 @@ test.describe('floors grow with the build-as-you-go run', () => {
       const floor = RISES_AFTER[id];
       const n = String(i + 1).padStart(2, '0');
       if (!floor) {
-        // nothing rises after this build: no floor started since it finished
-        const done = (await events(page)).find(e => e.kind === 'build' && e.id === id && e.phase === 'done')!.at;
-        expect((await floors(page)).filter(e => e.phase === 'start' && e.at >= done), `no floor after ${id}`).toEqual([]);
+        // nothing rises after this build: no floor started between its finish and the next build's (an auto step can finish right behind it)
+        const ev = await events(page);
+        const done = ev.find(e => e.kind === 'build' && e.id === id && e.phase === 'done')!.at;
+        const next = ev.find(e => e.kind === 'build' && e.id !== id && e.phase === 'done' && e.at > done)?.at ?? Infinity;
+        expect((await floors(page)).filter(e => e.phase === 'start' && e.at >= done && e.at < next), `no floor after ${id}`).toEqual([]);
         continue;
       }
       await expect.poll(async () => (await floors(page)).some(e => e.phase === 'start' && e.floor === floor), { timeout: 5_000, message: `${floor} floor starts after ${id}` }).toBe(true);
@@ -98,7 +102,7 @@ test.describe('floors grow with the build-as-you-go run', () => {
       const start = ev.find(e => e.kind === 'floor' && e.phase === 'start' && e.floor === floor)!.at;
       expect(start, `${floor} after ${after}`).toBeGreaterThanOrEqual(done);
     }
-    await expect(page.locator('.ship-cel').first()).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => page.evaluate(() => !!(window as any).__cel), { timeout: 30_000, message: 'the rocket celebrated' }).toBe(true);
     await shot('floors-09-rocket.png');
     expect(errors).toEqual([]);
   });
