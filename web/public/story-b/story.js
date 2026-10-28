@@ -256,9 +256,9 @@
     after(0.9, () => {
       you.budget = null; you.svc = 0.12; you.cap = 3;
       S.spawnEvery = 0.3;
-      stationClass(2, "auto", "AUTO");
+      stationClass(2, "auto", "AUTOMATED");
       float(COL - 80, you.y - 34, "automatic", "var(--ok)");
-      caption("It's automatic now.", "The line runs on its own. You step out.");
+      caption("Automated.", "It runs itself now. You step out of the line.");
       // You walk off the line to the next jam.
       S.you.ty = S.st[1].y - 26;
       after(2.6, () => {
