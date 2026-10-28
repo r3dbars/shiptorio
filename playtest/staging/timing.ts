@@ -10,7 +10,10 @@ export class FixtureTiming {
     this.start = at;
   }
   attach(response: Response): Response {
-    response.headers.set("Server-Timing", this.entries.join(", "));
-    return response;
+    const headers = new Headers(response.headers);
+    headers.set("Server-Timing", this.entries.join(", "));
+    // Service/DO responses may have immutable headers. Preserve the actual
+    // upgraded socket when wrapping; dropping it would break the private hop.
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers, ...(response.webSocket ? { webSocket: response.webSocket } : {}) });
   }
 }

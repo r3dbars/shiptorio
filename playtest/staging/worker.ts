@@ -1,7 +1,7 @@
 import { settleFixtureLease } from "./request-lease";
 // PRIVATE, isolated test backend. Production/staging application entries never import this file.
 import { app } from "../../server/src/index";
-import { fixtureSession } from "./session";
+import { fixtureSession, clearFixtureSession } from "./session";
 import { FixtureTiming } from "./timing";
 import { makeSessionCookie } from "../../server/src/session";
 import { ISOLATED_TEST_CONTEXT, verifyTestDelegation } from "../../server/src/test-delegation";
@@ -73,6 +73,7 @@ export default {
         env.DB.prepare("DELETE FROM signup_resources WHERE login=? AND resource=?").bind(persona, repo),
         env.DB.prepare("DELETE FROM spark_factory_budgets WHERE repo=?").bind(repo),
       ]);
+      await clearFixtureSession(env, persona);
       await factory.completeFixtureReset();
       const resumed = await provider.fetch(new Request("http://fixture.internal/resume", { method: "POST", headers: { "x-test-persona": persona } }));
       if (!resumed.ok) return new Response("Fixture reset remains locked", { status: 503 });

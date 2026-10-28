@@ -16,3 +16,8 @@ export async function fixtureSession(env: FixtureEnv, persona: TestPersona): Pro
   await env.CACHE.put(key, session, { expirationTtl: 86400 });
   return session;
 }
+
+/** Reset removes seeded progress/reach, so its old session must not skip reseeding. */
+export async function clearFixtureSession(env: FixtureEnv, persona: TestPersona): Promise<void> {
+  await env.CACHE.delete(`fixture-session:${persona}`);
+}
