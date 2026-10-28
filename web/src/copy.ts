@@ -574,10 +574,25 @@ export const RESEARCH = {
 /** Your machine (ui/RunnerConnection.tsx): the local runner, drawn as a power cable into the factory's socket. */
 export const RUNNER = {
   title: "Connect your machine",
-  state: { online: "Working", offline: "Idle", unpaired: "Unplugged", unknown: "Checking", error: "Blocked" } as Record<"online" | "offline" | "unpaired" | "unknown" | "error", string>,
+  state: { online: "Connected", offline: "Idle", unpaired: "Unplugged", unknown: "Checking", error: "Blocked" } as Record<"online" | "offline" | "unpaired" | "unknown" | "error", string>,
   agent: { codex: "Codex", claude_code: "Claude Code", local: "Local model" } as Record<string, string>,
   job: { planning: "Planning", awaiting_approval: "Waiting for your approval", ready: "Ready to build", running: "Building", completed: "PR opened", failed: "Stopped" } as Record<string, string>,
   unknownJob: "Unknown",
+  /** The HUD light (ui/MachineLight.tsx): one line, is your machine on and what is it doing. */
+  light: {
+    label: "Your machine",
+    unplugged: "Not connected",
+    offline: "Offline",
+    signIn: "Sign in to Codex or Claude",
+    idle: "Connected · nothing to do",
+    yourTurn: "Connected · waiting on your OK",
+    planning: (n: string) => `Planning ${n}`,
+    planReady: (n: string) => `Plan ${n} ready · your OK`,
+    starting: (n: string) => `Starting ${n}`,
+    building: (n: string) => `Working on ${n}`,
+    aJob: "a job",
+    open: "Open your machine's connection",
+  },
   noAgents: "no agents detected",
   online: (agents: string) => `Online · ${agents}`,
   offline: "Offline · start your runner to connect",
