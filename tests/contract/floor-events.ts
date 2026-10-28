@@ -1,4 +1,4 @@
-import { deepStrictEqual, ok, strictEqual } from 'node:assert/strict';
+import { deepStrictEqual, ok } from 'node:assert/strict';
 
 export const RISES_AFTER: Record<string, string> = { tunnel: 'build', build: 'checks', checks: 'launch' };
 export type FloorEvent = { kind: 'build' | 'floor'; phase: string; id?: string; floor?: string; at: number };
@@ -16,10 +16,10 @@ export function assertFloorChronology(events: readonly FloorEvent[]) {
   const actual = events.filter(e => e.kind === 'floor' && e.phase !== 'stand').map(({ floor, phase }) => ({ floor, phase }));
   const canonical = ['build', 'checks', 'launch'].flatMap(floor => ['start', 'done'].map(phase => ({ floor, phase })));
   deepStrictEqual(actual, canonical.slice(0, actual.length), 'floors start and finish once, bottom up, without overlap');
-  let lastDone: string | undefined;
-  for (const e of events) {
-    if (e.kind === 'build' && e.phase === 'done') lastDone = e.id;
-    if (e.kind === 'floor' && e.phase === 'start')
-      strictEqual(e.floor, RISES_AFTER[lastDone ?? ''], `${e.floor} starts after its own triggering build`);
+  for (const [index, e] of events.entries()) {
+    if (e.kind !== 'floor' || e.phase !== 'start') continue;
+    const trigger = Object.keys(RISES_AFTER).find(id => RISES_AFTER[id] === e.floor);
+    const done = events.findIndex(candidate => candidate.kind === 'build' && candidate.phase === 'done' && candidate.id === trigger);
+    ok(done >= 0 && done < index, `${e.floor} starts after its own triggering build`);
   }
 }
