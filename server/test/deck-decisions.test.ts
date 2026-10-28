@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer } from '../src/deck-decisions';
+import { hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer } from '../src/deck-decisions';
 import type { Move } from '@shiptorio/shared';
 const move: Move = { id: 'a', title: 'Build a fix', why: 'A real issue', itemId: 'gh-1', kind: 'build', createdAt: 0, options: [{ id: 'yes', label: 'Plan', recommended: true, actions: [{tool: 'plan_runner_job', args: {}, reason: 'Plan'}] }] };
 test('defers survive storage, return on next check-in, and third defer escalates', () => {
@@ -56,4 +56,14 @@ test('Later receipts are player, move and action-scope specific and bounded', ()
   beginCheckin(book); deferCard(book, changed, intent); expect(book.decisions[moveKey(changed)].count).toBe(1);
   for(let i=0;i<200;i++){beginCheckin(book);deferCard(book,move,{id:`intent-${i}`,userId:1});}
   expect(book.deferReceipts!.length).toBeLessThanOrEqual(128);
+});
+
+test('a receipt with identical player, move, UUID and semantic key still requires the exact scope hash', () => {
+  const book=emptyDeckBook(), intent={id:'11111111-1111-4111-8111-111111111111',userId:1,scope:'a'.repeat(64)};
+  deferCard(book,move,intent,1000);
+  expect(hasDeferReceipt(book,move,intent,1001)).toBe(true);
+  expect(hasDeferReceipt(book,move,{...intent,scope:'b'.repeat(64)},1001)).toBe(false);
+  beginCheckin(book);deferCard(book,move,{...intent,scope:'b'.repeat(64)},1001);
+  expect(book.decisions[moveKey(move)].count).toBe(2);
+  expect(hasDeferReceipt(book,move,intent,601001)).toBe(false);
 });
