@@ -510,7 +510,7 @@ export async function pullRequestReadiness(token: string, repo: string, number: 
   return { mergeState, ready: false, reason };
 }
 
-/** Inspect all checks on the CURRENT PR commit. Never accept a moving head/base or a spoofed required check. */
+/** Inspect all checks on the CURRENT PR commit. Never accept a moving head/base or check evidence for another commit. */
 export async function inspectPullRequest(token: string, repo: string, number: number, eventSha?: string, expectedBase?: string) {
   type Pr = { head: { sha: string }; base: { ref: string; sha: string }; state: string; merged: boolean };
   const path = `/repos/${repo}/pulls/${number}`;
