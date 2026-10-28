@@ -657,6 +657,18 @@ Root owns hosted validation, release integration and deployment.
 - The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
 - Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
 
+### Codex per-viewport bot Launch receipts — 2026-10-28
+
+The phone observed a new Launch, but desktop persistence was checked only through
+visible launched items. A viewport could also time out without adding a failure.
+The tracker now binds evidence to the exact fixture socket/repo, requires a new
+first-width item transition, and lets desktop confirm that receipt by exact item
+or a safe HUD-counter floor (metrics, otherwise science) from a fresh snapshot.
+This is bounded fixture resume confirmation with no intervening research, not a
+general cumulative ship ledger. Every newbie viewport
+records its receipt and fails if unfinished; initial ships never replace a fresh
+phone transition. Backend authorization and gameplay deadlines stay unchanged.
+
 ### Codex inert bot staging setup — 2026-10-28
 
 The staging bot previously mounted the old game before resetting its fixture,
@@ -729,3 +741,8 @@ Verified whole-App regressions: Hono response assignment replaced appended App t
 
 - Root-approved narrow `accounts.ts/currentUser` change: after the fresh session lookup, read revocation and admission concurrently on every request. Both results remain required, known revocation still denies before any admission error, and revocation lookup failures still propagate. No mutable authority caching, boundary sharing, fixture policy change or frontend edits.
 - Deterministic held-read tests pin overlapping requests and waiting for both results; real SQLite tests pin next-request deletion/revocation/admission changes, failure precedence, explicit pending-account behavior and production rejection of negative testers. Live cold/warm timing remains pending deployment; required cold GitHub verification is not bypassed.
+
+### Codex isolated-fixture reset diagnostics
+
+- Reported reset409 naturally advanced from provider-busy to Factory wipe-pending after lease expiry; no cleanup bug was established and no guard was relaxed. Busy resets now report only fixed reason labels, bounded counts and the latest bounded lease retry interval through a validating private wrapper. Unknown/malformed provider failures remain generic; credentials/UUIDs/provider headers are never forwarded.
+- Fixed-clock tests cover pending receipt + outer lease expiry, ordinary in-flight work rejection and sanitized errors. No live fixture call/reset was performed from this lane; root owns the continuing hosted test.

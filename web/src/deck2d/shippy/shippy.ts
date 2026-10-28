@@ -122,7 +122,6 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         const stepLen = Math.min(Math.abs(d), o.speed * dt * walkEase());
         world.x += Math.sign(d) * stepLen;
         if (Math.abs(world.tx - world.x) < 0.5) { world.x = world.tx; world.mode = "stand"; world.t = 0; world.poseT = 0; feet(3); }
-        else if (Math.floor(world.t / 0.13) !== Math.floor((world.t - dt) / 0.13)) feet(1);
         break;
       }
       case "stand":
@@ -157,7 +156,7 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
   function standEffects(dt: number) {
     const p = world.pose, t = world.poseT;
     if (p === "lever" && crossed(t % 1.4, dt, 0.55)) puff(worldPuffs, world.x + o.size * 1.35, o.floorAt(world.x) - o.size * 0.35, 5, o.size * 0.25, "255,190,90");
-    if (p === "happy" && crossed(t % 0.5, dt, 0.49)) feet(3);
+    if (p === "happy" && t < 1 && crossed(t % 0.5, dt, 0.49)) feet(3);
     if (p === "weld" && crossed(t % 0.09, dt, 0.08)) puff(worldPuffs, world.x + o.size * 0.95, o.floorAt(world.x) - o.size * 0.05, 3, o.size * 0.18, "255,200,90", 0.6);
     if (p === "alarmed" && crossed(t % 0.14, dt, 0.13)) puff(worldPuffs, world.x + o.size * 0.15, o.floorAt(world.x) - o.size * 1.35, 1, o.size * 0.3, "120,110,105", 1.2);
   }
@@ -178,7 +177,8 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         return { ...base, frame: k > 0.9 ? "shippy-4" : "shippy-lever", flip: false, x: base.x + yank * u * 0.05, sx: 1 + yank * 0.05, sy: 1 - yank * 0.08, glow: 0.6 + yank * 0.4 };
       }
       case "happy": {
-        const h = (t % 0.5) / 0.5;
+        // two hops, then he stands there glowing green
+        const h = t < 1 ? (t % 0.5) / 0.5 : 0;
         const air = still ? 0 : Math.sin(h * Math.PI);
         const land = !still && h > 0.9 ? (h - 0.9) * 10 : 0;
         return { ...base, frame: "shippy-happy", y: base.y - air * u * 0.4, sx: 1 - air * 0.07 + land * 0.1, sy: 1 + air * 0.1 - land * 0.12, glow: 0.9, color: GREEN };
@@ -199,10 +199,10 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         return { ...base, frame: f ? "shippy-carry-1" : "shippy-carry-0", sy: base.sy - (f ? 0.02 : 0) };
       }
       case "peek": {
-        // pop the lid, look around, little hop every couple of seconds: "a call is waiting on you"
+        // pop the lid once with one little hop, then just the amber glow: "a call is waiting on you"
         const pop = t < 0.25 ? wobble(t / 0.25, 1) * 0.12 : 0;
-        const k = ((t + 1.6) % 2.2) / 0.35;
-        const hop = !still && k < 1 ? Math.sin(k * Math.PI) * u * 0.12 : 0;
+        const k = (t - 0.1) / 0.35;
+        const hop = !still && k > 0 && k < 1 ? Math.sin(k * Math.PI) * u * 0.12 : 0;
         return { ...base, frame: "shippy-peek", y: base.y - hop, sx: 1 + pop, sy: 1 - pop + (hop ? 0.04 : 0), glow: 0.55 + 0.35 * Math.sin(t * 6), color: AMBER };
       }
       default:
@@ -282,9 +282,10 @@ export function createShippy(art: ArtLoader, options: ShippyOptions = {}): Shipp
         };
       }
       case "stand": {
-        const breathe = still ? 0 : Math.sin(clock * 2.6) * 0.02;
+        const breathe = still ? 0 : Math.sin(clock * 2.6) * 0.01;
         const arrive = still ? 0 : wobble(Math.min(1, t / 0.5), 2) * 0.1;
-        const idle: Draw = { ...base, frame: Math.sin(clock * 3) > 0 ? "shippy-3" : "shippy-4", sx: 1 + arrive - breathe, sy: 1 - arrive + breathe };
+        // standing still means still: one frame, only a faint breath (the deck was too busy, Justin 2026-10-28)
+        const idle: Draw = { ...base, frame: "shippy-3", sx: 1 + arrive - breathe, sy: 1 - arrive + breathe };
         return act(world.pose, world.poseT, u, idle);
       }
       case "leave": {
