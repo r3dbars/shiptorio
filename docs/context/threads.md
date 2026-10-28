@@ -681,3 +681,8 @@ After #498, hosted upgrades still exceeded the unchanged five-second client dead
 ### Codex cold-start socket admission — PR #510
 
 Verified whole-App regressions: Hono response assignment replaced appended App timing with the upstream DO header; use Hono's append API. Trace/rate/guest repeated the same URL-aware currentUser lookup three times; one request-local Hono promise reduces total session reads from five to three, retaining fresh scoped resolveUser, repoAccess and independent DO authorization. No cross-request principal cache. Actual9–10s cold upgrades were canceled at5s; a separate bounded15s handshake accepts these legitimate responses while first snapshot/pong keep5s and reconnect notice keeps3s. Client fake-clock tests pin6/10s success,15s hung retry,5s missing snapshot, rejection, disposal and existing heartbeat behavior. Cold requests are not claimed fast; live timing follows deploy.
+
+### Codex existing-factory connection critical path — PR #515
+
+- Before: every reconnect awaited optional Sentry/PostHog discovery and loaded the factory twice. After: one load, then a durable `mineReconnectPending` marker consumed by the normal alarm after foreground gauntlet work; failures retain the marker for retry after eviction. First factory creation and GitHub reinitialization remain synchronous. No auth, quota, socket deadline, or frontend changes.
+- Focused regression: original source fails the provider-free reconnect test; updated source passes 22 tests / 111 assertions, including real mine connection on the next alarm, disconnect preservation, retry and current lifecycle/account/installation guards. The under-three-second live target remains unproven until this PR deploys and is measured.
