@@ -10,6 +10,7 @@ import { openUnlockLink } from "./unlockLink";
 import { attentionOf, ATTENTION_RANK, continueOption, type Attention, type Move, type WebToServer } from "@shiptorio/shared";
 import { ATTENTION, NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { because } from "./because";
+import { LearnDots } from "./LearnDots";
 import { sound } from "../sound/engine";
 import { HoldGesture, type HoldClock } from "./holdLaunch";
 import { holdRenderYield } from "./holdRender";
@@ -122,6 +123,7 @@ export function AttentionTray({ deck, send, onPower, onCheckin, quiet, first }: 
         </div>
         <span className="att">{shown.title}</span>
         <span className="aw">{shown.why}</span>
+        <LearnDots learn={shown.learn} />
         {thinking && why && <p className="awhy-line"><b>{THINKS.why}</b> {why}</p>}
         {open && (
           <div className="amore">

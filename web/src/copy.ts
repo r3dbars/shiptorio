@@ -1014,6 +1014,16 @@ export const JUDGE = {
 } as const;
 
 /** docs/ATTENTION.md: one card shape, three kinds, Continue or Later. */
+// docs/LEARN.md: the dots on a card, and the list of things the factory does on its own now.
+export const LEARN = {
+  line: (left: number) => `Approve ${left} more like this and then it's automatic.`,
+  aria: (have: number, need: number, left: number) => `${have} of ${need} approved. Approve ${left} more like this and then it's automatic.`,
+  title: "The factory does these for you",
+  why: "You said yes to these 3 times in a row. Launching still waits for you.",
+  stop: "Ask me again",
+  stopFor: (label: string) => `Ask me again about ${label}`,
+};
+
 export const ATTENTION = {
   kind: { approve: "Approve", steer: "Steer", suggest: "Suggested" } as const,
   continue: "Continue",
