@@ -855,14 +855,27 @@ describe("Rush and Park from a cart's callout", () => {
     expect(f.saved().items[0].priority).toBeUndefined();
   });
 
-  it("offers the next plan for the rushed item first and never for a parked one", async () => {
+  it("offers one plan at a time: the rushed item first, never a parked one", async () => {
     const f = fixture([waiting("gh-1"), waiting("gh-2", { priority: "rush" }), waiting("gh-3", { priority: "park" })], { SPARK_DISABLED: "1" });
     f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
     const offer = (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan.bind(f.factory);
+    const planned = () => (f.factory as unknown as { openMoves: { id: string; title: string; itemId?: string }[] }).openMoves.filter((m) => m.title.startsWith("Plan"));
     await offer();
-    // the plans in the order they were offered (the deck re-ranks what it shows; this is the line's order)
-    const offered = (f.factory as unknown as { openMoves: { title: string; itemId?: string }[] }).openMoves;
-    const planned = offered.filter((m) => m.title.startsWith("Plan")).map((m) => m.itemId);
-    expect(planned).toEqual(["gh-2", "gh-1"]);
+    await offer(); // a second tick doesn't stack another card
+    expect(planned().map((m) => m.itemId)).toEqual(["gh-2"]);
+    // set it aside and the next issue in line is dealt
+    await send(f, { type: "choose_move", moveId: planned()[0].id, optionId: "decline" });
+    await offer();
+    expect(planned().map((m) => m.itemId)).toEqual(["gh-1"]);
+  });
+
+  it("trims a deck that already holds a plan card per issue down to one", async () => {
+    const f = fixture([waiting("gh-1"), waiting("gh-2")], { SPARK_DISABLED: "1" });
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: Date.now() });
+    const plan = (id: string) => ({ id: `plan-${id}`, title: `Plan #${id}`, why: "Get a plan first.", itemId: id, stage: "build", kind: "build", createdAt: 1, options: [{ id: "codex", label: "Plan with Codex", recommended: true, actions: [{ tool: "plan_runner_job", args: { harness: "codex" }, reason: "plan" }] }] });
+    f.data.set("openMoves", [plan("gh-1"), plan("gh-2")]);
+    await (f.factory as unknown as { offerRunnerPlan(): Promise<void> }).offerRunnerPlan();
+    const plans = (f.saved().deck ?? []).filter((m) => m.options.some((o) => o.actions.some((a) => a.tool === "plan_runner_job")));
+    expect(plans).toHaveLength(1);
   });
 });
