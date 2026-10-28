@@ -1,5 +1,9 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Polished logo dev refresh (Codex, 2026-10-28)
+
+#467 updates the shared Wordmark, password gate and server-page brand image to the approved polished asset, with a quiet gate background. Password/session/CSRF code is untouched. The approved brass public welcome page remains byte-for-byte unchanged. Product-source local check: 1,421 passed, two existing skips, zero failures; lint/types/build green. Earlier Miniflare previews at 390×844 and 1440×900 verified image loading, full form visibility and wrong-password feedback. Refreshed onto dev; exact-head quick CI, Stranger and CodeQL govern merge. Production remains an explicit dev-to-main promotion.
+
 ## Simplify the whole game UI (Claude, 2026-10-28)
 
 - Justin: the live factory is overwhelming (4 ways to say "needs you", 3 "not connected" mine tags, a stale red Steer card, two different 12s). Audit + 10 A/B picks: https://claude.ai/artifact/F2Rd8CtzAxJhH1sfDCriLT. Rules in docs/SIMPLE-UI.md.
@@ -600,15 +604,3 @@ only moves on a `dev → main` promotion, which runs the full suite and gets the
 - 2026-10-27 — Codex: planner outage recovery builds on #312 with classified cooldowns, a two-minute planning deadline, persisted automatic resumption (including raised caps without refunding unknown spend), one calm resting card, and deterministic bottleneck fallback. Small scope exceptions: factory.ts wires durable jobs/cards/alarms; web/src/source/live.ts formats the resting deadline in the browser's timezone. Moves the Oct 27 live-loop reliability checkpoint forward.
 
 - 2026-10-28 — Codex: #371 rebased onto dev, retaining admin stops, explicit base-refresh provenance, native model JSON formats and websocket sequence guards. Raised call/token/spend caps resume parked plans without refunding ambiguous paid calls; focused stop/quota/recovery tests cover the new dev integration.
-
-## Polished plain logo (Codex, October 28)
-
-Justin requested the approved GPT Images brass wordmark in the product, using its
-plain dark background. Focused visual PR updates the shared Wordmark, gate and
-server-page brand image; the gate drops its decorative film. Password/session/CSRF
-code is untouched. This explicitly authorized branding task extends the usual
-backend lane. Local full check: 1,307 passed, two existing skips, zero failures; lint/types/build green. Miniflare browser previews at 390×844 and 1440×900 loaded the correct image, showed the entire form without overflow, and displayed wrong-password feedback without script errors. Root releases batches; not deployed.
-
-### Polished logo dev refresh (2026-10-28)
-
-Refreshed #467 onto dev for the fast staging lane. Preserved the approved brass public welcome page byte-for-byte; only gated/shared branding changes remain. The previous local phone/desktop preview is historical evidence, with fresh local check and exact-head dev CI required before this merge. Production still changes only on an explicit dev-to-main promotion.
