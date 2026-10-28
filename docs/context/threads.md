@@ -1,5 +1,9 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Hosted tester playthrough fixes (Codex, 2026-10-28)
+
+The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
+
 ## Polished logo dev refresh (Codex, 2026-10-28)
 
 #467 updates the shared Wordmark, password gate and server-page brand image to the approved polished asset, with a quiet gate background. Password/session/CSRF code is untouched. The approved brass public welcome page remains byte-for-byte unchanged. Product-source local check: 1,421 passed, two existing skips, zero failures; lint/types/build green. Earlier Miniflare previews at 390×844 and 1440×900 verified image loading, full form visibility and wrong-password feedback. Refreshed onto dev; exact-head quick CI, Stranger and CodeQL govern merge. Production remains an explicit dev-to-main promotion.

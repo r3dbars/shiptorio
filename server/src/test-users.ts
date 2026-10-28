@@ -112,8 +112,9 @@ export function testUserRoutes(app: Hono<any>): void {
     }
     const match = url.pathname.match(/^\/api\/repos\/([^/]+\/[^/]+)(?:\/|$)/);
     const sourceRead = ["/api/setup/status", "/api/sources"].includes(url.pathname) && c.req.method === "GET";
-    if (match || sourceRead) {
-      if ((match?.[1] ?? url.searchParams.get("repo")) !== repo || /\/runner(?:\/|$)/.test(url.pathname) && !(c.req.method === "GET" && url.pathname.endsWith("/runner/status"))) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
+    const overviewRead = url.pathname === "/api/empire" && c.req.method === "GET" && !url.search;
+    if (match || sourceRead || overviewRead) {
+      if (!overviewRead && (match?.[1] ?? url.searchParams.get("repo")) !== repo || /\/runner(?:\/|$)/.test(url.pathname) && !(c.req.method === "GET" && url.pathname.endsWith("/runner/status"))) return c.json({ error: "Test accounts cannot access real repositories or runners" }, 403);
       // The local capability service is installed alongside Miniflare's outbound stubs. Keep
       // sockets inside workerd (a Node fetch bridge cannot preserve hibernating WebSockets).
       // A flag alone cannot enable this: both a private key and its service must answer.
