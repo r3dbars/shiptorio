@@ -1,0 +1,46 @@
+/* The simple screen (?simple=1): the slow-spot line top center, the one task tray bottom center (TaskTray.tsx).
+   Black Iron plates, same as the rest of the HUD: a 2px iron border, a black outline, pixel labels, mono text. */
+
+.slowspot {
+  position: absolute; z-index: 7; top: calc(10px + var(--sat)); left: calc(10px + var(--sal)); right: calc(10px + var(--sar));
+  margin-inline: auto; width: fit-content; display: flex; align-items: center; gap: 10px; max-width: 620px; padding: 7px 8px 7px 12px;
+  background: rgba(14, 10, 8, 0.94); border: 2px solid var(--iron-line); outline: 2px solid #000; border-radius: 0;
+  color: var(--iron-ink); font: 600 13px/1.25 var(--mono); cursor: pointer; text-align: left;
+}
+.slowspot .k { flex: none; font: 400 9px/1 var(--pixel); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.slowspot b { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slowspot.you { border-color: var(--iron-amber); }
+.slowspot.you b { color: var(--iron-amber); }
+.slowspot.line { border-color: var(--iron-bad); }
+.slowspot.line b { color: #ffb3a6; }
+.slowspot.clear b { color: var(--iron-ok); }
+.slowspot .ideas { flex: none; font-size: 11px; color: var(--iron-aether); }
+.slowspot .go { flex: none; font: 700 9px/1 var(--pixel); letter-spacing: .1em; text-transform: uppercase; padding: 5px 7px; background: var(--iron-amber); color: #140c02; }
+.slowspot:not(.you) .go { background: transparent; color: var(--iron-aether); border: 2px solid #2f5a52; }
+.slowspot:disabled { cursor: default; }
+.slowspot:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+
+/* the tray sits at the bottom, in thumb reach, on every screen */
+.needs-slot.simple { top: auto; bottom: calc(14px + var(--sab)); width: min(600px, calc(100% - 20px)); }
+.tasktray .acard.task { cursor: grab; }
+.tasktray .tw { font-size: 12px; color: #e6d6bc; }
+.tasktray .tdo { font-size: 11px; color: var(--dim); }
+.tasktray .tearn { font-size: 11px; color: var(--iron-aether); }
+.tasktray .tpager { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; font: 400 9px/1 var(--pixel); letter-spacing: .08em; color: var(--dim); white-space: nowrap; }
+.tasktray .tpager button { padding: 8px 9px; border-color: transparent; color: var(--iron-ink); font-size: 13px; }
+.tasktray .aacts .atog { margin-left: 0; }
+
+@media (max-width: 760px) {
+  .slowspot { top: calc(16px + var(--sat) + var(--top-h, 60px)); gap: 8px; font-size: 12px; }
+  .needs-slot.simple { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); bottom: calc(8px + var(--sab)); width: auto; transform: none; }
+}
+
+/* the compact floor card: a small wordmark and two numbers on one line */
+.floorcard.compact { flex-direction: row; align-items: center; gap: 12px; padding: 6px 10px; }
+.floorcard.compact h1 { width: 116px; }
+.floorcard.compact .counts dd { font-size: 20px; }
+@media (max-width: 760px) {
+  .floorcard.compact { flex: 0 1 auto; gap: 8px; }
+  .floorcard.compact h1 { width: 84px; }
+  .floorcard.compact .counts dd { font-size: 16px; }
+}

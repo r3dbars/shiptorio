@@ -12,6 +12,7 @@ import { LEDGE_Z, MINES, TIERS } from "./layout";
 import { clickable, mineKey, type ShaftPlan } from "./plan";
 import type { ShaftStage, ShaftView } from "./stage";
 import { lineOrder, quietWord, WORDS, workOnLine, type Work } from "./waiting";
+import { simpleOn } from "../../flags";
 
 export interface HudHost {
   pick(key: string): void; // a chip or ping was clicked: open that thing's panel
@@ -20,7 +21,7 @@ export interface HudHost {
 }
 
 // the game's fixed plates over the map (App.tsx): the floor card and icons, the needs tray, the ticker, the controls
-const PLATES = [".hudtop", ".needs-slot", ".ticker", ".ctrl", ".judge-header", ".judge-caption"];
+const PLATES = [".hudtop", ".slowspot", ".needs-slot", ".ticker", ".ctrl", ".judge-header", ".judge-caption"];
 
 // a quiet machine never says IDLE: it says what it's waiting on (waiting.ts)
 const STATE_WORD: Record<string, string> = { WORKING: "WORKING", BLOCKED: "NEEDS YOU" };
@@ -65,6 +66,7 @@ export class ShaftHud {
   selected?: string; // the key whose panel is open
   showAll = false; // every label on (the keyboard is on the map, or the player asked)
   teaching = new Set<string>(); // labels the tour pins
+  quiet = simpleOn(); // the simple screen: no labels at all except on what's asked for (the task tray's card, a tap)
   private world: { I: Iron; stage: ShaftStage; sp: ShaftPlan } | null = null;
   private chips: Chip[] = [];
   private readonly tags = new Map<IronItem, HTMLSpanElement>();
@@ -248,8 +250,8 @@ export class ShaftHud {
       // ping already saying so, or when asked for (hover, keyboard on the map, selected, the tour). Down on one
       // floor, the machines there keep a faint name.
       const asked = teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected));
-      const loud = (hot && !pinged.size) || asked;
-      const faint = !loud && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
+      const loud = (hot && !pinged.size && !this.quiet) || asked;
+      const faint = !loud && !this.quiet && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
       const shown = loud || faint;
       c.el.classList.toggle("faint", faint);
       c.el.classList.toggle("teaching", teaching);
@@ -285,7 +287,7 @@ export class ShaftHud {
     }
 
     // item tags: wide screens, down on one floor and close enough to read (the whole shaft stays unlabeled)
-    const tagsOn = !phone && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
+    const tagsOn = !phone && !this.quiet && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
     const seen = new Set<IronItem>();
     if (tagsOn)
       for (const it of I.items) {

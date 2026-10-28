@@ -40,7 +40,9 @@ import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
-import { attentionOn, buildoutOn } from "./flags";
+import { attentionOn, buildoutOn, simpleOn } from "./flags";
+import { SlowSpotLine, TaskTray } from "./ui/TaskTray";
+import { slowSpot } from "./ui/slowSpot";
 import { Buildout, useFreeLook } from "./ui/Buildout";
 import { BuildStamp } from "./ui/BuildStamp";
 import { installBuildSound } from "./sound/build";
@@ -185,7 +187,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     }
   };
   // ?checkin opens the deck on load, the way a phone check-in would.
-  const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
+  const [checkin, setCheckin] = useState(() => !simpleOn() && (new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin"));
   const [focus, setFocus] = useState<string | null>(null); // what the check-in wants the map to zoom to
   // the map's pick keys: a station id as-is, a folder as d:<name>, any other machine as m:<id>
   const pickKey = (id: string) =>
@@ -207,6 +209,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on && viewReady, !!viewing);
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
+  // The simple screen (?simple=1): one slow-spot line, one task tray, a map with no labels. The tray opens on its own
+  // while work is parked on the player; tapping the line opens or closes it.
+  const simple = useState(simpleOn)[0] && !intro && !guided;
+  const [tasksAsked, setTasksAsked] = useState<boolean | null>(null);
+  const spot = slowSpot(deck, state?.bottleneck);
+  const ideas = deck.filter((m) => attentionOf(m) === "suggest").length;
+  const tasksOpen = tasksAsked ?? spot.who === "you";
   const nudge = useBottleneckNudge(deck, progressing, calm);
   achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson || celebrating }; // achievements pay XP into progression; toasts wait out the tour coach card and a rocket
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
@@ -502,7 +511,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
-          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding && !guided ? pings : undefined}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding && !guided && !simple ? pings : undefined}
           cosmetics={cosmeticsOf(prog.p, progressing)}
 
           satellites={intro ? undefined : satellites}
@@ -525,7 +534,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             counts={counts}
             repo={state?.repo}
             showKey={false}
-            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
+            compact={simple}
+            extra={simple ? undefined : (progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
               {sandbox && (
                 <a className="chip play-chip" href={signInUrl()} aria-label={PLAY.chipLabel} title={PLAY.chipLabel}>
                   <span>{PLAY.chip}<small>{PLAY.chipCta}</small></span>
@@ -594,6 +604,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </button>}
           </div>
         </div>
+
+        {simple && state && <SlowSpotLine spot={spot} ideas={ideas} open={tasksOpen} onToggle={() => setTasksAsked(!tasksOpen)} />}
 
         {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
@@ -764,8 +776,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
           </section>
         ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
-          <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
-            {calm ? (
+          <div className={simple ? "needs-slot simple" : "needs-slot"} ref={hv.refs.needs as Ref<HTMLDivElement>}>
+            {simple ? (
+              tasksOpen && <TaskTray deck={deck} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} autonomy={autonomy} />
+            ) : calm ? (
               <AttentionTray
                 deck={deck}
                 send={sendCard}

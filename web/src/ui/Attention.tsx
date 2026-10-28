@@ -17,8 +17,8 @@ const SWIPE_PX = 80;
 const LATER_ASK_MS = 4000;
 type Why = (typeof ATTENTION.why)[number]["why"];
 
-const isLaunch = (m: Move) => continueOption(m).actions.some((a) => a.tool === "request_merge");
-const plugsInAgent = (o: Move["options"][number]) => o.actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+export const isLaunch = (m: Move) => continueOption(m).actions.some((a) => a.tool === "request_merge");
+export const plugsInAgent = (o: Move["options"][number]) => o.actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
 
 /** The card the tray shows: the first Steer, else the first Approve, else the first suggestion, in deck order. */
 export function trayCard(deck: readonly Move[]): Move | null {
