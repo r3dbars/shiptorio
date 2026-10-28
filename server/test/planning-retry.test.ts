@@ -14,6 +14,9 @@ const cases = [
 ] as const;
 
 describe("planner cooldowns", () => {
+  test("a repo with no budget owner yet never rests the planner", () => {
+    expect(planningFailureKind(new BudgetError("Budget owner unavailable; sign in and connect this repo to resume planning"))).toBe("other");
+  });
   for (const [error, kind] of cases) test(`${kind} parks once and recovers at its reset`, () => {
     expect(planningFailureKind(error)).toBe(kind);
     let retry = planningFailure(undefined, error, now);

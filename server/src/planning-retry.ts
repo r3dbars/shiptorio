@@ -19,6 +19,8 @@ export const nextPlanningDay = (now = Date.now()) => (Math.floor(now / 86400000)
 export function planningFailureKind(error: unknown): PlanningFailureKind {
   if (error instanceof Error && error.cause) return planningFailureKind(error.cause);
   const message = String(error instanceof Error ? error.message : error);
+  // No connected owner yet is a setup gap, not a planner outage: resting the whole planner would hide it.
+  if (/budget owner unavailable/i.test(message)) return "other";
   if (/daily.*(?:budget|cap)|budget exhausted/i.test(message)) return "cap";
   if (/429|rate limit/i.test(message)) return "rate_limit";
   if (/timeout|timed out|deadline|abort|planner interrupted/i.test(message)) return "timeout";
