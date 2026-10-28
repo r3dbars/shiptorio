@@ -38,6 +38,13 @@ test("PR code has read-only tokens, no deployment secrets and no privileged even
       for (const [scope, access] of Object.entries(job.permissions ?? workflow.permissions)) {
         if (name === "codeql.yml" && jobName === "analyze" && scope === "security-events") {
           expect(access).toBe("write"); // CodeQL's SARIF upload only.
+        } else if (name === "ci.yml" && jobName === "full-suite" && scope === "statuses") {
+          // Posts release-validation after the other jobs pass. It never checks out or runs
+          // PR code, and fork PRs get a read-only token whatever the workflow asks for.
+          expect(access).toBe("write");
+          const steps = (job as { steps: { uses?: string; run?: string }[] }).steps;
+          expect(steps.some(step => step.uses), "full-suite uses no actions (no checkout)").toBe(false);
+          expect(steps.map(step => step.run?.trim().split(/\s+/).slice(0, 2).join(" ")), "full-suite only posts a status").toEqual(["gh api"]);
         } else {
           expect(["read", "none"], `${name}/${jobName}/${scope}`).toContain(access);
         }
