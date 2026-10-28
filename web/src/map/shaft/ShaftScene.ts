@@ -18,6 +18,7 @@ import type { FactoryState } from "@shiptorio/shared";
 import { buildoutOn } from "../../flags";
 import { submitWhenUnheld } from "../../ui/holdRender";
 import { perf } from "../perf";
+import { GpuSubmission } from "../gpu-submission";
 import { FrameGovernor } from "../quality";
 import type { Cosmetics, Ping } from "../scene";
 import type { SatelliteSpec } from "../empire";
@@ -71,6 +72,8 @@ function loadModules(): Promise<Install[]> {
 
 export class ShaftScene {
   private readonly renderer: THREE.WebGLRenderer;
+  private readonly gpu: GpuSubmission;
+  private submittedShadowFrame = 0;
   private readonly governor = new FrameGovernor(window.matchMedia?.("(pointer: coarse)").matches ?? false);
   private readonly reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   private I: Iron | null = null;
@@ -113,6 +116,8 @@ export class ShaftScene {
     private readonly onPick?: (id: string) => void,
   ) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+    this.gpu = new GpuSubmission(this.renderer.getContext(), canvas);
+    perf.submissions(this.gpu.stats());
     this.renderer.setPixelRatio(1);
     this.renderer.info.autoReset = false;
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -396,6 +401,7 @@ export class ShaftScene {
     this.trust.dispose();
     this.hud.dispose();
     this.said.remove();
+    this.gpu.dispose();
     this.renderer.dispose();
   }
 
@@ -615,19 +621,25 @@ export class ShaftScene {
     stage.camStep(dt);
     this.firstRun.step(this.t, dt, this.reduceMotion);
     this.clogs.step(this.t, dt, this.reduceMotion);
-    const shadows = this.governor.shadows();
-    this.renderer.shadowMap.needsUpdate ||= shadows; // a build may have asked for one too
     // Consent UI keeps its RAF and safety clock. Only expensive GL/precompile
     // yields while a native hold is active; simulation and camera still step.
     submitWhenUnheld(() => {
-      if (this.warmPending && this.bo) {
-        this.warmPending = false;
-        this.bo.precompile((holders) => this.warm(stage, holders));
-      }
-      stage.render(this.renderer);
+      this.gpu.submit(() => {
+        // Count ordinary shadow cadence only on actual GPU submissions; skipped
+        // RAFs must not latch every-other-frame shadows into every drawn frame.
+        const shadowFrame = ++this.submittedShadowFrame;
+        this.renderer.shadowMap.needsUpdate ||= this.tier === 0 || shadowFrame % 2 === 0;
+        if (this.warmPending && this.bo) {
+          this.warmPending = false;
+          this.bo.precompile((holders) => this.warm(stage, holders));
+        }
+        stage.render(this.renderer);
+      });
+      // DOM/input keeps following the game even while the GPU finishes a frame.
       this.hud.place(this.W, this.H);
       this.quietChips();
     });
+    perf.submissions(this.gpu.stats());
     perf.work(performance.now() - now);
   };
 
