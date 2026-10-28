@@ -1,5 +1,5 @@
-// The factory learns what you approve (docs/LEARN.md, Justin's journey pick #11). Every kind of card (its kind plus
-// where it is, the deck's `kind|scope` class) counts your Continues in a row. Say yes LEARN_NEED times in a row and
+// The factory learns what you approve (docs/LEARN.md, Justin's journey pick #11). Every kind of card (its kind, where
+// it is and what its suggested option does: `kind|scope|tool`) counts your Continues in a row. Say yes LEARN_NEED times in a row and
 // the factory does that kind on its own from then on. Later, Edit (another option) or a dismiss resets the count, and
 // a dismiss also tells the planner to try a different version next time. Pure rules; the Factory DO stores them in
 // the deck book, behind the "learn" flag.
@@ -8,7 +8,7 @@
 // merges, customer replies, research and autonomy cards always wait for the player.
 
 import type { Learned, Move } from "@shiptorio/shared";
-import { yesKey, type DeckBook } from "./deck-decisions";
+import type { DeckBook } from "./deck-decisions";
 
 export const LEARN_NEED = 3;
 const SAFE_TOOLS = new Set(["plan_runner_job", "approve_runner_job"]);
@@ -24,44 +24,56 @@ export function learnOption(card: Move): string | null {
   return option.actions.every(a => SAFE_TOOLS.has(a.tool)) ? option.id : null;
 }
 
-export const learnKey = (card: Move, scope: string) => yesKey(card.kind ?? "unblock", scope);
+/** Starting a plan and approving one are learned apart: letting code get written is a bigger yes than reading. */
+export function learnKey(card: Move, scope: string): string {
+  const tool = card.options.find(o => o.recommended)?.actions[0]?.tool ?? "none";
+  return `${card.kind ?? "unblock"}|${scope}|${tool}`;
+}
 
-const KIND_WORD: Record<string, string> = { build: "Plans", verify: "Checks", review: "Reviews", unblock: "Fixes", input: "Inputs" };
+const TOOL_WORD: Record<string, string> = { plan_runner_job: "Starting plans", approve_runner_job: "Approving plans" };
 
-/** "Plans in /web": what the player sees in the list of things the factory does on its own. */
+/** "Approving plans in /web": what the player sees in the list of things the factory does on its own. */
 export function learnLabel(key: string): string {
-  const [kind, scope = ""] = key.split("|");
+  const [, scope = "", tool = ""] = key.split("|");
   const [what, where] = scope.split(":");
-  const word = KIND_WORD[kind] ?? "These cards";
+  const word = TOOL_WORD[tool] ?? "These cards";
   const folder = what === "district" ? (where ?? "").replace(/^\/+/, "") : "";
   return folder ? `${word} in /${folder}` : word;
 }
 
 export const isLearned = (book: DeckBook, key: string) => !!book.auto?.[key];
 
-/** The dots on a card: yeses so far, out of LEARN_NEED. Undefined for cards that can't be learned or already are. */
+/** The dots on a card: yeses so far, out of LEARN_NEED. Undefined before the first yes, and for cards that can't be learned or already are. */
 export function learnMeter(book: DeckBook, card: Move, scope: string): Move["learn"] {
   if (!learnOption(card)) return undefined;
   const key = learnKey(card, scope);
-  if (isLearned(book, key)) return undefined;
-  // An old streak from before learning existed never skips the last yes: the player always sees one dot left.
-  return { have: Math.min(book.yes?.[key] ?? 0, LEARN_NEED - 1), need: LEARN_NEED };
+  const have = book.learnYes?.[key] ?? 0;
+  // No dots before the first yes: a brand-new player's first card stays plain.
+  if (isLearned(book, key) || !have) return undefined;
+  return { have: Math.min(have, LEARN_NEED - 1), need: LEARN_NEED };
 }
 
-/** After a Continue was counted (noteYes): learns the class once the streak is full. True when it just learned. */
+/** A Continue on the suggested option, as is: one more dot. Learns the class on the last one; true when it just learned. */
 export function learnFromYes(book: DeckBook, card: Move, scope: string, now: number): boolean {
   if (!learnOption(card)) return false;
   const key = learnKey(card, scope);
-  if (isLearned(book, key) || (book.yes?.[key] ?? 0) < LEARN_NEED) return false;
+  if (isLearned(book, key)) return false;
+  const yes = book.learnYes ??= {};
+  if ((yes[key] = (yes[key] ?? 0) + 1) < LEARN_NEED) return false;
   (book.auto ??= {})[key] = { since: now, label: learnLabel(key) };
   return true;
+}
+
+/** Later, Edit or a dismiss on any card of this kind and place: the dots empty. */
+export function resetLearn(book: DeckBook, kind: string, scope: string): void {
+  for (const key of Object.keys(book.learnYes ?? {})) if (key.startsWith(`${kind}|${scope}|`)) delete book.learnYes![key];
 }
 
 /** Ask the player again for this class. The streak starts over. */
 export function forget(book: DeckBook, key: string): boolean {
   if (!book.auto?.[key]) return false;
   delete book.auto[key];
-  if (book.yes) delete book.yes[key];
+  if (book.learnYes) delete book.learnYes[key];
   book.autoRuns = (book.autoRuns ?? []).filter(r => r.key !== key);
   return true;
 }

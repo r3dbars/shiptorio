@@ -358,13 +358,13 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
       inputRevision: await issueRevision(`Fix bug ${n}`, JSON.stringify({ body: "A scoped fix", failure: "", scars: [] })) });
     await f.checkin();
     const meter = (id: string) => f.saved().deck?.find(m => m.id === id)?.learn;
-    expect(meter("approval-1")).toEqual({ have: 0, need: 3 });
+    expect(meter("approval-1")).toBeUndefined(); // no dots before the first yes
     await f.send({ type: "choose_move", moveId: "approval-1", optionId: "approve" });
     expect(meter("approval-2")).toEqual({ have: 1, need: 3 });
     await f.send({ type: "choose_move", moveId: "approval-2", optionId: "approve" });
     expect(meter("approval-3")).toEqual({ have: 2, need: 3 });
     await f.send({ type: "choose_move", moveId: "approval-3", optionId: "approve" });
-    expect(f.saved().learned).toEqual([{ key: "build|district:web", label: "Plans in /web", since: expect.any(Number) }]);
+    expect(f.saved().learned).toEqual([{ key: "build|district:web|approve_runner_job", label: "Approving plans in /web", since: expect.any(Number) }]);
     expect(f.events.some(e => e.type === "log" && e.text.startsWith("Learned."))).toBe(true);
 
     // A fourth plan arrives: the factory approves it on its own, logged as autonomy.
@@ -378,7 +378,7 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     expect(await f.taps.prepare("SELECT action FROM card_taps WHERE card_id = 'approval-4'").bind().first()).toEqual({ action: "auto" });
 
     // Ask me again: the dots come back.
-    await f.send({ type: "unlearn", key: "build|district:web" });
+    await f.send({ type: "unlearn", key: "build|district:web|approve_runner_job" });
     expect(f.saved().learned).toEqual([]);
   });
 

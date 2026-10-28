@@ -93,7 +93,7 @@ import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, reco
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
-import { dismissNote, forget, forgetOnComeback, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
+import { dismissNote, resetLearn, forget, forgetOnComeback, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
@@ -681,6 +681,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
     resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!));
+    resetLearn(book, move.kind ?? "unblock", moveScope(move, this.state!));
     if (why === "defer") deferCard(book, move);
     else {
       const id = crypto.randomUUID(), scope = moveScope(move, this.state!);
@@ -3103,7 +3104,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await this.accountPut("deckBook", this.deckBook);
         } else if (consumed && learnOption(card)) {
           // Edit: the player changed the suggestion, so the streak starts over.
-          resetYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
+          resetLearn(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
           await this.accountPut("deckBook", this.deckBook);
         }
       }
