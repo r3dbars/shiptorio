@@ -88,7 +88,7 @@ export function bezel(g: Px, cx: number, cy: number, r0: number, r1: number, ram
     if (d > r1 || d < r0) continue;
     const t = ((d - r0) / Math.max(0.5, r1 - r0)) * 2 - 1; // -1 inner edge .. 1 outer edge
     const ux = dx / (d || 1), uy = dy / (d || 1), nz = Math.sqrt(Math.max(0, 1 - t * t * 0.8));
-    tone(g, x, y, ramp, 0.12 + 0.48 * lambert(ux * t, -uy * t, nz) + 0.3 * spec(ux * t, -uy * t, nz));
+    tone(g, x, y, ramp, 0.06 + 0.46 * lambert(ux * t, -uy * t, nz) + 0.35 * spec(ux * t, -uy * t, nz));
   }
 }
 

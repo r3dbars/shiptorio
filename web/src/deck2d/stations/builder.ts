@@ -23,16 +23,16 @@ function gear(g: Px, cx: number, cy: number, turn: number) {
   for (let y = Math.floor(cy - 8); y <= Math.ceil(cy + 8); y++) for (let x = Math.floor(cx - 8); x <= Math.ceil(cx + 8); x++) {
     const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
     const a = Math.atan2(dy, dx) - (turn / 8) * Math.PI * 2;
-    const R = Math.cos(a * 8) > 0 ? 7.1 : 5.4;
+    const R = Math.cos(a * 8) > 0.1 ? 7.4 : 5.4;
     if (d > R) continue;
     const k = (dx - dy) / (d || 1); // -1.4 shadow side .. 1.4 lit side
     let c: Color = k > 0.2 ? "haze-2" : "iron-4";
     if (d > R - 1 && k > 0.6) c = "haze-3";
     if (d > R - 1 && k < -0.6) c = "iron-3";
-    if (d < 3.4) c = d < 1.5 ? "soot" : k > 0.3 ? "steel-2" : "steel-1";
+    if (d < 3.4) c = d < 1.2 ? "brass-3" : d < 2.2 ? "brass-1" : k > 0.3 ? "iron-2" : "iron-0";
     g.set(x, y, c);
   }
-  g.set(cx + 0.5, cy - 2.5, "white"); // glint on the hub collar
+  g.set(cx + 1.5, cy - 2.5, "haze-3"); // glint on the hub collar
 }
 
 export const builder: StationDef = {
@@ -66,7 +66,7 @@ export const builder: StationDef = {
 
     // --- front face: dark iron, rust and grime, framed in brass
     face(g, 8, 20, 32, 34, IRON, 0.36, { rust: 0.06, grime: 4, seed: 11 });
-    strap(g, 8, 19, 32, 3, BRASS, 4);
+    strap(g, 8, 19, 32, 2, BRASS, 4);
     strap(g, 8, 22, 2, 31, BRASS);
     strap(g, 38, 22, 2, 31, BRASS);
     g.vline(35, 35, 13, "iron-0"); rivet(g, 34, 37, "iron-4", "soot"); rivet(g, 34, 45, "iron-4", "soot");
@@ -93,12 +93,12 @@ export const builder: StationDef = {
 
     // --- the gear in its brass bezel
     const gx = 21.5, gy = 42.5;
-    for (let y = Math.floor(gy - 12); y <= gy + 13; y++) for (let x = Math.floor(gx - 13); x <= gx + 12; x++) if (Math.hypot(x + 1.5 - gx, y - 0.5 - gy) <= 11 && g.has(x, y)) g.set(x, y, "iron-0"); // its shadow
-    bezel(g, gx, gy, 7.6, 11, BRASS);
-    for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2 + 0.3; rivet(g, Math.round(gx + Math.cos(a) * 9.4 - 0.5), Math.round(gy + Math.sin(a) * 9.4 - 1)); }
-    for (let y = Math.floor(gy - 8); y <= gy + 8; y++) for (let x = Math.floor(gx - 8); x <= gx + 8; x++) {
+    for (let y = Math.floor(gy - 12); y <= gy + 13; y++) for (let x = Math.floor(gx - 13); x <= gx + 12; x++) if (Math.hypot(x + 1.5 - gx, y - 0.5 - gy) <= 10.6 && g.has(x, y)) g.set(x, y, "iron-0"); // its shadow
+    bezel(g, gx, gy, 8, 10.6, BRASS);
+    for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2 + 0.3; rivet(g, Math.round(gx + Math.cos(a) * 9.3 - 0.5), Math.round(gy + Math.sin(a) * 9.3 - 1)); }
+    for (let y = Math.floor(gy - 9); y <= gy + 9; y++) for (let x = Math.floor(gx - 9); x <= gx + 9; x++) {
       const d = Math.hypot(x + 0.5 - gx, y + 0.5 - gy);
-      if (d <= 7.6) g.set(x, y, d > 6.9 ? "soot" : "iron-0");
+      if (d <= 8) g.set(x, y, d > 7.4 ? "soot" : "iron-0");
     }
     gear(g, gx, gy, s === "working" ? (f % 4) / 4 : 0);
 
