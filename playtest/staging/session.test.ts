@@ -42,7 +42,10 @@ test("reset invalidates cached provisioning proof and restores non-newbie reach 
     f.env.DB.prepare("DELETE FROM user_installations WHERE user_id=?").bind(id),
     f.env.DB.prepare("DELETE FROM user_progress WHERE user_id=?").bind(id),
   ]);
+  // Model a stale KV read after deletion: D1 revocation must still force reseeding.
+  f.env.CACHE.delete = async () => {};
   await clearFixtureSession(f.env, "test-midgame");
+  expect(await currentUser(f.env, first)).toBeNull();
   const next = await fixtureSession(f.env, "test-midgame");
   expect(next).not.toBe(first);
   expect(await f.env.DB.prepare("SELECT repo FROM user_repos WHERE user_id=?").bind(id).first()).not.toBeNull();

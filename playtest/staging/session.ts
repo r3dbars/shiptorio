@@ -19,5 +19,7 @@ export async function fixtureSession(env: FixtureEnv, persona: TestPersona): Pro
 
 /** Reset removes seeded progress/reach, so its old session must not skip reseeding. */
 export async function clearFixtureSession(env: FixtureEnv, persona: TestPersona): Promise<void> {
+  // KV can return stale values after deletion. Revoke in authoritative D1 first.
+  await env.DB.prepare("DELETE FROM sessions WHERE user_id=?").bind(personaId(persona)).run();
   await env.CACHE.delete(`fixture-session:${persona}`);
 }
