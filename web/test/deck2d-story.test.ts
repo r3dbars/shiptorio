@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
+import { STAGE_AT } from "../src/deck2d/build/build";
 import { STOPS } from "../src/deck2d/contract";
+import { GROW_SECONDS } from "../src/deck2d/grow/index";
+import { LAUNCH_BUILD_SECONDS } from "../src/deck2d/launch/timeline";
 import { STORY_CARD, createStory, type Story } from "../src/deck2d/story";
 
 // Steps the story until cond() or the time limit (sim seconds). Returns the sim seconds it took.
-function run(s: Story, cond: () => boolean, limit = 120) {
+function run(s: Story, cond: () => boolean, limit = 200) {
   let t = 0;
   while (!cond() && t < limit) { s.step!(0.1); t += 0.1; }
   expect(cond()).toBe(true);
@@ -15,27 +18,36 @@ test("the story plays all four beats and ends on the connect card", () => {
   const s = createStory({ seed: 3, onConnect: () => connected++ });
   const v0 = s.view();
   expect(v0.stops.map((x) => x.id)).toEqual([...STOPS]);
-  expect(v0.stops.every((x) => !x.built)).toBe(true); // the deck starts empty
+  expect(v0.stops.filter((x) => x.built).map((x) => x.id)).toEqual(["repo"]); // just your repo on a small deck
   expect(v0.shippy).toEqual({ pose: "folded", at: "corner" });
   expect(v0.deck).toEqual({ size: "small", island: "none" });
 
-  // each stop shows construction (building 0..1) before it's built, and the island rises before the first launch
-  let sawBuilding = false, sawGrow = false, sawIsland = false;
+  // ONE thing moves at a time: builds, grows and the island never overlap; a caption may ride ~2s into a build, no longer
+  const busy: { what: string; from: number; to: number }[] = [];
+  let t0 = 0, prev = s.view();
   run(s, () => {
     const v = s.view();
-    sawBuilding ||= v.stops.some((x) => x.building != null && x.building > 0 && x.building < 1 && !x.built);
-    sawGrow ||= v.deck!.growing != null;
-    sawIsland ||= v.deck!.island === "building";
+    t0 += 0.1;
+    for (const st of v.stops) if (st.built && !prev.stops.find((x) => x.id === st.id)!.built && st.id !== "launch") busy.push({ what: st.id, from: t0, to: t0 + STAGE_AT.gone });
+    if (v.deck!.size !== prev.deck!.size) busy.push({ what: v.deck!.size, from: t0, to: t0 + GROW_SECONDS });
+    if (v.deck!.island === "building" && prev.deck!.island === "none") busy.push({ what: "island", from: t0, to: t0 + Math.min(LAUNCH_BUILD_SECONDS, 8) });
+    const now = busy.filter((b) => t0 > b.from + 0.05 && t0 < b.to - 0.05);
+    expect(now.length).toBeLessThanOrEqual(1);
+    if (now.some((b) => t0 > b.from + 2.2)) expect(v.caption).toBeNull();
     if (v.shipped > 0) expect(v.deck!.island).toBe("built");
+    prev = v;
     return v.stops.find((x) => x.id === "launch")!.built;
   });
-  expect([sawBuilding, sawGrow, sawIsland]).toEqual([true, true, true]);
+  expect(busy.map((b) => b.what)).toEqual(["planner", "builder", "medium", "checks", "island"]);
   expect(s.view().deck!.size).toBe("medium");
 
   // 1 software is a factory: stops build in one by one, rockets go up
   let t = run(s, () => s.view().shipped >= 2);
   const built = s.view().stops.filter((x) => x.built).map((x) => x.id);
   expect(built).toEqual(["repo", "planner", "builder", "checks", "launch"]);
+  // beat 2 builds Gate, then Review (the call), one at a time
+  run(s, () => s.view().stops.find((x) => x.id === "gate")!.built);
+  expect(s.view().stops.find((x) => x.id === "review")!.built).toBe(false);
 
   // 2 there's always a bottleneck: review jams, a card slides up
   t += run(s, () => s.view().card != null);
@@ -81,7 +93,7 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(s.view().card).toMatchObject({ yes: "See my repo", no: "Replay", setup: true });
   s.approve(STORY_CARD.connect);
   expect(connected).toBe(1);
-  expect(t).toBeLessThan(90); // ~60-90s of story with instant swipes
+  expect(t).toBeLessThan(200); // slow and calm on purpose; one thing at a time
 });
 
 test("same seed, same story; later on the last card replays", () => {
@@ -89,7 +101,7 @@ test("same seed, same story; later on the last card replays", () => {
   for (let i = 0; i < 200; i++) { a.step!(0.1); b.step!(0.1); }
   expect(JSON.stringify(a.view())).toBe(JSON.stringify(b.view()));
   a.reset();
-  expect(a.view().stops.every((x) => !x.built)).toBe(true);
+  expect(a.view().stops.filter((x) => x.built).length).toBe(1);
 });
 
 test("item ids stay stable as crates move stop to stop", () => {
