@@ -7,7 +7,7 @@
 // Only safe, undoable tools can be learned: starting a plan and approving a plan. Launches (the held red button),
 // merges, customer replies, research and autonomy cards always wait for the player.
 
-import type { Learned, Move } from "@shiptorio/shared";
+import type { Item, Learned, Move } from "@shiptorio/shared";
 import type { DeckBook } from "./deck-decisions";
 
 export const LEARN_NEED = 3;
@@ -22,6 +22,17 @@ export function learnOption(card: Move): string | null {
   if (!option?.actions.length || option.id.startsWith("rework-")) return null;
   if (card.options.some(o => o.actions.some(a => a.tool === "request_merge"))) return null;
   return option.actions.every(a => SAFE_TOOLS.has(a.tool)) ? option.id : null;
+}
+
+/**
+ * Only first-time work can be learned. A rework plan, a base refresh of a factory PR, or anything on an item that
+ * already has a PR or a scar is a new decision that always needs the player's own fresh yes, whatever they said
+ * to first builds before (#170).
+ */
+export function freshWork(card: Move, item: Item | undefined, jobs: readonly { itemId: string; approvalMoveId?: string; reworkPr?: number; refreshBase?: unknown }[]): boolean {
+  if (!item || item.prNumber || item.state === "rejected" || item.scars?.length) return false;
+  if (card.options.some(o => o.id.startsWith("rework-") || o.actions.some(a => a.args.refreshBase === true || a.args.reworkPr !== undefined || a.args.scarCount !== undefined))) return false;
+  return !jobs.some(j => (j.approvalMoveId === card.id || j.itemId === item.id) && (j.reworkPr !== undefined || !!j.refreshBase));
 }
 
 /** Starting a plan and approving one are learned apart: letting code get written is a bigger yes than reading. */
@@ -44,8 +55,8 @@ export function learnLabel(key: string): string {
 export const isLearned = (book: DeckBook, key: string) => !!book.auto?.[key];
 
 /** The dots on a card: yeses so far, out of LEARN_NEED. Undefined before the first yes, and for cards that can't be learned or already are. */
-export function learnMeter(book: DeckBook, card: Move, scope: string): Move["learn"] {
-  if (!learnOption(card)) return undefined;
+export function learnMeter(book: DeckBook, card: Move, scope: string, fresh: boolean): Move["learn"] {
+  if (!fresh || !learnOption(card)) return undefined;
   const key = learnKey(card, scope);
   const have = book.learnYes?.[key] ?? 0;
   // No dots before the first yes: a brand-new player's first card stays plain.
@@ -54,13 +65,13 @@ export function learnMeter(book: DeckBook, card: Move, scope: string): Move["lea
 }
 
 /** A Continue on the suggested option, as is: one more dot. Learns the class on the last one; true when it just learned. */
-export function learnFromYes(book: DeckBook, card: Move, scope: string, now: number): boolean {
-  if (!learnOption(card)) return false;
+export function learnFromYes(book: DeckBook, card: Move, scope: string, now: number, fresh: boolean, by: string): boolean {
+  if (!fresh || !learnOption(card)) return false;
   const key = learnKey(card, scope);
   if (isLearned(book, key)) return false;
   const yes = book.learnYes ??= {};
   if ((yes[key] = (yes[key] ?? 0) + 1) < LEARN_NEED) return false;
-  (book.auto ??= {})[key] = { since: now, label: learnLabel(key) };
+  (book.auto ??= {})[key] = { since: now, label: learnLabel(key), by };
   return true;
 }
 

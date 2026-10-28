@@ -27,7 +27,7 @@ import { validatePlan, validatePatch } from "./injection-policy";
 import { authorizationRevoked } from "./session";
 import { handleLifecycle, lifecycleEvents, RETENTION_MS } from "./github-lifecycle";
 import { purgeInstallationTokens } from "./github";
-import { flagEnabled } from "./flags";
+import { flagEnabled, flagOptedOut } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
 import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
@@ -94,7 +94,7 @@ import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, reco
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
-import { dismissNote, resetLearn, forget, forgetOnComeback, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
+import { dismissNote, resetLearn, forget, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
@@ -433,7 +433,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const streak = yes?.[yesKey(m.kind ?? "unblock", moveScope(m, s))] ?? 0;
       const card = streak >= 2 && !m.because ? { ...m, because: `You said yes to the last ${streak} like this.` } : m;
       // docs/LEARN.md: the dots. How many more yeses until the factory does this kind on its own.
-      const learn = learning ? learnMeter(this.deckBook!, m, moveScope(m, s)) : undefined;
+      const learn = learning ? learnMeter(this.deckBook!, m, moveScope(m, s), freshWork(m, s.items.find(i => i.id === m.itemId), jobs)) : undefined;
       return learn ? { ...card, learn } : card;
     });
     const previous = s.move;
@@ -858,7 +858,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.refreshDecisions();
   }
 
-  private async chooseRunnerMove(move: Move, optionId: string): Promise<void> {
+  /** by: who let it through. The planner's own taps (autonomy levels, learned cards) are never recorded as the player's. */
+  private async chooseRunnerMove(move: Move, optionId: string, by: "player" | "autonomy" = "player"): Promise<void> {
     const moveId = move.id;
     if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
     const item = this.state!.items.find(i => i.id === move.itemId);
@@ -884,13 +885,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
             try { assertRefreshItem(stored, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), stored.repo, stored.reworkPr!, stored.branch, stored.baseBranch!, { headSha: stored.refreshBase.expectedHeadSha, baseSha: stored.baseSha!, baseBranch: stored.baseBranch! }); }
             catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return; }
           }
-          stored.status = "ready"; stored.approvedAt = Date.now();
+          stored.status = "ready"; stored.approvedAt = Date.now(); stored.approvedBy = by;
         }
         else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${currentItem.id}`, currentItem.updatedAt); }
         else return;
         await this.accountPut(`runnerJob:${stored.id}`, stored);
         await this.resolveRunnerMove(move);
-        this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: "player", reason: "Decision from the game", itemId: item.id });
+        this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: by, reason: by === "autonomy" ? "Approved on its own: the planner's autonomy level or a kind of card you taught it" : "Decision from the game", itemId: item.id });
       });
       return;
     }
@@ -2863,7 +2864,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       s.move = card;
       const before = JSON.stringify(await this.runnerJobs());
       const handled = await this.choosePermitMove(card.id, tap.optionId) || await this.chooseGauntletMove(card.id, tap.optionId);
-      if (!handled) await this.chooseRunnerMove(card, tap.optionId);
+      if (!handled) await this.chooseRunnerMove(card, tap.optionId, "autonomy");
       const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
       await this.refreshDecisions();
       if (!consumed) continue;
@@ -2882,22 +2883,35 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.decisionData();
     const s = this.state!, book = this.deckBook!;
     if (!Object.keys(book.auto ?? {}).length || !(await flagEnabled(this.env, "learn"))) return;
+    // The autonomy kill switch stops this too: an explicit global "false" means nothing runs on its own.
+    if (await flagOptedOut(this.env, "autonomy")) return;
     for (const card of [...this.openMoves!]) {
       const optionId = learnOption(card);
       const key = learnKey(card, moveScope(card, s));
       if (!optionId || !isLearned(book, key) || suppressed(book, card)) continue;
+      // The player who taught it decides: their own opt-out of learning or autonomy stops it.
+      const by = book.auto![key].by;
+      if (!by || !(await flagEnabled(this.env, "learn", by)) || await flagOptedOut(this.env, "autonomy", by)) continue;
+      const jobs = await this.runnerJobs();
+      // Rework, base refreshes and anything with a PR or a scar always wait for a fresh yes (#170).
+      if (!freshWork(card, s.items.find(i => i.id === card.itemId), jobs)) continue;
       const label = card.options.find(o => o.id === optionId)?.label ?? optionId;
       s.move = card;
-      const before = JSON.stringify(await this.runnerJobs());
-      await this.chooseRunnerMove(card, optionId);
-      const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
-      if (consumed) {
+      const before = JSON.stringify(jobs);
+      await this.chooseRunnerMove(card, optionId, "autonomy");
+      const after = await this.runnerJobs();
+      const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(after);
+      // Only count it as done when the handler actually approved or started the plan. A stale or refused plan
+      // is the handler's to report; it is never logged as something the factory did.
+      const done = after.some(j => j.itemId === card.itemId && (j.approvalMoveId === card.id ? j.status === "ready" && j.approvedBy === "autonomy" : !jobs.some(k => k.id === j.id)));
+      if (consumed && done) {
         noteAutoRun(book, card.itemId, key);
         await this.logTap(card, "auto", optionId);
         await this.accountPut("deckBook", book);
       }
       await this.refreshDecisions();
       if (!consumed) continue;
+      if (!done) return;
       this.broadcast({ type: "log", level: "info", text: `${card.title}: ${label}`, at: Date.now(), itemId: card.itemId, actor: "spark", tool: card.options.find(o => o.id === optionId)?.actions[0]?.tool, approvedBy: "autonomy", reason: "You taught it this one. Turn it off in Make it yours." });
       return;
     }
@@ -3233,14 +3247,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else if (card.locked && (option.id === "launch" || action?.tool === "request_merge")) {
         this.log("warn", "Run the missing checks before launching.");
       } else {
-        const before = JSON.stringify(await this.runnerJobs());
+        const jobsBefore = await this.runnerJobs(), before = JSON.stringify(jobsBefore);
+        // docs/LEARN.md: only first-time work counts toward teaching the factory; judged before the tap changes it.
+        const fresh = freshWork(card, s.items.find(i => i.id === card.itemId), jobsBefore);
         const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) {
           await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
           noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));
-          if (await flagEnabled(this.env, "learn") && learnFromYes(this.deckBook!, card, moveScope(card, s), Date.now()))
+          if (await flagEnabled(this.env, "learn", playerLogin(auth)) && learnFromYes(this.deckBook!, card, moveScope(card, s), Date.now(), fresh, playerLogin(auth)))
             this.broadcast({ type: "log", level: "success", text: "Learned. The factory does these on its own now.", at: Date.now(), itemId: card.itemId, actor: "player", reason: "You said yes 3 times in a row. Turn it off in Make it yours." });
           await this.accountPut("deckBook", this.deckBook);
         } else if (consumed && learnOption(card)) {
