@@ -16,7 +16,8 @@ import * as THREE from "three";
 type P3 = [number, number, number];
 
 export const BURST_SECONDS = 1;
-const SECONDS = { big: BURST_SECONDS, small: 0.65, calm: 0.45 };
+export const BURST_REDUCED_SECONDS = 0.45;
+const SECONDS = { big: BURST_SECONDS, small: 0.65, calm: BURST_REDUCED_SECONDS };
 
 export interface BurstOpts {
   /** the first time this kind of piece comes online: the big burst */
@@ -451,4 +452,14 @@ export function burst(target: THREE.Object3D, opts: BurstOpts = {}): BurstRun {
     // nothing to put back but the lamps, which end() turns on: a cancelled burst leaves the piece lit as it was
     cancel: end,
   };
+}
+
+/** One of each thing a burst draws (arcs, sparks, flash, ring), for the scene to compile at load (ShaftScene.warm). */
+export function burstWarmups(): THREE.Object3D[] {
+  const add = () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false }));
+  const sparks = new THREE.InstancedMesh(box, add(), 1);
+  sparks.setColorAt(0, new THREE.Color(0xffffff));
+  return [sparks, new THREE.InstancedMesh(box, add(), 1), new THREE.Mesh(box, add()), flash];
 }

@@ -12,6 +12,7 @@ import { ATTENTION, NEXT_MOVE, STAGE_LABEL, THINKS, WORDS } from "../copy";
 import { because } from "./because";
 import { sound } from "../sound/engine";
 import { HoldGesture, type HoldClock } from "./holdLaunch";
+import { holdRenderYield } from "./holdRender";
 
 const SWIPE_PX = 80;
 const LATER_ASK_MS = 4000;
@@ -210,9 +211,10 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
   const launch = useRef(onLaunch);
   launch.current = onLaunch;
   const gesture = useRef<HoldGesture | null>(null);
+  const renderHold = useRef<ReturnType<typeof holdRenderYield> | null>(null);
   const ticked = useRef(-1); // the last countdown tick played this press
-  if (!gesture.current)
-    gesture.current = new HoldGesture(
+  if (!gesture.current) {
+    const lease = renderHold.current = holdRenderYield(
       {
         progress: (p) => {
           setP(p);
@@ -231,8 +233,9 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
           launch.current(c);
         },
       },
-      clock,
     );
+    gesture.current = new HoldGesture(lease.events, clock);
+  }
   const g = gesture.current;
   useEffect(() => g.retarget(card), [g, card]);
   useEffect(() => {
@@ -244,6 +247,7 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
       window.removeEventListener("blur", leave);
       document.removeEventListener("visibilitychange", hidden);
       g.dispose();
+      renderHold.current?.dispose();
     };
   }, [g]);
   const isKey = (e: React.KeyboardEvent) => e.key === " " || e.key === "Enter";

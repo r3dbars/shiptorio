@@ -721,7 +721,7 @@ export const LESSON_COPY: Record<string, { title: string; text: string }> = {
   ore: { title: "Ore", text: "That's ore: each open issue is one chunk. It rides the belt in, and the Line list shows where every chunk is." },
   inspect: { title: "Checks", text: "Nothing ships unchecked. Every PR runs the gauntlet: CI, proof, AI review. A fail rides the red belt back with the reason, for another try." },
   pad: { title: "Launch pad", text: "It passed and it's on the pad. Launching means you merge the PR. That's always your call." },
-  rocket: { title: "Rocket", text: "Rocket! That was a real merged PR. The score counts what shipping did for people, not how busy the factory looks." },
+  rocket: { title: "Rocket", text: "Rocket! Each one is a merged PR. The score counts what shipping did for people, not how busy the factory looks." },
   bottleneck: { title: "Bottleneck", text: "There's always a bottleneck: the one spot where work piles up. The Next Move card points at it. Clear it and the factory grows." },
   autonomy: { title: "Autonomy", text: "Every suggestion you take as-is builds trust. Earn enough and the factory gets to do the small stuff on its own." },
   checkin: { title: "Check-in", text: "When a few things wait on you, check in: swipe through them in one go. Right does it, left is later, down is never." },

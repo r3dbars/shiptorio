@@ -274,3 +274,28 @@ replace the runtime, widen the sandbox or resume a process using an old PID/sess
   separately remains valid. No real Keychain was reset or recreated.
 - This is deployment and installation evidence only. No new #170 build,
   supervised regression receipt, factory PR or Launch has been established.
+
+## Fresh plan after backend release #438 (2026-10-27)
+
+- [Release #438](https://github.com/r3dbars/shiptorio/pull/438) reached main
+  `eb6a820539b55e6e95eab4fd9eb79532d9178015`. [Deploy 40599991822](https://github.com/r3dbars/shiptorio/actions/runs/40599991822)
+  passed, and the live version matched. Anonymous `/api/me` returned 401.
+- The installed Bun 1.4.4 runner manifest and bundle match that release; bundle
+  SHA-256 is `d9633d54d4fb1edbd63ca765d0854dd62e021be17dbb889144757825ecc18b24`.
+  Existing pairings were unchanged. After restarting the existing launchd service,
+  authenticated runner health reported paired/online, Codex available and
+  `needsRepair=false`. Claude's unavailable private Keychain remains preserved.
+- Root clicked the actual game's **Plan with Codex** action for #170. Job
+  `8a104da4-fa7f-4b02-a370-b19c7c74483c` planned against the release SHA above,
+  restricted to `server/src/sources/sentry.ts` and `server/test/mines.test.ts`.
+  It reached `awaiting_approval`; approval move
+  `1ef4eca0-6b9f-496d-b398-e8531126f421` was expanded in the game for Justin.
+- The plan requires the terminal-status/lifecycle `Signal.action` regressions to
+  fail on base and pass on head, followed by local checks and a PR. Root has not
+  approved this fresh plan on Justin's behalf. No new build, runner PR, gauntlet
+  pass or Launch is claimed here. The older manually prepared #373 is not adopted.
+- A full window of old governance cards hid the real runner decision. Historical
+  cards were deferred through the game's existing controls without changing
+  automation policy. [Fix #443](https://github.com/r3dbars/shiptorio/pull/443)
+  reserves one non-merge slot while retaining every pending decision and all
+  Launch priority; its release and the human approval are separate checkpoints.

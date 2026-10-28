@@ -1,6 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { assertFloorChronology, floorStartsBeforeNextTrigger, RISES_AFTER } from '../contract/floor-events';
+import { assertBuildEventPrefix, type BuildEvent } from '../contract/buildout-events';
+import { observeManualLaunch, type LaunchObservation } from '../contract/launch-observation';
 
 // Floating-city art pass, slice 10 (web/src/map/shaft/modules/growth.js): under ?buildout=1&artpass=1 the island
 // starts as the rock and its boarded tunnel, and each floor goes up just before the build that sits on it: the build
@@ -11,7 +14,6 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 const STEPS = ['tunnel', 'boiler', 'builder', 'issue', 'planner', 'build', 'checks', 'launch'] as const;
 const AUTO = new Set<string>(['build', 'checks']);
 // the floor that rises once this build is done (the next build sits on it)
-const RISES_AFTER: Record<string, string> = { tunnel: 'build', build: 'checks', checks: 'launch' };
 type Ev = { kind: 'build' | 'floor'; id?: string; floor?: string; floors?: string[]; phase: string; at: number };
 
 const watch = (page: Page) => page.addInitScript(() => {
@@ -19,8 +21,6 @@ const watch = (page: Page) => page.addInitScript(() => {
   w.__ev = [];
   window.addEventListener('shiptorio:build', e => w.__ev.push({ kind: 'build', ...(e as CustomEvent).detail, at: performance.now() }));
   window.addEventListener('shiptorio:floor', e => w.__ev.push({ kind: 'floor', ...(e as CustomEvent).detail, at: performance.now() }));
-  // the SHIPPED! card is up for ~10 s, which a slow renderer can spend before the launch build reports done
-  new MutationObserver(() => { w.__cel ||= !!document.querySelector('.ship-cel'); }).observe(document, { childList: true, subtree: true });
 });
 const events = (page: Page): Promise<Ev[]> => page.evaluate(() => (window as any).__ev);
 const floors = async (page: Page) => (await events(page)).filter(e => e.kind === 'floor');
@@ -28,8 +28,9 @@ const built = async (page: Page, id: string, phase = 'done') => (await events(pa
 
 // Hold from the keyboard (Space on the focused button): the same consent path as a pointer hold (holdLaunch.ts),
 // and it doesn't depend on pointer capture under software WebGL.
-async function hold(page: Page, button: ReturnType<Page['locator']>, until: () => Promise<boolean>) {
+async function hold(page: Page, button: ReturnType<Page['locator']>, until: () => Promise<boolean>, beforePress?: () => Promise<void>) {
   await button.focus();
+  await beforePress?.();
   await page.keyboard.down('Space');
   try { await expect.poll(until, { timeout: 20_000 }).toBe(true); } // software WebGL can run a few frames a second
   finally { await page.keyboard.up('Space'); }
@@ -46,11 +47,11 @@ function shooter(page: Page, info: TestInfo) {
 }
 
 test.describe('floors grow with the build-as-you-go run', () => {
-  // runs on all three: 1440 (desktop), 390 (iphone-14) and pixel-7.
   test.setTimeout(420_000);
 
   test('dark to rocket: each floor rises right before the build that sits on it', async ({ page }, info) => {
     const errors: string[] = [];
+    let launchCard: LaunchObservation | undefined;
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     await watch(page);
@@ -66,24 +67,29 @@ test.describe('floors grow with the build-as-you-go run', () => {
     await shot('floors-00-rock.png');
 
     for (const [i, id] of STEPS.entries()) {
-      // an auto step can come and go before we look, so it's checked by its build events alone
-      if (!AUTO.has(id)) await expect(root, `step ${id}`).toHaveAttribute('data-step', id, { timeout: 90_000 });
+      if (AUTO.has(id))
+        await expect.poll(async () => await built(page, id) || await root.getAttribute('data-step') === id,
+          { timeout: 90_000, message: `step ${id} or already completed` }).toBe(true);
+      else await expect(root, `step ${id}`).toHaveAttribute('data-step', id, { timeout: 90_000 });
       if (!AUTO.has(id) && !(await built(page, id, 'start'))) {
         await expect(action.first(), `${id} has an action`).toBeVisible();
         const kind = await action.first().getAttribute('data-buildout-action');
         const moved = async () => (await built(page, id, 'start')) || (await root.getAttribute('data-step')) !== id;
-        if (kind === 'hold' || (await action.first().getAttribute('class'))?.includes('bo-hold')) await hold(page, action.first(), moved);
+        if (id === 'launch') await expect(action.first()).toHaveAttribute('data-buildout-action', 'hold');
+        if (kind === 'hold' || (await action.first().getAttribute('class'))?.includes('bo-hold')) await hold(page, action.first(), moved,
+          id === 'launch' ? async () => { launchCard = await observeManualLaunch(page); } : undefined);
         else await action.first().click();
       }
       await expect.poll(() => built(page, id), { timeout: 90_000, message: `${id} finishes` }).toBe(true);
+      assertBuildEventPrefix((await events(page)).filter(e => e.kind === 'build') as BuildEvent[]);
       const floor = RISES_AFTER[id];
       const n = String(i + 1).padStart(2, '0');
       if (!floor) {
-        // nothing rises after this build: no floor started between its finish and the next build's (an auto step can finish right behind it)
-        const ev = await events(page);
-        const done = ev.find(e => e.kind === 'build' && e.id === id && e.phase === 'done')!.at;
-        const next = ev.find(e => e.kind === 'build' && e.id !== id && e.phase === 'done' && e.at > done)?.at ?? Infinity;
-        expect((await floors(page)).filter(e => e.phase === 'start' && e.at >= done && e.at < next), `no floor after ${id}`).toEqual([]);
+        // A slow snapshot may include the next automatic build's floor. The
+        // current step's interval stays quiet until that next legitimate trigger.
+        const captured = await events(page);
+        expect(floorStartsBeforeNextTrigger(captured, id), `no floor after ${id} before the next trigger`).toEqual([]);
+        assertFloorChronology(captured);
         continue;
       }
       await expect.poll(async () => (await floors(page)).some(e => e.phase === 'start' && e.floor === floor), { timeout: 5_000, message: `${floor} floor starts after ${id}` }).toBe(true);
@@ -95,6 +101,8 @@ test.describe('floors grow with the build-as-you-go run', () => {
 
     // every floor rose once, bottom up, each after the build before it
     const ev = await events(page);
+    assertFloorChronology(ev);
+    assertBuildEventPrefix(ev.filter(e => e.kind === 'build') as BuildEvent[]);
     const rose = ev.filter(e => e.kind === 'floor' && e.phase === 'start').map(e => e.floor);
     expect(rose).toEqual(['build', 'checks', 'launch']);
     for (const [after, floor] of Object.entries(RISES_AFTER)) {
@@ -102,7 +110,8 @@ test.describe('floors grow with the build-as-you-go run', () => {
       const start = ev.find(e => e.kind === 'floor' && e.phase === 'start' && e.floor === floor)!.at;
       expect(start, `${floor} after ${after}`).toBeGreaterThanOrEqual(done);
     }
-    await expect.poll(() => page.evaluate(() => !!(window as any).__cel), { timeout: 30_000, message: 'the rocket celebrated' }).toBe(true);
+    expect(launchCard, 'the manual Launch press started its actual-card visibility check').toBeDefined();
+    await launchCard!();
     await shot('floors-09-rocket.png');
     expect(errors).toEqual([]);
   });

@@ -340,6 +340,26 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.accountPut("approvalEvents", [...events.slice(-199), { kind, scope, at: Date.now(), actionId }]);
   }
 
+  // Publication state is per live DO instance, not an authorization cache. A new
+  // instance publishes its first deck/move, and each new socket still gets a snapshot.
+  private decisionPublications: Partial<Record<"deck" | "move", { payload: string; policyRevision: number }>> = {};
+
+  private publishDecisionFrame(message: Extract<ServerToWeb, { type: "deck" | "move" }>): void {
+    const type = message.type, payload = JSON.stringify(message), policyRevision = this.redactor.policyRevision;
+    const previous = this.decisionPublications[type];
+    if (previous?.payload === payload && previous.policyRevision === policyRevision) return;
+    // Pending publications also suppress duplicates. A rejected cursor/delivery
+    // must release only its own stamp: an older failure cannot invalidate a newer
+    // payload, or a later identical payload under a new policy (the ABA case).
+    const publication = { payload, policyRevision };
+    this.decisionPublications[type] = publication;
+    const failed = (error: unknown) => {
+      if (this.decisionPublications[type] === publication) delete this.decisionPublications[type];
+      report(error, "factory.decision_publication_failed", { kind: type });
+    };
+    try { void this.broadcast(message).catch(failed); } catch (error) { failed(error); }
+  }
+
   private async refreshDecisions() {
     if (!this.state || !this.meta || this.batchingDecisions) return;
     await this.decisionData();
@@ -410,9 +430,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
     this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck } });
-    this.broadcast({ type: "deck", deck });
-    if (s.move) this.broadcast({ type: "move", move: s.move });
-    else if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
+    // Unchanged decisions need no new transport frame. Every frame we do publish
+    // retains broadcast's fresh session/membership checks; tick and queue telemetry
+    // keep flowing even when the cards are unchanged.
+    this.publishDecisionFrame({ type: "deck", deck });
+    if (s.move) this.publishDecisionFrame({ type: "move", move: s.move });
+    else {
+      delete this.decisionPublications.move;
+      if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
+    }
   }
 
   // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------

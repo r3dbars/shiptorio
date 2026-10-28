@@ -18,8 +18,8 @@ import * as THREE from "three";
 import type { FactoryState } from "@shiptorio/shared";
 
 import { STEP_IDS, STEPS, cameraFor, emitBuild, resolve, stepById, stepFrom, type StepId } from "../../buildout/journey";
-import { burst, type BurstRun } from "./burst";
-import { construct, type ConstructRun } from "./construct";
+import { burst, BURST_REDUCED_SECONDS, type BurstRun } from "./burst";
+import { construct, CONSTRUCT_REDUCED_SECONDS, type ConstructRun } from "./construct";
 import type { Iron } from "./core";
 import type { Layout, PathDef, Plan, StationDef } from "./layout";
 import { LEDGE_Z, MINES, MINE_FACE_Z } from "./layout";
@@ -49,8 +49,10 @@ export function fullPlan(sp: ShaftPlan): ShaftPlan {
   const sources = p.sources?.includes("github") ? p.sources : ["github", ...(p.sources ?? [])];
   const first = assemblers[0].id;
   // a plant read off the state before its builder stands feeds nothing yet: it's the first builder's
-  // and a plant feeding the placeholder planner feeds the skeleton's, or the key flips mid-build and the whole shaft rebuilds
-  const power = (p.power ?? []).map((x) => (x.type === "dynamo" && !x.feeds?.length ? { ...x, feeds: [first] } : x.feeds?.includes("planner") && planner.id !== "planner" ? { ...x, feeds: x.feeds.map((f) => (f === "planner" ? planner.id : f)) } : x));
+  // feeds named before their machine stands (plan.ts says "planner" until the splitter exists) point at the
+  // placeholder, so the key stays put and the shaft isn't rebuilt mid-build when the real plant arrives
+  const fed = (ids: string[] | undefined) => ids?.map((id) => (id === "planner" ? planner.id : id));
+  const power = (p.power ?? []).map((x) => (x.type === "dynamo" && !x.feeds?.length ? { ...x, feeds: [first] } : { ...x, feeds: fed(x.feeds) }));
   if (!power.some((x) => x.type === "steam")) power.unshift({ id: SKELETON.steam, type: "steam", feeds: [planner.id] });
   if (!power.some((x) => x.type !== "steam" && x.feeds?.includes(first))) power.push({ id: SKELETON.dynamo, type: "dynamo", feeds: [first], harness: "claude_code" });
   for (const x of power) labels[x.id] ??= x.type === "dynamo" ? "DYNAMO" : x.type.toUpperCase();
@@ -282,6 +284,26 @@ export class Buildout {
       this.moment.burst?.cancel();
       this.moment.anchor?.removeFromParent();
       this.moment = { ...this.moment, phase: "chalk", t: 0, holders: [], pieces: [], runs: [], burst: null, anchor: null };
+    }
+  }
+
+  /** Run one draw with every hidden machine showing and unculled, so their shaders compile and link now, at load,
+   *  and revealing one mid-build never stalls the frame (and the player's hold) on a compile. */
+  precompile(draw: (holders: THREE.Object3D[]) => void) {
+    const holders = [...this.hiddenStations].map((id) => this.I!.stations[id].holder);
+    if (!holders.length) return; // returning factories need no construction warm-up
+    const culled: THREE.Object3D[] = [];
+    for (const h of holders) {
+      h.visible = true;
+      h.traverse((o) => {
+        if (o.frustumCulled) (o.frustumCulled = false), culled.push(o);
+      });
+    }
+    try {
+      draw(holders);
+    } finally {
+      for (const o of culled) o.frustumCulled = true;
+      for (const h of holders) h.visible = false;
     }
   }
 
@@ -518,42 +540,56 @@ export class Buildout {
     }
     const mo = this.moment;
     if (!mo || !this.I) return;
-    mo.t += dt;
-    if (mo.phase === "chalk") {
-      if (mo.t >= CHALK_S || mo.hurry) this.startConstruct(mo);
-      return;
-    }
-    if (mo.phase === "construct") {
-      let all = true;
-      for (const r of mo.runs) if (!r.update(dt)) all = false;
-      const k = mo.hurry || this.reduced ? 1 : Math.min(1, mo.t / CONSTRUCT_S);
-      // the pieces grow one after another along the flow, each over 40% of the time
-      const n = mo.pieces.length;
-      mo.pieces.forEach((pc, i) => {
-        const start = n > 1 ? (i / (n - 1)) * 0.6 : 0;
-        const u = Math.min(1, Math.max(0, (k - start) / 0.4));
-        this.setRise(pc.id, u >= 1 ? 1 : u * u * (3 - 2 * u));
-      });
-      if (n) this.syncShadows();
-      if (all && (k >= 1 || mo.hurry)) this.startBurst(mo);
-      return;
-    }
-    if (mo.phase === "burst") {
-      const fin = !mo.burst || mo.burst.update(dt);
-      if (fin && (mo.t >= BURST_S || this.reduced)) {
+    // One rendered frame can cross several phases. Spend only the time each
+    // phase needs, carrying the remainder forward instead of dropping it at t=0.
+    // Never spend old elapsed time on a newly queued build after this one ends.
+    let remaining = Math.max(0, dt);
+    for (let transitions = 0; transitions < 4; transitions++) {
+      const duration = mo.phase === "chalk" ? (mo.hurry ? 0 : CHALK_S)
+        : mo.phase === "construct" ? (mo.hurry ? 0 : this.reduced ? (mo.runs.length ? CONSTRUCT_REDUCED_SECONDS : 0) : CONSTRUCT_S)
+        : mo.phase === "burst" ? (this.reduced ? BURST_REDUCED_SECONDS : BURST_S) : PAYOFF_S;
+      const elapsed = Math.min(remaining, Math.max(0, duration - mo.t));
+      mo.t += elapsed;
+      remaining -= elapsed;
+      if (mo.phase === "chalk") {
+        if (mo.t < duration) return;
+        this.startConstruct(mo);
+        continue;
+      }
+      if (mo.phase === "construct") {
+        for (const r of mo.runs) r.update(elapsed);
+        const k = mo.hurry || this.reduced ? 1 : Math.min(1, mo.t / CONSTRUCT_S);
+        // the pieces grow one after another along the flow, each over 40% of the time
+        const n = mo.pieces.length;
+        mo.pieces.forEach((pc, i) => {
+          const start = n > 1 ? (i / (n - 1)) * 0.6 : 0;
+          const u = Math.min(1, Math.max(0, (k - start) / 0.4));
+          this.setRise(pc.id, u >= 1 ? 1 : u * u * (3 - 2 * u));
+        });
+        if (n) this.syncShadows();
+        if (mo.t < duration) return;
+        this.startBurst(mo); // finishes runs, including any floating-point residue
+        continue;
+      }
+      if (mo.phase === "burst") {
+        mo.burst?.update(elapsed);
+        if (mo.t < duration) return;
+        // The nominal burst ends here; natural particles may finish during payoff.
         mo.phase = "payoff";
         mo.t = 0;
         const f = stepById(mo.step).lights;
         this.shown.add(mo.step);
         if (f) this.hooks.light(this.litFloors);
+        continue;
       }
-      return;
-    }
-    if (mo.t >= PAYOFF_S) {
+      mo.burst?.update(elapsed);
+      if (mo.t < duration) return;
+      mo.burst?.finish(); // guarantee resource cleanup even if a particle lingered
       mo.anchor?.removeFromParent();
       this.moment = null;
       emitBuild({ id: mo.step, phase: "done", first: true });
       this.advance();
+      return;
     }
   }
 

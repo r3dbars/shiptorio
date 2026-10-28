@@ -78,12 +78,9 @@ export default function install(IRON) {
       mem.off ??= onBuild(heard);
       // a rebuild while a floor was rising (a new machine id rebuilds the shaft): it starts over on the new one
       mem.run = null;
-      let first = true, last = 0;
+      let first = true;
       return {
-        update(t, dt) {
-          // a floor rises on the wall clock, like a build: the frame's dt is clamped, so on a slow GPU it would crawl
-          const now = performance.now(), wall = last ? Math.min(0.5, (now - last) / 1000) : 0;
-          last = now;
+        update(t, dt, renderElapsed = dt) {
           if (first) {
             // after the bake, before the first frame draws: the floors that aren't built are gone
             const state = I.driver && I.driver.state;
@@ -97,7 +94,7 @@ export default function install(IRON) {
             if (mem.floor) mem.run = buildFloor(I, mem.floor, { reduced: reducedMotion() });
             next();
           }
-          if (mem.run && mem.run.update(Math.max(dt, wall))) finished();
+          if (mem.run && mem.run.update(renderElapsed)) finished();
           // the chalk on the next site waits for its deck
           const chalk = I.root && I.root.getObjectByName('buildout-chalk');
           if (chalk) chalk.visible = !mem.run;

@@ -16,6 +16,7 @@ import * as THREE from "three";
 import type { FactoryState } from "@shiptorio/shared";
 
 import { buildoutOn } from "../../flags";
+import { submitWhenUnheld } from "../../ui/holdRender";
 import { perf } from "../perf";
 import { FrameGovernor } from "../quality";
 import type { Cosmetics, Ping } from "../scene";
@@ -31,6 +32,8 @@ import { biasFor } from "./frame";
 import { ShaftHud } from "./hud";
 import { makeLayout, MINES } from "./layout";
 import { cartAt, clickable, mineKey, planFromState, type ShaftPlan } from "./plan";
+import { burst, burstWarmups } from "./burst";
+import { construct, constructWarmups } from "./construct";
 import { ShaftStage, type ShaftView } from "./stage";
 import { Trophies } from "./trophies";
 import { TrustLamps } from "./trust";
@@ -398,6 +401,55 @@ export class ShaftScene {
 
   // ---------- building ----------
 
+  // Build as you go: on the first frame of a new shaft, draw once more with every hidden machine showing, each one
+  // mid-construct and mid-burst, then the real frame over it, so every shader a build uses compiles and links now and
+  // revealing a piece never stalls the frame (and the player's hold) on a compile. One of each throwaway material a
+  // build makes (sparks, arcs, flash) stays in the scene, hidden, so those programs are never dropped between builds.
+  private warmPending = false;
+  private warm(stage: ShaftStage, holders: THREE.Object3D[]) {
+    const r = this.renderer;
+    const reduced = this.reduceMotion;
+    const extras = [...constructWarmups(), ...burstWarmups()];
+    for (const o of extras) (o.frustumCulled = false), stage.root.add(o);
+    const runs: (ReturnType<typeof construct> | ReturnType<typeof burst>)[] = [];
+    const unculled = (): THREE.Object3D[] => {
+      const out: THREE.Object3D[] = [];
+      for (const h of holders)
+        h.traverse((o) => {
+          if (o.frustumCulled) (o.frustumCulled = false), out.push(o);
+        });
+      return out;
+    };
+    // three looks, each drawn with its shadows: early in a build, late in it (every part landed), and as it stands
+    const look = () => {
+      const culled = unculled();
+      r.shadowMap.needsUpdate = true;
+      try { stage.render(r); }
+      finally { for (const o of culled) o.frustumCulled = true; }
+    };
+    try {
+      for (const h of holders) {
+        const c = construct(h, { reduced });
+        runs.push(c);
+        c.update(reduced ? 0.5 : 1.5); // register cleanup before any update can fail
+        const b = burst(h, { first: true, reduced });
+        runs.push(b);
+        b.update(0.3);
+      }
+      look();
+      if (!reduced) for (const run of runs) run.update(2);
+      look();
+      for (const run of runs.reverse()) run.cancel();
+      runs.length = 0;
+      look();
+      for (const p of r.info.programs ?? []) p.getUniforms(); // finish linking now, not on first use
+    } finally {
+      for (const run of runs) run.cancel();
+      for (const o of extras) o.visible = false;
+      r.shadowMap.needsUpdate = true; // the real shadows, without the hidden machines
+    }
+  }
+
   private rebuild(sp: ShaftPlan) {
     // A new shaft cannot carry the old driver's replay timer. End it before carrying the real line.
     if (this.lapsing) this.finishLapse();
@@ -435,6 +487,7 @@ export class ShaftScene {
     }
     if (this.firstRun.level < 0 && this.state) this.firstRun.set(bo ? bo.litFloors : litFloors(this.state), this.reduceMotion); // the first look: no swoop
     this.firstRun.patch(stage.root, !!bo && !bo.complete);
+    this.warmPending = !!bo;
     this.trophies.reset();
     stage.root.add(this.trophies.group);
     this.clogs.reset();
@@ -553,27 +606,37 @@ export class ShaftScene {
       this.tier = this.governor.tier;
       stage.finish.setBloomTaps(this.tier === 0 ? 12 : this.tier === 1 ? 8 : 0);
     }
-    const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
+    const elapsed = Math.max(0, (now - this.last) / 1000);
+    const dt = Math.min(0.05, elapsed);
     this.last = now;
     this.t += dt;
-    I.step(this.t, dt);
-    this.buildStep(dt);
+    I.step(this.t, dt, elapsed);
+    this.buildStep(dt, elapsed);
     stage.camStep(dt);
     this.firstRun.step(this.t, dt, this.reduceMotion);
     this.clogs.step(this.t, dt, this.reduceMotion);
     const shadows = this.governor.shadows();
     this.renderer.shadowMap.needsUpdate ||= shadows; // a build may have asked for one too
-    stage.render(this.renderer);
-    this.hud.place(this.W, this.H);
-    this.quietChips();
+    // Consent UI keeps its RAF and safety clock. Only expensive GL/precompile
+    // yields while a native hold is active; simulation and camera still step.
+    submitWhenUnheld(() => {
+      if (this.warmPending && this.bo) {
+        this.warmPending = false;
+        this.bo.precompile((holders) => this.warm(stage, holders));
+      }
+      stage.render(this.renderer);
+      this.hud.place(this.W, this.H);
+      this.quietChips();
+    });
     perf.work(performance.now() - now);
   };
 
   // Build as you go, each frame: the build playing, the pool of light on the next site, the director's camera.
-  private buildStep(dt: number) {
+  private buildStep(dt: number, buildElapsed = dt) {
     const bo = this.bo;
     if (!bo) return;
-    bo.tick(this.t, dt);
+    // Construction follows elapsed time; the camera and movement keep the physics clamp.
+    bo.tick(this.t, buildElapsed);
     this.firstRun.spotAt(bo.spot());
     this.director?.step(this.t, dt);
     if (bo.busy) this.governor.poke();
