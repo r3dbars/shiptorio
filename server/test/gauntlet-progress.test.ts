@@ -2,7 +2,7 @@ import { expect, it, mock } from "bun:test";
 import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { freshInspection, nextGate, setStage } from "../src/gauntlet";
-mock.module("cloudflare:workers", () => ({ DurableObject: class {} }));
+mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { Factory } = await import("../src/factory");
 
 const head = "a".repeat(40);
