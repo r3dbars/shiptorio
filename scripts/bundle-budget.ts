@@ -10,7 +10,7 @@ const DIST = resolve(import.meta.dir, "../web/dist");
 type Chunk = { file: string; imports?: string[]; dynamicImports?: string[] };
 // These imports require another route or a player action. Idle-prefetched panels count. Everything new
 // is counted by default, so moving startup work behind import() cannot evade the budget.
-const DEFERRED = /^(src\/judge\/|src\/source\/live\.ts$|src\/sound\/foundryPlayer\.ts$)/;
+const DEFERRED = /^(src\/judge\/|src\/map\/scene\.ts$|src\/source\/live\.ts$|src\/sound\/foundryPlayer\.ts$)/;
 
 export function initialJS(manifest: Record<string, Chunk>) {
   const seen = new Set<string>();
