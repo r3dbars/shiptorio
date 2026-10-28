@@ -64,8 +64,10 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     const next = async () => (await root.getAttribute('data-step')) !== id;
     // Automatic work can finish before the poller observes its transient card.
     // Manual decisions still require their exact step and real player action.
-    if (!(AUTO.has(id) && await done()))
-      await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
+    if (AUTO.has(id))
+      await expect.poll(async () => await done() || await root.getAttribute('data-step') === id,
+        { timeout: 60_000, message: `step ${n} is ${id} or already completed` }).toBe(true);
+    else await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
     // Steps 6 (build runs) and 7 (checks) build themselves; the rest wait on the player.
     const action = card.locator('[data-buildout-action]');
     if (!AUTO.has(id) && !(await started())) {
