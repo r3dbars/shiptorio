@@ -6,6 +6,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { continueOption, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { HoldGesture, type HoldClock } from "./holdLaunch";
+import { holdRenderYield } from "./holdRender";
 import { RunnerConnection } from "./RunnerConnection";
 import { sound } from "../sound/engine";
 import { BUILD_MS, LOOK, STEPS, lineFor, onBuild, phaseAt, stepFrom, STARTER_ISSUE, type BuildPhase, type Step } from "../buildout/journey";
@@ -95,8 +96,9 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
   const build = useRef(onBuild);
   build.current = onBuild;
   const gesture = useRef<HoldGesture | null>(null);
-  if (!gesture.current)
-    gesture.current = new HoldGesture(
+  const renderHold = useRef<ReturnType<typeof holdRenderYield> | null>(null);
+  if (!gesture.current) {
+    const lease = renderHold.current = holdRenderYield(
       {
         progress: setP,
         arm: () => sound.play("arm"),
@@ -107,9 +109,9 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
           build.current();
         },
       },
-      clock,
-      HOLD_BUILD_MS,
     );
+    gesture.current = new HoldGesture(lease.events, clock, HOLD_BUILD_MS);
+  }
   const g = gesture.current;
   useEffect(() => g.retarget(card), [g, card]);
   useEffect(() => {
@@ -121,6 +123,7 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
       window.removeEventListener("blur", leave);
       document.removeEventListener("visibilitychange", hidden);
       g.dispose();
+      renderHold.current?.dispose();
     };
   }, [g]);
   const isKey = (e: React.KeyboardEvent) => e.key === " " || e.key === "Enter";
