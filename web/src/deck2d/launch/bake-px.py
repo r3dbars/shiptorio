@@ -42,6 +42,16 @@ def drop_wisps(im):
             if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in seen and cand(nx, ny): stack.append((nx, ny))
     for x, y in seen: p[x, y] = (0, 0, 0, 0)
 
+# Art direction (PIXEL-CANVAS.md): iron is dark and cool, brass is jewelry. The tower frames are painted warm
+# brown/brass, so their body colors move onto the steel ramp by brightness; brass-3 and up stays as trim and glints,
+# sun (lamps), copper (rust) and soot stay as they are.
+H = lambda h: tuple(int(h[i:i + 2], 16) for i in (1, 3, 5))
+STEEL = ["#121e2b", "#273349", "#3d4d6a", "#7d8ea3"]
+COOL = {H(a): H(STEEL[b]) for a, b in [
+    ("#181211", 0), ("#291b17", 0), ("#351705", 0), ("#422616", 1), ("#5a3521", 1), ("#432f29", 1),
+    ("#6d370c", 1), ("#834621", 2), ("#a36915", 2), ("#6b5360", 2), ("#ae6237", 3), ("#b48254", 3), ("#8f6f62", 3),
+]}
+
 for name, s in JOBS.items():
     im = Image.open(ART / f"launch-{name}.webp").convert("RGBA")
     w, h = round(im.width * s / ART_PX), round(im.height * s / ART_PX)
@@ -57,6 +67,7 @@ for name, s in JOBS.items():
             k = (r, g, b)
             if k not in cache: cache[k] = near(k)
             c = cache[k]
+            if name.startswith("tower"): c = COOL.get(c, c)
             op[x, y] = (*c, 255)
     if name.startswith("island"): drop_wisps(out)
     out.save(OUT / f"{name}.png", optimize=True)

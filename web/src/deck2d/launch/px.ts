@@ -228,37 +228,38 @@ export function createPixelLaunch(_art: ArtLoader, bus: DeckBus, preview: Previe
       rect(BRIDGE.x0 - 1, y0 - 3, 1, 15, P.soot[0]);
     }
   }
-  /** One bridge section, 3/4 view: back rail, a plank top face, a riveted iron front face, a truss brace below and
+  /** One bridge section, 3/4 view, cool dark steel with brass only as rivets: back rail, a plank top face, a riveted iron front face, a truss brace below and
    *  a cast shadow down-left; a brass post + lantern every other one. Light from the upper right. */
   function section(x: number, w: number, y: number, i: number, lit: boolean) {
     const half = (f: () => void) => { cx.save(); cx.globalAlpha = 0.5; f(); cx.restore(); };
     half(() => rect(x - 2, y + 11, w, 2, P.iron[0])); // cast shadow, down-left, 50%
-    // back rail: a round copper pipe (lit top, dark under), glint every other section
+    // back rail: a round dark-steel pipe (lit top, dark under), glint every other section
     rect(x, y - 5, w, 1, P.soot[0]);
-    rect(x, y - 4, w, 1, P.copper[3]); rect(x, y - 3, w, 1, P.copper[1]); rect(x, y - 2, w, 1, P.copper[0]);
-    if (i % 2 === 1) rect(x + 5, y - 4, 1, 1, P.copper[4]);
+    rect(x, y - 4, w, 1, P.steel[3]); rect(x, y - 3, w, 1, P.steel[2]); rect(x, y - 2, w, 1, P.steel[1]);
+    if (i % 2 === 1) rect(x + 5, y - 4, 1, 1, P.white[0]);
     rect(x, y - 1, w, 1, P.soot[0]);
     // plank top face: lit front lip, mid, darker toward the back, grime checker along the back edge
     rect(x, y, w, 1, P.plate[2]); rect(x, y + 1, w, 2, P.plate[3]); rect(x, y + 3, w, 1, P.plate[4]);
     for (let k = i & 1; k < w; k += 2) rect(x + k, y, 1, 1, P.plate[1]);
     for (let k = 0; k < w; k += 4) { rect(x + k, y, 1, 4, P.plate[1]); rect(x + k + 1, y, 1, 1, P.plate[4]); } // plank seams, bevel lit on the near side
-    // front face: soot edge, iron bevel (light top, dark bottom), rivets 1 light over 1 dark
+    // front face: cool steel girder, bevel (light top, dark bottom), brass rivets (1 light over 1 dark), rust under them
     rect(x, y + 4, w, 1, P.soot[0]);
-    rect(x, y + 5, w, 1, P.iron[4]); rect(x, y + 6, w, 2, P.iron[3]); rect(x, y + 8, w, 1, P.iron[2]); rect(x, y + 9, w, 1, P.iron[1]);
-    rect(x + 2, y + 6, 1, 1, P.brass[4]); rect(x + 2, y + 7, 1, 1, P.iron[0]);
-    rect(x + 6, y + 6, 1, 1, P.brass[4]); rect(x + 6, y + 7, 1, 1, P.iron[0]);
-    rect(x + w - 1, y + 5, 1, 5, P.iron[1]); // panel seam
+    rect(x, y + 5, w, 1, P.steel[3]); rect(x, y + 6, w, 2, P.steel[2]); rect(x, y + 8, w, 1, P.steel[1]); rect(x, y + 9, w, 1, P.steel[0]);
+    for (const rx of [2, 6]) { rect(x + rx, y + 6, 1, 1, P.brass[4]); rect(x + rx, y + 7, 1, 1, P.soot[0]); if ((i + rx) % 3 === 0) rect(x + rx, y + 8, 1, 2, P.copper[0]); }
+    rect(x + w - 1, y + 5, 1, 5, P.steel[0]); // panel seam
+    if (i % 3 === 1) { rect(x + 3, y + 9, 1, 1, P.iron[2]); rect(x + 4, y + 8, 1, 1, P.iron[2]); } // grime
     rect(x, y + 10, w, 1, P.soot[0]);
     // truss below: a diagonal brace per section, lit edge on top
-    for (let k = 0; k < 4; k++) { rect(x + 1 + k, y + 11 + k, 2, 1, P.iron[2]); rect(x + 1 + k, y + 12 + k, 1, 1, P.soot[0]); }
-    rect(x + 1, y + 11, 1, 1, P.iron[3]);
-    if (i % 2 === 0) { // brass post (banded: dark left, lit right, warm rim) + lantern
+    for (let k = 0; k < 4; k++) { rect(x + 1 + k, y + 11 + k, 2, 1, P.steel[1]); rect(x + 1 + k, y + 12 + k, 1, 1, P.soot[0]); }
+    rect(x + 1, y + 11, 1, 1, P.steel[2]);
+    if (i % 2 === 0) { // dark steel post (banded: dark left, lit right, warm rim) + lantern
       rect(x - 1, y - 8, 5, 8, P.soot[0]);
-      rect(x, y - 7, 1, 7, P.brass[1]); rect(x + 1, y - 7, 1, 7, P.brass[3]); rect(x + 2, y - 7, 1, 7, P.brass[4]);
-      rect(x + 2, y - 5, 1, 1, P.brass[5]); // glint
+      rect(x, y - 7, 1, 7, P.steel[0]); rect(x + 1, y - 7, 1, 7, P.steel[2]); rect(x + 2, y - 7, 1, 7, P.steel[3]);
+      rect(x + 2, y - 6, 1, 1, P.sun[5]); // warm rim glint
+      rect(x + 1, y - 2, 1, 1, P.brass[3]); // collar rivet
       if (lit) half(() => rect(x - 3, y - 14, 9, 8, P.sun[4])); // lamp halo on the light layer
       rect(x - 1, y - 12, 5, 4, P.soot[0]); // lantern cage
-      rect(x, y - 11, 3, 2, lit ? P.sun[5] : P.iron[2]); rect(x + 1, y - 11, 1, 1, lit ? P.sun[6] : P.iron[3]);
+      rect(x, y - 11, 3, 2, lit ? P.sun[5] : P.steel[1]); rect(x + 1, y - 11, 1, 1, lit ? P.sun[6] : P.steel[2]);
       rect(x, y - 13, 3, 1, P.soot[0]); rect(x + 1, y - 14, 1, 1, P.soot[0]);
     }
   }
