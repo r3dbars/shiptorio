@@ -260,7 +260,7 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
       onPointerDown={(e) => {
         if (!e.isPrimary || e.button !== 0) return;
         e.currentTarget.setPointerCapture?.(e.pointerId);
-        g.press(card);
+        if (!g.holding && renderHold.current?.pointerDown(e.pointerId)) g.press(card);
       }}
       onPointerUp={() => g.release()}
       onPointerCancel={() => g.cancel()}
@@ -269,7 +269,7 @@ export function HoldLaunch({ card, label, onLaunch, clock = realClock }: { card:
       onKeyDown={(e) => {
         if (!isKey(e)) return;
         e.preventDefault();
-        if (!e.repeat) g.press(card);
+        if (!e.repeat && !g.holding && renderHold.current?.keyDown(e.key)) g.press(card);
       }}
       onKeyUp={(e) => {
         if (!isKey(e)) return;
