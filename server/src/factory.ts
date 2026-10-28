@@ -1300,6 +1300,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // Keep audited publication identity for a NEW plan; this proof never completes the gauntlet.
         Object.assign(job, { status: "failed", error: error.message, headSha: receipt.sha, proof: receipt.proof, prUrl: `https://github.com/${job.repo}/pull/${job.reworkPr}` });
         await this.accountPut(`runnerJob:${job.id}`, job);
+        this.log("warn", "The base advanced during publication. Review a fresh update plan before verification can continue.", item.id);
         await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(receipt.sha), failure: error.message, updatedAt: Date.now() }] });
         return { status: "failed" };
       }
@@ -2424,7 +2425,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       if (jobs.some(j => j.refreshBase && j.headSha === headSha && j.status !== "completed") && !jobs.some(j => j.status === "completed" && j.headSha === headSha)) {
-        this.log("warn", "The base advanced during publication. Review a fresh update plan before verification can continue.", item.id);
         return;
       }
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";

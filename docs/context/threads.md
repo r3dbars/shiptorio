@@ -497,3 +497,20 @@ owns batching, merge and Deploy; this chat does not merge. Narrow `publication.t
 exception extends merged #351's trusted boundary, without changing workspace code.
 Root authorized one narrow deck reservation exception: explicit same-PR refresh proposals
 and approvals keep a runner slot in a full deck; merge-gate priority stays intact.
+
+## Root combined repair candidate — October 28
+
+Integrates #464 (GitHub merge-readiness guard), #465 (read-only browser observations),
+#466 (freshly approved same-PR base refresh), and #468 + #471 (runner re-install with
+verified Keychain protection). Conflict resolution retains both complete provider
+identity and current-head check metadata in the rework fixtures. A base-moved warning
+is emitted once at failed publication rather than on every waiting alarm.
+
+#468's exact-head browser/load run was dispatched once by the check-only helper:
+[40696934882](https://github.com/r3dbars/shiptorio/actions/runs/40696934882), head
+`c7ccd833c530ab9d394c64b3068469dfee4ae27f`; no skipped job is accepted as proof.
+The root candidate needs its own complete checks. No factory PR has been merged;
+#170 still requires fresh base-update approval and the player's final Launch.
+Logo #467 is separate visual work; landing workshop #469 belongs to Justin's other
+thread and is excluded from this batch. Production remains the password-gated rollback
+until a verified deployment. This entry incorporates the pending helper receipt #470.
