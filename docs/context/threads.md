@@ -59,6 +59,10 @@ The receipt does not certify current runner/process state or a completed rework 
 Launch. No factory PR was merged directly by this documentation run.
 [Evidence and remaining proof](testing-live-acceptance.md).
 
+## Codex isolated tester rebase onto dev — PR #354
+
+Retains production-disabled negative-ID identities and scoped fixture delegation while preserving current administrator controls and request redaction. The bot workflow now pins existing reviewed action SHAs and disables persisted checkout credentials. No fixture resources or configuration were changed. Local proof and exact-head dev CI are required before merge.
+
 ## Stranger E2E: latest status (2026-10-26)
 
 | PR | State | Result |

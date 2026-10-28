@@ -2,6 +2,14 @@ import { expect, test } from "bun:test";
 import { githubStub } from "./github-stub.mjs";
 import { sparkStub } from "./spark-stub.mjs";
 
+test("persona GitHub fixture keeps its configured identity through issues and permission checks", async () => {
+  const user = { id: -9001, login: "test-newbie", name: "Test newbie", avatar_url: null };
+  const stub = githubStub({ origin: "http://localhost:8809", webhookSecret: "fixture", worker: async () => new Response(), user, repo: "test-fixture/test-newbie", repoId: 999001 });
+  expect(await (await stub.outbound(new Request("https://api.github.com/user"))).json()).toEqual(user);
+  const issues = await (await stub.outbound(new Request("https://api.github.com/repos/test-fixture/test-newbie/issues"))).json();
+  expect(issues[0].html_url).toContain("test-fixture/test-newbie");
+});
+
 test("stranger Spark fixture distinguishes tool-based review from planning", async () => {
   const stub = sparkStub();
   const reply = await stub.outbound(new Request("https://fixture.meta/chat/completions", { method: "POST", body: JSON.stringify({ messages: [

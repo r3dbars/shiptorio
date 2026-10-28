@@ -5,11 +5,11 @@
 
 import { createHmac } from "node:crypto";
 
-export function githubStub({ origin, webhookSecret, worker }) {
+export function githubStub({ origin, webhookSecret, worker, user, repo, repoId, installationId = 99001 }) {
   const state = {
-    user: { id: 4242001, login: "fresh-stranger", name: "Fresh Stranger", avatar_url: null },
-    repo: "fresh-stranger/lemonade-stand",
-    repoId: 4242999, // stable numeric identity supplied by actual GitHub repository responses/webhooks
+    user: user ?? { id: 4242001, login: "fresh-stranger", name: "Fresh Stranger", avatar_url: null },
+    repo: repo ?? "fresh-stranger/lemonade-stand",
+    repoId: repoId ?? 4242999, // stable numeric identity supplied by actual GitHub repository responses/webhooks
     installation: null, // set when the stranger clicks Install on the fake GitHub page
     calls: [],
     unexpected: [],
@@ -146,7 +146,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
       });
     }
     if (url.pathname === "/apps/shiptorio-stub/installations/confirm") {
-      state.installation = 99001;
+      state.installation = installationId;
       await sendInstallWebhook();
       // With a Setup URL set on the App, GitHub sends the player back. Without one it leaves them on
       // the installation's settings page (what production does today, see new-user-path.md).
