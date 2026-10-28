@@ -123,7 +123,7 @@ export function strap(g: Px, x: number, y: number, w: number, h: number, ramp: R
     let v = 0.42 + 0.12 * u + (blotch(x + i, y + j, 3, 3) - 0.5) * 0.16;
     if (j === h - 1 && h > 1) v -= 0.3;
     if (i === w - 1 && w > 2 && h > 2) v -= 0.12;
-    if (!solid && j === 0) { tone(g, x + i, y + j, BRASS, 0.38 + 0.35 * u); continue; } // the brass trim line, brighter toward the sun
+    if (!solid && j === 0) { tone(g, x + i, y + j, BRASS, 0.38 + 0.35 * u + (w > 6 && i === w - 3 ? 0.4 : 0)); continue; } // the brass trim line, brighter toward the sun, one glint near its lit end
     if (!solid && i === w - 1 && h > 2 && w <= 3) { tone(g, x + i, y + j, BRASS, 0.55); continue; } // lit right edge of an upright
     if (j === 0) v += 0.2;
     tone(g, x + i, y + j, body, v);
@@ -145,7 +145,7 @@ export function drop(g: Px, x: number, y: number, w: number, h: number, c: Color
 
 /** A rivet: one light px over one dark px. */
 export function rivet(g: Px, x: number, y: number, light: Color = "brass-3", dark: Color = "brass-0") {
-  g.set(x, y, light); g.set(x, y + 1, dark);
+  g.set(x, y, light === "brass-3" && noise(Math.round(x), Math.round(y), 77) < 0.3 ? "brass-4" : light); g.set(x, y + 1, dark); // some heads catch the sun
 }
 
 /** Smoke: a few soft puffs drifting up and to the right from (x, y). p is the loop phase 0..1; heavy = jam smoke. */
