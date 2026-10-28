@@ -4,8 +4,7 @@
 //   1 Software is a factory: a small working line is already running, crates roll, rockets go up.
 //   2 There's always a bottleneck: crates pile at Review, waiting on your call ("REVIEW WAITING"). Never "the
 //     bottleneck is you".
-//   3 Swipe, and it moves: approving releases the pile and rockets launch. The reward: the deck grows and a Gate
-//     builds in.
+//   3 Swipe, and it moves: approving releases the pile and rockets launch. The reward: a Gate builds in.
 //   4 Approve twice more and it's automatic: Shippy unfolds, walks to Review, takes the lever. Then the next jam
 //     shows up somewhere else, and the last card asks to connect the real repo.
 // ONE thing moves at a time (Justin, 2026-10-28: "shit flashing and pinging all over the place"): build-outs are a
@@ -55,7 +54,8 @@ const FIXES = ["login typo", "broken docs link", "button label", "footer link", 
 const CALL_PILE = 3; // crates waiting at Review before the first card slides up
 const PILE_CAP = 9; // stop adding crates past this so the heap stays readable
 
-// The small working line the story opens on: everything but the Gate, on a medium deck, island up.
+// The small working line the story opens on: everything but the Gate, island up. Whenever the island is up the deck
+// must be large, or the bridge hangs over open sky past the deck's end.
 const START: StopId[] = ["repo", "planner", "builder", "checks", "review", "launch"];
 
 interface Live extends Item { t: number; approved: boolean }
@@ -95,7 +95,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       caption: null as string | null, captionAt: 0,
       timers: [] as { at: number; fn: () => void }[],
       script: [] as Step[], stepT: 0, // the running step is script[0]; stepT = seconds into it
-      size: "medium" as DeckSize, lastCallAt: -99,
+      size: "large" as DeckSize, lastCallAt: -99,
       island: "built" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
     };
   }
@@ -160,12 +160,11 @@ export function createStory(opts: StoryOptions = {}): Story {
     { run: () => { setPhase("bottleneck"); S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; } },
     { say: "Right now, it's waiting on your call." }, { rest: SAY_SEC },
   ];
-  // The first swipe's reward: the released crates ship, then the line goes still while the deck grows and a Gate
-  // builds in. Then crates roll again and pile for the next call.
+  // The first swipe's reward: the released crates ship, then the line goes still while a Gate builds in. Then crates
+  // roll again and pile for the next call.
   const reward = (): Step[] => [
     { until: () => !STOPS.slice(STOPS.indexOf("review") + 1).some((id) => S.st[id].q.length) && S.st.review.q.every((c) => !c.approved) },
     { run: () => { S.spawnEvery = 0; } }, { rest: REST_SEC },
-    { grow: "large" }, { rest: REST_SEC },
     { build: "gate" }, { rest: REST_SEC },
     { say: "The line grows as you go." }, { rest: SAY_SEC },
     { run: () => { S.spawnEvery = 1; S.spawnT = 0.9; } },

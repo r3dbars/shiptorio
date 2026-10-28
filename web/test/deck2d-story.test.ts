@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { STAGE_AT } from "../src/deck2d/build/build";
 import { STOPS } from "../src/deck2d/contract";
-import { GROW_SECONDS } from "../src/deck2d/grow/index";
 import { STORY_CARD, createStory, type Story } from "../src/deck2d/story";
 
 // Steps the story until cond() or the time limit (sim seconds). Returns the sim seconds it took.
@@ -19,7 +18,7 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(v0.stops.map((x) => x.id)).toEqual([...STOPS]);
   expect(v0.stops.filter((x) => x.built).map((x) => x.id)).toEqual(["repo", "planner", "builder", "checks", "review", "launch"]); // a small working line
   expect(v0.shippy).toEqual({ pose: "folded", at: "corner" });
-  expect(v0.deck).toEqual({ size: "medium", island: "built" });
+  expect(v0.deck).toEqual({ size: "large", island: "built" }); // island up means the large deck, never a gap
 
   // 1 software is a factory: rockets go up right away. 2 then it jams at Review and the card lands fast (north star)
   let t = run(s, () => s.view().shipped >= 1);
@@ -47,11 +46,8 @@ test("the story plays all four beats and ends on the connect card", () => {
   s.approve(s.view().card!.id);
   t += run(s, () => s.view().shipped > shippedBefore, 15);
 
-  // the reward, one thing at a time: new crates stop, the deck grows, then the Gate builds; no caption over either
-  t += run(s, () => s.view().deck!.size === "large", 20);
-  const g0 = t;
+  // the reward, one thing at a time: new crates stop, then the Gate builds; no caption or card over it
   t += run(s, () => s.view().stops.find((x) => x.id === "gate")!.built, 20);
-  expect(t - g0).toBeGreaterThanOrEqual(GROW_SECONDS - 0.2);
   for (let k = 0; k < (STAGE_AT.gone - 2.3) * 10; k++) {
     s.step!(0.1); t += 0.1;
     if (k > 22) expect(s.view().caption).toBeNull();
@@ -96,6 +92,7 @@ test("item ids stay stable as crates move stop to stop", () => {
     const v = s.view();
     const ids = v.stops.flatMap((x) => x.items.map((i) => i.id));
     expect(new Set(ids).size).toBe(ids.length); // never in two places
+    if (v.deck?.island !== "none") expect(v.deck?.size).toBe("large"); // the bridge never hangs past the deck's end
     v.stops.forEach((x, k) => x.items.forEach((it) => {
       const prev = seen.get(it.id);
       if (prev != null) expect(k).toBeGreaterThanOrEqual(prev); // only moves forward
