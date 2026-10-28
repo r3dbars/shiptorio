@@ -1,4 +1,4 @@
-import { ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "./runner-refresh";
+import { assertRefreshItem, ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "./runner-refresh";
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
 import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
@@ -849,7 +849,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         }
         if (optionId === "approve") {
           if (stored.refreshBase) {
-            try { await refreshTarget(await installationToken(this.env, this.meta!.installationId), stored.repo, stored.reworkPr!, stored.branch, stored.baseBranch!, { headSha: stored.refreshBase.expectedHeadSha, baseSha: stored.baseSha!, baseBranch: stored.baseBranch! }); }
+            try { assertRefreshItem(stored, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), stored.repo, stored.reworkPr!, stored.branch, stored.baseBranch!, { headSha: stored.refreshBase.expectedHeadSha, baseSha: stored.baseSha!, baseBranch: stored.baseBranch! }); }
             catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return; }
           }
           stored.status = "ready"; stored.approvedAt = Date.now();
@@ -1223,7 +1223,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return null;
       }
       if (job.refreshBase) {
-        try { await refreshTarget(await installationToken(this.env, this.meta!.installationId), job.repo, job.reworkPr!, job.branch, job.baseBranch!, { headSha: job.refreshBase.expectedHeadSha, baseSha: job.baseSha!, baseBranch: job.baseBranch! }); }
+        try { assertRefreshItem(job, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), job.repo, job.reworkPr!, job.branch, job.baseBranch!, { headSha: job.refreshBase.expectedHeadSha, baseSha: job.baseSha!, baseBranch: job.baseBranch! }); }
         catch { job.status = "failed"; job.error = "Factory head or base changed before dispatch; review a fresh plan."; await this.accountPut(`runnerJob:${job.id}`, job); return null; }
       }
       // Charge only a validated plan actually dispatched to the runner. Lost-claim recovery above never charges twice.
@@ -1273,6 +1273,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (job.status === "failed" && (!receipt.ok || job.refreshBase && job.headSha === receipt.sha && job.proof?.headSha === receipt.sha) && job.pairId === pairId && job.lease === receipt.lease) return { status: "failed" };
     if (!validLease(job, pairId, receipt.lease)) throw new Error("Invalid or expired lease");
     const item = this.state.items.find(i => i.id === job.itemId)!;
+    if (job.refreshBase) assertRefreshItem(job, item);
     if (!receipt.ok) {
       job.status = "failed"; job.error = "Local build failed; player must approve another attempt.";
       await this.accountPut(`runnerJob:${job.id}`, job);

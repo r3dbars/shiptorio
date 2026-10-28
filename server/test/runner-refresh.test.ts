@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "../src/runner-refresh";
+import { assertRefreshItem, ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "../src/runner-refresh";
 import type { RunnerJob } from "../src/runner-job";
 const repo = "r3dbars/demo", branch = "shiptorio/runner-00000000-0000-4000-8000-000000000001";
 const headSha = "a".repeat(40), baseSha = "b".repeat(40);
@@ -30,4 +30,11 @@ test("only a previously approved same-item runner publication grants refresh pro
   const job: RunnerJob = { id: "old", itemId: item.id, repo, harness: "codex", branch, status: "completed", allowedPaths: ["src/fix.ts"], approvedAt: 1, headSha, prUrl: `https://github.com/${repo}/pull/1` };
   expect(ownsRefreshPr([job], item, repo, headSha)).toBe(true);
   for (const change of [{ status: "running" }, { approvedAt: undefined }, { itemId: "gh-2" }, { repo: "attacker/fork" }, { branch: "human" }, { headSha: baseSha }, { prUrl: `https://github.com/${repo}/pull/2` }]) expect(ownsRefreshPr([{ ...job, ...change } as RunnerJob], item, repo, headSha)).toBe(false);
+});
+
+test("a refresh assignment cannot move to another factory item's PR or branch", () => {
+  const job = { branch, reworkPr: 1, refreshBase: { expectedHeadSha: headSha } } as RunnerJob;
+  expect(() => assertRefreshItem(job, { branch, prNumber: 1 })).not.toThrow();
+  expect(() => assertRefreshItem(job, { branch, prNumber: 2 })).toThrow("changed PR or branch");
+  expect(() => assertRefreshItem(job, { branch: "human", prNumber: 1 })).toThrow("changed PR or branch");
 });

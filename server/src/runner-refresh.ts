@@ -24,3 +24,7 @@ export async function refreshTarget(token: string, repo: string, pr: number, bra
 export function ownsRefreshPr(jobs: RunnerJob[], item: { id: string; branch?: string; prNumber?: number }, repo: string, headSha: string): boolean {
   return !!item.prNumber && jobs.some(job => (job.status === "completed" || job.status === "failed" && !!job.refreshBase && !!job.proof?.failsOnBase && !!job.proof?.passesOnHead) && job.repo === repo && job.itemId === item.id && job.branch === item.branch && job.headSha === headSha && job.prUrl === `https://github.com/${repo}/pull/${item.prNumber}` && !!job.approvedAt);
 }
+
+export function assertRefreshItem(job: RunnerJob, item: { prNumber?: number; branch?: string }): void {
+  if (job.refreshBase && (item.prNumber !== job.reworkPr || item.branch !== job.branch)) throw new Error("Factory item changed PR or branch; request a fresh plan");
+}
