@@ -564,7 +564,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             repo={state?.repo}
             showKey={false}
             compact={simple}
-            extra={simple ? undefined : (progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
+            extra={simple ? (cfg.kind === "live" ? <MachineLight repo={cfg.repo} onOpen={() => toggleSheet("power")} bare /> : undefined) : (progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
               {sandbox && (
                 <a className="chip play-chip" href={signInUrl()} aria-label={PLAY.chipLabel} title={PLAY.chipLabel}>
                   <span>{PLAY.chip}<small>{PLAY.chipCta}</small></span>
