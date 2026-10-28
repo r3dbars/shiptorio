@@ -49,7 +49,8 @@ const SAY_SEC = 2;
 const REST_SEC = 0.5;
 const BUILD_SEC = STAGE_AT.gone; // until the check and its afterglow are gone
 const GROW_SEC = GROW_SECONDS;
-const ISLAND_SEC = LAUNCH_BUILD_SECONDS;
+// launch/ maps islandProgress to its picture, so the story can run it faster than its own preview clock.
+const ISLAND_SEC = Math.min(LAUNCH_BUILD_SECONDS, 8);
 const built = (id: StopId, line: string): Step[] => [{ build: id }, { rest: REST_SEC }, { say: line }];
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
 const CALL_PILE = 4; // crates waiting at Review before the first card slides up
@@ -79,7 +80,7 @@ export function createStory(opts: StoryOptions = {}): Story {
   function fresh() {
     const rand = rng(opts.seed ?? 1);
     const fixes = [...FIXES].sort(() => rand() - 0.5);
-    const st = Object.fromEntries(STOPS.map((id) => [id, { built: false, q: [] } as StopSim])) as Record<StopId, StopSim>;
+    const st = Object.fromEntries(STOPS.map((id) => [id, { built: id === "repo", q: [] } as StopSim])) as Record<StopId, StopSim>;
     return {
       rand, fixes, st,
       t: 0, phase: "build" as StoryPhase, phaseT: 0,
@@ -153,8 +154,9 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   // Beat 1: the line builds itself, piece by piece, then the first crates roll.
   const beat1 = (): Step[] => [
-    { rest: 0.6 }, { say: "Software is a factory." },
-    ...built("repo", "Ideas land in your repo."),
+    // The repo is already on the deck: it's yours, the factory gets built around it.
+    { rest: 0.6 }, { say: "Software is a factory." }, { rest: SAY_SEC },
+    { say: "Ideas land in your repo." },
     ...built("planner", "A planner picks the next one."),
     ...built("builder", "A builder writes the code."),
     { grow: "medium" }, { rest: REST_SEC },
