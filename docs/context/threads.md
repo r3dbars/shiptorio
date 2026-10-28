@@ -528,3 +528,18 @@ manual run was cancelled rather than claiming acceptance. Root updates only the
 provider fixtures to model real metadata; safety checks and browser assertions stay
 unchanged. The fixture PR identity now follows the repo/branch actually submitted.
 Local real journey and Stranger reruns precede the next frozen full manual dispatch.
+
+## Nonblocking GPU submission candidate (Codex, 2026-10-28)
+
+[#478](https://github.com/r3dbars/shiptorio/pull/478) starts from diagnostic #475.
+Hosted desktop samples already showed tier 2 with low JS submission work, so no
+quality/governor change is proposed. A zero-timeout WebGL2 fence poll keeps at most
+one normal RAF submission pending; simulation, camera, builds and consent clocks
+continue, and HUD work stays outside GPU admission. Ordinary shadow cadence counts
+actual submissions; urgent build invalidations stay latched. Unsupported/failed
+fences or a five-second unsignaled fence fall back to the previous rendering path;
+context loss/restoration and disposal release sync references. Existing perf frame
+metrics retain their logical-frame meaning, with separate passive submission/skip/
+failure counters. Fake-GL, hold and governor tests pass; local original desktop
+journey and comparative evidence are pending. This is an unproven performance
+candidate, not a released fix. Root owns hosted verification, merging and deployment.
