@@ -49,10 +49,16 @@ export class Redactor {
   private secrets = new Set<string>();
   private orderedSecrets?: string[];
   private variants = new Map<string, string[]>();
+  // Repeated object keys and short values dominate browser/diagnostic scrubbing.
+  // Instance-local FIFO: <=128 pairs of <=256 UTF-16 units each, so <=128 KiB
+  // of string payload plus Map overhead. Long/unbounded input is never retained.
+  private shortText = new Map<string, string>();
   private addSecret(value: string): void {
     if (this.secrets.has(value)) return;
     this.secrets.add(value);
     this.orderedSecrets = undefined;
+    // Previously ordinary text may now contain a raw, URI or JSON secret variant.
+    this.shortText.clear();
   }
   constructor(values: unknown = {}) { this.register(values); }
   register(values: unknown): void {
@@ -67,6 +73,8 @@ export class Redactor {
     }
   }
   text(value: string): string {
+    const memoized = value.length <= 256 ? this.shortText.get(value) : undefined;
+    if (memoized !== undefined) return memoized;
     let result = value;
     // Preserve raw-secret length ordering and each secret's raw/URI/JSON Set order.
     const ordered = this.orderedSecrets ??= [...this.secrets].sort((a, b) => b.length - a.length);
@@ -78,8 +86,13 @@ export class Redactor {
       }
       for (const variant of variants) result = result.split(variant).join("[REDACTED]");
     }
-    return redactText(result).replace(/\b(?:ph[a-z]_|gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED]")
+    result = redactText(result).replace(/\b(?:ph[a-z]_|gh[opsu]_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED]")
       .replace(/\bBearer\s+[^\s"',}]+/gi, "Bearer [REDACTED]");
+    if (value.length <= 256 && result.length <= 256) {
+      if (this.shortText.size >= 128) this.shortText.delete(this.shortText.keys().next().value!);
+      this.shortText.set(value, result);
+    }
+    return result;
   }
   value<T>(value: T): T { return sanitize(value, text => this.text(text), false); }
   /** Bounded diagnostic output; secrets are removed before truncation. */
