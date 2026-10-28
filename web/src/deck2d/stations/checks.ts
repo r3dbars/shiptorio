@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift } from "./px";
-import { BRASS, COPPER, IRON, STEEL, ball, bezel, blotch, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
+import { BRASS, COPPER, IRON, STEEL, ball, bezel, blotch, box3q, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Checks: a domed iron cabinet with one big glass porthole in a riveted brass bezel, a dark tank with brass bands
@@ -38,7 +38,7 @@ export const checks: StationDef = {
     cylH(g, 7, 8, 6, 3, COPPER, { amb: 0.1, gloss: 0.9 }); // a copper pipe from the valve into the dome
 
     // --- right side face and the indicator panel
-    for (let y = 17; y < 46; y++) for (let x = 38; x < 41; x++) tone(g, x, y, IRON, 0.5 + (x - 38) * 0.07 + (noise(x, y, 6) - 0.5) * 0.08);
+    box3q(g, 11, 17, 26, 29, 5, 0.34, { rust: 0.05, grime: 4, seed: 41 }); // the body in 3/4, side face receding right
     cylH(g, 38, 21, 7, 3, COPPER, { amb: 0.1, gloss: 0.9 }); cylV(g, 43, 21, 3, 10, COPPER, { amb: 0.1, gloss: 1 }); // pipe down into the panel
     cylV(g, 42, 26, 5, 1, BRASS, { amb: 0.3 }); g.set(46, 26, "brass-5");
     drop(g, 40, 31, 7, 11);
@@ -47,12 +47,10 @@ export const checks: StationDef = {
     for (const y of [34, 36, 38]) for (const x of [41, 43]) { tone(g, x, y, lit, s === "idle" ? 0.4 : 0.7); tone(g, x + 1, y, lit, s === "idle" ? 0.55 : 0.9); }
 
     // --- the body
-    face(g, 11, 17, 27, 29, IRON, 0.34, { rust: 0.05, grime: 4, seed: 41 });
-    strap(g, 11, 17, 27, 2, BRASS, 4);
     strap(g, 11, 19, 2, 26, BRASS, 5);
-    strap(g, 36, 19, 2, 26, BRASS, 5);
-    bracket(g, 11, 44, 0, 1); bracket(g, 37, 44, 1, 1);
-    for (const [x, y, n] of [[12, 21, 4], [37, 30, 5], [15, 19, 3], [33, 19, 4]] as const) streak(g, x, y, n);
+    strap(g, 34, 19, 2, 26, BRASS, 5);
+    bracket(g, 11, 44, 0, 1); bracket(g, 36, 44, 1, 1);
+    for (const [x, y, n] of [[12, 21, 4], [38, 24, 5], [15, 19, 3], [33, 19, 4]] as const) streak(g, x, y, n);
 
     // dome cap over the top, brass rim, iron crown, sitting on the body
     for (let y = 7; y < 18; y++) for (let x = 12; x < 40; x++) {

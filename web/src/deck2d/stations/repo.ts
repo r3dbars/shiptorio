@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift, type Px } from "./px";
-import { BRASS, COPPER, IRON, blotch, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone } from "./shade";
+import { BRASS, COPPER, IRON, blotch, box3q, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone } from "./shade";
 import type { StationDef } from "./types";
 
 // Repo: a tall riveted iron safe. A dark chimney with a brass seam, copper pipes looping over both shoulders (the
@@ -58,15 +58,11 @@ export const repo: StationDef = {
     for (let y = 22; y < 35; y++) for (let x = 1; x < 3; x++) tone(g, x, y, IRON, 0.25 + (x - 1) * 0.08); // dark seam where it turns away
     for (const y of [20, 28, 35]) { cylV(g, 0, y, 10, 2, BRASS, { amb: 0.22, gloss: 0.9 }); g.set(8, y, "brass-5"); }
     // --- body: top face, right side, front
-    for (let k = 0; k < 3; k++) for (let x = 12 + (3 - k); x <= 40; x++) tone(g, x, 13 + k, IRON, 0.55 + 0.15 * ((x - 12) / 28) + (blotch(x, 13 + k, 3, 2) - 0.5) * 0.2);
-    for (let y = 15; y < 50; y++) for (let x = 39; x < 41; x++) tone(g, x, y, IRON, 0.5 + (x - 39) * 0.08 + (noise(x, y, 6) - 0.5) * 0.08);
-    face(g, 11, 16, 28, 34, IRON, 0.34, { rust: 0.05, grime: 4, seed: 21 });
-    strap(g, 11, 16, 28, 2, BRASS, 4);
-    strap(g, 11, 18, 2, 31, BRASS, 5);
-    strap(g, 37, 18, 2, 31, BRASS, 5);
-    tone(g, 38, 16, BRASS, 1); tone(g, 38, 17, BRASS, 0.85); // corner catching the sun
-    bracket(g, 11, 49, 0, 1); bracket(g, 38, 49, 1, 1);
-    for (const [x, y, n] of [[13, 18, 3], [36, 22, 4], [14, 27, 5], [37, 40, 4]] as const) streak(g, x, y, n); // rust run off the bands
+    box3q(g, 11, 16, 26, 34, 5, 0.34, { rust: 0.05, grime: 4, seed: 21 });
+    strap(g, 11, 17, 2, 32, BRASS, 5);
+    strap(g, 35, 17, 2, 32, BRASS, 5);
+    bracket(g, 11, 16, 0, 0); bracket(g, 36, 16, 1, 0); bracket(g, 11, 49, 0, 1); bracket(g, 36, 49, 1, 1);
+    for (const [x, y, n] of [[13, 18, 3], [34, 22, 4], [14, 27, 5], [38, 30, 4]] as const) streak(g, x, y, n); // rust run off the bands
 
     // readout: three bars + a lamp in a dark slot
     drop(g, 15, 20, 21, 7);
@@ -115,9 +111,9 @@ export const repo: StationDef = {
     }
 
     // --- chimney: dark iron stack with a brass seam, brass collar and lip
-    drop(g, 20, 11, 13, 3, "soot");
-    cylH(g, 20, 11, 13, 3, BRASS, { amb: 0.16, gloss: 0.7 });
-    for (let x = 21; x < 32; x += 3) rivet(g, x, 12);
+    drop(g, 20, 12, 13, 3, "soot");
+    cylH(g, 20, 12, 13, 3, BRASS, { amb: 0.16, gloss: 0.7 });
+    for (let x = 21; x < 32; x += 3) rivet(g, x, 13);
     cylV(g, 22, 2, 9, 9, IRON, { amb: 0.1, gloss: 0.7 });
     g.vline(28, 2, 9, "brass-2"); g.vline(29, 2, 9, "brass-3");
     cylV(g, 21, 0, 11, 2, BRASS, { amb: 0.3, gloss: 0.9 });
