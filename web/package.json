@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build -c vite.deck.config.ts && bun ../scripts/bundle-budget.ts",
+    "build": "vite build && vite build -c vite.deck.config.ts && vite build -c vite.arttest.config.ts && bun ../scripts/bundle-budget.ts",
     "typecheck": "tsc --noEmit",
     "a11y": "node test/a11y/audit.mjs && node test/a11y/keyboard.mjs",
     "test:chunks": "bun ../scripts/bundle-budget.ts --test"
@@ -13,6 +13,7 @@
   "dependencies": {
     "@sentry/react": "^11.9.0",
     "@shiptorio/shared": "workspace:*",
+    "pixi.js": "8.6.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "three": "^0.180.0"
