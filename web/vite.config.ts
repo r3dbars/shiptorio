@@ -30,6 +30,12 @@ function artPages(): Plugin {
         res.end(read(path));
       });
     },
+    configurePreviewServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (/^\/story\/?(?:\?|$)/.test(req.url ?? "")) req.url = req.url!.replace(/^\/story\/?/, "/story/index.html");
+        next();
+      });
+    },
     generateBundle() {
       for (const fileName of Object.keys(ART)) this.emitFile({ type: "asset", fileName, source: read(fileName) });
     },
