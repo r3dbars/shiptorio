@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift, type Px } from "./px";
-import { BAND, BRASS, IRON, blotch, cylH, drop, face, noise, rivet, smoke, strap, tone, type Ramp } from "./shade";
+import { BAND, BRASS, IRON, blotch, bracket, cylH, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Review: a low riveted inspection bench with a crate on hazard stripes, two jointed brass arms holding lamps over
@@ -24,15 +24,15 @@ function rod(g: Px, x0: number, y0: number, x1: number, y1: number) {
   for (let y = Math.floor(Math.min(y0, y1) - 2); y <= Math.max(y0, y1) + 2; y++) for (let x = Math.floor(Math.min(x0, x1) - 2); x <= Math.max(x0, x1) + 2; x++) {
     const px = x + 0.5 - x0, py = y + 0.5 - y0, along = px * ux + py * uy, across = (px * nx + py * ny) * litSide;
     if (along < 0 || along > len || Math.abs(across) > 1.6) continue;
-    tone(g, x, y, BRASS, 0.42 + 0.3 * (across / 1.6) + (across > 0.3 && across < 1 ? 0.15 : 0));
+    tone(g, x, y, BRASS, 0.34 + 0.3 * (across / 1.6) + (across > 0.3 && across < 1 ? 0.15 : 0));
   }
 }
 function joint(g: Px, x: number, y: number) {
-  for (let yy = y - 3; yy <= y + 3; yy++) for (let xx = x - 3; xx <= x + 3; xx++) {
+  for (let yy = y - 4; yy <= y + 4; yy++) for (let xx = x - 4; xx <= x + 4; xx++) {
     const d = Math.hypot(xx - x, yy - y);
-    if (d <= 2.6) tone(g, xx, yy, BRASS, d > 1.9 ? 0.25 + 0.3 * ((xx - x) - (yy - y)) / 2.6 : 0.5 + 0.3 * ((xx - x) - (yy - y)) / 2.6);
+    if (d <= 3.2) { if (d > 1.6) tone(g, xx, yy, BRASS, 0.4 + 0.35 * ((xx - x) - (yy - y)) / 3.2); else g.set(xx, yy, "iron-0"); } // brass ring, dark hub
   }
-  g.set(x, y, "soot"); g.set(x + 1, y - 1, "brass-4");
+  g.set(x, y, "brass-3"); g.set(x + 1, y - 2, "brass-5"); // the pin, and a glint on the ring
 }
 
 export const review: StationDef = {
@@ -58,6 +58,8 @@ export const review: StationDef = {
       rivet(g, px + 2, 25); rivet(g, px + 2, 32);
     }
     for (const fx of [3, 36]) cylH(g, fx, 37, 6, 2, BRASS, { amb: 0.15 });
+    bracket(g, 2, 26, 0, 0, 3); bracket(g, 41, 26, 1, 0, 3); bracket(g, 2, 36, 0, 1, 3); bracket(g, 41, 36, 1, 1, 3);
+    for (const [x, y, n] of [[6, 28, 4], [20, 28, 3], [27, 28, 5], [39, 28, 4]] as const) streak(g, x, y, n);
 
     // hazard stripes under the crate
     for (let x = 14; x < 30; x++) for (let y = 23; y < 25; y++) g.set(x, y, ((x + y) >> 1) % 2 ? "soot" : "brass-3");
@@ -72,6 +74,7 @@ export const review: StationDef = {
       const a = cx + 1 + Math.round((i * (cw - 3)) / (ch - 3)), b = cx + cw - 2 - Math.round((i * (cw - 3)) / (ch - 3));
       tone(g, a, cy + 1 + i, WOOD, 0.75); tone(g, b, cy + 1 + i, WOOD, 0.3);
     }
+    for (const [x, y] of [[cx, cy], [cx + cw - 1, cy], [cx, cy + ch - 1], [cx + cw - 1, cy + ch - 1]]) g.set(x, y, x > cx ? "brass-3" : "brass-1"); // brass corner caps
     if (s === "jammed") for (const y of [cy + 2, cy + ch - 3]) for (let x = cx; x < cx + cw; x++) tone(g, x, y, LIT.jammed, x < cx + 3 ? 0.4 : 0.6);
     if (s === "working") for (let x = cx + 1; x < cx + cw - 1; x++) tone(g, x, cy + 1 + f * 2, lit, 0.9);
     if (glow) g.glow(cx, cy - 2, cw + 1, 6, glow, 0.25); // the lamps' light on the crate top
