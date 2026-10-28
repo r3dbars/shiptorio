@@ -22,7 +22,7 @@ O letters, brushed brass and a small rocket inside the final O. The selected pla
 petrol-background version is `web/public/brand/wordmark-polished.webp` (2172 × 724,
 3:1). This is a quality-95 WebP encoding of the approved generated image, not the
 busy factory-background exploration. It is used by the password gate, shared app
-wordmark and server-rendered connection pages. The gate now uses a quiet solid
+wordmark, public welcome page and server-rendered connection pages. The gate now uses a quiet solid
 background instead of loading the factory film. Password, CSRF and session behavior
 are unchanged. The compact vector seal and favicons remain the existing artwork.
 

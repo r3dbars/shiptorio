@@ -607,4 +607,4 @@ Justin requested the approved GPT Images brass wordmark in the product, using it
 plain dark background. Focused visual PR updates the shared Wordmark, gate and
 server-page brand image; the gate drops its decorative film. Password/session/CSRF
 code is untouched. This explicitly authorized branding task extends the usual
-backend lane. Phone/desktop preview and local checks pending; root releases batches.
+backend lane. Local full check: 1,307 passed, two existing skips, zero failures; lint/types/build green. Miniflare browser previews at 390×844 and 1440×900 loaded the correct image, showed the entire form without overflow, and displayed wrong-password feedback without script errors. Root releases batches; not deployed.
