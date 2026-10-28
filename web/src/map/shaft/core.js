@@ -10,6 +10,7 @@
 // See CONTRACT.md for the full contract and layout.js for where everything stands.
 // =====================================================================
 import * as THREE from 'three';
+import { compactPointLightLoop } from './pointLightLoop';
 import { C45, PORTS, toRootAt, TUNNEL_DEPTH, MINES as MINE_DEFS } from './layout.js';
 
 const V3 = THREE.Vector3;
@@ -29,6 +30,7 @@ export function patchLegacyLights() {
     console.warn('[SHAFT] three changed its light chunks; lights will look x PI off');
     return false;
   }
+  SC.lights_fragment_begin = compactPointLightLoop(SC.lights_fragment_begin);
   SC.lights_pars_begin = SC.lights_pars_begin.replace(head, head +
     '#ifdef IRON_LEGACY\n\tif ( cutoffDistance > 0.0 && decayExponent > 0.0 ) return pow( saturate( - lightDistance / cutoffDistance + 1.0 ), decayExponent );\n\treturn 1.0;\n#endif\n');
   SC.lights_phong_pars_fragment = SC.lights_phong_pars_fragment
