@@ -546,6 +546,10 @@ Further retained evidence: [CI 40613954864](https://github.com/r3dbars/shiptorio
 
 #462 (`ecc09a38`) retains an actual visible shipped-card observation starting immediately before manual Launch, with the original 30-second bound. The captured Pixel trace shows the visible green SHIPPED card after manual input, before the old late poll; early/missing celebrations still fail. #461 (`7ce2ce73`) carries elapsed time through construction phases instead of dropping overshoot, stops before spending it on another queued build, and lets natural particle tails finish during payoff. Real-controller regressions cover slow frames, actual holders, cleanup, hurry and queue boundaries. The combined `097ecb02` full local check passed (1,362 passed, two existing skips, zero failures; lint/types/build green). The standalone runner bundle remains unchanged. A controlled three-build software-renderer comparison found no meaningful benefit from disabling trace screenshots, so full tracing is retained. Remote combined acceptance and deployment remain pending; production is still the verified rollback with the password gate enabled.
 
+### Codex Later intent receipts (2026-10-28)
+
+Draft prerequisite for #524: optional defer_move intent UUID is correlation only. The same atomic deckBook write stores the parked choice and a bounded player/move/scope receipt; replay across reconnect reparks without another defer count or teaching reset. Focused restart/ack-loss/storage-interruption regressions pass. No web UI/art changes; hosted CI still required.
+
 ## GitHub merge readiness guard (Codex, 2026-10-28)
 
 [#464](https://github.com/r3dbars/shiptorio/pull/464) reuses the permission-free first

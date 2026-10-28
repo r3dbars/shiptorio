@@ -109,7 +109,7 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_priority"), itemId: z.string().max(80), priority: z.enum(["rush", "park", "none"]) }),
   z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
   // Check-in swipes (docs/PRODUCT.md "Check-in"). Right is choose_move with the recommended option.
-  z.object({ type: z.literal("defer_move"), moveId: z.string() }), // left: later, back next check-in
+  z.object({ type: z.literal("defer_move"), moveId: z.string(), intentId: z.string().uuid().optional() }), // left: later, back next check-in
   // down: never. why: once = just this one, kind = stop this kind (a rule), spark = Spark decides these, wrong = Spark misread it (a scar)
   z.object({ type: z.literal("dismiss_move"), moveId: z.string(), why: z.enum(["once", "kind", "spark", "wrong"]) }),
   z.object({ type: z.literal("undo"), actionId: z.string() }),
