@@ -547,3 +547,17 @@ failures. That low local skip rate does not establish a hosted speedup. Full loc
 check passes: 1,406 tests, two existing skips, zero failures; lint/types/build green.
 Hosted comparative evidence remains pending. This is an unproven performance
 candidate, not a released fix. Root owns hosted verification, merging and deployment.
+
+## Physical hold rendering lease (Codex, 2026-10-28)
+
+[#479](https://github.com/r3dbars/shiptorio/pull/479) extends #478 after the hosted
+Pixel trace showed consent/tunnel-start arriving before native touchEnd while
+synchronous shader warm-up blocked the observer. Real BuildHold/HoldLaunch DOM
+regressions fail before and pass after: consent still submits at the original
+threshold, but its render pause follows the matching physical press through card
+unmount. Up/cancel, blur, hidden state or a fresh matching down after a missed up
+releases detached ownership. Early abandonment releases immediately; assistive
+activation and controller timing are unchanged. Cleanup/setup replay remains safe.
+Focused tests pass (28 tests, 101 assertions); full check and original Pixel journeys
+are pending. This fixes input ordering, not the residual shader stall after release.
+Root owns hosted validation, release integration and deployment.
