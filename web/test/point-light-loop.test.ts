@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { ShaderChunk } from "three";
+import upstreamLights from "three/src/renderers/shaders/ShaderChunk/lights_fragment_begin.glsl.js";
 import { compactPointLightLoop } from "../src/map/shaft/pointLightLoop";
 
 const point = /\t#pragma unroll_loop_start\n\tfor \( int i = 0; i < NUM_POINT_LIGHTS; i \+\+ \) \{[\s\S]*?\t#pragma unroll_loop_end/;
 test("only legacy point lights without shadow samplers use the compact lighting loop", () => {
-  const source = ShaderChunk.lights_fragment_begin;
+  const source = upstreamLights; // Immutable upstream fixture: other scene tests may already patch ShaderChunk.
   const original = source.match(point)?.[0];
   expect(original).toBeDefined(); // An upstream chunk change needs review, not a silent ineffective patch.
   const result = compactPointLightLoop(source);
