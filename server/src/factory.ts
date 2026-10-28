@@ -819,6 +819,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!presence || Date.now() - presence.seenAt > 20000) return;
     // One plan card at a time: the next issue is dealt once this one is planned, built or set aside.
     if (s.deck?.some(proposesPlan)) return;
+    await this.decisionData();
+    const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     // A base update is a separate explicit plan, never an automatic rework or a Launch shortcut.
     const refreshChecked = await this.ctx.storage.get<number>("runnerRefreshCheckedAt") ?? 0;
     const refreshCandidates = s.items.filter(i => runnerIssue(i) && i.prNumber && i.branch?.startsWith("shiptorio/runner-") && ["on_pad", "passed", "inspecting"].includes(i.state) && canRework(i) && jobs.some(j => j.itemId === i.id && j.branch === i.branch && !!j.approvedAt && !!j.headSha));
@@ -837,8 +839,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         return;
       }
     }
-    await this.decisionData();
-    const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     for (const item of lineOrder(s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber))) {
       if (parked.has(item.id)) continue;
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
