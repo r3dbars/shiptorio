@@ -25,6 +25,9 @@ Cancellation and job timeout cannot guarantee recovery; do not cancel an active 
 
 ## Rollback drill
 
+Production fault drills are currently prohibited by root. Validate locally or on
+staging; a future production drill needs a new explicit, serialized approval window.
+
 Manual Deploy runs can deploy a selected branch to **production shiptorio** and share
 main's non-cancelling deployment concurrency group. Use only for an authorized drill:
 
@@ -40,3 +43,46 @@ Verified on production in [Deploy 40428959075](https://github.com/r3dbars/shipto
 a real branch returned 503 on GET /access, automatic rollback restored the saved
 version, every restored smoke passed, and the job stayed red. Full receipt:
 [docs/context/threads.md](../../docs/context/threads.md#deploy-smoke--automatic-rollback-codex-2026-10-26).
+
+## Chromium render gate
+
+```sh
+bun x playwright install --with-deps --no-shell chromium
+node scripts/smoke/browser.mjs https://shiptorio.com /tmp/browser-smoke
+# Read-only staging verification:
+node scripts/smoke/browser.mjs https://shiptorio.dev /tmp/staging-browser-smoke
+bun scripts/smoke/validate-browser.mjs # healthy, black, console error, thrown exception fixtures
+bun run build && bun scripts/smoke/drill-local.mjs /tmp/local-browser-drill
+```
+
+The same probe runs after Live smoke and after automatic/production manual rollback.
+Two fresh contexts open `/judge`, start the replay, and inspect the actual shaft
+canvas drawing buffer at 390×844 and 1440×900. Sampling happens immediately after
+an animation callback, before WebGL discards its non-preserved buffer; it requires
+at least 12 quantized colors and 1% lit pixels. HTML/CSS overlays cannot satisfy it.
+Console errors and uncaught page exceptions fail the run without an allowlist.
+Pixel readback is requested on demand so the observer does not stall every render
+frame. A canvas gets up to 30 seconds for software-WebGL startup within the
+unchanged 45-second total CLI deadline. Both viewports run in parallel. The probe writes
+screenshots plus `results.json` under the given output directory. CI uploads both
+rejected and restored evidence as `deploy-browser-smoke-<run id>` even on failure.
+Chromium installs before any deployment mutation, so setup failure cannot strand
+an unchecked deployment. Manual staging rollback retains its existing health probe.
+
+The local drill serves the real built judge assets, substitutes a deliberate throw
+for the built JavaScript entry in memory, verifies both viewports reject that exact
+exception, then restores the original assets and repeats the same smoke. It writes
+healthy/rejected/restored screenshots and diagnostics without changing built files,
+calling providers, deploying Workers, or exercising Cloudflare rollback.
+
+`/judge` runs the simulator and never opens a WebSocket. It cannot prove an
+authenticated live factory connection; do not call this probe live-socket proof.
+
+For a **browser-specific** authorized rollback drill, branch from this change and
+replace only the Deploy command with build → overwrite the built `index-*.js`
+entry with `throw new Error("browser rollback drill")` → server deploy. This
+leaves API/version probes healthy while crashing the actual delivered game.
+Dispatch that branch, confirm Browser smoke reports the deliberate exception,
+confirm the saved version is restored and re-smoked, and keep the run red.
+Never merge the fault commit. Run the new probe against the rollback target first:
+a pre-existing console error also fails restoration and must be reported honestly.

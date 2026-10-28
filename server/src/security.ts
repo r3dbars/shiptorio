@@ -17,13 +17,13 @@ export function securityHeaders(request: Request, artNonce?: string, turnstile =
   const gateScript = gatePolicy?.match(/(?:^|;\s*)script-src ('nonce-[a-f0-9]{32}')(?=;|$)/)?.[1];
   const csp = [
     "default-src 'none'",
-    gateScript ? `script-src ${gateScript}` : `script-src 'self'${turnstile ? " https://challenges.cloudflare.com" : ""}${artNonce ? ` 'nonce-${artNonce}' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js` : ""}`,
+    gateScript ? `script-src ${gateScript}` : `script-src 'self'${url.pathname === '/judge' ? ' https://static.cloudflareinsights.com' : ''}${turnstile ? " https://challenges.cloudflare.com" : ""}${artNonce ? ` 'nonce-${artNonce}' https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js` : ""}`,
     "script-src-attr 'none'",
     // React positions map labels with style attributes; forms also use inline CSS.
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
-    `connect-src 'self' ${socket}${turnstile ? " https://challenges.cloudflare.com" : ""}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}${telemetryOrigin}`,
+    `connect-src 'self' ${socket}${url.pathname === '/judge' ? ' https://cloudflareinsights.com' : ''}${turnstile ? " https://challenges.cloudflare.com" : ""}${local ? " ws://localhost:* ws://127.0.0.1:*" : ""}${artNonce ? " https://cdnjs.cloudflare.com" : ""}${telemetryOrigin}`,
     ...(turnstile ? ["frame-src https://challenges.cloudflare.com"] : []),
 
     "worker-src 'self' blob:",

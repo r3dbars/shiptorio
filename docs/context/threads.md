@@ -236,6 +236,13 @@ Next for Codex: the "connect the mines" prompt (GitHub App end to end, then Sent
 Prompt packs for Justin live in the Claude project's files under `shiptorio/codex-prompts/`.
 
 
+## Deploy browser smoke (Codex, 2026-10-28)
+
+- #367 adds actual canvas pixels, zero console/page errors and screenshot artifacts at 390×844/1440×900, including restored-version browser smoke after rollback. Preserves pinned Actions and real-storage checks; the judge-only CSP correction is user-authorized.
+- Local full check: 1,422 passed, two existing platform skips, zero failures; types/builds pass. The built-game local drill passes healthy → exact deliberate JS crash rejected → original assets restored at both sizes, with six screenshots. On-demand GPU readback allows 30s startup inside the unchanged 45s CLI cap; earlier local timing failures are preserved.
+- [Earlier Deploy 40572720445](https://github.com/r3dbars/shiptorio/actions/runs/40572720445) failed screenshot stabilization, restored the saved Worker and passed restored API smoke; restored browser smoke correctly flagged the old CSP error. The failed run remains intact; capture now uses Chromium’s compositor.
+- New policy: target `dev`, merge only on exact-head check/selfhost/Stranger/CodeQL, then verify Staging. Production fault drills remain prohibited and unproven; no green main Deploy containing this gate is claimed. Live-socket/account work is separate. The prepared production fault branch has never been dispatched.
+
 ## Deploy smoke + automatic rollback (Codex, 2026-10-26)
 
 - Day 1 deploy reliability checkpoint, extending merged #173: one local/CI smoke
