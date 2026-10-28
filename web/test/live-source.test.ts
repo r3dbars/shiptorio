@@ -282,3 +282,126 @@ it("gives a returning tab a fresh three-second notice grace and never flashes on
   h.advance(3001); expect(h.notices.size).toBe(0);
   source.close(); expect(h.tasks.size).toBe(0);
 }));
+
+const decisionCard = (head = "a") => ({ id: "plan-1", title: "Approve this plan", why: "Scoped", itemId: "gh-1", createdAt: 1,
+  plan: [`Base ${head}`], options: [{id:"approve",label:"Approve",recommended:true,actions:[{tool:"approve_runner_job",args:{jobId:`job-${head}`},reason:"Exact plan"}]}] });
+const decisionSnapshot = (head = "a", seq = 0) => JSON.stringify({ ...JSON.parse(snapshot), seq, state: {...snapshotMessage.state, move:decisionCard(head), deck:[decisionCard(head)]} });
+it("retains an offline tap and sends it only after a fresh matching snapshot", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  h.advance(300); const fresh = h.sockets[1]; fresh.open();
+  expect(fresh.sent).toEqual([]);
+  fresh.message(decisionSnapshot());
+  expect(fresh.sent).toEqual([JSON.stringify({type:"choose_move",moveId:"plan-1",optionId:"approve"})]);
+  source.close();
+}));
+it("replays an unacknowledged tap once per connection but never replays changed plan authority", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  const tap = {type:"choose_move" as const,moveId:"plan-1",optionId:"approve"};
+  source.send(tap); source.send(tap); expect(first.sent).toHaveLength(1);
+  first.close(); h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot("b"));
+  expect(fresh.sent).toEqual([]); source.close();
+}));
+it("authoritative resolution clears pending decisions and disposal cannot send them for another player", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  source.send({type:"defer_move",moveId:"plan-1"});
+  first.message(JSON.stringify({type:"deck",deck:[],seq:1}));
+  first.close(); h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot("a",2));
+  expect(fresh.sent).toEqual([]);
+  source.close(); source.send({type:"dismiss_move",moveId:"plan-1",why:"once"});
+  h.win.dispatchEvent(new Event("online")); expect(h.sockets).toHaveLength(2);
+}));
+it("keeps a tap when send throws between readiness and socket transmission", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  first.send = () => { throw new Error("network disappeared"); };
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  h.advance(300); const fresh = h.sockets[1]; fresh.open(); expect(fresh.sent).toEqual([]);
+  fresh.message(decisionSnapshot()); expect(fresh.sent).toHaveLength(1); source.close();
+}));
+it("an explicit resolution acknowledges the intent even if the same card is offered again", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  source.send({type:"dismiss_move",moveId:"plan-1",why:"once"});
+  first.message(JSON.stringify({type:"move_resolved",moveId:"plan-1",actor:"player",seq:1}));
+  first.close(); h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot("a",2));
+  expect(fresh.sent).toEqual([]); source.close();
+}));
+it("changed tool scope under the same card and option ID requires a fresh player choice", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  const changed = JSON.parse(decisionSnapshot());
+  changed.state.deck[0].options[0].actions[0].args.headSha = "new-head";
+  h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(JSON.stringify(changed));
+  expect(fresh.sent).toEqual([]);
+  expect(h.messages.at(-2)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("decision changed")});
+  source.close();
+}));
+it("Later survives reconnect but unrelated machine writes are not replayed", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot()); first.close();
+  source.send({type:"defer_move",moveId:"plan-1"}); source.send({type:"set_goal",text:"not replayable"});
+  h.advance(300); const fresh = h.sockets[1]; fresh.open(); fresh.message(decisionSnapshot());
+  expect(fresh.sent).toHaveLength(1);
+  expect(JSON.parse(fresh.sent[0])).toMatchObject({type:"defer_move",moveId:"plan-1",intentId:expect.stringMatching(/^[a-f0-9-]{36}$/)}); source.close();
+}));
+it("pong cannot hide an unacknowledged decision; replay is bounded and visibly asks for retry", () => transportTest(h => {
+  const source = h.connect(), first = h.sockets[0]; first.open(); first.message(decisionSnapshot());
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  for (let attempt = 0; attempt < 2; attempt++) {
+    h.sockets.at(-1)!.message("pong"); h.advance(10_300);
+    const fresh = h.sockets.at(-1)!; expect(fresh).not.toBe(first);
+    fresh.open(); fresh.message(decisionSnapshot()); expect(fresh.sent).toHaveLength(1);
+  }
+  h.sockets.at(-1)!.message("pong"); h.advance(10_001);
+  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")}));
+  expect(h.sockets.reduce((n,s) => n+s.sent.filter(raw=>raw.includes('"choose_move"')).length,0)).toBe(3);
+  source.close(); expect(h.tasks.size).toBe(0);
+}));
+it("same-card Launch cannot replay across a changed PR head", () => transportTest(h => {
+  const launch = JSON.parse(decisionSnapshot());
+  launch.state.deck[0].options[0].actions = [{tool:"request_merge",args:{headSha:"a"},reason:"Launch this exact revision"}];
+  const source = h.connect(), first=h.sockets[0];first.open();first.message(JSON.stringify(launch));first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  launch.state.deck[0].options[0].actions[0].args.headSha = "b";
+  h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(JSON.stringify(launch));
+  expect(fresh.sent).toEqual([]);source.close();
+}));
+it("offline intents expire rather than approving unexpectedly much later", () => transportTest(h => {
+  const source=h.connect(), first=h.sockets[0];first.open();first.message(decisionSnapshot());first.close();
+  source.send({type:"defer_move",moveId:"plan-1"}); h.advance(60_001);
+  expect(h.messages).toContainEqual(expect.objectContaining({type:"log",text:expect.stringContaining("could not be confirmed")}));
+  const fresh=h.sockets.at(-1)!;fresh.open();fresh.message(decisionSnapshot());expect(fresh.sent).toEqual([]);source.close();
+}));
+it("never queues a card or option that this source has not received", () => transportTest(h => {
+  const source=h.connect(), first=h.sockets[0];
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  first.open();first.message(decisionSnapshot());expect(first.sent).toEqual([]);
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"forged"});expect(first.sent).toEqual([]);source.close();
+}));
+it("a persistent inspect card is sent once online without false acknowledgement retries", () => transportTest(h => {
+  const state=JSON.parse(decisionSnapshot());state.state.deck[0].options[0].actions=[{tool:"inspect_bottleneck",args:{stage:"inspect"},reason:"Read the queue"}];
+  const source=h.connect(),first=h.sockets[0];first.open();first.message(JSON.stringify(state));
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  for(let n=0;n<4;n++){h.advance(14_000);first.message("pong");}
+  expect(h.sockets).toHaveLength(1);
+  expect(first.sent.filter(raw=>raw.includes('"choose_move"'))).toHaveLength(1);
+  expect(h.messages.some(msg=>msg.type==="log" && msg.level==="warn")).toBe(false);
+  source.close();
+}));
+it("offline nonreplayable choices request an explicit retry and never run after reconnect", () => transportTest(h => {
+  const state=JSON.parse(decisionSnapshot());state.state.deck[0].options[0].actions=[{tool:"run_missing_check",args:{headSha:"a"},reason:"Queue a check"}];
+  const source=h.connect(),first=h.sockets[0];first.open();first.message(JSON.stringify(state));first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  expect(h.messages.at(-1)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")});
+  h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(JSON.stringify(state));expect(fresh.sent).toEqual([]);source.close();
+}));
+
+it("Later reuses one correlation ID after ack loss; a fresh later tap gets a new ID", () => transportTest(h => {
+  const source=h.connect(),first=h.sockets[0];first.open();first.message(decisionSnapshot());
+  source.send({type:"defer_move",moveId:"plan-1"});source.send({type:"defer_move",moveId:"plan-1"});
+  expect(first.sent).toHaveLength(1);const original=JSON.parse(first.sent[0]);expect(original.intentId).toMatch(/^[a-f0-9-]{36}$/);
+  first.close();h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(decisionSnapshot());
+  expect(JSON.parse(fresh.sent[0])).toEqual(original);
+  fresh.message(JSON.stringify({type:"deck",deck:[],seq:1}));
+  fresh.message(JSON.stringify({type:"deck",deck:[decisionCard()],seq:2}));
+  source.send({type:"defer_move",moveId:"plan-1"});
+  expect(JSON.parse(fresh.sent[1]).intentId).not.toBe(original.intentId);source.close();
+}));

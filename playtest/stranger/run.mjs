@@ -97,6 +97,32 @@ await context.route(`${origin}/auth/login*`, async (route) => {
   await route.fulfill({ status: 200, contentType: "text/html", headers: { "set-cookie": cookies.join("\n") }, body: `<script>location.href=${JSON.stringify(to)}</script>` });
 });
 context.setDefaultTimeout(UI_TIMEOUT);
+// Observe native sockets and cut only the real approval gesture, before its click
+// handler sends. No factory state/command is injected and no network errors are ignored.
+await context.addInitScript(() => {
+  const Native = window.WebSocket;
+  window.__approvalTransport = { sockets: [], snapshots: [], cutNext: false, cut: null };
+  window.WebSocket = class extends Native {
+    constructor(...args) {
+      super(...args);
+      if (!new URL(String(args[0]), location.href).pathname.endsWith("/factory")) return;
+      const trace = window.__approvalTransport;
+      trace.sockets.push(this);
+      this.addEventListener("message", event => {
+        try { if (JSON.parse(event.data).type === "snapshot") trace.snapshots.push({ socket: trace.sockets.indexOf(this), at: performance.now() }); } catch { /* Native pong is not a snapshot. */ }
+      });
+    }
+  };
+  document.addEventListener("pointerdown", event => {
+    const trace = window.__approvalTransport, button = event.target.closest?.("button");
+    if (!trace.cutNext || !button || !/Approve and build with Codex/i.test(button.getAttribute("aria-label") ?? button.textContent)) return;
+    trace.cutNext = false;
+    const socket = trace.sockets.findLast(socket => socket.readyState === Native.OPEN);
+    if (!socket) throw new Error("Approval interruption needs a live factory socket");
+    socket.close(4000, "Stranger approval interruption");
+    trace.cut = { trusted: event.isTrusted, at: performance.now(), readyState: socket.readyState, socket: trace.sockets.indexOf(socket) };
+  }, true);
+});
 const page = await context.newPage();
 const consoleErrors = [];
 const expectedAnonymousErrors = [];
@@ -300,8 +326,18 @@ try {
     await until("Spark plan approval", () => factoryState.deck?.some(m => m.options?.some(o => o.id === "approve")));
     assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null, "no runner job before the plan is approved");
     assert.equal(stub.state.pulls.length, 0, "no PR before approval");
+    await page.evaluate(() => { window.__approvalTransport.cutNext = true; });
     await clickMove(/Approve and build with Codex/i);
+    const interrupted = await page.evaluate(() => window.__approvalTransport.cut);
+    assert.ok(interrupted?.trusted, "a real player gesture must trigger the interruption");
+    assert.notEqual(interrupted.readyState, 1, "the approval click must occur after its socket starts closing");
+    await page.waitForFunction(() => {
+      const trace = window.__approvalTransport;
+      return trace.cut && trace.snapshots.some(snapshot => snapshot.socket !== trace.cut.socket && snapshot.at > trace.cut.at);
+    }, null, {timeout: UI_TIMEOUT});
+    report.approvalReconnect = { ...interrupted, freshSnapshot: true };
     job = await until("approved runner job", async () => (await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job);
+    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null, "another claim cannot dispatch a second build while this lease is active");
     assert.equal(job.itemId, "gh-1", `approved job is for gh-1, got ${job.itemId}`);
     assert.equal(job.baseSha, stub.state.baseSha, "job built on the base sha");
     assert.deepEqual(job.allowedPaths, ["src/cart.ts", "test/cart.test.ts"]);

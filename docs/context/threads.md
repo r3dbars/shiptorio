@@ -517,6 +517,10 @@ Periodic reconciliation could spend nine installation request slots between veri
 
 [Testing PR #18](https://github.com/r3dbars/Testing/pull/18) adds CI and new tests only: executable README examples, source/built CLI coupon checks, and fixtures proving the gate rejects #12's silently ignored `--coupon SAVE10` form. Nine tests, types, build, and five gate fixtures pass locally; the real README gate remains red on main's stale npm Setup until the separately owned README rework lands. No merge of #12/#13 was attempted (#13 was already merged at inspection). All ten ladder drafts (2 docs, 3 reproduced bugs, 3 tests, 2 tiny features), scopes, and acceptance lines are in #18's description. Justin explicitly asked to hold publication until the queue clears: the live check found 12 stuck queued items and shared usage of 214/400 calls, 956879/1000000 tokens. Open nothing until a fresh queue/budget check permits the first batch, then release 3/3/3/1. Testing #18 stays draft and unmerged until its real README check is green; these receipts do not certify clean factory ships or an autonomy level-up.
 
+### Codex reconnect-safe decision transport (2026-10-28)
+
+Draft #524 follows #517 replay-idempotency: live choose/defer/dismiss taps remain in source-scoped memory through reconnect, replay only after matching fresh snapshot/unchanged action scope, and clear on resolution or disposal. Missing acknowledgements force resync after10s, max3 send attempts/60s, then visible retry warning. No machine-write replay or persistent client storage. Native Stranger approval socket-cut regression preserves all existing runner/PR/Launch assertions; hosted evidence pending. Focused28 transport tests/108 assertions pass.
+
 ## Quiet live reconnect (Codex, 2026-10-27)
 
 Day 2 live-map checkpoint: replace sleeping sockets on tab return/network recovery,

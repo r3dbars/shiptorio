@@ -1,3 +1,4 @@
+import { DecisionOutbox, isDecision } from "./decision-outbox";
 import { socketDisconnected } from "../telemetry";
 import { parseLiveMessage } from "./schemas";
 import type { Listener, Source, StatusListener } from ".";
@@ -18,6 +19,26 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
   let retry: ReturnType<typeof setTimeout> | undefined;
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let notice: HTMLElement | undefined;
+  let decisionTimer: ReturnType<typeof setTimeout> | undefined;
+  const warnDecision = (reason: "changed" | "unconfirmed") => onMessage({type:"log", level:"warn", text:reason === "unconfirmed" ? "Your decision could not be confirmed. Check the current factory state and try again." : "The available decision changed. Review the current card before trying again.", at:Date.now()});
+  const outbox = new DecisionOutbox(warnDecision);
+  const watchDecisions = () => {
+    if (closed || !outbox.hasPending) { clearTimeout(decisionTimer); decisionTimer = undefined; return; }
+    if (decisionTimer !== undefined) return;
+    decisionTimer = setTimeout(() => {
+      decisionTimer = undefined;
+      outbox.expire();
+      // A healthy heartbeat does not acknowledge a player decision. Ask for fresh
+      // authoritative state before replaying the same bounded intent.
+      if (outbox.hasPending && synced) lost();
+      watchDecisions();
+    }, 10_000);
+  };
+  const flushDecisions = () => {
+    const socket = ws;
+    if (closed || !synced || !socket || socket.readyState !== WebSocket.OPEN) return;
+    try { outbox.flush(socket, message => socket.send(JSON.stringify(message))); } catch { lost(); }
+  };
 
   // Preserve the last good map through short interruptions; no red offline flash.
   const waiting = () => {
@@ -113,9 +134,11 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       if (msg.type === "snapshot") { msg.state.deck?.forEach(local); local(msg.state.move); }
       if (msg.type === "deck") msg.deck.forEach(local);
       if (msg.type === "move") local(msg.move);
+      outbox.observe(msg);
+      watchDecisions();
       onMessage(msg);
       if (!current()) return;
-      if (msg.type === "snapshot") ready();
+      if (msg.type === "snapshot") { ready(); flushDecisions(); }
       if (current()) heartbeat = setTimeout(() => ping(socket), HEARTBEAT_MS);
     };
     socket.onclose = (event) => {
@@ -151,6 +174,13 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
 
   return {
     send: (msg) => {
+      if (closed) return;
+      if (isDecision(msg)) {
+        if (outbox.replayable(msg)) { outbox.enqueue(msg); flushDecisions(); watchDecisions(); }
+        else if (!outbox.knows(msg) || !synced || ws?.readyState !== WebSocket.OPEN) warnDecision("unconfirmed");
+        else { try { ws.send(JSON.stringify(msg)); } catch { warnDecision("unconfirmed"); lost(); } }
+        return;
+      }
       if (!closed && synced && ws?.readyState === WebSocket.OPEN) {
         try { ws.send(JSON.stringify(msg)); } catch { lost(); }
       }
@@ -158,6 +188,7 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     close: () => {
       if (closed) return;
       closed = true;
+      outbox.clear(); clearTimeout(decisionTimer);
       detach(); clearTimeout(retry); clearNotice();
       if (typeof window !== "undefined") {
         window.removeEventListener("online", resume);

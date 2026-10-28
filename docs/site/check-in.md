@@ -83,6 +83,12 @@ When the deck is empty you see "All clear" and a tally. The score isn't how many
 
 Open the deck straight away with [?checkin](/?source=sim&scenario=checkin&checkin) on any factory URL.
 
+### Decisions while reconnecting
+
+Plan/build approvals, Launch choices, Later and dismiss taps on an already-seen card stay in memory for that factory tab during brief interruptions. Unacknowledged consent replays only after a fresh snapshot confirms the same complete offered plan/options. Changed plans require a fresh player choice; removed cards acknowledge the intent. Later uses one UUID per intent across retries, so the server can repark it without another lesson/count. Closing or changing the factory clears that memory.
+
+A ten-second acknowledgement watchdog is independent of heartbeat. Retries stop after three send attempts or one minute, then ask the player to check the factory and retry. Only single-action plan_runner_job, approve_runner_job and request_merge choices replay automatically, plus Later/dismiss. Persistent inspect/check-queue choices send once online and ask for explicit retry if offline; other machine writes never replay. This grants no approval or Launch permission.
+
 ### Reliable decisions and step status
 
 A repeated Later delivery parks the same card once; it does not count as several decisions or teach automation. The next check-in can offer it again. Repeated approvals keep the same approved runner job and count one approval lesson. Reconnecting restores the saved cards and current job state; a tap alone never marks a build or launch complete.
