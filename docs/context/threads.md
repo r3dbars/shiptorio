@@ -653,6 +653,10 @@ load job judges the unchanged 5 s / 3 s budget on the median of up to three runs
 pass on near-identical code. `release/*` runs are no longer cancelled by a later push.
 `merge_group` triggers are wired for when Justin turns on the merge queue.
 
+## Repository picker failure clarity (Codex, 2026-10-28)
+
+Provider or database permission-check failures now return a safe retryable repository-discovery error instead of a misleading empty list or generic server error. Real session/membership revocation still denies access; no cached authorization is trusted beyond existing policy. Three route regressions cover failure, recovery and revocation, with the existing batched-authorization suite retained. Full check and exact-head dev CI remain required.
+
 ## dev / main split (Claude, 2026-10-28)
 
 Justin (16:31Z) picked the flow in `docs/context/branches.md`: every agent PR (Claude and Codex) now targets `dev`,

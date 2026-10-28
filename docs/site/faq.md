@@ -85,3 +85,5 @@ If the planner is busy or unavailable, planning rests behind one card showing th
 ## Why does my factory say Reconnecting?
 
 A cold factory or a network interruption can take several seconds to reconnect. Keep the page open: it retries automatically and restores the current factory once the connection is verified. A slow connection does not approve work or launch a PR.
+
+If the repository picker cannot check your current access, it shows a retryable error instead of pretending you have no repositories. Try again after the interruption; a repository whose access was actually removed stays hidden.
