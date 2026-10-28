@@ -1,0 +1,194 @@
+// The 2D deck's data side (facelift plan https://claude.ai/artifact/APbJAp64ymtzegrTv2wUfQ). One pure function turns a
+// FactoryState, live or sim, into the contract's DeckView (../contract.ts): seven stops left to right with their crates,
+// the one card waiting on you, and what Shippy is doing. The engine only ever reads DeckView.
+//
+// The story it has to tell (locked 2026-10-28): software is a factory, it's waiting on your calls, swipe and it moves,
+// approve twice more and it's automatic.
+
+import { attentionOf, continueOption, type FactoryState, type Item as FactoryItem, type Move, type Stage, type StationKind } from "@shiptorio/shared";
+import { LEARN } from "../../copy";
+import { STOP_LABEL, STOPS, type CardView, type DeckView, type Item, type ShippyView, type Stop, type StopId, type StopState } from "../contract";
+
+/** CardView plus what the card UI must know to stay safe. hold = merges real code: a held press, never a flick. */
+export interface LiveCardView extends CardView {
+  hold: boolean;
+  setup: boolean; // plugs in a local agent: Approve opens Power setup instead of sending the move
+  attention: "approve" | "steer" | "suggest";
+  waitingCards: number; // cards in the deck, this one included
+}
+export interface LiveDeckView extends DeckView {
+  card: LiveCardView | null;
+}
+
+export interface DeckOpts {
+  now?: number; // Date.now(), for the short lever / happy beats
+  pulled?: { stop: StopId; at: number } | null; // the last Approve, so Shippy pulls the lever there
+  hidden?: ReadonlySet<string>; // cards answered here that the server hasn't dropped yet
+}
+
+const LEVER_MS = 1200;
+const HAPPY_MS = 4000;
+export const FIRST_LINE = "Approve it and it moves.";
+
+const STAGE_STOP: Record<Stage, StopId> = { intake: "repo", triage: "planner", build: "builder", resources: "builder", power: "builder", inspect: "checks", pad: "gate", release: "launch", impact: "launch" };
+const STATION_STOP: Partial<Record<StationKind, StopId>> = { ci: "checks", verify: "checks", custom: "checks", review: "review", merge: "gate", orbit: "launch", measure: "launch" };
+const MACHINE_STOP: Record<string, StopId> = { ore_deposit: "repo", splitter: "planner", assembler: "builder", inspector: "checks", launch_pad: "gate" };
+// The suggested option's tool says best where a card is parked. start_job is the sim's name for approving a build.
+const TOOL_STOP: Record<string, StopId> = {
+  plan_runner_job: "planner", approve_runner_job: "builder", start_job: "builder", request_rework: "builder",
+  run_missing_check: "checks", request_merge: "gate", connect_source: "repo", triage: "planner",
+};
+const KIND_STOP: Partial<Record<NonNullable<Move["kind"]>, StopId>> = { build: "builder", verify: "checks", review: "review", ship: "gate", input: "repo", reply: "repo" };
+// learned keys end in the suggested tool (server/src/learn.ts learnKey): which stop a learned kind takes off your hands
+const LEARN_STOP: Record<string, StopId> = { plan_runner_job: "planner", approve_runner_job: "builder", start_job: "builder" };
+const learnedStop = (key: string) => LEARN_STOP[key.split("|").at(-1) ?? ""];
+
+/** Where an item sits on the line. Rework rides back to the builder; a settled launch has left the deck. */
+export function itemStop(item: FactoryItem): StopId | null {
+  switch (item.state) {
+    case "ore": return "repo";
+    case "queued": return "planner";
+    case "working":
+    case "rejected": return "builder";
+    case "inspecting": {
+      const pending = item.inspection?.stages.find((g) => g.state === "pending")?.gate;
+      return pending === "ai" ? "review" : pending === "human" ? "gate" : "checks";
+    }
+    case "passed":
+    case "on_pad": return "gate";
+    case "launched": return item.orbit?.state === "watching" ? "launch" : null;
+  }
+}
+
+function placeStop(s: FactoryState, id: string | undefined): StopId | null {
+  if (!id) return null;
+  const st = s.stations?.find((x) => x.id === id || x.machineId === id);
+  if (st) return STATION_STOP[st.kind] ?? null;
+  const m = s.machines.find((x) => x.id === id);
+  if (m) return MACHINE_STOP[m.type] ?? null;
+  const it = s.items.find((x) => x.id === id);
+  return it ? itemStop(it) : null;
+}
+
+/** Which stop a card is about: its suggested tool, its kind, the item it moves, where it focuses, its stage. */
+export function cardStop(s: FactoryState, move: Move): StopId {
+  const tool = continueOption(move).actions[0]?.tool;
+  const item = move.itemId ? s.items.find((x) => x.id === move.itemId) : undefined;
+  return (tool && TOOL_STOP[tool]) || (move.kind && KIND_STOP[move.kind]) || (item && itemStop(item)) || placeStop(s, move.focus) || (move.stage && STAGE_STOP[move.stage]) || "repo";
+}
+
+export const isLaunchCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "request_merge");
+export const isSetupCard = (m: Move) => continueOption(m).actions.some((a) => a.tool === "connect_source" && (a.args.kind === "claude" || a.args.kind === "codex"));
+const RANK = { steer: 0, approve: 1, suggest: 2 } as const;
+
+/** The one card: setup first (nothing moves without an agent), then stuck, then parked, then ideas, in deck order. */
+export function pickCard(deck: readonly Move[]): Move | null {
+  const rank = (m: Move) => (isSetupCard(m) ? -1 : RANK[attentionOf(m)]);
+  let best: Move | null = null;
+  for (const m of deck) if (!best || rank(m) < rank(best)) best = m;
+  return best;
+}
+
+function built(s: FactoryState, stop: StopId): boolean {
+  const kinds = new Set(s.stations?.map((x) => x.kind) ?? []);
+  const has = (t: string) => s.machines.some((m) => m.type === t);
+  switch (stop) {
+    case "repo": return !!s.repo;
+    case "planner": return s.machines.length > 0; // every factory plans once anything is built
+    case "builder": return has("assembler");
+    case "checks": return kinds.has("ci") || kinds.has("verify") || kinds.has("custom") || has("inspector");
+    case "review": return kinds.has("review");
+    case "gate":
+    case "launch": return kinds.has("merge") || has("launch_pad");
+  }
+}
+
+/** Stops the player handed to Shippy: a learned kind of card, an autonomy level, a launch permit. */
+function handedStops(s: FactoryState): Set<StopId> {
+  const out = new Set<StopId>();
+  for (const l of s.learned ?? []) {
+    const stop = learnedStop(l.key);
+    if (stop) out.add(stop);
+  }
+  const level = s.autonomy?.level;
+  if (level === "build" || level === "lights_out") out.add("planner").add("builder");
+  if (level === "lights_out" || s.autonomy?.districts.some((d) => d.permit)) out.add("gate").add("launch");
+  return out;
+}
+
+function jamStop(s: FactoryState, card: Move | null, handed: Set<StopId>): StopId | null {
+  // the card waiting on you is the jam the story points at; with no card, the bottleneck engine's pick, unless Shippy
+  // already runs that stop (a busy automatic stop is just working, so beat 4 never lights up red)
+  if (card && attentionOf(card) !== "suggest") return cardStop(s, card);
+  const b = s.bottleneck;
+  const stop = b && b.wip > 0 ? placeStop(s, b.stationId) ?? STAGE_STOP[b.stage] : null;
+  return stop && !handed.has(stop) ? stop : null;
+}
+
+function crate(it: FactoryItem, jammed: boolean): Item {
+  const look: Item["look"] = jammed ? "wait" : it.state === "rejected" ? "bad" : it.state === "passed" || it.state === "on_pad" || it.state === "launched" ? "ok" : it.priority === "rush" ? "glow" : "plain";
+  return { id: it.id, title: it.title, look };
+}
+
+export function deckView(s: FactoryState | null, opts: DeckOpts = {}): LiveDeckView {
+  const now = opts.now ?? Date.now();
+  if (!s) return { stops: STOPS.map((id) => ({ id, built: false, state: "idle", automated: false, items: [] })), jam: null, card: null, shippy: { pose: "folded", at: "corner" }, shipped: 0, caption: null };
+
+  const deck = (s.deck?.length ? s.deck : s.move ? [s.move] : []).filter((m) => !opts.hidden?.has(m.id));
+  const move = pickCard(deck);
+  // green means you handed it over (beat 4), so CI and AI review, which never asked you, stay plain working / idle
+  const handed = handedStops(s);
+  const jam = jamStop(s, move, handed);
+  const busy = new Set(s.machines.filter((m) => m.state === "working").map((m) => MACHINE_STOP[m.type]));
+  const at = new Map<StopId, FactoryItem[]>(STOPS.map((id) => [id, []]));
+  // front of the line first: the oldest crate at a stop is the next one out
+  for (const it of [...s.items].sort((a, b) => a.updatedAt - b.updatedAt)) {
+    const stop = itemStop(it);
+    if (stop) at.get(stop)!.push(it);
+  }
+
+  const stops: Stop[] = STOPS.map((id) => {
+    const here = at.get(id)!;
+    const jammed = jam === id;
+    const automated = handed.has(id);
+    const state: StopState = jammed ? "jammed" : automated ? "auto" : here.length || busy.has(id) ? "working" : "idle";
+    const stop: Stop = { id, built: built(s, id) || here.length > 0 || jammed, state, automated, items: here.map((it) => crate(it, jammed)) };
+    if (jammed) stop.waiting = `${STOP_LABEL[id].toUpperCase()} WAITING`;
+    return stop;
+  });
+
+  let card: LiveCardView | null = null;
+  if (move) {
+    const learn = move.learn ?? null;
+    card = {
+      id: move.id,
+      title: move.title,
+      stop: cardStop(s, move),
+      dots: learn ? { have: learn.have, need: learn.need } : null,
+      line: learn ? LEARN.line(Math.max(1, learn.need - learn.have)) : FIRST_LINE,
+      hold: isLaunchCard(move),
+      setup: isSetupCard(move),
+      attention: attentionOf(move),
+      waitingCards: deck.length,
+    };
+  }
+
+  const shipped = s.metrics?.rockets ?? s.items.filter((it) => it.state === "launched").length;
+  const caption = card ? null : handed.size ? "Shippy has this. Fix the next jam." : "Software is a factory.";
+  return { stops, jam, card, shippy: shippyOf(s, stops, jam, card, opts, now), shipped, caption };
+}
+
+function shippyOf(s: FactoryState, stops: Stop[], jam: StopId | null, card: CardView | null, opts: DeckOpts, now: number): ShippyView {
+  if (opts.pulled && now - opts.pulled.at < LEVER_MS) return { pose: "lever", at: opts.pulled.stop };
+  // a kind of work just went automatic, or a rocket just left: beat 4's payoff
+  const fresh = (s.learned ?? []).filter((l) => now - l.since < HAPPY_MS).sort((a, b) => b.since - a.since)[0];
+  if (fresh) return { pose: "happy", at: learnedStop(fresh.key) ?? "corner" };
+  if (s.items.some((it) => it.state === "launched" && now - it.updatedAt < HAPPY_MS)) return { pose: "happy", at: "launch" };
+  if (jam && card) return { pose: "alarmed", at: jam };
+  const target = placeStop(s, s.foreman?.targetId);
+  if (target) return { pose: "walking", at: target };
+  const moving = stops.filter((x) => x.state === "working").sort((a, b) => b.items.length - a.items.length)[0];
+  if (moving) return { pose: "walking", at: moving.id };
+  if (jam) return { pose: "alarmed", at: jam };
+  return { pose: "folded", at: "corner" };
+}

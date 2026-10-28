@@ -45,6 +45,7 @@ import {
   fallbackExperiment,
   insertCheck,
   researchBlocked,
+  projectPipeline,
   suggestResearch,
   techById,
   TECHS,
@@ -446,7 +447,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.accountPut("openMoves", this.openMoves);
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
-    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, learned: s.learned } });
+    this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck, learned: s.learned, pipeline: projectPipeline(s, jobs, presenceFresh) } });
     // Unchanged decisions need no new transport frame. Every frame we do publish
     // retains broadcast's fresh session/membership checks; tick and queue telemetry
     // keep flowing even when the cards are unchanged.
@@ -862,50 +863,51 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   /** by: who let it through. The planner's own taps (autonomy levels, learned cards) are never recorded as the player's. */
-  private async chooseRunnerMove(move: Move, optionId: string, by: "player" | "autonomy" = "player"): Promise<void> {
+  private async chooseRunnerMove(move: Move, optionId: string, by: "player" | "autonomy" = "player"): Promise<boolean> {
     const moveId = move.id;
-    if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return;
+    if (!move.itemId || !move.options.some(o => o.id === optionId) && optionId !== "decline") return false;
     const item = this.state!.items.find(i => i.id === move.itemId);
     const refreshMove = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" && a.args.refreshBase === true)) || (await this.runnerJobs()).some(j => j.approvalMoveId === moveId && !!j.refreshBase);
     const available = (candidate: Item) => refreshMove ? !!candidate.prNumber && ["on_pad", "passed", "inspecting", "rejected"].includes(candidate.state) : (!candidate.prNumber || candidate.state === "rejected") && ["ore", "queued", "rejected"].includes(candidate.state);
-    if (!item || !available(item)) return;
+    if (!item || !available(item)) return false;
     const job = (await this.runnerJobs()).find(j => j.approvalMoveId === moveId && j.itemId === move.itemId && j.repo === this.meta?.repo && j.status === "awaiting_approval");
     if (job) {
-      await this.ctx.blockConcurrencyWhile(async () => {
+      return this.ctx.blockConcurrencyWhile(async () => {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${job.id}`);
-        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return;
+        if (!stored || stored.status !== "awaiting_approval" || stored.approvalMoveId !== moveId || stored.itemId !== move.itemId || stored.repo !== this.meta?.repo) return false;
         const currentItem = this.state?.items.find(i => i.id === stored.itemId);
-        if (!currentItem || !available(currentItem)) return;
+        if (!currentItem || !available(currentItem)) return false;
         if (stored.inputRevision !== await workRevision(currentItem)) {
           stored.status = "failed"; stored.error = "Issue changed; request a fresh plan.";
           await this.accountPut(`runnerJob:${stored.id}`, stored);
           await this.resolveRunnerMove(move);
           this.log("warn", stored.error, item.id);
-          return;
+          return false;
         }
         if (optionId === "approve") {
           if (stored.refreshBase) {
             try { assertRefreshItem(stored, currentItem); await refreshTarget(await installationToken(this.env, this.meta!.installationId), stored.repo, stored.reworkPr!, stored.branch, stored.baseBranch!, { headSha: stored.refreshBase.expectedHeadSha, baseSha: stored.baseSha!, baseBranch: stored.baseBranch! }); }
-            catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return; }
+            catch { stored.status = "failed"; stored.error = "Factory head or base changed; review a fresh plan."; await this.accountPut(`runnerJob:${stored.id}`, stored); await this.resolveRunnerMove(move); this.log("warn", stored.error, item.id); return false; }
           }
           stored.status = "ready"; stored.approvedAt = Date.now(); stored.approvedBy = by;
         }
         else if (optionId === "decline") { stored.status = "failed"; stored.error = "Player declined this plan."; await this.accountPut(`runnerDeferred:${currentItem.id}`, currentItem.updatedAt); }
-        else return;
+        else return false;
         await this.accountPut(`runnerJob:${stored.id}`, stored);
         await this.resolveRunnerMove(move);
         this.broadcast({ type: "log", level: "info", text: optionId === "approve" ? "Plan approved. Your local agent can now start." : "Plan set aside. No build started.", at: Date.now(), actor: by === "autonomy" ? "spark" : "player", tool: optionId === "approve" ? "approve_runner_job" : "decline_runner_job", approvedBy: by, reason: by === "autonomy" ? "Approved on its own: the planner's autonomy level or a kind of card you taught it" : "Decision from the game", itemId: item.id });
+        return true;
       });
-      return;
     }
-    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return; }
+    if (optionId === "decline") { await this.accountPut(`runnerDeferred:${item.id}`, item.updatedAt); await this.resolveRunnerMove(move); return true; }
     const action = move.options.find(o => o.id === optionId)?.actions[0];
-    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return;
+    if (action?.tool !== "plan_runner_job" || !RunnerHarness.safeParse(action.args.harness).success) return false;
     try {
       await this.enqueueRunner({ itemId: item.id, harness: action.args.harness as RunnerJob["harness"], allowedPaths: [], needsApproval: true, refreshBase: action.args.refreshBase === true });
       await this.resolveRunnerMove(move);
       this.log("info", "Reading the issue and code to prepare your plan. No build has started.", item.id);
-    } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); }
+      return true;
+    } catch (error) { this.log("warn", error instanceof Error ? error.message : "Unable to plan this issue", item.id); return false; }
   }
 
   async allowDeviceStart() {
@@ -3286,7 +3288,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) {
-      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
+      // Derived on reconnect from durable jobs, rather than a stored/optimistic step counter.
+      const [jobs, presence] = await Promise.all([this.runnerJobs(), this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence")]);
+      const pipeline = projectPipeline(state, jobs, !!presence?.harnesses.length && Date.now() - presence.seenAt < 20000);
+      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state: { ...state, pipeline } } satisfies ServerToWeb));
       server.send(await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false)));
     }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
@@ -3375,8 +3380,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         // docs/LEARN.md: only first-time work counts toward teaching the factory; judged before the tap changes it.
         const fresh = freshWork(card, s.items.find(i => i.id === card.itemId), jobsBefore);
         const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
-        if (!handled) await this.chooseRunnerMove(card, msg.optionId);
-        const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
+        const runnerConsumed = handled ? false : await this.chooseRunnerMove(card, msg.optionId);
+        // Only the invocation that committed a runner transition may teach approval.
+        // Another socket can observe that transition too; observation is not a second tap.
+        const consumed = handled ? !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs()) : runnerConsumed;
         if (consumed && option.recommended) {
           await this.recordApproval(card.kind ?? "unblock", moveScope(card, s));
           noteYes(this.deckBook!, card.kind ?? "unblock", moveScope(card, s));

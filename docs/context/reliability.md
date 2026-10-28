@@ -21,6 +21,22 @@ signed grant. This is deterministic outage proof, not a real overnight sleep tes
 
 Checkpoint: Oct 28 inspector/rework loop. Backend only; existing shared protocol and player approval gates.
 
+## Background service and standalone pairing roots (2026-10-28)
+
+The Mac service was still running, but Testing had been paired through the standalone
+installer in `~/.local/share/shiptorio/runner`, while launchd watched only
+`~/Library/Application Support/Shiptorio`. Its valid Testing grant was never revoked:
+a heartbeat with that retained grant succeeded. Closing the standalone terminal left
+Testing unwatched; this is separate from sleep/renewal expiry.
+
+Service installation now imports existing unexpired, unrejected standalone pairings
+only for the exact same server. It retains source files, different manual pairings,
+permanent rejections, and the existing signing/session authority. Installation can
+reuse an existing service configuration without a checkout `.dev.vars`. KeepAlive
+restarts the helper after process exit; macOS sleep still suspends all local work.
+The existing twelve-hour clock-jump/ten-minute outage and revocation tests remain
+required. This is deterministic recovery proof, not a physical overnight sleep test.
+
 ## Delivery and outbound calls
 
 GitHub delivery IDs and Sentry Request-IDs (body SHA-256 fallback) use the existing D1 delivery ledger with seven-day retention. Pending duplicates may enqueue again to recover a failed handoff; the DO queue coalesces them. Seven-day DO completion tombstones also close the race between a completed handler and a delayed intake enqueue. Both ledgers clean expired completed entries; pending or failed payloads are retained.

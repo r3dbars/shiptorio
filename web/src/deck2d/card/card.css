@@ -1,0 +1,108 @@
+/* The one iron swipe card (card.ts). Frames are Justin's 9-slice sprites in /deck/art (ui-panel, ui-btn, ui-btn-glow). */
+@font-face { font-family: "Pixelify Sans"; font-weight: 400 700; font-display: swap; src: url("/fonts/pixelify-sans.woff2") format("woff2"); }
+
+.ironcard {
+  --ic-ink: #f6e3c0;
+  --ic-dim: #e9cf9f;
+  --ic-gold: #ffc35a;
+  --ic-ring: #b89466;
+  position: fixed; left: 0; right: 0; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  display: grid; justify-items: center; pointer-events: none; z-index: 20;
+}
+/* every card (live, ghost, caught up) stacks in the same grid cell */
+.ironcard > .ic-card { grid-area: 1 / 1; }
+
+.ic-card {
+  pointer-events: auto; position: relative;
+  width: min(460px, calc(100vw - 20px)); box-sizing: border-box; margin: 0; padding: 4px 2px 0; text-align: center;
+  border: 40px solid transparent; border-image: url("/deck/art/ui-panel.webp") 128 fill / 40px stretch;
+  filter: drop-shadow(0 12px 22px #000b);
+  font-family: "Pixelify Sans", "Silkscreen", ui-monospace, monospace; color: var(--ic-ink);
+  touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  cursor: grab; will-change: transform;
+}
+.ic-card.dragging { cursor: grabbing; transition: none; }
+.ic-card:not(.dragging):not(.ic-ghost) { transition: transform .32s cubic-bezier(.2, 1.6, .4, 1); } /* snaps back with a little bounce */
+
+.ic-title {
+  margin: -18px 0 0; font-weight: 700; font-size: clamp(23px, 6.6vw, 31px); line-height: 1.12; letter-spacing: .01em;
+  color: var(--ic-ink); text-shadow: 0 3px 0 #000; text-wrap: balance;
+}
+.ic-dots { display: flex; justify-content: center; gap: 12px; margin: 12px 0 8px; }
+.ic-dot {
+  width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 3px solid var(--ic-ring); background: #0006;
+}
+.ic-dot.on { background: radial-gradient(circle at 35% 35%, #fff2c4, var(--ic-gold) 45%, #d88a1c); border-color: #ffdd8a; box-shadow: 0 0 10px #ffb347aa; }
+.ic-dot.pop { animation: ic-pop .38s cubic-bezier(.3, 1.8, .5, 1) both; }
+@keyframes ic-pop {
+  0% { transform: scale(1); background: #0006; border-color: var(--ic-ring); box-shadow: none; }
+  45% { transform: scale(1.75); box-shadow: 0 0 22px 6px #ffc35acc; }
+  100% { transform: scale(1); }
+}
+.ic-line {
+  margin: 0 8px 14px; font-weight: 600; font-size: clamp(15px, 4.2vw, 18px); line-height: 1.3; color: var(--ic-dim); text-shadow: 0 2px 0 #000; text-wrap: balance;
+}
+.ic-line[hidden], .ic-dots[hidden] { display: none; }
+
+.ic-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 -26px -26px; }
+.ic-btn {
+  --lean: 0;
+  font: inherit; font-weight: 700; font-size: clamp(18px, 5vw, 22px); color: var(--ic-ink); text-shadow: 0 2px 0 #000;
+  min-height: 60px; padding: 0 4px; cursor: pointer; background: none;
+  border: 18px solid transparent; border-image: url("/deck/art/ui-btn.webp") 72 fill / 18px stretch;
+  display: flex; align-items: center; justify-content: center; gap: .45em; white-space: nowrap;
+  transform: scale(calc(1 + var(--lean) * .07)); transition: transform .12s, filter .12s;
+  touch-action: manipulation;
+}
+.ic-btn span { font-size: 1.1em; }
+.ic-btn b { font-weight: inherit; position: relative; }
+.ic-btn span { position: relative; }
+/* a hold card (ships real code): Approve fills with molten gold while held, HOLD_MS in card.ts */
+.ic-fill { display: none; }
+.hold .ic-btn.approve { position: relative; overflow: hidden; }
+.hold .ic-fill {
+  display: block; position: absolute; inset: -4px auto -4px -14px; width: calc(100% + 28px); transform-origin: left;
+  transform: scaleX(0); background: linear-gradient(90deg, #ff8a1c99, #ffd76acc); transition: transform .18s ease-out; pointer-events: none;
+}
+.hold .ic-btn.approve.holding .ic-fill { transform: scaleX(1); transition: transform .8s linear; }
+.hold .ic-btn.approve.holding { animation: ic-shake .8s linear; }
+@keyframes ic-shake { 60%, 70%, 80%, 90% { translate: 1px 0; } 65%, 75%, 85%, 95% { translate: -1px 0; } }
+.ic-btn.approve { --lean: var(--lean-r, 0); border-image-source: url("/deck/art/ui-btn-glow.webp"); color: #fff4d6; filter: drop-shadow(0 0 calc(4px + var(--lean) * 14px) #ffb347aa) brightness(calc(1 + var(--lean) * .25)); }
+.ic-btn.later { --lean: var(--lean-l, 0); }
+.ic-btn.later.lit { border-image-source: url("/deck/art/ui-btn-glow.webp"); filter: drop-shadow(0 0 10px #ffb34788); }
+.ic-btn:active:not(:disabled) { transform: translateY(2px) scale(.98); }
+.ic-btn:focus-visible { outline: 3px solid var(--ic-gold); outline-offset: -6px; }
+.ic-btn:disabled { cursor: default; }
+
+/* the empty state: same plate, no buttons */
+.ic-empty { cursor: default; padding-bottom: 6px; }
+.ic-empty .ic-title { color: #c9f5a8; }
+.ic-empty .ic-line { margin-bottom: -16px; }
+
+/* in: slides up from below (after an answer it waits for the ghost's dot pop) */
+.ic-in { animation: ic-in .42s cubic-bezier(.2, 1.4, .4, 1) both; }
+.ic-in.after { animation-delay: .26s; }
+@keyframes ic-in { from { transform: translateY(70px) scale(.94); opacity: 0; } }
+
+/* out: the answered card flies off as a ghost from where it was let go */
+.ic-ghost { pointer-events: none; z-index: 1; }
+.ic-ghost.approve { animation: ic-out-right .42s cubic-bezier(.5, 0, .9, .5) both; }
+.ic-ghost.approve.popping { animation-delay: .24s; }
+.ic-ghost.later { animation: ic-out-left .38s cubic-bezier(.5, 0, .9, .5) both; }
+.ic-ghost.down { animation: ic-out-down .3s ease-in both; }
+@keyframes ic-out-right {
+  from { transform: translate(var(--fx, 0px), var(--fy, 0px)) rotate(var(--ft, 0deg)); }
+  to { transform: translate(115vw, -40px) rotate(24deg); opacity: .6; }
+}
+@keyframes ic-out-left {
+  from { transform: translate(var(--fx, 0px), var(--fy, 0px)) rotate(var(--ft, 0deg)); }
+  to { transform: translate(-115vw, -20px) rotate(-20deg); opacity: .6; }
+}
+@keyframes ic-out-down { to { transform: translateY(80px) scale(.94); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ic-in, .ic-in.after, .ic-dot.pop { animation: none; }
+  .ic-ghost.approve, .ic-ghost.later, .ic-ghost.down { animation: ic-out-fade .2s linear both; animation-delay: 0s; }
+  @keyframes ic-out-fade { to { opacity: 0; } }
+  .ic-card:not(.dragging):not(.ic-ghost) { transition: none; }
+}

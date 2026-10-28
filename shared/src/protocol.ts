@@ -1,6 +1,7 @@
 // Every message on the wire. Both lanes build against this file; change it in a PR both see.
 
 import { z } from "zod";
+import { PipelineStep } from "./pipeline";
 import { HoldingBack } from "./signals";
 import { GoalId, Goals } from "./goals";
 import {
@@ -33,6 +34,7 @@ import {
 // ---------- server → web ----------
 
 export const Patch = z.object({
+  pipeline: z.array(PipelineStep).length(6).optional(), // full replacement, never client-advanced
   items: z.array(Item).optional(), // upserts
   machines: z.array(Machine).optional(),
   belts: z.array(Belt).optional(),

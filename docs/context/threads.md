@@ -625,6 +625,10 @@ check passes: 1,406 tests, two existing skips, zero failures; lint/types/build g
 Hosted comparative evidence remains pending. This is an unproven performance
 candidate, not a released fix. Root owns hosted verification, merging and deployment.
 
+### Codex durable pipeline and player decisions (2026-10-28)
+
+PR #517 adds a derived six-step `pipeline` snapshot/patch contract; current durable jobs/cards and exact-plan/head checks remain authoritative. Later replay counts once per check-in; concurrent Approve records one teaching event for one committed runner transition. Focused61 tests/350 assertions and full local check1,623 pass/two existing platform skips/no failures. One web reducer line is required contract glue; no layout/deck UI changes. Client decision delivery is separate #524. Exact-head hosted CI and Staging still required.
+
 ## Physical hold rendering lease (Codex, 2026-10-28)
 
 [#479](https://github.com/r3dbars/shiptorio/pull/479) extends #478 after the hosted
@@ -645,6 +649,15 @@ Root owns hosted validation, release integration and deployment.
 - The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
 - Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
 
+### Codex runner service pairing import — 2026-10-28
+
+Before: a valid standalone Testing pairing was absent from the running launchd
+service's separate data root. After: service installation imports same-origin valid
+pairings under the existing store lock, preserves originals/replacements/rejections,
+and reuses installed config. No new grant, approval, job claim or production deploy.
+Focused regressions cover import idempotence, owner-only files and refusal boundaries;
+existing sleep/network/revocation tests remain required. Full CI/Staging pending.
+
 ## Self-serve release-validation (Claude, 2026-10-28)
 
 Justin (16:16Z): merges must be "as fast as possible" so he can iterate. CI now runs the
@@ -656,6 +669,10 @@ load job judges the unchanged 5 s / 3 s budget on the median of up to three runs
 (first run alone when it passes) because one run on a shared VM swung 5.2 s → 8.2 s →
 pass on near-identical code. `release/*` runs are no longer cancelled by a later push.
 `merge_group` triggers are wired for when Justin turns on the merge queue.
+
+## Repository picker failure clarity (Codex, 2026-10-28)
+
+Provider or database permission-check failures now return a safe retryable repository-discovery error instead of a misleading empty list or generic server error. Real session/membership revocation still denies access; no cached authorization is trusted beyond existing policy. Three route regressions cover failure, recovery and revocation, with the existing batched-authorization suite retained. Full check and exact-head dev CI remain required.
 
 ## dev / main split (Claude, 2026-10-28)
 
