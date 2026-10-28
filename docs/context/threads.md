@@ -439,3 +439,12 @@ sequence/snapshot/heartbeat wiring because browser-socket.ts does not own delive
 Contract/journey assertions recognize seq/pong; the deck fixture drains background
 check-in work and the goal assertion allows transport metadata. Comeback, sound,
 shaft, source/index.ts and other active lanes remain untouched.
+
+## Codex merge helper — October 28, 13:28 UTC
+
+Check-only receipt: ready Claude PR #468, head `c7ccd833c530ab9d394c64b3068469dfee4ae27f`,
+had green check/selfhost/Stranger/CodeQL but skipped browser/load on PR CI. No existing
+manual run was present. Dispatched [full CI 40696934882](https://github.com/r3dbars/shiptorio/actions/runs/40696934882)
+on that exact head; it is in progress, not accepted as green. No merge, retarget,
+production change or duplicate dispatch. #449 and #388 remain unchanged and covered
+by root's release batch. This receipt is for the next batch only.
