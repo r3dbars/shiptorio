@@ -37,6 +37,8 @@ const SHIPPY: Record<ShippyPose, Cue[]> = {
   lever: [{ sfx: "arm", at: 0 }],
   happy: [{ sfx: "chirp", at: 0 }],
   alarmed: [{ sfx: "caught", at: 0 }],
+  weld: [], // build poses: the construction kit below already carries those sounds
+  carry: [],
 };
 
 // Construction is its own quiet kit (every cue under build.ts ROUTINE_PEAK), the same one the old buildout used.
