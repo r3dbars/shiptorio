@@ -1,4 +1,4 @@
-import { introEnabled } from "../flags";
+import { buildoutOn, introEnabled } from "../flags";
 // The first screens of the game (docs/PRODUCT.md, Onboarding): the welcome tour, then play first, sign in later.
 // A signed-out player goes straight to the demo shop (onPlay); signing in with GitHub is the unlock that brings
 // the repo step here. Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
@@ -118,7 +118,8 @@ function Journey() {
 // onPlay: a bare visit. Nobody signed in goes to the demo shop instead of the sign-in card.
 export function Onboarding({ live, step: initial, onDone, onPlay }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void; onPlay?: () => void }) {
   // the tour comes first, before anyone's asked to sign in (playtest #107)
-  const [step, setStep] = useState<OnboardStep>(introEnabled && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
+  // Build as you go is its own introduction (buildout/CONTRACT.md), so it never plays the welcome tour first.
+  const [step, setStep] = useState<OnboardStep>(introEnabled && !buildoutOn() && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
   const [login, setLogin] = useState<string | null | undefined>(live ? undefined : "you"); // undefined: still asking /api/me
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");

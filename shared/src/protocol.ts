@@ -6,6 +6,7 @@ import { GoalId, Goals } from "./goals";
 import {
   Actor,
   Autonomy,
+  Learned,
   AutonomyLevel,
   Belt,
   Bottleneck,
@@ -46,6 +47,7 @@ export const Patch = z.object({
   bottleneck: Bottleneck.nullable().optional(),
   holdingBack: HoldingBack.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
+  learned: z.array(Learned).optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
   brain: Brain.optional(), // full replacement when present
@@ -109,6 +111,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   // down: never. why: once = just this one, kind = stop this kind (a rule), spark = Spark decides these, wrong = Spark misread it (a scar)
   z.object({ type: z.literal("dismiss_move"), moveId: z.string(), why: z.enum(["once", "kind", "spark", "wrong"]) }),
   z.object({ type: z.literal("undo"), actionId: z.string() }),
+  // docs/LEARN.md: stop doing this kind of card on its own; it asks the player again.
+  z.object({ type: z.literal("unlearn"), key: z.string().max(200) }),
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),

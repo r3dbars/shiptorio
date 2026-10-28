@@ -12,7 +12,8 @@ import { redactText } from "./redact";
 
 export const TAPS_RETENTION_MS = 90 * 86400000;
 
-export type TapAction = "continue" | "other" | "later" | "never" | "gone";
+/** auto: the factory answered it on its own, after the player taught it (docs/LEARN.md). */
+export type TapAction = "continue" | "other" | "later" | "never" | "gone" | "auto";
 export type NeverReason = "once" | "kind" | "spark" | "wrong";
 export type TapOutcome = "shipped_clean" | "shipped_after_rework" | "rework" | "came_back";
 

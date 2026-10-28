@@ -1,0 +1,104 @@
+/* The simple screen (?simple=1): the slow-spot line top center, the one task tray bottom center (TaskTray.tsx).
+   Black Iron plates, same as the rest of the HUD: a 2px iron border, a black outline, pixel labels, mono text. */
+
+.slowspot {
+  position: absolute; z-index: 7; top: calc(10px + var(--sat)); left: calc(10px + var(--sal)); right: calc(10px + var(--sar));
+  margin-inline: auto; width: fit-content; display: flex; align-items: center; gap: 10px; max-width: 620px; padding: 7px 8px 7px 12px;
+  background: rgba(14, 10, 8, 0.94); border: 2px solid var(--iron-line); outline: 2px solid #000; border-radius: 0;
+  color: var(--iron-ink); font: 600 13px/1.25 var(--mono); cursor: pointer; text-align: left;
+}
+.slowspot .k { flex: none; font: 400 9px/1 var(--pixel); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.slowspot b { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slowspot.you { border-color: var(--iron-amber); }
+.slowspot.you b { color: var(--iron-amber); }
+.slowspot.line { border-color: var(--iron-bad); }
+.slowspot.line b { color: #ffb3a6; }
+.slowspot.clear b { color: var(--iron-ok); }
+.slowspot .ideas { flex: none; font-size: 11px; color: var(--iron-aether); }
+.slowspot .go { flex: none; font: 700 9px/1 var(--pixel); letter-spacing: .1em; text-transform: uppercase; padding: 5px 7px; background: var(--iron-amber); color: #140c02; }
+.slowspot:not(.you) .go { background: transparent; color: var(--iron-aether); border: 2px solid #2f5a52; }
+.slowspot:disabled { cursor: default; }
+.slowspot:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
+
+/* the tray sits at the bottom, in thumb reach, on every screen */
+.needs-slot.simple { top: auto; bottom: calc(14px + var(--sab)); width: min(600px, calc(100% - 20px)); }
+.tasktray .acard.task { cursor: grab; }
+.tasktray .tw { font-size: 12px; color: #e6d6bc; }
+.tasktray .tdo { font-size: 11px; color: var(--dim); }
+.tasktray .tearn { font-size: 11px; color: var(--iron-aether); }
+.tasktray .tpager { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; font: 400 9px/1 var(--pixel); letter-spacing: .08em; color: var(--dim); white-space: nowrap; }
+.tasktray .tpager button { padding: 8px 9px; border-color: transparent; color: var(--iron-ink); font-size: 13px; }
+.tasktray .aacts .atog { margin-left: 0; }
+
+@media (max-width: 760px) {
+  .slowspot { top: calc(16px + var(--sat) + var(--top-h, 60px)); gap: 8px; font-size: 12px; }
+  .needs-slot.simple { left: calc(8px + var(--sal)); right: calc(8px + var(--sar)); bottom: calc(8px + var(--sab)); width: auto; transform: none; }
+}
+
+/* the compact floor card: a small wordmark and two numbers on one line */
+.floorcard.compact { flex-direction: row; align-items: center; gap: 12px; padding: 6px 10px; }
+.floorcard.compact h1 { width: 116px; }
+.floorcard.compact .counts dd { font-size: 20px; }
+@media (max-width: 760px) {
+  .floorcard.compact { flex: 0 1 auto; gap: 8px; }
+  .floorcard.compact h1 { width: 84px; }
+  .floorcard.compact .counts dd { font-size: 16px; }
+}
+
+/* the spotlight (ShaftHud.quiet): the map dims around the machine the task card is about, so the card and the thing it
+   talks about are the brightest two things on screen */
+.shaftspot {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .45s ease;
+  background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 var(--sr, 160px), rgba(6, 4, 3, var(--dim-a, .66)) calc(var(--sr, 160px) * 1.9));
+}
+.shaftspot.on { opacity: 1; transition-delay: .35s; } /* wait out most of the camera flight, so it never goes black mid-move */
+:root[data-look~="hard"] .shaftspot { --dim-a: .78; background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 var(--sr, 160px), rgba(6, 4, 3, var(--dim-a)) calc(var(--sr, 160px) + 6px)); }
+:root[data-look~="nospot"] .shaftspot { display: none; }
+@media (prefers-reduced-motion: reduce) { .shaftspot { transition: none; } }
+
+/* glass: the plates go see-through so the factory shows behind them (?look=glass, a style pick) */
+:root[data-look~="glass"] .tasktray .acard, :root[data-look~="glass"] .slowspot, :root[data-look~="glass"] .floorcard.compact, :root[data-look~="glass"] .hudicons {
+  background: rgba(14, 10, 8, 0.5); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); outline-color: rgba(0, 0, 0, .5);
+}
+
+/* gestures (journey round 3): what letting go would do shows on the card while you drag */
+.tasktray .acard.task { position: relative; touch-action: none; transition: transform .18s ease; }
+.tasktray .acard.task[style] { transition: none; }
+.tasktray .tintent {
+  position: absolute; z-index: 2; top: 8px; left: 50%; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+  font: 700 10px/1 var(--pixel); letter-spacing: .12em; text-transform: uppercase; padding: 6px 8px; background: #000; color: var(--iron-ink); border: 2px solid var(--iron-line);
+}
+.tasktray .will-go .tintent, .tasktray .will-launch .tintent { color: var(--iron-ok); border-color: var(--iron-ok); }
+.tasktray .will-later .tintent { color: var(--dim); }
+.tasktray .will-more .tintent, .tasktray .will-less .tintent { color: var(--iron-aether); border-color: #2f5a52; }
+.tasktray .will-never .tintent { color: #ffb3a6; border-color: var(--iron-bad); }
+.tasktray .will-launchFar .tintent { color: var(--iron-amber); }
+.tasktray .amore .tnever-btn { margin-top: 6px; color: #ffb3a6; border-color: #5a2a22; }
+
+/* the first card's Go glows until the first Continue (no tour: pick 4) */
+.tasktray .ago.glow { animation: tglow 1.4s ease-in-out infinite; }
+@keyframes tglow { 50% { box-shadow: inset 0 0 0 3px var(--iron-aether), 0 0 18px var(--iron-aether); } }
+@media (prefers-reduced-motion: reduce) { .tasktray .ago.glow { animation: none; box-shadow: inset 0 0 0 3px var(--iron-aether); } }
+
+/* a never's optional why: one tap, or nothing and it goes as a plain never */
+.tasktray .tnever {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; padding: 8px 10px;
+  background: rgba(14, 10, 8, 0.94); border: 2px solid var(--iron-line); outline: 2px solid #000; font: 600 12px/1.3 var(--mono); color: var(--iron-ink);
+}
+.tasktray .tnever > span { font: 400 9px/1 var(--pixel); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+.tasktray .tnever div { display: flex; flex-wrap: wrap; gap: 6px; }
+.tasktray .tnever button { padding: 7px 9px; font: 600 12px/1.2 var(--mono); background: #1e1814; color: var(--iron-ink); border: 2px solid var(--iron-line); }
+
+/* all caught up: one line over the whole factory after your last card */
+.caughtup {
+  position: absolute; z-index: 7; left: 0; right: 0; bottom: 38%; margin-inline: auto; width: fit-content; max-width: calc(100% - 32px);
+  padding: 10px 14px; background: rgba(14, 10, 8, 0.6); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 2px solid var(--iron-ok); outline: 2px solid #000; color: var(--iron-ok); font: 600 14px/1.3 var(--mono); pointer-events: none;
+}
+
+/* playtest fixes: parked line on the caught-up card, the shipped moment, the dots meter in the tray */
+.tasktray .tparked { font-size: 12px; color: var(--dim); margin-right: auto; }
+.tasktray .acard.shipped { border-color: var(--iron-ok); }
+.tasktray .acard.shipped .atop b { color: var(--iron-ok); }
+.tasktray .acard.shipped .att::before { content: "🚀 "; }
+.tasktray .learndots { margin-top: 2px; }
