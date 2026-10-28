@@ -11,6 +11,15 @@ How we turn the 2D deck into real, animated pixel art before the Nov 4 deadline.
 - **No new game engine before Nov 4.** We keep our canvas and add a small pixel layer. PixiJS is the upgrade after the deadline.
 - **Tonight and tomorrow:** generate all the art while your ChatGPT credits last. Codex and Claude build the code side at the same time.
 
+## Update, Oct 28 9:25 PM: code first
+
+Justin's call: **anything that moves is drawn in code**, the way Thariq (@trq212, "treek") builds his prototypes. Big pieces that never move stay as **pictures**. Nothing else in this plan changes. Code and pictures share the same tiny canvas and the same 48 colors, and that shared canvas is what makes them look like one game.
+
+- **Code draws:** stations and their states, Shippy and every pose, belt, crates, lever, lamps, beacon, gauges, gears, rocket and flame, and every effect. Each one is a small function that fills whole art pixels with palette colors into the art-res buffer. No arcs, no anti-aliasing. A palette quantize pass at the end of each frame snaps any stray color to the 48.
+- **Pictures:** sky, city skyline, cloud strips, deck body and its underside rock, launch island rock. Snapped with `pixelize.py`.
+- **ChatGPT's job changes.** It makes the static pictures, plus one reference still per object that the code version copies (shapes, proportions, where the rivets go). The edit-frame prompts in section 3 become optional backup if a code version can't get close.
+- **How Thariq does it** (from `docs/ART.md`): real 3D primitives in three.js, flat shading, an orthographic camera at 45 degrees, rendered to a low-res buffer with nearest-neighbor, then a full-screen pass for outline, saturation/contrast and palette quantize. Our 2D version is the same recipe without the 3D: code shapes, low-res buffer, palette lock.
+
 ## What it looks like (proof from our own art)
 
 ![Before and after: the original ChatGPT art on top, snapped to the contract below](pixel/before-after.webp)
