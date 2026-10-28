@@ -40,8 +40,6 @@ const capAt = (z: DeckSize) => DECKS[z].cap * DECKS[z].s; // world x where a siz
 const endAt = (z: DeckSize) => DECKS[z].w * DECKS[z].s; // world x where it ends
 const capW = (z: DeckSize) => endAt(z) - capAt(z);
 const TILE = 80; // one new floor column, world px
-/** The bridge + rocket island sprite (launch/ draws it; the camera still has to fit it). */
-const ISLAND_X1 = 1905 + 1533 * 0.72;
 
 // ---------- timeline, seconds from the start of a grow ----------
 const T: Record<Exclude<GrowPhase, "done">, readonly [number, number]> = {
@@ -79,7 +77,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   let g: Growth | null = null;
   let sparks: Spark[] = [];
   let plaque = { t: -1, size: "small" as DeckSize };
-  let time = 0, island = 0; // island: 0..1 how much of the bridge + rocket island is up (for the camera)
+  let time = 0;
   const queue: DeckSize[] = [];
   for (const n of [...SIZES.map(sprite), ...STAGE_ART, "grow-crane", "grow-plaque-m", "grow-plaque-l"]) art.get(n); // start loading now
 
@@ -136,7 +134,6 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     const target: DeckSize = d?.size ?? "large";
     if (size === null) size = target;
     else want(target);
-    island = !d || d.island === "built" ? 1 : d.island === "building" ? d.islandProgress ?? 0 : 0; // the engine / launch/ eases it
     tick(dt);
   }
 
@@ -340,7 +337,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     },
     bounds() {
       const deckEnd = g ? capX() + capW(g.to) : endAt(now());
-      return { x0: -20, x1: deckEnd + 20 + island * Math.max(0, ISLAND_X1 - deckEnd) };
+      return { x0: -20, x1: deckEnd + 20 }; // just the deck; the engine frames the island itself once it's up
     },
     seek(from: DeckSize, to: DeckSize, t: number) {
       size = from; queue.length = 0; g = null; sparks = []; plaque.t = -1;

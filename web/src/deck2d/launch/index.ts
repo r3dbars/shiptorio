@@ -1,12 +1,13 @@
 import { LAUNCH, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
-import { mountPreview, type Preview } from "./preview";
+import type { Preview } from "./preview";
 import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeBack, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
 
 // launch/: you earn the rocket. The island rises out of the clouds, a bridge is laid out to it from the deck, a
 // launch tower goes up on its ring, and the first rocket is lowered in on the tower's hook. Driven by
 // view.deck.island + islandProgress (timeline.ts maps progress to the picture); emits launch-stage events for juice/.
 // Owns the island outright (replaces "island"); once the build is done the engine's own rocket takes over at the
-// same spot. Dev: /deck.html?launch=preview adds a play button + scrubber (preview.ts).
+// same spot. Dev: /launch.html plays it alone on a quiet deck with a play button + scrubber (page.ts, preview.ts);
+// /deck.html?launch=preview sends you there.
 //
 // Art: Justin's stage sheets, cut by slice-art.py into launch-<island|bridge|tower>-<0..3>.webp. Frames in a set
 // share one height and stay registered, so stepping through them is the animation; this file adds the motion
@@ -26,9 +27,14 @@ const HOT = "255,170,60";
 interface Bit { x: number; y: number; vx: number; vy: number; t: number; life: number; r: number; kind: "rock" | "dust" | "spark" }
 type Place = (im: HTMLImageElement) => [number, number, number];
 
-export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLayer => {
+export const createLayer: CreateLayer = (art, bus) => {
+  if (new URLSearchParams(location.search).get("launch") === "preview") location.replace(`/launch.html${location.search}`);
+  return createLaunchLayer(art, bus, null);
+};
+
+/** The layer itself; preview (launch.html) drives progress directly instead of reading it from the view. */
+export function createLaunchLayer(art: ArtLoader, bus: DeckBus, preview: Preview | null): DeckLayer {
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const preview: Preview | null = new URLSearchParams(location.search).get("launch") === "preview" ? mountPreview() : null;
   let p = -1, t = 0, seatedFlash = 0, upFlash = 0;
   const bits: Bit[] = [];
   let cx!: CanvasRenderingContext2D;
@@ -99,18 +105,17 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
       spawn(1, () => ({ x: rnd(RING.x - 200, RING.x + 200), y: Math.min(CLOUD_Y - 10, RING.y + 220 + riseOffset(u)), vx: rnd(-30, 30), vy: rnd(0, 80), life: 1.2, r: rnd(3, 8), kind: "rock" }));
       if (Math.random() < 0.5) dust(RING.x - 260, RING.x + 260, CLOUD_Y - 60, 1);
     }
-    if (phase === "bridge" && frameAt(u, BRIDGE_AT).k === 1 && Math.random() < dt * 20) sparks(rnd(BRIDGE.x + 120, bridgeEnd(1)), BRIDGE_Y - 10, 2);
   }
   function cues(a: number, b: number) {
     for (const c of crossed(a, b)) {
       bus.emit({ type: "launch-stage", stage: c.stage });
       if (c.stage === "island-up") { upFlash = 1.2; dust(RING.x - 250, RING.x + 250, RING.y + 120, 24); }
-      if (c.stage === "rocket-seated") { seatedFlash = 1; dust(LAUNCH.x - 90, LAUNCH.x + 90, LAUNCH.y + 10, 16); sparks(LAUNCH.x, LAUNCH.y, 20); }
+      if (c.stage === "rocket-seated") { seatedFlash = 1; dust(LAUNCH.x - 90, LAUNCH.x + 90, LAUNCH.y + 10, 16); sparks(LAUNCH.x, LAUNCH.y, 10); }
       if (c.stage === "tower") dust(RING.x - 150, RING.x + 150, RING.y + 30, 10);
     }
     // each new bridge frame lands with a burst at its far end
     const ba = through(a, "bridge"), bb = through(b, "bridge");
-    for (let k = 1; k < 4; k++) if (ba < BRIDGE_AT[k] && bb >= BRIDGE_AT[k]) { const x = bridgeEnd(k); sparks(x - 30, BRIDGE_Y - 20, 18); dust(x - 160, x, BRIDGE_Y + 20, 8); }
+    for (let k = 1; k < 4; k++) if (ba < BRIDGE_AT[k] && bb >= BRIDGE_AT[k]) { const x = bridgeEnd(k); sparks(x - 30, BRIDGE_Y - 20, 8); dust(x - 160, x, BRIDGE_Y + 20, 5); }
   }
 
   // ---------- drawing ----------
@@ -164,7 +169,7 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
     cx.save(); cx.beginPath(); cx.rect(x - 10, front, w + 20, y + h - front); cx.clip();
     cx.drawImage(im, x, y, w, h);
     cx.restore();
-    if (l < 0.7) { glow(RING.x, front, 150, 0.5, 0.15); if (Math.random() < 0.5) sparks(rnd(x + 30, x + w - 30), front, 1); }
+    if (l < 0.7) glow(RING.x, front, 150, 0.4, 0.15);
   }
   function drawRing() {
     const { phase } = phaseAt(p);
@@ -207,4 +212,4 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
       else if (slot === "front") drawBits();
     },
   };
-};
+}
