@@ -9,9 +9,11 @@
 import { ART_PX, BELT_Y, LOOK, PALETTE as P, STOP_X, type StopId, type StopState } from "../contract";
 import { STAGE_AT } from "./timeline";
 
-export type DrawStation = (ctx: CanvasRenderingContext2D, id: StopId, state: StopState) => void;
-const stations = import.meta.glob<{ drawStation?: DrawStation }>("../stations/index.ts", { eager: true });
+export type DrawStation = (ctx: CanvasRenderingContext2D, id: StopId, state: StopState, t?: number) => void;
+const stations = import.meta.glob<{ drawStation?: DrawStation; stationSize?: (id: StopId) => { w: number; h: number } }>("../stations/index.ts", { eager: true });
 const external = (): DrawStation | undefined => Object.values(stations)[0]?.drawStation;
+/** How tall the finished machine is in art px (feet = row 0). */
+const heightOf = (stop: StopId) => Object.values(stations)[0]?.stationSize?.(stop).h ?? 38;
 
 /** Half-width of a stop's slot, in art px (110 world units). */
 export const SLOT_PX = 22;
@@ -115,7 +117,7 @@ function standIn(pen: Pen, t: number) {
 
 function machine(pen: Pen, stop: StopId, t: number) {
   const ext = external();
-  if (ext) ext(pen.ctx, stop, "idle"); else standIn(pen, t);
+  if (ext) ext(pen.ctx, stop, "idle", t); else standIn(pen, t);
 }
 
 // ---------- the locked plot: tarp, padlock, plate ----------
@@ -414,12 +416,12 @@ export function drawBuildPx(ctx: CanvasRenderingContext2D, stop: StopId, t: numb
   // the machine: girder cage, then the finished drawing revealed from the feet, then its top lowered in
   const fUp = span(t, STAGE_AT.frame, STAGE_AT.panels - 0.05), pUp = span(t, STAGE_AT.panels, STAGE_AT.top - 0.05);
   if (t < STAGE_AT.land && fUp > 0) { ctx.save(); pen.clip(-Math.round(36 * fUp), 1); cage(pen); ctx.restore(); }
-  const seat = -28; // the top slice (stack + top face) above this row comes in on the hook
+  const seat = -Math.round(heightOf(stop) * 0.74); // the top slice (stack + top face) above this row comes in on the hook
   const body = t < STAGE_AT.top ? -Math.round(pUp * -seat) : seat;
   if (body < 0) { ctx.save(); pen.clip(body, 2); machine(pen, stop, t); ctx.restore(); }
   if (t >= STAGE_AT.top) {
     const thump = t >= STAGE_AT.land && t < STAGE_AT.land + 0.08 ? 1 : 0;
-    ctx.save(); ctx.translate(0, (-drop + thump) * ART_PX); pen.clip(-60, seat - 1); machine(pen, stop, t); ctx.restore();
+    ctx.save(); ctx.translate(0, (-drop + thump) * ART_PX); pen.clip(-80, seat - 1); machine(pen, stop, t); ctx.restore();
   }
   // tarp whips up and off, the plate drops away
   if (t < STAGE_AT.plot + 0.2) {
