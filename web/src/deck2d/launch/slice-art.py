@@ -1,35 +1,30 @@
-# Placeholder art for the launch build: splits pad.webp (bridge + rocket island + tower) into pieces the
-# launch layer can animate one at a time, plus darkened copies for "built but not lit yet".
-# Re-run when Justin's island/bridge/tower stage art lands (or delete once real sheets replace these).
-#   python3 web/src/deck2d/launch/slice-art.py
+# Cuts Justin's launch stage sheets (ChatGPT, 2172x724, 4 frames left to right on transparent) into
+# web/public/deck/art/launch-<name>-<0..3>.webp. Frames in one sheet share one y-range so they stay
+# registered (the island really rises inside its frames); each frame's x is its own run of opaque columns.
+#   python3 web/src/deck2d/launch/slice-art.py island=<sheet.png> bridge=<sheet.png> tower=<sheet.png>
+# Prints each frame's size and its cell-relative offset (the layer anchors on these, see FRAMES in index.ts).
+import sys
 from pathlib import Path
-from PIL import Image, ImageEnhance
+import numpy as np
+from PIL import Image
 
 ART = Path(__file__).resolve().parents[3] / "public" / "deck" / "art"
-pad = Image.open(ART / "pad.webp").convert("RGBA")
-W, H = pad.size
-px = pad.load()
 
-def piece(x, y):
-    if 1018 <= x <= 1440 and y < 222:
-        return "tower"
-    if x >= 1022 or (x >= 900 and y < 392) or (930 <= x < 985 and y >= 610):
-        return "island"
-    return "bridge"
+def runs(mask):
+    out, s = [], None
+    for x, c in enumerate(mask):
+        if c and s is None: s = x
+        if not c and s is not None: out.append((s, x)); s = None
+    if s is not None: out.append((s, len(mask)))
+    return [r for r in out if r[1] - r[0] > 15]
 
-parts = {k: Image.new("RGBA", (W, H)) for k in ("island", "bridge", "tower")}
-out = {k: p.load() for k, p in parts.items()}
-for y in range(H):
-    for x in range(W):
-        if px[x, y][3]:
-            out[piece(x, y)][x, y] = px[x, y]
-
-for name, im in parts.items():
-    box = im.getbbox()
-    crop = im.crop(box)
-    crop.save(ART / f"launch-{name}.webp", quality=88, method=6)
-    print(name, box)
-    if name in ("island", "bridge"):
-        rgb = ImageEnhance.Brightness(ImageEnhance.Color(crop).enhance(0.35)).enhance(0.42)
-        rgb.putalpha(crop.getchannel("A"))
-        rgb.save(ART / f"launch-{name}-dark.webp", quality=88, method=6)
+for arg in sys.argv[1:]:
+    name, path = arg.split("=", 1)
+    im = Image.open(path).convert("RGBA")
+    a = np.array(im)[:, :, 3] > 20
+    rows = np.where(a.any(1))[0]
+    y0, y1 = int(rows[0]), int(rows[-1]) + 1
+    for i, (x0, x1) in enumerate(runs(a.any(0))):
+        fr = im.crop((x0, y0, x1, y1))
+        fr.save(ART / f"launch-{name}-{i}.webp", quality=90, method=6)
+        print(name, i, fr.size)

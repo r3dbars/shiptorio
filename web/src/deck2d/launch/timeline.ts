@@ -2,9 +2,9 @@
 // story can drive it with any curve, the preview can scrub it, and tests can check it.
 //
 //   rise    the island comes up out of the clouds: tip -> half up shedding rocks -> fully up, dark -> ring lights
-//   bridge  a stub juts out from the deck, a crane rolls on and lays girders bay by bay, lanterns light
-//   tower   the launch tower goes up in three lifts inside scaffolding
-//   rocket  the crane hauls a rocket up from the clouds, swings it over and lowers it onto the ring
+//   bridge  a stub juts out from the deck, a crane swings in deck plates, the last beam goes down, lanterns light
+//   tower   the launch tower goes up in three lifts: pad, pillars, gantry
+//   rocket  a rocket comes down from the sky on the gantry's hook and is lowered onto the pad
 
 export const LAUNCH_BUILD_SECONDS = 12; // the whole build at speed 1 (story: islandProgress += dt / this); keep it short, the bottleneck is the point
 

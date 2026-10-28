@@ -1,37 +1,35 @@
 import { LAUNCH, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
 import { mountPreview, type Preview } from "./preview";
-import {
-  LAUNCH_BUILD_SECONDS, clamp01, crossed, easeBack, easeInOut, easeOut, phaseAt, span, through,
-} from "./timeline";
+import { LAUNCH_BUILD_SECONDS, clamp01, crossed, easeBack, easeInOut, easeOut, phaseAt, span, through } from "./timeline";
 
 // launch/: you earn the rocket. The island rises out of the clouds, a bridge is laid out to it from the deck, a
-// tower goes up, and a crane lowers the first rocket onto the ring. Driven by view.deck.island + islandProgress
-// (timeline.ts maps progress to the picture); emits launch-stage events for juice/. Owns the island outright
-// (replaces "island"); once the build is done the engine's own rocket takes over at the same spot.
-// Dev: /deck.html?launch=preview adds a play button + scrubber (preview.ts).
+// launch tower goes up on its ring, and the first rocket is lowered in on the tower's hook. Driven by
+// view.deck.island + islandProgress (timeline.ts maps progress to the picture); emits launch-stage events for juice/.
+// Owns the island outright (replaces "island"); once the build is done the engine's own rocket takes over at the
+// same spot. Dev: /deck.html?launch=preview adds a play button + scrubber (preview.ts).
 //
-// Art: placeholders cut from pad.webp by slice-art.py (launch-island/-bridge/-tower + dark copies) until Justin's
-// rising-island / bridge / tower stage sheets land.
+// Art: Justin's stage sheets, cut by slice-art.py into launch-<island|bridge|tower>-<0..3>.webp. Frames in a set
+// share one height and stay registered, so stepping through them is the animation; this file adds the motion
+// between frames (rise, drop-ins, crossfades), the dust/sparks/rocks, and the rocket on its cable.
 
-const PAD = { x: 1905, y: -50, s: 0.72 }; // where the engine drew pad.webp; the pieces keep its pixel grid
-const wx = (px: number) => PAD.x + px * PAD.s;
-const wy = (py: number) => PAD.y + py * PAD.s;
-const PIECE = { island: { x: 900, y: 179 }, bridge: { x: 0, y: 285 }, tower: { x: 1018, y: 0 } }; // crop offsets (pad px)
-const BAYS = [0, 140, 345, 525, 735, 935, 1022]; // bridge girder bays, pad px from the deck end
-const CLOUD_Y = 640; // the island comes up through here; nothing below it is drawn
-const RING = { x: wx(1265), y: wy(330), rx: 108, ry: 32 };
-const LAMPS_BRIDGE = [[75, 330], [35, 420], [35, 575]].map(([x, y]) => ({ x: wx(x), y: wy(y) }));
-const LAMPS_ISLAND = [[1025, 265], [1060, 405], [1452, 260], [1490, 410], [1402, 615]].map(([x, y]) => ({ x: wx(x), y: wy(y) }));
+// Where each set sits in the world (frame px -> world: x + px * s). Tuned against the engine's belt
+// (bridge deck at BRIDGE_Y 353) and launch spot (rocket feet at LAUNCH.y + 20).
+const RING = { x: LAUNCH.x, y: LAUNCH.y + 14 }; // middle of the landing ring on the island top
+const ISLAND = { s: 1, ringX: 265, ringY: 118 }; // island-3's ring centre, frame px
+const BRIDGE = { x: 1958, s: 1.04, deckY: 205 }; // left end meets the deck; deckY = where its floor is, frame px
+const BRIDGE_Y = 353;
+const TOWER = { s: 0.66, padY: 535 }; // tower frames' pad centre, frame px (x = frame centre)
 const ROCKET_H = 220; // same size and spot as the engine's rocket, so the hand-off is invisible
-const CRANE = { h: 300, jib: 200, bridgeY: 270, parkX: 2990, parkY: 200 };
-const C = { line: "#0c0a0b", iron: "#3a302b", ironHi: "#5a4a3e", brass: "#c98a32", brassHi: "#ffc35a", hot: "255,170,60" };
+const CLOUD_Y = 640; // the island comes up through here; nothing below it is drawn
+const HOT = "255,170,60";
 
 interface Bit { x: number; y: number; vx: number; vy: number; t: number; life: number; r: number; kind: "rock" | "dust" | "spark" }
+type Place = (im: HTMLImageElement) => [number, number, number];
 
 export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLayer => {
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   const preview: Preview | null = new URLSearchParams(location.search).get("launch") === "preview" ? mountPreview() : null;
-  let p = -1, t = 0, landedBays = 0, landedLifts = 0, seatedFlash = 0, upFlash = 0;
+  let p = -1, t = 0, seatedFlash = 0, upFlash = 0;
   const bits: Bit[] = [];
   let cx!: CanvasRenderingContext2D;
 
@@ -41,49 +39,39 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
   const sparks = (x: number, y: number, n = 14) => spawn(n, () => ({ x, y, vx: rnd(-220, 220), vy: rnd(-260, -40), life: rnd(0.3, 0.6), r: rnd(2, 4), kind: "spark" }));
   const dust = (x0: number, x1: number, y: number, n = 10) => spawn(n, () => ({ x: rnd(x0, x1), y, vx: rnd(-60, 60), vy: rnd(-40, -5), life: rnd(0.8, 1.4), r: rnd(12, 26), kind: "dust" }));
 
-  // ---------- where things are at progress p ----------
-  function riseOffset(u: number) {
-    if (u < 0.3) return 820 - 390 * easeOut(u / 0.3); // the tip breaks the clouds
-    if (u < 0.65) return 430 - 260 * easeInOut(span(u, 0.3, 0.65)); // half up, shedding rocks
-    return 170 * (1 - easeBack(span(u, 0.65, 0.86))); // all the way up, clunks into place
+  // ---------- frames ----------
+  /** Which frame of a set shows at u, given where each frame takes over; blend = 0..1 into the next. */
+  function frameAt(u: number, starts: number[], fade = 0.06): { k: number; blend: number } {
+    let k = 0;
+    for (let i = 1; i < starts.length; i++) if (u >= starts[i]) k = i;
+    const next = starts[k + 1];
+    return { k, blend: next === undefined ? 0 : span(u, next - fade, next) };
   }
-  const bayLand = (i: number) => 0.16 + (i - 1) * 0.136 + 0.136 * 0.55; // bridge-u when bay i (1..5) lands
-  const liftLand = (k: number) => (k + 0.75) / 3; // tower-u when lift k (0..2) tops out
+  const ISLAND_AT = [0, 0.3, 0.6, 0.86], BRIDGE_AT = [0, 0.25, 0.55, 0.8], TOWER_AT = [0, 1 / 3, 2 / 3];
 
-  /** The crane: where it stands, which way its jib points (-1..1, foreshortened slew), hook height, what it carries. */
-  function craneAt(): { x: number; y: number; dir: number; hookY: number; alpha: number; load: "bay" | "rocket" | null; bay?: number; bayDy?: number; sway?: number } | null {
-    const b = through(p, "bridge"), r = through(p, "rocket");
-    if (b <= 0.06 || p >= 1) return null;
-    const top = (y: number) => y - CRANE.h;
-    if (b < 0.16) { // rolls on from the deck to the end of the stub
-      const k = easeOut(span(b, 0.06, 0.16)), x = 1780 + (wx(BAYS[1]) - 50 - 1780) * k;
-      return { x, y: CRANE.bridgeY, dir: 0.4, hookY: top(CRANE.bridgeY) + 40, alpha: Math.min(1, k * 3), load: null };
+  /** Frame k, with frame k+1 fading in on top by blend. */
+  function drawSet(name: string, k: number, blend: number, place: Place) {
+    const base = cx.globalAlpha;
+    for (const [i, a] of [[k, 1], [k + 1, blend]] as const) {
+      const im = img(`launch-${name}-${i}`); if (!im || a <= 0) continue;
+      const [x, y, s] = place(im);
+      cx.globalAlpha = base * a;
+      cx.drawImage(im, x, y, im.naturalWidth * s, im.naturalHeight * s);
     }
-    if (b < 0.84) { // lays bays 1..5: lower the girder, it clunks in, roll forward onto it
-      const i = Math.min(5, 1 + Math.floor((b - 0.16) / 0.136)), l = span(b, 0.16 + (i - 1) * 0.136, 0.16 + i * 0.136);
-      const roll = easeInOut(span(l, 0.55, 1)), x = wx(BAYS[i] + (BAYS[i + 1] - BAYS[i]) * roll) - 50;
-      const hookX = wx((BAYS[i] + BAYS[i + 1]) / 2), dir = (hookX - x) / CRANE.jib;
-      const drop = l < 0.55 ? -150 * (1 - easeBack(l / 0.55)) : 0;
-      const bayTop = wy(PIECE.bridge.y) + drop;
-      return l < 0.55
-        ? { x, y: CRANE.bridgeY, dir, hookY: bayTop, alpha: 1, load: "bay", bay: i, bayDy: drop }
-        : { x, y: CRANE.bridgeY, dir: dir * (1 - roll) + 0.4 * roll, hookY: top(CRANE.bridgeY) + 40 + 80 * (1 - roll), alpha: 1, load: null };
-    }
-    if (r <= 0) { // bridge done: roll across the island to the far edge, then wait there through the tower
-      const k = easeInOut(span(b, 0.84, 1));
-      const x = wx(BAYS[5]) - 50 + (CRANE.parkX - wx(BAYS[5]) + 50) * k, y = CRANE.bridgeY + (CRANE.parkY - CRANE.bridgeY) * easeInOut(span(k, 0.35, 0.7));
-      return { x, y, dir: 0.4 - 0.15 * k, hookY: top(y) + 40, alpha: 1, load: null };
-    }
-    // rocket: slew out over the edge, drop the hook through the clouds, haul the rocket up, swing it in, lower it
-    const x = CRANE.parkX, y = CRANE.parkY, jibY = top(y) + 8, over = (LAUNCH.x - x) / CRANE.jib;
-    const seatY = LAUNCH.y + 20 - ROCKET_H; // rocket top when seated
-    if (r < 0.1) return { x, y, dir: 0.25 + 0.75 * easeInOut(r / 0.1), hookY: jibY + 40, alpha: 1, load: null };
-    if (r < 0.22) return { x, y, dir: 1, hookY: jibY + 40 + (CLOUD_Y + 60 - jibY - 40) * easeInOut(span(r, 0.1, 0.22)), alpha: 1, load: null };
-    if (r < 0.45) return { x, y, dir: 1, hookY: CLOUD_Y + 60 - (CLOUD_Y + 60 - jibY - 30) * easeInOut(span(r, 0.22, 0.45)), alpha: 1, load: "rocket" };
-    if (r < 0.66) { const l = span(r, 0.45, 0.66); return { x, y, dir: 1 + (over - 1) * easeInOut(l), hookY: jibY + 30, alpha: 1, load: "rocket", sway: Math.sin(l * Math.PI * 3) * (1 - l) * 0.14 }; }
-    if (r < 0.86) { const l = span(r, 0.66, 0.86); return { x, y, dir: over, hookY: jibY + 30 + (seatY - jibY - 30) * (l < 0.85 ? easeInOut(l / 0.85) : 1), alpha: 1, load: "rocket", sway: Math.sin(l * 9) * (1 - l) * 0.03 }; }
-    const l = span(r, 0.86, 1); // unhook, swing back, sink away behind the island
-    return { x, y: y + 260 * easeInOut(span(l, 0.45, 1)), dir: over + (0.25 - over) * easeInOut(span(l, 0, 0.5)), hookY: seatY - 60 * easeOut(span(l, 0, 0.4)), alpha: 1 - span(l, 0.6, 1), load: null };
+    cx.globalAlpha = base;
+  }
+  const islandPlace = (dy: number): Place => (im) =>
+    [RING.x - (ISLAND.ringX - 251 + im.naturalWidth / 2) * ISLAND.s, RING.y - ISLAND.ringY * ISLAND.s + dy, ISLAND.s];
+  const bridgePlace: Place = () => [BRIDGE.x, BRIDGE_Y - BRIDGE.deckY * BRIDGE.s, BRIDGE.s];
+  const towerPlace = (dy: number): Place => (im) => [RING.x - (im.naturalWidth / 2) * TOWER.s, RING.y - TOWER.padY * TOWER.s + dy, TOWER.s];
+  /** World x of the right end of a bridge frame (where the next piece lands). */
+  const bridgeEnd = (k: number) => BRIDGE.x + (img(`launch-bridge-${k}`)?.naturalWidth ?? 600) * BRIDGE.s;
+  /** The gantry hook (tower-2's hanging lamp), world. */
+  const hook = () => { const w = img("launch-tower-2")?.naturalWidth ?? 450; return { x: RING.x - (w / 2 - 228) * TOWER.s, y: RING.y - (TOWER.padY - 232) * TOWER.s }; };
+
+  function riseOffset(u: number) { // on top of the frames' own rise: keep it moving between steps, then clunk
+    if (u < 0.86) return 120 * (1 - easeOut(u / 0.86));
+    return -10 * Math.sin(span(u, 0.86, 0.95) * Math.PI);
   }
 
   // ---------- update ----------
@@ -108,149 +96,96 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
 
     const { phase, u } = phaseAt(p);
     if (phase === "rise" && u < 0.86 && Math.random() < dt * 40) { // rocks fall off the bottom, cloud churns at the waterline
-      const off = riseOffset(u), x0 = wx(PIECE.island.x + 60), x1 = wx(1500);
-      spawn(1, () => ({ x: rnd(x0, x1), y: Math.min(CLOUD_Y - 10, wy(700) + off), vx: rnd(-30, 30), vy: rnd(0, 80), life: 1.2, r: rnd(3, 8), kind: "rock" }));
-      if (Math.random() < 0.5) dust(x0, x1, CLOUD_Y - 30, 1);
+      spawn(1, () => ({ x: rnd(RING.x - 200, RING.x + 200), y: Math.min(CLOUD_Y - 10, RING.y + 220 + riseOffset(u)), vx: rnd(-30, 30), vy: rnd(0, 80), life: 1.2, r: rnd(3, 8), kind: "rock" }));
+      if (Math.random() < 0.5) dust(RING.x - 260, RING.x + 260, CLOUD_Y - 60, 1);
     }
-    if (phase === "tower") { const l = (u * 3) % 1; if (l < 0.75 && Math.random() < dt * 30) sparks(rnd(wx(1040), wx(1430)), towerFront(u), 2); }
+    if (phase === "bridge" && frameAt(u, BRIDGE_AT).k === 1 && Math.random() < dt * 20) sparks(rnd(BRIDGE.x + 120, bridgeEnd(1)), BRIDGE_Y - 10, 2);
   }
   function cues(a: number, b: number) {
     for (const c of crossed(a, b)) {
       bus.emit({ type: "launch-stage", stage: c.stage });
-      if (c.stage === "island-up") { upFlash = 1.2; dust(wx(950), wx(1520), wy(560), 24); }
-      if (c.stage === "rocket-seated") { seatedFlash = 1; dust(LAUNCH.x - 90, LAUNCH.x + 90, LAUNCH.y, 16); sparks(LAUNCH.x, LAUNCH.y - 6, 20); }
+      if (c.stage === "island-up") { upFlash = 1.2; dust(RING.x - 250, RING.x + 250, RING.y + 120, 24); }
+      if (c.stage === "rocket-seated") { seatedFlash = 1; dust(LAUNCH.x - 90, LAUNCH.x + 90, LAUNCH.y + 10, 16); sparks(LAUNCH.x, LAUNCH.y, 20); }
+      if (c.stage === "tower") dust(RING.x - 150, RING.x + 150, RING.y + 30, 10);
     }
-    const bu = through(b, "bridge"), bays = [1, 2, 3, 4, 5].filter((i) => bu >= bayLand(i)).length;
-    for (; landedBays < bays; landedBays++) { const i = landedBays + 1; sparks(wx(BAYS[i]), wy(420), 18); dust(wx(BAYS[i]), wx(BAYS[i + 1]), wy(470), 6); }
-    landedBays = Math.min(landedBays, bays);
-    const tu = through(b, "tower"), lifts = [0, 1, 2].filter((k) => tu >= liftLand(k)).length;
-    for (; landedLifts < lifts; landedLifts++) dust(wx(1030), wx(1440), towerFront(liftLand(landedLifts)), 8);
-    landedLifts = Math.min(landedLifts, lifts);
-  }
-  /** World y of the top of the built part of the tower at tower-u. */
-  function towerFront(u: number) {
-    const k = Math.min(2, Math.floor(u * 3)), h = (k + easeOut(span((u * 3) % 1 || (u >= 1 ? 1 : 0), 0, 0.75))) / 3;
-    const tw = img("launch-tower"), th = (tw?.naturalHeight ?? 222) * PAD.s, bottom = wy(PIECE.tower.y) + th;
-    return bottom - th * (u >= 1 ? 1 : h);
+    // each new bridge frame lands with a burst at its far end
+    const ba = through(a, "bridge"), bb = through(b, "bridge");
+    for (let k = 1; k < 4; k++) if (ba < BRIDGE_AT[k] && bb >= BRIDGE_AT[k]) { const x = bridgeEnd(k); sparks(x - 30, BRIDGE_Y - 20, 18); dust(x - 160, x, BRIDGE_Y + 20, 8); }
   }
 
   // ---------- drawing ----------
-  function piece(name: "island" | "bridge" | "tower", dy = 0, alpha = 1) {
-    const im = img(`launch-${name}`); if (!im || alpha <= 0) return;
-    cx.globalAlpha = alpha;
-    cx.drawImage(im, wx(PIECE[name].x), wy(PIECE[name].y) + dy, im.naturalWidth * PAD.s, im.naturalHeight * PAD.s);
-    cx.globalAlpha = 1;
-  }
-  /** Dark copy underneath, lit copy faded in on top: "built but not switched on yet" -> on. */
-  function litPiece(name: "island" | "bridge", lit: number, dy = 0) {
-    if (lit < 1) { const d = img(`launch-${name}-dark`); if (d) cx.drawImage(d, wx(PIECE[name].x), wy(PIECE[name].y) + dy, d.naturalWidth * PAD.s, d.naturalHeight * PAD.s); }
-    piece(name, dy, lit);
-  }
-  function glow(x: number, y: number, r: number, rgb: string, a: number, sy = 1) {
+  function glow(x: number, y: number, r: number, a: number, sy = 1) {
     if (a <= 0) return;
     cx.save(); cx.translate(x, y); cx.scale(1, sy);
     const g = cx.createRadialGradient(0, 0, 1, 0, 0, r);
-    g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+    g.addColorStop(0, `rgba(${HOT},${a})`); g.addColorStop(1, `rgba(${HOT},0)`);
     cx.globalCompositeOperation = "lighter"; cx.fillStyle = g; cx.fillRect(-r, -r, r * 2, r * 2);
     cx.restore();
   }
-  const box = (x: number, y: number, w: number, h: number, fill: string) => { cx.fillStyle = C.line; cx.fillRect(Math.round(x) - 2, Math.round(y) - 2, Math.round(w) + 4, Math.round(h) + 4); cx.fillStyle = fill; cx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); };
-
   function drawIsland() {
     const { phase, u } = phaseAt(p);
     if (phase === "none") return;
-    if (phase !== "rise") { litPiece("island", 1); return; }
-    const off = riseOffset(u), shake = reduced || u > 0.86 ? 0 : Math.sin(t * 61) * 3 * (1 - u);
-    cx.save(); cx.beginPath(); cx.rect(PAD.x - 200, -2000, 2000, CLOUD_Y + 2000); cx.clip();
+    if (phase !== "rise") { drawSet("island", 3, 0, islandPlace(0)); return; }
+    const { k, blend } = frameAt(u, ISLAND_AT);
+    const shake = reduced || u > 0.86 ? 0 : Math.sin(t * 61) * 3 * (1 - u);
+    cx.save(); cx.beginPath(); cx.rect(RING.x - 600, -2000, 1200, CLOUD_Y + 2000); cx.clip();
     cx.translate(shake, 0);
-    litPiece("island", span(u, 0.86, 1), off);
+    if (k === 0) cx.globalAlpha = span(u, 0, 0.08); // the tip fades up out of the cloud
+    drawSet("island", k, blend, islandPlace(riseOffset(u)));
+    cx.globalAlpha = 1;
     cx.restore();
+    glow(RING.x, RING.y, 160, span(u, 0.86, 0.92) * 0.6 + upFlash * 0.4, 0.3);
   }
   function drawBridge() {
     const b = through(p, "bridge"); if (b <= 0) return;
-    const dark = img("launch-bridge-dark"), lit = img("launch-bridge"); if (!dark || !lit) return;
-    // how far it's laid: the stub slides out of the deck, then each bay once it's landed
-    const stub = easeOut(span(b, 0, 0.1)) * BAYS[1];
-    let reach = stub;
-    for (let i = 1; i <= 5; i++) if (b >= bayLand(i)) reach = BAYS[i + 1];
-    if (b >= 0.84) reach = BAYS[6];
-    const glowOn = span(b, 0.86, 0.97); // lanterns, deck end first
-    const y0 = wy(PIECE.bridge.y), h = dark.naturalHeight * PAD.s;
-    const cut = (im: HTMLImageElement, sx: number, sw: number, dy = 0) => { if (sw > 0) cx.drawImage(im, sx, 0, sw, im.naturalHeight, wx(sx), y0 + dy, sw * PAD.s, h); };
-    cut(dark, 0, reach);
-    if (glowOn > 0) { cx.globalAlpha = glowOn; cut(lit, 0, reach); cx.globalAlpha = 1; }
-    const cr = craneAt();
-    if (cr?.load === "bay" && cr.bay) cut(dark, BAYS[cr.bay], BAYS[cr.bay + 1] - BAYS[cr.bay], cr.bayDy);
-    LAMPS_BRIDGE.forEach((l, i) => { const on = span(glowOn, i * 0.25, i * 0.25 + 0.3); glow(l.x, l.y, 46, C.hot, on * (0.55 + 0.45 * Math.sin(Math.min(1, on) * Math.PI))); });
+    const { k, blend } = frameAt(b, BRIDGE_AT);
+    if (k > 0) { drawSet("bridge", k, blend, bridgePlace); return; }
+    const im = img("launch-bridge-0"); if (!im) return; // the stub slides out of the deck edge
+    const w = im.naturalWidth * BRIDGE.s * easeOut(span(b, 0, 0.12));
+    cx.save(); cx.beginPath(); cx.rect(BRIDGE.x - 20, -1000, w + 20, 3000); cx.clip();
+    drawSet("bridge", 0, blend, bridgePlace);
+    cx.restore();
   }
   function drawTower() {
     const u = through(p, "tower"); if (u <= 0) return;
-    const tw = img("launch-tower"); if (!tw) return;
-    const x = wx(PIECE.tower.x), w = tw.naturalWidth * PAD.s, th = tw.naturalHeight * PAD.s, bottom = wy(PIECE.tower.y) + th;
-    const front = towerFront(u), scaffold = span(u, 0, 0.06) * (1 - span(u, 0.94, 1));
-    if (scaffold > 0) { // poles and planks around both pillar groups, full height, before the iron fills them
-      cx.globalAlpha = scaffold * 0.85; cx.strokeStyle = C.brass; cx.lineWidth = 3;
-      for (const [a, z] of [[1030, 1170], [1300, 1440]]) {
-        const ax = wx(a), zx = wx(z);
-        cx.beginPath();
-        for (const px of [ax, (ax + zx) / 2, zx]) { cx.moveTo(px, bottom); cx.lineTo(px, bottom - th - 10); }
-        for (let yy = bottom; yy > bottom - th - 10; yy -= 36) { cx.moveTo(ax - 6, yy); cx.lineTo(zx + 6, yy); }
-        cx.stroke();
-      }
+    const { k } = frameAt(u, TOWER_AT, 0);
+    const l = span(u, TOWER_AT[k], TOWER_AT[k + 1] ?? 1);
+    if (k === 0) { // the pad drops onto the ring and clunks
+      cx.globalAlpha = span(l, 0, 0.15);
+      drawSet("tower", 0, 0, towerPlace(-260 * (1 - easeBack(span(l, 0, 0.5)))));
       cx.globalAlpha = 1;
+      return;
     }
-    cx.save(); cx.beginPath(); cx.rect(x - 10, front, w + 20, bottom - front + 4); cx.clip();
-    cx.drawImage(tw, x, bottom - th, w, th);
+    // pillars, then the gantry, rise out of the pad: the new frame is revealed bottom-up over the old one
+    drawSet("tower", k - 1, 0, towerPlace(0));
+    const im = img(`launch-tower-${k}`); if (!im) return;
+    const [x, y, s] = towerPlace(0)(im), w = im.naturalWidth * s, h = im.naturalHeight * s, padTop = RING.y - 30;
+    const front = padTop - (padTop - y) * easeOut(span(l, 0, 0.7));
+    cx.save(); cx.beginPath(); cx.rect(x - 10, front, w + 20, y + h - front); cx.clip();
+    cx.drawImage(im, x, y, w, h);
     cx.restore();
-    if (u < 1 && (u * 3) % 1 < 0.75) { cx.fillStyle = `rgba(${C.hot},0.9)`; cx.fillRect(x, front - 2, w, 3); glow(x + w / 2, front, w / 2, C.hot, 0.35, 0.2); }
+    if (l < 0.7) { glow(RING.x, front, 150, 0.5, 0.15); if (Math.random() < 0.5) sparks(rnd(x + 30, x + w - 30), front, 1); }
   }
   function drawRing() {
-    const { phase, u } = phaseAt(p);
-    const on = phase === "rise" ? span(u, 0.86, 1) : phase === "none" ? 0 : 1;
-    if (on <= 0 || p >= 1) return;
-    const pulse = 0.18 + 0.1 * Math.sin(t * 3);
-    glow(RING.x, RING.y, RING.rx * 1.3, C.hot, on * pulse + upFlash * 0.5 + seatedFlash * 0.6, RING.ry / RING.rx);
-    if (phase === "rise") LAMPS_ISLAND.forEach((l, i) => glow(l.x, l.y, 50, C.hot, span(u, 0.86 + i * 0.02, 0.92 + i * 0.02) * 0.7 * (1 + upFlash)));
+    const { phase } = phaseAt(p);
+    if (phase === "none" || phase === "rise" || p >= 1) return;
+    glow(RING.x, RING.y, 150, 0.15 + 0.08 * Math.sin(t * 3) + seatedFlash * 0.6, 0.3);
   }
-  function drawCrane() {
-    const c = craneAt(); if (!c) return;
-    const { x, y, dir, hookY } = c, top = y - CRANE.h, tip = x + CRANE.jib * dir, jibY = top + 8;
-    cx.globalAlpha = c.alpha;
-    // the load hangs under the hook (bays are drawn with the bridge so they sit in its layer)
-    if (c.load === "rocket") rocket(tip, hookY, c.sway ?? 0);
-    cx.strokeStyle = C.line; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(tip, jibY + 6); cx.lineTo(tip, hookY); cx.stroke();
-    box(tip - 7, hookY - 6, 14, 10, C.brass);
-    // mast: two rails, cross braces
-    box(x - 14, top, 6, CRANE.h - 20, C.iron); box(x + 8, top, 6, CRANE.h - 20, C.iron);
-    cx.strokeStyle = C.ironHi; cx.lineWidth = 3; cx.beginPath();
-    for (let yy = top + 10; yy < y - 30; yy += 34) { cx.moveTo(x - 8, yy); cx.lineTo(x + 8, yy + 17); cx.lineTo(x - 8, yy + 34); }
-    cx.stroke();
-    // base on wheels
-    box(x - 36, y - 26, 72, 16, C.iron); box(x - 36, y - 26, 72, 4, C.brass);
-    for (const wx0 of [x - 24, x + 24]) { cx.fillStyle = C.line; cx.beginPath(); cx.arc(wx0, y - 6, 9, 0, Math.PI * 2); cx.fill(); cx.fillStyle = C.brass; cx.beginPath(); cx.arc(wx0, y - 6, 4, 0, Math.PI * 2); cx.fill(); }
-    // jib (foreshortened as it slews), counterweight the other way, cab on top
-    const back = x - 60 * Math.sign(dir || 1) * Math.max(0.3, Math.abs(dir));
-    box(Math.min(back, tip), jibY, Math.abs(tip - back), 8, C.iron);
-    cx.strokeStyle = C.brass; cx.lineWidth = 2; cx.beginPath();
-    const n = Math.max(1, Math.round(Math.abs(tip - x) / 26));
-    for (let i = 0; i < n; i++) { const a = x + ((tip - x) * i) / n, b = x + ((tip - x) * (i + 1)) / n; cx.moveTo(a, jibY + 8); cx.lineTo((a + b) / 2, jibY); cx.lineTo(b, jibY + 8); }
-    cx.stroke();
-    box(back - 12, jibY + 6, 24, 20, C.ironHi);
-    box(x - 18, top - 18, 36, 24, C.ironHi); box(x - 10, top - 13, 12, 10, C.brassHi);
-    cx.globalAlpha = 1;
-  }
-  /** The rocket by its top-centre, tipped by a small sway. Same art and size as the engine's. */
-  function rocket(x: number, topY: number, sway: number) {
+  /** The rocket, hanging off the gantry hook, lowered onto the pad. Same art and size as the engine's. */
+  function drawRocket() {
+    const r = through(p, "rocket"); if (r <= 0 || p >= 1) return;
     const rk = img("rocket"); if (!rk) return;
+    const h = hook(), seated = LAUNCH.y + 20 - ROCKET_H, hang = Math.min(h.y + 16, seated);
+    let top: number, sway = 0;
+    if (r < 0.6) { const l = span(r, 0, 0.6); top = -900 + (hang + 900) * easeOut(l); sway = reduced ? 0 : Math.sin(l * Math.PI * 4) * (1 - l) * 0.1; }
+    else if (r < 0.66) top = hang;
+    else if (r < 0.86) top = hang + (seated - hang) * easeInOut(span(r, 0.66, 0.86));
+    else top = seated + (r < 0.9 ? Math.sin(span(r, 0.86, 0.9) * Math.PI) * 4 : 0);
     const w = rk.naturalWidth * ROCKET_H / rk.naturalHeight;
-    cx.save(); cx.translate(x, topY); cx.rotate(sway);
+    if (r < 0.9) { cx.strokeStyle = "#0c0a0b"; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(h.x, h.y); cx.lineTo(LAUNCH.x, top); cx.stroke(); }
+    cx.save(); cx.translate(LAUNCH.x, top); cx.rotate(sway);
     cx.drawImage(rk, -w / 2, 0, w, ROCKET_H);
-    cx.strokeStyle = C.line; cx.lineWidth = 3; cx.beginPath(); cx.moveTo(-w * 0.3, 8); cx.lineTo(0, -6); cx.lineTo(w * 0.3, 8); cx.stroke(); // sling
     cx.restore();
-  }
-  function drawSeatedRocket() { // between seating and the engine taking over at p = 1
-    const r = through(p, "rocket"); if (r < 0.86 || p >= 1) return;
-    rocket(LAUNCH.x, LAUNCH.y + 20 - ROCKET_H + (r < 0.9 ? Math.sin(span(r, 0.86, 0.9) * Math.PI) * 4 : 0), 0);
   }
   function drawBits() {
     for (const b of bits) {
@@ -267,9 +202,8 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
     draw(ctx: CanvasRenderingContext2D, slot: LayerSlot) {
       cx = ctx;
       if (p < 0) return;
-      if (p >= 1 && !bits.length) { if (slot === "deck") { litPiece("bridge", 1); litPiece("island", 1); piece("tower"); } return; }
       if (slot === "deck") { drawBridge(); drawIsland(); drawTower(); drawRing(); }
-      else if (slot === "line") { drawSeatedRocket(); drawCrane(); }
+      else if (slot === "line") drawRocket();
       else if (slot === "front") drawBits();
     },
   };
