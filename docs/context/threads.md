@@ -8,7 +8,7 @@
 ## Steam & iron sound picks (Claude, 2026-10-27)
 
 - Soundboard thread owns all SFX and music now (the gameplay thread handed over `claude/gameplay-sound`). Justin picked every sound on the A/B soundboard (https://claude.ai/artifact/EdGMjvx9LP9xTfzNv9Cwe3); recipes live in `web/src/sound/steamIron.ts` with the take each one is (`PICKS`).
-- Machine taps play when the camera flies in (`tapFor` in steamIron, called from `useFactorySound`); close-ups get a mood layer (working / stuck / rework / idle, `moodOf`); the hold-to-launch button is a 4-tick countdown clank; card Continue / Later, unlock, merged, caught a bug and ore arriving replaced the chiptune versions. Repair sounds (`repair_pry`, `repair_boiler`, `repair_cart`) are ready for the first-run repair slice.
+- Machine taps play when the camera flies in (`tapFor` in steamIron, called from `useFactorySound`); close-ups get a mood layer (working / stuck / rework / idle, `moodOf`); the hold-to-launch button is a 4-tick countdown clank; card Continue / Later, unlock, merged, caught a bug and ore arriving replaced the chiptune versions. Repair sounds play when a build-out hold completes: tunnel = `repair_pry` (Crowbar), boiler = `repair_boiler` (Ignite), issue = `repair_cart` (Hammer); see `REPAIR_SFX` in web/src/ui/Buildout.tsx.
 - Music: Justin hasn't picked tracks yet, so the current score stays.
 
 ## Let players play first, sign in later (Claude, 2026-10-27)
