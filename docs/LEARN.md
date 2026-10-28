@@ -23,8 +23,8 @@ red button stays with the player), a customer reply, research, rework plans, loc
 
 ## The meter
 
-`Move.learn = { have, need }` on learnable cards. The card shows ●●○ and one line: "1 more yes and the factory does
-these for you." An old streak from before learning never skips the last dot.
+`Move.learn = { have, need }` on learnable cards. The card shows ●●○ and one line: "Approve 1 more like this and then
+it's automatic." (Justin's round 3 pick) An old streak from before learning never skips the last dot.
 
 ## Code
 

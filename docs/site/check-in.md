@@ -67,7 +67,7 @@ Every swipe can be undone for five minutes. Push a card to **Later** three times
 
 ## Teach the factory
 
-Plan cards and plan approvals carry a row of dots: **●●○ 1 more yes and the factory does these for you.** Each Continue on that kind of card, in that folder, fills a dot. Fill all three and the factory starts and approves those plans on its own from then on. **Later**, picking another option, or **Never** empties the dots again, and **Just this one** also tells the planner to try a different version or something else next time.
+Plan cards and plan approvals carry a row of dots: **●●○ Approve 1 more like this and then it's automatic.** Each Continue on that kind of card, in that folder, fills a dot. Fill all three and the factory starts and approves those plans on its own from then on. **Later**, picking another option, or **Never** empties the dots again, and **Just this one** also tells the planner to try a different version or something else next time.
 
 Launching is never learned: the red button always waits for you. If work the factory started on its own comes back from the gauntlet, that kind of card goes back to asking you. See everything it learned in **Make it yours**, where **Ask me again** turns one off.
 
