@@ -1,24 +1,29 @@
 // The construction moment: a stop goes from a tarped, padlocked plot to a finished machine with a gold burst and a
-// green check. ~5.4s until the engine's normal sprite takes over; the check and afterglow linger to ~7.6s.
+// green check. ~2.5s until the engine's normal sprite takes over; the check and afterglow linger to 3.5s
+// (the first run is serial, so this stays short).
 // Thread "Animate a station getting built"; this folder only. Art: Justin's ChatGPT sheets, cut by
 // scripts/art/cut-build.py into /deck/art/build-*.webp, fx-*.webp and <stop>-build-1..4.webp.
 //
 // The beats (seconds from the start):
 //   0.00 unlock    tarp whips off, padlock pops, plate drops away
-//   0.45 plot      chalk plot glows gold, corner lamps light
-//   1.00 scaffold  scaffold platform and crane rise beside the plot
-//   1.60 frame     the frame goes up from the feet, sparks at the edge
-//   2.50 panels    panels weld on over the frame
-//   3.60 top       the crane brings the top down; thump + dust at 4.25
-//   4.55 burst     scaffold and crane drop away, gold ring bursts, the machine flashes
-//   5.00 check     green check pops (small, overshoot, settle)
-//   5.40 done      the engine draws the normal idle sprite again
+//   0.20 plot      chalk plot glows gold, corner lamps light
+//   0.45 scaffold  scaffold platform and crane rise behind the plot
+//   0.70 frame     the frame goes up from the feet
+//   1.15 panels    panels weld on over the frame
+//   1.65 top       the crane brings the top down; thump + dust at 1.95
+//   2.10 burst     scaffold and crane drop away, gold ring bursts
+//   2.30 check     green check pops (small, overshoot, settle)
+//   2.50 done      the engine draws the normal idle sprite again
+// Calm by design (Justin, 2026-10-28): everything stays inside the stop's own slot (SLOT px either side, neighbours
+// are ~250 apart), no welding sparks or flashes mid-build, one small shake when the top lands, one burst at the end.
 // A stop with <stop>-build-1..4 sprites (builder today) plays those stages; others reveal their idle sprite instead.
 
 import { BELT_Y, LOOK, STOP_X, type ArtLoader, type DeckBus, type DeckView, type Stop, type StopId } from "../contract";
 
 export type BuildStage = "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check";
-export const STAGE_AT = { unlock: 0, plot: 0.45, scaffold: 1.0, frame: 1.6, panels: 2.5, top: 3.6, land: 4.25, burst: 4.55, check: 5.0, done: 5.4, gone: 7.6 } as const;
+export const STAGE_AT = { unlock: 0, plot: 0.2, scaffold: 0.45, frame: 0.7, panels: 1.15, top: 1.65, land: 1.95, burst: 2.1, check: 2.3, done: 2.5, gone: 3.5 } as const;
+/** Half-width of a stop's slot in world px: scaffold, crane, dust and burst stay inside it. */
+const SLOT = 110;
 const STAGES: BuildStage[] = ["plot", "scaffold", "frame", "panels", "top", "burst", "check"];
 
 const SPRITE_OF: Partial<Record<StopId, string>> = { launch: "gate" };
@@ -30,7 +35,7 @@ export const BUILD_SPRITES = [
   "build-tarp", "build-plate", "build-plot-dim", "build-plot-glow", "build-scaffold",
   "build-crane-left", "build-crane-up", "build-crane-right",
   "build-burst-1", "build-burst-2", "build-burst-3", "build-burst-4", "build-check-1", "build-check-2", "build-check-3",
-  "fx-spark-1", "fx-spark-2", "fx-spark-3", "fx-spark-4", "fx-dust-1", "fx-dust-2", "fx-dust-3", "fx-dust-4",
+  "fx-dust-1", "fx-dust-2", "fx-dust-3", "fx-dust-4",
   "builder-build-1", "builder-build-2", "builder-build-3", "builder-build-4",
 ] as const;
 
@@ -43,9 +48,8 @@ export interface BuildOptions {
   now?: () => number; // test hook
 }
 
-interface Job { stop: StopId; t: number; fired: Set<string>; sparkAcc: number }
-interface Puff { name: "spark" | "dust"; x: number; y: number; size: number; t: number; dur: number; flip: boolean }
-interface Bit { x: number; y: number; vx: number; vy: number; life: number; max: number }
+interface Job { stop: StopId; t: number; fired: Set<string> }
+interface Puff { name: "dust"; x: number; y: number; size: number; t: number; dur: number; flip: boolean }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 const span = (t: number, a: number, b: number) => clamp01((t - a) / (b - a));
@@ -72,7 +76,6 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   const locked = new Set<StopId>();
   const seen = new Map<StopId, boolean>();
   const puffs: Puff[] = [];
-  const bits: Bit[] = [];
   const tints = new Map<string, HTMLCanvasElement>();
   const reduced = opts.reduced ?? (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
   let clock = 0;
@@ -115,24 +118,14 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   function puff(name: Puff["name"], x: number, y: number, size: number, dur = 0.45) {
     puffs.push({ name, x, y, size, t: 0, dur, flip: Math.random() < 0.5 });
   }
-  function spark(x: number, y: number) {
-    const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, s = 90 + Math.random() * 170;
-    bits.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0, max: 0.25 + Math.random() * 0.35 });
-  }
 
   function start(stop: StopId) {
     locked.delete(stop);
-    jobs.set(stop, { stop, t: 0, fired: new Set(), sparkAcc: 0 });
+    jobs.set(stop, { stop, t: 0, fired: new Set() });
   }
 
   /** The height (0..1 of the machine) the current layer has reached, and which layer. */
   const reveal = (t: number, a: number, b: number) => ease.inOut(span(t, a, b));
-  /** Where the welding is happening: on the rising edge, sweeping side to side. */
-  function weldAt(j: Job) {
-    const h = LOOK[j.stop].h, w = widthOf(j.stop), t = j.t;
-    const up = t < STAGE_AT.panels ? reveal(t, STAGE_AT.frame, STAGE_AT.panels - 0.1) : reveal(t, STAGE_AT.panels, STAGE_AT.top - 0.1);
-    return { x: STOP_X[j.stop] + Math.sin(t * 3.3) * w * 0.32, y: feet(j.stop) - h * (0.08 + up * 0.8) };
-  }
 
   function step(j: Job, dt: number) {
     const t0 = j.t; j.t += dt;
@@ -141,19 +134,11 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       if (t >= STAGE_AT[st] && !j.fired.has(st)) { j.fired.add(st); bus?.emit({ type: "build-stage", stop, stage: st }); }
     }
     const crossed = (at: number) => t0 < at && t >= at;
-    if (crossed(0.05)) puff("spark", x, f - h * 0.28, 70, 0.35); // the padlock pops
-    if (t > STAGE_AT.frame && t < STAGE_AT.top) {
-      j.sparkAcc += dt * (reduced ? 10 : t < STAGE_AT.panels ? 28 : 50);
-      while (j.sparkAcc >= 1) { j.sparkAcc--; const p = weldAt(j); spark(p.x, p.y); }
-      if (!reduced && Math.floor(t0 * 3) !== Math.floor(t * 3)) { const p = weldAt(j); puff("spark", p.x, p.y, 54, 0.32); }
-    }
     if (crossed(STAGE_AT.land)) {
-      shakeAmp = Math.max(shakeAmp, reduced ? 0 : 7);
-      puff("dust", x - w * 0.42, f - 10, 92, 0.7); puff("dust", x + w * 0.42, f - 10, 92, 0.7);
-      if (!reduced) puff("dust", x, f - h * 0.75, 70, 0.6);
+      shakeAmp = Math.max(shakeAmp, reduced ? 0 : 2.5);
+      const dx = Math.min(w * 0.4, SLOT - 35);
+      puff("dust", x - dx, f - 10, 64, 0.7); puff("dust", x + dx, f - 10, 64, 0.7);
     }
-    if (crossed(STAGE_AT.burst - 0.1)) { puff("dust", x - w * 0.95, f - 6, 110, 0.75); puff("dust", x + w * 0.95, f - 6, 110, 0.75); }
-    if (crossed(STAGE_AT.burst)) shakeAmp = Math.max(shakeAmp, reduced ? 0 : 3);
     if (crossed(STAGE_AT.check)) bus?.emit({ type: "station-built", stop });
     if (t >= STAGE_AT.gone) jobs.delete(stop);
   }
@@ -195,7 +180,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   function drawTarpOff(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), w = widthOf(j.stop), c = ctx0!;
     const tarp = img("build-tarp");
-    const k = span(t, 0.08, STAGE_AT.plot + 0.35);
+    const k = span(t, 0.04, STAGE_AT.plot + 0.2);
     if (tarp && k < 1) {
       const th = (tarp.height * w * 1.02) / tarp.width, shiver = t < 0.08 ? Math.sin(t * 160) * 2 : 0;
       c.save();
@@ -206,17 +191,17 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       c.drawImage(tarp, -(w * 1.02) / 2, -th, w * 1.02, th);
       c.restore();
     }
-    const pk = span(t, 0, 0.45);
+    const pk = span(t, 0, 0.25);
     if (pk < 1) drawPlate(j.stop, x, f + 40, 1 - pk, ease.in(pk) * 40);
   }
 
   function drawScaffold(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), h = LOOK[j.stop].h, w = widthOf(j.stop), c = ctx0!;
-    const up = ease.out(span(t, STAGE_AT.scaffold, STAGE_AT.scaffold + 0.55)), off = span(t, STAGE_AT.burst - 0.15, STAGE_AT.burst + 0.3);
+    const up = ease.out(span(t, STAGE_AT.scaffold, STAGE_AT.scaffold + 0.3)), off = span(t, STAGE_AT.burst - 0.15, STAGE_AT.burst + 0.3);
     if (up <= 0 || off >= 1) return;
     const sc = img("build-scaffold");
     if (!sc) return;
-    const sh = h * 0.62, sx = x - w * 0.5 - (sh * sc.width) / sc.height * 0.22, sink = ease.in(off) * 50;
+    const sh = Math.min(h * 0.8, (SLOT * 2 * 0.9 * sc.height) / sc.width), sx = x - 12, sink = ease.in(off) * 30; // behind the machine, inside the slot
     c.save(); c.globalAlpha = 1 - off;
     put(sc, sx, f + 4 + sink, sh, [0, up]); // grows up from its feet
     c.restore();
@@ -225,14 +210,14 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   /** The crane stands right of the plot and swings: left over the machine while it builds, up to lift, back for the top. */
   function drawCrane(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), h = LOOK[j.stop].h, w = widthOf(j.stop), c = ctx0!;
-    const up = ease.out(span(t, STAGE_AT.scaffold + 0.15, STAGE_AT.scaffold + 0.75)), off = span(t, STAGE_AT.burst - 0.2, STAGE_AT.burst + 0.35);
+    const up = ease.out(span(t, STAGE_AT.scaffold + 0.05, STAGE_AT.scaffold + 0.35)), off = span(t, STAGE_AT.burst - 0.2, STAGE_AT.burst + 0.35);
     if (up <= 0 || off >= 1) return;
     const swing = t < STAGE_AT.panels ? "up" : t < STAGE_AT.top - 0.35 ? (Math.floor(t * 1.6) % 2 ? "up" : "left") : "left";
     const im = img(`build-crane-${swing}`);
     if (!im) return;
-    const ch = h * 1.25, cx = x + w * 0.62 + ch * 0.12 + ease.in(off) * 60;
+    const ch = Math.min(h * 1.05, (SLOT * 1.3 * im.height) / im.width), cx = x + SLOT - (ch * im.width) / im.height / 2; // base at the slot's right edge
     c.save(); c.globalAlpha = 1 - off;
-    put(im, cx, f + 4 + ease.in(off) * 40, ch, [0, up]);
+    put(im, cx, f - 6 + ease.in(off) * 30, ch, [0, up]);
     c.restore();
   }
 
@@ -267,29 +252,23 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
         c.save(); c.globalAlpha = span(t, STAGE_AT.top, STAGE_AT.top + 0.2); put(im, x, f - drop, h - squash, [0.72, 1]); c.restore();
       }
     }
-    // the gold edge line where the welding is
-    if (t > STAGE_AT.frame && t < STAGE_AT.top - 0.1) {
-      const p = weldAt(j), w = widthOf(stop);
-      c.save(); c.globalCompositeOperation = "lighter"; c.strokeStyle = "rgba(255,200,90,0.75)"; c.lineWidth = 2; c.shadowColor = "#ffc94a"; c.shadowBlur = 8;
-      c.beginPath(); c.moveTo(x - w * 0.38, p.y); c.lineTo(x + w * 0.38, p.y); c.stroke(); c.restore();
-    }
     // the flash that hides the swap to the finished sprite
     if (t >= STAGE_AT.burst - 0.05 && t < STAGE_AT.done && im) {
       const k = span(t, STAGE_AT.burst - 0.05, STAGE_AT.done);
-      c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha = (1 - k) * 0.7; put(tint(im, "#ffd77a"), x, f, h); c.restore();
+      c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha = (1 - k) * 0.45; put(tint(im, "#ffd77a"), x, f, h); c.restore();
     }
   }
 
   function drawBurst(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), h = LOOK[j.stop].h, w = widthOf(j.stop), c = ctx0!;
-    const k = span(t, STAGE_AT.burst, STAGE_AT.burst + 0.7);
+    const k = span(t, STAGE_AT.burst, STAGE_AT.burst + 0.45);
     if (k > 0 && k < 1) {
-      const n = Math.min(4, 1 + Math.floor(k * 4)), im = img(`build-burst-${n}`), d = w * (1.3 + k * 1.3);
+      const n = Math.min(4, 1 + Math.floor(k * 4)), im = img(`build-burst-${n}`), d = SLOT * 2 * (0.6 + k * 0.4);
       c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
       if (im) c.drawImage(im, x - d / 2, f - h * 0.5 - d / 2, d, d);
-      const g = c.createRadialGradient(x, f - h * 0.5, 0, x, f - h * 0.5, w * 1.2);
+      const g = c.createRadialGradient(x, f - h * 0.5, 0, x, f - h * 0.5, SLOT);
       g.addColorStop(0, `rgba(255,210,110,${0.45 * (1 - k)})`); g.addColorStop(1, "rgba(255,210,110,0)");
-      c.fillStyle = g; c.fillRect(x - w * 1.2, f - h * 0.5 - w * 1.2, w * 2.4, w * 2.4);
+      c.fillStyle = g; c.fillRect(x - SLOT, f - h * 0.5 - SLOT, SLOT * 2, SLOT * 2);
       c.restore();
     }
     // warm afterglow on the finished machine
@@ -324,19 +303,11 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       const n = Math.min(4, 1 + Math.floor((p.t / p.dur) * 4)), im = img(`fx-${p.name}-${n}`);
       if (!im) continue;
       c.save();
-      if (p.name === "spark") c.globalCompositeOperation = "lighter";
-      c.globalAlpha = p.name === "dust" ? 0.9 : 1;
+      c.globalAlpha = 0.85;
       c.translate(p.x, p.y); if (p.flip) c.scale(-1, 1);
       c.drawImage(im, -p.size / 2, -p.size / 2, p.size, p.size);
       c.restore();
     }
-    c.save(); c.globalCompositeOperation = "lighter"; c.lineWidth = 2;
-    for (const b of bits) {
-      const k = b.life / b.max;
-      c.strokeStyle = k < 0.35 ? "#fff1b0" : k < 0.7 ? "#ffc94a" : "#ff7a2a"; c.globalAlpha = 1 - k * 0.6;
-      c.beginPath(); c.moveTo(b.x, b.y); c.lineTo(b.x - b.vx * 0.03, b.y - b.vy * 0.03); c.stroke();
-    }
-    c.restore();
   }
 
   return {
@@ -352,11 +323,6 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       first = false;
       for (const j of [...jobs.values()]) step(j, dt);
       for (let i = puffs.length - 1; i >= 0; i--) if ((puffs[i].t += dt) >= puffs[i].dur) puffs.splice(i, 1);
-      for (let i = bits.length - 1; i >= 0; i--) {
-        const b = bits[i];
-        if ((b.life += dt) >= b.max) { bits.splice(i, 1); continue; }
-        b.vy += 520 * dt; b.x += b.vx * dt; b.y += b.vy * dt;
-      }
     },
     draw(ctx, slot) {
       ctx0 = ctx;
@@ -365,7 +331,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
         for (const s of locked) drawLocked(s);
         for (const j of jobs.values()) {
           if (j.t >= STAGE_AT.done) continue;
-          drawScaffold(j); drawMachine(j); drawCrane(j); drawTarpOff(j);
+          drawScaffold(j); drawCrane(j); drawMachine(j); drawTarpOff(j); // scaffold + crane behind the machine
         }
         return;
       }
