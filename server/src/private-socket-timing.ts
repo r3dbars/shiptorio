@@ -1,6 +1,6 @@
 // Fixed numeric diagnostics for the isolated fixture only; never a request-header capability.
 export const PRIVATE_SOCKET_TIMING = Symbol("private-socket-timing");
-type Phase = "app_trace_auth" | "app_signed_in" | "app_scope_auth" | "app_repo_access" | "app_quotas" | "app_factory_lookup" | "app_ensure" | "app_socket_fetch" | "do_auth" | "do_load" | "do_admin_view" | "do_repo_access" | "do_frame";
+type Phase = "app_admin_view" | "app_deleted" | "app_installation" | "app_trace_auth" | "app_signed_in" | "app_scope_auth" | "app_repo_access" | "app_quotas" | "app_factory_lookup" | "app_ensure" | "app_socket_fetch" | "do_auth" | "do_load" | "do_admin_view" | "do_repo_access" | "do_frame";
 export class PrivateSocketTiming {
   private entries = new Map<Phase, { count: number; duration: number }>();
   constructor(private readonly now = () => performance.now()) {}

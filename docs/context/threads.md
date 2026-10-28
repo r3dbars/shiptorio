@@ -663,3 +663,7 @@ Hosted isolated-fixture upgrades took 5.46–6.15s, longer than the unchanged cl
 ### Codex private fixture connection profiling
 
 After #498, hosted upgrades still exceeded the unchanged five-second client deadline. The private fixture now returns fixed-name Server-Timing phase durations (no request data/secrets) and revalidates its private session before deciding whether provisioning is needed. A valid existing persona session no longer rewrites users/progress/allowlist on each read; expired/revoked/wrong-persona sessions still take the provisioning path. Reset revokes private D1 sessions before deleting its KV cache, so stale KV values cannot skip reseeding. `node playtest/staging/timing-host.mjs` proves the actual workerd DO 101 retains its socket, timing header and first frame (one guarded local upgrade). Live phase measurements and full player-loop acceptance remain pending deployment.
+
+### Codex private socket application phase profile — PR #507
+
+#500 measured cold10.48s/warm4.73–4.82s upgrades; the internal application phase accounted for9.40s/3.83–3.88s. Add request-local fixed numeric App/Factory phases only through the private fixture's in-process capability (and exact private config plus a verified negative principal for DO output). No deadlines, authorization/revocation/repository/quota checks, caches or production configuration change. Preserve all nested timing headers and upgraded sockets. Root owns the uninterrupted hosted bot; next live measurements wait for that run to finish.
