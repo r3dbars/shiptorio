@@ -102,7 +102,8 @@ async function run(browser, base, view) {
   // Plain `vite` has no worker behind /api, so those misses are expected; set STRICT=1 to count them.
   const api = url => !process.env.STRICT && /^\/(api|auth)\//.test(new URL(url).pathname) && (apiMisses.add(new URL(url).pathname), true);
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error' && !(m.location().url && api(m.location().url))) errors.push(`console: ${m.text()}`); });
+  // The browser asks for /favicon.ico on its own; the deck page has no icon yet, and that's fine.
+  page.on('console', m => { const at = m.location().url; if (m.type() === 'error' && !(at && (api(at) || new URL(at).pathname === '/favicon.ico'))) errors.push(`console: ${m.text()}`); });
   page.on('requestfailed', r => { if (!api(r.url())) errors.push(`request failed: ${r.url()}`); });
   page.on('response', r => { if (r.status() >= 400 && !api(r.url())) errors.push(`${r.status()}: ${r.url()}`); });
   const t0 = Date.now();
