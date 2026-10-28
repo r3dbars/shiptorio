@@ -61,10 +61,10 @@ export function githubStub({ origin, webhookSecret, worker }) {
       const input = await request.json();
       if (!state.branches[input.head] || input.base !== "main") return json({ message: "Missing branch" }, 422);
       const pr = { ...input, number: 7, html_url: `https://github.com/${state.repo}/pull/7`, state: "open", merged: false,
-        user: { login: "shiptorio[bot]" }, head: { ref: input.head, sha: state.branches[input.head] }, base: { ref: "main", sha: state.baseSha } };
+        user: { login: "shiptorio[bot]" }, draft: false, head: { ref: input.head, sha: state.branches[input.head], repo: { full_name: state.repo } }, base: { ref: "main", sha: state.baseSha, repo: { full_name: state.repo } } };
       state.pulls.push(pr); return json(pr, 201);
     }
-    if (p === `/repos/${state.repo}/pulls/7`) return state.pulls[0] ? json(state.pulls[0]) : json({}, 404);
+    if (p === `/repos/${state.repo}/pulls/7`) return state.pulls[0] ? json({ ...state.pulls[0], mergeable: true, mergeable_state: state.checks === "success" ? "clean" : "blocked" }) : json({}, 404);
     if (p === `/repos/${state.repo}/pulls/7/files`) return json(diffFiles());
     if (p === `/repos/${state.repo}/pulls/7/merge` && request.method === "PUT") {
       const input = await request.json(), pr = state.pulls[0];
@@ -72,7 +72,7 @@ export function githubStub({ origin, webhookSecret, worker }) {
       state.merges.push(input); pr.merged = true; pr.state = "closed"; pr.merge_commit_sha = "c".repeat(40);
       return json({ merged: true, sha: pr.merge_commit_sha });
     }
-    if (p.includes("/commits/") && p.endsWith("/check-runs")) return json({ total_count: 1, check_runs: [{ name: "CI", status: state.checks === "pending" ? "in_progress" : "completed", conclusion: state.checks === "pending" ? null : state.checks }] });
+    if (p.includes("/commits/") && p.endsWith("/check-runs")) return json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: p.split("/")[5], status: state.checks === "pending" ? "in_progress" : "completed", conclusion: state.checks === "pending" ? null : state.checks }] });
     if (p.includes("/commits/") && p.endsWith("/status")) return json({ total_count: 0, statuses: [] });
     if (p === `/repos/${state.repo}/issues`) return json(url.searchParams.get("page") === "1" || !url.searchParams.get("page") ? issues : []);
     const one = p.match(new RegExp(`^/repos/${state.repo}/issues/(\\d+)$`));

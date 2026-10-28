@@ -521,3 +521,10 @@ existing skips, zero failures; lint/types/web and runner build green. The earlie
 CI was cancelled rather than accepted. Corrected #471 uses the native settings
 suffix, with disposable-keychain disabled-timeout detection and restoration proof.
 The final combined remote browser/load run is still required. No deployment yet.
+
+Browser/Stranger integration preflight found older provider stubs omitted current
+check head SHA and PR readiness/base metadata now required by #464/#466. The d946
+manual run was cancelled rather than claiming acceptance. Root updates only the
+provider fixtures to model real metadata; safety checks and browser assertions stay
+unchanged. The fixture PR identity now follows the repo/branch actually submitted.
+Local real journey and Stranger reruns precede the next frozen full manual dispatch.
