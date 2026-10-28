@@ -3,7 +3,7 @@ import { STOPS } from "../src/deck2d/contract";
 import { STORY_CARD, createStory, type Story } from "../src/deck2d/story";
 
 // Steps the story until cond() or the time limit (sim seconds). Returns the sim seconds it took.
-function run(s: Story, cond: () => boolean, limit = 120) {
+function run(s: Story, cond: () => boolean, limit = 200) {
   let t = 0;
   while (!cond() && t < limit) { s.step!(0.1); t += 0.1; }
   expect(cond()).toBe(true);
@@ -19,23 +19,33 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(v0.shippy).toEqual({ pose: "folded", at: "corner" });
   expect(v0.deck).toEqual({ size: "small", island: "none" });
 
-  // each stop shows construction (building 0..1) before it's built, and the island rises before the first launch
-  let sawBuilding = false, sawGrow = false, sawIsland = false;
+  // ONE thing moves at a time: builds, grows and the island never overlap, and no caption shows while one plays
+  const busy: { what: string; from: number; to: number }[] = [];
+  let t0 = 0, prev = s.view();
   run(s, () => {
     const v = s.view();
-    sawBuilding ||= v.stops.some((x) => x.building != null && x.building > 0 && x.building < 1 && !x.built);
-    sawGrow ||= v.deck!.growing != null;
-    sawIsland ||= v.deck!.island === "building";
+    t0 += 0.1;
+    for (const st of v.stops) if (st.built && !prev.stops.find((x) => x.id === st.id)!.built && st.id !== "launch") busy.push({ what: st.id, from: t0, to: t0 + 7.6 });
+    if (v.deck!.size !== prev.deck!.size) busy.push({ what: v.deck!.size, from: t0, to: t0 + 7.4 });
+    if (v.deck!.island === "building" && prev.deck!.island === "none") busy.push({ what: "island", from: t0, to: t0 + 12 });
+    const now = busy.filter((b) => t0 > b.from + 0.05 && t0 < b.to - 0.05);
+    expect(now.length).toBeLessThanOrEqual(1);
+    if (now.length) expect(v.caption).toBeNull();
     if (v.shipped > 0) expect(v.deck!.island).toBe("built");
+    prev = v;
     return v.stops.find((x) => x.id === "launch")!.built;
   });
-  expect([sawBuilding, sawGrow, sawIsland]).toEqual([true, true, true]);
+  expect(busy.map((b) => b.what)).toEqual(["repo", "planner", "builder", "medium", "checks", "island"]);
   expect(s.view().deck!.size).toBe("medium");
 
   // 1 software is a factory: stops build in one by one, rockets go up
   let t = run(s, () => s.view().shipped >= 2);
   const built = s.view().stops.filter((x) => x.built).map((x) => x.id);
   expect(built).toEqual(["repo", "planner", "builder", "checks", "launch"]);
+  // beat 2 builds Review and Gate one at a time too, on a still line
+  run(s, () => s.view().stops.find((x) => x.id === "review")!.built);
+  expect(s.view().stops.every((x) => x.items.length === 0)).toBe(true);
+  expect(s.view().stops.find((x) => x.id === "gate")!.built).toBe(false);
 
   // 2 there's always a bottleneck: review jams, a card slides up
   t += run(s, () => s.view().card != null);
@@ -81,7 +91,7 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(s.view().card).toMatchObject({ yes: "See my repo", no: "Replay", setup: true });
   s.approve(STORY_CARD.connect);
   expect(connected).toBe(1);
-  expect(t).toBeLessThan(90); // ~60-90s of story with instant swipes
+  expect(t).toBeLessThan(200); // slow and calm on purpose; one thing at a time
 });
 
 test("same seed, same story; later on the last card replays", () => {

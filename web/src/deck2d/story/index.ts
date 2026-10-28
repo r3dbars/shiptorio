@@ -2,12 +2,17 @@
 // A DeckSource with no server: it plays Justin's locked story (2026-10-28) on the real line, ported from /story-b:
 //   1 Software is a factory: a small empty deck, stops build in one by one (construction, then a burst), the deck
 //     grows, the rocket island rises, crates roll and the first rockets go up.
+// ONE thing moves at a time (Justin, 2026-10-28: "shit flashing and pinging all over the place"): construction is a
+// strict serial script. Each build, grow and island plays to the end, then a short rest, then a caption on its own.
 //   2 There's always a bottleneck: review and gate build in, the line speeds up, crates pile at Review waiting on
 //     your call ("REVIEW WAITING"). Never "the bottleneck is you".
 //   3 Swipe, and it moves: approving releases the pile and rockets launch.
 //   4 Approve twice more and it's automatic: Shippy unfolds, walks to Review, takes the lever. Then the next jam
 //     shows up somewhere else, and the last card asks to connect the real repo.
 // Pure sim: no DOM, no canvas. The engine draws view() and animates crates by item id.
+import { STAGE_AT } from "../build/build";
+import { GROW_SECONDS } from "../grow/index";
+import { LAUNCH_BUILD_SECONDS } from "../launch/timeline";
 import { STOPS, type CardView, type DeckSource, type DeckView, type Item, type ShippyView, type StopId } from "../contract";
 
 export interface StoryOptions {
@@ -29,28 +34,28 @@ export const STORY_CARD = { call: "story-call-", connect: "story-connect" } as c
 // Seconds each stop spends on its front crate. Upstream stays faster than the spawn rate so the only pile is Review.
 const SVC: Record<StopId, number> = { repo: 0.5, planner: 0.8, builder: 0.95, checks: 0.8, review: 0.6, gate: 0.45, launch: 1.1 };
 
-// Construction: one job at a time, each with a visible build-up (Stop.building / deck.growing / islandProgress).
-type Job = { kind: "stop"; id: StopId; line?: string } | { kind: "grow"; size: DeckSize; line?: string };
+// Construction is one serial script: every step waits for the one before it to finish on screen.
 type DeckSize = NonNullable<DeckView["deck"]>["size"];
-const JOB_SEC = { stop: 2.4, grow: 1.4 } as const;
-const JOB_GAP = 0.8;
-// The rocket island has its own build (launch/timeline.ts LAUNCH_BUILD_SECONDS), so it rises in parallel,
-// starting as soon as the repo is down. The engine won't launch until it's "built".
-const ISLAND_SEC = 12;
-const BEAT1: Job[] = [
-  { kind: "stop", id: "repo", line: "Ideas land in your repo." },
-  { kind: "stop", id: "planner", line: "A planner picks the next one." },
-  { kind: "stop", id: "builder", line: "A builder writes the code." },
-  { kind: "grow", size: "medium" },
-  { kind: "stop", id: "checks", line: "Checks catch what's broken." },
-];
-const BEAT2: Job[] = [{ kind: "grow", size: "large" }, { kind: "stop", id: "review" }, { kind: "stop", id: "gate" }];
+type Step =
+  | { say: string } // a caption, alone on a still deck, long enough to read
+  | { build: StopId } // flip built; build/ plays the whole construction, check and afterglow
+  | { grow: DeckSize } // grow/ plays the new section, then its plaque
+  | { island: true } // launch/ raises the island, bridge, tower, rocket
+  | { rest: number }
+  | { until: () => boolean }
+  | { run: () => void };
+const SAY_SEC = 2.5;
+const REST_SEC = 1;
+const BUILD_SEC = STAGE_AT.gone; // until the check and its afterglow are gone
+const GROW_SEC = GROW_SECONDS + 3.1; // + the "MEDIUM DECK" plaque (grow/ PLAQUE_SECONDS)
+const ISLAND_SEC = LAUNCH_BUILD_SECONDS;
+const built = (id: StopId, line: string): Step[] => [{ build: id }, { rest: REST_SEC }, { say: line }];
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
 const CALL_PILE = 5; // crates waiting at Review before the first card slides up
 const PILE_CAP = 9; // stop adding crates past this so the heap stays readable
 
 interface Live extends Item { t: number; approved: boolean }
-interface StopSim { built: boolean; q: Live[]; building?: number }
+interface StopSim { built: boolean; q: Live[] }
 
 // The real app's front door: signing in with GitHub starts there.
 const connect = () => { if (typeof location !== "undefined") location.assign("/"); };
@@ -81,12 +86,12 @@ export function createStory(opts: StoryOptions = {}): Story {
       budget: null as number | null, // how many crates Review may still pass. null = no limit
       reviewSvc: SVC.review,
       approvals: 0, card: null as CardView | null, laterUntil: 0,
-      bottleneckQueued: false, autoReview: false, jam: null as StopId | null, nextJam: null as StopId | null,
+      autoReview: false, jam: null as StopId | null, nextJam: null as StopId | null,
       shippy: { pose: "folded", at: "corner" } as ShippyView,
-      caption: "Software is a factory." as string | null,
+      caption: null as string | null,
       timers: [] as { at: number; fn: () => void }[],
-      jobs: [...BEAT1] as Job[], job: null as { job: Job; p: number } | null, jobGap: 0.6,
-      size: "small" as DeckSize, growing: undefined as number | undefined,
+      script: [] as Step[], stepT: 0, // the running step is script[0]; stepT = seconds into it
+      size: "small" as DeckSize,
       island: "none" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
     };
   }
@@ -145,57 +150,60 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.shippy = { pose: "peek", at: "corner" };
   }
 
-  function raiseIsland(dt: number) {
-    if (S.island !== "building") return;
-    S.islandProgress = Math.min(1, (S.islandProgress ?? 0) + dt / ISLAND_SEC);
-    if (S.islandProgress < 1) return;
-    S.island = "built"; S.islandProgress = undefined;
-    S.st.launch.built = true; // the pad is on the island
-    S.caption = "And then it ships.";
-  }
+  // Beat 1: the line builds itself, piece by piece, then the first crates roll.
+  const beat1 = (): Step[] => [
+    { rest: 0.6 }, { say: "Software is a factory." },
+    ...built("repo", "Ideas land in your repo."),
+    ...built("planner", "A planner picks the next one."),
+    ...built("builder", "A builder writes the code."),
+    { grow: "medium" }, { rest: REST_SEC },
+    ...built("checks", "Checks catch what's broken."),
+    { island: true }, { rest: REST_SEC }, { say: "And then it ships." },
+    { run: () => { S.spawnEvery = 2.6; S.spawnT = 2.4; } },
+    { until: () => S.shipped >= 1 }, { say: "Ideas in, rockets out." },
+  ];
+  // Beat 2: the line drains and goes still, Review and Gate build in, then the pile starts.
+  const beat2 = (): Step[] => [
+    { run: () => { setPhase("bottleneck"); S.spawnEvery = 0; S.budget = 0; } },
+    { until: () => STOPS.every((id) => !S.st[id].q.length) }, { rest: REST_SEC },
+    { grow: "large" }, { rest: REST_SEC },
+    { build: "review" }, { rest: REST_SEC },
+    { build: "gate" }, { rest: REST_SEC },
+    { say: "There's always a bottleneck." },
+    { run: () => { S.spawnEvery = 1.3; S.spawnT = 1.2; } },
+    { until: () => S.st.review.q.length >= 2 },
+    { run: () => { S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; } },
+    { say: "Right now, it's waiting on your call." },
+  ];
 
-  function construct(dt: number) {
-    if (!S.job) {
-      if (!S.jobs.length) return;
-      S.jobGap -= dt;
-      if (S.jobGap > 0) return;
-      const job = S.jobs.shift()!;
-      S.job = { job, p: 0 };
-      if (job.line) S.caption = job.line;
+  function play(dt: number) {
+    const cur = S.script[0];
+    if (!cur) return;
+    const first = S.stepT === 0;
+    S.stepT += dt;
+    let done = false;
+    if ("say" in cur) { if (first) S.caption = cur.say; done = S.stepT >= SAY_SEC; }
+    else if ("build" in cur) { if (first) { S.caption = null; S.st[cur.build].built = true; } done = S.stepT >= BUILD_SEC; }
+    else if ("grow" in cur) { if (first) { S.caption = null; S.size = cur.grow; } done = S.stepT >= GROW_SEC; }
+    else if ("island" in cur) {
+      if (first) { S.caption = null; S.island = "building"; }
+      S.islandProgress = Math.min(1, S.stepT / ISLAND_SEC);
+      if (S.islandProgress >= 1) { S.island = "built"; S.islandProgress = undefined; S.st.launch.built = true; done = true; }
     }
-    const { job } = S.job;
-    S.job.p = Math.min(1, S.job.p + dt / JOB_SEC[job.kind]);
-    const p = S.job.p, done = p >= 1;
-    if (job.kind === "stop") {
-      S.st[job.id].building = done ? undefined : p;
-      if (done) S.st[job.id].built = true;
-      if (done && job.id === "repo") { S.spawnEvery = 2.6; S.spawnT = 2.2; S.island = "building"; S.islandProgress = 0; }
-    } else {
-      S.growing = done ? undefined : p;
-      if (done) S.size = job.size;
-    }
-    if (done) { S.job = null; S.jobGap = JOB_GAP; }
-    if (done && !S.jobs.length && S.island === "building" && (S.islandProgress ?? 0) < 0.75) S.caption = "Last piece: somewhere to launch from.";
+    else if ("rest" in cur) done = S.stepT >= cur.rest;
+    else if ("until" in cur) done = cur.until();
+    else { cur.run(); done = true; }
+    if (done) { S.script.shift(); S.stepT = 0; }
   }
+  const idle = () => S.script.length === 0;
 
   function director() {
     const p = S.phase;
     if (p === "build") {
-      if (S.shipped >= 1 && S.caption === "And then it ships.") S.caption = "Software is a factory. Ideas in, rockets out.";
-      if (S.st.launch.built && S.shipped >= 2 && !S.bottleneckQueued) {
-        S.bottleneckQueued = true;
-        after(0.6, () => {
-          setPhase("bottleneck");
-          S.caption = "There's always a bottleneck.";
-          S.budget = 0;
-          S.jobs.push(...BEAT2); S.jobGap = 0;
-          after(5.5, () => { S.caption = "Right now, it's waiting on your call."; S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; });
-          S.spawnEvery = 1.3;
-        });
-      }
+      if (idle() && S.shipped >= 3) S.script.push(...beat2());
       return;
     }
-    if (p === "bottleneck" && S.jam && S.st.review.q.length >= CALL_PILE) { setPhase("swipe"); showCall(); return; }
+    if (p === "bottleneck" && idle() && S.st.review.q.length >= CALL_PILE) { setPhase("swipe"); showCall(); return; }
     if (p === "swipe" && !S.card && S.laterUntil > 0 && S.t >= S.laterUntil) { S.laterUntil = 0; showCall(); }
   }
 
@@ -237,8 +245,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       dt -= h;
       S.t += h; S.phaseT += h;
       if (S.spawnEvery > 0) { S.spawnT += h; while (S.spawnT >= S.spawnEvery) { S.spawnT -= S.spawnEvery - (S.rand() - 0.5) * 0.3; spawn(); } }
-      construct(h);
-      raiseIsland(h);
+      play(h);
       flow(h);
       const due = S.timers.filter((x) => S.t >= x.at);
       S.timers = S.timers.filter((x) => S.t < x.at);
@@ -257,13 +264,12 @@ export function createStory(opts: StoryOptions = {}): Story {
       if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "jammed"; waiting = "REVIEW WAITING"; }
       if (automated) state = "auto";
       if (id === S.nextJam) { state = "jammed"; waiting = "CHECKS WAITING"; }
-      return { id, built: s.built, state, automated, ...(s.building != null ? { building: s.building } : {}), items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
+      return { id, built: s.built, state, automated, items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
     });
     return {
       stops, jam: S.jam, card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
       deck: {
         size: S.size, island: S.island,
-        ...(S.growing != null ? { growing: S.growing } : {}),
         ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}),
       },
     };
@@ -293,7 +299,8 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.laterUntil = S.t + 4;
   }
 
-  function reset() { S = fresh(); fns.forEach((fn) => fn()); }
+  function reset() { S = fresh(); S.script = beat1(); fns.forEach((fn) => fn()); }
+  reset();
 
   return {
     view, step, approve, later, reset,
