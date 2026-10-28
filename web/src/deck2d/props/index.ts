@@ -15,7 +15,7 @@ const WIDTH: Record<Size, number> = DECK_DX ? { small: 1700, medium: 2450, large
 const NEXT: Record<Size, Size> = { small: "medium", medium: "large", large: "large" };
 /** The twin boiler stands on the back of the floor behind Repo and Planner (same spot as engine's BOILER). */
 const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
-const STEAM = [PALETTE.iron[3], PALETTE.iron[4], PALETTE.haze[2], PALETTE.haze[3], PALETTE.white[0]];
+const STEAM = [PALETTE.iron[4], PALETTE.haze[2], PALETTE.haze[3], PALETTE.white[0], PALETTE.white[0]];
 const COL = 16; // art px: the hull grows one plate-ish column at a time
 
 export const createLayer: CreateLayer = () => {
@@ -34,13 +34,13 @@ export const createLayer: CreateLayer = () => {
     const P = ART_PX;
     ventXs(w).forEach((vx, i) => {
       for (let k = 0; k < 4; k++) {
-        const q = (t / 5 + k / 4 + i * 0.37) % 1, r = 2 + q * 5;
-        const cx = vx - 0.5 - q * 4 + Math.sin(q * 6 + i) * 1, cy = VENT_MOUTH + 1 + q * 26;
+        const q = (t / 5.5 + k / 4 + i * 0.37) % 1, r = 3 + q * 6;
+        const cx = vx - 0.5 - q * 4 + Math.sin(q * 6 + i) * 1.2, cy = VENT_MOUTH + q * 30;
         for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
           const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - cy) / r, d = dx * dx + dy * dy;
           if (d > 0.85 + 0.15 * Math.sin(Math.atan2(dy, dx) * 3 + k)) continue;
-          if (q > 0.55 && ((x + y) & 1)) continue; // older puffs thin to a checker, then they're gone
-          if (q > 0.8 && d > 0.4) continue;
+          if (q > 0.65 && d > 0.35 && ((x + y) & 1)) continue; // older puffs fray to a checker at the edge, then they're gone
+          if (q > 0.88 && ((x + y) & 1)) continue;
           const v = 0.55 + 0.35 * (dx * 0.5 - dy * 0.6) - d * 0.15 - q * 0.2;
           ctx.fillStyle = STEAM[Math.max(0, Math.min(4, Math.round(v * 4)))];
           ctx.fillRect(x * P, y * P, P, P);

@@ -21,7 +21,6 @@ export const A = {
 /** The canvas starts TOP art px above y 0 (lanterns on the back rail) and is H tall (orb at the bottom). */
 export const TOP = 8, H = 160, PAD = 2;
 
-const FLOOR: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "plate-1", "plate-2", "iron-4", "plate-4"];
 /** Warm dark iron for the skirt and posts: the deck reads brown-black like the mockups, not blue. */
 const WARM: Ramp = ["soot", "iron-0", "iron-1", "iron-2", "plate-1", "iron-3", "iron-4"];
 const POST: Ramp = ["soot", "brass-0", "plate-1", "brass-1", "plate-2", "brass-2", "brass-3", "brass-4"];
@@ -39,11 +38,13 @@ const xr = (y: number, w: number) => w - 1 - Math.max(0, CH - (y - A.back));
 export const orbX = (w: number) => (w >= A.orb.x + 24 ? A.orb.x : w / 2);
 /** The two steam vents ride with the right-hand end. */
 export const ventXs = (w: number) => [w - 98, w - 78];
-export const VENT_MOUTH = 100;
+export const VENT_MOUTH = 106;
 
 // ---------- floor ----------
-const ROWS = [A.back, A.back + 6, A.back + 13, A.back + 21, A.back + 29, A.back + 36, A.front - 2];
-const PLATE = 22;
+const ROWS = [A.back, A.back + 7, A.back + 14, A.back + 21, A.back + 28, A.back + 35, A.front - 2];
+const PLATE = 15;
+/** Floor plates: tan-brown worn iron catching the sunset, thin dark seams, a rivet in each corner. */
+const DECKPLATE: Ramp = ["iron-0", "iron-1", "iron-2", "plate-1", "plate-2", "iron-4", "plate-4"];
 function floor(g: Px, w: number) {
   const c = w / 2;
   for (let y = A.back; y < A.front - 2; y++) {
@@ -54,33 +55,29 @@ function floor(g: Px, w: number) {
       // plates converge a little toward the back, like the mockups' 3/4 view
       const u = c + (x - c) / (0.9 + 0.1 * v) + 1000, col = Math.floor(u / PLATE), m = u - col * PLATE;
       const ph = hash(col, r, 2);
-      let t = 0.54 + (ph - 0.5) * 0.18 + 0.12 * (x / w) + (blotch(x, y, 5, 4) - 0.5) * 0.22 + (noise(x, y, 6) - 0.5) * 0.05;
-      if (y < A.back + 2) t -= 0.18; // the back rail's shadow falls down-left onto the floor
-      // each plate is bevelled: lit along its top and right edges, shadowed along its bottom and left (light: upper right)
-      if (m < 1) t = 0.1; // seam groove
-      else if (m < 2) t -= 0.08;
-      else if (m >= PLATE - 1) t += 0.14;
-      if (y === top && r > 0) t = 0.1;
-      else if (y === top + 1) t += 0.16;
-      else if (y === bot - 1) t -= 0.12;
+      let t = 0.68 + (ph - 0.5) * 0.12 + 0.1 * (x / w) - 0.06 * (1 - v) + (blotch(x, y, 6, 4) - 0.5) * 0.16 + (noise(x, y, 6) - 0.5) * 0.06;
+      if (y < A.back + 2) t -= 0.2; // the back rail's shadow falls down-left onto the floor
+      if (m < 1 || (y === top && r > 0)) t = 0.24; // seam
+      else if (y === top + 1 && r > 0) t += 0.08; // the plate's lit top edge
+      else if (m >= PLATE - 1) t += 0.05;
       // grime collects in the corners: a dark checker
-      if ((m < 4 || m >= PLATE - 3) && (y >= bot - 2) && ((x + y) & 1)) t -= 0.12;
+      if ((m < 3 || m >= PLATE - 2) && (y >= bot - 2) && ((x + y) & 1)) t -= 0.1;
       // a few plates are grates: dark slots
-      const grate = ph < 0.1 && !beltRow && r > 0;
-      if (grate && m > 3 && m < PLATE - 3 && y > top + 1 && y < bot - 1) t = (y - top) % 2 ? 0.06 : 0.36;
-      tone(g, x, y, FLOOR, t);
-      // rust: brown where thin, orange where thick, in slow blotches
+      const grate = ph < 0.08 && !beltRow && r > 0;
+      if (grate && m > 2 && m < PLATE - 2 && y > top + 1 && y < bot - 1) t = (y - top) % 2 ? 0.08 : 0.4;
+      tone(g, x, y, DECKPLATE, t);
+      // wear and rust in slow blotches: orange where the paint's gone, dark brown where it's rusting
       const ru = blotch(x, y, 4, 9 + col);
-      if (!grate && ru > 0.86 && noise(x, y, 11) < 0.5 && m > 1 && y > top + 1) g.set(x, y, ru > 0.92 ? "copper-0" : "plate-1");
-      // rivets at the plate corners (brass is jewelry: one light px over one dark px)
-      if ((Math.floor(m) === 3 || Math.floor(m) === PLATE - 4 || (Math.floor(m) === PLATE / 2 && !beltRow)) && (y === top + 3 || y === bot - 3) && (!beltRow || y < 40)) {
-        g.set(x, y, "brass-3"); g.set(x, y + 1, "brass-0");
+      if (!grate && m > 1 && y > top + 1 && noise(x, y, 11) < 0.55) { if (ru > 0.9) g.set(x, y, "plate-3"); else if (ru < 0.1) g.set(x, y, "plate-1"); }
+      // a rivet in each corner (brass is jewelry: one light px over one dark px); none under the belt
+      if ((Math.floor(m) === 2 || Math.floor(m) === PLATE - 3) && (y === top + 2 || y === bot - 3) && !beltRow) {
+        g.set(x, y, "brass-3"); g.set(x, y + 1, "iron-1");
       }
     }
   }
   // the front lip: a riveted brass-trimmed edge plate
   for (let x = 0; x < w; x++) {
-    tone(g, x, A.front - 2, FLOOR, 0.62 + 0.15 * (x / w));
+    tone(g, x, A.front - 2, DECKPLATE, 0.7 + 0.15 * (x / w));
     g.set(x, A.front - 1, x % 7 === 3 ? "brass-4" : "brass-2");
     g.set(x, A.front, "brass-0");
   }
@@ -88,14 +85,17 @@ function floor(g: Px, w: number) {
 
 // ---------- rails, posts, lanterns ----------
 function lantern(g: Px, cx: number, base: number, sky = true) {
-  // brass foot, glass with a hot core, brass hood + ring; light from the upper right
-  g.rect(cx - 2, base - 1, 5, 1, "brass-1"); g.set(cx + 2, base - 1, "brass-3");
-  for (let j = 0; j < 4; j++) for (let i = -1; i <= 1; i++) tone(g, cx + i, base - 2 - j, LAMP, 0.85 - Math.abs(i) * 0.25 - (j === 0 ? 0.25 : 0) + (i === 1 ? 0.08 : 0));
-  g.vline(cx - 2, base - 5, 4, "brass-1"); g.vline(cx + 2, base - 5, 4, "brass-3");
-  g.rect(cx - 2, base - 6, 5, 1, "brass-2"); g.set(cx + 2, base - 6, "brass-4"); g.set(cx, base - 7, "brass-3");
-  // steady halo: warms the metal round it and (25%) the sky behind
-  g.glowDisc(cx + 0.5, base - 3.5, 6, "sun-4", 0.25, [cx - 2, base - 7, 5, 7]);
-  if (sky) for (const [dx, dy] of [[-3, -3], [3, -3], [-3, 0], [3, 0], [-1, -8], [1, -8]]) g.glow(cx + dx, base - 3 + dy, 1, 1, "sun-4", 0.5, true); // a few warm sparks of light, no disc
+  // a cage lantern: brass foot, glass with a hot core behind two dark bars, a pointed brass hood with a ring on top
+  g.rect(cx - 3, base - 1, 7, 1, "brass-1"); g.set(cx + 3, base - 1, "brass-3"); g.set(cx + 2, base - 1, "brass-2");
+  for (let j = 0; j < 5; j++) for (let i = -2; i <= 2; i++) tone(g, cx + i, base - 2 - j, LAMP, 0.95 - Math.abs(i) * 0.18 - Math.abs(j - 2) * 0.1 + (i > 0 ? 0.06 : 0));
+  g.vline(cx - 3, base - 6, 5, "brass-1"); g.vline(cx + 3, base - 6, 5, "brass-3");
+  for (const i of [-1, 1]) g.vline(cx + i, base - 5, 3, "sun-1"); // the cage bars, dark against the flame
+  g.rect(cx - 3, base - 7, 7, 1, "brass-2"); g.set(cx + 3, base - 7, "brass-4");
+  g.rect(cx - 2, base - 8, 5, 1, "brass-2"); g.set(cx + 2, base - 8, "brass-4"); g.set(cx, base - 9, "brass-3"); g.set(cx, base - 10, "brass-1");
+  // steady halo: warms the metal round it
+  g.glowDisc(cx + 0.5, base - 3, 11, "sun-4", 0.25, [cx - 3, base - 10, 7, 10]);
+  g.glowDisc(cx + 0.5, base - 3, 6, "sun-5", 0.25, [cx - 3, base - 10, 7, 10]);
+  if (sky) for (const [dx, dy] of [[-5, -4], [5, -4], [-4, 0], [4, 0], [0, -12]]) g.glow(cx + dx, base - 3 + dy, 1, 1, "sun-4", 0.5, true); // a few warm sparks of light, no disc
 }
 
 function post(g: Px, x: number, top: number, bot: number) {
@@ -112,8 +112,9 @@ function backRail(g: Px, w: number) {
   const n = Math.max(2, Math.round((w - 2 * CH) / 26));
   for (let k = 0; k <= n; k++) {
     const x = Math.round(CH - 2 + (k * (w - 2 * CH)) / n);
-    post(g, x, y0 - 11, y0 + 1);
-    if (k % 3 === 0 || k === n) lantern(g, x + 2, y0 - 11);
+    const lamp = k % 3 === 0 || k === n;
+    post(g, x, y0 - (lamp ? 14 : 11), y0 + 1);
+    if (lamp) lantern(g, x + 2, y0 - 15);
   }
 }
 
@@ -122,19 +123,16 @@ function sideRails(g: Px, w: number) {
   for (const [x0, x1, sgn] of [[0, CH, 1], [w - 1, w - 1 - CH, -1]] as const) {
     for (let k = 0; k <= CH; k++) { const x = x0 + sgn * k, y = A.back + CH - k - 9; g.set(x, y, "copper-1"); g.set(x, y + 1, "copper-0"); }
   }
-  for (const x of [0, w - 5]) { post(g, x, A.back + CH - 10, A.front + 1); }
+  for (const x of [0, w - 5]) { post(g, x, A.back + CH - 14, A.front + 1); lantern(g, x + 2, A.back + CH - 15); }
   for (let y = A.back + CH - 8; y < A.front - 4; y++) { g.set(1, y, "copper-0"); g.set(w - 3, y, "copper-2"); }
 }
 
 function frontRail(g: Px, w: number) {
   const y0 = A.front;
   cylH(g, 0, y0 - 6, w, 2, CU, { amb: 0.18, gloss: 1.2 });
-  const n = Math.max(2, Math.round(w / 34));
-  for (let k = 0; k <= n; k++) {
-    const x = Math.round((k * (w - 5)) / n);
-    post(g, x, y0 - 8, y0 + 2);
-    if (k === 0 || k === n) lantern(g, x + 2, y0 - 8);
-  }
+  // posts stand on the skirt's brackets, so rail, skirt and hangers read as one frame; tall lantern posts at the ends
+  for (let x = 14, k = 0; x < w - 6; x += 32, k++) post(g, x + 0.5, y0 - 8, y0 + 2);
+  for (const x of [0, w - 5]) { post(g, x, y0 - 12, y0 + 2); lantern(g, x + 2, y0 - 13); }
 }
 
 // ---------- skirt ----------
@@ -148,17 +146,29 @@ function skirt(g: Px, w: number) {
     const ru = blotch(x, y, 3, 23);
     if (ru > 0.84 && noise(x, y, 25) < 0.55) g.set(x, y, ru > 0.9 ? "copper-0" : "plate-1");
   }
-  strap(g, 0, y0, w, 2, GOLD, 0, false); // top band
-  for (let x = 3; x < w; x += 6) rivet(g, x, y0 + 6, "iron-4", "soot"); // a rivet row across the middle
-  strap(g, 0, y1 - 3, w, 2, GOLD); // bottom band
+  strap(g, 0, y0, w, 3, GOLD, 0, false); // top band
+  for (let x = 4; x < w; x += 8) { g.rect(x, y0 + 5, 2, 2, "iron-3"); g.set(x + 1, y0 + 5, "iron-4"); g.set(x, y0 + 6, "iron-1"); g.hline(x, y0 + 7, 2, "soot"); } // 2px bolt heads across the middle
+  strap(g, 0, y1 - 4, w, 3, GOLD); // bottom band
   for (let x = 3; x < w; x += 6) rivet(g, x, y1 - 3, "brass-5", "brass-1");
   g.hline(0, y1 - 1, w, "soot"); // the under-lip in shadow
   // brackets: riveted plates bolted over the skirt, standing a px proud with a cast shadow
   for (let x = 14; x < w - 6; x += 32) {
     strap(g, x, y0 - 1, 6, y1 - y0 + 2, WARM);
     for (let y = y0 + 2; y < y1 - 2; y += 3) { rivet(g, x + 1, y, "brass-3", "brass-0"); rivet(g, x + 4, y, "brass-4", "brass-0"); }
-    // a rust streak running down from the bracket's foot
-    if (hash(x, 1) < 0.6) for (let y = y1 - 1; y < y1 + 1; y++) g.set(x + 1, y, "copper-0");
+  }
+}
+/** The brackets run on down past the skirt into the rock; every other one carries a hanging lantern. Drawn after the
+ * rocks so they sit in front. */
+function hangers(g: Px, w: number) {
+  const y1 = A.skirt;
+  for (let x = 14, k = 0; x < w - 6; x += 32, k++) {
+    strap(g, x, y1 - 1, 6, 5, WARM);
+    rivet(g, x + 1, y1 + 1, "brass-3", "brass-0"); rivet(g, x + 4, y1 + 1, "brass-4", "brass-0");
+    g.hline(x, y1 + 4, 6, "soot");
+    if (k % 2 === 1 && Math.abs(x + 3 - orbX(w)) > 20 && !ventXs(w).some((v) => Math.abs(x + 3 - v) < 12)) {
+      g.vline(x + 3, y1 + 4, 3, "iron-3"); g.set(x + 2, y1 + 5, "iron-1");
+      lantern(g, x + 3, y1 + 14, false);
+    }
   }
 }
 
@@ -176,7 +186,7 @@ function boulder(g: Px, cx: number, cy: number, r: number, seed: number) {
     const lump = 0.82 + 0.18 * blotch(x, y, 2, seed);
     if (d > lump) continue;
     const nz = Math.sqrt(Math.max(0, 1 - d));
-    let v = 0.22 + 0.5 * Math.max(0, dx * 0.6 - dy * 0.5 + nz * 0.5) * 0.8 + (noise(x, y, seed) - 0.5) * 0.12;
+    let v = 0.2 + 0.62 * Math.max(0, dx * 0.45 - dy * 0.75 + nz * 0.35) + (noise(x, y, seed) - 0.5) * 0.12;
     if (d > lump * 0.75 && dx < 0.2 && dy < 0) v -= 0.12; // the crease on the shadow side
     tone(g, x, y, ROCK, v);
     if (dy > 0.45 && d > lump * 0.55) g.set(x, y, dy > 0.75 && noise(x, y, seed + 1) < 0.7 ? "plate-1" : "haze-0"); // warm bounce from below
@@ -186,10 +196,10 @@ function rocks(g: Px, w: number) {
   const y0 = A.skirt;
   // a dark mass first so the boulders never show sky between them
   for (let x = 1; x < w - 1; x++) { const d = depth(x, w) * 0.72; for (let y = y0; y < y0 + d; y++) g.set(x, y, (x + y) & 1 ? "iron-0" : "soot"); }
-  const n = Math.round(w / 1.6);
+  const n = Math.round(w / 3);
   const bs: { x: number; y: number; r: number; s: number }[] = [];
   for (let i = 0; i < n; i++) {
-    const x = 3 + hash(i, 1, 33) * (w - 6), d = depth(x, w), r = 2.5 + hash(i, 2, 33) * 3.5 + d * 0.05;
+    const x = 3 + hash(i, 1, 33) * (w - 6), d = depth(x, w), r = 4 + hash(i, 2, 33) * 4.5 + d * 0.05;
     bs.push({ x, y: y0 + 1 + hash(i, 3, 33) * Math.max(1, d - r * 0.8), r, s: i });
   }
   bs.sort((a, b) => a.y - b.y);
@@ -198,55 +208,65 @@ function rocks(g: Px, w: number) {
     // under the deck the top of each rock sits in the skirt's shadow
     for (let y = Math.floor(b.y - b.r); y < b.y - b.r * 0.4; y++) for (let x = Math.floor(b.x - b.r); x <= b.x + b.r; x++) if (y < y0 + 4 && g.has(x, y) && ((x + y) & 1)) g.set(x, y, "soot");
   }
-  // cyan cracks: steady energy seams on a few rocks (never pulse)
-  for (let i = 0; i < Math.max(2, Math.round(w / 48)); i++) {
-    const x0 = Math.round(20 + ((i + 0.5) / Math.max(2, Math.round(w / 48))) * (w - 40) + (hash(i, 7, 41) - 0.5) * 18);
-    if (Math.abs(x0 - orbX(w)) < 16) continue;
-    let x = x0, y = y0 + 3;
-    const len = 6 + Math.round(hash(i, 8, 41) * 6);
-    for (let k = 0; k < len; k++) {
-      g.set(x, y, k % 3 === 1 ? "energy-3" : "energy-2"); g.set(x - 1, y, "energy-0");
-      g.glow(x - 2, y, 1, 1, "energy-1", 0.5); g.glow(x + 1, y, 1, 1, "energy-1", 0.5); g.glow(x + 2, y, 1, 1, "energy-1", 0.25);
-      y++; if (hash(i, k, 43) < 0.45) x += hash(i, k, 44) < 0.5 ? -1 : 1;
-    }
+  // cyan cracks: steady energy seams running down through the rock, some forked (they never pulse)
+  const nc = Math.max(2, Math.round(w / 44));
+  for (let i = 0; i < nc; i++) {
+    const x0 = Math.round(16 + ((i + 0.5) / nc) * (w - 32) + (hash(i, 7, 41) - 0.5) * 16);
+    if (Math.abs(x0 - orbX(w)) < 22 || ventXs(w).some((v) => Math.abs(x0 - v) < 10)) continue;
+    const len = Math.min(Math.round(depth(x0, w)) - 4, 10 + Math.round(hash(i, 8, 41) * 12));
+    const run = (x: number, y: number, n: number, seed: number) => {
+      for (let k = 0; k < n; k++) {
+        g.set(x, y, k % 4 === 2 ? "energy-3" : "energy-2"); if (g.has(x - 1, y)) g.set(x - 1, y, "energy-0");
+        g.glow(x - 2, y, 1, 1, "energy-1", 0.5); g.glow(x + 1, y, 1, 1, "energy-1", 0.5); g.glow(x + 2, y, 1, 1, "energy-1", 0.25);
+        y++; if (hash(seed, k, 43) < 0.5) x += hash(seed, k, 44) < 0.5 ? -1 : 1;
+        if (k === 4 && n > 8 && hash(seed, 9, 45) < 0.7) run(x + 1, y, Math.round(n / 3), seed + 17); // a fork
+      }
+    };
+    run(x0, y0 + 2, len, i);
   }
-  // copper pipe loops hung under the skirt between brackets, and a hanging lantern every other bay
-  for (let x = 20, k = 0; x < w - 30; x += 32, k++) {
-    if (Math.abs(x + 13 - orbX(w)) < 18 || ventXs(w).some((v) => Math.abs(x + 13 - v) < 22)) continue;
-    if (k % 2 === 0) tube(g, [[x, y0 - 1], [x, y0 + 5], [x + 13, y0 + 5], [x + 13, y0 - 1]], 1.4, CU, { bend: 4, amb: 0.1, gloss: 0.8 });
-    else { g.vline(x + 6, y0, 3, "iron-3"); lantern(g, x + 6, y0 + 9, true); }
+  // big pipe loops slung under the skirt, dark iron with brass collars, in front of the rock
+  const bays = Math.floor((w - 20) / 64);
+  for (let k = 0; k < bays; k++) {
+    const x = 22 + k * 64, wid = 40 + Math.round(hash(k, 3, 51) * 8), d = 9 + Math.round(hash(k, 4, 51) * 5);
+    if (Math.abs(x + wid / 2 - orbX(w)) < 34 || ventXs(w).some((v) => v > x - 14 && v < x + wid + 14)) continue;
+    tube(g, [[x, y0 - 1], [x + 2, y0 + d], [x + wid - 2, y0 + d], [x + wid, y0 - 1]], 1.6, POST, { bend: 8, amb: 0.12, gloss: 0.9 });
+    for (const cx of [x + 1, x + wid - 1]) cylV(g, cx - 2, y0 + 1, 4, 2, BRASS, { amb: 0.15 });
   }
 }
 
 // ---------- the core orb ----------
 function orb(g: Px, w: number) {
-  const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y + 2, R = 13;
+  const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y - 6, R = 20; // the engine frames the world down to y 670 (134 art px): the finial stays above that
   // the riser that holds it: copper with brass collars, from the skirt down through the rock
-  cylV(g, cx - 2.5, A.skirt - 1, 5, cy - R - A.skirt + 2, CU, { amb: 0.15, gloss: 1.1 });
-  for (const y of [A.skirt + 2, cy - R - 3]) cylV(g, cx - 4.5, y, 9, 2, BRASS, { amb: 0.15, gloss: 1 });
+  cylV(g, cx - 3.5, A.skirt - 1, 7, cy - R - A.skirt + 2, CU, { amb: 0.15, gloss: 1.1 });
+  for (const y of [A.skirt + 2, A.skirt + 10]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
   // the glass and its glowing core
-  ball(g, cx, cy, R - 0.5, ENERGY, { amb: 0.2, gloss: 0.45 });
-  ball(g, cx + 0.5, cy + 0.5, 4.2, ["energy-2", "energy-2", "energy-3", "energy-3", "white"], { amb: 0.45, gloss: 0.6 });
-  g.set(cx + 4, cy - 6, "white"); g.set(cx + 5, cy - 5, "energy-3"); // one glint on the glass
+  ball(g, cx, cy, R - 0.5, ENERGY, { amb: 0.12, gloss: 0.35 });
+  ball(g, cx + 0.5, cy + 0.5, 9, ["energy-1", "energy-2", "energy-2", "energy-3", "energy-3"], { amb: 0.35, gloss: 0.4 });
+  g.set(cx + 9, cy - 12, "white"); g.set(cx + 10, cy - 11, "energy-3"); g.set(cx + 8, cy - 12, "energy-3"); g.set(cx + 10, cy - 10, "energy-3"); // one glint on the glass
   // the brass cage: meridians (ellipses that narrow toward the edges), an equator band, top and bottom caps
   const cage = (x: number, y: number) => { const s = (x + 0.5 - cx) / R; g.set(x, y, s > 0.3 ? "brass-4" : s > -0.3 ? "brass-3" : "brass-1"); };
-  for (const ph of [-0.82, -0.35, 0.35, 0.82]) for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx + Math.sin(ph) * R * Math.cos(a) - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
+  for (const ph of [-1.1, -0.7, -0.3, 0.3, 0.7, 1.1]) for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx + Math.sin(ph) * R * Math.cos(a) - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
   for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
   for (let x = Math.floor(cx - R); x <= cx + R; x++) { cage(x, Math.round(cy - 0.5)); if (g.has(x, Math.round(cy + 0.5))) g.set(x, Math.round(cy + 0.5), "brass-0"); }
-  cylH(g, cx - 5.5, cy - R - 1, 11, 2, BRASS, { amb: 0.2, gloss: 1 });
-  cylH(g, cx - 4.5, cy + R - 1, 9, 2, BRASS, { amb: 0.12, gloss: 0.8 });
-  g.vline(cx - 0.5, cy + R + 1, 2, "brass-2"); g.set(cx - 0.5, cy + R + 3, "brass-4"); // finial
+  cylH(g, cx - 10.5, cy - R - 2, 21, 4, BRASS, { amb: 0.2, gloss: 1 });
+  cylH(g, cx - 8.5, cy + R - 2, 17, 4, BRASS, { amb: 0.12, gloss: 0.8 });
+  for (let x = Math.floor(cx - R); x <= cx + R; x++) if (g.has(x, Math.round(cy - 1.5))) cage(x, Math.round(cy - 1.5)); // a 2px equator band
+  g.vline(cx - 0.5, cy + R + 2, 2, "brass-2"); g.set(cx - 0.5, cy + R + 4, "brass-4"); // finial
+  // a soft steady cyan glow: on the rock round it, and a dithered ring of light in the air (no fades on the grid)
+  g.glowDisc(cx, cy, R + 10, "energy-1", 0.25, [Math.floor(cx - R), Math.floor(cy - R - 2), 2 * R + 2, 2 * R + 4]);
+  for (let y = Math.floor(cy - R - 4); y <= cy + R + 4; y++) for (let x = Math.floor(cx - R - 4); x <= cx + R + 4; x++) { const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (d > R + 1 && d < R + 3.5 && !g.has(x, y) && ((x + y) & 1) && ((x >> 1) + (y >> 1)) % 2) g.glow(x, y, 1, 1, "energy-1", 0.5, true); }
   // a steady cool halo: on the rock above and, faintly, the sky round it
 }
 
 // ---------- the steam vents (static part) ----------
 function vents(g: Px, w: number) {
   for (const x of ventXs(w)) {
-    tube(g, [[x - 11, A.front + 7], [x, A.front + 7], [x, VENT_MOUTH - 2]], 4, CU, { bend: 6, amb: 0.12, gloss: 1.2 });
-    cylV(g, x - 12, A.front + 2, 2, 10, BRASS, { amb: 0.15 }); // the flange where it leaves the skirt
-    cylV(g, x - 5, VENT_MOUTH - 6, 10, 3, BRASS, { amb: 0.15, gloss: 1 }); // the mouth collar
-    cylV(g, x - 5, VENT_MOUTH - 14, 10, 2, BRASS, { amb: 0.15, gloss: 1 });
-    for (let i = -4; i <= 4; i++) g.set(x + i - 0.5, VENT_MOUTH - 2, Math.abs(i) < 4 ? "soot" : "brass-1"); // the dark mouth
+    tube(g, [[x - 14, A.front + 7], [x, A.front + 7], [x, VENT_MOUTH - 2]], 5, CU, { bend: 6, amb: 0.12, gloss: 1.2 });
+    cylV(g, x - 15, A.front + 1, 2, 12, BRASS, { amb: 0.15 }); // the flange where it leaves the skirt
+    cylV(g, x - 6.5, VENT_MOUTH - 7, 13, 4, BRASS, { amb: 0.15, gloss: 1 }); // the mouth collar
+    cylV(g, x - 6.5, VENT_MOUTH - 17, 13, 2, BRASS, { amb: 0.15, gloss: 1 });
+    for (let i = -5; i <= 5; i++) g.set(x + i - 0.5, VENT_MOUTH - 3, Math.abs(i) < 5 ? "soot" : "brass-1"); // the dark mouth
   }
 }
 
@@ -267,6 +287,7 @@ export function hullCanvas(w: number): HTMLCanvasElement {
   rocks(g, w);
   orb(g, w);
   skirt(g, w);
+  hangers(g, w);
   vents(g, w);
   floor(g, w);
   backRail(g, w);
