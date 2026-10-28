@@ -1,0 +1,70 @@
+{
+  "origin": "https://shiptorio.dev",
+  "observedAt": "2026-10-27T19:59:42.304Z",
+  "preflight": {
+    "health": 200,
+    "judge": 200,
+    "version": 200
+  },
+  "stage": "complete",
+  "blocked": null,
+  "build": {
+    "commit": "9166c1cdeb8c2e47a00e9069c74876a1cdb57151"
+  },
+  "startedAt": "2026-10-27T19:59:57.771Z",
+  "endedAt": "2026-10-27T20:10:06.889Z",
+  "durationMs": 600000,
+  "cohort": {
+    "judgeHttpViewers": 200,
+    "supplementalLiveObservers": 200,
+    "signedInFactorySockets": 50,
+    "connectedSnapshots": 60,
+    "openAtEnd": 0,
+    "unexpectedCloses": 250
+  },
+  "apiMs": {
+    "count": 111,
+    "p50": 352.39154199999757,
+    "p95": 539.7620829999796,
+    "max": 7880.348125000019
+  },
+  "pageAndAssetMs": {
+    "count": 8000,
+    "p50": 245.16320800001267,
+    "p95": 3103.3036670000292,
+    "max": 8696.051458000089
+  },
+  "upgradeMs": {
+    "count": 60,
+    "p50": 14632.1825,
+    "p95": 14967.046957999999,
+    "max": 14971.456458
+  },
+  "fanoutMs": {
+    "count": 9,
+    "p50": 22049.176665999985,
+    "p95": 22132.797666,
+    "max": 22132.797666
+  },
+  "attempts": 8830,
+  "failed": 876,
+  "errorRate": 0.09920724801812005,
+  "failures": {
+    "upgrade:429": 190,
+    "socket:transport": 190,
+    "socket:closed": 250,
+    "socket:missing-probe": 204,
+    "http:401": 42
+  },
+  "cloudflare": {
+    "minutes": 10.151966666666667,
+    "cpuMs": 31182.937,
+    "d1RowsReadPerMinute": 3153.0836389665055,
+    "d1RowsWrittenPerMinute": 3.84162017868459,
+    "analyticsFile": "tests/load/evidence/invalidated-by-staging-rollback-analytics.json",
+    "capturedAt": "2026-10-27T20:11:17.619Z"
+  },
+  "passedClientBudgets": false,
+  "validComparison": false,
+  "invalidationReason": "Concurrent staging deployments at 20:06:17Z, 20:06:37Z, 20:06:45Z replaced the pinned Worker with BUILD_SHA unknown, invalidating fixture cookies/control endpoint."
+}

@@ -219,3 +219,9 @@ describe("a re-plan sees why the last attempt was sent back", () => {
     expect(users[0]).not.toContain('"rework"');
   });
 });
+
+it("planner failure copy in the public decision log never names the model", () => {
+  const brain = recordThought(emptyBrain('muse-spark-1.3', true), { at: 1, decision: 'plan', by: 'fallback', model: 'fixed rule', ms: 1, title: 'Fix cart', outcome: 'Spark returned no content', reason: 'Spark is unavailable' });
+  expect(brain.thoughts[0].outcome).toBe('planner returned no content');
+  expect(brain.thoughts[0].reason).toBe('planner is unavailable');
+});

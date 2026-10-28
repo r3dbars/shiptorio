@@ -1,5 +1,6 @@
 import { expect, it, mock } from "bun:test";
 import { testD1 } from "./d1-fixture";
+import { unlimitedFactory } from "./browser-fixture";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { testApp: app } = await import("./app-fixture");
@@ -16,7 +17,7 @@ async function env() {
   const DB = testD1();
   await DB.prepare("INSERT INTO installations(id, account_login, permissions) VALUES (1, 'fixture', '{}')").run();
   await DB.prepare("INSERT INTO repos(full_name, installation_id, repo_id) VALUES ('fixture/shop', 1, 501)").run();
-  return { DB, CACHE: { get: async () => null }, GITHUB_WEBHOOK_SECRET: secret,
+  return { DB, FACTORY: unlimitedFactory, CACHE: { get: async () => null }, GITHUB_WEBHOOK_SECRET: secret,
     SENTRY_REPO_ID: "501", SENTRY_INSTALLATION_ID: "1", SENTRY_CLIENT_SECRET: secret,
     SUPPORT_REPO: "fixture/shop", SUPPORT_REPO_ID: "501", SUPPORT_INSTALLATION_ID: "1",
     SUPPORT_INBOUND_TOKEN: token, INTERCOM_CLIENT_SECRET: secret };

@@ -1,0 +1,10 @@
+{
+  "extends": "../../server/tsconfig.json",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types", "node", "bun"],
+    "typeRoots": ["../../server/node_modules/@types", "../../node_modules/@types", "../../node_modules"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["*.ts"],
+  "exclude": ["read-metrics.ts"]
+}

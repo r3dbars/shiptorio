@@ -5,6 +5,7 @@ import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { emptyDeckBook, moveKey } from "../src/deck-decisions";
 import { testD1 } from "./d1-fixture";
+import { flagKey } from "../src/flags";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -68,6 +69,39 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
 }
 
 describe("durable live check-in decisions", () => {
+  it("checks the upgrade principal once per request and rechecks repository access and revocation", async () => {
+    const f = fixture([]);
+    const internal = f.factory as unknown as { env: { DB: { prepare(sql: string): any } }; githubStopped(): Promise<boolean> };
+    internal.githubStopped = async () => true;
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    let reads = 0, revoked = false, revokeDuringUpgrade = false;
+    internal.env.DB.prepare = (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith("SELECT u.id, u.login FROM sessions")) return statement;
+      return { ...statement, bind: (...args: unknown[]) => {
+        const bound = statement.bind(...args);
+        return { ...bound, first: async () => { reads++; return revoked || revokeDuringUpgrade && reads > 1 ? null : bound.first(); } };
+      } };
+    };
+    await f.checkin();
+    // One principal read plus the independent repository authorization read.
+    expect(reads).toBe(2);
+    reads = 0;
+    await f.checkin();
+    expect(reads).toBe(2); // Never reuse the prior request's authority.
+    // A revocation between principal verification and repository authorization
+    // still denies the upgrade; the two reads are deliberately not collapsed.
+    reads = 0;
+    revokeDuringUpgrade = true;
+    const raced = await f.factory.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
+    expect(raced.status).toBe(403);
+    expect(reads).toBe(2);
+    expect((f.factory as any).socketFetch).toBeUndefined();
+    revoked = true;
+    const response = await f.factory.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
+    expect(response.status).toBe(401);
+  });
+
   it("retries an unchanged decision after a transient cursor write failure", async () => {
     const f = fixture([card("first"), card("second")]);
     await f.checkin();
@@ -480,6 +514,96 @@ describe("real runner proposals survive a deck full of passive source alerts", (
   });
 });
 
+describe("the factory learns what the player approves (docs/LEARN.md)", () => {
+  type Job = Record<string, unknown>;
+  /** Three plan approvals in /web, each Continued by the player, so "Approving plans in /web" is learned. */
+  async function taught() {
+    const { issueRevision } = await import("../src/runner-job");
+    const items = [1, 2, 3, 4].map(n => ({ id: `gh-${n}`, kind: "bug" as const, source: "github_issue" as const, title: `Fix bug ${n}`, body: "A scoped fix", district: "web", state: "queued" as const, attempts: 0, updatedAt: 1 }));
+    const approval = (n: number) => card(`approval-${n}`, { title: `Plan for bug ${n}`, kind: "build", stage: "build", itemId: `gh-${n}`, options: [{ id: "approve", label: "Approve plan", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: `job-${n}` }, reason: "Player approves the scoped plan" }] }] });
+    const f = fixture([1, 2, 3].map(approval), { items });
+    const job = async (n: number, extra: Job = {}) => f.data.set(`runnerJob:job-${n}`, { id: `job-${n}`, repo: "r3dbars/demo", itemId: `gh-${n}`, harness: "codex", allowedPaths: ["web/src/a.ts"], branch: `shiptorio/runner-${n}`, status: "awaiting_approval", approvalMoveId: `approval-${n}`,
+      inputRevision: await issueRevision(`Fix bug ${n}`, JSON.stringify({ body: "A scoped fix", failure: "", scars: [] })), ...extra });
+    for (const n of [1, 2, 3]) await job(n);
+    await f.checkin();
+    const meter = (id: string) => f.saved().deck?.find(m => m.id === id)?.learn;
+    const internal = f.factory as unknown as { openMoves: Move[] | null; state: FactoryState; env: { CACHE: unknown }; runLearned(): Promise<void>; broadcastQueue: Promise<void> };
+    /** A fourth plan arrives, then one tick of learned work runs. */
+    const fourth = async (extra: Job = {}, item: Record<string, unknown> = {}) => {
+      await job(4, extra);
+      if (Object.keys(item).length) internal.state.items = internal.state.items.map(i => i.id === "gh-4" ? { ...i, ...item } : i);
+      f.data.set("openMoves", [...(f.data.get("openMoves") as Move[]), approval(4)]);
+      internal.openMoves = null;
+      await internal.runLearned();
+      await internal.broadcastQueue;
+      return f.data.get("runnerJob:job-4") as Job;
+    };
+    const flags = (values: Record<string, string>) => { internal.env.CACHE = { ...membershipCache, get: async (key: string) => values[key] ?? membershipCache.get(key) }; };
+    expect(meter("approval-1")).toBeUndefined(); // no dots before the first yes
+    await f.send({ type: "choose_move", moveId: "approval-1", optionId: "approve" });
+    expect(meter("approval-2")).toEqual({ have: 1, need: 3 });
+    await f.send({ type: "choose_move", moveId: "approval-2", optionId: "approve" });
+    expect(meter("approval-3")).toEqual({ have: 2, need: 3 });
+    await f.send({ type: "choose_move", moveId: "approval-3", optionId: "approve" });
+    return { f, fourth, flags };
+  }
+
+  it("fills the dots on each yes, learns on the third, then approves the next plan on its own, recorded as autonomy", async () => {
+    const { f, fourth } = await taught();
+    expect(f.saved().learned).toEqual([{ key: "build|district:web|approve_runner_job", label: "Approving plans in /web", since: expect.any(Number) }]);
+    expect(f.events.some(e => e.type === "log" && e.text.startsWith("Learned."))).toBe(true);
+    // The player's own approvals stay the player's.
+    expect(f.data.get("runnerJob:job-1")).toMatchObject({ status: "ready", approvedBy: "player" });
+    expect(await fourth()).toMatchObject({ status: "ready", approvedAt: expect.any(Number), approvedBy: "autonomy" });
+    // The shared handler's own audit line says autonomy too, not the player.
+    const approvals = f.events.filter((e): e is Extract<ServerToWeb, { type: "log" }> => e.type === "log" && e.tool === "approve_runner_job" && e.itemId === "gh-4");
+    expect(approvals.length).toBeGreaterThan(0);
+    expect(approvals.every(e => e.approvedBy === "autonomy" && e.actor === "spark")).toBe(true);
+    expect(await f.taps.prepare("SELECT action FROM card_taps WHERE card_id = 'approval-4'").bind().first()).toEqual({ action: "auto" });
+
+    // Ask me again: the dots come back.
+    await f.send({ type: "unlearn", key: "build|district:web|approve_runner_job" });
+    expect(f.saved().learned).toEqual([]);
+  });
+
+  for (const [name, job, item] of [
+    ["a rework plan (job.reworkPr)", { reworkPr: 170 }, {}],
+    ["a base refresh (job.refreshBase)", { refreshBase: { expectedHeadSha: "c".repeat(40) } }, {}],
+    ["an item that already has a PR", {}, { prNumber: 170 }],
+    ["an item with a scar", {}, { scars: [{ station: "ci", reason: "red", at: 1 }] }],
+  ] as const) it(`never approves ${name} on its own, even after earlier first-build yeses`, async () => {
+    const { fourth } = await taught();
+    const stored = await fourth(job, item);
+    expect(stored.status).toBe("awaiting_approval");
+    expect(stored.approvedAt).toBeUndefined();
+  });
+
+  for (const [name, values] of [
+    ["the global learn kill switch", { [flagKey("learn")]: "false" }],
+    ["the global autonomy kill switch", { [flagKey("autonomy")]: "false" }],
+    ["the teacher's own learn opt-out", { [flagKey("learn", "test-player")]: "false" }],
+    ["the teacher's own autonomy opt-out", { [flagKey("autonomy", "test-player")]: "false" }],
+  ] as const) it(`does nothing on its own under ${name}`, async () => {
+    const { fourth, flags } = await taught();
+    flags(values);
+    expect(await fourth()).toMatchObject({ status: "awaiting_approval" });
+  });
+
+  it("a stale plan goes through the real handler's revision check and is never approved", async () => {
+    const { f, fourth } = await taught();
+    const stored = await fourth({ inputRevision: "stale" });
+    expect(stored).toMatchObject({ status: "failed", error: "Issue changed; request a fresh plan." });
+    expect(stored.approvedAt).toBeUndefined();
+    expect(f.events.some(e => e.type === "log" && e.tool === "approve_runner_job" && e.itemId === "gh-4")).toBe(false);
+  });
+
+  it("a dismiss tells the planner to try something different, and empties the dots", async () => {
+    const f = fixture([card("idea", { kind: "build" })]);
+    await f.checkin();
+    await f.send({ type: "dismiss_move", moveId: "idea", why: "once" });
+    expect((f.data.get("deckBook") as { notes: { text: string }[] }).notes.at(-1)?.text).toContain("try a smaller or different version");
+  });
+});
 
 describe("runner decisions remain reachable among durable third-defer escalations", () => {
   for (const status of ["failed", "awaiting_approval"] as const) it(`keeps the ${status} path visible without consuming governance decisions`, async () => {

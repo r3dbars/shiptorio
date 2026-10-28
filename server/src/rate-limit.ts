@@ -62,6 +62,8 @@ export async function rateLimit(env: LimiterEnv, subject: string, budget: Budget
 // client-chosen identity headers or a form-supplied login as counter identities.
 export const ipSubject = (request: Request) => `ip:${request.headers.get("cf-connecting-ip") ?? "unknown"}`;
 export function requestBudget(request: Request, path = new URL(request.url).pathname): Budget | null {
+  if (path === "/api/me") return "auth";
+  if (["/api/me/progress", "/api/me/prefs", "/api/account/export", "/api/account/delete"].includes(path)) return "move";
   if (path.startsWith("/auth/") || path.startsWith("/setup") || path === "/access" && request.method === "POST") return "auth";
   if (path.startsWith("/connect/")) return "connect";
   if (/^\/api\/repos\/[^/]+\/[^/]+\/factory$/.test(path)) return "socket";

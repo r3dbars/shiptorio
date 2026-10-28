@@ -198,3 +198,221 @@ test("quota telemetry reports the configured owner floor and effective resource 
   const status = await quotaStatus(env, 'owner/repo', { id: 1, login: 'owner' });
   expect(status.quotas.filter(q => ['runs', 'factories', 'repos'].includes(q.id)).map(q => q.limit)).toEqual([200, 99999, 99999]);
 });
+
+test("every planner failure releases the job, publishes one calm card, and resumes without a player tap", async () => {
+  const { BudgetError } = await import('../src/budget');
+  const { SparkError } = await import('../src/spark');
+  const { OutboundError } = await import('../src/reliability');
+  const { PLANNER_REST_KEY } = await import('../src/planning-retry');
+  for (const error of [new SparkError('Planner rate limit (429)'), new OutboundError(503), new DOMException('Timed out', 'TimeoutError'), new BudgetError('Planner daily call/token budget exhausted'), new SparkError('malformed JSON')]) {
+    const { f, data, reload } = await fixture();
+    const input = { itemId: 'gh-1', harness: 'codex' as const, allowedPaths: ['src/cart.ts'] };
+    const job = await f.enqueueRunner(input);
+    const methods = f as unknown as { performRunnerPlan(job: RunnerJob, signal: AbortSignal): Promise<void>; planRunnerJob(job: RunnerJob): Promise<void>; refreshDecisions(): Promise<void> };
+    const attempt = spyOn(methods, 'performRunnerPlan').mockRejectedValue(error);
+    try { await methods.planRunnerJob(job); } finally { attempt.mockRestore(); }
+    expect((await f.runnerJobs())[0]).toMatchObject({ status: 'failed', deadline: undefined });
+    expect(data.has(`planningResume:${job.id}`)).toBe(true);
+    for (let n = 0; n < 3; n++) await methods.refreshDecisions();
+    expect((data.get('state') as FactoryState).deck?.filter(m => m.id === 'planner-rest')).toHaveLength(1);
+    expect((data.get('state') as FactoryState).bottleneck).toBeTruthy(); // deterministic engine still runs
+    // Simulate the persisted reset elapsing, then cold-start the object and run its planning pass.
+    for (const key of [PLANNER_REST_KEY, 'planningRetry:gh-1']) {
+      const retry = data.get(key) as PlanningRetry;
+      data.set(key, { ...retry, retryAt: Date.now() - 1 });
+    }
+    const restored = reload();
+    await restored.usage();
+    const resumed = restored as unknown as { planRunnerJobs(): Promise<void>; performRunnerPlan(job: RunnerJob): Promise<void>; refreshDecisions(): Promise<void> };
+    let resumedJob: RunnerJob | undefined;
+    const recovered = spyOn(resumed, 'performRunnerPlan').mockImplementation(async j => { resumedJob = j; data.set(`runnerJob:${j.id}`, { ...j, status: 'awaiting_approval' }); data.delete(`planningResume:${j.id}`); });
+    try { await resumed.planRunnerJobs(); await resumed.refreshDecisions(); } finally { recovered.mockRestore(); }
+    expect(resumedJob?.id).toBe(job.id);
+    expect(resumedJob?.planningStarted).toBe(false);
+    expect((data.get('state') as FactoryState).deck?.some(m => m.id === 'planner-rest')).toBe(false);
+  }
+});
+
+test("an expired persisted planning deadline fails before any provider work starts", async () => {
+  const { f, data } = await fixture();
+  const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });
+  job.deadline = Date.now() - 1;
+  data.set(`runnerJob:${job.id}`, job);
+  const methods = f as unknown as { planRunnerJob(job: RunnerJob): Promise<void>; performRunnerPlan(job: RunnerJob): Promise<void> };
+  const work = spyOn(methods, 'performRunnerPlan');
+  try { await methods.planRunnerJob(job); expect(work).not.toHaveBeenCalled(); } finally { work.mockRestore(); }
+  expect((await f.runnerJobs())[0].status).toBe('failed');
+  expect((data.get('planningRetry:gh-1') as PlanningRetry).kind).toBe('timeout');
+});
+
+test("a hung planning attempt leaves planning at its deadline and cannot publish a late ready job", async () => {
+  const { f } = await fixture();
+  const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });
+  job.deadline = Date.now() + 10;
+  const methods = f as unknown as { planRunnerJob(job: RunnerJob): Promise<void>; performRunnerPlan(job: RunnerJob, signal: AbortSignal): Promise<void> };
+  let release!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const work = spyOn(methods, 'performRunnerPlan').mockImplementation(async (j, signal) => { await wait; signal.throwIfAborted(); j.status = 'ready'; });
+  const before = Date.now();
+  try {
+    await methods.planRunnerJob(job);
+    expect(Date.now() - before).toBeLessThan(500);
+    expect((await f.runnerJobs())[0].status).toBe('failed');
+    release(); await Promise.resolve();
+    expect(job.status).toBe('failed');
+  } finally { work.mockRestore(); }
+});
+
+test("a failed deck model drops its cached wording and keeps deterministic bottleneck guidance", async () => {
+  const { f, env, data } = await fixture();
+  await f.usage();
+  await (f as unknown as { decisionData(): Promise<void> }).decisionData();
+  env.META_API_KEY = 'test-only';
+  const methods = f as unknown as { askGameMaster(deck: unknown[], stages: unknown[]): void; gmAsking: string | null; gm: unknown; refreshDecisions(): Promise<void> };
+  methods.gm = { key: 'old', call: { order: [], reason: 'old wording' } };
+  const provider = spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 429 }));
+  try {
+    methods.askGameMaster([{ id: 'bottleneck:build', title: 'Work waiting', why: 'A queued issue', options: [{ id: 'later', label: 'Later', actions: [], recommended: true }] }], []);
+    for (let n = 0; methods.gmAsking && n < 100; n++) await new Promise(resolve => setTimeout(resolve, 1));
+    expect(methods.gmAsking).toBeNull();
+    expect(methods.gm).toBeNull();
+    await methods.refreshDecisions(); // the next scheduled tick applies the fallback
+    const state = data.get('state') as FactoryState;
+    expect(state.bottleneck).toBeTruthy();
+    expect(state.deck?.some(m => m.id.startsWith('bottleneck:'))).toBe(true);
+    expect(state.deck?.filter(m => m.id === 'planner-rest')).toHaveLength(1);
+    expect(provider).toHaveBeenCalledTimes(1);
+  } finally { provider.mockRestore(); }
+});
+
+test("the shared resting ledger never appears as a phantom issue in quota telemetry", async () => {
+  const { f, data } = await fixture();
+  data.set('planningRetry:planner', planningFailure(undefined, '503'));
+  expect(await f.planningRetries()).toEqual([]);
+});
+
+test("a parked retry respects a subsequent player deferral", async () => {
+  const { f, data } = await fixture();
+  await f.usage();
+  const state = data.get('state') as FactoryState;
+  const job: RunnerJob = { id: 'parked', itemId: 'gh-1', repo: 'owner/repo', harness: 'codex', allowedPaths: ['src/cart.ts'], status: 'failed', branch: 'shiptorio/runner-parked' };
+  data.set('planningResume:parked', job);
+  data.set('runnerDeferred:gh-1', state.items[0].updatedAt);
+  const methods = f as unknown as { planRunnerJobs(): Promise<void>; performRunnerPlan(job: RunnerJob): Promise<void> };
+  const attempt = spyOn(methods, 'performRunnerPlan');
+  try { await methods.planRunnerJobs(); expect(attempt).not.toHaveBeenCalled(); } finally { attempt.mockRestore(); }
+  expect(data.has('planningResume:parked')).toBe(false);
+});
+
+test("an interrupted planner parks for automatic recovery after a cold start", async () => {
+  const { f, data, reload } = await fixture();
+  const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });
+  data.set(`runnerJob:${job.id}`, { ...job, planningStarted: true });
+  const restored = reload();
+  await restored.usage();
+  await (restored as unknown as { planRunnerJobs(): Promise<void> }).planRunnerJobs();
+  expect((await restored.runnerJobs())[0].status).toBe('failed');
+  expect(data.has(`planningResume:${job.id}`)).toBe(true);
+  expect((data.get('planningRetry:gh-1') as PlanningRetry).kind).toBe('timeout');
+});
+
+test("raising call, token or spend caps wakes parked planning without refunding an ambiguous call", async () => {
+  const { sparkChat } = await import('../src/spark');
+  const { factorySpend } = await import('../src/spend');
+  const { budgetUsage } = await import('../src/budget');
+  for (const cap of ['calls', 'tokens', 'spend'] as const) {
+    const { f, env, data } = await fixture();
+    if (cap === 'calls') await env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=1').run();
+    if (cap === 'tokens') await env.DB.prepare('UPDATE signup_allowlist SET spark_tokens_daily=7000').run();
+    if (cap === 'spend') await env.DB.prepare("INSERT INTO spark_factory_budgets VALUES('owner/repo',30000000)").run();
+    const account = await budgetAccount(env.DB, 'owner/repo');
+    const chatEnv = { ...env, META_API_KEY: 'test-only', budgetRepo: 'owner/repo', budgetAccount: async () => account };
+    const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });
+    const methods = f as unknown as { performRunnerPlan(job: RunnerJob): Promise<void>; planRunnerJob(job: RunnerJob): Promise<void>; planRunnerJobs(): Promise<void>; refreshDecisions(): Promise<void> };
+    let offline = true;
+    const provider = spyOn(globalThis, 'fetch').mockImplementation((async () => {
+      if (offline) throw new TypeError('fetch failed');
+      return Response.json({ choices: [{ message: { content: 'approved plan' } }], usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 } });
+    }) as unknown as typeof fetch);
+    const attempt = spyOn(methods, 'performRunnerPlan').mockImplementation(async j => {
+      await sparkChat(chatEnv, []);
+      data.set(`runnerJob:${j.id}`, { ...j, status: 'awaiting_approval' });
+      data.delete(`planningResume:${j.id}`);
+    });
+    try {
+      await methods.planRunnerJob(job);
+      const before = await budgetUsage(env, account), spendBefore = await factorySpend(env.DB, 'owner/repo');
+      expect(before.calls).toBe(1);
+      expect(spendBefore).toMatchObject({ calls: 1, unmeasuredCalls: 1 });
+      expect((data.get('planningRetry:planner') as PlanningRetry).kind).toBe('cap');
+      await methods.planRunnerJobs(); // remaining room below 100% is not a cap increase
+      expect(provider).toHaveBeenCalledTimes(1);
+      expect((await f.runnerJobs())[0].status).toBe('failed');
+      if (cap === 'calls') await env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=2').run();
+      if (cap === 'tokens') await env.DB.prepare('UPDATE signup_allowlist SET spark_tokens_daily=14000').run();
+      if (cap === 'spend') await env.DB.prepare("UPDATE spark_factory_budgets SET daily_nano_usd=100000000").run();
+      offline = false;
+      await methods.planRunnerJobs();
+      await methods.refreshDecisions();
+      expect(provider).toHaveBeenCalledTimes(2);
+      const after = await budgetUsage(env, account), spendAfter = await factorySpend(env.DB, 'owner/repo');
+      expect(after.calls).toBe(2);
+      expect(after.tokens).toBe(before.tokens + 10);
+      expect(spendAfter).toMatchObject({ calls: 2, unmeasuredCalls: 1 });
+      expect(spendAfter.estimatedUsd).toBeCloseTo(spendBefore.estimatedUsd + 0.0000185, 8);
+      expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
+      expect((await f.runnerJobs())[0].status).toBe('awaiting_approval');
+      expect((data.get('state') as FactoryState).deck?.some(m => m.id === 'planner-rest')).toBe(false);
+    } finally { attempt.mockRestore(); provider.mockRestore(); }
+  }
+});
+
+test("the actual daily cap resets at midnight without erasing the previous day's unknown spend", async () => {
+  const { sparkChat } = await import('../src/spark');
+  const { factorySpend } = await import('../src/spend');
+  const { budgetUsage } = await import('../src/budget');
+  const { f, env, data } = await fixture();
+  await env.DB.prepare('UPDATE signup_allowlist SET spark_calls_daily=1').run();
+  const account = await budgetAccount(env.DB, 'owner/repo');
+  const chatEnv = { ...env, META_API_KEY: 'test-only', budgetRepo: 'owner/repo', budgetAccount: async () => account };
+  const job = await f.enqueueRunner({ itemId: 'gh-1', harness: 'codex', allowedPaths: ['src/cart.ts'] });
+  const methods = f as unknown as { performRunnerPlan(job: RunnerJob): Promise<void>; planRunnerJob(job: RunnerJob): Promise<void>; planRunnerJobs(): Promise<void> };
+  const before = Date.now();
+  let offline = true;
+  const provider = spyOn(globalThis, 'fetch').mockImplementation((async () => {
+    if (offline) throw new TypeError('network unavailable');
+    return Response.json({ choices: [{ message: { content: 'plan' } }], usage: { total_tokens: 10 } });
+  }) as unknown as typeof fetch);
+  const attempt = spyOn(methods, 'performRunnerPlan').mockImplementation(async j => { await sparkChat(chatEnv, []); data.set(`runnerJob:${j.id}`, { ...j, status: 'awaiting_approval' }); });
+  let clock: ReturnType<typeof spyOn> | undefined;
+  try {
+    await methods.planRunnerJob(job);
+    const oldSpend = await factorySpend(env.DB, 'owner/repo', before);
+    const retry = data.get('planningRetry:planner') as PlanningRetry;
+    offline = false;
+    clock = spyOn(Date, 'now').mockReturnValue(retry.retryAt);
+    await methods.planRunnerJobs();
+    expect((await budgetUsage(env, account)).calls).toBe(1);
+    expect((await f.runnerJobs())[0].status).toBe('awaiting_approval');
+    expect(await factorySpend(env.DB, 'owner/repo', before)).toEqual(oldSpend);
+    expect(oldSpend.unmeasuredCalls).toBe(1);
+    expect(provider).toHaveBeenCalledTimes(2);
+  } finally { clock?.mockRestore(); attempt.mockRestore(); provider.mockRestore(); }
+});
+
+test("parked plans stay parked under the kill switch, admin pause, or zero job capacity", async () => {
+  for (const stop of ['kill', 'admin', 'jobs'] as const) {
+    const { f, env, data } = await fixture();
+    await f.usage();
+    const job: RunnerJob = { id: 'parked', itemId: 'gh-1', repo: 'owner/repo', harness: 'codex', allowedPaths: ['src/cart.ts'], status: 'failed', branch: 'shiptorio/runner-parked' };
+    data.set('planningResume:parked', job);
+    if (stop === 'kill') env.SPARK_DISABLED = '1';
+    if (stop === 'jobs') env.FACTORY_CONCURRENT_JOBS = '0';
+    if (stop === 'admin') await env.DB.prepare("INSERT INTO admin_controls(scope,paused) VALUES('owner/repo',1)").run();
+    const methods = f as unknown as { planRunnerJobs(): Promise<void>; performRunnerPlan(job: RunnerJob): Promise<void> };
+    const attempt = spyOn(methods, 'performRunnerPlan');
+    try { await methods.planRunnerJobs(); expect(attempt).not.toHaveBeenCalled(); } finally { attempt.mockRestore(); }
+    expect(data.has('planningResume:parked')).toBe(true);
+    expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
+  }
+});

@@ -34,17 +34,50 @@ function artPages(): Plugin {
   };
 }
 
+// The default map needs these assets before it can draw. Start their transfers with
+// the HTML instead of waiting for React -> FactoryMap -> ShaftScene -> art imports.
+function shaftPreloads(): Plugin {
+  return {
+    name: "shiptorio-shaft-preloads",
+    transformIndexHtml: {
+      order: "post",
+      handler(_html, context) {
+        if (!context.bundle) return;
+        return Object.values(context.bundle)
+          .filter((entry) => entry.type === "chunk" && Object.keys(entry.modules).some((id) =>
+            /\/web\/src\/map\/shaft\/(ShaftScene\.ts|modules\/[^/]+\.js)$/.test(id)))
+          .map((entry) => ({ tag: "link", attrs: { rel: "modulepreload", href: `/${entry.fileName}`, crossorigin: "" }, injectTo: "head" as const }));
+      },
+    },
+  };
+}
+
 // `bun run dev:web` serves the UI on :5173 and proxies the API + websockets to `wrangler dev` on :8787.
 export default defineConfig({
-  plugins: [react(), artPages(), docsSite()],
+  plugins: [react(), artPages(), docsSite(), shaftPreloads()],
   build: {
+    manifest: true,
     rollupOptions: {
       output: {
+        onlyExplicitManualChunks: true,
         // vendors in their own chunks: we deploy many times a day, and three + react don't change,
         // so a returning player only re-downloads the game code
         manualChunks(id) {
           if (id.includes("node_modules/three/") || id.includes("node_modules/.bun/three@")) return "three";
           if (/node_modules\/(\.bun\/)?(react|react-dom|scheduler)[@/]/.test(id)) return "react";
+          // Assign only code: putting entry CSS in the factory chunk would make the
+          // recovery bootstrap statically import the very chunk it must recover.
+          if (!/\.[cm]?[jt]sx?(?:\?|$)/.test(id)) return;
+          // Keep the core together for gzip efficiency, without promoting route-only pages,
+          // idle panels or shaft art into startup. A forest of tiny shared chunks costs more
+          // transfer bytes and dependency round trips on a cold phone connection.
+          if (/\/web\/src\/(main\.tsx|chunkReload\.ts)$/.test(id)) return;
+          // The alternate island renderer is loaded only on selection or shaft fallback.
+          if (/\/web\/src\/map\/(scene|models|itemlab|empire)\.(ts|js)$/.test(id)) return;
+          // These two pure layout helpers are also used by the initial station panel.
+          if (/\/web\/src\/map\/shaft\/(waiting|plan)\.ts$/.test(id)) return "factory";
+          if (/\/web\/src\/(judge\/|lab\/|map\/shaft\/|ui\/(Onboarding|IslandBackdrop|CheckIn|HowItThinks)\.tsx$|sound\/foundryPlayer\.ts$|source\/live\.ts$)/.test(id)) return;
+          if (/\/(web|shared|server)\/src\//.test(id) || /node_modules\/(\.bun\/)?(@sentry|zod)[/@]/.test(id)) return "factory";
         },
       },
     },

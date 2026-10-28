@@ -6,6 +6,7 @@ import { FactoryState, type Item } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { freshInspection, setStage } from "../src/gauntlet";
 import { emptyBook, setPermit } from "../src/permits";
+import { RateLimitError } from "../src/rate-limit";
 import { authorizedSocket, browserEnv } from "./browser-fixture";
 mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { Factory } = await import("../src/factory");
@@ -189,12 +190,46 @@ it("a carried Launch is removed on a GitHub hold and returns when the same prove
     await f.factory.alarm();
     expect(f.saved().deck?.some(m => m.options.some(o => o.id === "launch"))).toBe(true);
     f.mergeState("blocked");
+    f.data.delete("gauntletReadiness:gh-1"); // the readiness poll interval elapsed
     await f.factory.alarm();
     expect(f.saved().deck?.some(m => m.options.some(o => o.id === "launch"))).toBe(false);
     expect(f.saved().items[0].inspection?.state).toBe("passed");
     f.mergeState("clean");
+    f.data.delete("gauntletReadiness:gh-1");
     await f.factory.alarm();
     expect(f.saved().deck?.some(m => m.options.some(o => o.id === "launch"))).toBe(true);
+  });
+});
+it("the tick re-asks GitHub about an on-pad PR at most every poll interval, and waits out a rate limit", async () => {
+  await fixture(async f => {
+    const original = globalThis.fetch;
+    let polls = 0, limited = false;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith("/pulls/99")) { polls++; if (limited) throw new RateLimitError(Date.now() + 600_000); }
+      return original(input, init);
+    }) as typeof fetch;
+    try {
+      await f.factory.alarm();
+      await f.factory.alarm();
+      await f.factory.alarm();
+      expect(polls).toBe(1);
+      const poll = f.data.get("gauntletReadiness:gh-1") as { head: string; nextAt: number };
+      expect(poll.head).toBe(head);
+      expect(poll.nextAt).toBeGreaterThan(Date.now() + 20_000);
+      // A new head is a different question and is asked at once.
+      f.data.set("gauntletReadiness:gh-1", { ...poll, head: "c".repeat(40) });
+      await f.factory.alarm();
+      expect(polls).toBe(2);
+      // A rate limit holds the next poll until GitHub's deadline; a webhook does not cut it short.
+      f.data.delete("gauntletReadiness:gh-1");
+      limited = true;
+      await f.factory.alarm();
+      const held = f.data.get("gauntletReadiness:gh-1") as { nextAt: number; limited: boolean };
+      expect(held.limited).toBe(true);
+      expect(held.nextAt).toBeGreaterThan(Date.now() + 500_000);
+      await (f.factory as unknown as { refreshReadinessPolls(): Promise<void> }).refreshReadinessPolls();
+      expect(f.data.has("gauntletReadiness:gh-1")).toBe(true);
+    } finally { globalThis.fetch = original; }
   });
 });
 it("a GitHub hold after the card offer blocks the final merge without erasing station proof", async () => {

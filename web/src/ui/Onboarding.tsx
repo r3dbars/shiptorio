@@ -1,4 +1,4 @@
-import { introEnabled } from "../flags";
+import { buildoutOn, introEnabled, simpleOn } from "../flags";
 // The first screens of the game (docs/PRODUCT.md, Onboarding): the welcome tour, then play first, sign in later.
 // A signed-out player goes straight to the demo shop (onPlay); signing in with GitHub is the unlock that brings
 // the repo step here. Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
@@ -118,7 +118,9 @@ function Journey() {
 // onPlay: a bare visit. Nobody signed in goes to the demo shop instead of the sign-in card.
 export function Onboarding({ live, step: initial, onDone, onPlay }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void; onPlay?: () => void }) {
   // the tour comes first, before anyone's asked to sign in (playtest #107)
-  const [step, setStep] = useState<OnboardStep>(introEnabled && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
+  // Build as you go is its own introduction (buildout/CONTRACT.md), so it never plays the welcome tour first, and the
+  // simple screen has no tour at all (docs/SIMPLE-UI.md, journey pick 1).
+  const [step, setStep] = useState<OnboardStep>(introEnabled && !buildoutOn() && !simpleOn() && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
   const [login, setLogin] = useState<string | null | undefined>(live ? undefined : "you"); // undefined: still asking /api/me
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
@@ -232,6 +234,8 @@ export function Onboarding({ live, step: initial, onDone, onPlay }: { live: bool
               <GitHubMark />
               <span>{ONBOARD.signIn}</span>
             </button>
+
+            <TesterLinks />
 
             <div className="ob-foot">
               <button hidden={!introEnabled} type="button" className="ob-replay" onClick={() => setStep("intro")}>
@@ -359,4 +363,19 @@ export function Onboarding({ live, step: initial, onDone, onPlay }: { live: bool
       </nav>
     </div>
   );
+}
+
+// The server independently checks TEST_USERS and PUBLIC_URL; production never requests this list.
+function TesterLinks() {
+  const [personas, setPersonas] = useState<string[]>([]);
+  useEffect(() => {
+    if (!["localhost", "127.0.0.1", "[::1]", "shiptorio.dev"].includes(location.hostname)) return;
+    let active = true;
+    fetch("/test/users?format=json").then(r => r.ok ? r.json() : null).then(data => {
+      if (active && Array.isArray(data?.personas)) setPersonas(data.personas.filter((p: unknown): p is string => typeof p === "string" && /^test-(newbie|guest|midgame|broke|blocked)$/.test(p)));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  if (!personas.length) return null;
+  return <aside aria-label="Test accounts"><small>Sign in as tester</small><ul>{personas.map(p => <li key={p}><a href={`/test/login?as=${p}`}>{p}</a></li>)}</ul></aside>;
 }

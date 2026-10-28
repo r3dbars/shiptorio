@@ -18,6 +18,15 @@ runner reliability, limits/quota visibility, security). This supersedes the earl
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**
 
+**New features ship ON on dev, no URL flag needed (Justin, 2026-10-28: "can we just always have no flags by
+default? ... everything just pushed into dev, I can experiment with it all").** On shiptorio.dev every preview feature
+is on; shiptorio.com keeps its defaults until a promotion flips them. Gate a new web feature with
+`feature("name")` from `web/src/flags.ts` (on at shiptorio.dev, `?name=0` / `?name=1` anywhere, `?preview=1` for the
+whole dev set on localhost), never a bare `?name=1` check. A new server flag goes in `FLAG_DEFAULTS` (prod default);
+staging's `FEATURES=all` turns it on there. Make it work alongside every other dev feature (the simple screen,
+the floating city art, progress, empire) and screenshot the plain shiptorio.dev path, not a flagged URL.
+See [`docs/context/branches.md`](docs/context/branches.md#new-features-are-on-on-dev).
+
 **The loop in one page: [`docs/LOOP.md`](docs/LOOP.md)** (visual: `docs/loop.html`). Ore → power → line →
 **verification gauntlet** (CI inspector, verify bay, AI review, merge gate, orbit watch) → rocket; fails ride the
 rework belt back to Spark with a scar tag; every station is clickable.
@@ -196,17 +205,23 @@ then open `/setup` on the deployed URL to create the GitHub App and set its secr
   Workers are ours.
 - Never commit secrets. Local secrets go in `.dev.vars` (gitignored); deployed ones via
   `wrangler secret put`.
-- Work on a branch and open a PR. Don't push to `main`.
+- **Open every PR against `dev`, never `main`** (Justin, 2026-10-28; see `docs/context/branches.md`). `dev` deploys
+  to shiptorio.dev on every merge. `main` is production (shiptorio.com) and only moves when Justin promotes `dev`.
+  Branch from `origin/dev`. Don't push to `dev` or `main` directly.
 - **Commit and push often** (Justin, 2026-10-26). Push WIP to your branch after every meaningful step, and open a
   draft PR early so the work is visible on GitHub. Never sit on unpushed local work.
 - **Run `bun run check` (typecheck + tests + build) before you mark a PR ready.** CI skips draft PRs, so push WIP
-  as a draft freely; it only runs (and only fails) once you mark it ready. Merge `main` in first so you test against it.
-- **Merge your own PR once CI is green** (Justin, 2026-10-26: "auto merge every thing"). Squash merge, then check
-  the Deploy run on `main` went green before calling it live. Don't merge drafts that are stale (#3, #4) or a PR
-  another agent is still working on. GitHub's repo auto-merge setting is not on yet; Justin can flip it in
-  Settings → General → "Allow auto-merge".
-- **D1 migrations:** before you merge, merge `main` into your branch and renumber your `server/migrations/NNNN_*.sql` to
-  the next free number. `server/test/migrations.test.ts` fails CI on a duplicate or gap. Deploy applies them to prod.
+  as a draft freely; it only runs (and only fails) once you mark it ready. Merge `dev` in first so you test against it.
+- **Merge your own PR into `dev` once CI is green** (Justin, 2026-10-26: "auto merge every thing"). PRs into `dev`
+  run only the quick checks (check, selfhost, Stranger), so this takes minutes. Squash merge (or turn on auto-merge),
+  then check the **Staging** run went green before saying it's on shiptorio.dev. Don't merge stale drafts or a PR
+  another agent is still working on. There are no more release batches.
+- **Promoting to production is Justin's call.** He opens (or asks a thread to open) one `dev → main` PR. That PR runs
+  the full suite (browser shards + load); its `full-suite` job posts `release-validation`. Merge it with a **merge
+  commit**, never squash, so `dev` and `main` stay in sync. Deploy then ships main to shiptorio.com.
+- **D1 migrations:** before you merge, merge `dev` into your branch and renumber your `server/migrations/NNNN_*.sql` to
+  the next free number. `server/test/migrations.test.ts` fails CI on a duplicate or gap. Staging applies them to
+  shiptorio.dev on merge; Deploy applies them to prod when `dev` is promoted.
 - **Never merge a PR the factory built** (runner PRs from `shiptorio[bot]` / `shiptorio/runner-*` branches, or anything
   in r3dbars/Testing) directly on GitHub. Those go through the in-game gauntlet and the Launch card, or auto-launch
   via a launch permit. A green CI is not enough: the verify bay and AI review can still flag them (#128 got merged

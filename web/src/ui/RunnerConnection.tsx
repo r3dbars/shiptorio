@@ -3,31 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import { runnerInstallCommand } from "../runner-install";
 import { RUNNER } from "../copy";
 import { PowerPlug, type PlugState } from "./ironArt";
+import { machineLine, useRunnerStatus } from "./runnerStatus";
 
 interface Join { join: string; expires: number }
-interface RunnerStatus { paired: boolean; online: boolean; seenAt: number | null; harnesses: string[]; lastJob: { id: string; status: string } | null }
 
 /** Your machine as a power cable into the factory's wall socket: seated and pulsing when the runner is online. */
 export function RunnerConnection({ repo }: { repo: string }) {
-  const [status, setStatus] = useState<RunnerStatus | null>(null);
-  const [error, setError] = useState("");
+  const { status, setStatus, error, setError } = useRunnerStatus(repo);
   const [confirm, setConfirm] = useState(false);
   const [join, setJoin] = useState<Join | null>(null);
   const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    let active = true;
-    const refresh = async () => {
-      try {
-        const response = await fetch(`/api/repos/${repo}/runner/status`, { cache: "no-store" });
-        if (!response.ok) throw new Error(RUNNER.noAccess);
-        const data = await response.json() as RunnerStatus;
-        if (active) { setStatus(data); setError(""); }
-      } catch (e) { if (active) setError(e instanceof Error ? e.message : RUNNER.unreachable); }
-    };
-    setStatus(null); void refresh();
-    const timer = setInterval(refresh, 5000);
-    return () => { active = false; clearInterval(timer); };
-  }, [repo]);
   // Not plugged in yet: mint a one-paste setup command, and a fresh one once the last expires (ten minutes, one use).
   const unpaired = status?.paired === false;
   const minting = useRef(false);
@@ -62,6 +47,7 @@ export function RunnerConnection({ repo }: { repo: string }) {
     </div>
     <PowerPlug state={error ? "unpaired" : plug} />
     <p role="status" aria-live="polite">{error || (status ? needsSignIn ? RUNNER.signIn : status.online ? RUNNER.online(agents) : status.paired ? RUNNER.offline : join ? RUNNER.waiting : RUNNER.unpaired : RUNNER.checking)}</p>
+    {status?.online && (status.working || status.waitingOn) && <p>{machineLine(status)!.text}{status.working?.title ? `: ${status.working.title}` : status.waitingOn ? `: ${status.waitingOn.title}` : ""}</p>}
     {status?.seenAt && <p className="empty">{RUNNER.lastSeen(new Date(status.seenAt).toLocaleString())}</p>}
     {status?.lastJob && <p className="empty">{RUNNER.lastJob(RUNNER.job[status.lastJob.status] ?? RUNNER.unknownJob, status.lastJob.id.slice(0, 8))}</p>}
     {!status?.online && <>

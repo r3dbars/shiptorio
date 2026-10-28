@@ -1,0 +1,66 @@
+diff --git a/server/src/factory.ts b/server/src/factory.ts
+index c7b16763..0a2abe74 100644
+--- a/server/src/factory.ts
++++ b/server/src/factory.ts
+@@ -1703,17 +1703,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
+       // A player may have many sockets. Share the same revocable session check only
+       // within this frame; the next frame must query D1 again (no authorization TTL).
+       const access = new Map<string, Promise<boolean>>();
+-      for (const ws of this.ctx.getWebSockets("web")) {
++      await Promise.all(this.ctx.getWebSockets("web").map(async ws => {
+         try {
+           const auth = ws.deserializeAttachment();
+-          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user) { ws.close(1008, "Repository access revoked"); continue; }
++          if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user) { ws.close(1008, "Repository access revoked"); return; }
+           const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login]);
+           let allowed = access.get(key);
+           if (!allowed) { allowed = repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
+-          if (!await allowed) { ws.close(1008, "Repository access revoked"); continue; }
++          if (!await allowed) { ws.close(1008, "Repository access revoked"); return; }
+           ws.send(text);
+         } catch { try { ws.close(1008, "Sign in again"); } catch {} }
+-      }
++      }));
+     };
+     const delivery = this.broadcastQueue.then(deliver);
+     this.broadcastQueue = delivery.catch(() => {});
+@@ -2588,9 +2588,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
+     Object.assign(auth, { repo, user });
+     const { 0: client, 1: server } = new WebSocketPair();
+     this.ctx.acceptWebSocket(server, ["web"]);
++    const firstViewer = this.ctx.getWebSockets("web").length === 1;
+     server.serializeAttachment(auth);
+     const state = await this.load();
+-    if (state && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
++    if (state && firstViewer && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
+     else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
+     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+diff --git a/server/src/rate-limit.ts b/server/src/rate-limit.ts
+index c1151ae1..a5b533ec 100644
+--- a/server/src/rate-limit.ts
++++ b/server/src/rate-limit.ts
+@@ -22,8 +22,8 @@ export function githubCooldown(res: Response, now: number, failures: number, sec
+ // Counters use the existing Factory namespace, in dedicated per-subject objects.
+ // A single bounded record survives isolate restarts; transactions serialize all
+ // connections for that identity. Idle objects have no alarms or growing key list.
+-export type Budget = "auth" | "connect" | "socket" | "move";
+-export const LIMITS: Record<Budget, number> = { auth: 20, connect: 30, socket: 60, move: 120 };
++export type Budget = "auth" | "connect" | "socket" | "socket_ip" | "move";
++export const LIMITS: Record<Budget, number> = { auth: 20, connect: 30, socket: 60, socket_ip: 300, move: 120 };
+ export interface LimitResult { allowed: boolean; retryAfter: number }
+ interface Window { start: number; count: number }
+ interface Counter { windows: Partial<Record<Budget, Window>> }
+@@ -54,7 +54,11 @@ export async function securityObjectName(subject: string): Promise<string> {
+ }
+ 
+ export async function rateLimit(env: LimiterEnv, subject: string, budget: Budget): Promise<LimitResult> {
+-  return env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).securityLimit(budget);
++  // Shared NATs and demo audiences can contain many authenticated players. Keep
++  // the per-user 60/min gate; give only the aggregate IP upgrade gate headroom
++  // for 250 connections. No authorization result or rejected attempt is cached.
++  const scoped = budget === "socket" && subject.startsWith("ip:") ? "socket_ip" : budget;
++  return env.FACTORY.get(env.FACTORY.idFromName(await securityObjectName(subject))).securityLimit(scoped);
+ }
+ 
+ // Cloudflare overwrites this header at the edge. Never use X-Forwarded-For,

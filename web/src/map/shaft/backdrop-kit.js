@@ -14,16 +14,20 @@
 //     return { update(t, dt) { if (!B.calm()) drift(dt); } };
 //   });
 
+import { buildoutOn, feature } from "../../flags";
+
+const host = () => (typeof location === "undefined" ? "" : location.hostname);
 const q = () => (typeof location === "undefined" ? new URLSearchParams() : new URLSearchParams(location.search));
 
-/** the floating-city art is installed only with ?artpass=1 (the old city + keel install when it's off) */
+/** the floating-city art: a preview feature (on at shiptorio.dev, ?artpass=1 / ?artpass=0 anywhere; web/src/flags.ts).
+ * The old city + keel install when it's off. */
 export function artPass() {
-  return q().get("artpass") === "1";
+  return feature("artpass", q().toString(), host());
 }
 
-/** the build-as-you-go floor growth runs only with ?buildout=1 */
+/** the build-as-you-go floor growth runs only with Build as you go (web/src/flags.ts buildoutOn) */
 export function buildout() {
-  return q().get("buildout") === "1";
+  return typeof location !== "undefined" && buildoutOn();
 }
 
 const prefersReduced = () => typeof matchMedia !== "undefined" && !!matchMedia("(prefers-reduced-motion: reduce)").matches;

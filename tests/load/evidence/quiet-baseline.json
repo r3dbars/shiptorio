@@ -1,0 +1,14 @@
+{
+  "origin": "https://shiptorio.dev",
+  "kind": "quiet-control",
+  "startedAt": "2026-10-27T19:55:00.000Z",
+  "endedAt": "2026-10-27T19:57:00.000Z",
+  "cloudflare": {
+    "minutes": 2,
+    "cpuMs": null,
+    "d1RowsReadPerMinute": null,
+    "d1RowsWrittenPerMinute": null,
+    "analyticsFile": "tests/load/evidence/quiet-baseline-analytics.json",
+    "capturedAt": "2026-10-27T20:07:43.348Z"
+  }
+}

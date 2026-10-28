@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "es2022", "module": "es2022", "moduleResolution": "bundler",
+    "lib": ["es2022"], "types": ["@cloudflare/workers-types", "bun"],
+    "strict": true, "noEmit": true, "skipLibCheck": true,
+    "allowJs": true, "checkJs": false
+  },
+  "include": ["worker.ts", "session.ts", "timing.ts", "request-lease.ts"]
+}

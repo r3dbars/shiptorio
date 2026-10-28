@@ -106,7 +106,9 @@ const DWELL_MS = 6000; // a lesson stays up at least this long before the next o
 
 // on = this run teaches. Off, everything is visible and no lessons fire.
 // hold = something else has the floor (a rocket's celebration, a badge toast): the next lesson waits its turn.
-export function useTutorial(state: FactoryState | null, on: boolean, hold = false) {
+// quiet = the welcome tour already told the story, so lessons land silently: each one still unlocks its piece of the
+// HUD and goes in the field guide, but no coach card opens (one short path, not two tours back to back, 2026-10-28).
+export function useTutorial(state: FactoryState | null, on: boolean, hold = false, quiet = false) {
   const [done, setDone] = useState<string[]>(() => (on ? [] : LESSONS.map((l) => l.id)));
   const [open, setOpen] = useState<string | null>(null);
   const [settled, setSettled] = useState(true); // the open lesson has been up long enough
@@ -121,10 +123,11 @@ export function useTutorial(state: FactoryState | null, on: boolean, hold = fals
   const next = LESSONS.find((l) => !done.includes(l.id));
   useEffect(() => {
     if (!on || !state || !next || !settled || hold || !next.when(state)) return;
+    if (quiet) return setDone((d) => [...d, next.id]);
     setOpen(next.id);
     setSettled(false);
     setDone((d) => [...d, next.id]);
-  }, [on, state, next, settled, hold]);
+  }, [on, state, next, settled, hold, quiet]);
 
   const shown = useMemo(() => {
     if (!on || !next) return new Set<HudPart>(ALL);

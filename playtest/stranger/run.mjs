@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 import { sparkStub } from "./spark-stub.mjs";
 import { githubStub } from "./github-stub.mjs";
+import { decodeFactoryFrame } from "./factory-frame.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const server = join(root, "server");
@@ -107,7 +108,9 @@ let factoryState = {};
 page.on("websocket", socket => {
   socket.on("framereceived", frame => {
     try {
-      const value = JSON.parse(String(frame.payload));
+      const decoded = decodeFactoryFrame(frame.payload);
+      if (decoded.heartbeat) return;
+      const value = decoded.message;
       if (value.type === "snapshot") factoryState = value.state;
       if (value.type === "move") factoryState.move = value.move;
       if (value.type === "move_resolved" && factoryState.move?.id === value.moveId) factoryState.move = null;

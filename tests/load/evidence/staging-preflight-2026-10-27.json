@@ -1,0 +1,60 @@
+{
+  "origin": "https://shiptorio.dev",
+  "observedAt": "2026-10-27T19:51:32.826Z",
+  "preflight": {
+    "health": 200,
+    "judge": 401,
+    "version": 401
+  },
+  "stage": "preflight",
+  "blocked": "Staging preflight failed: health=200, public /judge=401",
+  "build": {
+    "status": 401
+  },
+  "startedAt": "",
+  "endedAt": "",
+  "durationMs": 600000,
+  "cohort": {
+    "judgeHttpViewers": 200,
+    "supplementalLiveObservers": 200,
+    "signedInFactorySockets": 50,
+    "connectedSnapshots": 0,
+    "openAtEnd": 0,
+    "unexpectedCloses": 0
+  },
+  "apiMs": {
+    "count": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "pageAndAssetMs": {
+    "count": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "upgradeMs": {
+    "count": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "fanoutMs": {
+    "count": 0,
+    "p50": null,
+    "p95": null,
+    "max": null
+  },
+  "attempts": 0,
+  "failed": 0,
+  "errorRate": null,
+  "failures": {},
+  "cloudflare": {
+    "durableObjectCpuMs": null,
+    "d1RowsReadPerMinute": null,
+    "d1RowsWrittenPerMinute": null,
+    "reason": "Requires staging-scoped Cloudflare analytics export for this exact UTC window; client timing cannot measure billed CPU/D1."
+  },
+  "passedClientBudgets": false
+}

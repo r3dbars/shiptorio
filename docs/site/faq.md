@@ -52,7 +52,7 @@ A ship card is locked when a gauntlet stamp hasn't passed yet. Swiping right run
 
 ## Why does nothing build?
 
-Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Needs you card will say "Plug in Claude or ChatGPT to start building."
+Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Needs you card will say "Your computer writes the code. Plug it in to start building."
 
 ## Why can't I sign in?
 
@@ -79,3 +79,5 @@ The docs are. The app opens up after the hackathon. Built for the Meta AI Develo
 ## Where do I report a bug?
 
 Open an issue on the repo. If you're playing a live factory on Shiptorio's own repo, your bug becomes ore, and the factory might fix it for you.
+
+If the planner is busy or unavailable, planning rests behind one card showing the local resume time. Attempts have a two-minute deadline and retry automatically after the cooldown or daily reset. Raising a call, token or spend limit also wakes parked plans; ambiguous paid calls keep their reservations. Existing checks and merge decisions remain available.

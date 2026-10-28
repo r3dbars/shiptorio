@@ -1,0 +1,307 @@
+{
+  "capturedAt": "2026-10-27T20:11:17.619Z",
+  "query": "query($account: string!, $database: string!, $namespace: string!, $start: Time!, $end: Time!) {\n viewer { accounts(filter: {accountTag: $account}) {\n  d1AnalyticsAdaptiveGroups(limit: 1000, filter: {databaseId: $database, datetime_geq: $start, datetime_lt: $end}, orderBy: [datetimeMinute_ASC]) {\n   dimensions {datetimeMinute} sum {rowsRead rowsWritten readQueries writeQueries} avg {sampleInterval}\n  }\n  durableObjectsPeriodicGroups(limit: 1000, filter: {namespaceId: $namespace, datetime_geq: $start, datetime_lt: $end}, orderBy: [datetimeMinute_ASC]) {\n   dimensions {datetimeMinute} sum {cpuTime inboundWebsocketMsgCount outboundWebsocketMsgCount exceededCpuErrors fatalInternalErrors}\n  }\n } }\n}",
+  "variables": {
+    "account": "44da992322566011378aed0df314e779",
+    "database": "82bf6646-ed06-4c4d-94c3-c9b747940a7e",
+    "namespace": "187f0a43e43d4e869e501e5192eec961",
+    "start": "2026-10-27T19:59:57.771Z",
+    "end": "2026-10-27T20:10:06.889Z"
+  },
+  "raw": {
+    "viewer": {
+      "accounts": [
+        {
+          "d1AnalyticsAdaptiveGroups": [
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T19:59:00Z"
+              },
+              "sum": {
+                "readQueries": 343,
+                "rowsRead": 247,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:00:00Z"
+              },
+              "sum": {
+                "readQueries": 3350,
+                "rowsRead": 3530,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:01:00Z"
+              },
+              "sum": {
+                "readQueries": 4582,
+                "rowsRead": 4938,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:02:00Z"
+              },
+              "sum": {
+                "readQueries": 4452,
+                "rowsRead": 4812,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:03:00Z"
+              },
+              "sum": {
+                "readQueries": 2842,
+                "rowsRead": 2925,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:04:00Z"
+              },
+              "sum": {
+                "readQueries": 2843,
+                "rowsRead": 2928,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:05:00Z"
+              },
+              "sum": {
+                "readQueries": 2946,
+                "rowsRead": 3033,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:06:00Z"
+              },
+              "sum": {
+                "readQueries": 2758,
+                "rowsRead": 2819,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:07:00Z"
+              },
+              "sum": {
+                "readQueries": 3062,
+                "rowsRead": 3122,
+                "rowsWritten": 25,
+                "writeQueries": 13
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:08:00Z"
+              },
+              "sum": {
+                "readQueries": 2699,
+                "rowsRead": 2754,
+                "rowsWritten": 14,
+                "writeQueries": 6
+              }
+            },
+            {
+              "avg": {
+                "sampleInterval": 1
+              },
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:09:00Z"
+              },
+              "sum": {
+                "readQueries": 878,
+                "rowsRead": 902,
+                "rowsWritten": 0,
+                "writeQueries": 0
+              }
+            }
+          ],
+          "durableObjectsPeriodicGroups": [
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T19:59:00Z"
+              },
+              "sum": {
+                "cpuTime": 3489,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:00:00Z"
+              },
+              "sum": {
+                "cpuTime": 4952288,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 6842
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:01:00Z"
+              },
+              "sum": {
+                "cpuTime": 4974875,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 6955
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:02:00Z"
+              },
+              "sum": {
+                "cpuTime": 3179676,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 4070
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:03:00Z"
+              },
+              "sum": {
+                "cpuTime": 2916107,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 3865
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:04:00Z"
+              },
+              "sum": {
+                "cpuTime": 3019633,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 3922
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:05:00Z"
+              },
+              "sum": {
+                "cpuTime": 2981400,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 3725
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:06:00Z"
+              },
+              "sum": {
+                "cpuTime": 3079016,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 3923
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:07:00Z"
+              },
+              "sum": {
+                "cpuTime": 3040517,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 3868
+              }
+            },
+            {
+              "dimensions": {
+                "datetimeMinute": "2026-10-27T20:08:00Z"
+              },
+              "sum": {
+                "cpuTime": 3035936,
+                "exceededCpuErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 3773
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "units": {
+    "cpuTime": "microseconds (Cloudflare schema description)",
+    "d1": "rows; sampled adaptive groups, see sampleInterval"
+  },
+  "summary": {
+    "minutes": 10.151966666666667,
+    "cpuMs": 31182.937,
+    "d1RowsReadPerMinute": 3153.0836389665055,
+    "d1RowsWrittenPerMinute": 3.84162017868459
+  }
+}

@@ -13,6 +13,8 @@ interface Context { trace: Trace; redactor: Redactor; env: TelemetryEnv; waitUnt
 const context = new AsyncLocalStorage<Context>();
 export const currentTrace = () => context.getStore()?.trace;
 export const currentRedactor = () => context.getStore()?.redactor;
+/** Private fixture entrypoints use this to route outbound traffic; ordinary deployments never call it. */
+export const currentTestEnvironment = () => context.getStore()?.env;
 export function inTrace<T>(trace: Trace, env: TelemetryEnv, waitUntil: Context['waitUntil'], run: () => T): T {
   return context.run({ trace, redactor: new Redactor(env), env, waitUntil }, () => Sentry.withScope(() => {
     Sentry.setTag('requestId', trace.requestId);

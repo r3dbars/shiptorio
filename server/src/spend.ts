@@ -14,16 +14,16 @@ export function measuredCost(usage?: TokenUsage) {
   return Number.isSafeInteger(cost) ? { input, output, cached, cost } : null;
 }
 export async function reserveFactorySpend(db: D1Database, repo: string, input: number, output: number, model: string, now = Date.now()) {
-  if (model !== "muse-spark-1.3") throw new BudgetError("Spark spend pricing unavailable for this model; paid calls paused");
+  if (model !== "muse-spark-1.3") throw new BudgetError("Planner spend pricing unavailable for this model; paid calls paused");
   const cost = input * 1250 + output * 4250;
-  if (!count(input) || !count(output) || !count(cost)) throw new BudgetError("Invalid Spark cost reservation");
+  if (!count(input) || !count(output) || !count(cost)) throw new BudgetError("Invalid Planner cost reservation");
   const id = crypto.randomUUID(), day = utcDay(now);
   // One statement checks and reserves: concurrent requests cannot both spend the remaining balance.
   const row = await db.prepare(`INSERT INTO spark_factory_calls(id, repo, day, model, nano_usd)
     SELECT ?, ?, ?, ?, ? WHERE COALESCE((SELECT SUM(nano_usd) FROM spark_factory_calls WHERE repo = ? AND day = ?), 0) + ?
     <= COALESCE((SELECT daily_nano_usd FROM spark_factory_budgets WHERE repo = ?), ?) RETURNING id`)
     .bind(id, repo.toLowerCase(), day, model, cost, repo.toLowerCase(), day, cost, repo.toLowerCase(), DEFAULT_DAILY_BUDGET).first();
-  if (!row) throw new BudgetError("Spark daily dollar budget reached or too little remains for this call. I paused paid thinking to protect your budget. Raise the factory budget or wait until 00:00 UTC; existing PR checks and human merges can continue.");
+  if (!row) throw new BudgetError("Planner daily dollar budget reached or too little remains for this call. I paused paid thinking to protect your budget. Raise the factory budget or wait until 00:00 UTC; existing PR checks and human merges can continue.");
   return id;
 }
 export async function settleFactorySpend(db: D1Database, id: string, usage?: TokenUsage) {
@@ -43,7 +43,7 @@ export async function factorySpend(db: D1Database, repo: string, now = Date.now(
     outputTokens: row?.output_tokens ?? 0, cachedTokens: row?.cached_tokens ?? 0, unmeasuredCalls: row?.unmeasured_calls ?? 0,
     estimatedUsd: cost / NANO_USD, dailyBudgetUsd: daily / NANO_USD, status,
     explanation: status === "stopped" ? "I paused paid thinking because this factory reached its daily budget. Raise it or wait until 00:00 UTC. Existing PR checks and human merges can continue."
-      : status === "warning" ? "This factory has used at least 80% of today's Spark budget. I will pause paid thinking before another call could exceed it."
+      : status === "warning" ? "This factory has used at least 80% of today's planner budget. I will pause paid thinking before another call could exceed it."
       : "Paid thinking pauses before a call could exceed the daily budget. Budgets reset at 00:00 UTC.",
     pricing: "Estimated at $1.25/M input, $0.15/M cached input, $4.25/M output. Unmeasured calls retain their reservation." };
 }

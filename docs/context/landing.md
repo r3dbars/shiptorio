@@ -8,6 +8,13 @@
 - Desktop (1600×900) and phone (600×800) clips were recorded from the game renderer at main `c5e23309f221b4e4397bfc63d497e81a1648ea40`, using its seeded demo driver. The completed merge gate and rocket launch are visible. The 10-second loops crossfade their seam. Audio is a separate 32-second recording of that revision’s procedural music, ambience and sound effects, with staged effect cues. These are game previews, not recordings of real PR activity.
 - The refresh is scoped to `web/public/welcome/` and its logo asset; it does not replace the app/password-page branding in PR #467 or the separate layout workshop in #469. Justin explicitly requested this web work outside Codex’s usual backend lane. Checkpoint: October 28 landing-page polish.
 
+## Waitlist collection follow-up (2026-10-28)
+
+- Signup uses the existing public `POST /api/waitlist` Worker endpoint. It normalizes and deduplicates the address in D1 `signup_waitlist`, with `kind=email` and `status=pending`; owners review it at `/admin/signup`. This collects addresses only; no automatic email is sent.
+- The dialog requires both a successful HTTP response and `{ok:true}` before showing “You're on the waitlist.” Redirects, HTML, malformed replies and database failures retain the email for retry. Requests time out after 15 seconds instead of staying busy indefinitely. A confirmed signup hides the input form.
+- For a working local preview, run `bun run dev` (Worker plus build), or keep `bun run dev:web` and the server dev script running together. The server dev script sets `--infer-origin-from-routes=false` so Wrangler preserves localhost instead of inferring shiptorio.com and triggering the HTTPS gate. This does not change production origin checks.
+- Browser regression tests in `tests/e2e/waitlist.pw.ts` submit through the real Worker and verify a single normalized D1 row after repeat signup on desktop, iPhone and Pixel. They also refuse false success from HTML, missing save receipts, redirects and database failures. The D1 receipt reader exists only in the existing test Worker.
+
 ## Previous implementation
 
 Task 20, 2026-10-26. shiptorio.com is now public at `/`; the app stays behind the preview password.

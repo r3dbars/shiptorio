@@ -1,6 +1,7 @@
 import { rememberInstallationOwner } from "./installation-owner";
 import { gh } from "./github";
 import { signupAllowed } from "./signup";
+import { testIdentityAllowed } from "./test-users-policy";
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
 // server-side session, and copies which App installations and repos that user can reach, read with the
 // user's own token. Every factory route checks that copy, so a player only ever sees their own repos.
@@ -14,6 +15,8 @@ export interface AccountsEnv {
   SESSION_SECRET: string;
   ALLOWED_LOGINS: string;
   DEV_LOGIN?: string;
+  TEST_USERS?: string;
+  PUBLIC_URL?: string;
 }
 
 export interface User { id: number; login: string; dev?: true }
@@ -64,6 +67,7 @@ export async function currentUser(env: AccountsEnv, cookie: string | null, url: 
     .first<{ id: number; login: string }>();
   if (await authorizationRevoked(env.DB, session.login, session.issuedAt)) return null;
   if (!row || !allowPending && !await signupAllowed(env,row.login)) return null;
+  if (row.id < 0 && !testIdentityAllowed(env, row.id, row.login)) return null;
 
   return { id: row.id, login: row.login };
 }
@@ -145,9 +149,14 @@ export async function readPrefs(env: AccountsEnv, user: User): Promise<Partial<R
   return Object.fromEntries(rows.results.filter((r) => isPrefKey(r.key)).map((r) => [r.key, r.value]));
 }
 
-export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<string, unknown>, now = Date.now()): Promise<boolean> {
+export function validPrefs(prefs: unknown, allowEmpty = false): prefs is Partial<Record<PrefKey, string>> {
+  if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) return false;
   const entries = Object.entries(prefs);
-  if (!entries.length || entries.some(([k, v]) => !isPrefKey(k) || typeof v !== "string" || v.length > PREF_LIMIT[k])) return false;
+  return (allowEmpty || entries.length > 0) && entries.every(([k, v]) => isPrefKey(k) && typeof v === "string" && v.length <= PREF_LIMIT[k]);
+}
+export async function writePrefs(env: AccountsEnv, user: User, prefs: Record<string, unknown>, now = Date.now()): Promise<boolean> {
+  if (!validPrefs(prefs)) return false;
+  const entries = Object.entries(prefs);
   if (user.dev) return true;
   await env.DB.batch(entries.map(([k, v]) =>
     env.DB.prepare("INSERT INTO user_prefs (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")

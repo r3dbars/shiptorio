@@ -102,6 +102,10 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
       } else if (msg.type === "snapshot" || (typeof seq === "number" && seq <= lastSeq)) return;
       if (typeof seq === "number") lastSeq = seq;
       clearTimeout(deadline); clearTimeout(heartbeat);
+      const local = (m: { id: string; title: string; plan?: string[] } | null | undefined) => { if (m?.id === "planner-rest" && m.plan?.[0]) m.title = `Planner is resting until ${new Date(m.plan[0]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}`; };
+      if (msg.type === "snapshot") { msg.state.deck?.forEach(local); local(msg.state.move); }
+      if (msg.type === "deck") msg.deck.forEach(local);
+      if (msg.type === "move") local(msg.move);
       onMessage(msg);
       if (!current()) return;
       if (msg.type === "snapshot") ready();

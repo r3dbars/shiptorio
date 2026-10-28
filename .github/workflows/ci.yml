@@ -2,12 +2,12 @@ name: CI
 permissions:
   contents: read
 # One run per branch/event at a time. A new push cancels the previous run, except on
-# release/* branches, where an in-flight full run always finishes (a fix landing
-# mid-run used to throw away 10+ minutes of browser/load evidence).
-# Every ready PR runs everything: check/selfhost plus the browser and load suites.
-# When all four pass, the full-suite job posts the release-validation status that
-# main requires, so nobody has to dispatch and stamp it by hand. Drafts skip CI.
-# Main is checked by the Deploy run instead.
+# release/* branches, where an in-flight full run always finishes.
+# Two lanes (docs/context/branches.md):
+# - PRs into dev (where agents land work): check + selfhost only, so they merge in minutes.
+# - PRs into main (dev -> main promotions): also the browser and load suites. When all
+#   four pass, the full-suite job posts the release-validation status main requires.
+# Drafts skip CI. Main and dev are checked again by their deploy runs.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.head_ref, 'release/') && !startsWith(github.ref, 'refs/heads/release/') }}
@@ -31,27 +31,52 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - name: Docs-only change?
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/ci/docs-only.sh
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun install --frozen-lockfile
+        if: steps.scope.outputs.code == 'true'
+      - if: steps.scope.outputs.code == 'true'
+        run: bun install --frozen-lockfile
       - name: Audit dependency advisories (high and critical)
+        if: steps.scope.outputs.code == 'true'
         run: bun audit --audit-level=high
-      - run: bun run typecheck
-      - run: bun run typecheck:tests
-      - name: Install Linux runner verification boundary
+      # Independent steps share the 4-core runner instead of running one after another.
+      - name: Typecheck, build and runner verification boundary (in parallel)
+        if: steps.scope.outputs.code == 'true'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y bubblewrap
+          logs="$RUNNER_TEMP/prep"; mkdir -p "$logs"
+          start() { local name=$1; shift; ( "$@" > "$logs/$name.log" 2>&1; echo $? > "$logs/$name.code" ) & }
+          start typecheck bun run typecheck
+          start typecheck-tests bun run typecheck:tests
+          start build bun run build
           # GitHub's disposable Ubuntu VM restricts user namespaces by default.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: bun test
+          start boundary bash -c 'sudo apt-get update -qq && sudo apt-get install -y bubblewrap && sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0'
+          wait
+          failed=0
+          for name in typecheck typecheck-tests build boundary; do
+            echo "::group::$name"; cat "$logs/$name.log"; echo "::endgroup::"
+            if [ "$(cat "$logs/$name.code")" != 0 ]; then echo "::error::$name failed"; failed=1; fi
+          done
+          exit "$failed"
+      # Same files and tests, spread over worker processes (each file still runs isolated).
+      - if: steps.scope.outputs.code == 'true'
+        run: bun test --parallel
       - name: Verify real Durable Object storage on host
+        if: steps.scope.outputs.code == 'true'
         run: bun run test:storage
-      - run: bun run playtest --check
-      - run: bun run build
+      - if: steps.scope.outputs.code == 'true'
+        run: bun run playtest --check
   selfhost:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -75,7 +100,7 @@ jobs:
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
   browser:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.base_ref != 'dev')
     runs-on: ubuntu-latest
     # Split each viewport's files across two jobs as browser coverage grows.
     # Existing per-test and individual assertion deadlines remain unchanged.
@@ -122,7 +147,7 @@ jobs:
             tests/e2e/baselines/linux/
           retention-days: 7
   load:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.base_ref != 'dev')
     runs-on: ubuntu-latest
     # Up to three load runs (see tests/load/repeat.ts).
     timeout-minutes: 20
