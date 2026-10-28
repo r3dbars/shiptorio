@@ -232,54 +232,69 @@ function plot(pen: Pen, lit: boolean, t: number) {
 function scaffold(pen: Pen, t: number) {
   const { r, p, d, glow } = pen;
   const deckY = -36;
-  glow(-25, -2, 12, 3, P.iron[0], 0.5);
-  // back legs (darker, set back by the 3/4 offset) then front legs
+  glow(-25, -2, 12, 3, P.soot[0], 0.5);
+  // legs: cool dark steel, the back pair set back by the 3/4 offset; warm rim on the right edge, rust under rivets
   for (const [x, back] of [[-17, true], [19, true], [-21, false], [17, false]] as const) {
     const top = back ? deckY - 3 : deckY;
     r(x - 1, top, 4, -top + 1, P.soot[0]);
-    r(x, top, 1, -top, back ? P.iron[1] : P.iron[2]); r(x + 1, top, 1, -top, back ? P.iron[2] : P.iron[4]);
-    if (!back) { r(x - 1, -2, 4, 2, P.brass[2]); p(x + 1, -2, P.brass[4]); } // foot plates
-    for (let y = top + 3; y < -2; y += 7) rivet(pen, x + 1, y, P.iron[4], P.iron[0]);
+    r(x, top, 1, -top, back ? P.steel[0] : P.steel[1]); r(x + 1, top, 1, -top, back ? P.steel[1] : P.steel[2]);
+    if (!back) { r(x + 2, top + 1, 1, -top - 2, P.sun[1]); p(x + 1, top + 1, P.white[0]); } // sun rim + glint
+    if (!back) { r(x - 1, -2, 4, 2, P.steel[1]); r(x - 1, -2, 4, 1, P.steel[2]); }   // foot plates
+    for (let y = top + 3; y < -2; y += 7) {
+      rivet(pen, x + 1, y, P.brass[4], P.soot[0]);
+      if (!back) { p(x + 1, y + 2, P.copper[1]); p(x + 1, y + 3, P.copper[0]); } // rust streak
+    }
+    if (!back) d(x, -6, 2, 4, P.iron[1], P.steel[1]); // grime at the feet
   }
-  // X braces on the left bay, one px per row
-  for (let y = -3; y > deckY + 3; y -= 11) for (let k = 0; k < 10; k++) { p(-20 + Math.round(k * 0.3), y - k, P.iron[2]); p(-18 - Math.round(k * 0.3), y - k, P.iron[1]); }
-  // deck: top face + hazard-striped front edge
+  // X braces on the left bay
+  for (let y = -3; y > deckY + 3; y -= 11) for (let k = 0; k < 10; k++) { p(-20 + Math.round(k * 0.3), y - k, P.steel[1]); p(-18 - Math.round(k * 0.3), y - k, P.steel[0]); }
+  // deck: steel plate top face (lighter toward the sun), dark front edge with a brass rivet line
   r(-23, deckY - 4, 46, 7, P.soot[0]);
-  r(-22, deckY - 3, 44, 3, P.iron[3]); r(6, deckY - 3, 16, 3, P.iron[4]); d(-20, deckY - 2, 10, 1, P.iron[2], P.iron[3]);
-  for (let i = 0; i < 44; i++) r(-22 + i, deckY, 1, 2, (i + Math.floor(i / 1)) % 6 < 3 ? P.brass[4] : P.soot[0]);
-  r(-22, deckY + 2, 44, 1, P.iron[1]);
-  // railing: posts, rail with a lit top px
-  r(-22, deckY - 9, 44, 1, P.brass[3]); r(-22, deckY - 10, 44, 1, P.brass[4]); r(-22, deckY - 8, 44, 1, P.soot[0]);
-  for (const x of [-22, -11, 0, 11, 21]) { r(x, deckY - 9, 1, 6, P.brass[2]); }
+  r(-22, deckY - 3, 44, 3, P.steel[2]); r(8, deckY - 3, 14, 3, P.steel[3]); d(-21, deckY - 2, 12, 1, P.steel[1], P.steel[2]);
+  for (const x of [-12, 0, 12]) r(x, deckY - 3, 1, 3, P.steel[1]); // plate seams
+  r(-22, deckY, 44, 2, P.steel[1]); r(-22, deckY + 2, 44, 1, P.steel[0]);
+  for (let x = -20; x < 22; x += 6) p(x, deckY, P.brass[3]);
+  p(21, deckY - 3, P.white[0]); r(22, deckY - 3, 1, 5, P.sun[1]);
+  d(-22, deckY + 1, 8, 1, P.iron[1], P.steel[1]); // grime in the corner
+  // railing: dark steel rail with a lit top px, thin posts
+  r(-22, deckY - 10, 44, 1, P.steel[3]); r(-22, deckY - 9, 44, 1, P.steel[1]); r(-22, deckY - 8, 44, 1, P.soot[0]);
+  p(18, deckY - 10, P.white[0]);
+  for (const x of [-22, -11, 0, 11, 21]) r(x, deckY - 9, 1, 6, P.steel[1]);
   // lanterns at both ends: soot cage, warm glass, a soft halo (flickers one shade, slowly)
   for (const x of [-22, 20]) {
     const warm = Math.floor(t * 2 + x) % 5 === 0 ? P.sun[4] : P.sun[5];
-    r(x - 1, deckY - 15, 4, 5, P.soot[0]); r(x, deckY - 14, 2, 3, warm); p(x + 1, deckY - 14, P.sun[6]); r(x, deckY - 16, 2, 1, P.brass[3]);
+    r(x - 1, deckY - 15, 4, 5, P.soot[0]); r(x, deckY - 14, 2, 3, warm); p(x + 1, deckY - 14, P.sun[6]); p(x, deckY - 16, P.brass[3]);
     glow(x - 2, deckY - 17, 6, 8, P.sun[5], 0.25);
   }
   // ladder up the left
-  for (let y = -1; y > deckY; y--) { p(-24, y, P.brass[2]); p(-22, y, P.brass[3]); if ((y & 3) === 0) p(-23, y, P.brass[4]); }
+  for (let y = -1; y > deckY; y--) { p(-24, y, P.steel[0]); p(-22, y, P.steel[1]); if ((y & 3) === 0) p(-23, y, P.steel[2]); }
 }
 
 /** The crane, behind on the right: heavy base, banded turret drum, lattice boom, pulley, hook block. */
-function crane(pen: Pen, swing: number, hookY: number) {
+function crane(pen: Pen, swing: number, hookY: number, t = 0) {
   const { r, p, d, glow } = pen;
-  glow(4, -2, 14, 3, P.iron[0], 0.5);
-  // base: top face + front, brass trim, rivets, feet
+  glow(4, -2, 14, 3, P.soot[0], 0.5);
+  // base: steel top face + front, rivets with rust streaks, grime
   r(6, -10, 17, 11, P.soot[0]);
-  r(7, -9, 15, 3, P.iron[3]); r(15, -9, 7, 3, P.iron[4]);
-  r(7, -6, 15, 6, P.iron[2]); r(17, -6, 5, 6, P.iron[3]); r(7, -6, 15, 1, P.brass[3]);
-  d(8, -2, 6, 1, P.iron[1], P.iron[2]);
-  for (const x of [9, 13, 17, 20]) rivet(pen, x, -4);
-  // turret drum: a cylinder banded across x
-  const drum = [P.iron[1], P.iron[2], P.iron[3], P.iron[3], P.iron[4], P.iron[4], P.brass[3]];
+  r(7, -9, 15, 3, P.steel[2]); r(15, -9, 7, 3, P.steel[3]);
+  r(7, -6, 15, 6, P.steel[1]); r(17, -6, 5, 6, P.steel[2]); r(7, -6, 15, 1, P.steel[0]);
+  r(22, -9, 1, 9, P.sun[1]); p(21, -9, P.white[0]);
+  d(8, -2, 7, 1, P.iron[1], P.steel[1]);
+  for (const x of [9, 13, 17, 20]) { rivet(pen, x, -5, P.brass[4], P.soot[0]); p(x, -3, P.copper[1]); }
+  // turret drum: a steel cylinder banded across x, glint on the sun side
+  const drum = [P.steel[0], P.steel[1], P.steel[1], P.steel[2], P.steel[2], P.steel[3], P.sun[1]];
   r(9, -19, 9, 10, P.soot[0]);
   for (let i = 0; i < 7; i++) r(10 + i, -18, 1, 9, drum[i]);
-  r(10, -15, 7, 2, P.copper[2]); r(15, -15, 2, 2, P.copper[4]); // winch cable band
-  p(16, -18, P.white[0]);
+  r(10, -15, 7, 2, P.iron[1]); r(14, -15, 2, 1, P.iron[3]); // winch cable wrap
+  p(15, -18, P.white[0]); p(15, -17, P.steel[3]);
+  for (const x of [10, 16]) p(x, -12, P.brass[3]);
+  // exhaust: a short stack and a slow, dithered haze puff
+  r(18, -23, 3, 5, P.soot[0]); r(19, -22, 1, 4, P.steel[1]); p(19, -23, P.steel[2]);
+  const k = (t * 0.6) % 1, py = -26 - Math.round(k * 8);
+  if (k < 0.85) { r(18 + Math.round(k * 2), py, 3, 2, P.haze[1]); p(19 + Math.round(k * 2), py, P.haze[2]); if (k > 0.5) p(20 + Math.round(k * 2), py + 1, P.haze[0]); }
   // lantern on the base
   r(20, -14, 3, 4, P.soot[0]); r(21, -13, 1, 2, P.sun[5]); glow(19, -15, 5, 6, P.sun[5], 0.25);
-  // boom: pivot -> tip, 3 px thick, lit top, lattice dots
+  // boom: pivot -> tip, 3 px thick, steel with a lit top edge and lattice gaps
   const px0 = 13, py0 = -17, tx = Math.round(10 - swing * 12), ty = Math.round(-56 + swing * 6);
   const n = Math.max(Math.abs(tx - px0), Math.abs(ty - py0));
   for (let i = 0; i <= n; i++) {
@@ -288,15 +303,17 @@ function crane(pen: Pen, swing: number, hookY: number) {
   }
   for (let i = 0; i <= n; i++) {
     const x = Math.round(px0 + ((tx - px0) * i) / n), y = Math.round(py0 + ((ty - py0) * i) / n);
-    p(x, y - 0, P.brass[4]); p(x - 1, y, P.brass[3]); p(x, y + 1, P.brass[1]);
+    p(x, y, P.steel[3]); p(x - 1, y, P.steel[2]); p(x, y + 1, P.steel[0]);
     if (i % 3 === 0) p(x - 1, y + 1, P.soot[0]);
+    if (i % 9 === 4) p(x, y, P.brass[3]); // a rivet at each lattice joint
   }
-  // pulley at the tip
-  disc(pen, tx, ty, 2, (x, y) => (x * x + y * y < 1 ? P.soot[0] : x - y > 0 ? P.brass[4] : P.brass[2]));
+  // pulley at the tip: steel wheel, one glint
+  disc(pen, tx, ty, 2, (x, y) => (x * x + y * y < 1 ? P.soot[0] : x - y > 0 ? P.steel[3] : P.steel[1]));
+  p(tx + 1, ty - 1, P.white[0]);
   // cable + hook block
   const hy = Math.max(ty + 4, Math.round(hookY));
   r(tx, ty + 2, 1, hy - ty - 2, P.soot[0]);
-  r(tx - 2, hy - 1, 5, 4, P.soot[0]); r(tx - 1, hy, 3, 2, P.iron[3]); p(tx + 1, hy, P.brass[4]);
+  r(tx - 2, hy - 1, 5, 4, P.soot[0]); r(tx - 1, hy, 3, 2, P.steel[2]); p(tx + 1, hy, P.white[0]); p(tx - 1, hy + 1, P.copper[0]);
   p(tx - 1, hy + 3, P.steel[3]); p(tx - 1, hy + 4, P.steel[2]); p(tx, hy + 5, P.steel[2]); p(tx + 1, hy + 4, P.steel[3]);
   return { x: tx, y: hy + 5 };
 }
@@ -307,16 +324,16 @@ function cage(pen: Pen) {
   const T = -32, B = -1, L = -18, R = 17, off = 3;
   const beamV = (x: number, y0: number, y1: number, back: boolean) => {
     r(x - 1, y0, 4, y1 - y0 + 1, P.soot[0]);
-    r(x, y0, 1, y1 - y0, back ? P.iron[1] : P.iron[2]); r(x + 1, y0, 1, y1 - y0, back ? P.iron[2] : P.iron[4]);
+    r(x, y0, 1, y1 - y0, back ? P.steel[0] : P.steel[1]); r(x + 1, y0, 1, y1 - y0, back ? P.steel[1] : P.steel[3]);
   };
   const beamH = (x0: number, x1: number, y: number, back: boolean) => {
     r(x0, y - 1, x1 - x0 + 1, 4, P.soot[0]);
-    r(x0, y, x1 - x0, 1, back ? P.iron[2] : P.iron[4]); r(x0, y + 1, x1 - x0, 1, back ? P.iron[1] : P.iron[2]);
+    r(x0, y, x1 - x0, 1, back ? P.steel[1] : P.steel[3]); r(x0, y + 1, x1 - x0, 1, back ? P.steel[0] : P.steel[1]);
   };
   // back frame (set back up-right)
   beamV(L + off, T - off, B - off, true); beamV(R + off, T - off, B - off, true); beamH(L + off, R + off + 1, T - off, true);
   // top-face diagonals
-  for (let k = 0; k <= off; k++) { r(L + k, T - k, 2, 1, P.iron[3]); r(R + k, T - k, 2, 1, P.iron[4]); }
+  for (let k = 0; k <= off; k++) { r(L + k, T - k, 2, 1, P.steel[2]); r(R + k, T - k, 2, 1, P.steel[3]); }
   // front frame + middle girders
   beamV(L, T, B, false); beamV(R, T, B, false);
   for (const y of [T, -21, -11, B - 1]) beamH(L, R + 1, y, false);
@@ -324,10 +341,10 @@ function cage(pen: Pen) {
   // X brace in the lower bay
   for (let i = 0; i <= 32; i++) { // two diagonals, L+2..R-1 by -10..-3
     const x = L + 2 + Math.round((i * (R - L - 3)) / 32), y = -10 + Math.round((i * 7) / 32);
-    p(x, y, P.iron[2]); p(x, -13 - y, P.iron[3]);
+    p(x, y, P.steel[1]); p(x, -13 - y, P.steel[2]);
   }
   // the porthole ring that will hold the gear
-  disc(pen, -5, -10, 8, (x, y) => (x * x + y * y > 40 ? (x - y > 2 ? P.brass[4] : x - y < -4 ? P.brass[1] : P.brass[3]) : ""));
+  disc(pen, -5, -10, 8, (x, y) => (x * x + y * y > 40 ? (x - y > 6 ? P.brass[4] : x - y > 2 ? P.steel[3] : x - y < -4 ? P.steel[0] : P.steel[1]) : ""));
 }
 
 /** Pixel ring (midpoint circle). keep(x, y) can thin it out as it fades. */
@@ -414,7 +431,7 @@ export function drawBuildPx(ctx: CanvasRenderingContext2D, stop: StopId, t: numb
     ctx.save(); pen.clip(-70, 0); ctx.translate(0, (sink + Math.round((1 - up) * 50)) * ART_PX);
     scaffold(pen, t);
     const swing = t < STAGE_AT.frame ? 0 : t < STAGE_AT.top - 0.2 ? 0.5 : 1; // three slow positions, like the sheet
-    crane(pen, swing, t < STAGE_AT.top ? -44 : -H - drop - 8);
+    crane(pen, swing, t < STAGE_AT.top ? -44 : -H - drop - 8, t);
     ctx.restore();
   }
   // the machine: girder cage, then the finished drawing revealed from the feet, then its top lowered in
