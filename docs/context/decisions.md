@@ -441,3 +441,17 @@ production config; provider key values, revocations and permissions are unchange
 ## 2026-10-26 — Foundry S-rocket identity
 
 Justin selected the third refined rocket/S logo and **“A little play. A lot shipped.”** He asked Codex to implement it as code across the title screen, company logo, app titles and overlays, and merge it. The design uses dark enamel, brass, pipe rails and larger industrial headings; the existing factory artwork remains. See `docs/art/FOUNDRY-BRAND.md` for source assets and typography.
+
+Load-gate repair (2026-10-28): publish a decision deck and its top card only when
+that exact serialized payload changes within the live Factory instance. The first
+publication and every new socket's full snapshot remain; tick/bottleneck telemetry
+continues. Every actual frame still revalidates the session and repository access.
+This removes duplicate publication work rather than caching authorization or changing
+load budgets. CI profile timing is sampled evidence, not billed production CPU.
+A newly registered redaction secret invalidates those publication stamps through a
+per-instance monotonic policy revision, so the same raw card is sent again with the
+new scrubbing policy. Registering the same secret twice does not trigger new frames.
+Publication deduplication also tracks each pending frame by object identity. If
+cursor allocation or queued delivery rejects, only that publication's stamp is
+released for retry; an older failure cannot clear a newer stamp after an A/B/A
+payload sequence. Failures are reported and the next unchanged refresh retries.
