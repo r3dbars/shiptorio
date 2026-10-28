@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift, type Px } from "./px";
-import { BRASS, COPPER, IRON, ball, blotch, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
+import { BRASS, COPPER, IRON, ball, blotch, box3q, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Gate: a tall riveted iron cabinet the line runs through, a brass lantern on top, a slot window down its face and
@@ -57,13 +57,10 @@ export const gate: StationDef = {
     cylV(g, 13, 20, 6, 2, BRASS, { amb: 0.25, gloss: 0.9 }); g.set(18, 20, "brass-5"); // a brass collar on the pipe
 
     // --- cabinet: top face, lit side with a little box, front
-    for (let k = 0; k < 3; k++) for (let x = 19 + (3 - k); x <= 41; x++) tone(g, x, 11 + k, IRON, 0.55 + 0.15 * ((x - 19) / 22) + (blotch(x, 11 + k, 3, 2) - 0.5) * 0.2);
-    for (let y = 13; y < 44; y++) for (let x = 39; x < 42; x++) tone(g, x, y, IRON, 0.5 + (x - 39) * 0.07 + (noise(x, y, 6) - 0.5) * 0.08);
+    box3q(g, 19, 14, 20, 30, 4, 0.34, { rust: 0.05, grime: 4, seed: 51 });
     drop(g, 41, 16, 6, 9);
     face(g, 41, 16, 6, 9, IRON, 0.45, { seed: 5, grime: 1 }); strap(g, 41, 16, 6, 2, BRASS); g.vline(46, 18, 7, "brass-2");
     for (const x of [42, 44]) { g.vline(x, 19, 4, "soot"); g.vline(x + 1, 19, 4, "iron-3"); } // a little grille
-    face(g, 19, 14, 20, 30, IRON, 0.34, { rust: 0.05, grime: 4, seed: 51 });
-    strap(g, 19, 14, 20, 2, BRASS, 4);
     strap(g, 19, 16, 3, 27, BRASS, 5);
     strap(g, 36, 16, 3, 27, BRASS, 5);
     strap(g, 19, 42, 20, 2, BRASS, 4, false);

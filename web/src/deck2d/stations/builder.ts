@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import type { Px } from "./px";
-import { BRASS, COPPER, IRON, ball, bezel, blotch, bracket, cylH, cylV, drop, face, noise, rivet, smoke, strap, streak, tone } from "./shade";
+import { BRASS, COPPER, IRON, ball, bezel, box3q, bracket, cylH, cylV, drop, rivet, smoke, strap, streak, tone } from "./shade";
 import { shift } from "./px";
 import type { StationDef } from "./types";
 
@@ -51,46 +51,32 @@ export const builder: StationDef = {
     cylH(g, 3, 33, 6, 8, IRON, { amb: 0.06, gloss: 0.5 });
     cylV(g, 2, 32, 2, 10, BRASS, { amb: 0.3 });
 
-    // --- top face, seen from above: iron between brass edge straps
-    for (let k = 0; k < 7; k++) {
-      const y = 13 + k, x0 = 15 - k, x1 = 41 - Math.round(k / 2);
-      for (let x = x0; x <= x1; x++) tone(g, x, y, IRON, 0.6 + 0.16 * ((x - x0) / (x1 - x0)) + (blotch(x, y, 3, 5) - 0.5) * 0.25);
-      tone(g, x0, y, BRASS, 0.5); tone(g, x0 + 1, y, BRASS, 0.35);
-      tone(g, x1, y, BRASS, 0.72); tone(g, x1 - 1, y, BRASS, 0.5);
-    }
-    strap(g, 15, 13, 27, 2, BRASS, 5); // back edge
-    for (const cx of [12, 36]) strap(g, cx, 15, 4, 3, BRASS); // corner plates
-
-    // --- right side face (lit)
-    for (let y = 17; y < 53; y++) for (let x = 39; x < 42; x++) tone(g, x, y, IRON, 0.46 + (x - 39) * 0.06 - (y - 17) * 0.004 + (noise(x, y, 8) - 0.5) * 0.1);
-
-    // --- front face: dark iron, rust and grime, framed in brass
-    face(g, 8, 20, 32, 34, IRON, 0.36, { rust: 0.06, grime: 4, seed: 11 });
-    strap(g, 8, 19, 32, 2, BRASS, 4);
-    strap(g, 8, 22, 2, 31, BRASS);
-    strap(g, 38, 22, 2, 31, BRASS);
-    g.vline(35, 35, 13, "iron-0"); rivet(g, 34, 37, "iron-4", "soot"); rivet(g, 34, 45, "iron-4", "soot");
-    for (const [x, y, n] of [[12, 21, 4], [27, 21, 3], [34, 39, 5], [9, 33, 6], [36, 21, 2]] as const) streak(g, x, y, n); // rust run off the bands
-    bracket(g, 8, 19, 0, 0); bracket(g, 39, 19, 1, 0); bracket(g, 8, 53, 0, 1); bracket(g, 39, 53, 1, 1);
+    // --- the body in 3/4: a lit top face, the right side face receding, the dark front framed in brass
+    box3q(g, 8, 20, 27, 34, 8, 0.34, { rust: 0.06, grime: 4, seed: 11 });
+    strap(g, 8, 21, 2, 32, BRASS);
+    strap(g, 31, 21, 2, 32, BRASS);
+    for (const x of [36, 40]) for (let y = 18 - Math.round((x - 34) * 0.75); y < 50 - Math.round((x - 34) * 0.75); y += 6) rivet(g, x, y, "iron-4", "soot"); // rivets down the side
+    for (const [x, y, n] of [[12, 21, 4], [27, 21, 3], [9, 33, 6], [38, 20, 5], [33, 30, 4]] as const) streak(g, x, y, n); // rust run off the bands
+    bracket(g, 8, 20, 0, 0); bracket(g, 34, 20, 1, 0); bracket(g, 8, 53, 0, 1); bracket(g, 34, 53, 1, 1);
 
     // vent panel + latch (upper left)
     drop(g, 11, 22, 7, 11);
     g.rect(11, 22, 7, 11, "iron-2"); g.box(11, 22, 7, 11, "brass-1"); g.hline(11, 22, 7, "brass-2"); g.vline(17, 22, 11, "brass-0"); g.set(17, 22, "brass-3");
     g.rect(13, 24, 3, 7, "iron-0");
     g.vline(13, 24, 7, "soot"); g.vline(15, 24, 7, "soot"); g.vline(14, 25, 6, "iron-3");
-    strap(g, 19, 25, 5, 4, BRASS); g.hline(20, 26, 3, "iron-0");
+    
 
     // the window: 3 x 2 cells behind a brass frame
     const gl = GLASS[s];
-    strap(g, 25, 23, 11, 8, BRASS);
-    g.rect(26, 24, 9, 6, "soot");
-    for (const cy of [24, 27]) for (const cx of [26, 29, 32]) {
+    strap(g, 21, 23, 11, 8, BRASS);
+    g.rect(22, 24, 9, 6, "soot");
+    for (const cy of [24, 27]) for (const cx of [22, 25, 28]) {
       tone(g, cx, cy, gl, 0.75); tone(g, cx + 1, cy, gl, 1); tone(g, cx, cy + 1, gl, 0.5); tone(g, cx + 1, cy + 1, gl, 0.75);
     }
     if (s !== "idle") { // lamp glow on the iron around the window (light layer)
       const c = s === "working" ? "sun-5" : s === "jammed" ? "jam-2" : "ok-2";
-      g.glowDisc(30.5, 27, 8.5, c, 0.25, [25, 23, 11, 8]);
-      g.glow(25, 22, 11, 1, c, 0.5); g.glow(24, 23, 1, 8, c, 0.25); g.glow(36, 23, 1, 8, c, 0.5); g.glow(25, 31, 11, 1, c, 0.25);
+      g.glowDisc(26.5, 27, 8.5, c, 0.25, [21, 23, 11, 8]);
+      g.glow(21, 22, 11, 1, c, 0.5); g.glow(20, 23, 1, 8, c, 0.25); g.glow(32, 23, 1, 8, c, 0.5); g.glow(21, 31, 11, 1, c, 0.25);
     }
 
     // --- the gear in its brass bezel
@@ -104,40 +90,39 @@ export const builder: StationDef = {
     }
     gear(g, gx, gy, s === "working" ? (f % 4) / 4 : 0);
 
-    // --- copper tank on the right, its elbow into the top, a brass cap out the side
-    for (const [y, h, w] of [[20, 13, 9], [35, 11, 8], [48, 3, 9]] as const) { // stacked segments, each its own cylinder
-      cylV(g, 40, y, w, h, COPPER, { amb: 0.09, gloss: 1.0 });
-      for (let x = 40; x < 40 + w; x++) { tone(g, x, y, COPPER, 0.55 + (x - 40) * 0.05); g.set(x, y + h - 1, x < 44 ? "soot" : "copper-0"); } // lit lip, dark foot
+    // --- copper tank standing against the side face, its elbow into the top, a brass cap out the side
+    for (const [y, h] of [[20, 13], [35, 11], [48, 3]] as const) { // stacked segments, each its own cylinder
+      cylV(g, 43, y, 7, h, COPPER, { amb: 0.09, gloss: 1.0 });
+      for (let x = 43; x < 50; x++) { tone(g, x, y, COPPER, 0.55 + (x - 43) * 0.05); g.set(x, y + h - 1, x < 46 ? "soot" : "copper-0"); } // lit lip, dark foot
     }
-    for (const y of [18, 33, 46]) { cylV(g, 39, y, 11, 2, BRASS, { amb: 0.2, gloss: 0.9 }); g.set(48, y, "brass-5"); } // brass rings, a glint where the sun hits
-    for (let x = 40; x < 49; x++) g.set(x, 20, x < 44 ? "soot" : "brass-0"); // shadow under the top ring
-    cylH(g, 35, 13, 10, 5, COPPER, { amb: 0.18 });
-    cylV(g, 41, 13, 6, 6, COPPER, { amb: 0.18 });
-    cylV(g, 49, 34, 2, 6, BRASS, { amb: 0.3 });
+    for (const y of [18, 33, 46]) { cylV(g, 42, y, 9, 2, BRASS, { amb: 0.2, gloss: 0.9 }); g.set(49, y, "brass-5"); } // brass rings, a glint where the sun hits
+    for (let x = 43; x < 50; x++) g.set(x, 20, x < 46 ? "soot" : "brass-0"); // shadow under the top ring
+    cylH(g, 37, 12, 8, 4, COPPER, { amb: 0.18 });
+    cylV(g, 44, 12, 5, 6, COPPER, { amb: 0.18 });
 
     // --- feet
-    for (const fx of [8, 32]) { strap(g, fx, 49, 8, 3, BRASS, 3); cylH(g, fx, 52, 8, 2, BRASS, { amb: 0.15 }); }
+    for (const fx of [8, 27]) { strap(g, fx, 49, 8, 3, BRASS, 3); cylH(g, fx, 52, 8, 2, BRASS, { amb: 0.15 }); }
 
-    // --- chimney on a riveted collar
-    drop(g, 21, 12, 12, 3, "soot");
-    cylH(g, 21, 12, 12, 3, BRASS, { amb: 0.16, gloss: 0.6 });
-    for (let x = 22; x < 33; x += 3) rivet(g, x, 13);
-    cylV(g, 23, 4, 8, 9, IRON, { amb: 0.1, gloss: 0.8 }); // iron stack
-    cylV(g, 23, 8, 8, 1, BRASS, { amb: 0.3 }); // a brass band round it
-    cylV(g, 22, 1, 10, 3, BRASS, { amb: 0.3, gloss: 1.1 }); // lip
-    g.hline(24, 1, 6, "soot"); g.hline(25, 2, 4, "iron-0"); g.set(30, 1, "brass-5"); // the dark opening, a glint on the rim
+    // --- chimney on a riveted collar, standing in the middle of the top face
+    drop(g, 21, 15, 12, 3, "soot");
+    cylH(g, 21, 15, 12, 3, BRASS, { amb: 0.16, gloss: 0.6 });
+    for (let x = 22; x < 33; x += 3) rivet(g, x, 16);
+    cylV(g, 23, 7, 8, 9, IRON, { amb: 0.1, gloss: 0.8 }); // iron stack
+    cylV(g, 23, 11, 8, 1, BRASS, { amb: 0.3 }); // a brass band round it
+    cylV(g, 22, 4, 10, 3, BRASS, { amb: 0.3, gloss: 1.1 }); // lip
+    g.hline(24, 4, 6, "soot"); g.hline(25, 5, 4, "iron-0"); g.set(30, 4, "brass-5"); // the dark opening, a glint on the rim
 
-    // --- the lever: brass rod on a plate, ball knob on top
-    strap(g, 10, 13, 6, 2, BRASS);
-    g.vline(12, 8, 6, "brass-1"); g.vline(13, 8, 6, "brass-3");
+    // --- the lever on the top face: brass rod on a plate, ball knob on top
+    strap(g, 11, 17, 6, 2, BRASS);
+    g.vline(13, 11, 6, "brass-1"); g.vline(14, 11, 6, "brass-3");
     const plain = s === "idle" || s === "working";
-    ball(g, 13, 6.5, 2.8, plain ? IRON : s === "jammed" ? JAM_BALL : OK_BALL, { amb: plain ? 0.25 : 0.35 });
+    ball(g, 14, 9.5, 2.8, plain ? IRON : s === "jammed" ? JAM_BALL : OK_BALL, { amb: plain ? 0.25 : 0.35 });
 
     raw.outline();
 
     // --- life: smoke leaves the chimney (after the outline: smoke has no hard edge)
-    if (s === "working") smoke(g, 26, -1, f / 8);
-    if (s === "jammed") smoke(g, 26, -1, f / 8, true);
+    if (s === "working") smoke(g, 26, 2, f / 8);
+    if (s === "jammed") smoke(g, 26, 2, f / 8, true);
   },
 };
 
