@@ -18,17 +18,18 @@ const GLASS: Record<StopState, readonly Color[]> = {
 };
 
 function gear(g: Px, cx: number, cy: number, turn: number) {
-  // 8 square-ish teeth; turn is in tooth-steps (0..1 loops). Flat machined face: light on the upper-right half,
-  // a bright rim on the lit edges, a dark rim on the shadow edges, a dark hub with a bolt.
+  // 8 square teeth; turn is in tooth-steps (0..1 loops). Machined steel: lit half light grey, shadow half mid grey,
+  // a bright rim along the lit edge, a dark hub with a bolt.
   for (let y = Math.floor(cy - 8); y <= Math.ceil(cy + 8); y++) for (let x = Math.floor(cx - 8); x <= Math.ceil(cx + 8); x++) {
     const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
     const a = Math.atan2(dy, dx) - (turn / 8) * Math.PI * 2;
-    const R = Math.cos(a * 8) > -0.15 ? 7 : 5.3;
+    const R = Math.cos(a * 8) > 0 ? 7.1 : 5.4;
     if (d > R) continue;
-    const lit = dx - dy > 1.5;
-    let c: Color = lit ? "haze-2" : "iron-4";
-    if (d > R - 1) c = dx - dy > 2 ? "haze-3" : dx - dy < -1 ? "iron-3" : c;
-    if (d < 3.3) c = d < 1.4 ? "soot" : lit ? "iron-3" : "iron-1";
+    const k = (dx - dy) / (d || 1); // -1.4 shadow side .. 1.4 lit side
+    let c: Color = k > 0.2 ? "haze-2" : "iron-4";
+    if (d > R - 1 && k > 0.6) c = "haze-3";
+    if (d > R - 1 && k < -0.6) c = "iron-3";
+    if (d < 3.4) c = d < 1.5 ? "soot" : k > 0.3 ? "steel-2" : "steel-1";
     g.set(x, y, c);
   }
   g.set(cx + 0.5, cy - 2.5, "white"); // glint on the hub collar
@@ -45,9 +46,9 @@ export const builder: StationDef = {
     g.glow(4, 53, 38, 2, "iron-0", 0.5, true); // contact shadow on the deck, falling down-left
 
     // --- behind: left riser + intake stub
-    cylV(g, 4, 19, 5, 15, IRON, { amb: 0.22 });
-    cylH(g, 4, 16, 9, 5, IRON, { amb: 0.22 });
-    cylH(g, 3, 33, 6, 8, IRON, { amb: 0.2, gloss: 0.5 });
+    cylV(g, 4, 19, 5, 15, IRON, { amb: 0.08, gloss: 0.4 });
+    cylH(g, 4, 16, 9, 5, IRON, { amb: 0.08, gloss: 0.4 });
+    cylH(g, 3, 33, 6, 8, IRON, { amb: 0.06, gloss: 0.5 });
     cylV(g, 2, 32, 2, 10, BRASS, { amb: 0.3 });
 
     // --- top face, seen from above: iron between brass edge straps
@@ -64,16 +65,17 @@ export const builder: StationDef = {
     for (let y = 17; y < 53; y++) for (let x = 39; x < 42; x++) tone(g, x, y, IRON, 0.46 + (x - 39) * 0.06 - (y - 17) * 0.004 + (noise(x, y, 8) - 0.5) * 0.1);
 
     // --- front face: dark iron, rust and grime, framed in brass
-    face(g, 8, 20, 32, 34, IRON, 0.38, { rust: 0.12, grime: 4, seed: 11 });
+    face(g, 8, 20, 32, 34, IRON, 0.36, { rust: 0.06, grime: 4, seed: 11 });
     strap(g, 8, 19, 32, 3, BRASS, 4);
-    strap(g, 8, 22, 3, 31, BRASS, 5);
-    strap(g, 37, 22, 3, 31, BRASS, 5);
+    strap(g, 8, 22, 2, 31, BRASS);
+    strap(g, 38, 22, 2, 31, BRASS);
     g.vline(35, 35, 13, "iron-0"); rivet(g, 34, 37, "iron-4", "soot"); rivet(g, 34, 45, "iron-4", "soot");
 
     // vent panel + latch (upper left)
-    strap(g, 11, 22, 7, 11, BRASS);
+    drop(g, 11, 22, 7, 11);
+    g.rect(11, 22, 7, 11, "iron-2"); g.box(11, 22, 7, 11, "brass-1"); g.hline(11, 22, 7, "brass-2"); g.vline(17, 22, 11, "brass-0"); g.set(17, 22, "brass-3");
     g.rect(13, 24, 3, 7, "iron-0");
-    g.vline(13, 24, 7, "soot"); g.vline(15, 24, 7, "soot"); g.vline(14, 25, 6, "iron-2");
+    g.vline(13, 24, 7, "soot"); g.vline(15, 24, 7, "soot"); g.vline(14, 25, 6, "iron-3");
     strap(g, 19, 25, 5, 4, BRASS); g.hline(20, 26, 3, "iron-0");
 
     // the window: 3 x 2 cells behind a brass frame
@@ -85,8 +87,8 @@ export const builder: StationDef = {
     }
     if (s !== "idle") { // lamp glow on the iron around the window (light layer)
       const c = s === "working" ? "sun-5" : s === "jammed" ? "jam-2" : "ok-2";
-      g.glowDisc(30.5, 27, 9, c, 0.25, [25, 23, 11, 8]);
-      g.glowDisc(30.5, 27, 6.5, c, 0.5, [25, 23, 11, 8]);
+      g.glowDisc(30.5, 27, 8.5, c, 0.25, [25, 23, 11, 8]);
+      g.glow(25, 22, 11, 1, c, 0.5); g.glow(24, 23, 1, 8, c, 0.25); g.glow(36, 23, 1, 8, c, 0.5); g.glow(25, 31, 11, 1, c, 0.25);
     }
 
     // --- the gear in its brass bezel
@@ -102,7 +104,7 @@ export const builder: StationDef = {
 
     // --- copper tank on the right, its elbow into the top, a brass cap out the side
     cylV(g, 40, 18, 9, 32, COPPER, { amb: 0.12, gloss: 1.3 });
-    for (let y = 21; y < 46; y += 3) if (y < 32 || y > 36) for (let x = 40; x < 49; x++) g.set(x, y, x < 43 ? "soot" : x < 47 ? "sun-0" : "copper-1"); // coil ribs
+    for (const y of [21, 36, 49]) for (let x = 40; x < 49; x++) g.set(x, y, x < 44 ? "soot" : "brass-0"); // shadows under the bands
     for (const y of [18, 33, 46]) cylV(g, 39, y, 11, 3, BRASS, { amb: 0.18 });
     cylH(g, 35, 13, 10, 5, COPPER, { amb: 0.18 });
     cylV(g, 41, 13, 6, 6, COPPER, { amb: 0.18 });
