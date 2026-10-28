@@ -91,7 +91,7 @@ try {
       const go = page.locator(".acard button.ago, button.ci-act.do");
       const later = page.locator(".acard button.alater, button.ci-act.later");
       const play = page.getByRole("button", { name: /^(Play|Skip|Enter the factory)$/i });
-      const repo = page.getByRole("button", { name: new RegExp(`test-fixture/${persona}`) });
+      const repo = page.getByRole("button", { name: `test-fixture/${persona}` });
       const install = page.getByRole("link", { name: /install shiptorio on a repo/i });
       const closeSheet = page.locator(".sheet").getByRole("button", { name: "Close", exact: true });
       const checkin = page.getByRole("button", { name: /^Check in/i });
