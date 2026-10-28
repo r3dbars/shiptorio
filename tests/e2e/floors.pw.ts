@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { assertFloorChronology, floorStartsBeforeNextTrigger, RISES_AFTER } from '../contract/floor-events';
 
 // Floating-city art pass, slice 10 (web/src/map/shaft/modules/growth.js): under ?buildout=1&artpass=1 the island
 // starts as the rock and its boarded tunnel, and each floor goes up just before the build that sits on it: the build
@@ -11,7 +12,6 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 const STEPS = ['tunnel', 'boiler', 'builder', 'issue', 'planner', 'build', 'checks', 'launch'] as const;
 const AUTO = new Set<string>(['build', 'checks']);
 // the floor that rises once this build is done (the next build sits on it)
-const RISES_AFTER: Record<string, string> = { tunnel: 'build', build: 'checks', checks: 'launch' };
 type Ev = { kind: 'build' | 'floor'; id?: string; floor?: string; floors?: string[]; phase: string; at: number };
 
 const watch = (page: Page) => page.addInitScript(() => {
@@ -75,9 +75,11 @@ test.describe('floors grow with the build-as-you-go run', () => {
       const floor = RISES_AFTER[id];
       const n = String(i + 1).padStart(2, '0');
       if (!floor) {
-        // nothing rises after this build: no floor started since it finished
-        const done = (await events(page)).find(e => e.kind === 'build' && e.id === id && e.phase === 'done')!.at;
-        expect((await floors(page)).filter(e => e.phase === 'start' && e.at >= done), `no floor after ${id}`).toEqual([]);
+        // A slow snapshot may include the next automatic build's floor. The
+        // current step's interval stays quiet until that next legitimate trigger.
+        const captured = await events(page);
+        expect(floorStartsBeforeNextTrigger(captured, id), `no floor after ${id} before the next trigger`).toEqual([]);
+        assertFloorChronology(captured);
         continue;
       }
       await expect.poll(async () => (await floors(page)).some(e => e.phase === 'start' && e.floor === floor), { timeout: 5_000, message: `${floor} floor starts after ${id}` }).toBe(true);
@@ -89,6 +91,7 @@ test.describe('floors grow with the build-as-you-go run', () => {
 
     // every floor rose once, bottom up, each after the build before it
     const ev = await events(page);
+    assertFloorChronology(ev);
     const rose = ev.filter(e => e.kind === 'floor' && e.phase === 'start').map(e => e.floor);
     expect(rose).toEqual(['build', 'checks', 'launch']);
     for (const [after, floor] of Object.entries(RISES_AFTER)) {
