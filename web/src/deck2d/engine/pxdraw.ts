@@ -62,13 +62,14 @@ export function crate(cx: CanvasRenderingContext2D, x: number, y: number, look: 
   const W = 13, ax = g(x) - 6, ay = g(y) - 12 + 2; // bottom sits on the track
   const wood = C.plate, br = C.brass;
   px(cx, ax, ay, W, 12, C.soot[0]); // outline
-  // lid (top face, 3 rows), lit from the upper right
-  px(cx, ax + 1, ay + 1, W - 2, 3, wood[3]); px(cx, ax + 1, ay + 1, W - 2, 1, wood[4]); px(cx, ax + W - 3, ay + 1, 2, 3, wood[4]);
-  px(cx, ax + 4, ay + 2, 5, 1, wood[2]); // lid plank seam
-  // front face: 7 rows of planks, darker to the left and bottom
-  px(cx, ax + 1, ay + 4, W - 2, 7, wood[2]);
-  px(cx, ax + 1, ay + 6, W - 2, 1, wood[1]); px(cx, ax + 1, ay + 9, W - 2, 1, wood[1]); // plank seams
-  px(cx, ax + 1, ay + 4, 1, 7, wood[1]); px(cx, ax + W - 2, ay + 4, 1, 7, wood[3]); // shade left, sun rim right
+  // lid (top face, 3 rows), lit from the upper right: lighter than the deck's wood so the crate pops off the floor
+  px(cx, ax + 1, ay + 1, W - 2, 3, wood[4]); px(cx, ax + 1, ay + 1, W - 2, 1, C.sun[6]); px(cx, ax + 1, ay + 3, W - 2, 1, wood[3]);
+  px(cx, ax + 4, ay + 2, 5, 1, wood[3]); // lid plank seam
+  // front face: 7 rows of pale planks inside a dark iron frame (cool against the warm wall, like the mockups)
+  px(cx, ax + 1, ay + 4, W - 2, 7, wood[3]);
+  px(cx, ax + 2, ay + 7, W - 4, 1, wood[2]); // plank seam
+  px(cx, ax + W - 3, ay + 5, 1, 5, wood[4]); // sun rim on the right
+  px(cx, ax + 1, ay + 4, 1, 7, C.iron[1]); px(cx, ax + W - 2, ay + 4, 1, 7, C.iron[2]); px(cx, ax + 1, ay + 10, W - 2, 1, C.iron[1]);
   // brass frame: top edge and corner brackets with a glint on the sunny side
   px(cx, ax + 1, ay + 4, W - 2, 1, br[2]); px(cx, ax + W - 4, ay + 4, 3, 1, br[4]);
   px(cx, ax + 1, ay + 10, 2, 1, br[1]); px(cx, ax + W - 3, ay + 10, 2, 1, br[2]);
