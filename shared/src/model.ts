@@ -2,6 +2,8 @@
 // everyone else only reads it or asks for changes through protocol messages.
 
 import { z } from "zod";
+import { HoldingBack } from "./signals";
+import { Goals } from "./goals";
 
 // Science colors double as the kind of work an item is.
 export const ItemKind = z.enum(["bug", "feature", "cleanup", "tests"]);
@@ -123,6 +125,7 @@ export const Item = z.object({
   inspection: Inspection.optional(),
   scars: z.array(ScarTag).optional(), // every fail so far, newest last
   orbit: OrbitWatch.optional(), // set at launch; orbit watch's verdict on the last launch
+  priority: z.enum(["rush", "park"]).optional(), // the player's Rush or Park from the cart's callout (shared/src/priority.ts)
 });
 export type Item = z.infer<typeof Item>;
 
@@ -326,7 +329,7 @@ export type Foreman = z.infer<typeof Foreman>;
 
 // One decision the planner made, for the "how it thinks" panel. Every Spark call lands here,
 // and so does every time a rule had to stand in because Spark was down or unconfigured.
-export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "support", "route", "growth"]);
+export const ThoughtDecision = z.enum(["triage", "scope", "plan", "review", "next_move", "rank", "orbit", "research", "permit", "support", "route", "growth", "diagnose", "goal"]);
 export type ThoughtDecision = z.infer<typeof ThoughtDecision>;
 export const Thought = z.object({
   id: z.string(),
@@ -499,8 +502,10 @@ export const FactoryState = z.object({
   trust: z.number().min(0).max(1),
   tick: z.number().int(),
   // Foreman layer. Optional so servers and sims that don't send it yet still validate.
-  goal: z.string().optional(),
+  goal: z.string().optional(), // goalText(goals): the sentence Spark's prompts read
+  goals: Goals.optional(), // shared/src/goals.ts: what the player wants, picked on one earned card
   bottleneck: Bottleneck.nullable().optional(),
+  holdingBack: HoldingBack.nullable().optional(), // the bottleneck brain's pick (docs/BRAIN.md), behind the "brain" flag
   move: Move.nullable().optional(), // the open Next Move card
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),

@@ -7,6 +7,7 @@ import { suspiciousDiff, injectionAttempt, pathAllowed } from "./injection-polic
 import { checkStationId, researchedChecks, runCheck, techById, type Belt, type DiffFile, type FactoryState, type Inspection, type Item, type Machine, type Move, type ScarTag, type Station, type StationKind } from "@shiptorio/shared";
 import { gh } from "./github";
 import { parseJsonReply, sparkChat, type SparkEnv } from "./spark";
+import { reviewWithTools, type SparkStep, type Toolbox } from "./spark-tools";
 import type { RegressionProof } from "./runner-job";
 import { ORBIT_ID, orbitStation } from "./orbit";
 import { measureStation } from "./growth";
@@ -177,7 +178,7 @@ export function verifyFromDiff(files: string[], runnerReceipts: boolean, proof?:
 
 // ---------- AI review (Spark judges the diff) ----------
 
-export interface ReviewVerdict { verdict: "pass" | "rework"; reason: string; findings: string[] }
+export interface ReviewVerdict { verdict: "pass" | "rework"; reason: string; findings: string[]; steps?: SparkStep[] }
 
 interface PrFile { filename: string; status: string; patch?: string }
 
@@ -231,11 +232,13 @@ export function parseVerdict(text: string): ReviewVerdict {
   return { verdict, reason, findings };
 }
 
-export async function reviewDiff(env: SparkEnv, task: { title: string; body: string; builder: string }, diff: string, context: { path: string; content: string }[] = []): Promise<ReviewVerdict> {
+export async function reviewDiff(env: SparkEnv, task: { title: string; body: string; builder: string }, diff: string, context: { path: string; content: string }[] = [], box?: Toolbox, record?: (step: SparkStep) => Promise<void>): Promise<ReviewVerdict> {
   const findings = suspiciousDiff(diff);
   if (injectionAttempt(`${task.title}\n${task.body}\n${diff}`)) findings.push("Prompt injection attempt in untrusted issue or diff: instruction overrides are not authorized.");
   if (!diff.trim() || /binary or too large to show|rest cut for length/.test(diff) || diff.length > 64000) findings.push("Incomplete diff evidence; review cannot pass.");
   if (findings.length) return { verdict: "rework", reason: "Security review required before this change can proceed.", findings };
+  // With a toolbox the reviewer looks around the repo before ruling (spark-tools.ts); without one it reads the diff.
+  if (box) return reviewWithTools(env, task, diff, box, context, record);
   const text = await sparkChat(env, [
     {
       role: "developer",
@@ -255,7 +258,9 @@ export async function reviewDiff(env: SparkEnv, task: { title: string; body: str
 export function reviewComment(v: ReviewVerdict, builder: string): string {
   const head = v.verdict === "pass" ? "✅ **AI review passed**" : "🔁 **AI review sent this back**";
   const findings = v.findings.length ? `\n\n${v.findings.map((f) => `- ${f}`).join("\n")}` : "";
-  return `${head} (Muse Spark reviewing ${builder}'s work)\n\n${v.reason}${findings}\n\n_Shiptorio verification gauntlet: CI inspector → verify bay → AI review → merge gate._`;
+  const looked = (v.steps ?? []).filter((st) => st.tool !== "verdict");
+  const how = looked.length ? `\n\n<details><summary>How it checked (${looked.length} read-only ${looked.length === 1 ? "look" : "looks"})</summary>\n\n${looked.map((st, i) => `${i + 1}. \`${st.result.replace(/`/g, "'").slice(0, 160)}\`: ${st.reason}`).join("\n")}\n</details>` : "";
+  return `${head} (Muse Spark reviewing ${builder}'s work)\n\n${v.reason}${findings}${how}\n\n_Shiptorio verification gauntlet: CI inspector → verify bay → AI review → merge gate._`;
 }
 
 // ---------- the merge gate ----------
@@ -300,10 +305,13 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
   const scar = item.scars?.at(-1);
   const check = scar?.check ? techById(scar.check) : undefined;
   const station = check?.name ?? GAUNTLET.find((g) => g.kind === scar?.station)?.name ?? "The gauntlet";
+  // a second fail is a Steer (shared/src/attention.ts): say so plainly, with the reason (Justin's pick r5-rework A)
+  const fails = item.scars?.length ?? 0;
+  const again = fails >= 2;
   return {
     id: crypto.randomUUID(),
-    title: `${station} sent #${item.prNumber} back`,
-    why: item.failure ?? "A check failed.",
+    title: again ? `#${item.prNumber} failed ${fails === 2 ? "twice" : `${fails} times`}` : `${station} sent #${item.prNumber} back`,
+    why: again ? `${station}: ${scar?.reason ?? item.failure ?? "a check failed"}` : (item.failure ?? "A check failed."),
     stage: "inspect",
     kind: "review",
     itemId: item.id,
@@ -311,7 +319,7 @@ export function reworkMove(item: Item, now = Date.now(), harness: "codex" | "cla
     focus: check ? checkStationId(check.id) : GAUNTLET.find((g) => g.kind === scar?.station)?.id,
     createdAt: now,
     options: [
-      ...(canRework(item) ? [{ id: `rework-${harness}`, label: `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
+      ...(canRework(item) ? [{ id: `rework-${harness}`, label: again ? "Try again" : `Send back to ${harness === "codex" ? "Codex" : "Claude"} with the scar`, recommended: true, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Re-plan from the latest failed station before another local build." }] }] : []),
       { id: "later", label: "Look later", recommended: !canRework(item), actions: [] },
       { id: "overrule", label: "Overrule and launch", recommended: false, actions: [{ tool: "request_merge", args: { pr: item.prNumber, overrule: true }, reason: "The player is the merge gate." }] },
     ],

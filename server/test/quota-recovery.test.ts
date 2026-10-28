@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { expect, mock, spyOn, test } from "bun:test";
 import { FactoryState } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
 import { testD1, signedInCookie } from "./d1-fixture";
@@ -41,7 +41,7 @@ test("quota telemetry warns at 80%, stops at the cap, and resets at midnight wit
   const bucket = Math.floor(Date.now() / 86400000);
   await env.DB.prepare("INSERT INTO signup_counters VALUES('runs:owner',?,16,?)").bind(bucket, (bucket + 2) * 86400000).run();
   const account = await budgetAccount(env.DB, "owner/repo");
-  await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,160,400000)').bind(account, new Date().toISOString().slice(0, 10)).run();
+  await env.DB.prepare('INSERT INTO spark_usage VALUES(?,?,320,800000)').bind(account, new Date().toISOString().slice(0, 10)).run();
   env.ADMIN_LOGINS = "admin";
   const status = await quotaStatus(env, "owner/repo", { id: 1, login: "admin" });
   expect(status.quotas.filter(q => ['runs','spark-calls','spark-tokens'].includes(q.id)).map(q => q.status)).toEqual(['warning','warning','warning']);
@@ -97,7 +97,11 @@ test("legacy hosted scoping failures also preserve run quota and wait behind the
   const { f, env, data } = await fixture();
   env.META_API_KEY = "test-only";
   await f.usage(); // loads the real factory state without contacting providers
-  await (f as unknown as { runSparkJob(itemId: string, machineId: string): Promise<void> }).runSparkJob('gh-1', 'assembler-1');
+  // The provider refuses the key. Never reach the real API: a transient network error there retried with
+  // backoff after this test ended and landed on other files' fetch mocks.
+  const provider = spyOn(globalThis, "fetch").mockImplementation((async () => new Response(null, { status: 401 })) as unknown as typeof fetch);
+  try { await (f as unknown as { runSparkJob(itemId: string, machineId: string): Promise<void> }).runSparkJob('gh-1', 'assembler-1'); }
+  finally { provider.mockRestore(); }
   expect((await runQuotaStatus(env, 'owner')).used).toBe(0);
   expect((data.get('state') as FactoryState).items[0]).toMatchObject({ state: 'queued', attempts: 0 });
   expect(data.get('planningRetry:gh-1')).toMatchObject({ failures: 1 });

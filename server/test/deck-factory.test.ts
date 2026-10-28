@@ -3,6 +3,7 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { testD1 } from "./d1-fixture";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -26,7 +27,9 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
     async list(options: { prefix: string; limit?: number }) { return new Map([...data.entries()].filter(([key]) => key.startsWith(options.prefix)).slice(0, options.limit)); },
     async getAlarm() { return alarm; }, async setAlarm(value: number) { alarm = value; },
   };
+  const taps = testD1(); // docs/context/taps.md: the card tap log runs on real SQLite
   const DB = { prepare(sql: string) {
+    if (sql.includes("card_taps")) return taps.prepare(sql);
     if (sql.startsWith('SELECT u.id') || sql.startsWith('SELECT u.login')) return {bind:()=>({first:async()=>({id:1,login:'test-player'})})};
     if (sql.startsWith('SELECT enabled')) return {bind:()=>({first:async()=>null})};
     return { bind(...args: unknown[]) { return {
@@ -40,7 +43,8 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
   }; } }; } };
   const socket = authorizedSocket((raw: string) => events.push(JSON.parse(raw)));
   let exclusive: Promise<unknown> = Promise.resolve();
-  const ctx = { storage, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
+  const background: Promise<unknown>[] = [];
+  const ctx = { storage, waitUntil: (task: Promise<unknown>) => { background.push(task); }, acceptWebSocket() {}, blockConcurrencyWhile: <T>(fn: () => Promise<T>) => { const next = exclusive.then(fn); exclusive = next.catch(() => {}); return next; }, getWebSockets: () => [socket] };
   const reload = () => new Factory(ctx as never, credentialEnv({ ...browserEnv, CACHE: membershipCache, DB: authorizedDB(DB) }) as never);
   const factory = reload();
   const send = (value: unknown, instance = factory) => instance.webSocketMessage(authorizedSocket(), JSON.stringify(value));
@@ -52,13 +56,14 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
       expect(response.status).toBe(101);
       // These scenarios start after initial deck frames reach the browser, which
       // is now intentionally later than the handshake response.
+      await Promise.all(background);
       await (instance as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
     }
     finally { (globalThis as unknown as { WebSocketPair?: unknown }).WebSocketPair = prior; }
   };
   const saved = () => data.get("state") as FactoryState;
   const undoId = () => events.filter((e): e is Extract<ServerToWeb, { type: "log" }> => e.type === "log" && !!e.actionId).at(-1)!.actionId!;
-  return { factory, reload, send, checkin, data, saved, rules, events, undoId, socket };
+  return { factory, reload, send, checkin, data, saved, rules, events, undoId, socket, taps };
 }
 
 describe("durable live check-in decisions", () => {
@@ -120,6 +125,33 @@ describe("durable live check-in decisions", () => {
     await f.send({ type: "choose_move", moveId: "defer:deferred", optionId: "decide-class" }, current);
     expect(f.saved().deck).toEqual([]);
     expect(f.data.get("approvalEvents")).toEqual([expect.objectContaining({ kind: "verify" })]);
+  });
+
+  it("logs every card offered and what the player tapped, with the wait and the planner's reason", async () => {
+    const f = fixture([card("yes", { because: "Two PRs wait on review." }), card("later", { kind: "input" }), card("wrong", { kind: "build" })]);
+    await f.checkin();
+    const rows = async () => (await f.taps.prepare("SELECT card_id, kind, action, reason, because, suggested, decided_at, shown_at FROM card_taps ORDER BY card_id, id").all<Record<string, unknown>>()).results;
+    expect((await rows()).map(r => [r.card_id, r.action])).toEqual([["later", null], ["wrong", null], ["yes", null]]);
+    await f.send({ type: "choose_move", moveId: "yes", optionId: "review" });
+    await f.send({ type: "defer_move", moveId: "later" });
+    await f.send({ type: "dismiss_move", moveId: "wrong", why: "wrong" });
+    const after = await rows();
+    expect(after.map(r => [r.card_id, r.action, r.reason])).toEqual([["later", "later", null], ["wrong", "never", "wrong"], ["yes", "continue", null]]);
+    expect(after[2]).toMatchObject({ kind: "verify", because: "Two PRs wait on review.", suggested: "review" });
+    expect(after.every(r => typeof r.decided_at === "number")).toBe(true);
+    // A card still on the deck after its tap isn't logged again; a card offered again after Later is a new showing.
+    await f.checkin(f.reload());
+    expect((await rows()).filter(r => r.card_id === "later")).toHaveLength(2);
+  });
+
+  it("grades bottleneck-brain cards by their play, with the signals the brain saw", async () => {
+    const f = fixture([card("unlock:ci:ci_slow:repo", { kind: "automate", options: [{ id: "continue", label: "Cache installs", recommended: true, actions: [] }, { id: "later", label: "Later", recommended: false, actions: [] }] })]);
+    f.data.set("brainMemory", { current: { bottleneck: { id: "ci:ci_slow:repo", by: "spark" }, unlock: { play: "ci_cache_installs" } } });
+    f.data.set("brainSignals", { signals: [{ id: "ci:ci_slow:repo", severity: 0.734 }] });
+    await f.checkin();
+    const row = await f.taps.prepare("SELECT play, by, context FROM card_taps WHERE card_id = 'unlock:ci:ci_slow:repo'").first<{ play: string; by: string; context: string }>();
+    expect(row).toMatchObject({ play: "ci_cache_installs", by: "spark" });
+    expect(JSON.parse(row!.context).signals).toEqual([{ id: "ci:ci_slow:repo", severity: 0.73 }]);
   });
 
   it("can resolve the third-defer choice for an implied bottleneck card", async () => {

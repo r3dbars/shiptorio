@@ -1,3 +1,8 @@
+import { configuredAdmin } from "./admin-policy";
+import { auditAdmin } from "./admin-control";
+import { godRoutes } from "./admin-god";
+import { readAdminView, viewCookieValue, adminViewCookie } from "./admin-view";
+import { accountIdentity } from "./account-identity";
 import { quotaStatus, quota } from "./quotas";
 import { factorySpend, NANO_USD } from "./spend";
 import { budgetAccount, budgetLimits } from "./budget";
@@ -14,12 +19,14 @@ import { repoAccess, requireUser as resolveUser, validRepo } from "./authorizati
 
 import { Redactor } from "./redact";
 import * as Sentry from "@sentry/cloudflare";
-import { currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
+import { currentRedactor, currentTrace, inTrace, log, report, sentryOptions, type Trace } from "./telemetry";
 import { adminRoutes } from "./admin";
+import { tapsRoutes } from "./taps-admin";
 
 
 import { Hono, type Context, type Next } from "hono";
 import { ops } from "./ops";
+import { starterIssue } from "./starterIssue";
 import { authCallback, login, logout, ownerSession, publicUrl, setupCallback, setupPage } from "./auth";
 import { Factory, type FactoryEnv } from "./factory";
 import { appJwt, gh, registerGithubCredential, repoInstallationId } from "./github";
@@ -34,15 +41,16 @@ import { githubSource } from "./sources";
 import { sentryStatus, sentryWebhookUrl, type SentryPayload } from "./sources/sentry";
 import { postHogStatus } from "./sources/posthog";
 import { verifyHmac } from "./sources/types";
+import { boundedBody, webhookBody } from "./webhook-body";
 import { linkedRepo, postHogCreds, saveCreds, sentryCreds, credentialStatus, revokeCreds, markUsed, type CredentialScope } from "./sources/creds";
 import { connectPage, supportConnectPage } from "./connect";
 import { ensureInboundToken, isOperatorSupport, intercomWebhookUrl, normalizeEmail, normalizeIntercom, saveSupportCreds, supportCreds, supportWebhookUrl, tokenMatches, verifyIntercom, type SupportMessage } from "./sources/support";
 import type { GitHubPayload } from "./sources/github";
-import { pairToken, readRunnerToken, type RunnerIdentity } from "./runner-auth";
+import { pairToken, readRunnerToken, expiredRunnerGrant, runnerGrantExpiry, type RunnerIdentity } from "./runner-auth";
 import { EnqueueRunner, RunnerHarness, RunnerReceipt } from "./runner-job";
 import { installationToken } from "./github";
 import { CODE_RE, DEVICE_TTL, JOIN_RE, newJoinCode, normalizeCode, secretHash, htmlEscape, runnerPage } from "./device-pairing";
-import { emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
+import { validProgress, emptyIsland, type Empire, type IslandSummary } from "@shiptorio/shared";
 import { browserCacheControl, browserMutationAllowed, securityHeaders } from "./security";
 
 import { ipSubject, rateLimit, requestBudget } from "./rate-limit";
@@ -102,14 +110,14 @@ export const requireUser = async (c: Context<AppEnv>, next: Next) => {
 };
 
 app.use("*", async (c, next) => {
-  const trace: Trace = { requestId: crypto.randomUUID() };
+  const trace: Trace = { requestId: crypto.randomUUID(), route: c.req.path };
   const match = c.req.path.match(/^\/api\/repos\/([\w.-]+\/[\w.-]+)/);
   if (match) trace.repo = match[1].toLowerCase();
   const start = Date.now();
   return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
     c.header("X-Request-ID", trace.requestId);
     const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
-    if (user) { trace.userId = user.login; Sentry.setUser({ id: user.login }); }
+    if (user) { trace.userId = accountIdentity(user.id); Sentry.setUser({ id: accountIdentity(user.id) }); }
     await next();
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);
@@ -161,12 +169,20 @@ app.use("*", async (c, next) => {
     const identity = await readRunnerToken(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "");
     if (!match || c.req.method !== "POST" || !identity || identity.repo !== `${match[1]}/${match[2]}`.toLowerCase()) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated failed runner authentication')) return c.json({error:'try again later'},429);
-      return c.json({error:'runner authentication required'},401);
+      const expired = match && c.req.method === "POST" ? await expiredRunnerGrant(c.env.SESSION_SECRET, c.req.header("authorization")?.replace(/^Bearer /, "") ?? "") : null;
+      if (expired && expired.repo === `${match![1]}/${match![2]}`.toLowerCase()) await (await factory(c.env, expired.repo)).rejectRunnerGrant(expired.pairId, "runner_grant_expired", expired.expires);
+      return c.json({error:'runner authentication required', code: expired ? 'runner_grant_expired' : 'runner_grant_invalid'},401);
     }
-    if (!identity.user || !await signupAllowed(c.env,identity.user.login) || !await repoAccess(c.env, identity.user, identity.repo, "write")) return c.json({error:'repository access denied'},403);
+    let allowed: boolean;
+    try { allowed = !!identity.user && await signupAllowed(c.env, identity.user.login) && !!await repoAccess(c.env, identity.user, identity.repo, "write", true); }
+    catch { c.header("Retry-After", "60"); return c.json({error: "Repository access check temporarily unavailable"}, 503); }
+    if (!allowed) {
+      // Denied repository access must not invoke or mutate that repository's Durable Object.
+      return c.json({error:'repository access denied', code:'runner_access_revoked'},403);
+    }
     if (!await (await factory(c.env,identity.repo)).isRunnerPaired(identity.pairId)) {
       if (!await admit(c.env,await ipScope(c.req.raw,'pairing'),10,60000,'repeated revoked pairings')) return c.json({error:'try again later'},429);
-      return c.json({error:'runner pairing revoked'},401);
+      return c.json({error:'runner pairing revoked', code:'runner_pair_revoked'},401);
     }
 
     c.set("runner", identity);
@@ -201,6 +217,13 @@ app.onError((err, c) => {
 
 app.use("*", async (c, next) => {
   if (!browserMutationAllowed(c.req.raw, c.req.path)) return c.json({ error: "invalid origin" }, 403);
+  if (viewCookieValue(c.req.header('cookie') ?? null) && c.req.path.startsWith('/connect/')) return c.json({error:'Leave player view before managing credentials'},403);
+  if (viewCookieValue(c.req.header('cookie') ?? null) && !c.req.path.startsWith('/admin/') && !['GET','HEAD'].includes(c.req.method)) {
+    const view = await readAdminView(c.env,c.req.raw);
+    if (!view?.writable) return c.json({error:'Viewing as player is read-only. Enable write mode explicitly in God controls.'},403);
+    if (!c.req.path.startsWith('/api/repos/'+view.repo+'/')) return c.json({error:'Write mode is restricted to the selected factory'},403);
+    await auditAdmin(c.env.DB,(await signedIn(c))!.login,'view-write',view.repo,view.login,{method:c.req.method,path:c.req.path});
+  }
   await next();
 
 });
@@ -221,14 +244,16 @@ app.use("*", async (c, next) => {
     // Connector pages may disclose an inbound bearer URL or activate a mine on
     // GET; all connector management and repository mutations require writers.
     const authority = path.startsWith("/connect/") || !["GET", "HEAD"].includes(c.req.method) ? "write" : "read";
-    if (!validRepo(repo) || !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
-    if (match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
+    const view = await readAdminView(c.env,c.req.raw);
+    if (!validRepo(repo) || !(view?.repo === repo.toLowerCase() && (authority === "read" || view.writable)) && !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
+    if (!view && match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
   await next();
 });
 
 app.route("/", ops);
+app.route("/", starterIssue);
 
 // ---------- auth + setup ----------
 
@@ -236,8 +261,8 @@ app.get("/auth/login", (c) => signupMode(c.env) === 'password' ? login(new URL(c
 app.post('/auth/login', async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'signin'),10,600000,'sign-in flood')) return c.text('Try again later',429);
-  const raw = await c.req.text();
-  if (raw.length>4096) return c.text('Too large',413);
+  const raw = await boundedBody(c.req.raw, 4096);
+  if (raw === null) return c.text('Too large',413);
   const form = new URLSearchParams(raw);
   if (!await turnstile(c.req.raw,c.env,form,'signin')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
   const response = await login(new URL(c.req.url),c.env);
@@ -250,8 +275,8 @@ app.get('/waitlist',c => signupPage(c.env));
 app.post('/waitlist',async c => {
   if (c.req.header('origin') !== new URL(c.req.url).origin) return c.text('Invalid origin',403);
   if (!await admit(c.env,await ipScope(c.req.raw,'waitlist'),5,3600000,'waitlist flood')) return c.text('Try again later',429);
-  const raw = await c.req.text();
-  if (raw.length>4096) return c.text('Too large',413);
+  const raw = await boundedBody(c.req.raw, 4096);
+  if (raw === null) return c.text('Too large',413);
   const form=new URLSearchParams(raw),email=(form.get('email')||'').trim().toLowerCase();
   if (email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return signupPage(c.env,'Enter a valid email.',400);
   if (!await turnstile(c.req.raw,c.env,form,'waitlist')) return signupPage(c.env,'Please complete verification. If it is unavailable, try again later.',403);
@@ -260,8 +285,16 @@ app.post('/waitlist',async c => {
 });
 app.on(['GET','POST'],'/admin/signup',c=>adminSignup(c.req.raw,c.env));
 app.post('/admin',c=>adminSignup(c.req.raw,c.env));
-app.get("/auth/callback", (c) => authCallback(c.req.raw, new URL(c.req.url), c.env));
-app.get("/auth/logout", (c) => logout(c.req.raw, c.env));
+app.get("/auth/callback", async (c) => {
+  const original=await authCallback(c.req.raw,new URL(c.req.url),c.env), response=new Response(original.body,original);
+  response.headers.append('Set-Cookie',adminViewCookie('',new URL(c.req.url).protocol==='https:'));
+  return response;
+});
+app.get("/auth/logout", async (c) => {
+  const original=await logout(c.req.raw,c.env), response=new Response(original.body,original);
+  response.headers.append('Set-Cookie',adminViewCookie('',new URL(c.req.url).protocol==='https:'));
+  return response;
+});
 // The App's Setup URL: GitHub sends a player here after they install it. The install webhook has
 // already given them the repo, so send them back to the repo picker (new-user-path.md, snag 3).
 app.get("/github/installed", (c) => c.redirect("/?onboard=repo&source=live", 302));
@@ -272,7 +305,8 @@ app.get("/setup/callback", (c) => setupCallback(new URL(c.req.url), c.env));
 app.get("/api/me", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ login: null, allowed: false, installUrl: await installUrl(c.env) });
-  return c.json({ login: user.login, allowed: true, prefs: await readPrefs(c.env, user), installUrl: await installUrl(c.env) });
+  const view = await readAdminView(c.env,c.req.raw);
+  return c.json({ login: user.login, allowed: true, admin: configuredAdmin(c.env,user.login), viewingAs: view && {login:view.login,repo:view.repo,writable:view.writable}, prefs: await readPrefs(c.env, view ? {id:view.userId,login:view.login} : user), installUrl: await installUrl(c.env) });
 });
 
 // Settings that follow the player across browsers (intro seen, guide progress, achievements).
@@ -292,7 +326,10 @@ app.put("/api/me/prefs", async (c) => {
 app.get("/api/me/progress", async (c) => {
   const user = await signedIn(c);
   if (!user) return c.json({ error: "login required" }, 401);
-  return c.json({ progress: await readProgress(c.env, user) });
+  const view = await readAdminView(c.env,c.req.raw);
+  const target=view ? {id:view.userId,login:view.login} : user;
+  const reset=await c.env.DB.prepare('SELECT version FROM admin_progress_resets WHERE user_id=?').bind(target.id).first<{version:number}>();
+  return c.json({ progress: await readProgress(c.env, target), resetVersion:reset?.version??0 });
 });
 
 app.put("/api/me/progress", async (c) => {
@@ -301,7 +338,9 @@ app.put("/api/me/progress", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const text = await c.req.text();
   if (text.length > MAX_PROGRESS_BYTES) return c.json({ error: "too large" }, 413);
-  if (!(await writeProgress(c.env, user, text))) return c.json({ error: "invalid progress" }, 400);
+  if (!validProgress(text)) return c.json({error:'invalid progress'},400);
+  const version=Number(c.req.header('x-progress-reset') ?? '0');
+  if (!(await writeProgress(c.env, user, text, Date.now(), version))) return c.json({error:'Progress was changed by an administrator. Reload before saving.'},409);
   return c.json({ ok: true });
 });
 
@@ -455,8 +494,8 @@ app.post("/api/runner-device/start", async c => {
   return c.json({ code, secret, expires, interval: 3, verificationUri: `${publicUrl(new URL(c.req.url), c.env)}/runner/pair?code=${code}` });
 });
 app.post("/api/runner-device/poll", async c => {
-  const raw = await c.req.text();
-  if (raw.length > 512) return c.json({ error: "too large" }, 413);
+  const raw = await boundedBody(c.req.raw, 512);
+  if (raw === null) return c.json({ error: "too large" }, 413);
   let body: { code?: string; secret?: string };
   try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (typeof body?.code !== "string" || !CODE_RE.test(body.code) || typeof body.secret !== "string" || body.secret.length !== 72) return c.json({ error: "invalid device" }, 400);
@@ -465,8 +504,8 @@ app.post("/api/runner-device/poll", async c => {
 // One-paste setup: the runner trades the join code from its install command for a repo credential.
 // The code is burned on first use, and the account's write access is checked again here, not just when it was minted.
 app.post("/api/runner-device/join", async c => {
-  const raw = await c.req.text();
-  if (raw.length > 256) return c.json({ error: "too large" }, 413);
+  const raw = await boundedBody(c.req.raw, 256);
+  if (raw === null) return c.json({ error: "too large" }, 413);
   let body: { join?: string };
   try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
   const fail = async () => {
@@ -481,9 +520,10 @@ app.post("/api/runner-device/join", async c => {
   if (!await resourceQuota(c.env, record.user.login, "repo", record.repo) || !await resourceQuota(c.env, record.user.login, "factory", record.repo)) return c.json({ error: "repository/factory quota reached" }, 429);
   const f = await factory(c.env, record.repo);
   await f.ensure(record.repo, installation);
-  const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+  const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(record.user);
   const token = await pairToken(c.env.SESSION_SECRET, { repo: record.repo, pairId, expires, user: record.user });
   await f.activateRunner(pairId);
+  await f.recordRunnerGrant(pairId, expires);
   return c.json({ repo: record.repo, token, expires });
 });
 app.on(["GET", "POST"], "/runner/pair", async c => {
@@ -505,10 +545,11 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
     if (!await admit(c.env, `pair:${user.id}`, 5, 600000, "repeated browser pairing requests")) return c.json({ error: "pairing throttled" }, 429);
     const f = await factory(c.env, repo);
     await f.ensure(repo, installation);
-    const pairId = crypto.randomUUID(), expires = Date.now() + 8 * 60 * 60 * 1000;
+    const pairId = crypto.randomUUID(), expires = runnerGrantExpiry(user);
     const token = await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user });
     if (!await device(c.env, code).approveDevice({ repo, token, expires })) return c.html(runnerPage("Code expired or already used", "<p>Run shiptorio-runner pair for a new code.</p>"), 409, headers);
     await f.activateRunner(pairId);
+    await f.recordRunnerGrant(pairId, expires);
     await device(c.env, code).readyDevice();
     return c.html(runnerPage("Machine approved", `<p>Your terminal will confirm connection to <b>${htmlEscape(repo)}</b>. Return there to finish pairing, then <a href="/?source=live&repo=${encodeURIComponent(repo)}">open your factory</a>. The planner asks you to approve a plan before any code runs.</p>`), 200, headers);
   }
@@ -637,7 +678,8 @@ app.post("/api/repos/:owner/:repo/runner/:action", async (c) => {
   if (c.req.param("action") === "pair") {
     if (!await admit(c.env,`pair:${c.get("user").id}`,5,600000,'repeated browser pairing requests')) return c.json({error:'pairing throttled'},429);
     const pairId = await f.pairRunner();
-    const expires = Date.now() + 8 * 60 * 60 * 1000;
+    const expires = runnerGrantExpiry((await resolveUser(c.req.raw, c.env))!);
+    await f.recordRunnerGrant(pairId, expires);
     return c.json({ token: await pairToken(c.env.SESSION_SECRET, { repo, pairId, expires, user: (await resolveUser(c.req.raw, c.env))! }), expires });
   }
   if (c.req.param("action") !== "jobs") return c.json({ error: "unknown action" }, 404);
@@ -671,15 +713,16 @@ app.post("/api/runner/:owner/:repo/heartbeat", async c => {
   let raw: { harnesses?: unknown; authRequired?: unknown }; try { raw = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!Array.isArray(raw?.harnesses) || raw.harnesses.length > 3 || raw.harnesses.some((h: unknown) => !RunnerHarness.safeParse(h).success)) return c.json({ error: "invalid harnesses" }, 400);
   const f = await factory(c.env, identity.repo);
-  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked" }, 401);
+  if (!await f.isRunnerPaired(identity.pairId)) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
   if (raw.authRequired !== undefined && (!Array.isArray(raw.authRequired) || raw.authRequired.length > 2 || raw.authRequired.some((h: unknown) => h !== "codex" && h !== "claude_code"))) return c.json({ error: "invalid auth status" }, 400);
   await f.heartbeatRunner(identity.pairId, raw.harnesses, raw.authRequired as ("codex" | "claude_code")[] | undefined); return c.json({ ok: true });
 });
 
 app.post("/api/runner/:owner/:repo/renew", async (c) => {
   const identity = c.get("runner");
-  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked" }, 401);
-  const expires = Date.now() + 8 * 60 * 60 * 1000;
+  if (!(await (await factory(c.env, identity.repo)).isRunnerPaired(identity.pairId))) return c.json({ error: "Runner pairing revoked", code: "runner_pair_revoked" }, 401);
+  const expires = runnerGrantExpiry(identity.user);
+  await (await factory(c.env, identity.repo)).recordRunnerGrant(identity.pairId, expires);
   return c.json({ token: await pairToken(c.env.SESSION_SECRET, { ...identity, expires }), expires });
 });
 
@@ -696,7 +739,9 @@ app.post("/api/runner/:owner/:repo/finish", async (c) => {
 app.get("/api/repos/:owner/:repo/limits", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   const f = await factory(c.env, repo);
-  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, c.get("user")), f.runnerJobs(), f.planningRetries()]);
+  const view = await readAdminView(c.env,c.req.raw);
+  const viewer = view ? {id:view.userId,login:view.login} : c.get("user");
+  const [status, jobs, retries] = await Promise.all([quotaStatus(c.env, repo, viewer, !!view), f.runnerJobs(), f.planningRetries()]);
   const active = jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length;
   c.header("Cache-Control", "no-store");
   return c.json({ ...status, retries, quotas: [...status.quotas, quota("jobs", "Concurrent jobs", active, budgetLimits(c.env).jobs, null, null)] });
@@ -705,6 +750,8 @@ app.get("/api/repos/:owner/:repo/limits", async c => {
 // Spend belongs to the stable payer, rather than every collaborator with map access.
 app.on(["GET", "POST"], "/api/repos/:owner/:repo/spend", async c => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
+  const view = await readAdminView(c.env,c.req.raw);
+  if(c.req.method === 'GET' && view?.repo === repo) return c.json(await factorySpend(c.env.DB,repo));
   if (await budgetAccount(c.env.DB, repo) !== `user:${c.get("user").id}`) return c.json({ error: "budget owner required" }, 403);
   if (c.req.method === "POST") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
@@ -741,7 +788,7 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
   const f = await factory(c.env, repo);
-  if (c.env.GITHUB_APP_ID) {
+  if (c.env.GITHUB_APP_ID && !await readAdminView(c.env,c.req.raw)) {
     const installationId = await installationFor(c.env, repo);
     if (installationId) await f.ensure(repo, installationId);
   }
@@ -758,10 +805,9 @@ async function installationFor(env: Env, repo: string): Promise<number> {
 // ---------- GitHub webhooks ----------
 
 app.post("/webhooks/github", async (c) => {
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
-  if (!(await githubSource.verify(c.req.raw.clone(), c.env))) return c.json({ error: "bad signature" }, 401);
-  const body = await c.req.text();
-  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  const body = await webhookBody(c.req.raw);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
+  if (!(await githubSource.verify({ text: async () => body, headers: c.req.raw.headers }, c.env))) return c.json({ error: "bad signature" }, 401);
   let payload: GitHubPayload;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
   if (!payload || typeof payload !== "object") return c.json({ error: "invalid payload" }, 400);
@@ -811,15 +857,14 @@ app.post("/webhooks/sentry", (c) => sentryWebhook(c, null));
 async function sentryWebhook(c: Context<AppEnv>, perRepo: string | null) {
   if (!/^[a-f0-9]{64}$/i.test(c.req.header("sentry-hook-signature") ?? "")) return c.json({ error: "bad signature" }, 401);
   if (perRepo && !REPO_RE.test(perRepo)) return c.json({ error: "bad repo" }, 400);
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return c.json({ error: "payload too large" }, 413);
-  const body = await c.req.text();
-  if (body.length > 1048576) return c.json({ error: "payload too large" }, 413);
+  const body = await webhookBody(c.req.raw);
+  if (body === null) return c.json({ error: "payload too large" }, 413);
   const repo = perRepo ?? c.req.query("repo")?.toLowerCase() ?? await linkedRepo(c.env, "sentry");
   if (!repo || !REPO_RE.test(repo)) return c.json({ error: "repository unavailable" }, 403);
   const installation = await c.env.DB.prepare("SELECT installation_id, repo_id FROM repos WHERE full_name = ?").bind(repo).first<{ installation_id: number; repo_id: number }>();
   if (!installation) return c.json({ error: "repository unavailable" }, 403);
   const scope = { repo, installationId: installation.installation_id, repoId: installation.repo_id };
-  const redactor = new Redactor(c.env);
+  const redactor = currentRedactor() ?? new Redactor(c.env);
   const { clientSecret } = await sentryCreds(c.env, scope, redactor);
   if (!(await verifyHmac(clientSecret, body, c.req.header("sentry-hook-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   await markUsed(c.env, "sentry", scope);
@@ -858,7 +903,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
   if (!tokenMatches((await supportCreds(c.env, repo)).inboundToken, c.req.param("token"))) return c.json({ error: "unknown inbox" }, 401);
-  const body = await boundedBody(c);
+  const body = await webhookBody(c.req.raw);
   if (body === null) return c.json({ error: "payload too large" }, 413);
   let payload: unknown;
   try { payload = JSON.parse(body); } catch { return c.json({ error: "invalid JSON" }, 400); }
@@ -871,7 +916,7 @@ app.post("/webhooks/support/:owner/:repo/:token", async (c) => {
 app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`.toLowerCase();
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  const body = await boundedBody(c);
+  const body = await webhookBody(c.req.raw);
   if (body === null) return c.json({ error: "payload too large" }, 413);
   if (!(await verifyIntercom((await supportCreds(c.env, repo)).intercomClientSecret, body, c.req.header("x-hub-signature") ?? null))) return c.json({ error: "bad signature" }, 401);
   let payload: unknown;
@@ -880,12 +925,6 @@ app.post("/webhooks/intercom/:owner/:repo", async (c) => {
   if (!message) return c.json({ ok: true, ignored: true });
   return queueSupport(c, repo, message, body);
 });
-
-async function boundedBody(c: Context<AppEnv>): Promise<string | null> {
-  if (Number(c.req.header("content-length") ?? 0) > 1048576) return null;
-  const body = await c.req.text();
-  return body.length > 1048576 ? null : body;
-}
 
 async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMessage, body: string) {
   if (!await admit(c.env, `webhook:support:${repo}`, 120, 60000, "Support webhook flood")) return c.json({ error: "webhook throttled" }, 429);
@@ -901,6 +940,8 @@ async function queueSupport(c: Context<AppEnv>, repo: string, message: SupportMe
 }
 
 adminRoutes(app, factory);
+godRoutes(app, factory);
+tapsRoutes(app);
 
 app.all("/api/*", (c) => c.notFound());
 app.all("/connect/*", (c) => c.notFound());

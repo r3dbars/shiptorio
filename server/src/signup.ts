@@ -1,3 +1,4 @@
+import { configuredAdmin } from "./admin-policy";
 import { currentUser } from './accounts';
 import type { Env } from './index';
 import { isAllowed } from './session';
@@ -14,9 +15,9 @@ export interface SignupEnv {
 export const signupMode = (env: SignupEnv) => env.SIGNUP_GATE_MODE === 'waitlist' ? 'waitlist' : 'password';
 export const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 export const githubLogin = (s: string) => /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(s);
-export const isAdmin = (env: Env, login: string) => isAllowed(env.ADMIN_LOGINS || 'r3dbars', login);
+export const isAdmin = configuredAdmin;
 // Only explicitly configured owner/admin identities get quota exemptions, never a wildcard.
-export const isQuotaOwner = (env: SignupEnv, login: string) => (env.ADMIN_LOGINS || 'r3dbars').split(',').some(owner => owner.trim().toLowerCase() === login.toLowerCase());
+export const isQuotaOwner = configuredAdmin;
 export async function signupAllowed(env: {DB:D1Database;ALLOWED_LOGINS?:string}, login: string): Promise<boolean> {
   const row = await env.DB.prepare('SELECT enabled FROM signup_allowlist WHERE login = ?').bind(login.toLowerCase()).first<{enabled: number}>();
   return row ? row.enabled === 1 : env.ALLOWED_LOGINS !== "*" && isAllowed(env.ALLOWED_LOGINS || "", login);
@@ -96,7 +97,8 @@ export async function runQuotaStatus(env: Pick<Env, 'DB' | 'ADMIN_LOGINS'>, logi
   const row = await env.DB.prepare('SELECT runs_daily FROM signup_allowlist WHERE login=?').bind(login.toLowerCase()).first<{runs_daily:number}>();
   const used = await env.DB.prepare('SELECT count FROM signup_counters WHERE scope=? AND bucket=?')
     .bind(`runs:${login.toLowerCase()}`, Math.floor(now / 86400000)).first<{count:number}>();
-  return { used: used?.count ?? 0, limit: isQuotaOwner(env, login) ? Math.max(200, row?.runs_daily ?? 0) : row?.runs_daily ?? 20, resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
+  const override = await env.DB.prepare('SELECT runs FROM admin_user_limits WHERE user_id = (SELECT id FROM users WHERE lower(login) = ?)').bind(login.toLowerCase()).first<{runs:number|null}>();
+  return { used: used?.count ?? 0, limit: override?.runs ?? (isQuotaOwner(env, login) ? Math.max(200, row?.runs_daily ?? 0) : row?.runs_daily ?? 20), resetsAt: (Math.floor(now / 86400000) + 1) * 86400000 };
 }
 export async function runQuota(env: Env, login: string): Promise<boolean> {
   if (!await signupAllowed(env,login)) return false;
@@ -144,5 +146,5 @@ export async function adminSignup(request: Request, env: Env): Promise<Response>
   ]);
   const selected = allowlist.results.find(r => r.login === selectedLogin);
   const rows = waitlist.results.map(row=>`<li>${escape(String(row.identity))} (${escape(String(row.kind))}, ${escape(String(row.status))})<form method="post"><input type="hidden" name="identity" value="${escape(String(row.identity))}"><input name="login" aria-label="Verified GitHub login" placeholder="Verified GitHub login" value="${row.kind==='github'?escape(String(row.identity)):''}" required><button name="action" value="approve">Approve</button><button name="action" value="deny">Deny / revoke</button></form></li>`).join('');
-  return new Response(`<!doctype html><meta charset="utf-8"><title>Shiptorio admin — access</title><h1>Signup and abuse</h1><p>${escape(message)}</p><a href="/admin">Admin</a><p>Email approval requires Justin to verify the GitHub identity first.</p><h2>Waitlist</h2><ul>${rows}</ul><h2>Allowlist and quotas</h2><pre>${escape(JSON.stringify(allowlist.results,null,2))}</pre><form method="post"><input name="login" placeholder="GitHub login" value="${escape(selectedLogin)}" required><label>Factories<input name="factories" type="number" min="0" max="99999" value="${selected?.factories ?? 3}"></label><label>Repos<input name="repos" type="number" min="0" max="99999" value="${selected?.repos ?? 3}"></label><label>Runs/day (UTC)<input name="runs" type="number" min="0" max="99999" value="${selected?.runs_daily ?? 20}"></label><label>Spark calls/day (UTC; blank = Worker default)<input name="spark_calls" type="number" min="0" max="999999999" value="${selected?.spark_calls_daily ?? ''}"></label><label>Spark tokens/day (UTC; blank = Worker default)<input name="spark_tokens" type="number" min="0" max="999999999" value="${selected?.spark_tokens_daily ?? ''}"></label><button name="action" value="limits">Save access and quotas</button><button name="action" value="deny">Revoke</button></form><form method="post"><button name="action" value="invite">Create one-use invite</button></form><h2>Abuse flags</h2><pre>${escape(JSON.stringify(abuse.results,null,2))}</pre>`,{headers});
+  return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shiptorio admin — access</title><h1>Signup and abuse</h1><p>${escape(message)}</p><a href="/admin">Admin</a><p>Email approval requires Justin to verify the GitHub identity first.</p><h2>Waitlist</h2><ul>${rows}</ul><h2>Allowlist and quotas</h2><pre>${escape(JSON.stringify(allowlist.results,null,2))}</pre><form method="post"><input name="login" placeholder="GitHub login" value="${escape(selectedLogin)}" required><label>Factories<input name="factories" type="number" min="0" max="99999" value="${selected?.factories ?? 3}"></label><label>Repos<input name="repos" type="number" min="0" max="99999" value="${selected?.repos ?? 3}"></label><label>Runs/day (UTC)<input name="runs" type="number" min="0" max="99999" value="${selected?.runs_daily ?? 20}"></label><label>Spark calls/day (UTC; blank = Worker default)<input name="spark_calls" type="number" min="0" max="999999999" value="${selected?.spark_calls_daily ?? ''}"></label><label>Spark tokens/day (UTC; blank = Worker default)<input name="spark_tokens" type="number" min="0" max="999999999" value="${selected?.spark_tokens_daily ?? ''}"></label><button name="action" value="limits">Save access and quotas</button><button name="action" value="deny">Revoke</button></form><form method="post"><button name="action" value="invite">Create one-use invite</button></form><h2>Abuse flags</h2><pre>${escape(JSON.stringify(abuse.results,null,2))}</pre>`,{headers});
 }

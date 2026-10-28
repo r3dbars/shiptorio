@@ -1,5 +1,8 @@
+import { adminPaused } from "./admin-control";
+import { ShiptorioError } from "./errors";
 export interface BudgetEnv {
   DB?: D1Database;
+  budgetRepo?: string;
   SPARK_DISABLED?: string;
   SPARK_DAILY_CALLS?: string;
   SPARK_DAILY_TOKENS?: string;
@@ -7,8 +10,8 @@ export interface BudgetEnv {
   FACTORY_CONCURRENT_JOBS?: string;
 }
 export const limit = (value: string | undefined, fallback: number) => value !== undefined && /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : fallback;
-export const budgetLimits = (env: BudgetEnv) => ({ calls: limit(env.SPARK_DAILY_CALLS, 200), tokens: limit(env.SPARK_DAILY_TOKENS, 500000), output: Math.min(limit(env.SPARK_MAX_OUTPUT_TOKENS, 6144), 16384), jobs: limit(env.FACTORY_CONCURRENT_JOBS, 1), disabled: env.SPARK_DISABLED === "1" });
-export class BudgetError extends Error {}
+export const budgetLimits = (env: BudgetEnv) => ({ calls: limit(env.SPARK_DAILY_CALLS, 400), tokens: limit(env.SPARK_DAILY_TOKENS, 1000000), output: Math.min(limit(env.SPARK_MAX_OUTPUT_TOKENS, 6144), 16384), jobs: limit(env.FACTORY_CONCURRENT_JOBS, 1), disabled: env.SPARK_DISABLED === "1" });
+export class BudgetError extends ShiptorioError {}
 export const utcDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 export async function budgetAccount(db: D1Database, repo: string): Promise<string> {
   await db.prepare(`INSERT INTO factory_budget_owners(repo, user_id)
@@ -27,12 +30,14 @@ export async function accountBudgetLimits(env: BudgetEnv, account: string) {
   const row = await env.DB!.prepare(`SELECT a.spark_calls_daily, a.spark_tokens_daily FROM users u
     LEFT JOIN signup_allowlist a ON lower(a.login) = lower(u.login) WHERE u.id = ?`)
     .bind(Number(account.slice(5))).first<{ spark_calls_daily: number | null; spark_tokens_daily: number | null }>();
-  return { ...caps, calls: row?.spark_calls_daily ?? caps.calls, tokens: row?.spark_tokens_daily ?? caps.tokens };
+  const override = await env.DB.prepare('SELECT spark_calls, spark_tokens FROM admin_user_limits WHERE user_id = ?').bind(Number(account.slice(5))).first<{spark_calls:number|null; spark_tokens:number|null}>();
+  return { ...caps, calls: override?.spark_calls ?? row?.spark_calls_daily ?? caps.calls, tokens: override?.spark_tokens ?? row?.spark_tokens_daily ?? caps.tokens };
 }
 
 export async function reserveSpark(env: BudgetEnv, account: string, tokens: number) {
   const caps = await accountBudgetLimits(env, account), day = utcDay();
   if (!Number.isSafeInteger(tokens) || tokens <= 0) throw new BudgetError("Invalid token reservation");
+  if (await adminPaused(env.DB, env.budgetRepo)) throw new BudgetError("Administrator paused Spark for this factory");
   if (caps.disabled) throw new BudgetError("Spark budget: global kill switch is on");
   if (!env.DB) throw new BudgetError("Budget ledger unavailable; Spark paused");
   const row = await env.DB.prepare(`INSERT INTO spark_usage(account, day, calls, tokens)

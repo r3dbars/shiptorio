@@ -270,9 +270,9 @@ export function createIron(opts) {
   I.K = K;
   I._fx = updateFx;
   // Point lights are rationed: every one costs every lit pixel on a phone. Quota per module (all instances of a
-  // machine type share it), and a hard cap for the whole scene. Extras silently become dummies.
-  const LIGHT_QUOTA = { world: 2, underside: 3, belts: 0, planner: 1, assembler: 2, ci: 0, check: 0, verify: 1, review: 0, gate: 1, launch: 2, orbit: 0, measure: 0, steam: 0, dynamo: 0, battery: 0, geothermal: 0 };
-  const LIGHT_CAP = opts.lightCap === undefined ? 12 : opts.lightCap;
+  // machine type share it), and a hard cap for the whole scene. 'engine' is the floating city's aether engine part. Extras silently become dummies.
+  const LIGHT_QUOTA = { world: 2, underside: 3, belts: 0, planner: 1, assembler: 2, ci: 0, check: 0, verify: 1, review: 0, gate: 1, launch: 2, engine: 1, orbit: 0, measure: 0, steam: 0, dynamo: 0, battery: 0, geothermal: 0 };
+  const LIGHT_CAP = opts.lightCap === undefined ? 13 : opts.lightCap; // 12 + the floating city's aether engine (?artpass=1)
   const lightsUsed = {}; let lightsTotal = 0;
   const dummyLight = () => ({ intensity: 0, color: new THREE.Color(), position: new V3(), distance: 0, visible: false, isDummy: true });
   function kitFor(mod) {
@@ -346,7 +346,7 @@ export function createIron(opts) {
     const g = new THREE.Group();
     const src = srcColor(it.src);
     // ISSUE: a dark ore lump with glowing crystal shards in the source color
-    const ore = group(g);
+    const ore = group(g); ore.scale.setScalar(1.35); // big enough to read on the belts at map zoom
     rock(0.21, mat(0x2a2420, { shine: 10 }), 0, 0.2, 0, ore);
     rock(0.13, mat(0x1e1a16), 0.14, 0.13, 0.1, ore);
     const crys = mat(src, { e: src, ei: 0.85 });
@@ -392,10 +392,12 @@ export function createIron(opts) {
     p.cards.visible = kind === 'cards';
     p.cap.visible = kind === 'capsule' || kind === 'pass' || kind === 'reject';
     const col = kind === 'issue' ? p.src : I.KIND_COLOR[kind];
+    // Work stays the color of the mine it came from all the way up the line; only pass/reject glow their verdict.
+    p.glow = kind === 'pass' || kind === 'reject' ? col : p.src;
     p.bandM.color.setHex(col); p.bandM.emissive.setHex(col);
     p.tag.visible = kind === 'reject' || (kind === 'capsule' && this.attempts > 0);
     p.check.visible = kind === 'pass';
-    p.halo.material.color.setHex(col);
+    p.halo.material.color.setHex(p.glow);
     if (!silent) { this.flash(col); I.emit('kind', { item: this, kind }); }
   };
   Item.prototype.flash = function (col) {
@@ -481,7 +483,9 @@ export function createIron(opts) {
       });
       const front = arr[0];
       const stuck = front && front.atEnd && front.path === path;
-      path.jamT = stuck && arr.length >= 2 ? path.jamT + dt : 0;
+      // a pile-up jams the belt; so does even one item at the tray of a machine that is waiting on the player
+      const into = path.port && I.stations[path.port.split('.')[0]];
+      path.jamT = stuck && (arr.length >= 2 || (into && into.blocked)) ? path.jamT + dt : 0;
       path.jammed = path.jamT > 0.35;
       path.moving = moved;
       path.flow += ((path.jammed ? 0 : 1) - path.flow) * Math.min(1, dt * 3);
@@ -843,10 +847,12 @@ export function createIron(opts) {
     // halos pulse; items held by a blocked station blink amber
     I.items.forEach((it) => {
       const held = it.owner && I.stations[it.owner] && I.stations[it.owner].blocked;
-      const h = it.parts.halo; const base = held ? 0.26 + Math.sin(t * 10) * 0.12 : 0.16 + Math.sin(t * 3 + it.num) * 0.04;
-      h.material.opacity = base; h.scale.setScalar(held ? 0.85 + Math.sin(t * 10) * 0.08 : 0.8);
-      if (held) h.material.color.setHex(Math.sin(t * 10) > 0 ? 0xffb020 : 0xff3020);
-      else h.material.color.setHex(it.kind === 'issue' ? it.parts.src : I.KIND_COLOR[it.kind]);
+      // reduced motion (I.calm): halos hold still, and a held item stays solid amber instead of blinking
+      const w = I.calm ? 0 : 1;
+      const h = it.parts.halo; const base = held ? 0.3 + Math.sin(t * 10) * 0.12 * w : 0.3 + Math.sin(t * 3 + it.num) * 0.05 * w;
+      h.material.opacity = base; h.scale.setScalar(held ? 1.5 + Math.sin(t * 10) * 0.12 * w : 1.4);
+      if (held) h.material.color.setHex(I.calm || Math.sin(t * 10) > 0 ? 0xffb020 : 0xff3020);
+      else h.material.color.setHex(it.parts.glow);
     });
     for (let i = flashes.length - 1; i >= 0; i--) { const f = flashes[i]; f.t += dt; const k = f.t / 0.7; f.r.scale.setScalar(1 + k * 3); f.r.material.opacity = 0.9 * (1 - k); if (k >= 1) { f.r.parent && f.r.parent.remove(f.r); f.r.material.dispose(); flashes.splice(i, 1); } }
     updateFx(dt);

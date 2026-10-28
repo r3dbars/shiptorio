@@ -1,0 +1,176 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`first-factory initialization coalesces, retries failure, and cannot resurrect paused or migrated state: fresh factory state 1`] = `
+{
+  "baseBranch": "main",
+  "belts": [
+    {
+      "from": "ore-issues",
+      "id": "belt-1",
+      "to": "splitter-1",
+    },
+    {
+      "from": "splitter-1",
+      "id": "belt-2",
+      "to": "assembler-1",
+    },
+    {
+      "from": "assembler-1",
+      "id": "belt-g1",
+      "to": "ci-1",
+    },
+    {
+      "from": "ci-1",
+      "id": "belt-g2",
+      "to": "verify-1",
+    },
+    {
+      "from": "verify-1",
+      "id": "belt-g3",
+      "to": "review-1",
+    },
+    {
+      "from": "review-1",
+      "id": "belt-g4",
+      "to": "gate-1",
+    },
+    {
+      "from": "gate-1",
+      "id": "belt-g5",
+      "to": "launch-pad",
+    },
+  ],
+  "districts": [
+    {
+      "files": 1,
+      "h": 1,
+      "name": "src",
+      "w": 1,
+      "x": 0,
+      "y": 0,
+    },
+  ],
+  "items": [],
+  "machines": [
+    {
+      "id": "ore-issues",
+      "state": "idle",
+      "tier": 1,
+      "type": "ore_deposit",
+      "x": -6,
+      "y": 0,
+    },
+    {
+      "harness": "spark",
+      "id": "splitter-1",
+      "powerId": "steam-spark",
+      "state": "idle",
+      "tier": 1,
+      "type": "splitter",
+      "x": -3,
+      "y": 0,
+    },
+    {
+      "harness": "spark",
+      "id": "assembler-1",
+      "powerId": "steam-spark",
+      "state": "idle",
+      "tier": 1,
+      "type": "assembler",
+      "x": 0,
+      "y": 0,
+    },
+    {
+      "id": "ci-1",
+      "state": "idle",
+      "tier": 1,
+      "type": "inspector",
+      "x": 3,
+      "y": 0,
+    },
+    {
+      "id": "verify-1",
+      "state": "idle",
+      "tier": 1,
+      "type": "inspector",
+      "x": 6,
+      "y": 0,
+    },
+    {
+      "id": "review-1",
+      "state": "idle",
+      "tier": 1,
+      "type": "inspector",
+      "x": 9,
+      "y": 0,
+    },
+    {
+      "id": "gate-1",
+      "state": "idle",
+      "tier": 1,
+      "type": "inspector",
+      "x": 12,
+      "y": 0,
+    },
+    {
+      "id": "launch-pad",
+      "state": "idle",
+      "tier": 1,
+      "type": "launch_pad",
+      "x": 15,
+      "y": 0,
+    },
+    {
+      "id": "orbit-1",
+      "state": "idle",
+      "tier": 1,
+      "type": "inspector",
+      "x": 15,
+      "y": 3,
+    },
+    {
+      "id": "steam-spark",
+      "state": "idle",
+      "tier": 1,
+      "type": "steam",
+      "x": 0,
+      "y": 3,
+    },
+  ],
+  "power": [
+    {
+      "id": "steam-spark",
+      "kind": "steam",
+      "level": 1,
+      "name": "Planner",
+      "online": true,
+    },
+  ],
+  "repo": "example/shop",
+  "schemaVersion": 2,
+  "science": {
+    "blue": 0,
+    "green": 0,
+    "grey": 0,
+    "red": 0,
+  },
+  "sources": [
+    {
+      "detail": "Create and install the GitHub App.",
+      "eventsToday": 0,
+      "kind": "github",
+      "setup": {
+        "actionUrl": "https://shiptorio.com/setup",
+        "steps": [
+          "Open Shiptorio setup and create the private GitHub App.",
+          "Set the five GITHUB_* secrets shown on the callback from server/.",
+          "Install on Only select repositories, then open the live repo map.",
+        ],
+      },
+      "state": "needs_action",
+    },
+  ],
+  "tick": 0,
+  "trust": 0.5,
+}
+`;

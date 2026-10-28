@@ -1,6 +1,10 @@
+import { hmacSigningKey } from "./hmac-key";
 import { githubCooldown, RateLimitError } from "./rate-limit";
 import { observedFetch } from "./telemetry";
+import { decryptCredential, encryptCredential, type Envelope, type KeyEnv } from "./sources/credential-crypto";
 import { retry, OutboundError, RetryExhausted } from "./reliability";
+import { GitHubReadCache } from "./github-cache";
+import { githubLease } from "./github-concurrency";
 
 // GitHub App auth + webhook verification, using only WebCrypto so it runs on Workers.
 import { isOwnPlanComment, normalizeGitHub, TRUST_LABEL, trustedAuthor, type GitHubIssue, type GitHubPayload } from "./sources/github";
@@ -65,9 +69,7 @@ export async function appJwt(appId: string, privateKeyPem: string, now = Date.no
 
 export async function verifyWebhookSignature(secret: string, body: string, header: string | null): Promise<boolean> {
   if (!secret || !header?.startsWith("sha256=")) return false;
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
+  const key = await hmacSigningKey(secret);
   const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(body)));
   const expected = "sha256=" + [...mac].map((b) => b.toString(16).padStart(2, "0")).join("");
   if (expected.length !== header.length) return false;
@@ -76,10 +78,11 @@ export async function verifyWebhookSignature(secret: string, body: string, heade
   return diff === 0;
 }
 
-export interface AppCredentials {
+export interface AppCredentials extends KeyEnv {
   GITHUB_APP_ID: string;
   GITHUB_APP_PRIVATE_KEY: string;
   DB?: D1Database;
+  CACHE?: KVNamespace;
 }
 
 export class GitHubError extends OutboundError {
@@ -93,9 +96,11 @@ async function tokenFingerprint(token: string) {
   return [...hash].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
 const pendingTokens = new Map<string, Promise<string>>();
+const distrusted = new Set<number>();
 const tokenKey = (env: AppCredentials, id: number, scope?: InstallationTokenScope) => JSON.stringify([env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY, id, scope]);
 export function purgeInstallationTokens(id: number) {
   for (const [key, value] of tokenCache) if (value.installationId === id) tokenCache.delete(key);
+  distrusted.add(id); // the shared KV copy may be the token GitHub just refused
   // Keep ownership until expiry so outstanding callers can refresh or fail closed.
 }
 async function tokenVersion(env: AppCredentials, id: number): Promise<number> {
@@ -114,7 +119,7 @@ const queues = new Map<string, Promise<unknown>>();
 const queued = new Map<string, number>();
 const contexts = new Map<string, { db: D1Database; scope: string }>();
 const cooldowns = new Map<string, { next: number; failures: number }>();
-const etags = new Map<string, { etag: string; value: unknown; expires: number }>();
+const readCache = new GitHubReadCache();
 async function credentialKey(token: string) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("");
@@ -127,7 +132,12 @@ export async function registerGithubCredential(token: string, db: D1Database, sc
   boundedSet(contexts, await credentialKey(token), { db, scope });
 }
 async function ghRequest<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
-  const key = await credentialKey(token), context = contexts.get(key), scope = context?.scope ?? key;
+  const key = await credentialKey(token), owner = tokenOwners.get(key);
+  // Bounded context eviction must never remove an installation's shared budget.
+  const context = owner?.env.DB ? { db: owner.env.DB, scope: `github:installation:${owner.installationId}` } : contexts.get(key);
+  // Permission-scoped and replacement tokens still consume the same installation budget.
+  // D1 shares spacing/cooldowns across isolates; this queue caps in-flight calls to one per isolate.
+  const scope = context?.scope ?? (owner ? `github:installation:${owner.installationId}` : key);
   if ((queued.get(scope) ?? 0) >= 8) throw new RateLimitError(Date.now() + 60000);
   queued.set(scope, (queued.get(scope) ?? 0) + 1);
   const previous = queues.get(scope) ?? Promise.resolve();
@@ -152,25 +162,48 @@ async function ghRequest<T>(path: string, token: string, init: RequestInit = {})
       const latest = await context.db.prepare("SELECT next_at FROM api_limits WHERE scope = ?").bind(scope).first<{ next_at: number }>();
       if (latest && latest.next_at > Date.now() + 5000) throw new RateLimitError(latest.next_at);
     }
-    const cacheKey = `${key}:${path}`;
-    const cached = (init.method ?? "GET") === "GET" ? etags.get(cacheKey) : undefined;
     const headers = new Headers({ accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": UA, "x-github-api-version": "2022-11-28" });
     if (init.body) headers.set("content-type", "application/json");
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-    if (cached && cached.expires > Date.now()) headers.set("if-none-match", cached.etag);
-    const res = await observedFetch("github", API + path, { signal: AbortSignal.timeout(20000), ...init, headers });
-    const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
-    const next = githubCooldown(res, Date.now(), state.failures, secondary);
-    const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
-    boundedSet(cooldowns, scope, { next, failures });
-    if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
-    if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
-    if (res.status === 304 && cached) return structuredClone(cached.value) as T;
-    if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
-    if (res.status === 204) return undefined as T;
-    const value = await res.json();
-    if ((init.method ?? "GET") === "GET" && res.headers.has("etag") && JSON.stringify(value).length <= 65536) boundedSet(etags, cacheKey, { etag: res.headers.get("etag")!, value, expires: Date.now() + 300000 });
-    return value as T;
+    // Callers cannot switch the credential after its access boundary was checked.
+    headers.set("authorization", `Bearer ${token}`);
+    const cacheable = (init.method ?? "GET").toUpperCase() === "GET" && !init.body && !headers.has("if-none-match") && !headers.has("if-modified-since") && !headers.has("range") && !/\bno-store\b/i.test(headers.get("cache-control") ?? "");
+    const identity = owner ? JSON.stringify([owner.env.GITHUB_APP_ID, owner.installationId, owner.version, owner.scope]) : scope;
+    const cacheKey = cacheable ? await readCache.key(key, identity, path, headers) : undefined;
+    const cached = cacheKey ? await readCache.get(cacheKey, owner?.env) : undefined;
+    if (cached) headers.set("if-none-match", cached.etag);
+    const lease = context && scope.startsWith("github:installation:") ? await githubLease(context.db, scope) : undefined;
+    try {
+      // Slow D1 acquisition must not let the API request outlive its lease.
+      const remaining = lease ? Math.min(20000, lease.expiresAt - Date.now() - 1000) : 20000;
+      if (remaining <= 0) throw new RateLimitError(Date.now() + 1000);
+      const timeout = AbortSignal.timeout(remaining);
+      const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+      const res = await observedFetch("github", API + path, { ...init, signal, headers });
+      const secondary = res.status === 403 && (res.headers.has("retry-after") || /secondary rate limit|rate limit exceeded|abuse detection/i.test(await res.clone().text()));
+      const next = githubCooldown(res, Date.now(), state.failures, secondary);
+      const failures = res.status === 429 || secondary ? state.failures + 1 : 0;
+      boundedSet(cooldowns, scope, { next, failures });
+      if (context) await context.db.prepare("UPDATE api_limits SET next_at = MAX(next_at, ?), failures = ? WHERE scope = ?").bind(next, failures, scope).run();
+      if (res.status === 429 || secondary || res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") throw new RateLimitError(next);
+      // The candidate was fresh when selected; this authenticated 304 validates its
+      // exact ETag even if its storage TTL elapsed in flight. Do not extend that TTL:
+      // the next request must fetch unconditionally once the original entry expires.
+      if (res.status === 304 && cached) return structuredClone(cached.value) as T;
+      // Never serve stale data on errors, including revoked access disguised as 404.
+      if (!res.ok || res.status === 204) {
+        if (cacheKey && cached) await readCache.delete(cacheKey, owner?.env);
+        if (!res.ok) throw new GitHubError(res.status, path, init.method ?? "GET");
+        return undefined as T;
+      }
+      const value = await res.json();
+      if (cacheKey && res.status === 200 && res.headers.has("etag") && !/\bno-store\b/i.test(res.headers.get("cache-control") ?? "") && res.headers.get("vary") !== "*") await readCache.put(cacheKey, res.headers.get("etag")!, value, owner?.env);
+      else if (cacheKey && cached) await readCache.delete(cacheKey, owner?.env);
+      return value as T;
+    } finally {
+      // Keep the API outcome if release storage is unavailable; the lease expires.
+      try { await lease?.release(); } catch { /* bounded crash recovery */ }
+    }
   });
   queues.set(scope, request);
   try { return await request; } finally {
@@ -243,6 +276,8 @@ export async function installationToken(env: AppCredentials, installationId: num
   const pendingKey = key + version;
   if (pendingTokens.has(pendingKey)) return pendingTokens.get(pendingKey)!;
   const pending = (async () => {
+    const shared = distrusted.has(installationId) ? null : await sharedToken(env, key, version);
+    if (shared) { await adoptToken(env, key, { ...shared, installationId, version, env, scope }); return shared.token; }
     const jwt = await appJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
     if (env.DB) boundedSet(contexts, await credentialKey(jwt), { db: env.DB, scope: `github:app:${env.GITHUB_APP_ID}` });
     const res = await gh<{ token: string; expires_at?: string }>(`/app/installations/${installationId}/access_tokens`, jwt, {
@@ -250,16 +285,44 @@ export async function installationToken(env: AppCredentials, installationId: num
     });
     if (await tokenVersion(env, installationId) !== version) throw new Error("GitHub installation changed while issuing token");
     const entry = { token: res.token, expiresAt: Date.parse(res.expires_at ?? "") || Date.now(), installationId, version, env, scope };
-    boundedSet(tokenCache, key, entry);
-    if (env.DB) await registerGithubCredential(res.token, env.DB, `github:installation:${installationId}`);
-    for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
-    const { token: _, ...metadata } = entry;
-    tokenOwners.set(await tokenFingerprint(res.token), metadata);
+    await adoptToken(env, key, entry);
+    await shareToken(env, key, entry);
+    distrusted.delete(installationId);
     return res.token;
   })();
   pendingTokens.set(pendingKey, pending);
   try { return await pending; } finally { pendingTokens.delete(pendingKey); }
 
+}
+
+async function adoptToken(env: AppCredentials, key: string, entry: TokenEntry) {
+  boundedSet(tokenCache, key, entry);
+  if (env.DB) await registerGithubCredential(entry.token, env.DB, `github:installation:${entry.installationId}`);
+  for (const [value, old] of tokenOwners) if (old.expiresAt <= Date.now()) tokenOwners.delete(value);
+  const { token: _, ...metadata } = entry;
+  tokenOwners.set(await tokenFingerprint(entry.token), metadata);
+}
+// Every isolate used to mint its own installation token, which drained the App's 5,000/hr bucket.
+// Isolates now share one, encrypted in KV under the token version, until 5 minutes before expiry.
+const SHARED_MARGIN = 5 * 60 * 1000;
+const sharedKey = async (key: string, version: number) => `ghtoken:v1:${await tokenFingerprint(key)}:${version}`;
+async function sharedToken(env: AppCredentials, key: string, version: number): Promise<{ token: string; expiresAt: number } | null> {
+  if (!env.CACHE || !env.CRED_MASTER_KEY) return null;
+  try {
+    const name = await sharedKey(key, version);
+    const envelope = await env.CACHE.get<Envelope>(name, "json");
+    if (!envelope) return null;
+    const value = await decryptCredential<{ token: string; expiresAt: number }>(env, name, envelope);
+    return value.expiresAt > Date.now() + SHARED_MARGIN ? value : null;
+  } catch { return null; }
+}
+async function shareToken(env: AppCredentials, key: string, entry: TokenEntry) {
+  const ttl = Math.floor((entry.expiresAt - Date.now() - SHARED_MARGIN) / 1000);
+  if (!env.CACHE || !env.CRED_MASTER_KEY || ttl < 60) return;
+  try {
+    const name = await sharedKey(key, entry.version);
+    await env.CACHE.put(name, JSON.stringify(await encryptCredential(env, name, { token: entry.token, expiresAt: entry.expiresAt })), { expirationTtl: ttl });
+  } catch { /* the in-isolate cache still holds it */ }
 }
 
 // Publishing credentials stay inside one repository and cannot create PRs.
@@ -296,11 +359,6 @@ export async function repoTree(
     token,
   );
   return { branch: repo.default_branch, sha: tree.sha, entries: tree.tree, truncated: tree.truncated };
-}
-
-export async function pullRequestFiles(token: string, fullName: string, number: number): Promise<string[]> {
-  const files = await gh<{ filename: string }[]>(`/repos/${fullName}/pulls/${number}/files?per_page=100`, token);
-  return files.map((f) => f.filename);
 }
 
 export async function openIssues(token: string, repo: string): Promise<GitHubIssue[]> {
@@ -411,7 +469,7 @@ export async function commitToBranch(
         method: "POST",
         body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
       });
-    });
+    }, { shouldRetry: error => !(error instanceof RateLimitError) });
   }
   return commit.sha;
 }
@@ -430,7 +488,7 @@ export async function openPullRequest(
     );
     if (existing[0]) return existing[0];
     return gh(`/repos/${fullName}/pulls`, token, { method: "POST", body: JSON.stringify({ ...pr, draft: false }) });
-  });
+  }, { shouldRetry: error => !(error instanceof RateLimitError) });
 }
 
 /** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */

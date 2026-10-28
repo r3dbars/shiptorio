@@ -5,7 +5,7 @@ import { authorizationRevoked, isAllowed, readSessionDetails } from "./session";
 import { ipSubject } from "./rate-limit";
 
 export interface BrowserSocketEnv { SESSION_SECRET: string; APP_PASSWORD?: string; ALLOWED_LOGINS: string; DEV_LOGIN?: string; DB?: D1Database; SIGNUP_GATE_MODE?: string }
-export interface BrowserSocketAuth { login: string; expiresAt: number; epoch: string; issuedAt?: number; sessionHash?: string; userId?: number; rateSubject?: string; repo?:string; user?:AccessUser }
+export interface BrowserSocketAuth { adminView?: string; login: string; expiresAt: number; epoch: string; issuedAt?: number; sessionHash?: string; userId?: number; rateSubject?: string; repo?:string; user?:AccessUser }
 
 
 // Attachments hold no cookie or literal credential. Changing an access control value
@@ -51,4 +51,29 @@ export async function browserSocketActive(auth: BrowserSocketAuth, env: BrowserS
   if (!auth.sessionHash || !Number.isSafeInteger(auth.userId)) return signupMode(env) === "password";
   const row = await env.DB.prepare('SELECT u.login FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.id_hash=? AND s.user_id=? AND s.expires_at>?').bind(auth.sessionHash,auth.userId,Date.now()).first<{login:string}>();
   return !!row && row.login.toLowerCase() === auth.login.toLowerCase() && await signupAllowed({DB:env.DB,ALLOWED_LOGINS:env.ALLOWED_LOGINS},row.login);
+}
+
+// Transport metadata is additive: the shared gameplay schemas still parse the
+// original snapshot/patch/log payload. The durable cursor survives DO hibernation.
+export async function browserFrame(storage: Pick<DurableObjectStorage, "get" | "put">, message: object, advance = true): Promise<string> {
+  const seq = (await storage.get<number>("browserSeq") ?? 0) + (advance ? 1 : 0);
+  if (advance) await storage.put("browserSeq", seq);
+  return JSON.stringify({ ...message, seq });
+}
+
+export function browserHeartbeat(ws: Pick<WebSocket, "send">, raw: string | ArrayBuffer): boolean {
+  if (raw !== "ping") return false;
+  ws.send("pong");
+  return true;
+}
+
+// Sequence allocation must not queue behind another player's authorization I/O.
+export class BrowserFrames {
+  private queue: Promise<unknown> = Promise.resolve();
+  constructor(private storage: Pick<DurableObjectStorage, "get" | "put">) {}
+  frame(message: object, advance = true): Promise<string> {
+    const frame = this.queue.then(() => browserFrame(this.storage, message, advance));
+    this.queue = frame.catch(() => {});
+    return frame;
+  }
 }

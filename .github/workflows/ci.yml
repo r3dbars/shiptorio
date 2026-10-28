@@ -1,9 +1,10 @@
 name: CI
 permissions:
   contents: read
-# Actions minutes are metered on this private repo: one run per branch at a time (a new push
-# cancels the old run), docs-only changes skip it, drafts skip it (agents run `bun run check` locally while
-# they work; CI runs once the PR is marked ready), and main is checked by the Deploy run instead.
+# One run per branch/event at a time; a new push cancels the previous run.
+# Every ready PR needs check/selfhost, including docs-only changes, because branch
+# protection requires them. Drafts skip CI; browser/load remain manual checks.
+# Main is checked by the Deploy run instead.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
@@ -14,24 +15,25 @@ on:
         description: Generate Linux visual baselines for review
         type: boolean
         default: false
+      browser_grep:
+        description: Optional focused browser diagnostic (empty runs every test)
+        type: string
+        default: ''
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    # docs/site/*.md is the public docs site (served at /docs), so it builds and deploys like code
-    paths:
-      - "**"
-      - "!**/*.md"
-      - "!docs/context/**"
-      - "!docs/playtest/**"
-      - "docs/site/**"
 jobs:
   check:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
+      - name: Audit dependency advisories (high and critical)
+        run: bun audit --audit-level=high
       - run: bun run typecheck
       - run: bun run typecheck:tests
       - name: Install Linux runner verification boundary
@@ -41,6 +43,8 @@ jobs:
           # GitHub's disposable Ubuntu VM restricts user namespaces by default.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: bun test
+      - name: Verify real Durable Object storage on host
+        run: bun run test:storage
       - run: bun run playtest --check
       - run: bun run build
   selfhost:
@@ -48,9 +52,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - name: Self-host from a clean clone (no Cloudflare credentials)
@@ -66,11 +72,21 @@ jobs:
   browser:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Nine serial cases need room to finish and upload failure evidence on slow VMs.
+    # Per-test 180s and individual assertion deadlines remain unchanged.
+    timeout-minutes: 18
+    # Each viewport keeps its serial fixture, without making all three 90s
+    # replays and visual checks compete with one job's 12-minute deadline.
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop, iphone-14, pixel-7]
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - run: bun install --frozen-lockfile
@@ -80,11 +96,20 @@ jobs:
       - name: Check browser libraries
         run: |
           node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close();' || bun x playwright install-deps chromium
-      - run: bun run test:e2e ${{ inputs.update_baselines && '--update-snapshots' || '' }}
-      - uses: actions/upload-artifact@v4
+      - name: Run browser tests
+        env:
+          BROWSER_PROJECT: ${{ matrix.project }}
+          BROWSER_GREP: ${{ inputs.browser_grep }}
+          UPDATE_BASELINES: ${{ inputs.update_baselines }}
+        run: |
+          args=("--project=$BROWSER_PROJECT")
+          if [ -n "$BROWSER_GREP" ]; then args+=(--grep "$BROWSER_GREP"); fi
+          if [ "$UPDATE_BASELINES" = true ]; then args+=(--update-snapshots=all); fi
+          bun run test:e2e "${args[@]}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
-          name: browser-evidence
+          name: browser-evidence-${{ matrix.project }}
           path: |
             test-results/
             playwright-report/
@@ -95,14 +120,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - run: bun install --frozen-lockfile
       - run: bun run test:load
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: load-evidence

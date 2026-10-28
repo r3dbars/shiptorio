@@ -111,7 +111,8 @@ describe('wire contract drift guards', () => {
     expect([...emitted].sort()).toEqual([...variants].sort());
     // broadcast's typed argument plus workspace typecheck guards payload fields at all call sites.
     expect(source.text).toContain('private broadcast(msg: ServerToWeb)');
-    expect(read('web/src/source/live.ts')).toContain('ServerToWeb.safeParse(value)');
+    expect(read('web/src/source/live.ts')).toContain('parseLiveMessage(value)');
+    expect(read('web/src/source/schemas.ts')).toContain('ServerToWeb.parse(value)');
   });
 
   it('requires a web message branch for every variant and keeps the fallback reserved for log', () => {

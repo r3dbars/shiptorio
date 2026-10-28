@@ -31,9 +31,23 @@ and install your agent inside WSL.
    open GitHub issue and request Spark's plan. Review the files and steps in the plan
    card before approving a build.
 
+During browser approval, the runner retries dropped polling requests and temporary 429/5xx responses while the code remains valid. Authorization and expiry failures still stop pairing. Starting pairing and failures while reading a reply are outside this retry.
+
 macOS needs Apple Command Line Tools (`xcode-select --install`). Linux needs
 bubblewrap (`sudo apt install bubblewrap`) and working unprivileged user namespaces.
 The runner refuses jobs if the OS sandbox is unavailable.
+
+For a self-hosted factory, copy the command from that factory's **Power** panel.
+It downloads from your own origin and passes `SHIPTORIO_URL` to the installer, for example:
+
+```sh
+curl -fsSL 'https://factory.example/install.sh' | SHIPTORIO_URL='https://factory.example' sh
+```
+
+The installer saves the server URL for later `pair`, `watch` and `doctor` commands.
+The installer and CLI refuse to reuse an installation configured for a different
+server, including a different `SHIPTORIO_URL`, so existing pairing tokens cannot be sent to the new endpoint. Use a separate installation or
+uninstall the previous one before switching servers.
 
 The installer places a private pinned Bun and standalone bundle in
 `~/.local/share/shiptorio/runner`, checks the bundle against its HTTPS checksum
@@ -41,6 +55,10 @@ manifest, and creates `~/.local/bin/shiptorio-runner`. No repository checkout or
 manual token copying is required. Add `~/.local/bin` to PATH if desired.
 
 ## More repos and updates
+
+Renewed connections are saved in the private pairing store so they survive the next poll and a restart. Legacy environment grants are imported only when no pairing exists, or when a newer grant belongs to that same pairing and sign-in session. They cannot replace a different pairing. Disconnect the machine in the game to revoke access; deleting a local file does not revoke an environment grant.
+
+Pairing changes are serialized across helper processes. A busy-store error means another pairing writer has the lock. Close the other pairing command and retry; an interrupted writer's lock requires recovery with the helper stopped, rather than automatically overriding a possibly active writer.
 
 Run `~/.local/bin/shiptorio-runner pair` to add another repository while the runner
 is open. One process serves all paired repos, with one build at a time. Pairing
@@ -106,7 +124,9 @@ failure.
 
 ## What your agent can and can't touch
 
-Jobs run in an isolated checkout. The runner publishes only the approved file scope,
+Jobs fetch only the approved revision and, for rework, its regression-proof base rather
+than downloading the repository’s full history. Jobs run in an isolated checkout.
+The runner publishes only the approved file scope,
 then opens a pull request. It never pushes to the default branch. The OS sandbox
 keeps your normal home, unrelated repositories and supervisor GitHub credentials
 outside the agent and test processes. The agent can read its dedicated subscription
@@ -120,6 +140,8 @@ flow.
 
 The supervisor runs the repository's checks and verifies the frozen patch before
 publication. You still approve the plan and decide when to merge.
+
+Shiptorio's own application, unit and regression tests still run inside verification. Host integration probes that need local listener sockets, a dedicated Keychain or another OS sandbox are unsupported inside that already restricted boundary (`SHIPTORIO_CHECK_SANDBOX=1`). Their assertions and existing platform requirements remain intact in normal host runs: platform-eligible cases run in CI, while macOS-specific integrations retain local macOS validation. The runner does not grant network access or access to host credentials or unrelated files to make these probes pass. Verification can read the public OS timezone database needed by normal Date/Intl operations; private homes and sibling process data remain inaccessible.
 
 ## Stop, revoke and uninstall
 
@@ -153,3 +175,15 @@ bundles could finish the browser step without a default Keychain to persist the
 credential. Reinstall the runner and repeat `login claude` once. Wait for the Terminal
 message `claude_code: installed and signed in for Shiptorio`. Your personal Claude
 credentials and macOS Keychain stay separate.
+
+### Sleeping, reconnecting and expired pairing
+
+The helper retries temporary network failures with backoff, including after the computer
+sleeps. It renews its connection while watching and during a build. A connection grant lasts
+up to seven days and never extends past the browser session that approved it.
+
+If Shiptorio explicitly reports a revoked or expired grant, the helper stops using that
+connection and tells you to run `shiptorio-runner pair`. Saved builds and receipts stay on
+your computer. A fresh pairing replaces the stopped connection. The factory's runner status
+also reports when re-pairing is needed; a generic network error or unclassified 401 alone
+does not erase or stop the saved pairing.

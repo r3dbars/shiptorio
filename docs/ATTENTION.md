@@ -1,8 +1,14 @@
 # Attention: when Shiptorio is allowed to bug you
 
-> Status: **v1 built behind the `attention` flag** (2026-10-27, off by default). Try it: add `?attention=1` to any
-> game URL (sim too: `/?source=sim&scenario=checkin&attention=1`), or turn the flag on at /admin/flags. Thread "Design a calm attention system for players".
-> Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb (Black Iron, real map art). Any build ships behind the `attention` flag first.
+> Status: **on by default** since 2026-10-27 (Justin: "No flag just put it in main"). `?attention=0` brings back the old
+> Next Move card for one release; the global `attention` flag at /admin/flags stays as a kill switch. Thread "Design a calm attention system for players".
+> Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb (Black Iron, real map art).
+> Card layout from the gameplay picks (docs/GAMEPLAY.md): Later left, Continue as a tab on the right edge, more cards peek
+> out behind, and a Launch card is a big red button held for 800 ms (`web/src/ui/holdLaunch.ts`: primary press only;
+> blur, hidden tab, lost capture or a card change cancels; screen readers activate twice within 5 s).
+> Finishing the hold only *sends* the launch (a click and a short buzz). The rocket sound and the "Rocket launching"
+> caption come from the server's launched state, so a launch the server refuses (head moved, CI went red) never
+> sounds or reads as launched.
 
 ## The problem
 
@@ -258,7 +264,7 @@ these" is only recorded), the digest, push modes and quiet-hours settings, the c
 - `Move.because` cites the player's own taps when they drove the ranking (game master prompt gets the streak counts).
 - Client: one `useAttention(deck)` hook owns the tray row, the chime throttle and the push rules
   (replaces `useBottleneckNudge`). Quiet hours and push mode live in prefs (`savePref`).
-- Flag: `attention` (default off) until Justin has played it.
+- Flag: `attention`, default on since 2026-10-27; global false is the kill switch.
 
 ## Defaults (Justin can flip any of these)
 

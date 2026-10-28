@@ -24,7 +24,7 @@ describe("current-commit inspection", () => {
       return Response.json(Array.from({ length: 25 }, (_, index) => ({ number: (page - 1) * 25 + index, ...(index === 0 ? { pull_request: {} } : {}) })));
     }) as unknown as typeof fetch);
     try {
-      const issues = await openIssues("fake-token", "example/demo");
+      const issues = await openIssues(`inspection-${crypto.randomUUID()}`, "example/demo");
       expect(issues).toHaveLength(50);
       expect(issues.some((issue) => issue.pull_request)).toBe(false);
       expect(pages).toEqual([1, 2, 3]);

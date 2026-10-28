@@ -2,6 +2,7 @@ import { isLocal } from "./auth";
 import { sameOriginPath } from "./redirect";
 import { makeSessionCookie, readSession } from "./session";
 import { gatePage } from "./gate-page";
+import { boundedBody } from "./webhook-body";
 
 export interface AccessEnv {
   APP_PASSWORD?: string;
@@ -121,9 +122,8 @@ export async function previewAccess(request: Request, env: AccessEnv): Promise<R
     // Some Firefox/privacy configurations omit Origin on native form navigations.
     // Foreign origins are always refused; absent/opaque origins can instead
     // prove they loaded our form using its signed token and same-site cookie.
-    if (Number(request.headers.get("content-length") ?? 0) > 4096) return new Response("Too large", { status: 413 });
-    const raw = await request.text();
-    if (raw.length > 4096) return new Response("Too large", { status: 413 });
+    const raw = await boundedBody(request, 4096);
+    if (raw === null) return new Response("Too large", { status: 413 });
     const form = new URLSearchParams(raw);
     const origin = request.headers.get("origin");
     let sameSite = origin === url.origin;

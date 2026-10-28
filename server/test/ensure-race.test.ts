@@ -9,6 +9,7 @@ test("first-factory initialization coalesces, retries failure, and cannot resurr
   const der = await crypto.subtle.exportKey("pkcs8", keys.privateKey);
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(der).toString("base64")}\n-----END PRIVATE KEY-----`;
   let trees = 0, fail = false;
+  const initializationOrder: string[] = [];
   let arrived!: () => void, release!: () => void;
   let held: Promise<void> | null = null;
   const holdTree = () => { const ready = new Promise<void>(resolve => { arrived = resolve; }); held = new Promise(resolve => { release = resolve; }); return ready; };
@@ -16,17 +17,17 @@ test("first-factory initialization coalesces, retries failure, and cannot resurr
     const url = String(input);
     if (url.endsWith("/access_tokens")) return Response.json({ token: "ensure-test-token" });
     if (url.endsWith("/repos/example/shop")) return Response.json({ default_branch: "main" });
-    if (url.includes("/git/trees/")) { trees++; arrived?.(); await held; if (fail) return Response.json({ message: "Failure" }, { status: 400 }); return Response.json({ tree: [{ path: "src/cart.ts", type: "blob", size: 10 }] }); }
+    if (url.includes("/git/trees/")) { initializationOrder.push("tree"); trees++; arrived?.(); await held; if (fail) return Response.json({ message: "Failure" }, { status: 400 }); return Response.json({ tree: [{ path: "src/cart.ts", type: "blob", size: 10 }] }); }
     throw Error(`Unexpected fixture call ${url}`);
   }) as typeof fetch;
   const data = new Map<string, unknown>();
   const storage = {
     async transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> { return fn(storage); },
-    get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); },
+    get: async (key: string) => structuredClone(data.get(key)), put: async (key: string, value: unknown) => { if (key === "meta" || key === "state") initializationOrder.push(key); data.set(key, structuredClone(value)); },
     delete: async (key: string) => data.delete(key), list: async (o?: { prefix?: string }) => new Map([...data].filter(([key]) => !o?.prefix || key.startsWith(o.prefix))),
     getAlarm: async () => null, setAlarm: async () => {}, deleteAlarm: async () => {},
   };
-  const DB = { prepare: (sql: string) => { const statement = { bind: (..._values: unknown[]) => statement, all: async () => ({ results: [] }), run: async () => ({}), first: async () => sql.includes("token_version") ? { token_version: 0, status: "active" } : null }; return statement; } };
+  const DB = { prepare: (sql: string) => { const statement = { bind: (..._values: unknown[]) => statement, all: async () => ({ results: [] }), run: async () => ({}), first: async () => sql.includes("token_version") ? { token_version: 0, status: "active" } : sql.includes("excluded.failures") ? { next_at: Date.now() + 30000 } : null }; return statement; } };
   const env = credentialEnv({ SESSION_SECRET: "test-session", APP_PASSWORD: "test-preview", ALLOWED_LOGINS: "example", GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: pem, DB });
   const make = () => new Factory({ storage, blockConcurrencyWhile: (fn: () => unknown) => fn(), getWebSockets: () => [] } as never, env as never);
   try {
@@ -39,6 +40,10 @@ test("first-factory initialization coalesces, retries failure, and cannot resurr
     await Promise.resolve();
     expect(completed).toBe(0);
     release(); await first;
+    // Pin the complete durable result before extracting fresh-state construction.
+    expect(initializationOrder).toEqual(["meta", "tree", "state"]);
+    expect(data.get("meta")).toEqual({ repo: "example/shop", installationId: 1 });
+    expect(data.get("state")).toMatchSnapshot("fresh factory state");
     await factory.ingestIssue({ number: 1, title: "Real backlog", body: "Do not lose this", url: "https://github.com/example/shop/issues/1", labels: [] });
     await second;
     expect(trees).toBe(1);

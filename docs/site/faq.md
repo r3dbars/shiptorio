@@ -52,7 +52,7 @@ A ship card is locked when a gauntlet stamp hasn't passed yet. Swiping right run
 
 ## Why does nothing build?
 
-Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Next Move card will say "Plug in Claude or ChatGPT to start building."
+Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Needs you card will say "Plug in Claude or ChatGPT to start building."
 
 ## Why can't I sign in?
 
@@ -65,6 +65,8 @@ Install the Shiptorio GitHub App on it and refresh. If someone else installed it
 ## Does it work on my phone?
 
 Yes. The map, cards and check-in deck are built mobile first. The check-in deck is made for a two-minute swipe on your phone.
+
+At floor zoom, a one-finger drag settles on the nearest floor. Pinching and the full-shaft overview keep your chosen framing; cancelled gestures do not select or snap. With reduced motion enabled, the floor change is immediate.
 
 ## Can I try it without connecting anything?
 

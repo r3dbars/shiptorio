@@ -11,9 +11,9 @@ and verified live earlier today, see decisions.md).
 |---|---|---|---|
 | Triage (kind + district) | `spark.ts` `triage`, called by `Factory.sparkTriage` | **Spark**, with a one-line reason | keyword rule (`heuristicTriage`), logged as a fallback |
 | File scope for a job | `spark.ts` `pickFiles` | **Spark** | none: job fails, player re-approves |
-| Job plan (5-turn tool loop: read_issue, read_file, assign_job, ask_player) | `spark.ts` `planLocalTask` | **Spark** | none: job fails, player re-approves |
+| Job plan (8-turn tool loop over the whole toolbox, then assign_job or ask_player) | `spark-tools.ts` `planLocalTask` | **Spark** | none: job fails, player re-approves |
 | Rework re-plan after a scar | same loop, fed the failure + scars | **Spark** | none |
-| AI review station | `gauntlet.ts` `reviewDiff` | **Spark**, hostile reviewer, comments on the PR | station waits (pile shows) |
+| AI review station | `gauntlet.ts` `reviewDiff` → `spark-tools.ts` `reviewWithTools` (6-turn tool loop) | **Spark**, hostile reviewer, reads the repo at the PR head before ruling, comments on the PR with how it checked | station waits (pile shows) |
 | Deck ranking + suggested option per card | `spark.ts` `gameMaster`, `Factory.askGameMaster` | **Spark** (new) | value × wait score in `deck.ts` |
 | Bottleneck card wording | same call | **Spark** (new) | `impliedBottleneckMove` text |
 | Orbit watch: did this new Sentry spike come from the launch? | `spark.ts` `judgeOrbit`, `Factory.orbitCaused` | **Spark** (new), reads the PR's files + the error; unsure = caused | spike rule trips it |
@@ -85,6 +85,20 @@ permission stay deterministic so the automation earned by playing is provable.
 
 Check every prompt against the real API before a demo: `META_API_KEY=... bun run spark:check` runs
 triage (including the testbed's misleading "docs typo" issue), the game master and all three judges.
+
+13. Spark could only read the issue and pre-picked files, so it planned and reviewed half-blind (Testing #12's `--coupon`
+    example and #13's "$50 or more ships free" vs `subtotal > 50` both passed review). Now every agentic step shares one
+    read-only toolbox (`server/src/spark-tools.ts`, built per item by `Factory.sparkToolbox`, summaries in
+    `spark-context.ts`): `read_issue`, `read_comments`, `read_file`, `list_files`, `search_code` (GitHub code index, then
+    a path-ranked scan), `read_pr`, `read_ci` (check runs + annotations), `read_factory` (stations, district scars,
+    permits, autonomy, the player's past calls) and `read_signals` (Sentry/PostHog items and support tickets tied to the
+    work, never a customer address). Rails: every path goes through `pathAllowed`/`runnerPathAllowed`, results are
+    redacted and capped, the resent observations stay under 36k characters (oldest shrink first), and a secret path ends
+    the loop. Spark still can't write or merge: the planner finishes with assign_job/ask_player (files it found and read
+    may join the scope only when the player approves it on the Build card), the reviewer with a verdict. Each tool call
+    is broadcast to the log, listed in the plan comment, and the review comment gets a "How it checked" list.
+    Cost: a plan is up to 8 calls (was 5) and a review up to 6 (was 1). The default daily cap went from 200 calls / 500k
+    tokens to 400 / 1M so a Testing day doesn't stall; the $5/day per-factory dollar budget (spend.ts) still caps spend.
 
 ## Still open
 

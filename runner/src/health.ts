@@ -1,7 +1,44 @@
 import type { Job } from "./messages";
-import type { Pairing } from "./pairing";
+import type { Pairing, GrantRejectionCode } from "./pairing";
 
+export class RunnerGrantRejected extends Error {
+  constructor(public code: GrantRejectionCode, public status: number) {
+    super("Runner connection needs re-pairing. Run shiptorio-runner pair.");
+  }
+}
+/** Only explicit permanent codes from the authenticated endpoint stop a connection. */
+export async function runnerResponseError(response: Response, repo: string, action: string): Promise<Error> {
+  let code: unknown;
+  if ([401, 403].includes(response.status) && response.headers.get("content-type")?.includes("application/json")) {
+    const text = await response.text();
+    if (text.length <= 4096) { try { code = JSON.parse(text).code; } catch {} }
+  }
+  if (typeof code === "string" && ["runner_grant_expired", "runner_grant_invalid", "runner_pair_revoked", "runner_access_revoked"].includes(code)) {
+    return new RunnerGrantRejected(code as GrantRejectionCode, response.status);
+  }
+  return Object.assign(new Error(`Runner ${repo} ${action} failed (${response.status})`), { status: response.status });
+}
 export type Subscription = Exclude<Job["harness"], "local">;
+/** Refresh with a day in hand, rather than relying on being awake in the final hour. */
+export const RENEW_BEFORE_MS = 24 * 3600_000;
+export function renewalDue(pair: Pick<Pairing, "expires"> & Partial<Pick<Pairing, "token">>, now = Date.now()): boolean {
+  if (pair.expires > now + RENEW_BEFORE_MS) return false;
+  try {
+    // Scheduling only: the server still verifies the signed grant and live session on every call.
+    const ceiling = JSON.parse(atob(pair.token!.split(".")[0].replace(/-/g, "+").replace(/_/g, "/"))).user?.expiresAt;
+    if (Number.isFinite(ceiling) && pair.expires >= ceiling) return false;
+  } catch { /* Older/malformed local records do not suppress renewal. */ }
+  return true;
+}
+/** The heartbeat runs independently of a long local build, including grant renewal. */
+export async function maintainConnection(pair: Pairing, options: {
+  now?: () => number;
+  renew(pair: Pairing): Promise<void>;
+  heartbeat(pair: Pairing): Promise<unknown>;
+}) {
+  if (renewalDue(pair, options.now?.() ?? Date.now())) await options.renew(pair);
+  await options.heartbeat(pair);
+}
 export function authExpired(output: string): boolean {
   // Positive provider evidence only: configd/Seatbelt/network errors are not sign-in errors.
   return /(?:token|session|authentication|credentials?).{0,35}(?:expired|revoked|invalid)|(?:unauthorized|authentication_required|not logged in|please (?:log|sign) in|run (?:codex login|claude (?:auth )?login))|(?:invalid_grant|invalid_api_key|invalid api key|refresh_token_reused|refresh token.{0,80}already used|(?:sign|log) in again)/i.test(output);
@@ -34,7 +71,7 @@ export async function diagnose(options: {
   }
   if (!options.pairs.length) results.push({ check: "pairing", ok: false, detail: "No repositories paired. Run shiptorio-runner pair." });
   for (const pair of options.pairs) await check(`pairing:${pair.repo}`, async () => {
-    if (pair.expires <= Date.now()) throw Error();
+    if (pair.rejected || pair.expires <= Date.now()) throw Error();
     await options.pairing(pair);
   }, "Pairing expired/revoked or server unreachable. Check the network, then run shiptorio-runner pair if needed.");
   if (options.editHarness) {

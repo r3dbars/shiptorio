@@ -74,38 +74,59 @@ It never ends. There is always a bottleneck, always something to optimize, alway
 Start with code: issues, errors, PRs, the repo loop. Then grow into the rest of the business loop:
 marketing, customer acquisition, customer retention. Same game, more districts.
 
-## Current focus through Nov 4 (locked 2026-10-27)
+## Current focus: a great player experience (Justin, 2026-10-27 10:50)
 
-Justin approved this as the plan through the deadline (noon CT Wed Nov 4). Every thread and Codex follows it.
-Judges won't care about 20 features. They'll care about one real "oh wow" moment.
+"Focus less on the judges and just focus more on making this web app a great experience." The game itself is the
+priority now. The Nov 4 hackathon date still stands, but it no longer decides what we build. Every thread and Codex
+follows this order:
 
-1. **Prove the loop, then prove it again.** Ship r3dbars/Testing #5 for real, start to finish, then 5 to 10
-   more clean ships on Testing. Then show one autonomy level-up happening for real. That's the whole pitch.
-2. **Nail the vertical map.** Match Justin's Black Iron mockup closely (PR #204,
-   https://claude.ai/artifact/QR3JBEyauy8VAEGptsPGi9). No drift. Side-by-side screenshots before merging.
-3. **Build the judge experience.** A no-login demo mode plus a 2-minute demo video.
-4. **Feature freeze around Nov 1.** After that: bugs, polish and reliability only.
-5. **Park the big stuff until after.** Build mode, pricing, multi-repo empire and new mines stay behind
-   flags or on branches. Great for the post-hackathon story, not needed to win.
+1. **Make the core loop feel great to play.** Gameplay mechanics on phone and desktop, what you do with the UI vs
+   with objects in the world (machines, carts, belts, floors), and the repair-and-unlock progression. Design:
+   `docs/GAMEPLAY.md`, playbook https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8, A/B picks
+   https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR (Justin's picks get recorded in GAMEPLAY.md).
+2. **Prove the loop for real.** Real clean ships on r3dbars/Testing and one real autonomy level-up. The experience
+   only counts if it ships real PRs.
+3. **Nail the vertical map.** Match the Black Iron mockup (https://claude.ai/artifact/QR3JBEyauy8VAEGptsPGi9),
+   side-by-sides before merging.
+4. **Polish and reliability over new surfaces.** Fewer, better things on screen (principle 11).
+5. **Judge mode stays as it is** (live at /judge). No new hackathon-only work; Justin makes the demo video himself.
+6. **Still parked:** build mode, pricing, multi-repo empire, new mines (they show up later as unlocks in the
+   gameplay ladder).
 
-**Codex points at reliability, not features:** deploy guardrail, E2E tests, runner reliability,
-limits/quota visibility, security. Hold the other feature prompts until after Nov 4.
+**Codex points at reliability:** deploy guardrail, E2E tests, runner reliability, limits/quota visibility, security.
 
-## Current focus (Meta hackathon, submit by noon CT Wed Nov 4)
+## Gameplay picks (Justin, 2026-10-27)
 
-- **First playable loop:** real GitHub issue → Spark → fix PR (player's agent) → CI inspect / rework →
-  human merge → rocket.
-- **First signal sources (mines):** GitHub, Sentry, PostHog. Stripe is on hold.
-- **Gauntlet for Nov 4:** CI inspector, proof/verify bay, AI review, merge gate (`docs/LOOP.md`).
-- **Pitch:** solo founders and tiny teams with real users.
-- **Lanes:** Claude + Justin on `web/`; Codex on `server/`, `runner/`, Cloudflare. Hosted on shiptorio.com
-  (password-gated for now).
+The full approved rounds 1–4 and rollout policy are in [GAMEPLAY-PICKS.md](GAMEPLAY-PICKS.md).
+[GAMEPLAY.md](GAMEPLAY.md) preserves the early design context; the following is the round-1 summary:
+
+- **Setup is play:** you start in an abandoned foundry; picking the repo, connecting your AI and picking the first
+  issue are three repairs you watch happen. Locked parts are visible but broken (only the next one or two), you fix
+  them by tapping them, and a repair costs one real action, never points. Trust shows as lamps up the lift tower.
+- **Moving and looking:** the camera snaps to floors, opens on whatever needs you, tags show only on tap / hover,
+  tapping a machine opens a small callout on it.
+- **Deciding:** one card, always at the bottom. Later on the left, Continue on the right, every card swipes. Launch is
+  a big red hold button on the right with sound and a real press. Autonomy level-ups come as a card.
+- **Feel:** first rocket gets the full camera cut, later ones a corner flash; caught bugs show as a scar on the work;
+  a soft foundry hum is on by default.
+- **Refining:** gameplay is tuned through short A/B rounds on real game art that narrow in each time
+  (https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR). Justin's later 12:37/14:28 direction supersedes the earlier
+  `play`-flag rollout: approved picks are intended for everyone without a new play flag. Existing kill switches
+  and temporary `?attention=0` compatibility remain where implemented. These design records are not release receipts.
+
+## The loop today
+
+- **Playable loop:** real GitHub issue → Spark → fix PR (player's agent) → CI inspect / rework → human merge → rocket.
+- **Signal sources (mines):** GitHub, Sentry, PostHog. Stripe is on hold.
+- **Gauntlet:** CI inspector, proof/verify bay, AI review, merge gate (`docs/LOOP.md`).
+- **Who it's for:** solo founders and tiny teams with real users. Hosted on shiptorio.com (password-gated for now).
+- **Hackathon:** Meta, submit by noon CT Wed Nov 4. It's a date, not the goal.
 
 ## How to decide what's next
 
 Before starting something, check it against this list. Mostly-yes means go.
 
-- [ ] Is it on the **"through Nov 4" list** above (and is it before the ~Nov 1 freeze if it's a feature)?
+- [ ] Does it make the game **better to play** (the "Current focus" list above)?
 - [ ] Does it move the **current focus** loop closer to working end to end?
 - [ ] Does it make **play cascade into a real result** (PR, fix, reply, customer)?
 - [ ] Does it keep **Spark as the brain**, not the worker?
@@ -149,5 +170,16 @@ New high-level goals from Justin go here, dated, then get folded into the sectio
   check-in deck become one queue, research / mines / tools hidden until needed, no first-run Check in / Build fork.
 - 2026-10-27: Plan locked through Nov 4: prove the loop with real clean ships on Testing + one real autonomy
   level-up, nail the vertical map to the mockup, judge mode + 2-min video, feature freeze ~Nov 1, park build
-  mode / pricing / empire / new mines. Codex on reliability prompts only. See "Current focus through Nov 4".
+  mode / pricing / empire / new mines. Codex on reliability prompts only. Superseded the same morning by "great player experience first" (below).
 - 2026-10-26: Make independent self-hosting simple for open-source users bringing their own Meta API keys and GitHub App: one guided Cloudflare setup command, with a credential-free CI dry run.
+- 2026-10-27 10:50: Focus less on the judges, more on making the web app a great experience. Player experience is
+  now the main track (gameplay mechanics, world interactions, repair-and-unlock progression); judge mode is frozen
+  as is. See "Current focus".
+- 2026-10-27 11:17: Round 1 gameplay picks in (abandoned-foundry start, repairs by tapping the broken thing, Later
+  left / Continue right on every card, big red hold-to-launch button). A/B rounds are how gameplay gets refined from
+  now on. See "Gameplay picks" and `docs/GAMEPLAY.md`.
+- 2026-10-27 20:06: **Build as you go.** The dimmed tour look becomes how the game starts: camera parked, nothing
+  exists until you build it, and eight builds (repo tunnel, AI boiler, builder, first issue, planner, build, checks,
+  launch pad) rise in 5 to 8 animated seconds each, burst online with electricity and stamp themselves done while a
+  real first issue rides through. Behind `?buildout=1` until Justin has played it. Contract:
+  `web/src/buildout/CONTRACT.md`; plan https://claude.ai/artifact/T6puBBYVnZiFaBiqephirN.

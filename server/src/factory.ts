@@ -1,3 +1,7 @@
+import { adminPaused, auditAdmin } from "./admin-control";
+import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
+import { pruneExpiredDeliveryMarkers } from "./delivery-retention";
+import { accountIdentity } from "./account-identity";
 import { runnerAuthMove, type AuthHarness } from "./runner-health";
 import { planningFailure, planningHold, type PlanningRetry } from "./planning-retry";
 import { availableJobHarness, syncRunnerPower } from "./runner-power";
@@ -7,8 +11,8 @@ import { factorySpend } from "./spend";
 import { BudgetError, budgetAccount, budgetLimits, budgetUsage } from "./budget";
 import { runQuotaStatus, runQuota } from "./signup";
 import * as Sentry from "@sentry/cloudflare";
-import { currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
-import { redact } from "./redact";
+import { capture, currentTrace, inTrace, log, report, sentryOptions, type Trace, type TelemetryEnv } from "./telemetry";
+import { redact, redactText } from "./redact";
 import { Redactor } from "./redact";
 
 import { repoAccess, requireUser, validRepo } from "./authorization";
@@ -25,24 +29,26 @@ import { purgeInstallationTokens } from "./github";
 import { flagEnabled } from "./flags";
 import { DurableObject } from "cloudflare:workers";
 import { pollDevice, type DeviceRecord, type JoinRecord } from "./device-pairing";
-import { browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
+import { BrowserFrames, browserHeartbeat, browserSocketActive, browserSocketAllowed, browserSocketAuth, browserSocketEpoch, type BrowserSocketEnv } from "./browser-socket";
 
 import { consumeBudget, rateLimit, type Budget, type LimitResult } from "./rate-limit";
+import { unlockMove, signalWeight, type Diagnosis } from "@shiptorio/shared";
 import {
   SCIENCE_FOR,
   WebToServer,
+  canSetPriority,
   emptyResearch,
+  lineOrder,
+  withPriority,
   fallbackExperiment,
   insertCheck,
   researchBlocked,
   suggestResearch,
   techById,
   TECHS,
-  type Belt,
   type FactoryState,
   type FunnelWindow,
   type Item,
-  type Machine,
   type Move,
   type Patch,
   type ServerToWeb,
@@ -54,12 +60,26 @@ import {
   summarizeIsland,
   type IslandSummary,
   type AutonomyLevel,
+  GOAL_MOVE_ID,
+  GOALS,
+  GOAL_IDS,
+  goalMove,
+  goalsFromPick,
+  goalText,
+  tiltByGoals,
+  inferGoals,
+  type GoalGuess,
+  type Goals,
 } from "@shiptorio/shared";
 import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
-import { gameMaster, heuristicTriage, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
+import { initialFactoryState } from "./factory-initialization";
+import { inventoryCommand } from "./factory-inventory";
+import { gameMaster, heuristicTriage, readGoals, judgeOrbit, judgePermit, pickPower, pickResearch, pickFiles, planLocalTask, proposeExperiment, sparkConfigured, sparkModel, triage, writeFix, type GameMasterBrief, type GameMasterCall, type SparkEnv, type Triage } from "./spark";
 import { emptyBrain, recordThought, scoreShip } from "./brain";
+import type { SparkStep, Toolbox } from "./spark-tools";
+import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePaths } from "./spark-context";
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
@@ -69,9 +89,13 @@ import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelT
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
 import type { Signal } from "./sources";
 import { buildDeck, moveScope, enrichMove } from "./deck";
+import { closeGone, loadTaps, offerCards, offeredRow, openCards, purgeTaps, recordOutcome, recordTap, tapBrief, tapsEnabled, tapsReport, type NeverReason, type TapAction, type TapContext, type TapOutcome } from "./taps";
 import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } from "./bottleneck";
+import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
+import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
+import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
 import { experimentSignal, growthTick, MEASURE_ID, measureMachine, newExperiment, routeUsers } from "./growth";
 import { linkedRepo, linkRepo, postHogCreds, sentryCreds, markUsed, legacyCredentialOwner, type CredsEnv, type MineKind } from "./sources/creds";
@@ -89,6 +113,8 @@ export interface FactoryEnv extends AppCredentials, SparkEnv, CredsEnv, BrowserS
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   HOSTED_SPARK_ASSEMBLER?: string;
+  /** "off" stops the card tap log (docs/context/taps.md). */
+  TAPS_LOG?: string;
   DB: D1Database;
   FACTORY: DurableObjectNamespace<Factory>;
 }
@@ -114,6 +140,13 @@ interface Meta {
   repo: string;
   installationId: number;
 }
+
+/** deckBook.yes is keyed "kind|scope"; the goals collector wants Continues by kind. */
+const rollUpYes = (yes?: Record<string, number>) => {
+  const out: Record<string, number> = {};
+  for (const [key, n] of Object.entries(yes ?? {})) out[key.split("|")[0]] = (out[key.split("|")[0]] ?? 0) + n;
+  return out;
+};
 
 class FactoryBase extends DurableObject<FactoryEnv> {
   /** Dedicated probe object: storage read only, never initializes a repo or schedules work. */
@@ -146,9 +179,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private batchingDecisions = false;
+  private activeBrowserMoves = 0;
   private openMoves: Move[] | null = null;
   private deckBook: DeckBook | null = null;
   private deckRules: DeckRule[] | null = null;
+  /** Card ids on the deck that already have a card_taps row this showing (docs/context/taps.md); null until loaded. */
+  private tapsOpen: Set<string> | null = null;
+  private tapBriefCache: { at: number; brief: ReturnType<typeof tapBrief> } | null = null;
+  private tapsFailed = false;
 
   private accountErased = false;
 
@@ -163,8 +201,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         thoughts: state?.brain?.thoughts ?? [],
         approvals: await this.ctx.storage.get<{kind: string; scope: string; at: number; actionId: string}[]>("approvalEvents") ?? [],
         stages: await this.ctx.storage.get<StageHistory[]>("stageHistory") ?? [],
+        // docs/context/taps.md: every card this factory dealt and what was tapped.
+        taps: await this.accountTaps(),
       },
     });
+  }
+
+  /** This factory's card_taps rows, under its repo name or its retained repo-id key. */
+  private async accountTaps(): Promise<unknown[]> {
+    const meta = await this.ctx.storage.get<Meta>("meta");
+    const keys = [...new Set([meta?.repo, await this.ctx.storage.get<string>("githubDataKey")].filter((k): k is string => !!k))];
+    const rows: unknown[] = [];
+    for (const key of keys) rows.push(...(await this.env.DB.prepare("SELECT * FROM card_taps WHERE repo = ? ORDER BY shown_at").bind(key).all()).results);
+    return rows;
   }
 
   async accountConnectionStatus() {
@@ -195,7 +244,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
       this.state = null; this.meta = null;
-      this.openMoves = null; this.deckBook = null; this.deckRules = null;
+      this.openMoves = null; this.deckBook = null; this.deckRules = null; this.tapsOpen = null; this.tapBriefCache = null;
       this.running.clear();
     });
   }
@@ -219,7 +268,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   async observedCall(method: string, args: unknown[], trace: Trace): Promise<any> {
-    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "debugSnapshot", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
+    const allowed = ["allowDeviceStart", "startDevice", "startJoin", "takeJoin", "approveDevice", "readyDevice", "pollDevice", "activateRunner", "recordRunnerGrant", "rejectRunnerGrant", "runnerStatus", "planningRetries", "heartbeatRunner", "revokeRunner", "ensure", "connectMine", "disconnectMine", "pairRunner", "runnerJobs", "isRunnerPaired", "enqueueRunner", "claimRunner", "finishRunner", "enqueueGitHub", "enqueueSentry", "enqueueSupport", "debugSnapshot", "adminControl", "exportState", "summary", "exportAccountData", "eraseAccountData", "accountConnectionStatus", "closeAccountSockets", "pruneAccountDeliveries"];
 
     if (!allowed.includes(method)) throw new Error("Unknown factory RPC");
     return inTrace(trace, this.env, task => this.ctx.waitUntil(task), async () => {
@@ -229,6 +278,41 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         log("info", "factory.rpc", { method, durationMs: Date.now() - start });
         return result;
       } catch (error) { report(error, "factory.rpc_failed", { method, durationMs: Date.now() - start }); throw error; }
+    });
+  }
+
+  /** Internal RPC reachable only through the authenticated, audited admin route. No merge action exists. */
+  async adminControl(action: string, input: {level?: AutonomyLevel}) {
+    await this.load();
+    if(!this.state || !this.meta) throw new Error('Factory unavailable');
+    if(action === 'autonomy') {
+      if(!input.level || !['advisor','floor','build','lights_out'].includes(input.level)) throw new Error('Invalid level');
+      const book=await this.permitBook();
+      await this.savePermits({...book,ladder:{...ladderOf(book),level:input.level,since:Date.now()}});
+      return;
+    }
+    if(action === 'fast-forward') {
+      // Only scheduling delays. Never alter leases, inspection proof, strikes or launch permits.
+      for(const [key,value] of await this.ctx.storage.list<PlanningRetry>({prefix:'planningRetry:'})) {
+        await this.accountPut(key,{...value,retryAt:0});
+      }
+      await this.accountPut('posthogPoll',{nextAt:0,failures:0});
+      await this.accountAlarm(Date.now()+1);
+      return;
+    }
+    if(action !== 'reset-factory') throw new Error('Unknown control');
+    await this.ctx.blockConcurrencyWhile(async()=>{
+      const jobs=await this.runnerJobs();
+      if(this.running.size || this.batchingDecisions || this.initializing || this.activeBrowserMoves || jobs.some(j=>j.status==='running'||j.status==='planning') || this.state!.items.some(i=>i.prNumber&&i.state!=='launched')) throw new Error('Active work must finish first');
+      for(const [key] of await this.ctx.storage.list()) {
+        if(/^(runnerJob:|planningRetry:|delivery:)/.test(key)||['permits','openMoves','deckBook','approvalEvents','stageHistory','support','research','researchOffered','sparkResearch','posthogTraffic','pendingReviewComments','reconcileAt','reconcileCursor','runnerLastJobId','supportSeen'].includes(key)) await this.ctx.storage.delete(key);
+      }
+      await this.env.DB.prepare('DELETE FROM move_kind_rules WHERE repo=?').bind(this.meta!.repo).run();
+      this.openMoves=null;this.deckBook=null;this.deckRules=null;
+      this.state={repo:this.meta!.repo,baseBranch:this.state!.baseBranch,districts:this.state!.districts,...starterLine(),items:[],science:{red:0,green:0,grey:0,blue:0},trust:0.5,tick:0,sources:this.state!.sources};
+      await this.save();
+      await this.broadcast({type:'snapshot',state:this.state!});
+      await this.scheduleTick();
     });
   }
 
@@ -290,7 +374,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const boundHead = move.options.flatMap(o => o.actions).find(a => typeof a.args.headSha === "string")?.args.headSha;
       if (boundHead && item && boundHead !== item.inspection?.headSha) return false;
       const proposing = move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
-      if (proposing && item && (heldIssues.has(item.id) || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
+      if (proposing && item && (heldIssues.has(item.id) || item.priority === "park" || !runnerIssue(item) || !(["ore", "queued", "rejected"].includes(item.state)) || jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status)))) return false;
       const boundScars = move.options.flatMap(o => o.actions).find(a => typeof a.args.scarCount === "number")?.args.scarCount;
       if (proposing && item && boundScars !== undefined && boundScars !== (item.scars?.length ?? 0)) return false;
       const jobId = move.options.flatMap(o => o.actions).find(a => a.tool === "approve_runner_job")?.args.jobId;
@@ -303,7 +387,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
     const yes = await flagEnabled(this.env, "attention") ? this.deckBook!.yes : undefined;
-    const ranked = buildDeck(s, this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), { now, impliedMove, yes, rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
+    this.kickBrain(derived, now);
+    const brainCard = await this.brainCard(derived);
+    const ranked = buildDeck(s, [...this.openMoves!.filter(m => !m.id.startsWith("bottleneck:") && !suppressed(this.deckBook!, m)), ...(brainCard && !suppressed(this.deckBook!, brainCard) ? [brainCard] : [])], { now, impliedMove, yes, buildMoving: jobs.some(j => ["planning", "ready", "running"].includes(j.status)), rules: this.deckRules!.map(r => ({ ...r, kind: r.kind as NonNullable<Move["kind"]> })) });
     const offered = this.applyGameMaster(ranked);
     this.askGameMaster(ranked, metrics);
     for (const implied of offered.filter(m => m.id.startsWith("bottleneck:"))) {
@@ -319,6 +405,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     const previous = s.move;
     s.deck = deck; s.move = deck[0] ?? null;
+    await this.logDeck(deck);
     await this.accountPut("openMoves", this.openMoves);
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
@@ -328,9 +415,108 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     else if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
   }
 
+  // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------
+
+  private brainBusy = false;
+  private brainKickedAt = 0;
+
+  /** The brain's current card, from its stored memory. The "brain" flag (default off) gates it. */
+  private async brainCard(derived: { bottleneck: FactoryState["bottleneck"] }): Promise<Move | null> {
+    if (!await flagEnabled(this.env, "brain")) return null;
+    const cur = (await this.ctx.storage.get<BrainMemory>("brainMemory"))?.current;
+    if (!cur) return null;
+    const move = unlockMove(cur.bottleneck, cur.unlock, cur.shownAt);
+    // A queue-jam card stands on the jam's station, so the deck doesn't also deal the plain bottleneck card.
+    const jam = derived.bottleneck;
+    return cur.bottleneck.id.startsWith("factory:queue_jam") && jam ? { ...move, stage: jam.stage, focus: jam.stationId ?? jam.stage } : move;
+  }
+
+  /**
+   * One pass of the loop, off the tick: read due collectors, diagnose (throttled inside runDiagnose), store
+   * memory and the Diagnosis, and refresh the deck only when the card changed. One pass in flight; at most every 30s.
+   */
+  private kickBrain(derived: { bottleneck: FactoryState["bottleneck"]; stages: StageMetrics[] }, now: number) {
+    if (this.brainBusy || now - this.brainKickedAt < 30_000 || !this.meta) return;
+    this.brainBusy = true; this.brainKickedAt = now;
+    const run = async () => {
+      if (!await flagEnabled(this.env, "brain")) {
+        if (this.state?.holdingBack) { this.state.holdingBack = null; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack: null } }); }
+        return;
+      }
+      const s = this.state!, meta = this.meta!;
+      let token: Promise<string> | undefined;
+      const { cache, errors } = await collect({
+        state: s, repo: meta.repo, env: this.env, jam: { bottleneck: derived.bottleneck ?? null, stages: derived.stages },
+        storage: { get: key => this.ctx.storage.get(key) },
+        githubToken: () => token ??= installationToken(this.env, meta.installationId),
+        publicUrl: this.publicUrl(), yes: rollUpYes(this.deckBook?.yes),
+        posthogCreds: async () => await this.ctx.storage.get<boolean>("posthogLinked") ? postHogCreds(this.env, this.credentialScope(), this.redactor) : {},
+      }, await this.ctx.storage.get<SignalCache>("brainSignals") ?? emptySignalCache(), now);
+      for (const e of errors) this.log("warn", `Couldn't read ${e.source} signals: ${e.error.slice(0, 200)}`);
+      await this.accountPut("brainSignals", cache);
+      await this.decisionData();
+      const before = await this.ctx.storage.get<BrainMemory>("brainMemory") ?? emptyBrainMemory();
+      const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
+      const budget = await this.brainBudget();
+      const permits = await this.ctx.storage.get<PermitBook>("permits");
+      const result = await runDiagnose({
+        signals: tiltByGoals(cache.signals, s.goals), memory: before, now, goal: s.goal, playerFeedback: feedback, ctx: { repo: meta.repo }, budget,
+        think: sparkConfigured(this.env) ? brief => this.think("diagnose", { title: `${brief.signals.length} ${brief.signals.length === 1 ? "signal" : "signals"}, heaviest: ${brief.signals[0]?.title ?? "none"}`, target: derived.bottleneck?.stationId },
+          () => modelDiagnose(this.sparkEnv(), brief, { repo: meta.repo }, { factory: () => factoryBrief(s, undefined, permits, feedback) }),
+          out => "quiet" in out ? { outcome: "Nothing worth a card right now", reason: out.reason } : { outcome: `${out.bottleneck.title} → ${out.unlock.title}`, reason: out.reason }) : undefined,
+      });
+      await this.accountPut("brainMemory", result.memory);
+      const main = result.memory.current && cache.signals.find(x => x.id === result.memory.current!.bottleneck.signalIds[0]);
+      const holdingBack = result.memory.current ? { ...result.memory.current.bottleneck, severity: main ? Math.min(1, signalWeight(main, now)) : 0 } : null;
+      if (JSON.stringify(holdingBack) !== JSON.stringify(s.holdingBack ?? null)) { s.holdingBack = holdingBack; await this.save(); this.broadcast({ type: "patch", patch: { holdingBack } }); }
+      for (const c of result.cleared) this.log("info", `Unblocked: ${c.title}.`);
+      if (result.decided) {
+        const log = await this.ctx.storage.get<Diagnosis[]>("brainDiagnoses") ?? [];
+        await this.accountPut("brainDiagnoses", [result.diagnosis, ...log].slice(0, 50));
+      }
+      if (result.decided && !result.thought && result.fellBack === undefined && result.diagnosis.bottleneck) {
+        await this.note({ decision: "diagnose", by: "fallback", ms: 0, title: result.diagnosis.bottleneck.title, outcome: result.diagnosis.unlock?.title ?? "No card", reason: result.why, model: "heaviest-signal rule" });
+      }
+      const key = (m?: BrainMemory) => m?.current ? `${m.current.bottleneck.id}|${m.current.unlock.id}|${m.current.unlock.title}` : "";
+      if (key(before) !== key(result.memory)) await this.refreshDecisions();
+    };
+    void run().catch(error => this.log("error", `Bottleneck brain failed: ${String(error)}`)).finally(() => { this.brainBusy = false; });
+  }
+
+  /** The day's model budget as one fraction (calls or tokens, whichever is further along); null with no ledger. */
+  private async brainBudget(): Promise<{ used: number; limit: number } | null> {
+    const env = this.sparkEnv();
+    if (!env.DB || !env.budgetAccount) return null;
+    try {
+      const u = await budgetUsage(env, await env.budgetAccount());
+      return { used: Math.max(u.calls / Math.max(1, u.limits.calls), u.tokens / Math.max(1, u.limits.tokens)), limit: 1 };
+    } catch { return null; }
+  }
+
+  private async tapBrainCard(bottleneckId: string, choice: "continue" | "later") {
+    const memory = await this.ctx.storage.get<BrainMemory>("brainMemory");
+    if (!memory) return;
+    const signal = (await this.ctx.storage.get<SignalCache>("brainSignals"))?.signals.find(x => x.id === bottleneckId);
+    await this.accountPut("brainMemory", tapBrain(memory, bottleneckId, choice, signal ? signalWeight(signal, Date.now()) : 0, Date.now()));
+    this.brainKickedAt = 0; // the slot is free: look again on the next tick
+  }
+
+  /** Continue on an unlock card: run its one safe action (or the browser opens its link), and watch whether it worked. */
+  private async chooseBrainMove(card: Move, option: Move["options"][number]): Promise<boolean> {
+    if (!card.id.startsWith("unlock:")) return false;
+    if (option.id === "later") { await this.swipe(card, "defer"); return true; }
+    const action = option.actions[0];
+    if (action?.tool === "connect_source" && (action.args.kind === "sentry" || action.args.kind === "posthog")) await this.connectMine(action.args.kind);
+    else if (action?.tool === "inspect_bottleneck") this.log("info", card.why);
+    else if (action?.tool === "ask_goal") { await this.publishGauntletMove(null); await this.offerGoalMove(true); }
+    await this.recordApproval(card.kind ?? "unblock", moveScope(card, this.state!));
+    await this.tapBrainCard(card.id.slice(7), "continue");
+    return true;
+  }
+
   // ---------- game master: Spark ranks the deck and words the bottleneck card ----------
 
-  private gm: { key: string; call: GameMasterCall } | null = null;
+  private gm: { key: string; call: GameMasterCall; wip?: number } | null = null;
   private gmAsking: string | null = null;
   private gmLastAt = 0;
   private gmFails = 0;
@@ -352,7 +538,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       // A "do nothing" pick would stall autopilot on a card that has a real next step; ranking the card lower already says "later".
       const stalls = !m.options.find(o => o.id === pick)?.actions.length && m.options.some(o => o.recommended && o.actions.length);
       if (pick && !m.locked && !stalls) move = { ...move, options: move.options.map(o => ({ ...o, recommended: o.id === pick })) };
-      if (m.id.startsWith("bottleneck:") && call.bottleneck) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
+      // Spark's words quote the pile size it saw; once the pile changes, the card's own up-to-date words stand.
+      if (m.id.startsWith("bottleneck:") && call.bottleneck && this.gm!.wip === this.state!.bottleneck?.wip) move = { ...move, title: call.bottleneck.title, why: call.bottleneck.why };
       // The why line only describes the option Spark picked, so a locked or overruled card keeps its own reason.
       if (call.because[m.id] && !m.locked && !(pick && stalls)) move = { ...move, because: call.because[m.id] };
       return move;
@@ -375,12 +562,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       items: s.items.filter(i => i.state !== "launched").slice(0, 30).map(i => ({ id: i.id, title: i.title.slice(0, 120), kind: i.kind, state: i.state, district: i.district, scars: i.scars?.length ?? 0 })),
       cards: deck.map(m => ({ id: m.id, title: m.title.slice(0, 160), why: m.why.slice(0, 240), kind: m.kind, stage: m.stage, options: m.options.map(o => ({ id: o.id, label: o.label, recommended: o.recommended })) })),
       playerFeedback: plannerFeedback(this.deckBook!, this.deckRules!),
-    };
+    } as GameMasterBrief;
     const top = (id: string) => deck.find(m => m.id === id);
-    void this.rankBudgetLeft().then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
+    void this.rankBudgetLeft().then(async ok => { if (ok) brief.taps = await this.tapsForBrain(); return ok; }).then(ok => ok ? this.think("rank", { title: `${deck.length} decision ${deck.length === 1 ? "card" : "cards"}${s.bottleneck ? `, jam at ${s.bottleneck.stage}` : ""}`, target: s.bottleneck?.stationId },
       () => gameMaster(this.sparkEnv(), brief),
       call => ({ outcome: `Top card: ${call.bottleneck && call.order[0]?.startsWith("bottleneck:") ? call.bottleneck.title : top(call.order[0])?.title ?? "none"}`, reason: call.reason }))
-      .then(async call => { this.gm = { key, call }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
+      .then(async call => { this.gm = { key, call, wip: brief.bottleneck?.wip }; this.gmFails = 0; await this.refreshDecisions(); }) : undefined)
       .catch(error => { this.gm = null; this.gmFails = Math.min(this.gmFails + 1, 4); this.log("error", `Game master failed: ${String(error)}`); })
       .finally(() => { if (this.gmAsking === key) this.gmAsking = null; });
   }
@@ -409,8 +596,72 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.refreshDecisions();
   }
 
+  // ---------- the tap log (docs/context/taps.md): every card offered and what the player did ----------
+
+  /** The log is a side channel: a failing write is reported once per instance and never blocks a tap. */
+  private tapsError(error: unknown) {
+    if (!this.tapsFailed) report(error, "factory.taps_log_failed");
+    this.tapsFailed = true;
+  }
+
+  /** Logs cards new to the deck and closes the ones that left it untapped. Never breaks the deck. */
+  private async logDeck(deck: Move[]): Promise<void> {
+    if (!tapsEnabled(this.env) || !this.meta) return;
+    try {
+      const repo = this.meta.repo, now = Date.now();
+      if (!this.tapsOpen) { this.tapsOpen = new Set(await openCards(this.env.DB, repo)); await purgeTaps(this.env.DB, now); }
+      const ids = new Set(deck.map(m => m.id));
+      const fresh = deck.filter(m => !this.tapsOpen!.has(m.id));
+      const gone = [...this.tapsOpen].filter(id => !ids.has(id));
+      await offerCards(this.env.DB, await Promise.all(fresh.map(m => this.tapRow(m, now))));
+      await closeGone(this.env.DB, repo, gone, now);
+      this.tapsOpen = ids;
+    } catch (error) { this.tapsError(error); }
+  }
+
+  private async tapRow(move: Move, now: number) {
+    const s = this.state!, b = s.bottleneck;
+    // The model wrote it when the card carries the game master's reason or pick for it.
+    let by = this.gm && (this.gm.call.because[move.id] === move.because || this.gm.call.picks[move.id]) ? "spark" as const : "rule" as const;
+    const rank = s.brain?.thoughts.find(t => t.decision === "rank")?.reason;
+    const context: TapContext = { bottleneck: b ? { stage: b.stage, wip: b.wip, ageMinutes: Math.round(b.ageMs / 60000) } : null, ...(rank ? { rank } : {}) };
+    let play: string | undefined;
+    // Bottleneck-brain cards (`unlock:<bottleneckId>`, #388): grade them by play, with the signals the brain saw.
+    if (move.id.startsWith("unlock:")) {
+      const memory = await this.ctx.storage.get<{ current?: { bottleneck: { id: string; by: "spark" | "rule" }; unlock: { play: string } } }>("brainMemory");
+      const signals = await this.ctx.storage.get<{ signals: { id: string; severity: number }[] }>("brainSignals");
+      if (memory?.current && `unlock:${memory.current.bottleneck.id}` === move.id) { play = memory.current.unlock.play; by = memory.current.bottleneck.by; }
+      context.signals = (signals?.signals ?? []).slice(0, 10).map(x => ({ id: x.id, severity: Math.round(x.severity * 100) / 100 }));
+    }
+    return offeredRow(this.meta!.repo, move, moveScope(move, s), by, now, context, play);
+  }
+
+  private async logTap(card: Move, action: Exclude<TapAction, "gone">, optionId?: string, reason?: NeverReason): Promise<void> {
+    if (!tapsEnabled(this.env) || !this.meta) return;
+    try { await recordTap(this.env.DB, await this.tapRow(card, Date.now()), { action, optionId, reason }, Date.now()); }
+    catch (error) { this.tapsError(error); }
+  }
+
+  private async logOutcome(itemId: string, outcome: TapOutcome): Promise<void> {
+    if (!tapsEnabled(this.env) || !this.meta) return;
+    try { await recordOutcome(this.env.DB, this.meta.repo, itemId, outcome, Date.now()); } catch (error) { this.tapsError(error); }
+  }
+
+  /** The player's last 30 days of taps, boiled down for the game master. Cached 10 minutes. */
+  private async tapsForBrain(): Promise<ReturnType<typeof tapBrief> | undefined> {
+    if (!tapsEnabled(this.env) || !this.meta) return undefined;
+    if (this.tapBriefCache && Date.now() - this.tapBriefCache.at < 600000) return this.tapBriefCache.brief;
+    try {
+      const since = Date.now() - 30 * 86400000;
+      const brief = tapBrief(tapsReport(await loadTaps(this.env.DB, { repo: this.meta.repo, since, limit: 1000 }), since));
+      this.tapBriefCache = { at: Date.now(), brief };
+      return brief;
+    } catch (error) { this.tapsError(error); return undefined; }
+  }
+
   private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong") {
     await this.decisionData();
+    if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
     resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!));
     if (why === "defer") deferCard(book, move);
@@ -461,6 +712,28 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async publishRunnerMove(move: Move | null) { await this.publishDecision(move); }
 
   /** Posts Spark's plan and every tool call behind it on the GitHub issue, so the thinking is checkable in GitHub. */
+  /**
+   * Spark's read tools for one item at one commit: the repo (read, list, search), the issue thread, the PR and its
+   * checks when there is one, the factory and the mines. All read-only; see server/src/spark-tools.ts.
+   */
+  private async sparkToolbox(token: string, item: Item, sha: string, paths: string[], pr?: { headSha: string; diff: () => Promise<string> }): Promise<Toolbox> {
+    const repo = this.meta!.repo;
+    await this.decisionData();
+    const feedback = plannerFeedback(this.deckBook!, this.deckRules!);
+    const permits = await this.permitBook();
+    const issue = item.id.startsWith("gh-") ? Number(item.id.slice(3)) : undefined;
+    return {
+      paths: [...new Set(paths)].filter(runnerPathAllowed),
+      read: path => fileContent(token, repo, path, sha),
+      search: query => codeSearch(token, repo, query),
+      ...(issue ? { comments: () => issueComments(token, repo, issue) } : {}),
+      ...(pr ? { pr: pr.diff, ci: () => ciReport(token, repo, pr.headSha, item.failure) } : {}),
+      issue: () => JSON.stringify({ title: item.title, body: item.body ?? "", district: item.district, failure: item.failure, scars: item.scars }),
+      factory: () => factoryBrief(this.state!, item, permits, feedback),
+      signals: () => signalsBrief(this.state!, item),
+    };
+  }
+
   private async planComment(token: string, job: RunnerJob, item: Item): Promise<void> {
     if (!item.id.startsWith("gh-") || !job.plan) return;
     const triage = this.state?.brain?.thoughts.find(t => t.itemId === item.id && t.decision === "triage" && t.by === "spark");
@@ -490,7 +763,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
-    for (const item of s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber)) {
+    for (const item of lineOrder(s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber))) {
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
     const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
@@ -628,19 +901,41 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const lastId = await this.ctx.storage.get<string>("runnerLastJobId");
     const last = jobs.find(job => job.id === lastId);
     const paired = !!await this.ctx.storage.get("runnerPair");
-    return { paired, online: paired && !!presence && Date.now() - presence.seenAt < 20000,
+    const expires = await this.ctx.storage.get<number>("runnerGrantExpiry");
+    const repair = await this.ctx.storage.get<{code: string; at: number}>("runnerRepair") ??
+      (paired && expires && expires <= Date.now() ? {code: "runner_grant_expired", at: expires} : null);
+    return { needsRepair: !!repair, repairCommand: repair ? "shiptorio-runner pair" : null, repairReason: repair?.code ?? null,
+      paired, online: paired && !repair && !!presence && Date.now() - presence.seenAt < 20000,
       seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
       lastJob: last ? { id: last.id, status: last.status } : null };
   }
-  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); }
+  async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); await this.ctx.storage.delete("runnerRepair"); await this.ctx.storage.delete("runnerGrantExpiry"); }
   async pairRunner(): Promise<string> {
     await this.assertAccountActive(this.meta?.repo);
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const pairId = crypto.randomUUID();
     await this.accountPut("runnerPair", pairId); // Re-pairing revokes the previous token.
+    await this.ctx.storage.delete("runnerRepair");
+    await this.ctx.storage.delete("runnerGrantExpiry");
     return pairId;
   }
+  async recordRunnerGrant(pairId: string, expires: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      if (await this.isRunnerPaired(pairId)) await this.accountPut("runnerGrantExpiry", Math.max(expires, await this.ctx.storage.get<number>("runnerGrantExpiry") ?? 0));
+    });
+  }
+  async rejectRunnerGrant(pairId: string, code: "runner_grant_expired" | "runner_access_revoked", expires?: number) {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      const knownExpiry = await this.ctx.storage.get<number>("runnerGrantExpiry");
+      if (code === "runner_grant_expired" && knownExpiry && expires && expires < knownExpiry) return;
+      if (await this.isRunnerPaired(pairId)) {
+        await this.accountPut("runnerRepair", { code, at: Date.now() });
+        await this.ctx.storage.delete("runnerPresence");
+      }
+    });
+  }
   async revokeRunner(): Promise<void> {
+    await this.accountPut("runnerRepair", { code: "runner_pair_revoked", at: Date.now() });
     await this.ctx.storage.delete("runnerPair");
     await this.ctx.storage.delete("runnerPresence");
     await this.load();
@@ -669,29 +964,32 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async enqueueRunner(input: { itemId: string; harness: RunnerJob["harness"]; allowedPaths: string[]; needsApproval?: boolean }, requestedBy?: string): Promise<RunnerJob> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
 
-    return this.ctx.blockConcurrencyWhile(async () => {
-      if (!(await this.load()) || !this.meta) throw new Error("Factory not connected");
+    // Expected planning denials must leave the atomic callback normally: a throw
+    // inside blockConcurrencyWhile resets the entire object, even if callers catch it.
+    const result = await this.ctx.blockConcurrencyWhile(async () => {
+      if (!(await this.load()) || !this.meta) return new Error("Factory not connected");
       const item = this.state!.items.find(i => i.id === input.itemId);
       const rework = !!item?.prNumber && item.state === "rejected" && item.branch?.startsWith("shiptorio/runner-");
-      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) throw new Error("Item is not available to build");
-      if (rework && (!input.needsApproval || !canRework(item))) throw new Error("This PR requires player escalation, not another automatic rework offer");
-      if (!input.allowedPaths.every(runnerPathAllowed)) throw new Error("Unsafe approved path");
+      if (!item || !runnerIssue(item) || !["ore", "queued", "rejected"].includes(item.state) || item.prNumber && !rework) return new Error("Item is not available to build");
+      if (rework && (!input.needsApproval || !canRework(item))) return new Error("This PR requires player escalation, not another automatic rework offer");
+      if (!input.allowedPaths.every(runnerPathAllowed)) return new Error("Unsafe approved path");
       const jobs = await this.runnerJobs();
       for (const old of jobs.filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now())) {
         const stored = await this.ctx.storage.get<RunnerJob>(`runnerJob:${old.id}`);
         if (stored) await this.accountPut(`runnerJob:${old.id}`, { ...stored, status: "failed", error: "Lease expired; another attempt requires player approval." });
         old.status = "failed";
       }
-      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) throw new Error("This issue already has an active runner job; finish its plan or build first");
-      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) throw new Error("Factory job budget reached; finish the active runner job first");
+      if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return new Error("This issue already has an active runner job; finish its plan or build first");
+      if (this.env.SPARK_DISABLED === "1" || this.running.size + jobs.filter(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status)).length >= budgetLimits(this.env).jobs) return new Error("Factory job budget reached; finish the active runner job first");
       const hold = planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`));
-      if (hold) throw new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
+      if (hold) return new Error(`Planning paused after ${hold.failures} failed tries; retry at ${new Date(hold.retryAt).toISOString()}. ${hold.reason}`);
       const account = await this.runAccount(requestedBy);
-      if (!account) throw new Error("Run quota owner unavailable");
+      if (!account) return new Error("Run quota owner unavailable");
       const quota = await runQuotaStatus(this.env, account);
-      if (quota.used >= quota.limit) throw new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
-      const usage = await this.usage();
-      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) throw new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
+      if (quota.used >= quota.limit) return new Error(`Daily run quota reached; resumes at ${new Date(quota.resetsAt).toISOString()}`);
+      const usage = await this.usage().catch(error => { if (error instanceof BudgetError) return error; throw error; });
+      if (usage instanceof BudgetError) return usage;
+      if (usage.limits.disabled || usage.calls >= usage.limits.calls || usage.tokens >= usage.limits.tokens) return new BudgetError("Spark daily call/token budget exhausted; planning resumes after the limit is raised or at 00:00 UTC");
 
       const id = crypto.randomUUID();
       const job: RunnerJob = { ...input, repo: this.meta.repo, id, branch: `shiptorio/runner-${id}`, status: "planning", runAccount: account };
@@ -704,6 +1002,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.scheduleTick();
       return job;
     });
+    if (result instanceof Error) throw result;
+    return result;
   }
 
   /** Pick the power plant. The planner chooses among plants the fixed geothermal guard allows; the guard has the last word. */
@@ -736,7 +1036,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const job = [...jobs.values()].find(j => j.status === "planning");
     if (!job || !this.meta || !this.state) return;
     const trace = await this.ctx.storage.get<Trace>(`trace:${job.itemId}`);
-    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
+    return inTrace({ ...trace, requestId: trace?.requestId ?? currentTrace()?.requestId ?? crypto.randomUUID(), repo: this.meta.repo, itemId: job.itemId, job: job.id }, this.env, task => this.ctx.waitUntil(task), () => this.planRunnerJob(job));
   }
 
   private async planRunnerJob(job: RunnerJob): Promise<void> {
@@ -782,13 +1082,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           .then(files => files.filter(runnerPathAllowed));
         if (!job.allowedPaths.length) throw new Error("No safe file scope proposed");
       }
+      // Spark plans with the whole factory in reach: repo search and reads, the issue thread, the rework PR and its CI, scars, permits and mines.
+      const box = await this.sparkToolbox(token, item, job.baseSha!, [...tree.entries.filter(e => e.type === "blob").map(e => e.path), ...changedFiles.filter(f => f.status !== "removed").map(f => f.filename)],
+        job.reworkPr ? { headSha: job.baseSha!, diff: async () => diffText(changedFiles) } : undefined);
       const assignment = await this.think("plan", { title: item.title, itemId: item.id }, () => planLocalTask(this.sparkEnv(), { title: item.title, body: planningBody, district: item.district, failure: item.failure, scars: item.scars, playerFeedback: feedback }, job.allowedPaths,
-        path => fileContent(token, job.repo, path, job.baseSha!), async step => {
+        box, async step => {
           job.steps!.push(step);
           await this.accountPut(`runnerJob:${job.id}`, job);
           this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, approvedBy: "player", itemId: item.id });
-        }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
+        }, { widen: !!job.needsApproval }), a => ({ outcome: `${job.reworkPr ? "Re-planned after a scar" : "Plan"} for ${harnessLabel(job.harness)} in ${job.steps!.length} tool calls${a.heeded.length ? `, respecting ${a.heeded.length} of your past ${a.heeded.length === 1 ? "call" : "calls"}` : ""}`, reason: a.heeded[0] ? `${job.steps!.at(-1)?.reason ?? "Assigned the job."} Heeded: ${a.heeded[0]}` : job.steps!.at(-1)?.reason ?? "Read the issue and code, then assigned the job." }));
       validatePlan(assignment.plan, assignment.files);
+      if (!assignment.files.every(runnerPathAllowed)) throw new Error("Planned files fall outside the runner's path rules");
       job.plan = assignment.plan;
       job.allowedPaths = assignment.files;
       await this.routeRunnerJob(job, item);
@@ -819,6 +1123,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.githubStopped()) throw new Error("GitHub factory is archived or paused");
     const job = await this.ctx.blockConcurrencyWhile(async () => {
       if (await this.ctx.storage.get("runnerPair") !== pairId) throw new Error("Runner pairing revoked");
+      if (await adminPaused(this.env.DB,this.meta?.repo ?? (await this.ctx.storage.get<Meta>("meta"))?.repo)) return null;
       const running = await this.ctx.storage.list<RunnerJob>({ prefix: "runnerJob:" });
       const expired = [...running.values()].filter(j => j.status === "running" && j.deadline && j.deadline <= Date.now());
       for (const old of expired) {
@@ -1130,6 +1435,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.env.DB.batch([
       this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(key, meta.repo),
       this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(key, meta.repo),
+      this.env.DB.prepare("UPDATE card_taps SET repo = ? WHERE repo = ?").bind(key, meta.repo),
       this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`archived:${key}:installation:${meta.installationId}:repo:${meta.repo}`, `installation:${meta.installationId}:repo:${meta.repo}`),
     ]);
     await this.accountPut("githubDataKey", key);
@@ -1144,6 +1450,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       await this.env.DB.batch([
         this.env.DB.prepare("UPDATE pull_requests SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
         this.env.DB.prepare("UPDATE move_kind_rules SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
+        this.env.DB.prepare("UPDATE card_taps SET repo = ? WHERE repo = ?").bind(repo, retainedKey),
       ]);
       const archivedScope = `archived:${retainedKey}:installation:${this.meta!.installationId}:repo:${this.meta!.repo}`;
       if (repo === this.meta!.repo && installationId === this.meta!.installationId) await this.env.DB.prepare("UPDATE credentials SET scope = ? WHERE scope = ?").bind(`installation:${installationId}:repo:${repo}`, archivedScope).run();
@@ -1297,7 +1604,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (!(await this.load()) || !(await this.ctx.storage.get<boolean>("sentryLinked"))) return;
     if (!(await sentryCreds(this.env, this.credentialScope(), this.redactor)).clientSecret) return;
     await markUsed(this.env, "sentry", this.credentialScope()!);
-    for (const signal of normalizeSentry(this.redactor.value(payload), resource)) await this.ingestSignal(signal);
+    const signals = normalizeSentry(this.redactor.value(payload), resource);
+    // The brain's Sentry collector reads spikes off this hourly log. Assignments and resolves aren't errors.
+    if (resource !== "issue" || payload.action === "created" || payload.action === "unresolved") {
+      let pulses = (await this.ctx.storage.get<SentryPulse[]>(SENTRY_PULSES_KEY)) ?? [];
+      for (const signal of signals) if (signal.action === "upsert") pulses = recordSentryPulse(pulses, signal.externalId, signal.occurredAt, Date.now());
+      await this.accountPut(SENTRY_PULSES_KEY, pulses);
+    }
+    for (const signal of signals) await this.ingestSignal(signal);
   }
 
   /** Runs on the alarm. Every POLL_MS, with exponential backoff on errors and rate limits. */
@@ -1657,11 +1971,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   }
 
   private broadcastQueue: Promise<void> = Promise.resolve();
+  private browserFrames = new BrowserFrames(this.ctx.storage);
 
   private broadcast(msg: ServerToWeb) {
-    const text = JSON.stringify(this.redactor.value(msg));
+    const frame = this.browserFrames.frame(this.redactor.value(msg));
     const repo = this.meta?.repo ?? this.state?.repo;
     const deliver = async () => {
+      const text = await frame;
       // A player may have many sockets. Share the same revocable session check only
       // within this frame; the next frame must query D1 again (no authorization TTL).
       const access = new Map<string, Promise<boolean>>();
@@ -1669,9 +1985,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         try {
           const auth = ws.deserializeAttachment();
           if (!browserSocketAllowed(auth, this.env, this.socketEpoch) || !repo || auth.repo !== repo.toLowerCase() || !auth.user) { ws.close(1008, "Repository access revoked"); continue; }
-          const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login]);
+          const key = JSON.stringify([auth.user.id, auth.user.sessionHash, auth.user.expiresAt, auth.user.login, (auth as {adminView?:string}).adminView]);
           let allowed = access.get(key);
-          if (!allowed) { allowed = repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
+          if (!allowed) { allowed = (auth as {adminView?:string}).adminView ? activeAdminView(this.env,(auth as {adminView:string}).adminView,auth.user.id,auth.user.sessionHash,repo).then(Boolean) : repoAccess(this.env, auth.user, repo).then(Boolean); access.set(key, allowed); }
           if (!await allowed) { ws.close(1008, "Repository access revoked"); continue; }
           ws.send(text);
         } catch { try { ws.close(1008, "Sign in again"); } catch {} }
@@ -1686,7 +2002,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private log(level: "info" | "warn" | "error" | "success", text: string, itemId?: string) {
     text = this.redactor.text(text);
     log(level === "success" ? "info" : level, "factory.event", { message: text, itemId, repo: this.meta?.repo });
-    if (level === "error") Sentry.captureException(new Error(text), { tags: { itemId, repo: this.meta?.repo } });
+    if (level === "error") capture(new Error(text), { itemId, repo: this.meta?.repo });
     this.broadcast({ type: "log", level, text, at: Date.now(), itemId });
   }
 
@@ -1765,6 +2081,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.tick !== undefined) s.tick = p.tick;
     if (p.goal !== undefined) s.goal = p.goal;
+    if (p.goals) s.goals = p.goals;
     if (p.sources) s.sources = p.sources;
     if (p.experiments) s.experiments = p.experiments;
     // Bottlenecks are derived below; callers never set queue telemetry by hand.
@@ -1847,17 +2164,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, installationId);
     const tree = await repoTree(token, repo);
     if (await this.githubStopped()) return;
-    this.state = {
-      repo,
-      baseBranch: tree.branch,
-      districts: layoutMap(tree.entries).zones,
-      ...starterLine(),
-      items: [],
-      science: { red: 0, green: 0, grey: 0, blue: 0 },
-      trust: 0.5,
-      tick: 0,
-      sources: [githubStatus(this.env)],
-    };
+    this.state = initialFactoryState(repo, tree, this.env);
     await this.save();
   }
 
@@ -1998,6 +2305,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     });
     if (!committed) return;
     const { next, launched, auto } = committed;
+    await this.logOutcome(launched.id, launched.scars?.length ? "shipped_after_rework" : "shipped_clean");
     this.broadcast({ type: "patch", patch: { items: [launched], science: next.science, trust: next.trust, autonomy: next.autonomy, stations: next.stations, brain: next.brain } });
     await this.scheduleOrbitDeadline();
     await this.refreshDecisions();
@@ -2054,10 +2362,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } else {
         this.log("info", `AI review is reading PR #${pr} (${builder} built it, a different model reviews).`, item.id);
         // Docs that name code get that code, read at the PR head, so the reviewer can check the examples work.
-        const context = (await Promise.all(referencedFiles(files).map(async path => ({ path, content: (await fileContent(token, this.meta!.repo, path, headSha).catch(() => null))?.slice(0, 6000) }))))
+        const context = (await Promise.all(referencedFiles(files).map(async path => {
+          const content = await fileContent(token, this.meta!.repo, path, headSha).catch(() => null);
+          return { path, content: content === null ? undefined : redactText(content).slice(0, 6000) };
+        })))
           .filter((c): c is { path: string; content: string } => typeof c.content === "string");
-        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context),
-          v => ({ outcome: v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`, reason: v.reason }));
+        // The reviewer can read, list and search the repo at the PR head, the issue thread and CI before it rules.
+        const box = await this.sparkToolbox(token, item, headSha, await treePaths(token, this.meta.repo, headSha).catch(() => files.map(f => f.filename)), { headSha, diff: async () => diffText(files) });
+        const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
+        const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
+          v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
         const now = currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
@@ -2298,6 +2612,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   /** A station sent work back. Its lane's streak resets and any permit there is revoked. */
   private async noteRework(item: Item, why = `PR #${item.prNumber} needed rework`): Promise<void> {
+    await this.logOutcome(item.id, item.orbit?.state === "regressed" || /came back in orbit/.test(why) ? "came_back" : "rework");
     if (!item.lane) return;
     const { book, revoked } = recordRework(await this.permitBook(), item.lane);
     await this.savePermits(book);
@@ -2523,12 +2838,92 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return true;
   }
 
+  // ---------- player goals (shared/src/goals.ts) ----------
+
+  /**
+   * After the first rocket, guess what the player wants from the README and their taps, keep the guess on the state
+   * so the brain can weigh by it, and ask once on one card. A player pick ends it; Later parks it like any card.
+   */
+  private async offerGoalMove(revisit = false): Promise<void> {
+    const s = this.state;
+    if (!s || !this.meta || (!revisit && s.goals?.by === "player") || (s.metrics?.rockets ?? 0) < 1) return;
+    await this.decisionData();
+    if (this.openMoves!.some(m => m.id === GOAL_MOVE_ID)) return;
+    const guesses = await this.guessGoals();
+    const top = guesses[0];
+    if (top && s.goals?.by !== "player" && s.goals?.picks[0] !== top.id) await this.patch({ goals: { picks: guesses.slice(0, 3).map(g => g.id), by: "inferred", at: Date.now(), why: top.why }, goal: goalText({ picks: guesses.slice(0, 3).map(g => g.id), by: "inferred", at: Date.now() }) });
+    const move = goalMove(s, revisit ? undefined : s.goals, guesses, Date.now());
+    // Dropped cards come back no sooner than three days later, so a "not now" never turns into a nag.
+    const offeredAt = await this.ctx.storage.get<number>("goalOfferedAt") ?? 0;
+    if (!move || (!revisit && Date.now() - offeredAt < 3 * 86400000)) return;
+    await this.accountPut("goalOfferedAt", Date.now());
+    await this.publishGauntletMove(move);
+  }
+
+  /** README words + Continue taps + plugged-in sources, then Spark reorders. Cached until the taps or README change. */
+  private async guessGoals(): Promise<GoalGuess[]> {
+    const s = this.state!;
+    let readme = await this.ctx.storage.get<string>("goalReadme");
+    if (readme === undefined) {
+      readme = "";
+      try { readme = await fileContent(await installationToken(this.env, this.meta!.installationId), this.meta!.repo, "README.md", s.baseBranch) ?? ""; } catch { /* no README is fine */ }
+      await this.accountPut("goalReadme", readme.slice(0, 12000));
+    }
+    const yes: Record<string, number> = {};
+    for (const [key, n] of Object.entries(this.deckBook!.yes ?? {})) { const kind = key.split("|")[0]; yes[kind] = (yes[kind] ?? 0) + n; }
+    const sources = (s.sources ?? []).filter(x => x.state === "connected").map(x => x.kind);
+    const rule = inferGoals({ readme, yes, sources, rockets: s.metrics?.rockets });
+    const key = JSON.stringify([readme.length, yes, sources]);
+    const cached = await this.ctx.storage.get<{ key: string; guesses: GoalGuess[] }>("goalGuess");
+    if (cached?.key === key) return cached.guesses;
+    let guesses = rule;
+    if (!sparkConfigured(this.env)) {
+      await this.note({ decision: "goal", by: "fallback", ms: 0, title: "What the player wants", outcome: `Guessed ${GOALS[rule[0].id].label}`, reason: "No Meta API key, so README words and your taps made the guess.", model: "goal rule" });
+    } else {
+      try {
+        guesses = await this.think("goal", { title: "What the player wants", target: "factory" }, () => readGoals(this.sparkEnv(), { readme, guesses: rule, goals: GOAL_IDS.map(id => ({ id, label: GOALS[id].label })) }),
+          g => ({ outcome: `Guessed ${GOALS[g[0].id].label}`, reason: g[0].why || "Read the README and your past calls." }));
+      } catch { guesses = rule; }
+    }
+    await this.accountPut("goalGuess", { key, guesses });
+    return guesses;
+  }
+
+  /**
+   * The goal card, and the brain's set_a_goal / revisit_goal unlocks, whose Continue carries `ask_goal`: that deals
+   * the goal card right away. Returns false for every other move.
+   */
+  private async chooseGoalMove(moveId: string, optionId: string): Promise<boolean> {
+    const move = this.state!.move;
+    const asks = move?.id === moveId && move.options.find(o => o.id === optionId)?.actions[0]?.tool === "ask_goal";
+    if (asks) {
+      await this.publishGauntletMove(null);
+      await this.offerGoalMove(true);
+      return true;
+    }
+    if (!move || move.id !== moveId || moveId !== GOAL_MOVE_ID) return false;
+    const option = move.options.find(o => o.id === optionId);
+    await this.publishGauntletMove(null);
+    const goals = goalsFromPick(option?.actions[0]?.args.picks, Date.now(), this.state!.metrics?.rockets);
+    if (goals) await this.setGoals(goals, "card");
+    return true;
+  }
+
+  private async setGoals(goals: Goals, by: "card" | "menu"): Promise<void> {
+    await this.decisionData();
+    this.openMoves = this.openMoves!.filter(m => m.id !== GOAL_MOVE_ID);
+    await this.patch({ goals, goal: goalText(goals) });
+    const text = `Goal set: ${goals.picks.map(id => GOALS[id].label).join(", ")}. The factory hunts for what blocks it.`;
+    this.broadcast({ type: "log", level: "success", text, at: Date.now(), actor: "player", tool: "set_goals", approvedBy: "player", reason: by === "card" ? "You picked it on the goal card." : "You changed it in Make it yours." });
+    await this.refreshDecisions();
+  }
+
   // ---------- websockets (browsers) ----------
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.login }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request));
   }
 
   private async socketFetch(request: Request): Promise<Response> {
@@ -2540,26 +2935,36 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
     const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
     await this.load();
-    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
-    Object.assign(auth, { repo, user });
+    const adminView = await readAdminView(this.env,request);
+    if (viewCookieValue(request.headers.get("cookie")) && !adminView) return new Response("Admin view expired",{status:403});
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
+    Object.assign(auth, { repo, user, ...(adminView ? {adminView:adminView.idHash} : {}) });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
     const state = await this.load();
-    if (state && !(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
-    else if (state) server.send(JSON.stringify(this.redactor.value({ type: "snapshot", state } satisfies ServerToWeb)));
+    else if (state) {
+      const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
+      server.send(await this.browserFrames.frame(snapshot, false));
+    }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
+    // Restoring the map must not wait for a new planner turn (or provider latency).
+    if (!adminView && state) this.ctx.waitUntil((async () => {
+      if (!(await this.githubStopped())) { await this.decisionData(); beginCheckin(this.deckBook!); await this.refreshDecisions(); }
+    })());
     // The initial snapshot was authorized above. Other sockets may still be
     // revalidating queued frames; they must not hold this handshake open.
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
-    let auth: { login?: string } | null = null;
+    let auth: { login?: string; userId?: number } | null = null;
     try { auth = ws.deserializeAttachment(); } catch { /* Legacy socket; validation below closes it. */ }
-    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.login, repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
-      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { await this.broadcastQueue; }
+    return inTrace({ requestId: crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId), repo: this.meta?.repo }, this.env, task => this.ctx.waitUntil(task), async () => {
+      this.activeBrowserMoves++;
+      try { await this.handleBrowserMessage(ws, raw); } catch (error) { report(error, "factory.websocket_failed"); throw error; } finally { this.activeBrowserMoves--; await this.broadcastQueue; }
     });
   }
 
@@ -2569,7 +2974,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     let auth: unknown;
     try { auth = ws.deserializeAttachment(); } catch { /* Old sockets have no authenticated attachment. */ }
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { ws.close(1008, "Sign in again"); return; }
-    if (typeof raw !== "string" || raw === "ping") return;
+    if (typeof raw !== "string" || browserHeartbeat(ws, raw)) return;
     if (raw.length > 16384) return;
     for (const subject of [`user:${auth.userId ?? auth.login.toLowerCase()}`, auth.rateSubject ?? "ip:unknown"]) {
       if (!(await rateLimit(this.env, subject, "move")).allowed) { ws.close(1008, "Too many actions; retry later"); return; }
@@ -2578,7 +2983,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await authorizationRevoked(this.env.DB, auth.login, auth.issuedAt ?? 0)) { ws.close(1008, "GitHub authorization revoked"); return; }
     await this.load();
     const repo = this.meta?.repo ?? this.state?.repo;
-    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !await repoAccess(this.env, auth.user, repo, "write")) { ws.close(1008, "Repository write access required"); return; }
+    const viewId=(auth as {adminView?:string}).adminView;
+    const view=viewId && auth.user ? await activeAdminView(this.env,viewId,auth.user.id,auth.user.sessionHash,repo) : null;
+    if(viewId && !view?.writable) { ws.send(JSON.stringify({type:'log',level:'warn',text:'Viewing as player is read-only. Enable write mode in God controls.',at:Date.now()}));return; }
+    if (!repo || (auth as { repo?: string }).repo !== repo.toLowerCase() || !auth.user || !view?.writable && !await repoAccess(this.env, auth.user, repo, "write")) { ws.close(1008, "Repository write access required"); return; }
 
     let value: unknown;
     try { value = JSON.parse(raw); } catch { return; }
@@ -2586,6 +2994,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const parsed = WebToServer.safeParse(value);
     if (!parsed.success || !(await this.load())) return;
     const msg = parsed.data;
+    if(view) await auditAdmin(this.env.DB,auth.login,'view-write',repo,view.login,{message:msg.type});
     const trace = currentTrace();
     if (trace) { trace.repo = this.meta?.repo; if ("itemId" in msg && typeof msg.itemId === "string") trace.itemId = msg.itemId; }
     if (this.meta?.repo) Sentry.setTag("repo", this.meta.repo);
@@ -2600,14 +3009,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (!card) return; // stale or forged card ids never execute
       const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) ?? Object.values(this.deckBook!.decisions).find(d => `${d.move.id}:deferred` === card.id)?.move : card;
       if (!original) return;
-      if (msg.type === "defer_move") { await this.swipe(original, "defer"); return; }
-      if (msg.type === "dismiss_move") { await this.swipe(original, msg.why); return; }
+      if (msg.type === "defer_move") { await this.logTap(card, "later"); await this.swipe(original, "defer"); return; }
+      if (msg.type === "dismiss_move") { await this.logTap(card, "never", undefined, msg.why); await this.swipe(original, msg.why); return; }
       const option = card.options.find(o => o.id === msg.optionId);
       if (!option) return;
       if (card.id.endsWith(":deferred")) {
+        await this.logTap(card, msg.optionId === "keep-later" ? "later" : "never", msg.optionId, msg.optionId === "never-kind" ? "kind" : msg.optionId === "decide-class" ? "spark" : undefined);
         await this.swipe(original, msg.optionId === "never-kind" ? "kind" : msg.optionId === "decide-class" ? "spark" : "defer"); return;
       }
       // Existing handlers validate their own job/revision/head. Select any visible deck card temporarily.
+      await this.logTap(card, option.recommended ? "continue" : "other", option.id);
       s.move = card;
       const action = option.actions[0];
       if (action?.tool === "research" && !(await flagEnabled(this.env, "research", auth.login))) return;
@@ -2620,7 +3031,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.log("warn", "Run the missing checks before launching.");
       } else {
         const before = JSON.stringify(await this.runnerJobs());
-        const handled = await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
+        const handled = await this.chooseBrainMove(card, option) || await this.chooseSupportMove(card, option, (tool, ticketId, draftHash) => tool === "send_customer_reply" ? playerTap(ticketId, draftHash, playerLogin(auth)) : null) || await this.chooseResearchMove(msg.moveId, msg.optionId) || await this.chooseGoalMove(msg.moveId, msg.optionId) || await this.chooseLevelMove(msg.moveId, msg.optionId) || await this.choosePermitMove(msg.moveId, msg.optionId) || await this.chooseGauntletMove(msg.moveId, msg.optionId);
         if (!handled) await this.chooseRunnerMove(card, msg.optionId);
         const consumed = !this.openMoves!.some(m => m.id === card.id) || before !== JSON.stringify(await this.runnerJobs());
         if (consumed && option.recommended) {
@@ -2631,7 +3042,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.refreshDecisions(); return;
     }
-    switch (msg.type) {
+    const inventory = inventoryCommand(s, msg, () => crypto.randomUUID().slice(0, 6));
+    if (inventory.handled) {
+      if (inventory.stop) return;
+      if (inventory.patch) await this.patch(inventory.patch);
+    } else switch (msg.type) {
       case "send_reply":
         await this.sendSupportReply(playerTap(msg.ticketId, msg.draftHash, playerLogin(auth)));
         await this.refreshDecisions();
@@ -2648,6 +3063,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       case "set_goal":
         await this.patch({ goal: msg.text });
         break;
+      case "set_goals": {
+        const goals = goalsFromPick(msg.picks, Date.now(), s.metrics?.rockets);
+        if (goals) await this.setGoals(goals, "menu");
+        break;
+      }
       case "research":
         await this.research(msg.tech, "tree");
         break;
@@ -2679,53 +3099,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         else await this.patch({ sources: (s.sources ?? []).map((source) => source.kind === msg.kind ? { ...source, state: "not_connected", detail: "Disconnected" } : source) });
         break;
       }
-      case "place_machine": {
-        const m: Machine = {
-          id: `${msg.machineType}-${crypto.randomUUID().slice(0, 6)}`,
-          type: msg.machineType,
-          x: msg.x,
-          y: msg.y,
-          district: msg.district,
-          harness: msg.harness,
-          powerId: msg.harness === "spark" ? "steam-spark" : undefined,
-          tier: 1,
-          state: "idle",
-        };
-        await this.patch({ machines: [m] });
-        break;
-      }
-      case "remove_machine":
-        if (s.machines.some((m) => m.id === msg.id && m.state === "working")) break;
-        if (s.stations?.some((st) => st.machineId === msg.id)) break; // gauntlet stations stay on the line
-        await this.patch({
-          removed: [
-            { kind: "machine", id: msg.id },
-            ...s.belts.filter((b) => b.from === msg.id || b.to === msg.id).map((b) => ({ kind: "belt" as const, id: b.id })),
-          ],
-        });
-        break;
-      case "connect_belt": {
-        if (!s.machines.some((m) => m.id === msg.from) || !s.machines.some((m) => m.id === msg.to)) return;
-        const b: Belt = { id: `belt-${crypto.randomUUID().slice(0, 6)}`, from: msg.from, to: msg.to, carries: msg.carries };
-        await this.patch({ belts: [b] });
-        break;
-      }
-      case "move_machine": {
-        const m = s.machines.find((x) => x.id === msg.id);
-        const taken = s.machines.some((x) => x.id !== msg.id && Math.abs(x.x - msg.x) < 2 && Math.abs(x.y - msg.y) < 2);
-        if (m && !taken) await this.patch({ machines: [{ ...m, x: msg.x, y: msg.y }] });
-        break;
-      }
-      case "set_harness": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m?.type === "assembler" && m.state !== "working") await this.patch({ machines: [{ ...m, harness: msg.harness, powerId: msg.harness === "spark" ? "steam-spark" : m.powerId }] });
-        break;
-      }
-      case "set_module": {
-        const m = s.machines.find((x) => x.id === msg.machineId);
-        if (m) await this.patch({ machines: [{ ...m, module: msg.module }] });
-        break;
-      }
       case "route_item": {
         const item = s.items.find((i) => i.id === msg.itemId);
         const m = s.machines.find((x) => x.id === msg.machineId);
@@ -2733,6 +3106,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           await this.patch({ items: [{ ...item, state: "queued", machineId: m.id, updatedAt: Date.now() }] });
           await this.scheduleTick();
         }
+        break;
+      }
+      case "set_priority": {
+        // A cart's callout: Rush goes to the front of the line, Park sets it aside until Unpark (shared/src/priority.ts).
+        const item = s.items.find((i) => i.id === msg.itemId);
+        if (!item || !canSetPriority(item, msg.priority)) break;
+        await this.patch({ items: [{ ...withPriority(item, msg.priority), updatedAt: Date.now() }] });
+        this.log("info", msg.priority === "rush" ? `Rushed "${item.title}" to the front of the line` : msg.priority === "park" ? `Parked "${item.title}"` : `Unparked "${item.title}"`, item.id);
         break;
       }
       case "launch_pr": {
@@ -2777,9 +3158,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       await this.accountPut(key, clock);
     }
-    for (const [key, expiry] of await this.ctx.storage.list<number>({ prefix: "done:delivery:" })) {
-      if (expiry <= now) await this.ctx.storage.delete(key);
-    }
+    await pruneExpiredDeliveryMarkers(this.ctx.storage, now);
   }
 
   /** Repair missed webhooks without ever issuing a merge. Reuse the normal gated transitions. */
@@ -2849,6 +3228,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (meta) await this.env.DB.batch([
           this.env.DB.prepare("DELETE FROM pull_requests WHERE repo = ?").bind(dataKey!),
           this.env.DB.prepare("DELETE FROM move_kind_rules WHERE repo = ?").bind(dataKey!),
+          this.env.DB.prepare("DELETE FROM card_taps WHERE repo = ?").bind(dataKey!),
           ...(ownsName ? [this.env.DB.prepare("DELETE FROM repos WHERE full_name = ? AND archived_at IS NOT NULL").bind(meta.repo)] : []),
         ]);
         if (meta && dataKey?.startsWith("repo:")) await this.env.DB.prepare("DELETE FROM credentials WHERE scope = ?").bind(`archived:${dataKey}:installation:${meta.installationId}:repo:${meta.repo}`).run();
@@ -2882,6 +3262,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.load();
     await this.processDeliveries();
     if (await this.githubStopped()) return;
+    if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     if (!(await this.load())) return;
     await this.guard("pollPostHog", () => this.pollPostHog());
     await this.guard("tickSupport", () => this.tickSupport());
@@ -2910,7 +3291,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       } catch (error) { await this.reliabilityFailure(`tick:${item.id}`, error, item.id); }
     }
 
-    for (const item of s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS)) {
+    if (this.env.HOSTED_SPARK_ASSEMBLER !== "1") {
+      // The hosted assembler only stops here for want of a local agent. Once one is plugged in it isn't stuck,
+      // even after the queue empties, so the map stops saying "needs a look".
+      const presence = await this.ctx.storage.get<{ harnesses: string[]; seenAt: number }>("runnerPresence");
+      const stale = s.machines.filter((m) => m.type === "assembler" && m.harness === "spark" && m.state === "blocked");
+      if (stale.length && presence?.harnesses.length && Date.now() - presence.seenAt < 20000) await this.patch({ machines: stale.map((m) => ({ ...m, state: "idle" as const })) });
+    }
+    for (const item of lineOrder(s.items.filter((i) => i.state === "queued" && i.attempts < MAX_ATTEMPTS))) {
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       const jobs = await this.runnerJobs();
       if (jobs.some(j => j.itemId === item.id && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) continue;
@@ -2958,6 +3346,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.guard("offerGauntletMove", () => this.offerGauntletMove());
     await this.guard("offerPermitMove", () => this.offerPermitMove());
     await this.guard("offerLevelMove", () => this.offerLevelMove());
+    await this.guard("offerGoalMove", () => this.offerGoalMove());
     await this.guard("offerResearchMove", () => this.offerResearchMove());
     await this.guard("offerRunnerPlan", () => this.offerRunnerPlan());
     await this.guard("runLevel", () => this.runLevel());

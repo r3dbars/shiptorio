@@ -1,10 +1,10 @@
 ---
-title: Next move and check-in
-description: The Next Move card always shows the bottleneck. The check-in deck lets you clear everything waiting on you in two minutes.
+title: Needs you and check-in
+description: The Needs you card always shows the one thing waiting on you. The check-in deck lets you clear everything in two minutes.
 section: The loop
 order: 2
 ---
-# Next move and check-in
+# Needs you and check-in
 
 In an AI loop, the human is the bottleneck. So Shiptorio always points at you, and makes it quick to get out of the way.
 
@@ -14,9 +14,21 @@ Every tick, the factory looks at each stage of the line (intake, build, CI, veri
 
 If work is ready to build but no agent is plugged in, the bottleneck is power. Fix one bottleneck and the next one shows up. That's the game.
 
+## The Needs you card
+
+Always on screen at the bottom, one card at a time: anything stuck first, then work parked on your yes, then ideas. **Later** is on the left and parks it for a day. **Continue** is the tab down the card's right edge (or swipe right) and runs the Suggested option. **Details** shows the plan and the other options. When more cards are waiting, their edges peek out behind this one; tap the card to open the check-in deck.
+
+A **Launch** card is different: its right edge is a big red button you press and hold until the ring fills. A tap or a swipe never merges. Keyboard: hold Space or Enter. Screen reader: activate twice within five seconds. The hold plays four countdown clanks; sound captions announce when a hold starts, is cancelled, or sends a launch request. A request is not a completed launch.
+
+Add `?attention=0` to the URL to get the older Next Move card below for one more release.
+
+## Catching up when you return
+
+The comeback replay shows launches that really happened while you were away. If new factory state changes the shaft layout during replay, the replay ends and the live line returns immediately, including any PR waiting at the gate. You can also skip the replay.
+
 ## The Next Move card
 
-Always on screen at the bottom. It says:
+The older card, behind `?attention=0`. It says:
 
 - **what's stuck**, in one line with real numbers
 - **why it matters**
@@ -31,6 +43,8 @@ If nothing needs a card, it shows the bottleneck and a button to open that stati
 ## The check-in deck
 
 When more than one card is waiting, a **Check in** chip appears. Open it and you get a deck of up to 12 cards, ranked. Swipe through them and walk away.
+
+While your local runner is planning or handling an approved build, the general build-bottleneck reminder stays quiet. Plan approvals, connection problems, failed checks and Launch still get their own cards.
 
 ![The check-in deck](/docs/img/checkin.png)
 

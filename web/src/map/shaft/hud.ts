@@ -11,6 +11,7 @@ import { chipAnchor, cover, isLandscapePhone, isPhone } from "./frame";
 import { LEDGE_Z, MINES, TIERS } from "./layout";
 import { clickable, mineKey, type ShaftPlan } from "./plan";
 import type { ShaftStage, ShaftView } from "./stage";
+import { lineOrder, quietWord, WORDS, workOnLine, type Work } from "./waiting";
 
 export interface HudHost {
   pick(key: string): void; // a chip or ping was clicked: open that thing's panel
@@ -21,7 +22,8 @@ export interface HudHost {
 // the game's fixed plates over the map (App.tsx): the floor card and icons, the needs tray, the ticker, the controls
 const PLATES = [".hudtop", ".needs-slot", ".ticker", ".ctrl", ".judge-header", ".judge-caption"];
 
-const STATE_WORD: Record<string, string> = { IDLE: "IDLE", WORKING: "WORKING", BLOCKED: "NEEDS YOU" };
+// a quiet machine never says IDLE: it says what it's waiting on (waiting.ts)
+const STATE_WORD: Record<string, string> = { WORKING: "WORKING", BLOCKED: "NEEDS YOU" };
 const SHORT: Record<string, string> = {
   planner: "PLAN", ci: "CI", verify: "VERIFY", review: "REVIEW", gate: "GATE", launch: "PAD", orbit: "ORBIT", measure: "MEASURE",
   steam: "STEAM", dynamo: "DYNAMO", battery: "BATTERY", geothermal: "GEO",
@@ -70,6 +72,9 @@ export class ShaftHud {
   private readonly floors: HTMLElement;
   private readonly floorBtns = new Map<string, HTMLButtonElement>();
   private idleText = new Map<string, string>();
+  private lineAt = new Map<string, number>(); // each line machine's place, planner up to orbit
+  private work: Work[] = []; // where the real items stand on the line
+  private watching = new Set<string>(); // orbit watches with launches to watch
   private mineWaiting = new Map<string, number>();
   private reworkCount = 0;
   private measuredAt = 0;
@@ -163,6 +168,9 @@ export class ShaftHud {
     const pad = state.machines.find((m) => m.type === "launch_pad");
     if (pad) idle.set(pad.id, "merge = launch");
     this.idleText = idle;
+    this.lineAt = lineOrder(sp.plan);
+    this.work = workOnLine(items, sp.plan, this.lineAt);
+    this.watching = new Set((state.stations ?? []).filter((s) => s.kind === "orbit" && s.wip).map((s) => s.id));
     const waiting = new Map<string, number>();
     for (const i of items) {
       if (i.state !== "ore" && i.state !== "queued") continue;
@@ -235,12 +243,12 @@ export class ShaftHud {
       }
       const hot = t.s === "BLOCKED";
       const teaching = this.teaching.has(c.key);
-      // Quiet by default: a chip speaks up only when its machine has work in hand, is stuck, has a ping, or its mine
-      // has ore waiting. Idle ones come back when asked for (hover, keyboard on the map, selected, the tour), and
-      // as a faint name when the camera is down on one floor.
-      const busy = c.station ? hot || (t.s === "WORKING" && !!c.station.item) : t.s === "WORKING";
+      // Calm by default (Justin's playtest, 2026-10-27: "so many little labels popping up"): a busy machine shows
+      // its work by moving, not by talking. A chip speaks up only when its machine is stuck on you and there's no
+      // ping already saying so, or when asked for (hover, keyboard on the map, selected, the tour). Down on one
+      // floor, the machines there keep a faint name.
       const asked = teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected));
-      const loud = busy || pinged.has(c.key) || asked;
+      const loud = (hot && !pinged.size) || asked;
       const faint = !loud && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
       const shown = loud || faint;
       c.el.classList.toggle("faint", faint);
@@ -276,8 +284,8 @@ export class ShaftHud {
       p.c.el.style.transform = `translate(${Math.round(p.x - p.w / 2)}px,${Math.round(p.y - p.h / 2)}px)`;
     }
 
-    // item tags: wide screens, close enough to read
-    const tagsOn = !phone && stage.viewH * stage.zoom <= 40;
+    // item tags: wide screens, down on one floor and close enough to read (the whole shaft stays unlabeled)
+    const tagsOn = !phone && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
     const seen = new Set<IronItem>();
     if (tagsOn)
       for (const it of I.items) {
@@ -389,7 +397,15 @@ export class ShaftHud {
       const s = st.blocked ? "BLOCKED" : st.state;
       const q = st.M.queue();
       const idle = this.idleText.get(st.id);
-      const det = st.blocked ? st.prompt ?? "" : s === "WORKING" ? (st.detail || "") + (q > 1 ? ` · ${q} waiting` : "") : idle ?? st.detail ?? "";
+      if (s === "IDLE") {
+        // what it's waiting on: the next real item up the line, or you, when that item is parked on your card
+        const at = this.lineAt.get(st.id);
+        const I = this.world?.I;
+        const w = at === undefined || this.watching.has(st.id) ? null : quietWord(at, this.work, (id) => !!I?.stations[id]?.blocked, st.id);
+        if (w) return { s, word: w.word, det: w.det };
+        return { s, word: this.watching.has(st.id) ? WORDS.watch : WORDS.ready, det: idle ?? st.detail ?? "" };
+      }
+      const det = st.blocked ? st.prompt ?? "" : (st.detail || "") + (q > 1 ? ` · ${q} waiting` : "");
       return { s, word: STATE_WORD[s] ?? s, det };
     }
     if (c.mine) {

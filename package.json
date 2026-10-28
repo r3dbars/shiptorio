@@ -21,8 +21,13 @@
     "deploy": "bun run build && bun run --filter './server' deploy",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun test",
-    "check": "bun run typecheck && bun test && bun run build",
+    "test:storage": "bun server/scripts/test-storage-host.ts",
+    "test:parallel": "bun test --parallel=2",
+    "check": "bun run lint:observability && bun run typecheck && bun test && bun run build",
     "spark:check": "bun server/scripts/spark-check.ts",
+    "spark:loop": "bun server/scripts/spark-loop-check.ts",
+    "brain:eval": "bun server/scripts/brain-eval.ts",
+    "spark:eval": "bun server/scripts/spark-eval.ts",
     "fake:sentry": "bun --env-file=server/.dev.vars server/scripts/fake-sentry.ts",
     "test:fast": "bun run typecheck && bun run typecheck:tests && bun test && bun run playtest --check",
     "test:e2e": "playwright test",
@@ -32,7 +37,8 @@
     "autopilot": "bun --env-file=server/.dev.vars server/scripts/autopilot.ts",
     "fake:support": "bun --env-file=server/.dev.vars server/scripts/fake-support.ts",
     "stranger": "bun run build && node playtest/stranger/run.mjs",
-    "selfhost": "bun server/scripts/selfhost.ts"
+    "selfhost": "bun server/scripts/selfhost.ts",
+    "lint:observability": "bun scripts/lint-observability.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261026.1",

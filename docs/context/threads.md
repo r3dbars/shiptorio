@@ -1,5 +1,31 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
+## Locked dedicated Keychain restart (Codex, 2026-10-27)
+
+- Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
+
+
+## Steam & iron sound picks (Claude, 2026-10-27)
+
+- Soundboard thread owns all SFX and music now (the gameplay thread handed over `claude/gameplay-sound`). Justin picked every sound on the A/B soundboard (https://claude.ai/artifact/EdGMjvx9LP9xTfzNv9Cwe3); recipes live in `web/src/sound/steamIron.ts` with the take each one is (`PICKS`).
+- Machine taps play when the camera flies in (`tapFor` in steamIron, called from `useFactorySound`); close-ups get a mood layer (working / stuck / rework / idle, `moodOf`); the hold-to-launch button is a 4-tick countdown clank; card Continue / Later, unlock, merged, caught a bug and ore arriving replaced the chiptune versions. Repair sounds (`repair_pry`, `repair_boiler`, `repair_cart`) are ready for the first-run repair slice.
+- Music: Justin hasn't picked tracks yet, so the current score stays.
+
+## Let players play first, sign in later (Claude, 2026-10-27)
+
+- A bare visit plays the welcome tour, then drops signed-out players straight into the demo shop sandbox. GitHub sign-in is an unlock: the floor card's "Demo shop · Use your repo" chip, and a Suggested card after the first rocket. See docs/context/accounts.md "Play first". Codex prompt 3 (guest accounts, server side) builds on this; the intro story/look stays with "Fix the onboarding from Justin's playtest".
+
+## Build the agent loop that picks the bottleneck (Claude, 2026-10-27)
+
+- Loop core of the bottleneck brain (docs/BRAIN.md): `server/src/diagnose.ts` (one bottleneck + one unlock per pass, memory of Later/Continue/wins, throttle: main-signal change or 30 min, 24 a day, stops at half the model budget, rule fallback), `server/src/unlocks.ts` (playbook by signal kind; actions are only `inspect_bottleneck`, `connect_source`, `ask_goal`, everything else is a link), `server/src/signals/index.ts` (collector registry, `bind()` for collectors with their own ctx, plus the `factory:*` collector over bottleneck.ts).
+- Factory: `kickBrain` runs off the tick (one pass in flight, ≥30 s apart), stores `brainMemory`, `brainSignals`, `brainDiagnoses` (last 50, for the eval harness). Model calls go through `Factory.think("diagnose")`. Behind the `brain` flag, off by default.
+- Collector threads add one line to `COLLECTORS`. Eval entry point: `runDiagnose()` with an injectable `think`.
+
+## Give Spark tools and full understanding (Claude, 2026-10-27)
+
+- Owns Spark's tool layer: `server/src/spark-tools.ts` (toolbox, planner loop, review loop) and `spark-context.ts` (what the tools see). The "Make Meta Muse Spark central" thread keeps the audit (docs/context/spark-audit.md); this thread owns the planner and review prompts.
+- Planner: 8 turns over 9 read-only tools; review: 6 turns, reads the repo at the PR head. Acceptance cases: Testing #12 (`--coupon` vs `argv[2]`) and #13 (`$50 or more` vs `> 50`).
+
 ## Claude private Keychain persistence (Codex, 2026-10-26)
 
 - Live Testing #2 acceptance found a gap after #274: the isolated HOME had no `Library/Preferences` or default Keychain. Claude saved account metadata, but a new status process had no credential; neither a fake provider nor a signed-out native startup test proved persistence.
@@ -7,6 +33,17 @@
 - Real macOS test: create a non-secret credential through the isolated default store, read it in a second process and inside the agent sandbox, lock/unlock/restart, verify the personal default is unchanged, and verify the agent cannot read the unlock password. Focused subscription/native tests and runner typecheck pass; full Linux CI gates merge to avoid duplicate heavy local runs.
 - Runner bundle reinstall is required; PR includes the paste. Testing #2 still needs actual Claude sign-in and a real PR receipt. Justin authorized the allowance 21 → 22 for one attempt only; no build attempt has been submitted by this chat yet.
 
+## Codex: Testing real-loop acceptance (2026-10-26)
+
+Real Spark and the local Codex runner opened [Testing #12](https://github.com/r3dbars/Testing/pull/12)
+for issue #5. CI, docs verify and AI review passed, but executing the README coupon example
+on the exact PR head found an ignored flag; the run published a genuine failing manual status.
+Testing #13 also completed a real docs-only Spark/local Codex run. Both PRs remained open and
+unmerged in the read-only 2026-10-27 11:53 UTC recheck. The earlier Actions billing block and
+local deployment handoff are historical: Shiptorio Deploy40498676438 succeeded at61ef296.
+The receipt does not certify current runner/process state or a completed rework and in-game
+Launch. No factory PR was merged directly by this documentation run.
+[Evidence and remaining proof](testing-live-acceptance.md).
 
 ## Stranger E2E: latest status (2026-10-26)
 
@@ -49,6 +86,7 @@ is the only copy agents outside it (Codex) can see.
 
 | Thread | State | What it did / produced |
 | --- | --- | --- |
+| Design the core gameplay mechanics | waiting on Justin's A/B picks | `docs/GAMEPLAY.md`: core loop, six verbs (phone + desk), world vs UI rule, abandoned-foundry first run, repair-and-unlock ladder tied to real outcomes, 24 A/B decisions. Playbook https://claude.ai/artifact/QDvFEZePgx5bzBv7TBHZz8, A/B picks https://claude.ai/artifact/HTDQR39URzPniTeugbZGkR. Also VISION.md "Current focus" now = great player experience first (Justin 10:50); judge mode frozen as is. |
 | Design a calm attention system for players | v1 behind flag | `docs/ATTENTION.md` (PR #268). One Needs you tray, three kinds (approve / steer / suggested, `attentionOf` in shared), every card is Continue or Later, Continue streaks steer deck ranking + planner feedback. Behind flag `attention` (off by default; try `?attention=1`). Mockup: https://claude.ai/artifact/Qb9bkmAVvmPYtZdWt2LrQb |
 | Review Justin's GitHub repos | done | Found `r3dbars/shiptorio` (then just a README) |
 | Review Justin's Cloudflare account | done | Surveyed the account before setup. Nothing Shiptorio yet, R2 not enabled |
@@ -75,7 +113,7 @@ is the only copy agents outside it (Codex) can see.
 | Add progression and daily streaks | PR #172 | XP from real results, levels, daily streak + shields, unlocks on the island (glass lake, lanterns, gold pad), morning brief with the deck-size trend, check-in end tally, opt-in "you're the bottleneck" notification. `shared/src/progression.ts`, `web/src/ui/Progress.tsx`. Behind `?progress=1` (`?progress=demo` in the sim) |
 | Grow the factory across many repos | PR open | The empire, behind `?empire=1` (remembered; `?empire=0` off). Every other repo you connect floats as a satellite island beyond the main one, tied by a sky rail with crates (`web/src/map/empire.ts`: real island, districts and launch pad, flattened to ~25 draw calls, no shadows). Island chip in the top bar opens the overview: camera pulls back over every island, sheet rolls up shipped, weighted Automated %, waiting on you, and the most stuck island; tap an island to sail there (`web/src/ui/Empire.tsx`). `IslandSummary` + `rollup` in `shared/src/empire.ts`; `GET /api/empire` asks each repo's Factory `summary()` (player's own repos via `reposFor`). Sim shows shiptorio, testing, transcripted |
 | Always show a next move after rockets | PR open | #105 follow-up. `web/src/ui/whatsNext.ts`: when no Next Move card is open, one clear move is always picked from state (launch, check in, stuck station, research, connect a mine, near permit, place a builder, the line, grow) and shown in the Next Move slot, live and sim. Sim planner keeps dealing moves after scripted ore runs out (connect a mine, then "pull 3 more open issues"). Check: `node web/scripts/next-move-check.mjs` (10 rockets, card within 2s each) |
-| Rebuild the map as a vertical mine-to-launch factory | working | Justin 2026-10-27: the map goes vertical (VISION principle 10), and it's the map for everyone (the island stays behind `?world=iron` for one release). `web/src/map/shaft/`: quarry floor with mines in a cliff (inbox, GitHub, Sentry, PostHog) → ore lift → build floor (planner, assemblers) → tubes up → checks floor (CI, researched checks, verify, review) → freight lift → launch floor (gate, pad, rocket, orbit). Engine ported from the Black Iron mockup (`docs/art/black-iron/`), art in `shaft/modules/*.js` per `shaft/CONTRACT.md`, layout contract `shaft/layout.js`. Dev harness `web/shaft.html` + `web/scripts/shaft-shot.mjs`. In the game: `ShaftScene.ts` (FactoryScene's API), `plan.ts` (plan from FactoryState), `driver.ts` (real items drive it). The Black Iron thread owns `hud.ts`, `frame.ts`, `shaft.css` (chips, tags, pings, floor panel, phone framing); the HUD (#248) owns fixed chrome |
+| Rebuild the map as a vertical mine-to-launch factory | PR #311 | Justin 2026-10-27: the map goes vertical (VISION principle 10), and it's the map for everyone (the island stays behind `?world=iron` for one release). `web/src/map/shaft/`: quarry floor with mines in a cliff (inbox, GitHub, Sentry, PostHog) → ore lift → build floor (planner, assemblers) → tubes up → checks floor (CI, researched checks, verify, review) → freight lift → launch floor (gate, pad, rocket, orbit). Engine ported from the Black Iron mockup (`docs/art/black-iron/`), art in `shaft/modules/*.js` per `shaft/CONTRACT.md`, layout contract `shaft/layout.js`. Dev harness `web/shaft.html` + `web/scripts/shaft-shot.mjs`. In the game: `ShaftScene.ts` (FactoryScene's API), `plan.ts` (plan from FactoryState), `driver.ts` (real items drive it). The Black Iron thread owns `hud.ts`, `frame.ts`, `shaft.css` (chips, tags, pings, floor panel, phone framing); the HUD (#248) owns fixed chrome. The art passes (#311) finish every module against the mockup: planner, assemblers, launch floor, structure, power, belts, mine, and the checks floor with the merge gate (side-by-sides in project files `shiptorio/shaft/side-by-side/`). Static parts are merged into vertex-coloured meshes, so the default plan draws the stack in 1372 calls (build 823, checks 768, launch 578). Known limit: 7+ researched checks run the checks row off the deck's left end; `layout.js` needs a second row (after Nov 4) |
 | Design build mode and Codex task pack | parked (after Nov 4) | Justin 2026-10-27: optional Factorio / RCT-style build mode (place, move, rotate, rewire machines and belts). Spec `docs/BUILD-MODE.md`: every piece, its real pipeline meaning and ports, the per-tier grid on the vertical shaft (`web/src/map/shaft/layout.js`), the `Blueprint` model, `compile()` from layout to real pipeline config, safety rules, server draft/apply, web tools behind `?build=1`. 8-prompt Codex pack in project files `shiptorio/codex-prompts/build-mode.md`, parked until after Nov 4, then needs the shaft map on main |
 
 ## Codex: public judge replay (2026-10-26)
@@ -152,6 +190,17 @@ Rule since 18:44 UTC: every agent merges its own PR once CI is green, then check
 - [PR #275](https://github.com/r3dbars/shiptorio/pull/275), branch `codex/runner-edit-doctor`: add an explicit real subscription edit probe, proving exact file bytes and untouched canaries in a disposable checkout. Basic doctor stays inference-free.
 - Integrates the merged supervisor proposal fix in PR #272 rather than replacing or weakening its outer OS sandbox. This branch does not touch the real #170 job, pairing or watcher.
 - Fixture tests reject no-op success, extra/unapproved edits and provider failure. Real Codex 0.162.1 plus the unchanged OS boundary and scoped supervisor produced `answer = 1` → `answer = 2`; the unapproved file and outside canary were unchanged and git scope was exactly `example.ts`. This used immutable prerequisite #272 source plus the new shared job/doctor assembler helper in a disposable fixture. Public runner documentation describes the probe and nested Seatbelt failure. The full `doctor --edit codex` command reported PASS for Codex auth, sandbox, pairing and actual edit; it correctly exited nonzero for the separate missing Claude sign-in/sandbox. Integrated runner tests: 45 passed, 2 platform skips. Full `bun run check` passed after integration (726 tests, 2 platform skips; all workspace typechecks and production/web/standalone-runner build). CI/merge outcome is on PR #275.
+
+## Codex: self-host runner origin and live pairing (2026-10-26)
+
+- `codex/selfhost-runner-origin` fixes the Power panel install command to use the current origin and pass it to the shell side of the pipeline. The installer downloads that origin's bundle, saves its endpoint for later invocations, and rejects cross-server reuse of existing pairings. The CLI accepts self-hosted HTTPS origins and loopback-only HTTP.
+- Preserves the concurrently merged single-use join-code command: join arguments stay on the shell side of the same-origin installer pipeline; focused join-code and legacy device-pairing tests both pass.
+- Narrow `web/` lane exception: `RunnerConnection.tsx` and its command helper, needed to correct the self-host setup defect; no layout/art changes or shared protocol changes.
+- [PR #293](https://github.com/r3dbars/shiptorio/pull/293). Focused installation/update/pairing, saved-origin, cross-server refusal, HTTPS/loopback and shell-quoting tests passed; CI and stranger checks passed for the implementation.
+- Live acceptance on a fresh clone at `3c99157`: temporary Worker `shiptorio-selfhost-test-c78b8e`; the rendered Power command and install/manifest/bundle downloads all used its workers.dev origin. A real GitHub App and OAuth session, installed only on the disposable same-name repo, authorized the browser device-pairing flow. The downloaded runner saved a 0600 pairing; the real Worker accepted heartbeat and empty job polling (200), refused a different repo (401), and the UI showed online. A fresh `once` launch without SHIPTORIO_URL retained the origin/token; cross-server reinstall failed before network activity.
+- Pairing-only fixture: a synthetic local agent reports readiness; no real provider sign-in or agent build is claimed. All state and binaries used dedicated temporary directories, preserving the installed runner. Browser page identity/content, empty error/warning log, Power interaction and command/online screenshots were checked. Final combined version at `dd319f8` also passed the real one-paste join flow: its consumed code returns 410, and the installed bundle matches the deployment manifest. Cleanup is verified: token revoked (401), App/installation/repo deleted, temporary Worker/D1/KV/DO removed, isolated runner/token files deleted. No existing Worker was deployed or reconfigured.
+- Merge blocked by GitHub Actions account billing: final-head jobs refused to start before any steps ([run 40440466519](https://github.com/r3dbars/shiptorio/actions/runs/40440466519)); previous implementation checks were green before the required one-paste integration rebase. Final focused install/pairing/join/origin/docs tests and runner/web typechecks passed locally. PR remains open until final CI can run; no checks were bypassed.
+- Justin requested no existing Worker changes. Once green, the authorized squash merge must carry a workflow-skip marker so the main push does not trigger production Deploy. No repository deployment settings were changed.
 
 ## Codex (outside the Claude project)
 
@@ -303,4 +352,90 @@ The rejected production saves left all original account limits intact.
 
 ## Overnight paper-cut sweep (Codex, Oct 26–27, 2026)
 
-Small existing-behavior fixes only, one PR each; protected work excluded. Progress, unresolved findings and verification receipts: [papercuts.md](papercuts.md).
+Oct 26, 9:22–10:08 PM CT: #302 merged (browser QA imports), 160 page checks, 10 logged cuts; GitHub billing blocked Deploy and report #309. Protected work untouched. Receipts/resume: [papercuts.md](papercuts.md).
+## Runner overnight recovery
+
+Codex: eight-hour grant expiry plus final-hour, job-loop-only renewal explains the
+reproducible sleep gap left after #340's persistence fix. Extending bounded grants and
+renewing from the independent heartbeat; preserving revocation and saved work.
+
+
+## Codex merge helper
+
+- 2026-10-27: #342 head `1dbb4fc376a2cfe4673b66b770f31d689465ae71` passed required check/selfhost/Stranger and full manual browser/load [40564032048](https://github.com/r3dbars/shiptorio/actions/runs/40564032048). Squash merged as `7304199df5ed6259e7a8fff8d5402f21dfe67ab5`; [Deploy 40565415889](https://github.com/r3dbars/shiptorio/actions/runs/40565415889) green; live version matched and private factory returned 401 anonymously.
+- 2026-10-27: #346 was already merged. Updated its branch from main through merge commit `db5614982220d4eafeff107cf82e022b6c6f4501` (identical tree to deployed main at dispatch). Manual browser/load [40565878063](https://github.com/r3dbars/shiptorio/actions/runs/40565878063) passed all jobs. [Deploy 40566612966](https://github.com/r3dbars/shiptorio/actions/runs/40566612966) passed at verified descendant `1bdeeb4`; no second PR merge attempted.
+- 2026-10-27: #345 is already merged; updating the historical branch from main `1bdeeb4` returned a merge conflict. Owner notified in the PR; no code was edited. Its integrated code was covered by the green full manual run for #346.
+- 2026-10-27: #350 updated from main using GitHub update-branch, head `42b5bfcf1a64cf4fa1b16e4dd0aff3125d5bda82`. Full manual check [40567425171](https://github.com/r3dbars/shiptorio/actions/runs/40567425171) dispatched; merge awaits exact-head checks.
+- 2026-10-27: Justin replaced per-PR deployment with tested release batches every 30–60 minutes. Individual changes remain small reviewed PRs; a frozen combined batch gets full browser/load checks and one verified main deployment. The pending source-branch manual run for #350 was superseded, not counted as a pass.
+- First batch [#362](https://github.com/r3dbars/shiptorio/pull/362): #351 (`775d152`), #350 (`98be03e`), #352 (`4446c59`) and #353 (`e23ab13`) passed individual check/selfhost/Stranger and were squash-integrated into `release/2026-10-27-runner`. These are integration results, not production release claims.
+
+- Batch #362 also integrates #360 (overnight recovery) and this log. The combined runtime at `87ce41e` passed local full check: 993 passed, two existing platform skips, zero failures, plus types and builds. Final batch CI and production deployment remain pending.
+# Judge duration regression
+
+Codex: preserve the advertised 90-second public judge replay after ordinary sandbox
+ticks were slowed to 1.4 seconds. The unchanged iPhone end-to-end test caught the
+first tick failing to advance at 900 ms; only judge cadence returns to 900 ms.
+
+## Journey navigation readiness
+
+Codex: the desktop CI trace returned the correct factory document in 33 ms but
+delayed committing/booting it by about 29.5 seconds. Observe navigation commit
+explicitly, then retain URL, live snapshot, approval, PR, gauntlet and launch
+assertions. This is test synchronization, not a claim of improved product speed.
+
+
+## Preserve owner AI limits during deploy
+
+Codex: the operational production-owner upsert replaced raised call/token limits
+with NULL on every deploy. Preserve existing values, including explicit zero; a
+new owner row still uses normal defaults. Regression executes the actual deploy SQL
+twice and checks raised, zero and fresh-row cases. No usage ledger is reset.
+
+## Browser verification rendering mode
+
+Codex: the final release desktop trace spent tens of seconds on ordinary clicks
+and document readiness, leaving only six seconds for the final rocket assertion.
+Use Chromium WebGL-only SwiftShader fallback rather than SwANGLE for the whole
+compositor. Preserve actual 3D rendering and every test assertion, deadline and
+visual baseline. Extracted narrowly from the CI performance lane; full370 stays
+for the next batch. Failed40574810643 is retained.
+
+## See what players say yes and no to (Claude, Oct 27, 2026)
+
+Card tap log + eval: every dealt card, the planner's reason, the tap (Continue/other/Later/Never chip/untapped),
+time to decide and the approved work's outcome go to D1 `card_taps`. `/admin/taps` shows yes rates by kind and
+area, model vs rules, most skipped and outcome quality; `signals/taps.ts` is the brain's taps collector and the
+game master reads a short `taps` brief. Doc: [taps.md](taps.md). Meta API audit: [meta-api.md](meta-api.md) (native structured output behind `SPARK_NATIVE_JSON=1`; native tools/Responses API deferred). Migration 0016 may need renumbering in the batch.
+## Vertical judge clock and suite completion
+
+Codex:72219fb fixed the desktop journey (hosted2.2m pass) but the separate
+shaft replay relied on real timers and missed scar1 within60s. Drive its same
+900ms ticks explicitly and capture verifiedbeat4 whilepaused; preserveevery
+assertion and180s testdeadline. Nine serial desktop cases overran the12min job
+as the failed report printed, so only the wholejob budget is18min to retain
+complete evidence. No production runtime or visual baselines change.
+
+## Public repository guardrails (Codex, Oct 27, 2026)
+
+Added advisory CodeQL, grouped weekly dependency updates, private reporting/scope policy,
+and HTML response-header regression coverage preserving the preview nonce. Full-history
+secret-scan counts and validation receipts are recorded in the PR; see [security.md](security.md).
+
+## AI review eval (Codex, Oct 27, 2026)
+
+Day 2 gauntlet trust checkpoint: pinned 15 Testing patches (10 bad, 5 good), executable witnesses and a live production-reviewer harness. Results and limitations are generated in [EVAL.md](../EVAL.md) from raw receipts; no production reviewer changes.
+
+## Testing proving ground (Codex, 2026-10-27)
+
+[Testing PR #18](https://github.com/r3dbars/Testing/pull/18) adds CI and new tests only: executable README examples, source/built CLI coupon checks, and fixtures proving the gate rejects #12's silently ignored `--coupon SAVE10` form. Nine tests, types, build, and five gate fixtures pass locally; the real README gate remains red on main's stale npm Setup until the separately owned README rework lands. No merge of #12/#13 was attempted (#13 was already merged at inspection). All ten ladder drafts (2 docs, 3 reproduced bugs, 3 tests, 2 tiny features), scopes, and acceptance lines are in #18's description. Justin explicitly asked to hold publication until the queue clears: the live check found 12 stuck queued items and shared usage of 214/400 calls, 956879/1000000 tokens. Open nothing until a fresh queue/budget check permits the first batch, then release 3/3/3/1. Testing #18 stays draft and unmerged until its real README check is green; these receipts do not certify clean factory ships or an autonomy level-up.
+
+## Quiet live reconnect (Codex, 2026-10-27)
+
+Day 2 live-map checkpoint: replace sleeping sockets on tab return/network recovery,
+use heartbeat deadlines and jittered retry, and resync from one sequenced full snapshot.
+A small Reconnecting… notice waits three seconds; short blips retain the current map.
+Existing transport lifecycle tests move to web/test; factory.ts needs the small
+sequence/snapshot/heartbeat wiring because browser-socket.ts does not own delivery.
+Contract/journey assertions recognize seq/pong; the deck fixture drains background
+check-in work and the goal assertion allows transport metadata. Comeback, sound,
+shaft, source/index.ts and other active lanes remain untouched.

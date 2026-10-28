@@ -1,9 +1,10 @@
-import { ServerToWeb } from '../../shared/src';
+import type { ServerToWeb } from '../../shared/src';
+import { parseLiveMessage } from '../../web/src/source/schemas';
 
 // Production deliberately strips undeclared fields. Tests fail on them so emitting
-// a new field requires an explicit shared contract, even when parsing would succeed.
+// a new field requires an explicit gameplay or transport schema, even when parsing would succeed.
 export function assertWire(raw: unknown): ServerToWeb {
-  const parsed = ServerToWeb.parse(raw);
+  const parsed = parseLiveMessage(raw);
   const visit = (input: unknown, output: unknown, path: string) => {
     if (!input || typeof input !== 'object') return;
     for (const key of Object.keys(input)) {

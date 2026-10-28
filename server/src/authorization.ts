@@ -18,8 +18,10 @@ export async function requireUser(request: Request, env: AuthorizationEnv): Prom
 }
 
 export const validRepo = (repo: string) => /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) && !repo.split('/').some(p => p === '.' || p === '..');
-// D1 is checked even on cache hits: uninstall/removal revokes all users immediately.
-export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read"): Promise<number | null> {
+// GitHub collaborator checks are reused for 5 minutes. Idle runners re-checked every minute and drained the App's
+// hourly API bucket. D1 is checked even on cache hits: uninstall/removal revokes all users immediately.
+const ACCESS_TTL = 5 * 60 * 1000;
+export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: string, authority: "read" | "write" = "read", throwOnLookupError = false): Promise<number | null> {
   const repo = name.toLowerCase();
   if (!validRepo(repo) || user.expiresAt <= Date.now()) return null;
   if (!Number.isSafeInteger(user.id) || !/^[a-f0-9]{64}$/.test(user.sessionHash ?? '')) return null;
@@ -27,23 +29,43 @@ export async function repoAccess(env: AuthorizationEnv, user: AccessUser, name: 
   if (!sessionUser || !await signupAllowed(env,sessionUser.login)) return null;
   const row = await env.DB.prepare('SELECT installation_id FROM repos WHERE full_name = ?').bind(repo).first<{ installation_id: number }>();
   if (!row?.installation_id) return null;
-  const installed = await env.DB.prepare('SELECT id FROM installations WHERE id = ?').bind(row.installation_id).first();
-  if (!installed) return null;
-  const membership = await env.DB.prepare('SELECT installation_id FROM user_repos WHERE user_id = ? AND repo = ?').bind(user.id, repo).first<{ installation_id: number }>();
-  const userInstallation = await env.DB.prepare('SELECT installation_id FROM user_installations WHERE user_id = ? AND installation_id = ?').bind(user.id, row.installation_id).first();
-  if (!membership || membership.installation_id !== row.installation_id || !userInstallation) return null;
+  const checks = [
+    env.DB.prepare('SELECT id FROM installations WHERE id = ?').bind(row.installation_id),
+    env.DB.prepare('SELECT installation_id FROM user_repos WHERE user_id = ? AND repo = ?').bind(user.id, repo),
+    env.DB.prepare('SELECT installation_id FROM user_installations WHERE user_id = ? AND installation_id = ?').bind(user.id, row.installation_id),
+  ];
+  type Relationship = { id?: number; installation_id?: number };
+  let installed: Relationship | null | undefined, membership: Relationship | null | undefined, userInstallation: Relationship | null | undefined;
+  if (typeof env.DB.batch === 'function') {
+    // These three facts are independent after the repo lookup. Read them in one D1
+    // roundtrip on every request/frame; no authorization result is cached here.
+    const results = await env.DB.batch<Relationship>(checks);
+    if (results.length !== checks.length || results.some((result: { success?: boolean }) => result.success === false)) {
+      if (throwOnLookupError) throw new Error('Repository membership lookup unavailable');
+      return null;
+    }
+    [installed, membership, userInstallation] = results.map(result => result.results?.[0]);
+  } else {
+    // Lightweight D1 adapters can retain the original sequential read behavior.
+    installed = await checks[0].first<Relationship>();
+    if (!installed) return null;
+    membership = await checks[1].first<Relationship>();
+    userInstallation = await checks[2].first<Relationship>();
+  }
+  if (!installed || !membership || membership.installation_id !== row.installation_id || !userInstallation) return null;
   // Never promote a cached visibility grant into mutation authority. Separate
   // keys also make pre-upgrade read-only grants harmless for writers.
   const key = `access:v2:${authority === "write" ? "write:" : ""}${row.installation_id}:${repo}:${user.id}`;
   const cached = await env.CACHE?.get<{ expiresAt: number }>(key, 'json').catch(() => null);
-  if (cached && cached.expiresAt > Date.now() && cached.expiresAt <= Date.now() + 60000) return row.installation_id;
+  if (cached && cached.expiresAt > Date.now() && cached.expiresAt <= Date.now() + ACCESS_TTL) return row.installation_id;
   try {
     if (await repoInstallationId(env, repo) !== row.installation_id) return null;
     const token = await installationToken(env, row.installation_id);
     const result = await gh<{ permission: string; user: { id: number } }>(`/repos/${repo}/collaborators/${encodeURIComponent(sessionUser.login)}/permission`, token);
+    if (throwOnLookupError && (!Number.isSafeInteger(result.user?.id) || typeof result.permission !== "string")) throw new Error("Repository permission lookup unavailable");
     const permissions = authority === "write" ? ['write', 'maintain', 'admin'] : ['read', 'triage', 'write', 'maintain', 'admin'];
     if (result.user?.id !== user.id || !permissions.includes(result.permission)) return null;
-    await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + 60000 }), { expirationTtl: 60 }).catch(() => {});
+    await env.CACHE?.put(key, JSON.stringify({ expiresAt: Date.now() + ACCESS_TTL }), { expirationTtl: ACCESS_TTL / 1000 }).catch(() => {});
     return row.installation_id;
-  } catch { return null; } // API errors and suspended/uninstalled Apps fail closed.
+  } catch (error) { if (throwOnLookupError) throw error; return null; } // Deny every caller; runners distinguish unavailable from confirmed revocation.
 }

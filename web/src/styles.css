@@ -139,6 +139,7 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 .sp-tag.steel { color: var(--steel); }
 .sp-state { font-size: 12px; }
 .sp-what { margin: 0; font-size: 13px; line-height: 1.5; }
+.sp-eta { font-family: var(--pixel, monospace); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--amber, #ffb020); }
 .sp-stats { margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .sp-stats div { background: var(--iron-soot); border: 2px solid var(--iron-line); padding: 6px 8px; }
 .sp-stats dt { font: 400 10px/1.2 var(--pixel); letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase; }
@@ -237,6 +238,12 @@ a:focus-visible, button:focus-visible, [tabindex]:not([tabindex="-1"]):focus-vis
 .ci-act.do { color: var(--dark); background: var(--green); border-color: #000; }
 .ci-act.do .k { color: var(--dark); }
 .ci-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 78%; overflow-y: auto; z-index: 3; gap: 8px; background: var(--iron-panel-solid); animation: sheet-up 0.14s ease-out both; }
+.ci-details { max-height: 100%; overflow: hidden; }
+.ci-details-head, .ci-options { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.ci-review { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; }
+.ci-review > * { flex-shrink: 0; }
+.ci-review:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: -3px; }
+.ci-options { border-top: 2px solid var(--iron-line); padding-top: 8px; background: var(--iron-panel-solid); }
 .ci-sheet ol { margin: 0; padding-left: 18px; color: var(--dim); font-size: 13px; display: grid; gap: 4px; }
 .ci-close { align-self: flex-end; font: 400 10px var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--iron-plate); border: 2px solid var(--iron-line); padding: 7px 10px; cursor: pointer; }
 .ci-close:hover { border-color: var(--iron-line-hi); }
@@ -800,7 +807,11 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .tour-segs i { width: 14px; height: 14px; background: #1a1410; border: 2px solid #000; box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 0 1px var(--iron-line); }
 .tour-segs i.done { background: var(--iron-ok); box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.45), inset -2px -2px 0 rgba(0, 0, 0, 0.25), 0 0 0 1px #2f7a46; }
 .tour-segs i.now { background: var(--iron-amber); box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.5), inset -2px -2px 0 rgba(0, 0, 0, 0.2), 0 0 0 1px var(--iron-amber); animation: iron-ping 1s infinite; }
-.tour-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse at 50% 38%, transparent 45%, rgba(11, 8, 6, 0.55) 100%); }
+/* The tour keeps the factory in the dark: one pool of light where the beat is, the rest found by playing
+   (Justin's playtest, 2026-10-27). No machine names or crate tags either, only the beat's own marker. */
+/* one flat shade plus the pool, painted over the canvas (a CSS filter on the WebGL canvas costs a full extra pass) */
+.tour-vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: radial-gradient(ellipse 62% 48% at 50% 34%, transparent 30%, rgba(8, 6, 5, 0.72) 72%, rgba(5, 4, 3, 0.94) 100%), rgba(6, 4, 3, 0.36); }
+:root[data-tour] .maplabels .maplabel, :root[data-tour] .maplabels .tag, :root[data-tour] .maplabels .shaftfloors { display: none !important; }
 .ship-cel.high { place-items: start center; padding-top: calc(84px + var(--sat)); }
 /* the beat's highlight on the map: a pinging amber marker inside caution brackets, its tag on a caution-striped plate */
 :root[data-tour] .mapping i { border-radius: 0; width: 18px; height: 18px; margin: 2px; background: currentColor; border: 2px solid #000; animation: iron-ping 1s infinite; }
@@ -885,6 +896,8 @@ a.pill.hot:hover { background: var(--iron-amber-hi); }
 .seg button + button { border-left: 2px solid #000; }
 .seg button:hover:not(:disabled) { background: #3a2e26; }
 .seg button[aria-pressed="true"] { background: var(--iron-amber); color: var(--iron-on-amber); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.25); }
+.seg.goals { display: flex; flex-wrap: wrap; flex: 1; }
+.seg.goals button { flex: 1 1 30%; border-bottom: 2px solid #000; margin-bottom: -2px; }
 .seg button:disabled { color: var(--iron-dim); background: #140e0a; cursor: default; }
 .pickm { flex: 1; min-width: 0; background: var(--iron-soot); color: var(--iron-ink); border: 2px solid var(--iron-line); border-radius: 0; padding: 8px 10px; font: 400 14px var(--iron-mono); box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.5); }
 .pickm:hover { border-color: var(--iron-line-hi); }
@@ -1322,7 +1335,11 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .acard .atop span { color: var(--dim); font-weight: 400; }
 .acard .att { font: 700 13px/1.3 var(--mono); color: var(--iron-ink); }
 .acard .aw { font-size: 11px; line-height: 1.35; color: var(--dim); }
-.acard .abc { font-size: 11px; line-height: 1.35; color: var(--iron-aether); }
+.acard button.awhy { border-color: transparent; order: -1; } /* sits between Later and Details */
+.acard .aacts .alater { order: -2; }
+.acard button.awhy[aria-expanded="true"] { color: var(--iron-aether); }
+.acard .awhy-line { margin: 0; font-size: 12px; line-height: 1.35; color: var(--iron-ink); }
+.acard .awhy-line b { color: var(--iron-aether); }
 .acard .amore { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; font-size: 12px; max-height: min(40vh, 320px); overflow-y: auto; }
 .acard .amore p { margin: 0; }
 .acard .amore a { color: var(--iron-aether); }
@@ -1332,7 +1349,34 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 .acard button { font: 700 10px/1 var(--pixel); letter-spacing: .08em; text-transform: uppercase; padding: 10px 12px 9px; border: 2px solid var(--iron-line); background: transparent; color: var(--dim); cursor: pointer; }
 .acard button.ago { flex: 1; background: var(--ak); color: var(--ak-ink); border-color: #000; }
 .acard.suggest button.ago { background: transparent; color: var(--iron-aether); border-color: var(--iron-aether); }
-.acard button.atog { margin-left: auto; border-color: transparent; }
+.acard button.atog { border-color: transparent; }
+.acard .abody { display: contents; }
+/* play flag: Continue is a tab down the card's right edge, a launch is a big red hold button. */
+.acard.tabbed { flex-direction: row; gap: 0; padding-right: 0; }
+.acard.tabbed .abody { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; padding-right: 10px; }
+.acard.tabbed .aacts .atog { margin-left: auto; }
+.acard button.atab { flex: 0 0 72px; margin: -9px 0; border: 0; border-left: 2px solid #000; background: var(--ak); color: var(--ak-ink); font-size: 11px; }
+.acard.suggest button.atab { background: #1d3a35; color: var(--iron-aether); }
+.acard button.alaunch {
+  flex: 0 0 88px; margin: -9px 0; padding: 0; border: 0; border-left: 2px solid #000; background: #120806;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; touch-action: none; -webkit-touch-callout: none;
+}
+.acard button.alaunch .cap {
+  position: relative; width: 56px; height: 56px; border-radius: 50%;
+  background: conic-gradient(#ffd27a calc(var(--p) * 360deg), #2a1410 0) ; padding: 4px; box-sizing: border-box;
+}
+.acard button.alaunch .cap::after {
+  content: ""; position: absolute; inset: 5px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff8a73 0 12%, #e0301c 38%, #8e140a 100%);
+  box-shadow: 0 5px 0 #4a0904, 0 7px 0 #000; transition: transform .06s, box-shadow .06s;
+}
+.acard button.alaunch.down .cap::after { transform: translateY(4px); box-shadow: 0 1px 0 #4a0904, 0 2px 0 #000; }
+.acard button.alaunch .lbl { color: #ff8a73; font-size: 9px; }
+.acard button.alaunch.armed .cap { background: #ffd27a; }
+.acard button.alaunch:focus-visible { outline-offset: -4px; }
+/* More cards waiting: their edges peek out behind this one instead of a counter. */
+.acard.peek { margin-bottom: 6px; box-shadow: var(--iron-plate-shadow), 0 9px 0 -5px #2e2119, 0 11px 0 -5px #000; }
+.acard.peek2 { margin-bottom: 12px; box-shadow: var(--iron-plate-shadow), 0 9px 0 -5px #2e2119, 0 11px 0 -5px #000, 0 17px 0 -10px #221812, 0 19px 0 -10px #000; }
 .acard button:focus-visible, .aask button:focus-visible, .arest button:focus-visible { outline: 3px solid var(--iron-focus); outline-offset: 2px; }
 .aask, .arest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 10px; background: rgba(14, 10, 8, 0.94); border: 2px solid var(--iron-line); outline: 2px solid #000; font-size: 11px; color: var(--dim); }
 .aask div { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1343,3 +1387,9 @@ canvas.map:focus-visible { outline: 3px solid var(--iron-focus); outline-offset:
 
 /* The default screen is the map, one card and two counters: the shaft's floor buttons come out with the Menu. */
 .app:not(.tools-out) .maplabels.shaft .shaftfloors { display: none; }
+
+/* Play first, sign in later: the sandbox's floor-card chip says it's a demo and is the way to your own repo. */
+.play-chip { text-decoration: none; color: var(--iron-amber); padding: 4px 10px !important; }
+.play-chip > span { display: flex; align-items: baseline; gap: 8px; font: 700 12px/1.2 var(--pixel); letter-spacing: 0.08em; text-transform: uppercase; }
+.play-chip small { color: var(--ink); }
+.play-chip:hover small, .play-chip:focus-visible small { color: var(--iron-amber); }

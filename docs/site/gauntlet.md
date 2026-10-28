@@ -46,11 +46,11 @@ Researched checks (like the Secret scanner) slot in right after CI. See [Researc
 
 ## AI review
 
-**Tag: second opinion.** A hostile reviewer reads the PR diff and looks for what tests miss: the wrong approach, swallowed errors, security holes, scope creep.
+**Tag: second opinion.** A hostile reviewer reads the PR diff and can inspect the repository at the PR head, issue discussion, CI, factory history and related signals. It looks for what tests miss: the wrong approach, swallowed errors, security holes and scope creep.
 
 - The reviewer is **Meta Muse Spark**, not the agent that built the PR, so the builder never grades its own work.
-- It answers pass or rework, with up to five findings.
-- The verdict is posted as a comment on the PR: "AI review passed" or "AI review sent this back".
+- It has up to six turns to read and answer pass or rework, with up to five findings. Commands and examples added by the diff must be checked against the code they run.
+- The verdict is posted as a comment on the PR: "AI review passed" or "AI review sent this back". When it used read tools, the comment includes a collapsed **How it checked** list.
 
 ## Merge gate
 
@@ -59,7 +59,7 @@ Researched checks (like the Secret scanner) slot in right after CI. See [Researc
 > **Launch #N: the PR title**
 > CI, the verify bay and AI review all passed. Your merge launches the rocket.
 
-Tap **Launch #N** on the Next Move card, or swipe right in the [check-in deck](/docs/check-in). Right before merging, Shiptorio checks again that the PR hasn't changed since its checks ran and that CI is still green. If the PR moved, it goes back through the gauntlet. Then it squash-merges, and the rocket launches.
+On the **Needs you** card, press and hold the big red button until its ring fills (under a second). A tap does nothing and letting go early cancels, so nothing merges by accident. Swiping the card won't launch either. On a keyboard, hold Space or Enter. With a screen reader, activate the button once to arm it and again within five seconds to launch. When the ring fills, Shiptorio sends the launch; releasing early cancels. The rocket only goes up once the checks below pass. In the [check-in deck](/docs/check-in) you can still swipe right on a proven ship card. Right before merging, Shiptorio checks again that the PR hasn't changed since its checks ran and that CI is still green. If the PR moved, it goes back through the gauntlet. Then it squash-merges, and the rocket launches.
 
 **Later** puts the card away for ten minutes.
 

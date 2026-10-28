@@ -1,29 +1,45 @@
+import { fetchApprovedSource } from "./approved-source";
+import { runnerOrigin } from "./origin";
 import { freeSubscriptions, prepareAgentHome, subscriptionArgs, subscriptionSignedIn, subscriptionCredentialVersion } from "./subscriptions";
 import { assembleCodex } from "./codex-assembler";
 import { probeAssemblerEdit } from "./edit-probe";
 import { mkdir, lstat, realpath, rm, mkdtemp } from "node:fs/promises";
-import { chmod } from "node:fs/promises";
 import { resolve } from "node:path";
 import { agentEnvironment, assemblerPrompt, assertCheckCommand, harnessArgs, validateChanges } from "./policy";
 import { TEST_PATH, resetVerifyBase, verifyRegression } from "./verify";
 import { assertVerificationPlatform, checkSandbox, type CheckSandbox, verificationGit } from "./sandbox";
 import { assemblerContext, snapshotApproved, publishApproved } from "./publication";
-import { runnerHome, loadPairings, savePairing, pairMachine, joinMachine, type Pairing } from "./pairing";
+import { runnerHome, loadPairings, pairMachine, joinMachine, type Pairing } from "./pairing";
+import { loadConnections, persistRenewal, persistGrantRejection } from "./grant-store";
 
 
 import { atomicJson, Backoff, recoverWorkspace, replayReceipts, retryable } from "./recovery";
-import { AuthFailures, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
+import { AuthFailures, RunnerGrantRejected, runnerResponseError, maintainConnection, renewalDue, agentOffline, authExpired, diagnose, loginCommand, type Subscription } from "./health";
 import { tmpdir } from "node:os";
 const blocked = new Set<Subscription>();
 const authFailures = new AuthFailures();
+const rejectedGrants = new Map<string, string>();
 class SignInExpired extends Error {}
 import { responseSchemas, type Job } from "./messages";
 import { detectLocalModel, localModelConfig, runLocalAssembler } from "./local-model";
 import { redactText } from "../../server/src/redact";
 const root = process.env.SHIPTORIO_RUNNER_ROOT ? runnerHome() : process.env.SHIPTORIO_REPO ? resolve(import.meta.dir, "..") : runnerHome();
+// Resolve the installation origin before provider probes or authenticated runner calls.
+// Pre-self-host installations have no server-url file and belong to shiptorio.com.
+const originFile = Bun.file(resolve(root, "server-url"));
+const pinnedOrigin = await originFile.exists() ? (await originFile.text()).trim() : (await loadPairings(root)).length ? "https://shiptorio.com" : undefined;
+const base = runnerOrigin(process.env.SHIPTORIO_URL || pinnedOrigin || "https://shiptorio.com", pinnedOrigin);
+async function pinPairingOrigin() {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await Bun.write(originFile, base + "\n", { mode: 0o600 });
+}
 const checkout = process.cwd();
 const cleanEnv = agentEnvironment(process.env);
-const authHome = await prepareAgentHome(root);
+let claudeKeychainUnavailable = false;
+const authHome = await prepareAgentHome(root, () => {
+  claudeKeychainUnavailable = true;
+  console.error("Claude Code is unavailable: its private Keychain could not be unlocked. Codex can still run. Repair the private Keychain before signing in to Claude; credentials have been preserved.");
+});
 const harnessPath = (h: Exclude<Job["harness"], "local">) => Bun.which(h === "codex" ? "codex" : "claude");
 const localFile = Bun.file(resolve(root, "local-model.json"));
 const local = localModelConfig(process.env, await localFile.exists() ? await localFile.json() : null);
@@ -56,11 +72,13 @@ if (process.argv[2] === "geothermal") {
   process.exit(0);
 }
 async function signedInHarness(h: Job["harness"]) {
+  if (h === "claude_code" && claudeKeychainUnavailable) return false;
   if (h === "local") return localStatus?.ok === true;
   const executable = harnessPath(h);
   return executable ? subscriptionSignedIn(h, executable, authHome) : false;
 }
 async function loginHarness(h: Job["harness"]) {
+  if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Repair the private Keychain before signing in to Claude; no personal Keychain fallback is allowed.");
   if (h === "local") throw new Error("Local models do not need subscription login");
   console.log(`Sign in to ${h === "codex" ? "Codex" : "Claude Code"} for Shiptorio. This dedicated local login keeps your normal agent home outside job sandboxes.`);
   const child = Bun.spawn([harnessPath(h)!, ...subscriptionArgs(h, true)], { cwd: authHome, env: agentEnvironment(process.env, authHome), stdin: "inherit", stdout: "inherit", stderr: "inherit" });
@@ -68,8 +86,6 @@ async function loginHarness(h: Job["harness"]) {
   // Keychain-only reauthentication need not change a credential file. Wake a watching runner's auth guard.
   if (h === "claude_code") await Bun.write(resolve(authHome, ".claude/.shiptorio-login"), crypto.randomUUID(), { mode: 0o600 });
 }
-const base = process.env.SHIPTORIO_URL || "https://shiptorio.com";
-if (!["https://shiptorio.com", "https://shiptorio.dev"].includes(base) && !/^http:\/\/(localhost|127\.0\.0\.1):[0-9]{4,5}$/.test(base)) throw new Error("Unsupported Shiptorio origin");
 if (process.argv[2] === "doctor") {
   const args = process.argv.slice(3);
   if (args.length && (args.length !== 2 || args[0] !== "--edit" || args[1] !== "codex")) throw new Error("Usage: shiptorio-runner doctor [--edit codex]");
@@ -89,6 +105,7 @@ if (process.argv[2] === "doctor") {
     },
     pairing: pair => api(pair, "renew", {}),
     sandbox: async h => {
+      if (h === "claude_code" && claudeKeychainUnavailable) throw new Error("Claude Code private Keychain unavailable; sandbox probe was not run.");
       const dir = await mkdtemp(resolve(tmpdir(), "shiptorio-doctor-"));
       let boundary: CheckSandbox | undefined;
       try {
@@ -114,7 +131,7 @@ if (process.argv[2] === "doctor") {
 }
 if (["setup", "login"].includes(process.argv[2])) {
   await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
-  if (!available.length) throw new Error("Install Codex CLI or Claude Code first, then rerun the installer. See https://shiptorio.com/docs/runner");
+  if (!available.length) throw new Error(`Install Codex CLI or Claude Code first, then rerun the installer. See ${base}/docs/runner`);
   if (process.argv[2] === "login") {
     const h = process.argv[3] === "claude" ? "claude_code" : process.argv[3] === "codex" ? "codex" : null;
     if (!h || !available.includes(h)) throw new Error("Use login codex or login claude, with that CLI installed");
@@ -134,6 +151,7 @@ if (["setup", "login"].includes(process.argv[2])) {
 }
 const action = process.argv[2] ?? "watch";
 if (action === "pair") {
+  await pinPairingOrigin();
   if (process.argv[3] === "--join") await joinMachine(base, process.argv[4] ?? "", root); else await pairMachine(base, root);
   process.exit(0);
 }
@@ -148,21 +166,18 @@ if (action === "uninstall") {
   process.exit(0);
 }
 async function api(pair: Pairing, action: keyof typeof responseSchemas, body: unknown): Promise<any> {
+  if (connectionStopped(pair)) throw new RunnerGrantRejected(pair.rejected?.code ?? "runner_pair_revoked", 401);
   const r = await fetch(`${base}/api/runner/${pair.repo}/${action}`, { method: "POST", headers: { authorization: `Bearer ${pair.token}`, "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
-  if (!r.ok) { const error = new Error(`Runner ${pair.repo} ${action} failed (${r.status})`); Object.assign(error, { status: r.status }); throw error; }
+  if (!r.ok) throw await runnerResponseError(r, pair.repo, action);
   const text = await r.text();
   if (text.length > 128000) throw new Error("Runner response exceeds size limit");
   return responseSchemas[action].parse(JSON.parse(text));
 
 }
 async function renewPairing(pair: Pairing) {
-  if (pair.expires > Date.now() + 60 * 60 * 1000) return;
+  if (!renewalDue(pair)) return;
   const renewed = await api(pair, "renew", {});
-  Object.assign(pair, renewed);
-  if (process.env.SHIPTORIO_REPO === pair.repo) {
-    const file = resolve(root, ".dev.vars");
-    await Bun.write(file, `SHIPTORIO_URL=${base}\nSHIPTORIO_REPO=${pair.repo}\nSHIPTORIO_RUNNER_TOKEN=${pair.token}\n`, { mode: 0o600 }); await chmod(file, 0o600);
-  } else await savePairing(pair, root);
+  await persistRenewal(root, pair, renewed);
 }
 async function execute(job: Job, pair: Pairing) {
   const repo = pair.repo;
@@ -195,11 +210,11 @@ async function execute(job: Job, pair: Pairing) {
   try {
     await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
     if (await realpath(authHome) !== authHome) throw new Error("Agent home must not be a symlink");
-    // Fresh clone contains tracked files only: no primary checkout secrets, hooks or local edits.
+    // Fetch approved commits only: no primary checkout secrets, hooks, refs or full history.
     const source = resolve(jobRoot, "source.git");
     if (!workspace.state.initialized) {
       await rm(source, { recursive: true, force: true }); await rm(work, { recursive: true, force: true });
-      await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "clone", "--bare", "--", `https://github.com/${job.repo}.git`, source], jobRoot, gitEnv);
+      await fetchApprovedSource(async (args, cwd = jobRoot) => command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], cwd, gitEnv), source, `https://github.com/${job.repo}.git`, [job.baseSha, ...(job.verifyBaseSha ? [job.verifyBaseSha] : [])], true);
       await command([await verificationGit(), "-c", "core.hooksPath=/dev/null", "--git-dir", source, "worktree", "add", "--detach", work, job.baseSha], jobRoot, cleanEnv);
       await workspace.checkpoint("initialized");
     }
@@ -278,10 +293,11 @@ async function execute(job: Job, pair: Pairing) {
       if (verifyPaths.length && !proof.passesOnHead) throw new Error("Regression recipe failed on the fix commit");
     }
     if (JSON.stringify(await snapshotApproved(sandbox, paths)) !== JSON.stringify(frozen)) throw new Error("Checks changed approved files");
-    // Publication is rebuilt from a fresh trusted clone; hostile hooks/config never see credentials.
+    // Publication is rebuilt from a fresh trusted checkout; hostile hooks/config never see credentials.
     // Publication/installation can fail offline. Keep the workspace and rerun all checks on recovery.
     if (job.deadline <= Date.now()) throw new Error("Build lease expired; approve a fresh attempt in the game");
     let sha: string;
+    if (connectionStopped(pair)) { preserve = true; throw new RunnerGrantRejected(pair.rejected?.code ?? "runner_pair_revoked", 401); }
     try { sha = await publishApproved(job, frozen); } catch (error) { preserve = true; throw error; }
     summary = `Changed files: ${paths.join(", ")} (approved: ${job.allowedPaths.join(", ")}). Supervisor validated the scope and secret scan, then passed typecheck, tests and build. Agent output stays local.`;
     const receipt = { jobId: job.id, lease: job.lease, ok: true, sha, summary, checks, proof: proof ? { ...proof, headSha: sha } : undefined };
@@ -299,18 +315,20 @@ async function execute(job: Job, pair: Pairing) {
   } finally { await agentSandbox?.close(); await sandbox?.close(); if (completed) await workspace.close(); job.token = ""; gitEnv.GIT_CONFIG_VALUE_0 = ""; }
 
 }
+function connectionStopped(pair: Pairing) { return !!pair.rejected || rejectedGrants.get(pair.repo) === pair.token; }
+async function stopRejectedConnection(pair: Pairing, error: unknown): Promise<boolean> {
+  if (!(error instanceof RunnerGrantRejected)) return false;
+  rejectedGrants.set(pair.repo, pair.token);
+  await persistGrantRejection(root, pair, error.code).catch(() => console.error(`${pair.repo}: could not save re-pairing status; this process will keep the rejected grant stopped.`));
+  console.error(`${pair.repo}: connection stopped (${error.code}). Run shiptorio-runner pair. Saved builds and receipts are preserved.`);
+  return true;
+}
 async function connections() {
-  const pairs = await loadPairings(root);
-  const repo = process.env.SHIPTORIO_REPO, token = process.env.SHIPTORIO_RUNNER_TOKEN;
-  if (repo && token && !pairs.some(p => p.repo === repo)) {
-    const claims = JSON.parse(atob(token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/")));
-    pairs.push({ repo, token, expires: claims.expires });
-  }
-  return pairs;
+  return loadConnections(root, { SHIPTORIO_REPO: process.env.SHIPTORIO_REPO, SHIPTORIO_RUNNER_TOKEN: process.env.SHIPTORIO_RUNNER_TOKEN });
 }
 await mkdir(resolve(authHome, ".codex"), { recursive: true, mode: 0o700 });
 let pairs = await connections();
-if (!pairs.length) { await pairMachine(base, root); pairs = await connections(); }
+if (!pairs.length) { await pinPairingOrigin(); await pairMachine(base, root); pairs = await connections(); }
 if (action === "retry") {
   const id = process.argv[3]; if (!/^[a-f0-9-]{36}$/.test(id ?? "")) throw new Error("Expected job UUID");
   const receipt = await Bun.file(resolve(root, ".work", `${id}.receipt.json`)).json();
@@ -333,17 +351,22 @@ if (action === "retry") {
     return next;
   };
   let ready = await refreshAuth();
-  for (const pair of pairs) await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
+  for (const pair of pairs) {
+    if (connectionStopped(pair)) { console.error(`${pair.repo}: connection needs re-pairing. Run shiptorio-runner pair.`); continue; }
+    try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); }
+    catch (error) { await stopRejectedConnection(pair, error); }
+  }
   const heartbeat = setInterval(async () => {
     if (heartbeatBusy) return;
     heartbeatBusy = true;
     try {
       ready = await refreshAuth();
       for (const pair of await connections()) {
+        if (connectionStopped(pair)) continue;
         const retry = heartbeatBackoffs.get(pair.repo) ?? new Backoff(); heartbeatBackoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
-        try { await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }); retry.reset(); }
-        catch (error) { retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
+        try { await maintainConnection(pair, { renew: renewPairing, heartbeat: p => api(p, "heartbeat", { harnesses: ready, authRequired: [...blocked] }) }); retry.reset(); }
+        catch (error) { if (await stopRejectedConnection(pair, error)) continue; retry.fail(); console.error(`${pair.repo}: heartbeat unavailable; retrying. ${error instanceof Error ? error.message : "Network error"}`); }
       }
     }
     catch (error) { console.error(error instanceof Error ? error.message : "Heartbeat failed"); }
@@ -352,6 +375,7 @@ if (action === "retry") {
   try {
     do {
       for (const pair of await connections()) {
+        if (connectionStopped(pair)) continue;
         const retry = backoffs.get(pair.repo) ?? new Backoff(); backoffs.set(pair.repo, retry);
         if (!retry.ready()) continue;
         try {
@@ -367,16 +391,15 @@ if (action === "retry") {
           } else if (once) console.log(`${pair.repo}: no approved Spark job is ready.`);
           retry.reset();
         } catch (error) {
+          if (await stopRejectedConnection(pair, error)) continue;
           const delay = retry.fail();
           console.error(`${error instanceof Error ? error.message : "Runner request failed"}. Retrying in ${Math.ceil(delay / 1000)}s.`);
           if (error instanceof SignInExpired) {
             ready = ready.filter(h => !blocked.has(h as Subscription));
             await api(pair, "heartbeat", { harnesses: ready, authRequired: [...blocked] }).catch(() => {});
           }
-          if ((error as { status?: number }).status === 401) {
-            // Keep the pairing so doctor can diagnose it; never erase recovery evidence.
-            console.error(`${pair.repo}: pairing expired or revoked. Run shiptorio-runner pair to reconnect.`);
-          }
+          // Generic 401s may come from an upstream proxy: retain the grant and retry with backoff.
+
         }
       }
       if (!once) await Bun.sleep(5000);

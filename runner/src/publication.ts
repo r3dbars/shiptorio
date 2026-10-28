@@ -1,3 +1,4 @@
+import { fetchApprovedSource } from "./approved-source";
 import { lstat, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -55,7 +56,7 @@ export async function prepareApprovedCommit(job: { sourceUrl: string; baseSha: s
     } finally { clearTimeout(timer); }
   };
   try {
-    await run(["clone", "--no-checkout", "--", url, work]);
+    await fetchApprovedSource(run, work, url, [job.baseSha]);
     await run(["checkout", "--detach", job.baseSha], work);
     // The trusted checkout starts from main/previous PR head, not agent-owned metadata.
     // Never copy files through a tracked symlink ancestor.

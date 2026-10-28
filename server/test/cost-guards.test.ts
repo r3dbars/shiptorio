@@ -34,7 +34,7 @@ it("a new UTC day gets a fresh cap and zero is a valid hard stop", async () => {
   await expect(reserveSpark({ DB: db }, "owner", 1)).resolves.toMatchObject({ tokens: 1 });
   await expect(reserveSpark({ DB: db, SPARK_DAILY_CALLS: "0" }, "other", 1)).rejects.toThrow("exhausted");
   await expect(reserveSpark({ DB: db, SPARK_DISABLED: "1" }, "owner", 1)).rejects.toThrow("kill switch");
-  expect(budgetLimits({ SPARK_DAILY_CALLS: "NaN", FACTORY_CONCURRENT_JOBS: "0" })).toMatchObject({ calls: 200, jobs: 0 });
+  expect(budgetLimits({ SPARK_DAILY_CALLS: "NaN", FACTORY_CONCURRENT_JOBS: "0" })).toMatchObject({ calls: 400, jobs: 0 });
 });
 it("Spark reserves every outbound call, caps output, and never fetches when disabled or exhausted", async () => {
   const env = { ...sparkTestEnv(), SPARK_DAILY_CALLS: "1" };

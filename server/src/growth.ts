@@ -102,15 +102,3 @@ export function measureStation(s: { experiments?: Experiment[]; machines: { id: 
     actions: [],
   };
 }
-
-// Keep the author's traffic-only selection helpers for a future authorized producer.
-/** The funnel step to watch for drops: a pair of busy pageview routes that looks like one (traffic rows only pick it). */
-export const funnelFromTraffic = (rows: RouteDay[]): FunnelStep | null => guessFunnel([...new Set(rows.filter((r) => r.event === "$pageview").map((r) => r.route))]);
-
-/** Every funnel step the tick needs numbers for: the one to watch, plus each experiment still being built or measured. */
-export function stepsToQuery(experiments: Experiment[], watch: FunnelStep | null): FunnelStep[] {
-  const steps = new Map<string, FunnelStep>();
-  if (watch) steps.set(watch.label, watch);
-  for (const e of experiments) if (e.state === "building" || e.state === "measuring") steps.set(e.step.label, e.step);
-  return [...steps.values()].slice(0, 4);
-}

@@ -1,3 +1,4 @@
+import { hmacSigningKey } from "../hmac-key";
 import { factoryDeleted } from "../account-lifecycle";
 // Support mine: customer email and Intercom chats. Each conversation is one support ticket on the
 // support well; Spark sorts it and drafts a reply, and the player sends it (docs/context/support-mine.md).
@@ -124,7 +125,7 @@ export async function verifyIntercom(secret: string | undefined, body: string, s
   const supplied = signature.slice(5);
   if (!/^[0-9a-f]{40}$/i.test(supplied)) return false;
   const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const key = await hmacSigningKey(secret, "SHA-1");
   const expected = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(body)));
   let diff = 0;
   for (let i = 0; i < expected.length; i++) diff |= expected[i] ^ Number.parseInt(supplied.slice(i * 2, i * 2 + 2), 16);

@@ -4,6 +4,7 @@
 // busy (0..1) is how much work that thing has right now, so a jammed station sounds jammed.
 
 import type { sound } from "./engine";
+import type { MachineMood } from "./steamIron";
 
 type Synth = typeof sound;
 export type ScapeKind =
@@ -23,7 +24,8 @@ export type ScapeKind =
   | "battery"
   | "turret"
   | "other";
-export type Focus = { kind: ScapeKind; key: string; busy: number };
+// mood is the state layer the soundboard picked on top of the scape: working, stuck (needs you), rework or idle
+export type Focus = { kind: ScapeKind; key: string; busy: number; mood?: MachineMood };
 type Scape = {
   start?: (s: Synth, out: AudioNode) => () => void;
   step?: (s: Synth, out: AudioNode, i: number, f: Focus) => void;

@@ -64,7 +64,7 @@ More in [Connect your machine](/docs/runner#what-your-agent-can-and-cant-touch).
 
 ## Webhooks
 
-GitHub and Sentry webhooks are checked against their HMAC signatures with a constant-time compare, size-limited, and de-duplicated.
+GitHub and Sentry webhooks are checked against their HMAC signatures with a constant-time compare, size-limited, and de-duplicated. Public sign-in, waitlist and pairing messages also enforce byte limits while they are read, so oversized requests are rejected before being buffered in full.
 
 ## Merging
 
@@ -77,3 +77,5 @@ Protect `main` with GitHub's branch rules anyway. A repo-scoped token can't be l
 The repo owner can download a factory's whole state as JSON from `/api/repos/owner/name/export`. Uninstall the GitHub App from a repo and Shiptorio drops that repo and its access rows. Self-serve account deletion is being built.
 
 Found a security problem? Open an issue on the repo, or tell the maintainer directly if it's sensitive.
+
+Owner-only archived factory exports and deletion use verified numeric GitHub installation ownership. Renaming a login keeps verified ownership; reusing a former login does not transfer it. Legacy rows with no verified owner ID cannot grant those rights until authenticated installation metadata is refreshed.

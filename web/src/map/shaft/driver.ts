@@ -15,9 +15,10 @@ const PASS: Verdict = { pass: true, reason: null };
 const REAL_STAGE: Record<Item["state"], number> = { ore: 0, queued: 1, working: 2, inspecting: 3, rejected: 3, passed: 4, on_pad: 4, launched: 5 };
 const UPSTREAM_CAP = 6; // lumps on their way up to the planner at once; the rest wait in the mine
 // how much faster an item rides and gets worked when the real factory is that many stages ahead of it: the demo sim
-// finishes a PR in seconds, the trip up the shaft takes about a minute at full speed
-const MAX_HURRY = 10;
-const catchUp = (gap: number) => Math.min(MAX_HURRY, Math.max(1, 1 + gap * 2.25));
+// finishes a PR in seconds, the trip up the shaft takes about a minute at full speed. Kept gentle: at 10x the line
+// raced and the whole floor felt frantic (Justin's playtest, 2026-10-27: "everything is going so fast")
+const MAX_HURRY = 4;
+const catchUp = (gap: number) => Math.min(MAX_HURRY, Math.max(1, 1 + gap * 1.25));
 const BLOCKING_KINDS = new Set(["ship", "build", "unblock"]);
 const BLOCKING_STAGES = new Set(["pad", "build", "power", "resources"]);
 const SORTED = 0x7af0d8; // the flash on a lump the planner has read (ore -> queued)
@@ -71,6 +72,9 @@ export class GameDriver implements Driver {
   private verdicts = new WeakMap<IronItem, Map<string, Verdict>>(); // one verdict per visit to a station
   private decisions = new Map<string, string>();
   private warmed = false;
+  // the coming-back time-lapse (ui/away.ts): rockets that really shipped while the player was away fly again,
+  // while the PR waiting at the gate steps aside so they can pass; no machine asks the player until it's over
+  private lapse: { refs: Set<string>; t: number; max: number; over: () => void } | null = null;
   private tick = 0;
   private readonly line: string[]; // check station ids, in line order
   private readonly asms: string[];
@@ -128,7 +132,7 @@ export class GameDriver implements Driver {
     this.state = state;
     this.real = new Map(state.items.map((r) => [r.id, r]));
     for (const r of state.items) if (r.state === "working" && r.machineId && this.asms.includes(r.machineId)) this.lastAsm.set(r.id, r.machineId);
-    this.decisions = this.findDecisions(state);
+    this.decisions = this.lapse ? new Map() : this.findDecisions(state);
     for (const it of [...this.I.items]) {
       if (!it.ref) continue;
       const r = this.real.get(it.ref);
@@ -159,7 +163,7 @@ export class GameDriver implements Driver {
     let upstream = this.I.items.filter((it) => this.stageOf(it) <= 1 && it.kind === "issue").length;
     const order = (r: Item) => (r.state === "working" ? 0 : r.state === "rejected" ? 1 : r.state === "queued" ? 3 : r.state === "ore" ? 4 : 2);
     const todo = this.state.items
-      .filter((r) => !have.has(r.id) && r.state !== "launched")
+      .filter((r) => !have.has(r.id) && r.state !== "launched" && !(this.lapse && atGate(r)))
       .sort((a, b) => order(a) - order(b) || a.updatedAt - b.updatedAt);
     for (const r of todo) {
       if (this.launched.has(r.id) && r.state === "rejected") {
@@ -177,8 +181,10 @@ export class GameDriver implements Driver {
     }
   }
 
-  step() {
+  step(dt: number) {
     if (!this.state) return;
+    const lapse = this.lapse;
+    if (lapse && lapse.t < lapse.max && (lapse.t += dt) >= lapse.max) lapse.over();
     for (const it of this.I.items) {
       const r = it.ref ? this.real.get(it.ref) : undefined;
       if (!r) {
@@ -389,10 +395,59 @@ export class GameDriver implements Driver {
     return out;
   }
 
+  /** Replay these launched items up the shaft (the time-lapse). Returns the ones that found room on the line.
+   * over() fires once after max seconds of line time (the shaft's own clock, so a slow device still sees it all). */
+  beginLapse(refs: string[], max: number, over: () => void): string[] {
+    const I = this.I;
+    this.lapse = { refs: new Set(), t: 0, max, over };
+    this.decisions = new Map();
+    // the PR waiting at the gate steps aside; it comes back the moment the replay ends
+    for (const it of [...I.items]) {
+      const r = it.ref ? this.real.get(it.ref) : undefined;
+      if (r && atGate(r) && !it.owner) I.removeItem(it);
+    }
+    // oldest nearest the top, so they launch in the order they really shipped
+    const lastLane = this.line.length > 1 ? "lane-" + this.line[this.line.length - 2] : null;
+    const spots: [string | null, number, IronItem["kind"]][] = [["to-lift", 0.8, "pass"], ["to-lift", 0.45, "pass"], ["to-lift", 0.12, "pass"], [lastLane, 0.5, "capsule"], ["header", 0.75, "capsule"], ["header", 0.4, "capsule"]];
+    const placed: string[] = [];
+    let at = 0;
+    for (const ref of refs) {
+      const r = this.real.get(ref);
+      if (!r || r.state !== "launched") continue;
+      let it: IronItem | null = null;
+      while (!it && at < spots.length) {
+        const [path, f, kind] = spots[at++];
+        if (path && I.paths[path]) it = I.put(this.mineOf(r), path, f, kind, this.ident(r));
+      }
+      if (!it) break;
+      this.shown.set(r.id, r.scars?.length ?? 0);
+      I.relabel(it, { label: tagTextFn(r) });
+      this.lapse.refs.add(ref);
+      placed.push(ref);
+    }
+    return placed;
+  }
+
+  /** The time-lapse is over (or skipped): replays still on the line go, the waiting PR is back at the gate. */
+  endLapse() {
+    if (!this.lapse) return;
+    const refs = this.lapse.refs;
+    this.lapse = null;
+    for (const it of [...this.I.items]) if (it.ref && refs.has(it.ref) && !it.gone) this.I.removeItem(it);
+    if (!this.state) return;
+    this.decisions = this.findDecisions(this.state);
+    const have = new Set(this.I.items.map((it) => it.ref));
+    this.place(this.state.items.filter((r) => atGate(r) && !have.has(r.id)));
+  }
+
   // the first state: put every real item where it really is, so the line looks right from the first frame
   private warm() {
+    this.place(this.state!.items.filter((r) => !(this.lapse && atGate(r))));
+  }
+
+  private place(list: Item[]) {
     const I = this.I;
-    const items = [...this.state!.items].sort((a, b) => REAL_STAGE[b.state] - REAL_STAGE[a.state] || a.updatedAt - b.updatedAt);
+    const items = [...list].sort((a, b) => REAL_STAGE[b.state] - REAL_STAGE[a.state] || a.updatedAt - b.updatedAt);
     const intoStation = (id: string) => I.pathList.find((p) => p.port === id + ".in" && !p.rework)?.name;
     let ore = 0;
     for (const r of items) {
@@ -440,6 +495,8 @@ export class GameDriver implements Driver {
     }
   }
 }
+
+const atGate = (r: Item) => r.state === "on_pad" || r.state === "passed";
 
 function numOf(r: Item): number | undefined {
   const gh = /^gh-(\d+)$/.exec(r.id);

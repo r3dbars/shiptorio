@@ -1,10 +1,11 @@
+import { nativeTest } from "./native-prerequisite";
 import { expect, test } from "bun:test";
 import { chmod, mkdtemp, mkdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'";
 
-test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME install → browser pairing → two repos in one runner → update → uninstall", async () => {
+nativeTest("clean HOME install → browser pairing → two repos in one runner → update → uninstall", async () => {
   const home = await mkdtemp(join(tmpdir(), "shiptorio-clean-user-")), fakeBin = join(home, "bin"); await mkdir(fakeBin);
   const fixture = join(home, "fixture"); await mkdir(fixture);
   const bundle = await Bun.build({ entrypoints: [join(import.meta.dir, "../src/cli.ts")], target: "bun", outdir: fixture, naming: "runner.mjs" });
@@ -12,7 +13,7 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
   const bytes = await Bun.file(join(fixture, "runner.mjs")).arrayBuffer();
   let corrupt = false, starts = 0;
   const claims = new Set<string>(), beats = new Set<string>();
-  const tokens = new Map<string, string>();
+  const tokens = new Map<string, string[]>();
   const code = "ABCD-1234-ABCD", secret = "x".repeat(72);
   const server = Bun.serve({ port: 0, async fetch(req) {
     const url = new URL(req.url);
@@ -22,12 +23,18 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
     if (url.pathname.endsWith("/poll")) {
       const request = await req.json() as { code: string; secret: string }; expect(request).toEqual({ code, secret });
       const repo = starts === 1 ? "you/first" : "you/second", expires = Date.now() + 8 * 3600000;
-      const token = `${btoa(JSON.stringify({ repo, expires })).replace(/=/g, "")}.signature`; tokens.set(repo, token);
+      const token = `${btoa(JSON.stringify({ purpose: "runner", repo, pairId: repo, expires })).replace(/=/g, "")}.signature`; tokens.set(repo, [...(tokens.get(repo) ?? []), token]);
       return Response.json({ status: "approved", repo, token, expires });
     }
-    const match = url.pathname.match(/^\/api\/runner\/(you\/\w+)\/(claim|heartbeat)$/);
+    const match = url.pathname.match(/^\/api\/runner\/(you\/\w+)\/(claim|heartbeat|renew)$/);
     if (match) {
-      expect(req.headers.get("authorization")).toBe(`Bearer ${tokens.get(match[1])}`);
+      expect(tokens.get(match[1])?.map(token => `Bearer ${token}`)).toContain(req.headers.get("authorization") ?? "");
+      if (match[2] === "renew") {
+        const expires = Date.now() + 7 * 86400000;
+        const token = `${btoa(JSON.stringify({purpose:"runner",repo:match[1],pairId:match[1],expires})).replace(/=/g, "")}.signature`;
+        tokens.set(match[1], [...(tokens.get(match[1]) ?? []), token]);
+        return Response.json({token, expires});
+      }
       (match[2] === "claim" ? claims : beats).add(match[1]);
       return Response.json(match[2] === "claim" ? { job: null } : { ok: true });
     }
@@ -45,7 +52,7 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
   };
   for (const [name, body] of Object.entries(files)) { await Bun.write(join(fakeBin, name), body); await chmod(join(fakeBin, name), 0o700); }
   const installer = join(home, "install.sh");
-  await Bun.write(installer, (await Bun.file(join(import.meta.dir, "../install.sh")).text()).replace("origin=https://shiptorio.com", `origin=${origin}`).replaceAll("__BUN_VERSION__", Bun.version));
+  await Bun.write(installer, (await Bun.file(join(import.meta.dir, "../install.sh")).text()).replaceAll("__BUN_VERSION__", Bun.version));
   await Bun.write(join(home, "bunfig.toml"), 'preload = ["./untrusted-preload.ts"]\n');
   await Bun.write(join(home, "untrusted-preload.ts"), `await Bun.write(${JSON.stringify(join(home, "preload-ran"))}, "unexpected");`);
   const env = { HOME: home, PATH: `${fakeBin}:/usr/bin:/bin`, SHIPTORIO_URL: origin };
@@ -59,16 +66,26 @@ test.skipIf(process.platform === "linux" && !Bun.which("bwrap"))("clean HOME ins
     const first = run(["/bin/sh", installer]);
     await until(() => claims.has("you/first"));
     expect(await Bun.file(join(home, "browser-url")).text()).toContain(`/runner/pair?code=${code}`);
+    expect((await Bun.file(join(home, ".local/share/shiptorio/runner/server-url")).text()).trim()).toBe(origin);
+    // Subsequent launches must retain the server after the one-shot installer env is gone.
+    delete (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL;
     const launcher = join(home, ".local/bin/shiptorio-runner");
     const pair = run([launcher, "pair"]); expect(await pair.exited).toBe(0);
     await until(() => claims.has("you/second") && beats.has("you/second"));
     const config = join(home, ".local/share/shiptorio/runner/pairings/you%2Ffirst.json");
     const before = await Bun.file(config).text(); expect((await stat(config)).mode & 0o777).toBe(0o600);
     first.kill(); await first.exited;
+    (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL = origin;
     claims.clear(); const update = run(["/bin/sh", installer]); await until(() => claims.size === 2);
     expect(await Bun.file(join(home, "preload-ran")).exists()).toBe(false);
     expect(starts).toBe(2); expect(await Bun.file(config).text()).toBe(before);
     update.kill(); await update.exited;
+    (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL = "https://another.example";
+    const switched = run(["/bin/sh", installer]); expect(await switched.exited).not.toBe(0);
+    expect(await Bun.file(config).text()).toBe(before);
+    delete (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL;
+    // Updating uses the same explicit installation origin, as the UI's command does.
+    (env as { SHIPTORIO_URL?: string }).SHIPTORIO_URL = origin;
     corrupt = true;
     const broken = run(["/bin/sh", installer]); expect(await broken.exited).not.toBe(0);
     expect(await Bun.file(config).text()).toBe(before);

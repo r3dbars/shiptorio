@@ -1,6 +1,8 @@
 // Every message on the wire. Both lanes build against this file; change it in a PR both see.
 
 import { z } from "zod";
+import { HoldingBack } from "./signals";
+import { GoalId, Goals } from "./goals";
 import {
   Actor,
   Autonomy,
@@ -40,7 +42,9 @@ export const Patch = z.object({
   trust: z.number().optional(),
   tick: z.number().int().optional(),
   goal: z.string().optional(),
+  goals: Goals.optional(),
   bottleneck: Bottleneck.nullable().optional(),
+  holdingBack: HoldingBack.nullable().optional(),
   autonomy: Autonomy.optional(), // full replacement when present
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
@@ -97,6 +101,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   z.object({ type: z.literal("set_module"), machineId: z.string(), module: z.string() }),
   z.object({ type: z.literal("launch_pr"), itemId: z.string() }),
   z.object({ type: z.literal("route_item"), itemId: z.string(), machineId: z.string() }), // drag ore onto a machine
+  // a cart's callout: Rush (front of its queue), Park (set aside, stops taking the line) or none (back in line)
+  z.object({ type: z.literal("set_priority"), itemId: z.string().max(80), priority: z.enum(["rush", "park", "none"]) }),
   z.object({ type: z.literal("choose_move"), moveId: z.string(), optionId: z.string() }), // a Next Move button
   // Check-in swipes (docs/PRODUCT.md "Check-in"). Right is choose_move with the recommended option.
   z.object({ type: z.literal("defer_move"), moveId: z.string() }), // left: later, back next check-in
@@ -106,6 +112,8 @@ export const WebToServer = z.discriminatedUnion("type", [
   // Turn autonomy up to an unlocked level or back down. With district, permit sets that district's launch permit.
   z.object({ type: z.literal("set_autonomy"), level: AutonomyLevel.optional(), district: z.string().optional(), permit: z.boolean().optional() }),
   z.object({ type: z.literal("set_goal"), text: z.string().max(200) }),
+  // Pick goals (shared/src/goals.ts) from Make it yours, most important first.
+  z.object({ type: z.literal("set_goals"), picks: z.array(GoalId).min(1).max(3) }),
   // A station panel button. stationId is a Station id, or "rework" / a power source id for those panels.
   z.object({ type: z.literal("station_action"), stationId: z.string(), action: z.string() }),
   z.object({ type: z.literal("connect_source"), kind: SourceKind }),

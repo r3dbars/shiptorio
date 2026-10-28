@@ -149,6 +149,20 @@ async function api(path, body, token) {
 }
 async function clickMove(name) {
   const card = await until(`decision option ${name}`, () => factoryState.deck?.find(m => m.options.some(o => name.test(o.label))));
+  // The Needs you card (on by default) shows one card: Later the others until ours is up. Continue is the tab
+  // on its right edge, other options sit under Details.
+  if (await page.locator(".acard").count()) {
+    const acard = page.locator(".acard").filter({ hasText: card.title });
+    for (let i = 0; i < 20 && !await acard.count(); i++) {
+      const later = page.locator(".acard").filter({ hasNotText: card.title }).locator(".alater");
+      if (await later.count()) await later.first().click({ timeout: UI_TIMEOUT });
+      await page.waitForTimeout(1000);
+    }
+    const go = acard.getByRole("button", { name });
+    if (!await go.count()) await acard.locator(".atog").click({ timeout: UI_TIMEOUT });
+    await go.first().click({ timeout: UI_TIMEOUT });
+    return;
+  }
   if (factoryState.move?.id === card.id) {
     await page.getByRole("region", { name: "Next move", exact: true }).getByRole("button", { name }).click({ timeout: UI_TIMEOUT });
     return;
@@ -163,6 +177,8 @@ async function clickMove(name) {
 }
 let runnerToken, job;
 const t0 = Date.now();
+// Failure detail stays bounded and fixture-only: scalars as-is, objects as their type and size, never request/env objects.
+const scalar = (v) => (v === null || typeof v !== "object" ? v : `[${Array.isArray(v) ? `array(${v.length})` : "object"}]`);
 async function step(name, fn) {
   const start = Date.now();
   try {
@@ -171,7 +187,11 @@ async function step(name, fn) {
     console.log(`PASS ${name}`);
     await page.screenshot({ path: join(out, `${String(steps.length).padStart(2, "0")}-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
   } catch (error) {
-    steps.push({ name, ms: Date.now() - start, ok: false, error: String(error).split("\n")[0] });
+    // Keep the whole failure: the first line alone loses an assertion's actual/expected and its source line.
+    const detail = { message: String(error?.message ?? error), stack: error?.stack, actual: scalar(error?.actual), expected: scalar(error?.expected), operator: error?.operator };
+    const state = { deck: factoryState?.deck?.map(m => ({ id: m.id, title: m.title, options: m.options?.map(o => o.label) })), move: factoryState?.move?.id, pulls: stub.state.pulls.length, merges: stub.state.merges.length, cards: await page.locator(".acard .att").allTextContents().catch(() => []) };
+    steps.push({ name, ms: Date.now() - start, ok: false, error: String(error).split("\n")[0], detail, state });
+    console.error(`FAIL ${name}\n${detail.stack ?? detail.message}\nactual: ${JSON.stringify(detail.actual)}\nexpected: ${JSON.stringify(detail.expected)}\nstate: ${JSON.stringify(state)}`);
     await page.screenshot({ path: join(out, `FAIL-${name.replace(/\W+/g, "-")}.png`) }).catch(() => {});
     throw error;
   }
@@ -191,8 +211,13 @@ try {
   await step("welcome tour shows, then skip", async () => {
     await page.getByRole("button", { name: "Skip" }).click({ timeout: UI_TIMEOUT });
   });
+  await step("play first: the demo shop, no sign-in", async () => {
+    await page.waitForURL((u) => u.searchParams.get("source") === "sim" && u.searchParams.get("repo") === "you/demo-shop", { timeout: UI_TIMEOUT });
+    await page.locator(".floorcard").waitFor({ timeout: UI_TIMEOUT });
+  });
   await step("sign in with GitHub (real, not the sandbox)", async () => {
-    await page.getByRole("button", { name: /sign in with github/i }).click({ timeout: UI_TIMEOUT }); // the sandbox map loads first and CI runners are slow
+    // the floor card's "Use your repo" chip is the unlock; the sandbox map loads first and CI runners are slow
+    await page.getByRole("link", { name: /sign in with github/i }).first().click({ timeout: UI_TIMEOUT });
     await page.waitForURL((u) => u.searchParams.get("source") === "live" && u.searchParams.get("onboard") === "repo", { timeout: UI_TIMEOUT });
     await page.getByText(`Hey ${stub.state.user.login}`).waitFor({ timeout: UI_TIMEOUT });
     signedIn = true;
@@ -262,12 +287,12 @@ try {
   await step("Spark proposes a plan; no build before approval", async () => {
     await clickMove(/Plan with Codex/i);
     await until("Spark plan approval", () => factoryState.deck?.some(m => m.options?.some(o => o.id === "approve")));
-    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null);
-    assert.equal(stub.state.pulls.length, 0);
+    assert.equal((await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job, null, "no runner job before the plan is approved");
+    assert.equal(stub.state.pulls.length, 0, "no PR before approval");
     await clickMove(/Approve and build with Codex/i);
     job = await until("approved runner job", async () => (await api(`/api/runner/${stub.state.repo}/claim`, { harnesses: ["codex"] }, runnerToken)).job);
-    assert.equal(job.itemId, "gh-1");
-    assert.equal(job.baseSha, stub.state.baseSha);
+    assert.equal(job.itemId, "gh-1", `approved job is for gh-1, got ${job.itemId}`);
+    assert.equal(job.baseSha, stub.state.baseSha, "job built on the base sha");
     assert.deepEqual(job.allowedPaths, ["src/cart.ts", "test/cart.test.ts"]);
     assert.ok(job.steps.some(s => s.tool === "read_issue"));
     assert.ok(job.steps.some(s => s.tool === "read_file"));
@@ -303,22 +328,34 @@ try {
     assert.equal(item().inspection.humanApproved, false);
     assert.equal(stub.state.merges.length, 0);
   });
-  await step("Launch card merges only after the player's click", async () => {
+  await step("Launch card merges only after the player holds the red button", async () => {
     await until("Launch card over socket", () => factoryState.deck?.some(m => m.title.startsWith("Launch #7")));
     const card = factoryState.deck.find(m => m.title.startsWith("Launch #7"));
     assert.equal(card.evidence.length, 3);
     assert.ok(card.evidence.every(stamp => stamp.ok));
-    if (!await page.getByRole("button", { name: /^Activity, / }).isVisible()) await page.getByRole("button", { name: /^Menu/ }).click();
-    await page.getByRole("button", { name: /^Activity, / }).click();
-    const tray = page.getByRole("complementary", { name: "Activity", exact: true });
-    const launchCard = tray.locator(".tcard").filter({ has: page.getByRole("button", { name: /^Launch #7:/ }) });
-    await launchCard.getByRole("button", { name: /^Launch #7:/ }).click();
-    await launchCard.getByRole("button", { name: /^Launch #7(?!:)/ }).click();
+    // The Needs you card: launching is the big red button, held down until the ring fills.
+    const launchCard = page.locator(".acard").filter({ hasText: card.title });
+    for (let i = 0; i < 20 && !await launchCard.count(); i++) {
+      const later = page.locator(".acard").filter({ hasNotText: card.title }).locator(".alater");
+      if (await later.count()) await later.first().click({ timeout: UI_TIMEOUT });
+      await page.waitForTimeout(1000);
+    }
+    const red = launchCard.getByRole("button", { name: /^Hold to launch: / });
+    const box = await red.boundingBox({ timeout: UI_TIMEOUT });
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    assert.equal(stub.state.merges.length, 0, "nothing merged before the press");
+    await page.mouse.down(); await page.waitForTimeout(250); await page.mouse.up(); // a tap is not consent
+    await page.waitForTimeout(1500);
+    assert.equal(stub.state.merges.length, 0, "a short tap must not launch");
+    // Hold until the ring fills. It fills per rendered frame, so a slow CI browser takes longer than 800 ms.
+    await page.mouse.down();
+    await until("rocket launched while held", () => item()?.state === "launched" || stub.state.merges.length > 0);
+    await page.mouse.up();
     await until("rocket launched", () => item()?.state === "launched");
-    assert.equal(stub.state.merges.length, 1);
-    assert.equal(stub.state.merges[0].sha, stub.state.headSha);
-    assert.equal(item().inspection.humanApproved, true);
-    assert.equal(item().inspection.stages.find(s => s.gate === "human").state, "passed");
+    assert.equal(stub.state.merges.length, 1, "one merge after the hold");
+    assert.equal(stub.state.merges[0].sha, stub.state.headSha, "merged the approved head");
+    assert.equal(item().inspection.humanApproved, true, "human approval recorded");
+    assert.equal(item().inspection.stages.find(s => s.gate === "human").state, "passed", "human gate passed");
     report.finalItem = item();
   });
   await step("no silent provider fallback or browser errors", async () => {

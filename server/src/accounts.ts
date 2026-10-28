@@ -1,3 +1,4 @@
+import { rememberInstallationOwner } from "./installation-owner";
 import { gh } from "./github";
 import { signupAllowed } from "./signup";
 // Player accounts (migration 0004). GitHub is the only login. Sign-in stores the GitHub user, opens a
@@ -78,14 +79,14 @@ async function userApi<T>(path: string, token: string): Promise<T> {
   return gh<T>(path, token);
 }
 
-interface Reach { installations: { id: number; account: string }[]; repos: { repo: string; installationId: number; defaultBranch: string | null }[] }
+interface Reach { installations: { id: number; account: string; accountId?: number; accountType?: string }[]; repos: { repo: string; installationId: number; defaultBranch: string | null }[] }
 
 // Caps keep one sign-in inside the Worker's subrequest budget: 10 installations × 10 pages of 100 repos.
 export async function fetchReach(token: string): Promise<Reach> {
   const reach: Reach = { installations: [], repos: [] };
-  const { installations } = await userApi<{ installations: { id: number; account?: { login?: string } }[] }>("/user/installations?per_page=100", token);
+  const { installations } = await userApi<{ installations: { id: number; account?: { id?: number; login?: string; type?: string } }[] }>("/user/installations?per_page=100", token);
   for (const inst of installations.slice(0, 10)) {
-    reach.installations.push({ id: inst.id, account: inst.account?.login ?? "" });
+    reach.installations.push({ id: inst.id, account: inst.account?.login ?? "", accountId: inst.account?.id, accountType: inst.account?.type });
     for (let page = 1; page <= 10; page++) {
       const { repositories } = await userApi<{ repositories: { full_name: string; default_branch?: string }[] }>(`/user/installations/${inst.id}/repositories?per_page=100&page=${page}`, token);
       for (const r of repositories) reach.repos.push({ repo: r.full_name.toLowerCase(), installationId: inst.id, defaultBranch: r.default_branch ?? null });
@@ -111,6 +112,7 @@ export async function saveReach(env: AccountsEnv, userId: number, reach: Reach):
         .bind(r.repo, r.installationId, r.defaultBranch),
     ]),
   ]);
+  for (const i of reach.installations) await rememberInstallationOwner(db, i.id, {id: i.accountId, login: i.account, type: i.accountType});
 }
 
 export async function canSeeRepo(env: AccountsEnv, user: User, repo: string): Promise<boolean> {
@@ -164,12 +166,18 @@ export async function readProgress(env: AccountsEnv, user: User): Promise<Progre
 }
 
 /** Stores a progress blob only if the shared schema accepts it, so a bad client can't park junk here. */
-export async function writeProgress(env: AccountsEnv, user: User, raw: string, now = Date.now()): Promise<boolean> {
+export async function writeProgress(env: AccountsEnv, user: User, raw: string, now = Date.now(), resetVersion = 0): Promise<boolean> {
   if (raw.length > MAX_PROGRESS_BYTES) return false;
   const p = validProgress(raw);
   if (!p) return false;
   if (user.dev) return true;
-  await env.DB.prepare("INSERT INTO user_progress (user_id, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
-    .bind(user.id, JSON.stringify(p), now).run();
-  return true;
+  if (!Number.isSafeInteger(resetVersion) || resetVersion < 0) return false;
+  // The version check and write are one SQL statement: an intervening admin reset
+  // cannot be overwritten by an already-open browser with an old profile.
+  const row = await env.DB.prepare(`INSERT INTO user_progress(user_id,value,updated_at)
+    SELECT ?,?,? WHERE COALESCE((SELECT version FROM admin_progress_resets WHERE user_id=?),0)=?
+    ON CONFLICT(user_id) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+    WHERE COALESCE((SELECT version FROM admin_progress_resets WHERE user_id=?),0)=?
+    RETURNING user_id`).bind(user.id,JSON.stringify(p),now,user.id,resetVersion,user.id,resetVersion).first();
+  return !!row;
 }

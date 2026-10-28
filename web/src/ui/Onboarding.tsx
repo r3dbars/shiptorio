@@ -1,13 +1,14 @@
 import { introEnabled } from "../flags";
-// The first screens of the game (docs/PRODUCT.md, Onboarding): sign in with GitHub, pick a repo.
-// Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
+// The first screens of the game (docs/PRODUCT.md, Onboarding): the welcome tour, then play first, sign in later.
+// A signed-out player goes straight to the demo shop (onPlay); signing in with GitHub is the unlock that brings
+// the repo step here. Then the map takes over: the planner scans the repo, proposes the starter factory, and asks for power.
 // In the sim, sign-in is pretend and the repos are fake. Live sign-in goes through the GitHub App.
 
 import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { App } from "../App";
 import type { SourceConfig } from "../source";
 import { IslandBackdrop } from "./IslandBackdrop";
-import { savePref, seedPrefs, type PrefKey } from "../account";
+import { savePref, seedPrefs, signInUrl, type PrefKey } from "../account";
 import { CREDIT, ONBOARD } from "../copy";
 import { Icon, type IconName } from "./icons";
 import { Wordmark } from "./Logo";
@@ -98,17 +99,6 @@ function GitHubMark() {
   );
 }
 
-// The shift clock's readout: the real time, so punching in feels like punching in.
-function useClock() {
-  const fmt = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  const [now, setNow] = useState(fmt);
-  useEffect(() => {
-    const t = setInterval(() => setNow(fmt()), 10000);
-    return () => clearInterval(t);
-  }, []);
-  return now;
-}
-
 const JOURNEY_ICONS: IconName[] = ["ore", "cog", "check", "rocket"];
 
 function Journey() {
@@ -116,7 +106,7 @@ function Journey() {
     <ol className="ob-journey" aria-label={ONBOARD.journeyLabel}>
       {ONBOARD.journey.map((j, n) => (
         <li key={j.k} className={`ob-stop s${n}`}>
-          <Icon name={JOURNEY_ICONS[n]} size={16} />
+          <Icon name={JOURNEY_ICONS[n]} size={28} />
           <b>{j.k}</b>
           <span>{j.d}</span>
         </li>
@@ -125,15 +115,16 @@ function Journey() {
   );
 }
 
-export function Onboarding({ live, step: initial, onDone }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void }) {
+// onPlay: a bare visit. Nobody signed in goes to the demo shop instead of the sign-in card.
+export function Onboarding({ live, step: initial, onDone, onPlay }: { live: boolean; step: OnboardStep; onDone: (repo: string) => void; onPlay?: () => void }) {
   // the tour comes first, before anyone's asked to sign in (playtest #107)
   const [step, setStep] = useState<OnboardStep>(introEnabled && initial === "hello" && !introSeen() ? "intro" : initial === "intro" && (!introEnabled || INTRO_PARAM === "0") ? "repo" : initial);
-  const [login, setLogin] = useState<string | null>(live ? null : "you");
+  const [login, setLogin] = useState<string | null | undefined>(live ? undefined : "you"); // undefined: still asking /api/me
   const [repos, setRepos] = useState<Repo[] | null>(live ? null : SIM_REPOS);
   const [typed, setTyped] = useState("");
   const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [reposFailed, setReposFailed] = useState(false);
-  const [punched, setPunched] = useState(false); // the card is in the clock: sign-in is on its way
+  const [punched, setPunched] = useState(false); // the lever is down: sign-in is on its way
   const [chosen, setChosen] = useState<string | null>(null);
   const [find, setFind] = useState("");
   const timers = useRef<number[]>([]);
@@ -142,7 +133,11 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
     if (reducedMotion()) return fn();
     timers.current.push(window.setTimeout(fn, ms));
   };
-  const now = useClock();
+
+  // The sandbox has no real sign-in to wait for: a bare visit just plays.
+  useEffect(() => {
+    if (!live && step === "hello") onPlay?.();
+  }, [live, step]);
 
   // Live: who is signed in and which repositories the existing App installation can see.
   useEffect(() => {
@@ -153,10 +148,13 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
         setLogin(me.login);
         setInstallUrl(me.installUrl ?? null);
         seedPrefs(me.prefs);
+        // repos only for a real account: a guest (or nobody) gets the demo shop, and /api/repos would refuse them
+        if (me.login) loadRepos();
+        else setRepos((r) => r ?? []);
         if (me.login && step === "hello") setStep("repo");
+        else if (!me.login && step === "hello") onPlay?.();
       })
-      .catch(() => setLogin(null));
-    loadRepos();
+      .catch(() => { setLogin(null); if (step === "hello") onPlay?.(); });
   }, [live]);
 
   const loadRepos = () =>
@@ -178,12 +176,12 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
     return () => { clearInterval(timer); window.removeEventListener("focus", loadRepos); document.removeEventListener("visibilitychange", back); };
   }, [waiting]);
 
-  // Punch the card first (a beat of animation), then go: GitHub when live, the repo step in the sim.
+  // Pull the lever first (a beat of animation), then go: GitHub when live, the repo step in the sim.
   const signIn = () => {
     if (punched) return;
     setPunched(true);
     later(() => {
-      if (live) location.href = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
+      if (live) location.href = signInUrl();
       else setStep("repo");
     }, 720);
   };
@@ -198,7 +196,10 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
   const needle = find.trim().toLowerCase();
   const shown = repos && (searchable && needle ? repos.filter((r) => r.fullName.toLowerCase().includes(needle)) : repos);
 
-  if (step === "intro" && introEnabled) return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); setStep(live && login ? "repo" : "hello"); }} />;
+  if (step === "intro" && introEnabled) return <App config={TOUR} login={live ? login : null} onIntroDone={() => { markIntroSeen(); if (live && login) setStep("repo"); else if (onPlay) onPlay(); else setStep("hello"); }} />;
+
+  // a bare visit: the hello card only shows when ?onboard=hello asks for it, never while we work out where to go
+  if (step === "hello" && onPlay) return null;
 
   return (
     <div className="onboard">
@@ -214,25 +215,12 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
 
         {step === "hello" && (
           <>
-            <p className="iron-eyebrow ob-eyebrow">{ONBOARD.eyebrow}</p>
             <BrandWordmark />
             <p className="ob-tagline">{ONBOARD.tagline}</p>
-            <Coach>{ONBOARD.hello}</Coach>
+            <p className="ob-lede">{ONBOARD.hello}</p>
 
-            <div className={`ob-clock${punched ? " punched" : ""}`} aria-hidden="true">
-              <div className="ob-readout">
-                <small>{punched ? ONBOARD.clockedIn : ONBOARD.clockLabel}</small>
-                <b>{now}</b>
-              </div>
-              <div className="ob-slot">
-                <div className="ob-punchcard">
-                  <span className="ob-pc-top">{ONBOARD.card}</span>
-                  <span className="ob-pc-holes">{Array.from({ length: 16 }, (_, n) => <i key={n} className={[1, 4, 6, 9, 11, 14].includes(n) ? "x" : undefined} />)}</span>
-                  <span className="ob-pc-name">{ONBOARD.cardName}</span>
-                  <span className="ob-pc-stamp">{ONBOARD.clockedIn}</span>
-                </div>
-              </div>
-            </div>
+            {/* the four stations are the whole idea, so they're the biggest thing on the plate (Justin's playtest) */}
+            <Journey />
 
             <button
               type="button"
@@ -244,8 +232,6 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
               <GitHubMark />
               <span>{ONBOARD.signIn}</span>
             </button>
-
-            <Journey />
 
             <div className="ob-foot">
               <button hidden={!introEnabled} type="button" className="ob-replay" onClick={() => setStep("intro")}>
@@ -361,7 +347,7 @@ export function Onboarding({ live, step: initial, onDone }: { live: boolean; ste
             {!waiting && <p className="ob-help">
               {/* the list is the repos your GitHub account reaches through the App; installing on more adds them */}
               {ONBOARD.notThere}<a href={installUrl ?? "https://github.com/settings/installations"}>{ONBOARD.install}</a>{ONBOARD.onRepo}
-              {live && login ? <>{ONBOARD.then}<a href={`/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`}>{ONBOARD.refresh}</a></> : ONBOARD.first}.
+              {live && login ? <>{ONBOARD.then}<a href={signInUrl()}>{ONBOARD.refresh}</a></> : ONBOARD.first}.
             </p>}
           </>
         )}

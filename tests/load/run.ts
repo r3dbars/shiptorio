@@ -3,13 +3,17 @@ import { mkdir, rm } from 'node:fs/promises';
 import { assertWire } from '../contract/assert-wire';
 
 const origin = 'http://localhost:8799';
+const inspectorPort = '9249';
+// Profiling must observe the latency workload without saturating the same isolate
+// with 1kHz stack walks. Keep CPU estimates at an explicit, reported 100Hz.
+const cpuSamplingIntervalUs = 10_000;
 const rounds = Number(process.env.LOAD_ROUNDS ?? 20);
 if (!Number.isInteger(rounds) || rounds < 5 || rounds > 100) throw new Error('LOAD_ROUNDS must be 5..100');
 await mkdir('test-results', { recursive: true });
 await rm('test-results/load-worker.log', { force: true });
 const output = Bun.file('test-results/load-worker.log');
 const runId = `load-${crypto.randomUUID()}`;
-const server = Bun.spawn(['bun', 'tests/e2e/start.ts'], { stdout: output, stderr: output, detached: true, env: { ...process.env, SHIPTORIO_TEST_RUN_ID: runId } });
+const server = Bun.spawn(['bun', 'tests/e2e/start.ts'], { stdout: output, stderr: output, detached: true, env: { ...process.env, SHIPTORIO_TEST_RUN_ID: runId, SHIPTORIO_TEST_INSPECTOR_PORT: inspectorPort } });
 const clients: { ws: WebSocket; repo: string; tick: number }[] = [];
 const latencies: number[] = [], tickTimes: number[] = [];
 let profileSocket: WebSocket | undefined;
@@ -66,19 +70,20 @@ try {
   }
   await post('/__test/warm-load-grants');
   // CDP samples measure local workerd isolate CPU, never billed Cloudflare CPU.
-  const targets = await (await fetch('http://localhost:9249/json')).json() as { webSocketDebuggerUrl: string }[];
+  const targets = await (await fetch(`http://localhost:${inspectorPort}/json`)).json() as { webSocketDebuggerUrl: string }[];
   profileSocket = new WebSocket(targets[0].webSocketDebuggerUrl);
   await new Promise<void>((resolve, reject) => { profileSocket!.onopen = () => resolve(); profileSocket!.onerror = reject; });
   let id = 0;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: unknown) => void }>();
   profileSocket.onmessage = event => { const m = JSON.parse(String(event.data)); const p = pending.get(m.id); if (p) { pending.delete(m.id); m.error ? p.reject(m.error) : p.resolve(m.result); } };
-  const cdp = (method: string) => new Promise<any>((resolve, reject) => {
+  const cdp = (method: string, params?: Record<string, unknown>) => new Promise<any>((resolve, reject) => {
     const requestId = ++id;
     const timer = setTimeout(() => { pending.delete(requestId); reject(new Error(`Inspector timeout: ${method}`)); }, 15_000);
     pending.set(requestId, { resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); reject(e); } });
-    profileSocket!.send(JSON.stringify({ id: requestId, method }));
+    profileSocket!.send(JSON.stringify({ id: requestId, method, params }));
   });
   await cdp('Profiler.enable');
+  await cdp('Profiler.setSamplingInterval', { interval: cpuSamplingIntervalUs });
   await cdp('Profiler.start');
   const started = performance.now();
   for (let round = 0; round < rounds; round++) {
@@ -115,7 +120,7 @@ try {
     const sorted = [...values].sort((a, b) => a - b);
     return { count: sorted.length, p50: sorted[Math.floor(sorted.length * .5)], p95: sorted[Math.floor(sorted.length * .95)], max: sorted.at(-1) };
   };
-  const report = { environment: { runtime: 'local Wrangler/workerd', platform: process.platform, arch: process.arch, bun: Bun.version, cpuMeasurement: 'CDP sampled isolate active CPU; Factory stack subset. Estimates, not billed production DO CPU.' }, clients: clients.length, clientsOnOneFactory: 200, otherTickingFactories: 50, rounds, elapsedMs, latencyMs: stats(latencies), tickRpcMs: stats(tickTimes), cpu: { samples: profile.samples?.length, isolateActiveMs: activeUs / 1000, factoryStackMs: factoryUs / 1000, factoryMsPerRequestedTick: factoryUs / 1000 / (repos.length * rounds) }, failures };
+  const report = { environment: { runtime: 'local Wrangler/workerd', platform: process.platform, arch: process.arch, bun: Bun.version, cpuSamplingIntervalUs, cpuMeasurement: 'CDP sampled isolate active CPU; Factory stack subset. Estimates, not billed production DO CPU.' }, clients: clients.length, clientsOnOneFactory: 200, otherTickingFactories: 50, rounds, elapsedMs, latencyMs: stats(latencies), tickRpcMs: stats(tickTimes), cpu: { samples: profile.samples?.length, isolateActiveMs: activeUs / 1000, factoryStackMs: factoryUs / 1000, factoryMsPerRequestedTick: factoryUs / 1000 / (repos.length * rounds) }, failures };
   await Bun.write('test-results/load.json', JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
   if (latencies.length < clients.length * rounds || report.latencyMs.p95 > 3000 || report.tickRpcMs.p95 > 5000) throw new Error('Load budget exceeded or deliveries missing');

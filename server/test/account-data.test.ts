@@ -45,7 +45,7 @@ async function fixture() {
       ["schemaVersion", 2], ["backup:old", {items: ["private"]}],
     ]), alarm: 10 as number | null, closed: 0, factory: null as unknown as InstanceType<typeof Factory> };
     const storage = {
-      get: async (key: string) => structuredClone(record.data.get(key)),
+      get: async (key: string | string[]) => Array.isArray(key) ? new Map(key.filter(k => record.data.has(k)).map(k => [k, structuredClone(record.data.get(k))])) : structuredClone(record.data.get(key)),
       put: async (key: string, value: unknown) => { record.data.set(key, value); },
       list: async () => new Map(record.data),
       deleteAlarm: async () => { record.alarm = null; },
@@ -59,11 +59,12 @@ async function fixture() {
   const aliceCookie = await signedInCookie(env, "alice", ["alice/app", "org/shared"], 11);
   const aliceSecond = (await createSession(env, {id: 11, login: "alice"}, "other-browser")).split(";")[0];
   const bobCookie = await signedInCookie(env, "bob", ["bob/app", "alice/app"], 22);
-  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login) VALUES (1, 'alice'), (2, 'bob'), (3, 'org')").run();
+  await DB.prepare("INSERT OR REPLACE INTO installations (id, account_login, account_id, account_type) VALUES (1, 'alice', 11, 'User'), (2, 'bob', 22, 'User'), (3, 'org', 33, 'Organization')").run();
   await DB.prepare("INSERT OR REPLACE INTO repos (full_name, installation_id) VALUES ('alice/app', 1), ('bob/app', 2), ('org/shared', 3)").run();
   await DB.prepare("INSERT OR REPLACE INTO user_installations (user_id, installation_id, account_login) VALUES (11, 1, 'alice'), (11, 3, 'org'), (22, 2, 'bob')").run();
   await DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('alice/app', 1, 'Fix', 'open'), ('bob/app', 2, 'Other', 'open')").run();
   await DB.prepare("INSERT INTO move_kind_rules VALUES ('alice/app', 'test', '/', 'id', 1)").run();
+  for (const repo of ["alice/app", "bob/app"]) await DB.prepare("INSERT INTO card_taps (repo, card_id, kind, scope, title, by, shown_at) VALUES (?, 'card-1', 'verify', 'district:web', ?, 'rule', 1)").bind(repo, `Review ${repo}`).run();
   await DB.prepare("INSERT INTO user_prefs VALUES (11, 'intro', 'done', 1)").run();
   await DB.prepare("UPDATE user_repos SET installation_id = 3 WHERE repo = 'org/shared'").run();
   await DB.prepare("UPDATE user_repos SET installation_id = 2 WHERE repo = 'bob/app'").run();
@@ -73,6 +74,39 @@ async function fixture() {
 }
 
 describe("account data controls", () => {
+  it("does not grant a recycled login retained export or deletion rights", async () => {
+    const {env, user, objects} = await fixture();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 11").run();
+    await env.DB.prepare("UPDATE installations SET account_id = 99 WHERE id = 1").run();
+    expect(await ownedRepos(env, user)).toEqual([]);
+    expect((await exportAccount(env, user)).factories).toEqual([]);
+    await expect(deleteAccount(env, user, ["alice/app"])).rejects.toThrow("exactly");
+    expect(objects.get("alice/app")!.data.size).toBeGreaterThan(0);
+    expect(await factoryDeleted(env.DB, "alice/app")).toBe(false);
+  });
+  it("retains verified numeric ownership after a rename and fails closed for legacy and org rows", async () => {
+    const {env, user} = await fixture();
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 11").run();
+    await env.DB.prepare("UPDATE installations SET account_login = 'old-login' WHERE id = 1").run();
+    expect((await exportAccount(env, user)).factories.map(f => f.repo)).toEqual(["alice/app"]);
+    for (const sql of ["UPDATE installations SET account_id = NULL WHERE id = 1", "UPDATE installations SET account_id = 11, account_type = 'Organization' WHERE id = 1"]) {
+      await env.DB.prepare(sql).run(); expect(await ownedRepos(env, user)).toEqual([]);
+    }
+  });
+
+  it("exports card taps under the factory export's access rules, and never to an account without access", async () => {
+    const {env, kv, bobCookie} = await fixture();
+    const bob = await resolveUser(new Request("https://shiptorio.com", {headers: {cookie: bobCookie}}), env);
+    // A collaborator with live access exports the shared factory like the rest of its data; take that away.
+    expect(JSON.stringify(await exportAccount(env, bob!))).toContain("Review alice/app");
+    kv.delete("access:v2:1:alice/app:22");
+    await env.DB.prepare("DELETE FROM user_repos WHERE user_id = 22 AND repo = 'alice/app'").run();
+    const result = JSON.stringify(await exportAccount(env, bob!));
+    expect(result).toContain("Review bob/app");
+    expect(result).not.toContain("Review alice/app");
+    await expect(deleteAccount(env, bob!, ["alice/app"])).rejects.toThrow();
+    expect((await env.DB.prepare("SELECT repo FROM card_taps WHERE repo = 'alice/app'").all()).results).toHaveLength(1);
+  });
   it("exports visible factory items, permits, research and saved logs, without raw runner jobs/credentials", async () => {
     const {env, user} = await fixture();
     const result = await exportAccount(env, user);
@@ -80,6 +114,9 @@ describe("account data controls", () => {
     expect(result.factories[0].data.permits).toBeTruthy();
     expect(result.factories[0].data.research).toEqual({done: ["types"], spent: 0});
     expect(result.factories[0].data.logs.approvals).toEqual([{kind: "test", scope: "/", at: 1, actionId: "approval-1"}]);
+    // The owner's card tap log comes with the factory; another account's never does.
+    expect(result.factories[0].data.logs.taps).toEqual([expect.objectContaining({repo: "alice/app", card_id: "card-1", title: "Review alice/app"})]);
+    expect(JSON.stringify(result)).not.toContain("Review bob/app");
     expect(JSON.stringify(result)).not.toContain("DO-NOT-EXPORT");
     expect(JSON.stringify(result)).not.toContain("pair-secret");
   });
@@ -134,16 +171,19 @@ describe("account data controls", () => {
   });
   it("exports and purges both repo and global operational log copies, preserving other users", async () => {
     const {env, user, kv} = await fixture();
-    kv.set("ops:events:all:alice", JSON.stringify({userId: "alice", repo: "org/shared", event: "saved"}));
+    kv.set("ops:events:all:alice", JSON.stringify({userId: "github:user:11", repo: "org/shared", event: "saved"}));
     kv.set("ops:events:repo:alice/app:copy", JSON.stringify({repo: "alice/app", event: "saved"}));
     kv.set("ops:events:all:bob", JSON.stringify({userId: "bob", repo: "bob/app", event: "keep"}));
+    kv.set("ops:events:all:numeric-legacy", JSON.stringify({userId: "11", repo: "private/foreign", event: "foreign-numeric-login"}));
     const archive = await exportAccount(env, user);
+    expect(archive.activity.some(e => e.event === "foreign-numeric-login")).toBe(false);
     expect(archive.activity.some(e => e.event === "saved")).toBe(true);
     expect(archive.activity.some(e => e.event === "keep")).toBe(false);
     await deleteAccount(env, user, ["alice/app"]);
     expect(kv.has("ops:events:all:alice")).toBe(false);
     expect(kv.has("ops:events:repo:alice/app:copy")).toBe(false);
     expect(kv.has("ops:events:all:bob")).toBe(true);
+    expect(kv.has("ops:events:all:numeric-legacy")).toBe(true);
   });
   it("an in-flight operational log cannot recreate user keys after deletion", async () => {
     const {env, user, kv} = await fixture();
@@ -154,7 +194,7 @@ describe("account data controls", () => {
     const original = env.CACHE.put.bind(env.CACHE);
     env.CACHE.put = (async (key: string, value: string) => { if (key.startsWith("ops:")) {started(); await gate;} return original(key, value); }) as typeof env.CACHE.put;
     const tasks: Promise<unknown>[] = [];
-    inTrace({requestId: "delete-race", userId: "alice", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
+    inTrace({requestId: "delete-race", userId: "github:user:11", repo: "alice/app"}, env, task => tasks.push(task), () => log("info", "delayed_event"));
     await writing;
     await deleteAccount(env, user, ["alice/app"]);
     release();
@@ -180,7 +220,7 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).progress).not.toBeNull();
     await deleteAccount(env, user, ["alice/app"]);
     for (const table of ["user_progress", "signup_waitlist", "signup_invites", "signup_resources", "signup_counters", "signup_abuse", "spark_usage", "spark_factory_calls", "spark_factory_budgets", "factory_budget_owners", "api_limits"]) expect((await env.DB.prepare(`SELECT * FROM ${table}`).all()).results).toEqual([]);
-    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist ORDER BY login").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}, {login: "r3dbars", approved_by: "r3dbars"}]);
+    expect((await env.DB.prepare("SELECT login, approved_by FROM signup_allowlist ORDER BY login").all()).results).toEqual([{login: "bob", approved_by: "[deleted account]"}]);
   });
   it("exports the stable repo-id factory and erases both it and its frozen legacy object", async () => {
     const {env, user, objects} = await fixture();
@@ -188,6 +228,7 @@ describe("account data controls", () => {
     if (!columns.results.some(c => c.name === "repo_id")) await env.DB.prepare("ALTER TABLE repos ADD COLUMN repo_id INTEGER").run();
     await env.DB.prepare("UPDATE repos SET repo_id = 101, archived_at = 1 WHERE full_name = 'alice/app'").run();
     await env.DB.prepare("INSERT INTO pull_requests (repo, number, title, state) VALUES ('repo:101', 77, 'Archived', 'closed')").run();
+    await env.DB.prepare("INSERT INTO card_taps (repo, card_id, kind, scope, title, by, shown_at) VALUES ('repo:101', 'retained', 'ship', 'district:/', 'Retained card', 'rule', 1)").run();
     await env.DB.prepare("INSERT INTO credentials (scope, kind, envelope, updated_at) VALUES ('archived:repo:101:installation:1:repo:alice/old-name', 'sentry', 'encrypted-archived', 1), ('installation:1:repo-id:101', 'posthog', 'encrypted-stable', 1)").run();
     await env.DB.prepare("DELETE FROM user_repos WHERE repo = 'alice/app'").run();
     const kv = (env.CACHE as unknown as {get(key: string): Promise<string|null>});
@@ -202,6 +243,7 @@ describe("account data controls", () => {
     expect((await exportAccount(env, user)).factories[0].data.state?.items).toHaveLength(1);
     await deleteAccount(env, user, ["alice/app"]);
     expect(data.size).toBe(0); expect(legacy.data.size).toBe(0); expect(alarm).toBeNull();
+    expect((await env.DB.prepare("SELECT * FROM card_taps WHERE repo = 'repo:101'").all()).results).toEqual([]);
     expect(await kv.get("cred:support:1:101")).toBeNull();
     expect((await env.DB.prepare("SELECT * FROM pull_requests WHERE repo = 'repo:101'").all()).results).toEqual([]);
     expect((await env.DB.prepare("SELECT * FROM credentials WHERE scope GLOB 'archived:repo:101:*' OR scope = 'installation:1:repo-id:101'").all()).results).toEqual([]);
@@ -280,7 +322,8 @@ describe("account data controls", () => {
       const column = table === "users" ? "id" : "user_id";
       expect((await env.DB.prepare(`SELECT * FROM ${table} WHERE ${column} = 11`).all()).results).toEqual([]);
     }
-    for (const table of ["pull_requests", "move_kind_rules", "user_repos"]) expect((await env.DB.prepare(`SELECT * FROM ${table} WHERE repo = 'alice/app'`).all()).results).toEqual([]);
+    for (const table of ["pull_requests", "move_kind_rules", "card_taps", "user_repos"]) expect((await env.DB.prepare(`SELECT * FROM ${table} WHERE repo = 'alice/app'`).all()).results).toEqual([]);
+    expect((await env.DB.prepare("SELECT repo FROM card_taps").all()).results).toEqual([{repo: "bob/app"}]);
     expect(await env.DB.prepare("SELECT * FROM repos WHERE full_name = 'alice/app'").first()).toBeNull();
     expect(await env.DB.prepare("SELECT * FROM installations WHERE id = 1").first()).toBeNull();
     expect(objects.get("alice/app")!.data.size).toBe(0);

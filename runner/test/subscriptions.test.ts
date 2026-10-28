@@ -1,3 +1,4 @@
+import { nativeTest } from "./native-prerequisite";
 import { expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +7,7 @@ import { freeSubscriptions, prepareAgentHome, subscriptionSignedIn, subscription
 import { harnessArgs, agentEnvironment } from "../src/policy";
 import { checkSandbox } from "../src/sandbox";
 
-test("Claude CLI login → status → sandbox uses the same private config outside job workspaces", async () => {
+nativeTest("Claude CLI login → status → sandbox uses the same private config outside job workspaces", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-subscriptions-"));
   try {
     const home = await prepareAgentHome(root), executable = join(root, "claude");
@@ -61,7 +62,7 @@ test("each job refreshes sign-in, skips busy agents, and recovers after login or
 
 // No account is used: the real CLI must reject a fresh, signed-out home promptly.
 // This catches macOS startup stalls a shell fixture cannot reproduce (timezone ICU, #235).
-test.skipIf(process.platform !== "darwin" || !Bun.which("claude"))("native Claude reaches its auth error inside the macOS agent sandbox without spending tokens", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1" || process.platform !== "darwin" || !Bun.which("claude"))("native Claude reaches its auth error inside the macOS agent sandbox without spending tokens", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-native-claude-"));
   const home = await prepareAgentHome(root), work = join(root, "job"), executable = Bun.which("claude")!;
   await mkdir(work);
@@ -79,7 +80,7 @@ test.skipIf(process.platform !== "darwin" || !Bun.which("claude"))("native Claud
   } finally { await boundary?.close(); await rm(root, { recursive: true, force: true }); }
 }, 30000);
 
-test("Claude reauthentication clears its auth guard without resetting a failed Codex login", async () => {
+test.skipIf(process.env.SHIPTORIO_CHECK_SANDBOX === "1")("Claude reauthentication clears its auth guard without resetting a failed Codex login", async () => {
   const root = await mkdtemp(join(tmpdir(), "shiptorio-auth-version-"));
   try {
     const home = await prepareAgentHome(root);

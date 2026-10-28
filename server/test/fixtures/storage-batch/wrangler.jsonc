@@ -1,0 +1,7 @@
+{
+  "name": "shiptorio-storage-batch-test",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": { "bindings": [{ "name": "STORAGE_TEST", "class_name": "StorageTest" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StorageTest"] }]
+}
