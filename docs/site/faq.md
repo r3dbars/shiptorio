@@ -52,7 +52,7 @@ A ship card is locked when a gauntlet stamp hasn't passed yet. Swiping right run
 
 ## Why does nothing build?
 
-Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Needs you card will say "Your computer writes the code. Plug it in to start building."
+Probably no power. Spark can read and plan, but something has to build: connect a runner with Claude Code or Codex signed in. The Needs you card will say "Plug in Claude or ChatGPT to start building."
 
 ## Why can't I sign in?
 

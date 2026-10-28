@@ -7,9 +7,6 @@ export const attentionOn = () => { const p = attentionParam(); return p === null
 /** Build as you go (web/src/buildout/CONTRACT.md): the first run starts dark and empty, every piece built in front of
  * you. Off by default until Justin has played it; ?buildout=1 turns it on for that page load. */
 export const buildoutOn = () => new URLSearchParams(location.search).get("buildout") === "1";
-/** The simple screen (thread "Simplify the whole game UI", 2026-10-28): one slow-spot line, one task tray that flies the
- * camera to each ask, and a quiet map with no labels. Off by default until Justin has played it; ?simple=1 turns it on. */
-export const simpleOn = () => new URLSearchParams(location.search).get("simple") === "1";
 export async function loadFeatureFlags(): Promise<void> {
   // Explicit simulator URLs work offline and never depend on the backend.
   if (new URLSearchParams(location.search).get("source") === "sim") return;

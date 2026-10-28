@@ -9,8 +9,6 @@ so the build has one place to check. The approved rollout is for everyone, witho
 in [GAMEPLAY.md](GAMEPLAY.md) and [VISION.md](VISION.md). Existing kill switches and the temporary
 `?attention=0` fallback remain applicable where implemented; this document changes no runtime flags.
 
-Player-journey picks for the simple screen (2026-10-28) are in [SIMPLE-UI.md](SIMPLE-UI.md#journey-picks-justin-2026-10-28-1506).
-
 ## Rules that come out of the picks
 
 - **Simple on day one, more over months.** One card at a time, Later on the left, Continue on the right, swipe works too.

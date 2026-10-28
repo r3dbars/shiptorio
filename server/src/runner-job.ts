@@ -15,8 +15,6 @@ export interface RunnerJob {
   needsApproval?: boolean;
   approvalMoveId?: string;
   approvedAt?: number;
-  /** Who approved the plan: the player's tap, or the planner on its own (autonomy level or a learned card). */
-  approvedBy?: "player" | "autonomy";
   inputRevision?: string;
   route?: string; // which power plant builds it, and why (geothermal guard + planner pick)
   reworkPr?: number;

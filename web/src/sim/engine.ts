@@ -801,7 +801,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     if (p.trust !== undefined) s.trust = p.trust;
     if (p.metrics) s.metrics = p.metrics;
     if (p.autonomy) s.autonomy = p.autonomy;
-    if (p.learned) s.learned = p.learned;
     if (p.bottleneck !== undefined) s.bottleneck = p.bottleneck;
     if (p.holdingBack !== undefined) s.holdingBack = p.holdingBack;
     if (p.research) s.research = p.research;
@@ -820,14 +819,8 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // ---------- the Next Move card ----------
 
   // The check-in deck is the open card plus the ones waiting behind it, at most 12.
-  // docs/LEARN.md: say Go on 3 build cards in a row and the sim starts the next ones on its own, like the live
-  // factory. Build cards carry the dots, stamped fresh every deal.
-  const LEARN_NEED = 3;
-  let learnYes = 0, learnedBuild = false;
-  const stampLearn = (m: Move): Move => m.kind === "build" && m.options.some((o) => o.recommended && o.actions[0]?.tool === "start_job") && !learnedBuild && learnYes > 0 ? { ...m, learn: { have: learnYes, need: LEARN_NEED } } : m;
   const dealDeck = () => {
-    if (s.move) s.move = stampLearn(s.move);
-    s.deck = [...(s.move ? [s.move] : []), ...pending].slice(0, 12).map(stampLearn);
+    s.deck = [...(s.move ? [s.move] : []), ...pending].slice(0, 12);
     emit({ type: "deck", deck: s.deck });
   };
   const propose = (move: Omit<Move, "id" | "createdAt">, then: (optionId: string) => void): string => {
@@ -883,7 +876,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
     }
     const m = s.move?.id === moveId ? s.move : pending.find((x) => x.id === moveId);
     if (!m) return;
-    if (m.learn) learnYes = 0;
     pull(moveId, 0);
     pending.push(m);
     if (!s.move) open(pending.shift()!);
@@ -925,11 +917,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   const askToBuild = (item: Item) => {
     const asm = s.machines.find((m) => m.type === "assembler");
     const users = item.customer?.usersAffected;
-    if (learnedBuild) {
-      held.delete(item.id);
-      spark({ tool: "start_job", text: `Sent "${item.title}" to ${asm?.id ?? "the assembler"} with the plan`, reason: "You taught it this one. Turn it off in Make it yours." }, { itemId: item.id, target: asm?.id, approvedBy: "autonomy" });
-      return;
-    }
     propose(
       {
         title: users ? `${item.district === "checkout" ? "Checkout crash" : item.title}, ${users} users` : item.title,
@@ -945,12 +932,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
       },
       (opt) => {
         held.delete(item.id);
-        learnYes = opt === "go" ? learnYes + 1 : 0;
-        if (learnYes >= LEARN_NEED && !learnedBuild) {
-          learnedBuild = true;
-          apply({ learned: [{ key: "build|sim|start_job", label: "Starting builds", since: Date.now() }] });
-          emit({ type: "log", level: "success", text: "Learned. The factory does these on its own now.", at: Date.now(), actor: "player", reason: "You said yes 3 times in a row. Turn it off in Make it yours." });
-        }
         if (opt !== "go") {
           const cur = s.items.find((i) => i.id === item.id);
           if (cur) apply({ items: [withPriority(cur, "park")] }); // the cart's callout offers Unpark
@@ -2100,12 +2081,6 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         }
         case "defer_move":
           defer(msg.moveId);
-          break;
-        case "unlearn":
-          learnedBuild = false;
-          learnYes = 0;
-          apply({ learned: [] });
-          dealDeck();
           break;
         case "dismiss_move":
           dismiss(msg.moveId, msg.why);

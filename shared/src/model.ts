@@ -272,14 +272,8 @@ export const Move = z.object({
   plan: z.array(z.string()).optional(), // what happens on yes, step by step (details sheet)
   because: z.string().optional(), // one plain sentence on why the suggested option is the right call
   attention: z.enum(["approve", "steer", "suggest"]).optional(), // docs/ATTENTION.md: approve = parked on a yes, steer = stuck, suggest = an idea
-  // docs/LEARN.md: yeses in a row on this kind of card. When have reaches need, the factory does these on its own.
-  learn: z.object({ have: z.number().int().min(0), need: z.number().int().positive() }).optional(),
 });
 export type Move = z.infer<typeof Move>;
-
-// docs/LEARN.md: a kind of card the factory now answers on its own, after the player said yes enough times in a row.
-export const Learned = z.object({ key: z.string(), label: z.string(), since: z.number() });
-export type Learned = z.infer<typeof Learned>;
 
 export const DistrictTrust = z.object({
   district: z.string(),
@@ -515,7 +509,6 @@ export const FactoryState = z.object({
   move: Move.nullable().optional(), // the open Next Move card
   deck: z.array(Move).max(12).optional(), // the check-in deck, ranked; deck[0] is the open card
   autonomy: Autonomy.optional(),
-  learned: z.array(Learned).max(40).optional(), // docs/LEARN.md: card kinds the factory does on its own now
   metrics: Metrics.optional(),
   foreman: Foreman.optional(),
   brain: Brain.optional(), // the planner's decision log (powered by Meta Muse Spark)

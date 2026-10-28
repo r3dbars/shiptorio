@@ -1,15 +1,5 @@
 # Claude project threads (as of 2026-10-26 ~20:40 UTC)
 
-## Simplify the whole game UI (Claude, 2026-10-28)
-
-- Justin: the live factory is overwhelming (4 ways to say "needs you", 3 "not connected" mine tags, a stale red Steer card, two different 12s). Audit + 10 A/B picks: https://claude.ai/artifact/F2Rd8CtzAxJhH1sfDCriLT. Rules in docs/SIMPLE-UI.md.
-- Built behind `?simple=1` (`simpleOn()` in web/src/flags.ts): `SlowSpotLine` (one sentence: "You · 3 waiting" / the jammed stage / all clear, `ui/slowSpot.ts`), `TaskTray` (one card, "2 of 9", swipe or arrows browse and fly the camera via `setFocus(move.focus)`, Go / Later / Edit-More, autonomy "N more ..., then the factory stops asking"), quiet shaft HUD (`ShaftHud.quiet`: no chips, tags or pings except the card's machine), compact floor card. Don't add new map labels or second "needs you" surfaces; asks go in the tray.
-- Runner light + one-plan-card-at-a-time is PR #474 (thread "Make it obvious the runner is working"); `<MachineLight/>` slots into the simple HUD once it lands.
-
-## Teach the factory to automate what you approve (Claude, 2026-10-28)
-
-- Justin's journey pick #11. 3 Continues in a row on one card class (`kind|scope`) and the factory does that class on its own: `server/src/learn.ts`, `runLearned()` in the Factory tick, dots meter `web/src/ui/LearnDots.tsx` from `Move.learn`, learned list + "Ask me again" in Make it yours. Only plans and plan approvals can be learned, never Launch. Dismiss "Just this one" leaves the planner a try-something-different note. Flag `learn` (default on). docs/LEARN.md. The simple tray (#477) swaps its `.tearn` line for `<LearnDots>`.
-
 ## Locked dedicated Keychain restart (Codex, 2026-10-27)
 
 - Existing dedicated Keychains must unlock before `set-keychain-settings`; a locked service restart otherwise fails before credential discovery. The real macOS regression now locks the isolated store and calls prepare directly, preserving the password, saved canary, sandbox boundary and personal default Keychain checks.
@@ -19,7 +9,7 @@
 
 - Soundboard thread owns all SFX and music now (the gameplay thread handed over `claude/gameplay-sound`). Justin picked every sound on the A/B soundboard (https://claude.ai/artifact/EdGMjvx9LP9xTfzNv9Cwe3); recipes live in `web/src/sound/steamIron.ts` with the take each one is (`PICKS`).
 - Machine taps play when the camera flies in (`tapFor` in steamIron, called from `useFactorySound`); close-ups get a mood layer (working / stuck / rework / idle, `moodOf`); the hold-to-launch button is a 4-tick countdown clank; card Continue / Later, unlock, merged, caught a bug and ore arriving replaced the chiptune versions. Repair sounds (`repair_pry`, `repair_boiler`, `repair_cart`) are ready for the first-run repair slice.
-- Music (2026-10-28): Justin's 7 soundtrack picks are the default score. Pure score + picks + role rules in `web/src/sound/soundtrack.ts` (tests: `web/test/soundtrack.test.ts`), Web Audio port of the soundboard instruments in `soundtrackPlayer.ts`. Idle = Iron Lullaby, working = Night Shift, stuck = Pressure, after a launch = Liftoff (30 s), orbit watch close-up = Aether Drift, mines close-up = Deep Shaft, first run / welcome tour / guided build-out = Boiler Waltz. Calm rule: the floor's mood can only change the track after 8 bars; your own moves switch on the next bar with a 2.2 s crossfade. `?music=2` = old "Up from the Mine", `?music=1` = first adaptive score. Audition any track: `renderSoundtrackPreview(role)`.
+- Music: Justin hasn't picked tracks yet, so the current score stays.
 
 ## Let players play first, sign in later (Claude, 2026-10-27)
 

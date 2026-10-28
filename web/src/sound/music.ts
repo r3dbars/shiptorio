@@ -113,16 +113,6 @@ export function padCutoff(intensity: number, tension: number): number {
   return Math.round(500 + intensity * 1700 - tension * 300);
 }
 
-import type { Focus } from "./scapes";
-
-// Which close-up has its own track. The mines are the ore deposits and the repo sources at the bottom of the shaft.
-export function musicFocus(f: Focus | null): "orbit" | "mine" | null {
-  if (!f) return null;
-  if (f.kind === "orbit") return "orbit";
-  if (f.kind === "ore" || f.key.startsWith("src:")) return "mine";
-  return null;
-}
-
 // Foundry score v2: arrangement decisions stay independent of the audio clock.
 export type MusicState = "idle" | "working" | "blocked" | "launch";
 export const BAR_SECONDS = EIGHTH * STEPS_PER_BAR;

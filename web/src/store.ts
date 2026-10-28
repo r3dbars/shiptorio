@@ -38,7 +38,6 @@ export function applyPatch(s: FactoryState, p: Patch): FactoryState {
     bottleneck: p.bottleneck !== undefined ? p.bottleneck : s.bottleneck,
     holdingBack: p.holdingBack !== undefined ? p.holdingBack : s.holdingBack,
     autonomy: p.autonomy ?? s.autonomy,
-    learned: p.learned ?? s.learned,
     metrics: p.metrics ?? s.metrics,
     foreman: p.foreman ?? s.foreman,
     brain: p.brain ?? s.brain,

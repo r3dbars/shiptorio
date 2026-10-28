@@ -52,7 +52,6 @@ export class ShaftStage {
   view: ShaftView = "build";
   focusId: string | null = null;
   followItem: IronItem | null = null;
-  followRef: string | null = null; // follow this one real item (the simple screen's "see what's moving"), not the lead
   W = 2;
   H = 2;
   pixel = 1; // 1 = full resolution, 2-3 chunkier, 0 = smooth
@@ -117,7 +116,7 @@ export class ShaftStage {
   setView(view: ShaftView, id?: string | null) {
     this.view = view;
     this.focusId = id ?? null;
-    if (view !== "follow") this.followItem = this.followRef = null;
+    if (view !== "follow") this.followItem = null;
     this.presetGoal();
   }
 
@@ -155,20 +154,7 @@ export class ShaftStage {
 
   /** ease the camera toward its goal */
   camStep(dt: number) {
-    if (this.view === "follow" && this.followRef) {
-      // one item asked for by name: ride it; before it's in the shaft (or once it's gone) show the whole shaft
-      const it = this.I.items.find((x) => x.ref === this.followRef && !x.hidden && !x.gone);
-      this.followItem = it ?? null;
-      if (it) {
-        it.mesh.getWorldPosition(this.tgtGoal);
-        this.tgtGoal.y += 0.6;
-        this.viewGoal = followH(this.W);
-      } else {
-        const f = floorFrame("stack", this.W, this.H);
-        this.rootToWorld(...f.at, this.tgtGoal);
-        this.viewGoal = f.h;
-      }
-    } else if (this.view === "follow") {
+    if (this.view === "follow") {
       if (!this.followItem || !this.I.items.includes(this.followItem) || this.followItem.hidden) this.followItem = this.pickFollow();
       if (this.followItem) {
         this.followItem.mesh.getWorldPosition(this.tgtGoal);

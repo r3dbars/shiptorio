@@ -102,7 +102,6 @@ export class ShaftScene {
   // the coming-back time-lapse (ui/away.ts): asked for before the shaft may be built, started on the first sync
   private lapse: Timelapse | null = null;
   private lapsing = false;
-  private followRef: string | null = null; // the one real item the follow cam rides, when one was asked for
   private asked: string | null = null; // the last focus asked for, kept for a shaft that wasn't built yet
   private readonly trophies = new Trophies(); // a green lamp per shipped PR, by the assembler that built it
   private readonly clogs = new ClogView(); // the bottleneck, piling up where it lives (clog.ts)
@@ -359,12 +358,7 @@ export class ShaftScene {
     this.asked = key;
     this.hud.selected = key ?? undefined;
     const id = key ? this.stationOfKey(key) : undefined;
-    if (key?.startsWith("item:")) {
-      // ride one real item up the shaft (the simple screen's "see what's moving")
-      this.home ??= { ...this.view };
-      this.followRef = key.slice(5);
-      this.setView("follow", null);
-    } else if (key && (id || this.floorOfKey(key))) {
+    if (key && (id || this.floorOfKey(key))) {
       this.home ??= { ...this.view };
       if (id) this.setView("station", id);
       else this.setView(this.floorOfKey(key)!, null);
@@ -565,7 +559,6 @@ export class ShaftScene {
 
   private goTo(view: ShaftView) {
     this.governor.poke();
-    this.followRef = null; // the elevator's FOLLOW rides the lead item
     this.home = null;
     this.setView(view, null);
   }
@@ -576,7 +569,6 @@ export class ShaftScene {
     if (this.stage && !this.director?.locked) {
       if (view === "free") this.stage.view = "free";
       else this.stage.setView(view, id);
-      if (view === "follow") this.stage.followRef = this.followRef;
       if (snap || this.reduceMotion) this.stage.snap();
     }
     this.hud.syncFloors(view);
@@ -584,8 +576,7 @@ export class ShaftScene {
 
   // what's on screen sits higher when the bottom is covered (a card, a sheet, the phone controls)
   private applyBias() {
-    // the simple screen centres what the card is about, on every screen (journey round 3: "right in the center")
-    if (this.stage) this.stage.bias = this.hud.quiet && this.home ? { x: 0, y: 0 } : biasFor(this.W, this.H, this.lift, !!this.home);
+    if (this.stage) this.stage.bias = biasFor(this.W, this.H, this.lift, !!this.home);
   }
 
   private stationOfKey(key: string): string | undefined {
