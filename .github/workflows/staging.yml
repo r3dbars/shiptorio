@@ -27,7 +27,15 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck && bun test && bun run build
+      - run: bun run typecheck
+      - name: Install Linux runner verification boundary
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bubblewrap
+          # Match CI and Deploy: the runner sandbox tests need user namespaces.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: bun test
+      - run: bun run build
       - name: Verify real Durable Object storage on host
         run: bun run test:storage
       - name: Deploy isolated staging
