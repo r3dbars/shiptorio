@@ -79,3 +79,17 @@ Same picks page, db doc `picks/journey3`.
   PRs through the factory is its own thread ("Follow your work through the factory").
 - **Mac setup card:** "Your Mac writes the code" (why first). **Lamp:** just the lamp, no words (#474).
 - **Dots meter:** "Approve 2 more like this and then it's automatic" (`LearnDots`, #480).
+
+## Follow your work (round 3 pick 8, thread "Follow your work through the factory")
+
+Justin: "allow them to follow the PRs or the issues they're creating through the whole journey ... click here to see
+what things are moving through the factory and then they kinda cycle through if there's more than one thing."
+
+- After your last card, with work in flight, the tray shows one **All caught up** card: "3 things moving through the
+  factory", **Follow them** (the next idea, if any, is a small second button). Nothing in flight: the old centered
+  "All caught up." line and the idea card.
+- **Follow them** rides one piece of work at a time: the `item:<id>` focus key pins the shaft's follow cam to that real
+  item (`ShaftStage.followRef`; the whole shaft if it isn't drawn yet). The spotlight sits on it, centered, and it keeps
+  its one tag. The card shows what it is, where it is now ("In checks"), the PR link, "2 of 3" arrows and **Done**. It
+  moves on to the next one every 8 s.
+- Order (`ui/moving.ts`): furthest along first, newest first within a stage; the work your last yes was about first.

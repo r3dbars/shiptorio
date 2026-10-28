@@ -1084,4 +1084,13 @@ export const TASKS = {
     { why: "once", label: "Do it differently next time" },
   ] as const,
   caughtUp: (n: number) => (n ? `All caught up. ${n} thing${n === 1 ? "" : "s"} moving.` : "All caught up."),
+  // following the work through the factory once you're caught up (round 3 pick 8, thread "Follow your work")
+  caught: "All caught up",
+  inFlight: (n: number) => `${n} thing${n === 1 ? "" : "s"} moving through the factory`,
+  follow: (n: number) => (n === 1 ? "Follow it" : "Follow them"),
+  moving: "Moving",
+  now: (where: string) => `${where[0].toUpperCase()}${where.slice(1)}`,
+  stop: "Done",
+  prevWork: "Previous one",
+  nextWork: "Next one",
 };
