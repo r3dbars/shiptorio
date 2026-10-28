@@ -6,9 +6,9 @@ import type { Px } from "./px";
 // between two steps. Round things get banded shading across the curve, a hot glint and a bounce px at the dark edge.
 
 export type Ramp = readonly Color[];
-// Iron interleaves the warm iron ramp with the cool steel one (they step up in brightness together), so mottled
-// faces read as the dark cool-grey iron of the mockups rather than brown.
-export const IRON: Ramp = ["soot", "iron-0", "steel-0", "iron-1", "steel-1", "iron-2", "steel-2", "iron-3", "iron-4"];
+// Iron is the warm near-black of Justin's painted mockups (and the hub's hull): mostly the iron ramp, doubled up in
+// the darks so faces sit low, with one cool steel step in the light middle so lit edges read as metal, not wood.
+export const IRON: Ramp = ["soot", "iron-0", "iron-0", "iron-1", "iron-1", "iron-2", "steel-2", "iron-3", "iron-4"];
 // Ramps are tuned to Justin's painted art snapped to the 48: mostly the dark and middle steps, the top step only
 // for glints. (His builder snapped: soot, plate-0, iron-0, brass-0/1, iron-1/2, brass-2, plate-2; brass-4 is ~0.1%.)
 export const BRASS: Ramp = ["soot", "plate-0", "brass-0", "brass-1", "brass-2", "brass-3", "brass-4", "brass-5"];
@@ -110,8 +110,8 @@ export function face(g: Px, x: number, y: number, w: number, h: number, ramp: Ra
   }
 }
 
-/** Cool steel for raised bands and frames (art direction: dark cool iron, brass only as jewelry). */
-export const BAND: Ramp = ["soot", "steel-0", "iron-1", "steel-1", "iron-2", "steel-2", "steel-3"];
+/** Dark iron for raised bands and frames, a shade above the faces they sit on (brass only as jewelry). */
+export const BAND: Ramp = ["soot", "iron-0", "iron-1", "iron-1", "iron-2", "iron-3", "steel-3"];
 
 /** A raised strap/band. With the default (BRASS) it is a steel band whose lit top edge is a brass trim line and whose
  * rivets are brass: brass is jewelry, not paint. Pass GOLD to get a solid brass band (collars, flanges). */
@@ -123,7 +123,7 @@ export function strap(g: Px, x: number, y: number, w: number, h: number, ramp: R
     let v = 0.42 + 0.12 * u + (blotch(x + i, y + j, 3, 3) - 0.5) * 0.16;
     if (j === h - 1 && h > 1) v -= 0.3;
     if (i === w - 1 && w > 2 && h > 2) v -= 0.12;
-    if (!solid && j === 0) { tone(g, x + i, y + j, BRASS, 0.38 + 0.35 * u); continue; } // the brass trim line, brighter toward the sun
+    if (!solid && j === 0) { tone(g, x + i, y + j, BRASS, 0.38 + 0.35 * u + (w > 6 && i === w - 3 ? 0.4 : 0)); continue; } // the brass trim line, brighter toward the sun, one glint near its lit end
     if (!solid && i === w - 1 && h > 2 && w <= 3) { tone(g, x + i, y + j, BRASS, 0.55); continue; } // lit right edge of an upright
     if (j === 0) v += 0.2;
     tone(g, x + i, y + j, body, v);
@@ -145,7 +145,7 @@ export function drop(g: Px, x: number, y: number, w: number, h: number, c: Color
 
 /** A rivet: one light px over one dark px. */
 export function rivet(g: Px, x: number, y: number, light: Color = "brass-3", dark: Color = "brass-0") {
-  g.set(x, y, light); g.set(x, y + 1, dark);
+  g.set(x, y, light === "brass-3" && noise(Math.round(x), Math.round(y), 77) < 0.3 ? "brass-4" : light); g.set(x, y + 1, dark); // some heads catch the sun
 }
 
 /** Smoke: a few soft puffs drifting up and to the right from (x, y). p is the loop phase 0..1; heavy = jam smoke. */
@@ -184,18 +184,25 @@ export function bracket(g: Px, x: number, y: number, dx: 0 | 1, dy: 0 | 1, n = 4
   if (!dy && dx) g.set(x, y, "brass-5"); // the corner that faces the sun catches a glint
 }
 
+/** The right side face of a box in 3/4: a parallelogram d px wide starting at column x, stepping up ~3/4 px per px as
+ * it goes back. Its top edge catches the light. */
+export function side(g: Px, x: number, y: number, h: number, d: number, ramp: Ramp = IRON, base = 0.42, seed = 1) {
+  const up = Math.round(d * 0.75);
+  for (let i = 0; i < d; i++) {
+    const sx = x + i, lift = Math.round(((i + 1) * up) / d);
+    for (let yy = y - lift; yy < y + h - lift; yy++) {
+      const low = yy > y + h - lift - 4 ? -0.1 : 0;
+      tone(g, sx, yy, ramp, base + 0.06 * (i / d) + low + (blotch(sx, yy, 4, seed + 3) - 0.5) * 0.12);
+    }
+    tone(g, sx, y - lift, ramp, Math.min(1, base + 0.28));
+  }
+}
+
 /** A box seen in 3/4: the front face at (x, y, w, h), a lit top face and a right side face receding d px to the right
  * and about 3/4 d up. Brass trims the lit front-top edge; the front-right corner catches the sun. */
 export function box3q(g: Px, x: number, y: number, w: number, h: number, d: number, base = 0.34, opts: { rust?: number; grime?: number; seed?: number } = {}) {
   const up = Math.round(d * 0.75), seed = opts.seed ?? 1;
-  for (let i = 0; i < d; i++) { // side face, a parallelogram stepping up as it goes back
-    const sx = x + w + i, lift = Math.round(((i + 1) * up) / d);
-    for (let yy = y - lift; yy < y + h - lift; yy++) {
-      const low = yy > y + h - lift - 4 ? -0.1 : 0;
-      tone(g, sx, yy, IRON, 0.42 + 0.06 * (i / d) + low + (blotch(sx, yy, 4, seed + 3) - 0.5) * 0.12);
-    }
-    tone(g, sx, y - lift, IRON, 0.7); // its top edge catches the light
-  }
+  side(g, x + w, y, h, d, IRON, 0.42, seed);
   for (let j = 1; j <= up; j++) { // top face, lightest: it faces the sky
     const ty = y - j, sh = Math.round((j * d) / up);
     for (let xx = x + sh; xx < x + w + sh; xx++) tone(g, xx, ty, IRON, 0.7 + 0.12 * ((xx - x) / (w + d)) - j * 0.015 + (blotch(xx, ty, 4, seed + 5) - 0.5) * 0.12);

@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift, type Px } from "./px";
-import { BAND, BRASS, IRON, blotch, bracket, cylH, drop, face, noise, rivet, smoke, strap, streak, tone, type Ramp } from "./shade";
+import { BAND, BRASS, IRON, blotch, bracket, cylH, drop, face, noise, rivet, side, smoke, strap, streak, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Review: a low riveted inspection bench with a crate on hazard stripes, two jointed brass arms holding lamps over
@@ -47,9 +47,10 @@ export const review: StationDef = {
 
     // --- the bench: top face, front, posts
     for (let k = 0; k < 3; k++) for (let x = 2 + (3 - k); x <= 42; x++) tone(g, x, 23 + k, IRON, 0.58 + 0.14 * ((x - 2) / 40) + (blotch(x, 23 + k, 3, 2) - 0.5) * 0.2);
-    face(g, 2, 26, 40, 11, IRON, 0.32, { seed: 61, grime: 2, rust: 0.04 });
-    strap(g, 2, 26, 40, 2, BRASS, 5);
-    strap(g, 2, 35, 40, 2, BRASS, 5, false);
+    side(g, 39, 26, 11, 4, IRON, 0.42, 61); // the bench's right end, seen in 3/4
+    face(g, 2, 26, 37, 11, IRON, 0.32, { seed: 61, grime: 2, rust: 0.04 });
+    strap(g, 2, 26, 37, 2, BRASS, 5);
+    strap(g, 2, 35, 37, 2, BRASS, 5, false);
     for (const px of [8, 31]) { // the arm posts, standing proud of the bench
       drop(g, px, 21, 5, 16);
       face(g, px, 21, 5, 16, IRON, 0.42, { seed: px, grime: 2 });
@@ -57,12 +58,13 @@ export const review: StationDef = {
       for (let y = 23; y < 37; y++) { tone(g, px, y, BRASS, 0.35); tone(g, px + 4, y, BRASS, 0.72); }
       rivet(g, px + 2, 25); rivet(g, px + 2, 32);
     }
-    for (const fx of [3, 36]) cylH(g, fx, 37, 6, 2, BRASS, { amb: 0.15 });
-    bracket(g, 2, 26, 0, 0, 3); bracket(g, 41, 26, 1, 0, 3); bracket(g, 2, 36, 0, 1, 3); bracket(g, 41, 36, 1, 1, 3);
-    for (const [x, y, n] of [[6, 28, 4], [20, 28, 3], [27, 28, 5], [39, 28, 4]] as const) streak(g, x, y, n);
+    for (const fx of [3, 32]) cylH(g, fx, 37, 6, 2, BRASS, { amb: 0.15 });
+    cylH(g, 39, 34, 4, 2, BRASS, { amb: 0.12 }); // the back foot
+    bracket(g, 2, 26, 0, 0, 3); bracket(g, 38, 26, 1, 0, 3); bracket(g, 2, 36, 0, 1, 3); bracket(g, 38, 36, 1, 1, 3);
+    for (const [x, y, n] of [[6, 28, 4], [20, 28, 3], [27, 28, 5], [40, 26, 4]] as const) streak(g, x, y, n);
 
     // hazard stripes under the crate
-    for (let x = 14; x < 30; x++) for (let y = 23; y < 25; y++) g.set(x, y, ((x + y) >> 1) % 2 ? "soot" : "brass-3");
+    for (let x = 13; x < 31; x++) for (let y = 23; y < 26; y++) g.set(x, y, ((x + y) >> 1) % 2 ? "soot" : y === 23 ? "brass-4" : "brass-3"); // a hazard-striped pad under the crate
 
     // --- the crate
     const cx = 15, cy = 13, cw = 14, ch = 10;
