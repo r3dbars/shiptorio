@@ -31,14 +31,21 @@ function resize() {
   post.setSize(lowW, lowH);
   camera.aspect = lowW / lowH;
   camera.updateProjectionMatrix();
+  const r = restFor(camera.aspect);
+  if (r.yaw !== REST.yaw || r.zoom !== REST.zoom) { Object.assign(REST, r); Object.assign(cam, r); }
 }
 addEventListener("resize", resize);
-resize();
 
 // --- camera: fixed 3/4 view, drag to orbit a little, wheel/pinch to zoom; springs home on release ---
+// landscape: straight-on 3/4 like the mockups; portrait: turn the deck so the line runs corner to corner
 const REST = { yaw: 0, pitch: 0.4, zoom: 1 };
+const restFor = (aspect) => (aspect < 0.85 ? { yaw: FOCUS ? 0.35 : 0.78, pitch: 0.62, zoom: ZOOM } : { yaw: 0, pitch: 0.4, zoom: ZOOM });
 const cam = { ...REST };
 const target = new THREE.Vector3(0, -0.7, 0.2);
+// ?focus=builder: frame the Builder up close (same pixel size, just nearer)
+const FOCUS = new URLSearchParams(location.search).get("focus") === "builder";
+if (FOCUS) target.set(-2.2, 1.0, -0.6);
+const ZOOM = FOCUS ? 3.4 : 1;
 let drag = null as null | { x: number; y: number; yaw: number; pitch: number };
 const pointers = new Map<number, { x: number; y: number }>();
 let pinch0 = 0, zoom0 = 1;
@@ -51,15 +58,15 @@ canvas.addEventListener("pointerdown", (e) => {
 canvas.addEventListener("pointermove", (e) => {
   if (!pointers.has(e.pointerId)) return;
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; cam.zoom = clamp(zoom0 * Math.hypot(a.x - b.x, a.y - b.y) / pinch0, 0.8, 1.6); return; }
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; cam.zoom = clamp(zoom0 * Math.hypot(a.x - b.x, a.y - b.y) / pinch0, 0.8 * ZOOM, 1.6 * ZOOM); return; }
   if (!drag) return;
-  cam.yaw = clamp(drag.yaw - (e.clientX - drag.x) * 0.004, -0.55, 0.55);
+  cam.yaw = clamp(drag.yaw - (e.clientX - drag.x) * 0.004, REST.yaw - 0.55, REST.yaw + 0.55);
   cam.pitch = clamp(drag.pitch + (e.clientY - drag.y) * 0.003, 0.3, 0.95);
 });
 const up = (e) => { pointers.delete(e.pointerId); if (!pointers.size) drag = null; };
 canvas.addEventListener("pointerup", up);
 canvas.addEventListener("pointercancel", up);
-canvas.addEventListener("wheel", (e) => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(-e.deltaY * 0.0015), 0.8, 1.6); wheelT = 1.2; }, { passive: false });
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(-e.deltaY * 0.0015), 0.8 * ZOOM, 1.6 * ZOOM); wheelT = 1.2; }, { passive: false });
 let wheelT = 0;
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
@@ -67,17 +74,33 @@ function placeCamera(dt) {
   const held = pointers.size > 0 || wheelT > 0;
   wheelT = Math.max(0, wheelT - dt);
   if (!held) { const s = 1 - Math.exp(-dt * 2.2); cam.yaw += (REST.yaw - cam.yaw) * s; cam.pitch += (REST.pitch - cam.pitch) * s; cam.zoom += (REST.zoom - cam.zoom) * s; }
-  // fit the deck: ~21 units wide on landscape; on a phone frame the middle of the line
-  const half = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
-  const wantW = camera.aspect < 1 ? 6.2 : 10.8, wantH = 5.2;
-  const dist = Math.max(wantW / (half * camera.aspect), wantH / half) / cam.zoom;
+  // fit the whole deck (rails to orb) on screen at this angle: binary search the distance
+  const dist = fitDistance(cam.yaw, cam.pitch) / cam.zoom;
+  aim(cam.yaw, cam.pitch, dist);
+}
+const BOUNDS = [-8.3, 8.3].flatMap((x) => [-3.4, 2.6].flatMap((y) => [-3.6, 3.6].map((z) => new THREE.Vector3(x, y, z))));
+const v = new THREE.Vector3();
+function aim(yaw, pitch, dist) {
   camera.position.set(
-    target.x + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dist,
-    target.y + Math.sin(cam.pitch) * dist,
-    target.z + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dist,
+    target.x + Math.sin(yaw) * Math.cos(pitch) * dist,
+    target.y + Math.sin(pitch) * dist,
+    target.z + Math.cos(yaw) * Math.cos(pitch) * dist,
   );
   camera.lookAt(target);
+  camera.updateMatrixWorld();
 }
+function fitDistance(yaw, pitch) {
+  let lo = 10, hi = 250;
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    aim(yaw, pitch, mid);
+    const fits = BOUNDS.every((p) => { v.copy(p).project(camera); return Math.abs(v.x) < 0.94 && Math.abs(v.y) < 0.8; });
+    if (fits) hi = mid; else lo = mid;
+  }
+  return hi;
+}
+
+resize();
 
 // --- toggles so Justin can see what each step buys ---
 function toggle(id, get, set) {
