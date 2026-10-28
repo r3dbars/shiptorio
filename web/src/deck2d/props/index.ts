@@ -34,8 +34,8 @@ export const createLayer: CreateLayer = () => {
     const P = ART_PX;
     ventXs(w).forEach((vx, i) => {
       for (let k = 0; k < 4; k++) {
-        const q = (t / 5 + k / 4 + i * 0.37) % 1, r = 2 + q * 5;
-        const cx = vx - 0.5 - q * 4 + Math.sin(q * 6 + i) * 1, cy = VENT_MOUTH + 1 + q * 26;
+        const q = (t / 5.5 + k / 4 + i * 0.37) % 1, r = 3 + q * 6;
+        const cx = vx - 0.5 - q * 4 + Math.sin(q * 6 + i) * 1.2, cy = VENT_MOUTH + q * 30;
         for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
           const dx = (x + 0.5 - cx) / r, dy = (y + 0.5 - cy) / r, d = dx * dx + dy * dy;
           if (d > 0.85 + 0.15 * Math.sin(Math.atan2(dy, dx) * 3 + k)) continue;
