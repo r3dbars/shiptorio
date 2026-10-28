@@ -1,5 +1,5 @@
 // Shippy as real pixel art, drawn in code (contract: the pixel canvas, ?px=1). Every frame is built from parts on a
-// grid of art px: the box (lantern on the left, eye slit, brass trim, handle), four brass legs, one arm, props.
+// grid of art px: the box (lantern on the left, eye slit, rivets, handle), four steel legs, one arm, props.
 // Then a 1 art px soot outline goes around the whole shape. Palette only, light from the upper right.
 //
 // Grid coordinates: x right from the body's middle column, y up from the feet (feet sit on row -1).
@@ -16,7 +16,7 @@ const INK: Record<string, string> = {
   g: P.energy[0], G: P.energy[1], E: P.energy[2], F: P.energy[3],
   K: P.ok[1], L: P.ok[2],
   J: P.jam[1], j: P.jam[2],
-  S: P.sun[5], h: P.haze[2],
+  S: P.sun[5], h: P.haze[2], w: P.white[0], l: P.iron[2],
 };
 
 export type PxEye = "off" | "on" | "ok" | "jam" | "wide";
@@ -29,21 +29,22 @@ export type PxFrame =
 type Cells = Map<string, string>;
 export interface PxGrid { cells: Cells; minX: number; maxX: number; minY: number; maxY: number }
 
-// The box in 3/4 view, 17 columns x 10 rows: a caged lantern (0-2), the box (3-16) with brass corner caps.
-// Rows: 0-1 handle, 2-3 top face (catches the light), 4 the lid seam, 5-8 front face, 9 brass base band.
-// Rivets are a light px over a dark one; rust and a grime dither sit low and left, away from the light.
+// The box in 3/4 view, 17 columns x 10 rows: a caged lantern (0-2), the box (3-16) in cool dark steel.
+// Rows: 0-1 iron handle, 2-3 top face (catches the light), 4 the lid seam, 5-8 front face, 9 base band.
+// Brass is jewelry only (rivets, the lantern cage): a white glint on the top right corner, warm sun rim down the
+// right edge, rust and a grime dither low and left, away from the light.
 // The eye slit is row 6 ("#####").
 const BODY = [
-  "........bdef.....",
-  "........b..e.....",
-  ".cfdtuvuuuuuuuvve",
-  "bGEctttuuuuuuvuvd",
-  "bGFbssssssssssssd",
-  "bgEbttvtttttttvtu",
-  "bGEbtts#####ssttu",
-  "bgEbtrtRttrtttutu",
-  ".cdbkrktrRrtktutu",
-  "...bcccccccccccde",
+  "........tuuv.....",
+  "........s..u.....",
+  ".ctuuuvuuuuuuuvvw",
+  "bGEdttuuuuuuuvuvS",
+  "bGFsssssssssssssd",
+  "bgEtrtvttrRtrRvtS",
+  "bGEtts#####ssttuv",
+  "bgEdrtRtkrRtttutd",
+  ".cdkrkktrRrktklts",
+  "...sdsssssssssdss",
 ];
 const EYE: Record<PxEye, string> = { off: "sssss", on: "GEEEF", ok: "KKKLL", jam: "JJjjj", wide: "EFFFF" };
 const EYE_COL = 7, EYE_ROW = 6;
@@ -67,19 +68,19 @@ function body(g: PxGrid, by: number, eye: PxEye, dx = 0, lid = 0) {
 }
 
 /**
- * A jointed brass leg: out from the hip to a knee, straight down to a chunky 3 px foot on row footY.
+ * A jointed steel leg with a brass knee: out from the hip to a knee, straight down to a chunky 3 px foot on row footY.
  * side = which way the knee points, reach = how far out, back = the far pair, a shade darker.
  */
 function leg(g: PxGrid, hx: number, hipY: number, side: -1 | 1, reach: number, footY: number, fwd: number, back: boolean) {
-  const [upper, knee, lower] = back ? ["c", "d", "b"] : ["d", side > 0 ? "e" : "d", "c"];
+  const [upper, knee, lower] = back ? ["t", "c", "t"] : ["u", side > 0 ? "e" : "d", "u"];
   let x = hx;
   for (let y = hipY; y < footY; y++) {
     const r = y - hipY;
     x = hx + side * Math.min(r, reach) + (r >= reach ? fwd : 0);
     put(g, x, y, r === 0 ? "k" : r === reach ? knee : r < reach ? upper : lower);
-    if (!back && r > 0) put(g, x - side, y, r === reach ? "c" : "b"); // the shadow side of a 2 px thick leg
+    if (!back && r > 0) put(g, x - side, y, r === reach ? "c" : "t"); // the shadow side of a 2 px thick leg
   }
-  put(g, x - 1, footY, "k"); put(g, x, footY, back ? "k" : "b"); put(g, x + 1, footY, "k");
+  put(g, x - 1, footY, back ? "s" : "t"); put(g, x, footY, back ? "t" : "u"); put(g, x + 1, footY, back ? "s" : "v");
 }
 
 /** Four legs under a box whose bottom trim is on row by: the far pair first, then the near pair over them. */
@@ -95,12 +96,12 @@ function legs(g: PxGrid, by: number, liftA = 0, liftB = 0, fwd = 0) {
 
 /** Arm parts attach at the box's right side, eye height. */
 const ARMS: Record<string, [number, number, string][]> = {
-  out: [[0, 0, "k"], [1, 0, "d"], [2, 0, "d"], [3, 0, "e"], [4, -1, "c"], [4, 1, "c"], [4, 0, "b"]],
-  lever0: [[0, 0, "k"], [1, 1, "d"], [2, 2, "d"], [3, 3, "e"], [3, 4, "c"], [4, 4, "c"]],
-  lever1: [[0, 0, "k"], [1, 1, "d"], [2, 2, "d"], [3, 3, "d"], [3, 4, "e"], [3, 5, "c"], [4, 5, "c"]],
-  weld: [[0, 0, "k"], [1, 1, "d"], [2, 2, "d"], [3, 3, "R"], [4, 4, "r"]],
-  poke0: [[0, 0, "k"], [1, 0, "d"], [2, 0, "d"], [3, 0, "d"], [4, 0, "e"], [5, 0, "c"]],
-  poke1: [[0, 0, "k"], [1, 0, "d"], [2, 0, "d"], [3, 0, "d"], [4, 0, "d"], [5, 0, "e"], [6, 0, "c"], [6, -1, "c"], [6, 1, "c"]],
+  out: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "e"], [4, -1, "u"], [4, 1, "u"], [4, 0, "v"]],
+  lever0: [[0, 0, "k"], [1, 1, "t"], [2, 2, "t"], [3, 3, "e"], [3, 4, "u"], [4, 4, "u"]],
+  lever1: [[0, 0, "k"], [1, 1, "t"], [2, 2, "t"], [3, 3, "t"], [3, 4, "e"], [3, 5, "u"], [4, 5, "u"]],
+  weld: [[0, 0, "k"], [1, 1, "t"], [2, 2, "t"], [3, 3, "R"], [4, 4, "r"]],
+  poke0: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "t"], [4, 0, "e"], [5, 0, "u"]],
+  poke1: [[0, 0, "k"], [1, 0, "t"], [2, 0, "t"], [3, 0, "t"], [4, 0, "t"], [5, 0, "e"], [6, 0, "u"], [6, -1, "u"], [6, 1, "u"]],
 };
 function arm(g: PxGrid, by: number, name: keyof typeof ARMS, dx = 0) {
   for (const [ax, ay, ch] of ARMS[name]) put(g, 17 - MID + ax + dx, by - (BODY.length - 1 - EYE_ROW) + ay, ch);
