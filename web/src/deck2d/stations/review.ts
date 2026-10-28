@@ -87,16 +87,17 @@ export const review: StationDef = {
     rod(g, 33.5, 21, 38, 13); rod(g, 38, 13, 33, 2); rod(g, 33, 2, 27.5, 3.5);
     joint(g, 33, 21); joint(g, 38, 13); joint(g, 33, 2);
     for (const hx of [17, 27]) { // bell shades opening down toward the crate
-      for (let j = 0; j < 5; j++) {
-        const half = 1 + j * 0.7;
+      cylH(g, hx - 1, 2, 3, 1, BRASS, { amb: 0.3 }); // the socket the arm holds
+      for (let j = 0; j < 6; j++) {
+        const half = 0.8 + j * 0.55;
         for (let x = Math.floor(hx - half); x <= Math.ceil(hx + half); x++) {
           const u = (x + 0.5 - hx) / (half + 0.5);
-          if (j === 4 || j === 0) tone(g, x, 3 + j, BRASS, 0.4 + 0.3 * (u + 1) / 2); // brass rims
-          else tone(g, x, 3 + j, BAND, 0.3 + 0.45 * (u + 1) / 2 + (u > 0.3 && u < 0.7 ? 0.2 : 0)); // dark steel bell
+          if (j === 5) tone(g, x, 3 + j, BRASS, 0.45 + 0.4 * (u + 1) / 2 + (u > 0.4 && u < 0.7 ? 0.2 : 0)); // a bright rolled brass lip
+          else tone(g, x, 3 + j, IRON, 0.25 + 0.5 * (u + 1) / 2 + (u > 0.25 && u < 0.6 ? 0.3 : 0) - j * 0.02); // dark iron bell, a sun stripe on its right
         }
       }
-      for (let x = hx - 2; x <= hx + 2; x++) tone(g, x, 8, lit, s === "idle" ? 0.3 : 0.6 + (x - hx + 2) * 0.08);
-      if (glow) g.glowDisc(hx + 0.5, 9, 4, glow, 0.25, [hx - 2, 8, 5, 1]);
+      for (let x = hx - 3; x <= hx + 3; x++) tone(g, x, 9, lit, s === "idle" ? 0.3 : 0.6 + (x - hx + 3) * 0.06);
+      if (glow) g.glowDisc(hx + 0.5, 10, 4.5, glow, 0.25, [hx - 3, 9, 7, 1]);
     }
 
     // --- warning bulbs on the front corners
