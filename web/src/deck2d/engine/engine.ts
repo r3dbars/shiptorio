@@ -82,7 +82,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     const all = fitAll();
     if (cam.all) return all;
     // Desktop fits everything, except it leans in on a station while it's being built (construction reads small otherwise).
-    const site = !portrait() && !v.card ? v.stops.find((x) => x.building !== undefined && x.id !== "launch") : undefined;
+    const site = !portrait() && !v.card ? v.stops.find((x) => x.id !== "launch" && (x.building !== undefined || (x.built && layers.some((l) => l.owns?.(x))))) : undefined;
     if (!portrait() && !site) return all;
     const s = Math.max(all.s, W / (site ? 1300 : 1050)), half = W / 2 / s;
     if (site) return { x: Math.max(BOUNDS.x0 + half, Math.min(right() - half, STOP_X[site.id])), y: 230, s };
