@@ -85,14 +85,17 @@ function floor(g: Px, w: number) {
 
 // ---------- rails, posts, lanterns ----------
 function lantern(g: Px, cx: number, base: number, sky = true) {
-  // brass foot, glass with a hot core, brass hood + ring; light from the upper right
-  g.rect(cx - 2, base - 1, 5, 1, "brass-1"); g.set(cx + 2, base - 1, "brass-3");
-  for (let j = 0; j < 4; j++) for (let i = -1; i <= 1; i++) tone(g, cx + i, base - 2 - j, LAMP, 0.85 - Math.abs(i) * 0.25 - (j === 0 ? 0.25 : 0) + (i === 1 ? 0.08 : 0));
-  g.vline(cx - 2, base - 5, 4, "brass-1"); g.vline(cx + 2, base - 5, 4, "brass-3");
-  g.rect(cx - 2, base - 6, 5, 1, "brass-2"); g.set(cx + 2, base - 6, "brass-4"); g.set(cx, base - 7, "brass-3");
-  // steady halo: warms the metal round it and (25%) the sky behind
-  g.glowDisc(cx + 0.5, base - 3.5, 6, "sun-4", 0.25, [cx - 2, base - 7, 5, 7]);
-  if (sky) for (const [dx, dy] of [[-3, -3], [3, -3], [-3, 0], [3, 0], [-1, -8], [1, -8]]) g.glow(cx + dx, base - 3 + dy, 1, 1, "sun-4", 0.5, true); // a few warm sparks of light, no disc
+  // a cage lantern: brass foot, glass with a hot core behind two dark bars, a pointed brass hood with a ring on top
+  g.rect(cx - 3, base - 1, 7, 1, "brass-1"); g.set(cx + 3, base - 1, "brass-3"); g.set(cx + 2, base - 1, "brass-2");
+  for (let j = 0; j < 5; j++) for (let i = -2; i <= 2; i++) tone(g, cx + i, base - 2 - j, LAMP, 0.95 - Math.abs(i) * 0.18 - Math.abs(j - 2) * 0.1 + (i > 0 ? 0.06 : 0));
+  g.vline(cx - 3, base - 6, 5, "brass-1"); g.vline(cx + 3, base - 6, 5, "brass-3");
+  for (const i of [-1, 1]) g.vline(cx + i, base - 5, 3, "sun-1"); // the cage bars, dark against the flame
+  g.rect(cx - 3, base - 7, 7, 1, "brass-2"); g.set(cx + 3, base - 7, "brass-4");
+  g.rect(cx - 2, base - 8, 5, 1, "brass-2"); g.set(cx + 2, base - 8, "brass-4"); g.set(cx, base - 9, "brass-3"); g.set(cx, base - 10, "brass-1");
+  // steady halo: warms the metal round it
+  g.glowDisc(cx + 0.5, base - 3, 11, "sun-4", 0.25, [cx - 3, base - 10, 7, 10]);
+  g.glowDisc(cx + 0.5, base - 3, 6, "sun-5", 0.25, [cx - 3, base - 10, 7, 10]);
+  if (sky) for (const [dx, dy] of [[-5, -4], [5, -4], [-4, 0], [4, 0], [0, -12]]) g.glow(cx + dx, base - 3 + dy, 1, 1, "sun-4", 0.5, true); // a few warm sparks of light, no disc
 }
 
 function post(g: Px, x: number, top: number, bot: number) {
@@ -109,8 +112,9 @@ function backRail(g: Px, w: number) {
   const n = Math.max(2, Math.round((w - 2 * CH) / 26));
   for (let k = 0; k <= n; k++) {
     const x = Math.round(CH - 2 + (k * (w - 2 * CH)) / n);
-    post(g, x, y0 - 11, y0 + 1);
-    if (k % 3 === 0 || k === n) lantern(g, x + 2, y0 - 11);
+    const lamp = k % 3 === 0 || k === n;
+    post(g, x, y0 - (lamp ? 14 : 11), y0 + 1);
+    if (lamp) lantern(g, x + 2, y0 - 15);
   }
 }
 
@@ -119,19 +123,16 @@ function sideRails(g: Px, w: number) {
   for (const [x0, x1, sgn] of [[0, CH, 1], [w - 1, w - 1 - CH, -1]] as const) {
     for (let k = 0; k <= CH; k++) { const x = x0 + sgn * k, y = A.back + CH - k - 9; g.set(x, y, "copper-1"); g.set(x, y + 1, "copper-0"); }
   }
-  for (const x of [0, w - 5]) { post(g, x, A.back + CH - 10, A.front + 1); }
+  for (const x of [0, w - 5]) { post(g, x, A.back + CH - 14, A.front + 1); lantern(g, x + 2, A.back + CH - 15); }
   for (let y = A.back + CH - 8; y < A.front - 4; y++) { g.set(1, y, "copper-0"); g.set(w - 3, y, "copper-2"); }
 }
 
 function frontRail(g: Px, w: number) {
   const y0 = A.front;
   cylH(g, 0, y0 - 6, w, 2, CU, { amb: 0.18, gloss: 1.2 });
-  const n = Math.max(2, Math.round(w / 34));
-  for (let k = 0; k <= n; k++) {
-    const x = Math.round((k * (w - 5)) / n);
-    post(g, x, y0 - 8, y0 + 2);
-    if (k === 0 || k === n) lantern(g, x + 2, y0 - 8);
-  }
+  // posts stand on the skirt's brackets, so rail, skirt and hangers read as one frame; tall lantern posts at the ends
+  for (let x = 14, k = 0; x < w - 6; x += 32, k++) post(g, x + 0.5, y0 - 8, y0 + 2);
+  for (const x of [0, w - 5]) { post(g, x, y0 - 12, y0 + 2); lantern(g, x + 2, y0 - 13); }
 }
 
 // ---------- skirt ----------
@@ -145,9 +146,9 @@ function skirt(g: Px, w: number) {
     const ru = blotch(x, y, 3, 23);
     if (ru > 0.84 && noise(x, y, 25) < 0.55) g.set(x, y, ru > 0.9 ? "copper-0" : "plate-1");
   }
-  strap(g, 0, y0, w, 2, GOLD, 0, false); // top band
-  for (let x = 3; x < w; x += 6) rivet(g, x, y0 + 6, "iron-4", "soot"); // a rivet row across the middle
-  strap(g, 0, y1 - 3, w, 2, GOLD); // bottom band
+  strap(g, 0, y0, w, 3, GOLD, 0, false); // top band
+  for (let x = 4; x < w; x += 8) { g.rect(x, y0 + 5, 2, 2, "iron-3"); g.set(x + 1, y0 + 5, "iron-4"); g.set(x, y0 + 6, "iron-1"); g.hline(x, y0 + 7, 2, "soot"); } // 2px bolt heads across the middle
+  strap(g, 0, y1 - 4, w, 3, GOLD); // bottom band
   for (let x = 3; x < w; x += 6) rivet(g, x, y1 - 3, "brass-5", "brass-1");
   g.hline(0, y1 - 1, w, "soot"); // the under-lip in shadow
   // brackets: riveted plates bolted over the skirt, standing a px proud with a cast shadow
@@ -185,7 +186,7 @@ function boulder(g: Px, cx: number, cy: number, r: number, seed: number) {
     const lump = 0.82 + 0.18 * blotch(x, y, 2, seed);
     if (d > lump) continue;
     const nz = Math.sqrt(Math.max(0, 1 - d));
-    let v = 0.22 + 0.5 * Math.max(0, dx * 0.6 - dy * 0.5 + nz * 0.5) * 0.8 + (noise(x, y, seed) - 0.5) * 0.12;
+    let v = 0.2 + 0.62 * Math.max(0, dx * 0.45 - dy * 0.75 + nz * 0.35) + (noise(x, y, seed) - 0.5) * 0.12;
     if (d > lump * 0.75 && dx < 0.2 && dy < 0) v -= 0.12; // the crease on the shadow side
     tone(g, x, y, ROCK, v);
     if (dy > 0.45 && d > lump * 0.55) g.set(x, y, dy > 0.75 && noise(x, y, seed + 1) < 0.7 ? "plate-1" : "haze-0"); // warm bounce from below
@@ -195,10 +196,10 @@ function rocks(g: Px, w: number) {
   const y0 = A.skirt;
   // a dark mass first so the boulders never show sky between them
   for (let x = 1; x < w - 1; x++) { const d = depth(x, w) * 0.72; for (let y = y0; y < y0 + d; y++) g.set(x, y, (x + y) & 1 ? "iron-0" : "soot"); }
-  const n = Math.round(w / 1.6);
+  const n = Math.round(w / 3);
   const bs: { x: number; y: number; r: number; s: number }[] = [];
   for (let i = 0; i < n; i++) {
-    const x = 3 + hash(i, 1, 33) * (w - 6), d = depth(x, w), r = 2.5 + hash(i, 2, 33) * 3.5 + d * 0.05;
+    const x = 3 + hash(i, 1, 33) * (w - 6), d = depth(x, w), r = 4 + hash(i, 2, 33) * 4.5 + d * 0.05;
     bs.push({ x, y: y0 + 1 + hash(i, 3, 33) * Math.max(1, d - r * 0.8), r, s: i });
   }
   bs.sort((a, b) => a.y - b.y);
@@ -235,23 +236,26 @@ function rocks(g: Px, w: number) {
 
 // ---------- the core orb ----------
 function orb(g: Px, w: number) {
-  const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y + 4, R = 16;
+  const cx = Math.round(orbX(w)) + 0.5, cy = A.orb.y - 6, R = 20; // the engine frames the world down to y 670 (134 art px): the finial stays above that
   // the riser that holds it: copper with brass collars, from the skirt down through the rock
   cylV(g, cx - 3.5, A.skirt - 1, 7, cy - R - A.skirt + 2, CU, { amb: 0.15, gloss: 1.1 });
-  for (const y of [A.skirt + 2, A.skirt + 12, cy - R - 3]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
+  for (const y of [A.skirt + 2, A.skirt + 10]) cylV(g, cx - 5.5, y, 11, 2, BRASS, { amb: 0.15, gloss: 1 });
   // the glass and its glowing core
-  ball(g, cx, cy, R - 0.5, ENERGY, { amb: 0.2, gloss: 0.45 });
-  ball(g, cx + 0.5, cy + 0.5, 6, ["energy-2", "energy-2", "energy-3", "energy-3", "white"], { amb: 0.45, gloss: 0.6 });
-  g.set(cx + 6, cy - 9, "white"); g.set(cx + 7, cy - 8, "energy-3"); g.set(cx + 5, cy - 9, "energy-3"); // one glint on the glass
+  ball(g, cx, cy, R - 0.5, ENERGY, { amb: 0.12, gloss: 0.35 });
+  ball(g, cx + 0.5, cy + 0.5, 9, ["energy-1", "energy-2", "energy-2", "energy-3", "energy-3"], { amb: 0.35, gloss: 0.4 });
+  g.set(cx + 9, cy - 12, "white"); g.set(cx + 10, cy - 11, "energy-3"); g.set(cx + 8, cy - 12, "energy-3"); g.set(cx + 10, cy - 10, "energy-3"); // one glint on the glass
   // the brass cage: meridians (ellipses that narrow toward the edges), an equator band, top and bottom caps
   const cage = (x: number, y: number) => { const s = (x + 0.5 - cx) / R; g.set(x, y, s > 0.3 ? "brass-4" : s > -0.3 ? "brass-3" : "brass-1"); };
-  for (const ph of [-1.05, -0.62, -0.25, 0.25, 0.62, 1.05]) for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx + Math.sin(ph) * R * Math.cos(a) - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
+  for (const ph of [-1.1, -0.7, -0.3, 0.3, 0.7, 1.1]) for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx + Math.sin(ph) * R * Math.cos(a) - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
   for (let a = -Math.PI / 2; a <= Math.PI / 2; a += 0.04) cage(Math.round(cx - 0.5), Math.round(cy + R * Math.sin(a) - 0.5));
   for (let x = Math.floor(cx - R); x <= cx + R; x++) { cage(x, Math.round(cy - 0.5)); if (g.has(x, Math.round(cy + 0.5))) g.set(x, Math.round(cy + 0.5), "brass-0"); }
-  cylH(g, cx - 7.5, cy - R - 1, 15, 3, BRASS, { amb: 0.2, gloss: 1 });
-  cylH(g, cx - 6.5, cy + R - 1, 13, 3, BRASS, { amb: 0.12, gloss: 0.8 });
+  cylH(g, cx - 10.5, cy - R - 2, 21, 4, BRASS, { amb: 0.2, gloss: 1 });
+  cylH(g, cx - 8.5, cy + R - 2, 17, 4, BRASS, { amb: 0.12, gloss: 0.8 });
   for (let x = Math.floor(cx - R); x <= cx + R; x++) if (g.has(x, Math.round(cy - 1.5))) cage(x, Math.round(cy - 1.5)); // a 2px equator band
-  g.vline(cx - 0.5, cy + R + 1, 2, "brass-2"); g.set(cx - 0.5, cy + R + 3, "brass-4"); // finial
+  g.vline(cx - 0.5, cy + R + 2, 2, "brass-2"); g.set(cx - 0.5, cy + R + 4, "brass-4"); // finial
+  // a soft steady cyan glow: on the rock round it, and a dithered ring of light in the air (no fades on the grid)
+  g.glowDisc(cx, cy, R + 10, "energy-1", 0.25, [Math.floor(cx - R), Math.floor(cy - R - 2), 2 * R + 2, 2 * R + 4]);
+  for (let y = Math.floor(cy - R - 4); y <= cy + R + 4; y++) for (let x = Math.floor(cx - R - 4); x <= cx + R + 4; x++) { const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (d > R + 1 && d < R + 3.5 && !g.has(x, y) && ((x + y) & 1) && ((x >> 1) + (y >> 1)) % 2) g.glow(x, y, 1, 1, "energy-1", 0.5, true); }
   // a steady cool halo: on the rock above and, faintly, the sky round it
 }
 
