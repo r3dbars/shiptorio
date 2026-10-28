@@ -1,4 +1,3 @@
-import { gauntletPolicy } from "./gauntlet-fixture";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache } from "./browser-fixture";
 import { expect, it, mock } from "bun:test";
@@ -21,7 +20,6 @@ async function fixture(run: (f: { factory: InstanceType<typeof Factory>; data: M
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-      const policy = gauntletPolicy(url); if (policy) return policy;
     if (url.endsWith("/access_tokens")) return Response.json({ token: "fake-token" });
     if (url.endsWith("/pulls/99")) return Response.json({ base: { ref: "main", sha: "base" }, head: { sha: current }, state: "open", draft: false, mergeable: true, mergeable_state: mergeState, merged: false });
     if (url.includes("/pulls/99/files?")) {

@@ -1,4 +1,3 @@
-import { gauntletPolicy } from "./gauntlet-fixture";
 import { budgetDb } from "./budget-fixture";
 import { BudgetError } from "../src/budget";
 import { credentialEnv } from "./credential-fixture";
@@ -340,7 +339,6 @@ describe("Factory lifecycle", () => {
     let onFeedbackRead: (() => Promise<void>) | undefined;
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
-      const policy = gauntletPolicy(url); if (policy) return policy;
       if (/\/comments\?per_page=100&page=/.test(url) && !url.includes("/issues/1/comments?")) return Response.json([]);
       if (url.endsWith("/comments")) return Response.json({ id: 1 });
       const json = (value: unknown) => Response.json(value);
@@ -677,7 +675,6 @@ it('reconciliation repairs missed merge, close, moved head and check-run events 
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: unknown) => {
     const url = String(input);
-      const policy = gauntletPolicy(url); if (policy) return policy;
     if (url.includes('/pulls?state=all')) return Response.json(publicationRecovery ? [{ number: 1, html_url: 'https://github.com/r3dbars/demo/pull/1', state: 'closed', merged_at: '2026-10-26', head: { ref: 'shiptorio/runner-old', sha: 'old' } }] : []);
     if (url.endsWith('/access_tokens')) return Response.json({ token: 'test' });
     if (url.includes('/check-runs?')) return Response.json({ total_count: 1, check_runs: [{ name: 'CI', app: { id: 15368 }, head_sha: new URL(url).pathname.split('/').at(-2), status: 'completed', conclusion: 'success' }] });
@@ -751,7 +748,6 @@ for (const outcome of ["pass", "error", "comment"] as const) {
     const original = globalThis.fetch;
     globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
       const url = String(input);
-      const policy = gauntletPolicy(url); if (policy) return policy;
       if (url.includes("/comments?")) return Response.json([]);
       if (url.endsWith("/access_tokens")) return Response.json({ token: "test" });
       if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, base: { ref: "main", sha: "base" }, head: { sha: f.saved().items[0].inspection!.headSha } });
@@ -799,7 +795,7 @@ it("budget and rate-limit waits leave AI review pending without a rework scar", 
   const pem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(await crypto.subtle.exportKey("pkcs8", keys.privateKey)).toString("base64")}\n-----END PRIVATE KEY-----`;
   const original = globalThis.fetch;
   globalThis.fetch = (async (input: unknown) => {
-    const url = String(input), policy = gauntletPolicy(url); if (policy) return policy;
+    const url = String(input);
     if (url.endsWith("/access_tokens")) return Response.json({ token: "paused-review-token" });
     if (url.endsWith("/pulls/42")) return Response.json({ state: "open", merged: false, head: { sha: "head" }, base: { ref: "main", sha: "base" } });
     if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: "head", status: "completed", conclusion: "success" }] });

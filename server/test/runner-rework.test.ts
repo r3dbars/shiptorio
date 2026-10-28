@@ -1,4 +1,3 @@
-import { gauntletPolicy } from "./gauntlet-fixture";
 import { credentialEnv } from "./credential-fixture";
 import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCookies } from "./browser-fixture";
 import { expect, mock, test } from "bun:test";
@@ -38,7 +37,6 @@ test("scar → re-plan → approve → one same-branch fix → fresh gauntlet �
   const plans: string[] = [], comparisons: string[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input), json = (x: unknown) => Response.json(x);
-    const policy = gauntletPolicy(url); if (policy) return policy;
     if (/\/comments\?per_page=100&page=/.test(url)) return json([]);
     if (url.endsWith("/access_tokens")) return json({ token: "test-install-token" });
     if (url.endsWith("/repos/r3dbars/demo")) return json({ default_branch: "main" });
