@@ -34,6 +34,12 @@ async function testRecovery() {
   const built = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../web/src/chunkReload.ts")], target: "browser" });
   if (!built.success) throw new Error("Recovery test bundle failed");
   const recovery = await built.outputs[0].text();
+  // Resolve the current hashed game chunk from this build, never from an old filename.
+  const manifest: Record<string, Chunk> = JSON.parse(readFileSync(resolve(DIST, ".vite/manifest.json"), "utf8"));
+  const app = manifest["src/App.tsx"] ?? Object.values(manifest).find(chunk => /^assets\/factory-.*\.js$/.test(chunk.file));
+  if (!app) throw new Error("Fresh build has no App/factory chunk to exercise");
+  const appPath = `/${app.file}`;
+  console.log(`Built recovery target: ${appPath}`);
   const browser = await chromium.launch();
   try {
     for (const mode of ["transient", "persistent", "preload", "storage-blocked", "unrelated", "app-transient", "app-persistent"] as const) {
@@ -43,7 +49,7 @@ async function testRecovery() {
         if (mode.startsWith("app-")) {
           if (path === "/") documents++;
           if (path.startsWith("/api/")) return Response.json({}, { status: 404 });
-          if (/^\/assets\/(App|factory)-.*\.js$/.test(path)) {
+          if (path === appPath) {
             chunks++;
             if (mode === "app-persistent" || documents === 1) return new Response("missing old app chunk", { status: 404 });
           }
