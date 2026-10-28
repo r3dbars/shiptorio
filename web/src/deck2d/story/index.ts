@@ -1,6 +1,7 @@
 // The scripted first run on the 2D deck (thread "Build the first-run story on the deck").
 // A DeckSource with no server: it plays Justin's locked story (2026-10-28) on the real line, ported from /story-b:
-//   1 Software is a factory: the deck starts empty, stops build in one by one, crates roll, the first rockets go up.
+//   1 Software is a factory: a small empty deck, stops build in one by one (construction, then a burst), the deck
+//     grows, the rocket island rises, crates roll and the first rockets go up.
 //   2 There's always a bottleneck: review and gate build in, the line speeds up, crates pile at Review waiting on
 //     your call ("REVIEW WAITING"). Never "the bottleneck is you".
 //   3 Swipe, and it moves: approving releases the pile and rockets launch.
@@ -11,8 +12,8 @@ import { STOPS, type CardView, type DeckSource, type DeckView, type Item, type S
 
 export interface StoryOptions {
   seed?: number; // same seed, same story (crate titles, spawn jitter)
-  speed?: number; // multiplies dt; 2 = twice as fast
-  onConnect?(): void; // the last card's yes: "Want to see the real one?"
+  speed?: number; // accepted for the contract's signature; the page already scales dt by ?speed
+  onConnect?(): void; // the last card's yes: "Want to see the real one?" Default: go to the app to sign in
 }
 
 export type StoryPhase = "build" | "bottleneck" | "swipe" | "automatic" | "next-jam" | "end";
@@ -27,19 +28,32 @@ export const STORY_CARD = { call: "story-call-", connect: "story-connect" } as c
 
 // Seconds each stop spends on its front crate. Upstream stays faster than the spawn rate so the only pile is Review.
 const SVC: Record<StopId, number> = { repo: 0.5, planner: 0.8, builder: 0.95, checks: 0.8, review: 0.6, gate: 0.45, launch: 1.1 };
-const BUILD_AT: [number, StopId, string][] = [
-  [0.8, "repo", "Ideas land in your repo."],
-  [2.6, "planner", "A planner picks the next one."],
-  [4.4, "builder", "A builder writes the code."],
-  [6.2, "checks", "Checks catch what's broken."],
-  [8.0, "launch", "And then it ships."],
+
+// Construction: one job at a time, each with a visible build-up (Stop.building / deck.growing / islandProgress).
+type Job = { kind: "stop"; id: StopId; line?: string } | { kind: "grow"; size: DeckSize; line?: string };
+type DeckSize = NonNullable<DeckView["deck"]>["size"];
+const JOB_SEC = { stop: 2.4, grow: 1.4 } as const;
+const JOB_GAP = 0.8;
+// The rocket island has its own long build (launch/timeline.ts LAUNCH_BUILD_SECONDS), so it rises in parallel,
+// starting as soon as the repo is down. The engine won't launch until it's "built".
+const ISLAND_SEC = 26;
+const BEAT1: Job[] = [
+  { kind: "stop", id: "repo", line: "Ideas land in your repo." },
+  { kind: "stop", id: "planner", line: "A planner picks the next one." },
+  { kind: "stop", id: "builder", line: "A builder writes the code." },
+  { kind: "grow", size: "medium" },
+  { kind: "stop", id: "checks", line: "Checks catch what's broken." },
 ];
+const BEAT2: Job[] = [{ kind: "grow", size: "large" }, { kind: "stop", id: "review" }, { kind: "stop", id: "gate" }];
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
 const CALL_PILE = 5; // crates waiting at Review before the first card slides up
 const PILE_CAP = 9; // stop adding crates past this so the heap stays readable
 
 interface Live extends Item { t: number; approved: boolean }
-interface StopSim { built: boolean; q: Live[] }
+interface StopSim { built: boolean; q: Live[]; building?: number }
+
+// The real app's front door: signing in with GitHub starts there.
+const connect = () => { if (typeof location !== "undefined") location.assign("/"); };
 
 function rng(seed: number) {
   let a = seed >>> 0 || 1;
@@ -53,7 +67,6 @@ function rng(seed: number) {
 }
 
 export function createStory(opts: StoryOptions = {}): Story {
-  const speed = opts.speed && opts.speed > 0 ? opts.speed : 1;
   let S = fresh();
   const fns = new Set<() => void>();
 
@@ -72,6 +85,9 @@ export function createStory(opts: StoryOptions = {}): Story {
       shippy: { pose: "folded", at: "corner" } as ShippyView,
       caption: "Software is a factory." as string | null,
       timers: [] as { at: number; fn: () => void }[],
+      jobs: [...BEAT1] as Job[], job: null as { job: Job; p: number } | null, jobGap: 0.6,
+      size: "small" as DeckSize, growing: undefined as number | undefined,
+      island: "none" as NonNullable<DeckView["deck"]>["island"], islandProgress: undefined as number | undefined,
     };
   }
   const after = (sec: number, fn: () => void) => S.timers.push({ at: S.t + sec, fn });
@@ -80,6 +96,8 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   function spawn() {
     if (S.st.review.q.length >= PILE_CAP) return;
+    // Beat 1 is about the line being built, not a pile: keep a few crates on it while the island rises.
+    if (S.phase === "build" && STOPS.reduce((n, id) => n + S.st[id].q.length, 0) >= 3) return;
     const title = `Fix ${S.fixes[S.nextId % S.fixes.length]}`;
     S.st.repo.q.push({ id: `story-${S.nextId++}`, title, look: "plain", t: 0, approved: false });
   }
@@ -127,26 +145,51 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.shippy = { pose: "peek", at: "corner" };
   }
 
+  function raiseIsland(dt: number) {
+    if (S.island !== "building") return;
+    S.islandProgress = Math.min(1, (S.islandProgress ?? 0) + dt / ISLAND_SEC);
+    if (S.islandProgress < 1) return;
+    S.island = "built"; S.islandProgress = undefined;
+    S.st.launch.built = true; // the pad is on the island
+    S.caption = "And then it ships.";
+  }
+
+  function construct(dt: number) {
+    if (!S.job) {
+      if (!S.jobs.length) return;
+      S.jobGap -= dt;
+      if (S.jobGap > 0) return;
+      const job = S.jobs.shift()!;
+      S.job = { job, p: 0 };
+      if (job.line) S.caption = job.line;
+    }
+    const { job } = S.job;
+    S.job.p = Math.min(1, S.job.p + dt / JOB_SEC[job.kind]);
+    const p = S.job.p, done = p >= 1;
+    if (job.kind === "stop") {
+      S.st[job.id].building = done ? undefined : p;
+      if (done) S.st[job.id].built = true;
+      if (done && job.id === "repo") { S.spawnEvery = 2.6; S.spawnT = 2.2; S.island = "building"; S.islandProgress = 0; }
+    } else {
+      S.growing = done ? undefined : p;
+      if (done) S.size = job.size;
+    }
+    if (done) { S.job = null; S.jobGap = JOB_GAP; }
+    if (done && !S.jobs.length && S.island === "building") S.caption = "Last piece: somewhere to launch from.";
+  }
+
   function director() {
     const p = S.phase;
     if (p === "build") {
-      for (const [at, id, line] of BUILD_AT) {
-        if (!S.st[id].built && S.phaseT >= at) {
-          S.st[id].built = true;
-          S.caption = line;
-          if (id === "repo") { S.spawnEvery = 2.6; S.spawnT = 2.2; }
-        }
-      }
       if (S.shipped >= 1 && S.caption === "And then it ships.") S.caption = "Software is a factory. Ideas in, rockets out.";
       if (S.st.launch.built && S.shipped >= 2 && !S.bottleneckQueued) {
         S.bottleneckQueued = true;
         after(0.6, () => {
           setPhase("bottleneck");
           S.caption = "There's always a bottleneck.";
-          S.st.review.built = true;
           S.budget = 0;
-          after(1.2, () => { S.st.gate.built = true; });
-          after(2.4, () => { S.caption = "Right now, it's waiting on your call."; S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; });
+          S.jobs.push(...BEAT2); S.jobGap = 0;
+          after(5.5, () => { S.caption = "Right now, it's waiting on your call."; S.jam = "review"; S.shippy = { pose: "peek", at: "corner" }; });
           S.spawnEvery = 1.3;
         });
       }
@@ -180,18 +223,22 @@ export function createStory(opts: StoryOptions = {}): Story {
         dots: null,
         line: "Connect GitHub and this deck runs on your real code.",
         stop: "repo",
+        yes: "See my repo",
+        no: "Replay",
+        setup: true,
       };
     });
   }
 
   function step(dt: number) {
-    dt *= speed;
     // Fixed small steps keep the sim the same at any frame rate or speed.
     while (dt > 0) {
       const h = Math.min(dt, 0.05);
       dt -= h;
       S.t += h; S.phaseT += h;
       if (S.spawnEvery > 0) { S.spawnT += h; while (S.spawnT >= S.spawnEvery) { S.spawnT -= S.spawnEvery - (S.rand() - 0.5) * 0.3; spawn(); } }
+      construct(h);
+      raiseIsland(h);
       flow(h);
       const due = S.timers.filter((x) => S.t >= x.at);
       S.timers = S.timers.filter((x) => S.t < x.at);
@@ -210,14 +257,21 @@ export function createStory(opts: StoryOptions = {}): Story {
       if (id === "review" && s.built && !reviewOpen() && s.q.length) { state = "jammed"; waiting = "REVIEW WAITING"; }
       if (automated) state = "auto";
       if (id === S.nextJam) { state = "jammed"; waiting = "CHECKS WAITING"; }
-      return { id, built: s.built, state, automated, items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
+      return { id, built: s.built, state, automated, ...(s.building != null ? { building: s.building } : {}), items: s.q.map(({ id, title, look }) => ({ id, title, look })), ...(waiting ? { waiting } : {}) };
     });
-    return { stops, jam: S.jam, card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption };
+    return {
+      stops, jam: S.jam, card: S.card ? { ...S.card } : null, shippy: { ...S.shippy }, shipped: S.shipped, caption: S.card ? null : S.caption,
+      deck: {
+        size: S.size, island: S.island,
+        ...(S.growing != null ? { growing: S.growing } : {}),
+        ...(S.islandProgress != null ? { islandProgress: S.islandProgress } : {}),
+      },
+    };
   }
 
   function approve(cardId: string) {
     if (!S.card || S.card.id !== cardId) return;
-    if (cardId === STORY_CARD.connect) { opts.onConnect?.(); return; }
+    if (cardId === STORY_CARD.connect) { (opts.onConnect ?? connect)(); return; }
     S.approvals++;
     S.card = null;
     // Each yes releases a batch of the pile, quickly, so the swipe visibly moves the line.
