@@ -30,17 +30,19 @@ export const STORY_CARD = { call: "story-call-", connect: "story-connect" } as c
 const SVC: Record<StopId, number> = { repo: 0.5, planner: 0.8, builder: 0.95, checks: 0.8, review: 0.6, gate: 0.45, launch: 1.1 };
 
 // Construction: one job at a time, each with a visible build-up (Stop.building / deck.growing / islandProgress).
-type Job = { kind: "stop"; id: StopId; line?: string } | { kind: "grow"; size: DeckSize; line?: string } | { kind: "island"; line?: string };
+type Job = { kind: "stop"; id: StopId; line?: string } | { kind: "grow"; size: DeckSize; line?: string };
 type DeckSize = NonNullable<DeckView["deck"]>["size"];
-const JOB_SEC = { stop: 1.6, grow: 1.4, island: 2.6 } as const;
-const JOB_GAP = 0.5;
+const JOB_SEC = { stop: 2.4, grow: 1.4 } as const;
+const JOB_GAP = 0.8;
+// The rocket island has its own long build (launch/timeline.ts LAUNCH_BUILD_SECONDS), so it rises in parallel,
+// starting as soon as the repo is down. The engine won't launch until it's "built".
+const ISLAND_SEC = 26;
 const BEAT1: Job[] = [
   { kind: "stop", id: "repo", line: "Ideas land in your repo." },
   { kind: "stop", id: "planner", line: "A planner picks the next one." },
   { kind: "stop", id: "builder", line: "A builder writes the code." },
   { kind: "grow", size: "medium" },
   { kind: "stop", id: "checks", line: "Checks catch what's broken." },
-  { kind: "island", line: "And then it ships." },
 ];
 const BEAT2: Job[] = [{ kind: "grow", size: "large" }, { kind: "stop", id: "review" }, { kind: "stop", id: "gate" }];
 const FIXES = ["login typo", "broken docs link", "button label", "footer link", "empty state copy", "page title"];
@@ -94,6 +96,8 @@ export function createStory(opts: StoryOptions = {}): Story {
 
   function spawn() {
     if (S.st.review.q.length >= PILE_CAP) return;
+    // Beat 1 is about the line being built, not a pile: keep a few crates on it while the island rises.
+    if (S.phase === "build" && STOPS.reduce((n, id) => n + S.st[id].q.length, 0) >= 3) return;
     const title = `Fix ${S.fixes[S.nextId % S.fixes.length]}`;
     S.st.repo.q.push({ id: `story-${S.nextId++}`, title, look: "plain", t: 0, approved: false });
   }
@@ -141,6 +145,15 @@ export function createStory(opts: StoryOptions = {}): Story {
     S.shippy = { pose: "peek", at: "corner" };
   }
 
+  function raiseIsland(dt: number) {
+    if (S.island !== "building") return;
+    S.islandProgress = Math.min(1, (S.islandProgress ?? 0) + dt / ISLAND_SEC);
+    if (S.islandProgress < 1) return;
+    S.island = "built"; S.islandProgress = undefined;
+    S.st.launch.built = true; // the pad is on the island
+    S.caption = "And then it ships.";
+  }
+
   function construct(dt: number) {
     if (!S.job) {
       if (!S.jobs.length) return;
@@ -156,16 +169,13 @@ export function createStory(opts: StoryOptions = {}): Story {
     if (job.kind === "stop") {
       S.st[job.id].building = done ? undefined : p;
       if (done) S.st[job.id].built = true;
-      if (done && job.id === "repo") { S.spawnEvery = 2.6; S.spawnT = 2.2; }
-    } else if (job.kind === "grow") {
+      if (done && job.id === "repo") { S.spawnEvery = 2.6; S.spawnT = 2.2; S.island = "building"; S.islandProgress = 0; }
+    } else {
       S.growing = done ? undefined : p;
       if (done) S.size = job.size;
-    } else {
-      S.island = done ? "built" : "building";
-      S.islandProgress = done ? undefined : p;
-      if (done) S.st.launch.built = true; // the pad is on the island
     }
     if (done) { S.job = null; S.jobGap = JOB_GAP; }
+    if (done && !S.jobs.length && S.island === "building") S.caption = "Last piece: somewhere to launch from.";
   }
 
   function director() {
@@ -228,6 +238,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       S.t += h; S.phaseT += h;
       if (S.spawnEvery > 0) { S.spawnT += h; while (S.spawnT >= S.spawnEvery) { S.spawnT -= S.spawnEvery - (S.rand() - 0.5) * 0.3; spawn(); } }
       construct(h);
+      raiseIsland(h);
       flow(h);
       const due = S.timers.filter((x) => S.t >= x.at);
       S.timers = S.timers.filter((x) => S.t < x.at);
