@@ -34,7 +34,7 @@ test("first visit creates only an isolated signed guest save; reload retains pro
   expect(await currentUser(env, first.cookie)).toBeNull();
   expect((await app.fetch(req("/api/me/progress", first.cookie, "PUT", JSON.stringify(progress())), env)).status).toBe(200);
   expect((await app.fetch(req("/api/me/prefs", first.cookie, "PUT", JSON.stringify({ intro: "seen", guideSeen: "yes" })), env)).status).toBe(200);
-  expect(await (await app.fetch(req("/api/me/progress", first.cookie), env)).json()).toEqual({ progress: progress() });
+  expect(await (await app.fetch(req("/api/me/progress", first.cookie), env)).json()).toEqual({ progress: progress(), resetVersion: 0 });
   expect(((await (await app.fetch(req("/api/me", first.cookie), env)).json()) as { prefs: unknown }).prefs).toEqual({ intro: "seen", guideSeen: "yes" });
   expect((await env.DB.prepare("SELECT count(*) n FROM guests").first<{ n: number }>())?.n).toBe(1);
   expect((await env.DB.prepare("SELECT count(*) n FROM users").first<{ n: number }>())?.n).toBe(0);
