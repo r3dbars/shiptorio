@@ -72,6 +72,7 @@ export class ShaftHud {
   private readonly tags = new Map<IronItem, HTMLSpanElement>();
   private pings: PingEl[] = [];
   private readonly floors: HTMLElement;
+  private readonly spot: HTMLElement; // the simple screen's spotlight: the map dims around what the task card is about
   private readonly floorBtns = new Map<string, HTMLButtonElement>();
   private idleText = new Map<string, string>();
   private lineAt = new Map<string, number>(); // each line machine's place, planner up to orbit
@@ -88,6 +89,10 @@ export class ShaftHud {
     // a dev StrictMode remount can build the next hud before the last one is disposed, so count them on the root
     root.dataset.shaftHuds = String(Number(root.dataset.shaftHuds ?? 0) + 1);
     root.classList.add("shaft");
+    this.spot = document.createElement("div");
+    this.spot.className = "shaftspot";
+    this.spot.setAttribute("aria-hidden", "true");
+    root.prepend(this.spot);
     // the elevator panel: one button per floor, the whole shaft, and follow-the-work
     this.floors = document.createElement("nav");
     this.floors.className = "shaftfloors";
@@ -311,6 +316,17 @@ export class ShaftHud {
       }
     for (const [it, el] of this.tags) if (!seen.has(it)) (el.remove(), this.tags.delete(it));
 
+    // the spotlight: on the simple screen, everything but the card's machine dims
+    const lit = this.quiet && this.selected ? this.chips.find((x) => x.key === this.selected) : undefined;
+    if (lit) {
+      const st = lit.station;
+      const [x, y] = stage.project(...(st ? ([st.x, st.y + 1.6, st.z] as [number, number, number]) : lit.at()));
+      this.spot.style.setProperty("--sx", `${Math.round(x)}px`);
+      this.spot.style.setProperty("--sy", `${Math.round(y)}px`);
+      this.spot.style.setProperty("--sr", `${Math.round(Math.min(W, H) * (phone ? 0.3 : 0.2))}px`);
+    }
+    this.spot.classList.toggle("on", !!lit);
+
     // pings: over the machine they're about
     for (const pe of this.pings) {
       const c = this.chips.find((x) => x.key === pe.key);
@@ -365,6 +381,7 @@ export class ShaftHud {
     for (const pe of this.pings) pe.el.remove();
     this.pings = [];
     this.floors.remove();
+    this.spot.remove();
     cover.top = cover.bottom = 0;
     const left = Number(this.root.dataset.shaftHuds ?? 1) - 1;
     this.root.dataset.shaftHuds = String(left);

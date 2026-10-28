@@ -210,12 +210,19 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
   // The simple screen (?simple=1): one slow-spot line, one task tray, a map with no labels. The tray opens on its own
-  // while work is parked on the player; tapping the line opens or closes it.
+  // whenever there's a card; tapping the line opens or closes it.
   const simple = useState(simpleOn)[0] && !intro && !guided;
   const [tasksAsked, setTasksAsked] = useState<boolean | null>(null);
   const spot = slowSpot(deck, state?.bottleneck);
   const ideas = deck.filter((m) => attentionOf(m) === "suggest").length;
-  const tasksOpen = tasksAsked ?? spot.who === "you";
+  const tasksOpen = tasksAsked ?? deck.length > 0; // one card at a time, so an idea on its own is calm enough to show
+  // style picks for the simple screen (?look=glass, hard, nospot), read by TaskTray.css
+  useEffect(() => {
+    if (!simple) return;
+    const look = new URLSearchParams(location.search).get("look");
+    if (look) document.documentElement.dataset.look = look.replace(/,/g, " ");
+    return () => void delete document.documentElement.dataset.look;
+  }, [simple]);
   const nudge = useBottleneckNudge(deck, progressing, calm);
   achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson || celebrating }; // achievements pay XP into progression; toasts wait out the tour coach card and a rocket
   // today's log remembers the deck you walked in to (the morning number the trend is made of)

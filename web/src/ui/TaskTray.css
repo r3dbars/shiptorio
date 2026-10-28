@@ -44,3 +44,19 @@
   .floorcard.compact h1 { width: 84px; }
   .floorcard.compact .counts dd { font-size: 16px; }
 }
+
+/* the spotlight (ShaftHud.quiet): the map dims around the machine the task card is about, so the card and the thing it
+   talks about are the brightest two things on screen */
+.shaftspot {
+  position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .45s ease;
+  background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 var(--sr, 160px), rgba(6, 4, 3, var(--dim-a, .66)) calc(var(--sr, 160px) * 1.9));
+}
+.shaftspot.on { opacity: 1; }
+:root[data-look~="hard"] .shaftspot { --dim-a: .84; background: radial-gradient(circle at var(--sx, 50%) var(--sy, 50%), transparent 0 var(--sr, 160px), rgba(6, 4, 3, var(--dim-a)) calc(var(--sr, 160px) + 6px)); }
+:root[data-look~="nospot"] .shaftspot { display: none; }
+@media (prefers-reduced-motion: reduce) { .shaftspot { transition: none; } }
+
+/* glass: the plates go see-through so the factory shows behind them (?look=glass, a style pick) */
+:root[data-look~="glass"] .tasktray .acard, :root[data-look~="glass"] .slowspot, :root[data-look~="glass"] .floorcard.compact, :root[data-look~="glass"] .hudicons {
+  background: rgba(14, 10, 8, 0.5); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2); outline-color: rgba(0, 0, 0, .5);
+}
