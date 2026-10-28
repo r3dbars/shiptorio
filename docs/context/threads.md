@@ -645,6 +645,15 @@ Root owns hosted validation, release integration and deployment.
 - The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
 - Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
 
+### Codex runner service pairing import — 2026-10-28
+
+Before: a valid standalone Testing pairing was absent from the running launchd
+service's separate data root. After: service installation imports same-origin valid
+pairings under the existing store lock, preserves originals/replacements/rejections,
+and reuses installed config. No new grant, approval, job claim or production deploy.
+Focused regressions cover import idempotence, owner-only files and refusal boundaries;
+existing sleep/network/revocation tests remain required. Full CI/Staging pending.
+
 ## Self-serve release-validation (Claude, 2026-10-28)
 
 Justin (16:16Z): merges must be "as fast as possible" so he can iterate. CI now runs the

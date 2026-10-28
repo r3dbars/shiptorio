@@ -87,8 +87,10 @@ recovering job keeps its original provider. Local models keep their guarded rout
 - **Agent sign-in:** run `~/.local/bin/shiptorio-runner doctor`. Use
   `~/.local/bin/shiptorio-runner login codex` or `login claude` for the dedicated
   Shiptorio agent sign-in. Setup never copies your normal credential directory.
-- **Expired pairing:** tokens renew while online. After more than eight hours offline,
-  pair that repo again. Logout or lost repository access also revokes the grant.
+- **Expired pairing:** grants last up to seven days, capped by the approving sign-in.
+  The heartbeat renews with a day remaining; sleep and network failures retain a
+  valid pairing. Re-pair only when the runner reports a real expiry or revocation.
+  Logout or lost repository access also revokes the grant.
 - **No plan:** the first runner plan needs an open GitHub issue. Pairing alone does
   not create an issue or start a build. Spark still asks for plan approval.
 - **Claude sign-in:** run `~/.local/bin/shiptorio-runner login claude`. This opens
@@ -160,7 +162,11 @@ Legacy macOS service users should first run `bun run runner:service stop` from
 their checkout. That service has a separate install under
 `~/Library/Application Support/Shiptorio` and a launch agent at
 `~/Library/LaunchAgents/com.shiptorio.runner.plist`; after stopping it, remove those
-files to uninstall the legacy service.
+files to uninstall the legacy service. To keep existing standalone pairings running
+in the background, run `bun run runner:service install` from a checkout. It imports
+unexpired same-server pairings without deleting their standalone copies or replacing
+a different service pairing. The service reuses its own dedicated agent sign-ins;
+run doctor using the service data root to check them.
 
 Approving a plan stays bound to that exact issue and plan even if another card moves to
 the top of the deck. If the issue changes before approval, request a fresh plan.
