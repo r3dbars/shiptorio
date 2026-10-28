@@ -663,7 +663,9 @@ The phone observed a new Launch, but desktop persistence was checked only throug
 visible launched items. A viewport could also time out without adding a failure.
 The tracker now binds evidence to the exact fixture socket/repo, requires a new
 first-width item transition, and lets desktop confirm that receipt by exact item
-or a safe persisted counter floor from a fresh snapshot. Every newbie viewport
+or a safe HUD-counter floor (metrics, otherwise science) from a fresh snapshot.
+This is bounded fixture resume confirmation with no intervening research, not a
+general cumulative ship ledger. Every newbie viewport
 records its receipt and fails if unfinished; initial ships never replace a fresh
 phone transition. Backend authorization and gameplay deadlines stay unchanged.
 

@@ -30,7 +30,7 @@ test("desktop can verify the phone ship's persisted counter after the item left 
   const desktop = tracker.viewport(1280), receive = desktop.socket(socket);
   receive(snapshot(0)); expect(desktop.confirmed).toBe(false);
   receive(snapshot(1)); await desktop.promise;
-  expect(desktop.result()).toEqual({ width: 1280, repo, confirmed: true, mode: "persisted-counter", itemIds: ["new"], minimumRockets: 1 });
+  expect(desktop.result()).toEqual({ width: 1280, repo, confirmed: true, mode: "persisted-counter", itemIds: ["new"], minimumShipped: 1, counter: "metrics.rockets" });
 });
 
 test("known prior count uses the maximum pre-launch snapshot, not an arbitrary preexisting ship", () => {
@@ -42,7 +42,7 @@ test("known prior count uses the maximum pre-launch snapshot, not an arbitrary p
   const desktop = tracker.viewport(1280), next = desktop.socket(socket);
   next(snapshot(5)); expect(desktop.confirmed).toBe(false);
   next(snapshot(6)); expect(desktop.confirmed).toBe(true);
-  expect(desktop.result().minimumRockets).toBe(6);
+  expect(desktop.result().minimumShipped).toBe(6);
 });
 
 test("wrong origins/repos, patches without a matching snapshot and counters in patches cannot satisfy persistence", () => {
@@ -73,8 +73,45 @@ test("duplicate launch upserts do not inflate the receipt and an unfinished desk
   receive(patch([item("new", "launched")])); receive(snapshot(1, [item("new", "launched")]));
   const desktop = tracker.viewport(1280);
   expect(tracker.results()).toEqual([
-    { width: 390, repo, confirmed: true, mode: "fresh-transition", itemIds: ["new"], minimumRockets: 1 },
+    { width: 390, repo, confirmed: true, mode: "fresh-transition", itemIds: ["new"], minimumShipped: 1, counter: "metrics.rockets" },
     { width: 1280, repo, confirmed: false },
   ]);
   desktop.socket(socket)(snapshot(1)); expect(desktop.confirmed).toBe(true);
+});
+
+
+test("real initial science-only state and joint science launch patch confirm persisted desktop progress", () => {
+  const tracker = createLaunchTracker({ origin, repo }), phone = tracker.viewport(390), receive = phone.socket(socket);
+  const science = (red: number) => ({ red, green: 0, grey: 0, blue: 0 });
+  receive({ type: "snapshot", state: { repo, items: [], science: science(0) } });
+  receive(patch([item("new", "on_pad")]));
+  receive({ type: "patch", patch: { items: [item("new", "launched")], science: science(1) } });
+  const desktop = tracker.viewport(1280);
+  desktop.socket(socket)({ type: "snapshot", state: { repo, items: [], science: science(1) } });
+  expect(phone.confirmed).toBe(true); expect(desktop.confirmed).toBe(true);
+  expect(desktop.result().counter).toBe("science"); expect(desktop.result().minimumShipped).toBe(1);
+});
+
+test("an explicit count in the fresh transition can fill a missing baseline; arbitrary later counts cannot", () => {
+  const tracker = createLaunchTracker({ origin, repo }), phone = tracker.viewport(390), receive = phone.socket(socket);
+  receive(snapshot(undefined, [item("new", "on_pad")])); receive(patch([item("new", "launched")], 1));
+  const desktop = tracker.viewport(1280); desktop.socket(socket)(snapshot(1));
+  expect(desktop.confirmed).toBe(true); expect(desktop.result().counter).toBe("metrics.rockets");
+  const without = fresh(undefined), next = without.tracker.viewport(1280);
+  without.receive(patch([], 1)); next.socket(socket)(snapshot(1)); expect(next.confirmed).toBe(false);
+});
+
+test("malformed/overflow science or malformed authoritative metrics never fall back to another counter", () => {
+  for (const data of [
+    { science: { red: -1, green: 0, grey: 0, blue: 0 } },
+    { science: { red: Number.MAX_SAFE_INTEGER, green: 1, grey: 0, blue: 0 } },
+    { science: { red: 0, green: 0, grey: 0 } },
+    { metrics: { rockets: NaN }, science: { red: 0, green: 0, grey: 0, blue: 0 } },
+  ]) {
+    const tracker = createLaunchTracker({ origin, repo }), phone = tracker.viewport(390), receive = phone.socket(socket);
+    receive({ type: "snapshot", state: { repo, items: [item("new", "on_pad")], ...data } });
+    receive(patch([item("new", "launched")], 1));
+    const desktop = tracker.viewport(1280); desktop.socket(socket)(snapshot(1));
+    expect(phone.confirmed).toBe(true); expect(desktop.confirmed).toBe(false);
+  }
 });
