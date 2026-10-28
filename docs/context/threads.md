@@ -657,6 +657,16 @@ Root owns hosted validation, release integration and deployment.
 - The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
 - Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
 
+### Codex per-viewport bot Launch receipts — 2026-10-28
+
+The phone observed a new Launch, but desktop persistence was checked only through
+visible launched items. A viewport could also time out without adding a failure.
+The tracker now binds evidence to the exact fixture socket/repo, requires a new
+first-width item transition, and lets desktop confirm that receipt by exact item
+or a safe persisted counter floor from a fresh snapshot. Every newbie viewport
+records its receipt and fails if unfinished; initial ships never replace a fresh
+phone transition. Backend authorization and gameplay deadlines stay unchanged.
+
 ### Codex inert bot staging setup — 2026-10-28
 
 The staging bot previously mounted the old game before resetting its fixture,
