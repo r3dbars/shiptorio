@@ -118,6 +118,7 @@ export class ShaftScene {
     canvas: HTMLCanvasElement,
     labelRoot: HTMLElement,
     private readonly onPick?: (id: string) => void,
+    private freshRecovery = false, // only a replacement canvas, never ordinary startup
   ) {
     this.loop = guardRender(this.loop);
     this.renderer = recoverContext(canvas, () => {
@@ -478,7 +479,7 @@ export class ShaftScene {
   private rebuild(sp: ShaftPlan) {
     // A new shaft cannot carry the old driver's replay timer. End it before carrying the real line.
     if (this.lapsing) this.finishLapse();
-    const restoring = this.recovery.active;
+    const restoring = this.recovery.active || this.freshRecovery;
     const keep = this.stage ? { zoom: this.stage.zoom } : null;
     const carried = this.driver?.carry() ?? null; // the work on the line stays where it is
     this.teardown();
@@ -534,6 +535,7 @@ export class ShaftScene {
     this.applyBias();
     this.renderer.shadowMap.needsUpdate = true;
     if (restoring) this.recovery.begin(stage.scene);
+    this.freshRecovery = false;
     if (import.meta.env.DEV)
       (window as unknown as { __shaft?: unknown }).__shaft = {
         I, stage, layout, sp, driver, renderer: this.renderer,

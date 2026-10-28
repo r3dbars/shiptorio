@@ -147,6 +147,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws)).toBeGreaterThan(before);
       await expect(page.locator('.crash')).toHaveCount(0);
       await expect(page.locator('#map-summary')).toContainText('sim/shiptorio: 5 folders, 11 machines');
+      // A replacement context uses the recovery path rather than cold full-detail startup.
+      expect(await page.evaluate(() => (window as any).__shipPerf().recoveryEpoch)).toBeGreaterThan(0);
       await page.locator('canvas.map').focus();
       await page.keyboard.press('ArrowDown');
     });

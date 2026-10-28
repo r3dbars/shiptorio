@@ -18,7 +18,7 @@ type MapScene = Pick<
   timelapse?: (lapse: Timelapse) => void; // the shaft replays what shipped while you were away (ui/away.ts)
   endTimelapse?: () => void;
 };
-type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void) => MapScene;
+type MapCtor = new (canvas: HTMLCanvasElement, labels: HTMLElement, onPick: (id: string) => void, recovering?: boolean) => MapScene;
 
 interface Props {
   state: FactoryState | null;
@@ -80,7 +80,7 @@ export function FactoryMap({ state, onPick, focus = null, showLabels = false, pi
       else if (p.focus) scene.focus(p.focus);
       if (p.lapse) playLapse(scene, p.lapse);
     };
-    const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id));
+    const make = (Scene: MapCtor) => new Scene(canvasRef.current!, labelsRef.current!, (id) => pickRef.current?.(id), generation > 0);
     // (a map whose effect was already cleaned up, like StrictMode's first mount, is never built)
     const island = () => import("./scene").then(({ FactoryScene }) => FactoryScene);
     if (SHAFT)
