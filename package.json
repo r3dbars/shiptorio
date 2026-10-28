@@ -33,6 +33,7 @@
     "test:e2e": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
     "test:load": "bun tests/load/run.ts",
+    "test:load:ci": "bun tests/load/repeat.ts",
     "typecheck:tests": "tsc --noEmit -p tests",
     "autopilot": "bun --env-file=server/.dev.vars server/scripts/autopilot.ts",
     "fake:support": "bun --env-file=server/.dev.vars server/scripts/fake-support.ts",

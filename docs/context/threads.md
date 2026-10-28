@@ -567,3 +567,15 @@ Root owns hosted validation, release integration and deployment.
 - Integrated [#479](https://github.com/r3dbars/shiptorio/pull/479) runtime `34952d8af6aeaeca55c51d19d342183cbda2a772` after independent review: accepted native holds retain only their rendering lease until matching physical release, including card unmount. Lost-touch recovery uses primary pointer type, not reusable IDs. Consent timing/controller and assistive activation remain unchanged. Focused regressions: 29 passed / 105 assertions; final full check and hosted combined acceptance remain required.
 - The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
 - Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.
+
+## Self-serve release-validation (Claude, 2026-10-28)
+
+Justin (16:16Z): merges must be "as fast as possible" so he can iterate. CI now runs the
+full suite (check, selfhost, six browser shards, load) on every ready PR and merge-queue
+group, and its `full-suite` job posts the `release-validation` status itself when all pass.
+Codex root no longer has to dispatch the heavy run or stamp it by hand; any green PR can
+merge on its own instead of waiting for a release batch. Same tests and deadlines. The
+load job judges the unchanged 5 s / 3 s budget on the median of up to three runs
+(first run alone when it passes) because one run on a shared VM swung 5.2 s → 8.2 s →
+pass on near-identical code. `release/*` runs are no longer cancelled by a later push.
+`merge_group` triggers are wired for when Justin turns on the merge queue.
