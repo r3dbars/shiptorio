@@ -68,6 +68,63 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
 }
 
 describe("durable live check-in decisions", () => {
+  it("publishes the first decisions, then keeps telemetry without repeating unchanged card frames or their authorization reads", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    expect(f.events.filter(e => e.type === "deck")).toHaveLength(1);
+    expect(f.events.filter(e => e.type === "move")).toHaveLength(1);
+    const internal = f.factory as unknown as { refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; env: { DB: { prepare(sql: string): any } } };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    let sessionReads = 0;
+    internal.env.DB.prepare = sql => { if (sql.startsWith("SELECT u.id, u.login FROM sessions")) sessionReads++; return prepare(sql); };
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]);
+    expect(sessionReads).toBe(1); // Fresh authorization for the one real telemetry frame.
+    expect(f.saved().move?.id).toBe("first");
+  });
+
+  it("publishes changed lower cards and changed top options, resolves removal, and can offer the same card again", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void> };
+    const refresh = async () => { f.events.length = 0; await internal.refreshDecisions(); await internal.broadcastQueue; };
+    internal.openMoves.find(m => m.id === "second")!.why = "The evidence changed";
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck"]);
+    internal.openMoves.find(m => m.id === "first")!.options[0].label = "Read the updated receipts";
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { options: [{ label: "Read the updated receipts" }] } });
+    const first = structuredClone(internal.openMoves.find(m => m.id === "first")!);
+    internal.openMoves = [];
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move_resolved"]);
+    internal.openMoves = [first];
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+  });
+
+  it("sends full snapshots on reconnect and still denies revoked sessions when decisions are unchanged", async () => {
+    const f = fixture([card("first")]);
+    await f.checkin();
+    f.events.length = 0;
+    await f.checkin();
+    const snapshot = f.events.find(e => e.type === "snapshot");
+    expect(snapshot).toMatchObject({ state: { move: { id: "first" }, deck: [{ id: "first" }] } });
+    const internal = f.factory as unknown as { refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; env: { DB: { prepare(sql: string): any } } };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    internal.env.DB.prepare = sql => sql.startsWith("SELECT u.id, u.login FROM sessions") ? { bind: () => ({ first: async () => null }) } : prepare(sql);
+    let closed = 0;
+    f.socket.close = () => { closed++; };
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events).toEqual([]);
+    expect(closed).toBe(1);
+  });
+
   it("returns an authorized handshake while another session frame authorization is held", async () => {
     const f = fixture([]);
     await f.factory.exportState();

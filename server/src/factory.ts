@@ -340,6 +340,11 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.accountPut("approvalEvents", [...events.slice(-199), { kind, scope, at: Date.now(), actionId }]);
   }
 
+  // Publication state is per live DO instance, not an authorization cache. A new
+  // instance publishes its first deck/move, and each new socket still gets a snapshot.
+  private publishedDeck?: string;
+  private publishedMove?: string;
+
   private async refreshDecisions() {
     if (!this.state || !this.meta || this.batchingDecisions) return;
     await this.decisionData();
@@ -410,9 +415,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.accountPut("deckBook", this.deckBook);
     await this.save();
     this.broadcast({ type: "patch", patch: { bottleneck: s.bottleneck } });
-    this.broadcast({ type: "deck", deck });
-    if (s.move) this.broadcast({ type: "move", move: s.move });
-    else if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
+    // Unchanged decisions need no new transport frame. Every frame we do publish
+    // retains broadcast's fresh session/membership checks; tick and queue telemetry
+    // keep flowing even when the cards are unchanged.
+    const deckPayload = JSON.stringify(deck), movePayload = JSON.stringify(s.move);
+    if (deckPayload !== this.publishedDeck) {
+      this.broadcast({ type: "deck", deck });
+      this.publishedDeck = deckPayload;
+    }
+    if (s.move && movePayload !== this.publishedMove) this.broadcast({ type: "move", move: s.move });
+    else if (!s.move && previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
+    this.publishedMove = movePayload;
   }
 
   // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------
