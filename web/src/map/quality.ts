@@ -11,6 +11,11 @@ const CAP = 1000 / 30;
 const IDLE_AFTER = 4000; // ms without input before a phone drops to 30 fps
 const SLOW = 24; // ms; an average above this for 60 frames in a row steps down a tier
 const WARMUP = 3000;
+// Repeated foreground stalls can be too slow to enter the ordinary average path.
+// Two 0.5–2s frames after warm-up use the existing lowest tier. Longer gaps are
+// treated as suspension/clock jumps; one isolated stall never changes the look.
+const STALL_MIN = 500;
+const STALL_MAX = 2000;
 
 export class FrameGovernor {
   tier = 0;
@@ -19,6 +24,7 @@ export class FrameGovernor {
   private lastInput = performance.now();
   private n = 0;
   private slowFrames = 0;
+  private stalledFrames = 0;
   private readonly born = performance.now();
 
   constructor(private readonly phone: boolean) {
@@ -42,6 +48,11 @@ export class FrameGovernor {
     if (capped && gap < CAP - 4) return false;
     this.lastDraw = now;
     this.n++;
+    const foreground = typeof document === "undefined" || document.visibilityState === "visible";
+    const stalled = !capped && foreground && this.avg !== -Infinity && now - this.born > WARMUP
+      && gap >= STALL_MIN && gap <= STALL_MAX;
+    this.stalledFrames = stalled ? this.stalledFrames + 1 : 0;
+    if (this.stalledFrames >= 2) this.tier = 2;
     // only uncapped frames say how fast the device really is; skip long gaps (tab switches)
     // and not during the first seconds, while shaders compile and the island builds
     if (!capped && gap < 500 && this.avg !== -Infinity && now - this.born > WARMUP) {

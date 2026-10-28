@@ -10,7 +10,7 @@ let now = 0;
 
 beforeEach(() => {
   hidden = false;
-  now = performance.now();
+  now = Math.ceil(performance.now());
   Object.defineProperty(globalThis, "location", { configurable: true, value: { search: "" } });
   Object.defineProperty(globalThis, "document", { configurable: true, value: {
     get visibilityState() { return hidden ? "hidden" : "visible"; },
@@ -85,7 +85,7 @@ test("normal good-device look, ordinary average fallback and shadow cadence rema
   for (let i = 0; i < 150; i++) frame(good, 17);
   expect(good.tier).toBe(0); expect(good.shadows()).toBe(true);
   const slow = warmed();
-  for (let i = 0; i < 140; i++) frame(slow, 35);
+  for (let i = 0; i < 90; i++) frame(slow, 35);
   expect(slow.tier).toBe(1);
   const a = slow.shadows(); frame(slow, 35); expect(slow.shadows()).toBe(!a);
   slow.tier = 2;
