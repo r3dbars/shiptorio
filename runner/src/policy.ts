@@ -24,6 +24,6 @@ export function assemblerPrompt(job: { plan: string; allowedPaths: string[] }, f
 }
 export function harnessArgs(harness: "codex" | "claude_code", prompt: string, schema?: string): string[] {
   return harness === "codex"
-    ? ["exec", "--ignore-user-config", "--ephemeral", "--sandbox", "read-only", "-c", "features.shell_tool=false", "-c", "features.unified_exec=false", "-c", "features.multi_agent=false", "-c", 'web_search="disabled"', "-c", 'approval_policy="never"', "--json", ...(schema ? ["--output-schema", schema] : []), prompt]
+    ? ["exec", "--ignore-user-config", "--ephemeral", "--sandbox", "read-only", "-c", "features.shell_tool=false", "-c", "features.unified_exec=false", "-c", "features.multi_agent=false", "-c", "features.plugins=false", "-c", "features.apps=false", "-c", 'web_search="disabled"', "-c", 'approval_policy="never"', "--json", ...(schema ? ["--output-schema", schema] : []), prompt]
     : ["--print", "--safe-mode", "--restricted", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--tools", "Read,Edit,Write,Glob,Grep", "--no-session-persistence", "--output-format", "json", prompt];
 }
