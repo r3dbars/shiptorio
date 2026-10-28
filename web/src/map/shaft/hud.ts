@@ -294,8 +294,11 @@ export class ShaftHud {
     // item tags: wide screens, down on one floor and close enough to read (the whole shaft stays unlabeled)
     const tagsOn = !phone && !this.quiet && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
     const seen = new Set<IronItem>();
-    if (tagsOn)
-      for (const it of I.items) {
+    // the simple screen following one item ("see what's moving"): that one item keeps its tag, on every screen
+    const ref = this.quiet && this.selected?.startsWith("item:") ? this.selected.slice(5) : null;
+    const rode = ref ? I.items.find((it) => it.ref === ref && !it.hidden && !it.gone) : undefined;
+    if (tagsOn || rode)
+      for (const it of rode && !tagsOn ? [rode] : I.items) {
         if (it.hidden || it.gone) continue;
         seen.add(it);
         let el = this.tags.get(it);
@@ -308,7 +311,7 @@ export class ShaftHud {
         const held = !!it.owner && !!I.stations[it.owner]?.blocked;
         const text = it.label();
         if (el.textContent !== text) el.textContent = text;
-        const cls = `tag k-${it.kind}${held ? " held" : ""}`;
+        const cls = `tag k-${it.kind}${held ? " held" : ""}${it === rode ? " rode" : ""}`;
         if (el.className !== cls) el.className = cls;
         const p = it.mesh.position;
         const [x, y] = stage.project(p.x, p.y + 0.75, p.z);
@@ -318,14 +321,15 @@ export class ShaftHud {
 
     // the spotlight: on the simple screen, everything but the card's machine dims
     const lit = this.quiet && this.selected ? this.chips.find((x) => x.key === this.selected) : undefined;
-    if (lit) {
-      const st = lit.station;
-      const [x, y] = stage.project(...(st ? ([st.x, st.y + 1.6, st.z] as [number, number, number]) : lit.at()));
+    if (rode || lit) {
+      const st = lit?.station;
+      const p = rode?.mesh.position;
+      const [x, y] = stage.project(...(p ? ([p.x, p.y + 0.3, p.z] as [number, number, number]) : st ? ([st.x, st.y + 1.6, st.z] as [number, number, number]) : lit!.at()));
       this.spot.style.setProperty("--sx", `${Math.round(x)}px`);
       this.spot.style.setProperty("--sy", `${Math.round(y)}px`);
-      this.spot.style.setProperty("--sr", `${Math.round(Math.min(W, H) * (phone ? 0.3 : 0.2))}px`);
+      this.spot.style.setProperty("--sr", `${Math.round(Math.min(W, H) * (rode ? (phone ? 0.2 : 0.13) : phone ? 0.3 : 0.2))}px`);
     }
-    this.spot.classList.toggle("on", !!lit);
+    this.spot.classList.toggle("on", !!(rode || lit));
 
     // pings: over the machine they're about
     for (const pe of this.pings) {
