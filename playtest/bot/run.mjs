@@ -18,8 +18,6 @@ const local = ["localhost", "127.0.0.1"].includes(url.hostname);
 const steps = [], failures = [], frictions = [];
 const friction = text => { if (!frictions.includes(text)) frictions.push(text); };
 let observedLaunch = false;
-let confirmLaunch;
-const launchConfirmed = new Promise(resolve => { confirmLaunch = resolve; });
 let fixture, browser, lastPage;
 try {
   if (local) fixture = await localFactory(persona, url.origin);
@@ -31,14 +29,20 @@ try {
     lastPage = page;
     page.setDefaultTimeout(60000);
     const seenItems = new Map();
+    let contextLaunched = false, confirmLaunch;
+    const launchConfirmed = new Promise(resolve => { confirmLaunch = resolve; });
     page.on("websocket", socket => socket.on("framereceived", frame => {
       try {
         const event = JSON.parse(String(frame.payload));
         const items = event.type === "snapshot" ? event.state?.items : event.type === "patch" ? event.patch?.items : [];
         for (const item of items ?? []) {
-          if (item.state === "launched" && seenItems.has(item.id) && seenItems.get(item.id) !== "launched") { observedLaunch = true; confirmLaunch(); }
+          if (item.state === "launched") {
+            contextLaunched = true;
+            if (seenItems.has(item.id) && seenItems.get(item.id) !== "launched") observedLaunch = true;
+          }
           seenItems.set(item.id, item.state);
         }
+        if (observedLaunch && contextLaunched) confirmLaunch();
       } catch { /* Non-JSON heartbeat frames have no game state. */ }
     }));
     let admitted = false;
@@ -86,7 +90,7 @@ try {
     const deadline = Date.now() + Number(option("--duration", "180")) * 1000;
     while (Date.now() < deadline) {
       const text = await page.locator("body").innerText();
-      if (observedLaunch && new URL(page.url()).searchParams.has("repo")) { await capture("launch-confirmed-over-socket"); break; }
+      if (observedLaunch && contextLaunched && new URL(page.url()).searchParams.has("repo")) { await capture("launch-confirmed-over-socket"); break; }
       const fingerprint = createHash("sha256").update(text).digest("hex");
       if (fingerprint !== previous) { previous = fingerprint; lastChange = Date.now(); }
       const visible = async locator => (await locator.count()) && await locator.first().isVisible();
