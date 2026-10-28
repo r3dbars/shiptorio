@@ -73,6 +73,13 @@ test('the real growth controller uses elapsed floor time while the line keeps it
       { phase: 'start', floor: 'launch' }, { phase: 'done', floor: 'launch' },
     ]);
     expect(root.children.some(o => o.name.startsWith('floorbuild:'))).toBe(false);
+    I.policy.speed = 2;
+    I.debug.advance(0.1, 0.05); // manual advancement keeps its prior policy scaling
+    expect(observed.at(-1)).toEqual({ dt: 0.1, elapsed: 0.1 });
+    I.step(7, 0.05, 0.75);
+    expect(observed.at(-1)).toEqual({ dt: 0.1, elapsed: 0.75 });
+    expect(physics.at(-1)).toBe(0.1);
+    expect(events.filter(e => e.phase === 'done')).toHaveLength(3);
   } finally {
     I.dispose();
     for (const [key, descriptor] of Object.entries(originals)) {
