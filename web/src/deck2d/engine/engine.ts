@@ -1,7 +1,10 @@
 import {
-  BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, STOPS, STOP_X,
-  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, type ShippyModule, type StopId,
+  ART_PX, BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
+  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
+import { pixelOn } from "../../flags";
+import { createPixelCanvas } from "./pixel";
+import * as pd from "./pxdraw";
 
 // The deck renderer: sky, clouds, deck, bridge + rocket island, belt, stations, crates, rocket, camera.
 // It draws whatever DeckView it's handed and animates the in-between (crates sliding stop to stop by item id,
@@ -43,7 +46,11 @@ export interface Engine {
 export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus, shippy: ShippyModule, layers: DeckLayer[] = []): Engine {
   const owned = new Set(layers.flatMap((l) => l.replaces ?? []));
   const slot = (s: LayerSlot) => { for (const l of layers) l.draw(cx, s); };
-  const cx = cv.getContext("2d")!;
+  const screen = cv.getContext("2d")!;
+  let cx = screen; // in pixel mode, the art-resolution buffer while the world draws
+  // Pixel mode (contract: the pixel canvas): draw into a buffer at art resolution, blit at a whole-number scale,
+  // snap every pixel to the 48 colors (?pq=0 skips the snap, for speed checks).
+  const px = pixelOn() ? createPixelCanvas(cv, ART_PX, new URLSearchParams(location.search).get("pq") === "0" ? undefined : PALETTE_48) : null;
   let W = 0, H = 0, DPR = 1, t = 0;
   const resize = () => { DPR = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); };
   addEventListener("resize", resize); resize();
@@ -184,11 +191,11 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     cx.fillStyle = g; cx.fillRect(x - r, y - r, r * 2, r * 2);
     cx.globalCompositeOperation = "source-over";
   }
-  function sky() {
+  function sky(W: number, H: number, camS: number) {
     const sk = img("sky"); if (!sk) return;
     const s = Math.max(W / sk.naturalWidth, H / sk.naturalHeight) * 1.1, w = sk.naturalWidth * s, h = sk.naturalHeight * s;
-    const ox = Math.max(-(w - W) / 2, Math.min((w - W) / 2, -(cam.x - 1400) * 0.04 * cam.s));
-    cx.drawImage(sk, (W - w) / 2 + ox, (H - h) / 2, w, h);
+    const ox = Math.max(-(w - W) / 2, Math.min((w - W) / 2, -(cam.x - 1400) * 0.04 * camS));
+    cx.drawImage(sk, Math.round((W - w) / 2 + ox), Math.round((H - h) / 2), Math.round(w), Math.round(h));
   }
   function clouds(y: number, scale: number, speed: number, alpha: number) {
     const c = img("clouds"); if (!c) return;
@@ -202,8 +209,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     cx.globalAlpha = 1;
   }
   function belt() {
-    const b = img("belt"); if (!b) return;
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
+    if (px) {
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35);
+      return;
+    }
+    const b = img("belt"); if (!b) return;
     const bh = 34, bw = b.naturalWidth * bh / b.naturalHeight, step = bw / 5; // the strip holds 5 chevron panels
     const off = (t * SPEED * 0.35) % step;
     for (const g of segs) {
@@ -216,7 +227,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function crate(c: Crate) {
     const [x, y] = at(c.d);
-    if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.25 + 0.2 * Math.sin(t * 6));
+    if (px) { if (c.fade > 0.5) pd.crate(cx, x, y, c.look as Item["look"]); return; } // pixel art: no half-faded sprites
+    if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
     cx.globalAlpha = c.fade;
     put("crate-" + c.look, x, y + 12, CRATE);
     cx.globalAlpha = 1;
@@ -226,15 +238,16 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (!s.built || id === "launch") return;
     if (layers.some((l) => l.owns?.(s))) return;
     const e = 1 - drop[id], fall = -420 * e * e; // drops in from the sky
-    const bob = s.state === "working" && Math.sin(t * 20) > 0.5 ? -1.5 : 0;
+    const bob = 0; // calm: working stations don't jitter; the belt and crates show the work
     const L = LOOK[id];
     cx.globalAlpha = Math.min(1, drop[id] * 3);
     put(`${id}-${s.state}`, STOP_X[id], BELT_Y + L.drop + fall + bob, L.h);
     cx.globalAlpha = 1;
     if (s.state === "jammed") {
-      const x = STOP_X[id], top = BELT_Y + L.drop - L.h, blink = Math.sin(t * 8) > -0.2;
-      glow(x, top, 130, "255,60,40", blink ? 0.35 : 0.12);
-      if (blink) put("beacon", x, top + 18, 54);
+      // the one marker on the deck: a steady beacon with a slow breath, not a strobe
+      const x = STOP_X[id], top = BELT_Y + L.drop - L.h;
+      if (px) pd.beacon(cx, x, top, t);
+      else { glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4)); put("beacon", x, top + 18, 54); }
       if (s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
         cx.fillStyle = "#2b1a0a"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.font = "15px Silkscreen, monospace";
         const [a, b] = s.waiting.split(" ");
@@ -247,7 +260,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (!rv.built) return;
     const e = 1 - drop.review, fall = -420 * e * e;
     if (prev && v.shippy.pose === "lever") lever = 0.4;
-    put(lever > 0 ? "lever-down" : rv.state === "jammed" ? "lever-glow" : "lever-up", LEVER.x, LEVER.base + fall, LEVER.h);
+    const mode = lever > 0 ? "down" : rv.state === "jammed" ? "glow" : "up";
+    if (px) pd.lever(cx, LEVER.x, LEVER.base + fall, mode);
+    else put("lever-" + mode, LEVER.x, LEVER.base + fall, LEVER.h);
   }
   function rocketDraw() {
     const rk = img("rocket"), fl = img("flame");
@@ -281,11 +296,21 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     shippy.update(dt, act ? { pose: act.pose, at: act.at } : v.shippy);
     const quake = builder?.shake?.() ?? 0;
 
-    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
-    cx.fillStyle = "#2a1410"; cx.fillRect(0, 0, W, H);
-    sky();
-    cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + (Math.random() - 0.5) * quake) * cam.s), DPR * (H / 2 - (cam.y + (Math.random() - 0.5) * quake) * cam.s));
+    const qx = (Math.random() - 0.5) * quake, qy = (Math.random() - 0.5) * quake;
+    if (px) {
+      cx = px.begin({ x: cam.x + qx, y: cam.y + qy, s: cam.s });
+      const bw = cx.canvas.width, bh = cx.canvas.height, world = cx.getTransform();
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.fillStyle = "#291b17"; cx.fillRect(0, 0, bw, bh);
+      sky(bw, bh, 1 / ART_PX);
+      cx.setTransform(world);
+    } else {
+      cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = "high";
+      cx.fillStyle = "#2a1410"; cx.fillRect(0, 0, W, H);
+      sky(W, H, cam.s);
+      cx.setTransform(DPR * cam.s, 0, 0, DPR * cam.s, DPR * (W / 2 - (cam.x + qx) * cam.s), DPR * (H / 2 - (cam.y + qy) * cam.s));
+    }
     slot("sky-far");
     clouds(470, 1.1, 5, 0.85);
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).
@@ -304,7 +329,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     islandUp = island >= 1; islandIn = island > 0;
     slot("deck");
     put("boiler-on", 112, 182, 168);
-    glow(ORB.x, ORB.y, 100, "120,240,255", 0.3 + 0.2 * Math.sin(t * 2), true);
+    glow(ORB.x, ORB.y, 100, "120,240,255", 0.32, true); // steady; nothing ambient pulses
     belt();
     slot("line");
     rocketDraw();
@@ -316,6 +341,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     puffsDraw(dt);
     clouds(600, 1.6, 12, 0.95);
     slot("front");
+    if (px) { px.end(); cx = screen; cx.imageSmoothingEnabled = false; }
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     shippy.drawCorner(cx, 14, 14, 76);
   }

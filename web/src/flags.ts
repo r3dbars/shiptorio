@@ -24,6 +24,11 @@ export const simpleOn = () => feature("simple");
  * you. A preview feature (?buildout=1 / ?buildout=0), but the simple screen has no tour (docs/SIMPLE-UI.md, journey
  * pick 1: learn by doing), so it only plays with ?simple=0. */
 export const buildoutOn = () => feature("buildout") && !simpleOn();
+/** The real pixel-art deck (docs/PIXEL-PLAN.md). A preview feature; ?px=1 / ?px=0 also force it either way. */
+export const pixelOn = (search = globalThis.location?.search ?? "") => {
+  const p = new URLSearchParams(search).get("px");
+  return p === "1" ? true : p === "0" ? false : feature("pixel", search);
+};
 export async function loadFeatureFlags(): Promise<void> {
   // Explicit simulator URLs work offline and never depend on the backend.
   if (new URLSearchParams(location.search).get("source") === "sim") return;
