@@ -319,6 +319,30 @@ describe("durable live check-in decisions", () => {
     expect(fresh.state.pipeline?.find(s => s.id === "builder")).toMatchObject({ state: "working", cause: "building" });
   });
 
+  for (const failure of ["none", "before-book", "after-book"] as const) it(`Later ack loss survives reconnect and ${failure} persistence failure`, async () => {
+    const move = card("durable-intent"); const f = fixture([move]); await f.checkin();
+    const message = {type:"defer_move", moveId:move.id, intentId:"11111111-1111-4111-8111-111111111111"};
+    const storage = (f.factory as any).ctx.storage, put = storage.put.bind(storage);
+    let failed = false;
+    if (failure !== "none") storage.put = async (key: string, value: any) => {
+      if (key === "deckBook" && value.deferReceipts?.length && !failed) {
+        failed = true;
+        if (failure === "after-book") await put(key,value);
+        throw new Error("Simulated decision-book persistence interruption");
+      }
+      return put(key,value);
+    };
+    if (failure === "none") await f.send(message); else await expect(f.send(message)).rejects.toThrow("persistence interruption");
+    storage.put = put;
+    const reloaded=f.reload(); await f.checkin(reloaded); // Original deck-removal acknowledgement was lost.
+    await f.send(message,reloaded);
+    expect((f.data.get("deckBook") as ReturnType<typeof emptyDeckBook>).decisions[moveKey(move)]).toMatchObject({count:1,deferred:true});
+    expect(f.saved().deck).toEqual([]);
+    const next=f.reload(); await f.checkin(next);
+    await f.send({...message,intentId:"22222222-2222-4222-8222-222222222222"},next);
+    expect((f.data.get("deckBook") as ReturnType<typeof emptyDeckBook>).decisions[moveKey(move)].count).toBe(2);
+  });
+
   it("logs every card offered and what the player tapped, with the wait and the planner's reason", async () => {
     const f = fixture([card("yes", { because: "Two PRs wait on review." }), card("later", { kind: "input" }), card("wrong", { kind: "build" })]);
     await f.checkin();

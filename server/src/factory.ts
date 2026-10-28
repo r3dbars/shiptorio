@@ -97,7 +97,7 @@ import { deriveBottleneck, stageForItem, type StageHistory, type StageMetrics } 
 import { emptyMemory as emptyBrainMemory, modelDiagnose, runDiagnose, tapBrain, type BrainMemory } from "./diagnose";
 import { collect, emptyCache as emptySignalCache, type SignalCache } from "./signals";
 import { dismissNote, resetLearn, forget, forgetOnComeback, freshWork, isLearned, learnedList, learnFromYes, learnKey, learnMeter, learnOption, noteAutoRun } from "./learn";
-import { beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
+import { hasDeferReceipt, beginCheckin, deferCard, emptyDeckBook, moveKey, noteYes, plannerFeedback, resetYes, suppressed, thirdDefer, yesKey, type DeckBook, type DeckRule } from "./deck-decisions";
 import { normalizeSentry, sentryStatus, type SentryPayload } from "./sources/sentry";
 import { recordSentryPulse, SENTRY_PULSES_KEY, type SentryPulse } from "./signals/sentry";
 import { analyze, fakePostHogRows, fetchRouteDays, POLL_MS, postHogStatus, type RouteDay } from "./sources/posthog";
@@ -714,14 +714,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     } catch (error) { this.tapsError(error); return undefined; }
   }
 
-  private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong") {
+  private async swipe(move: Move, why: "defer" | "once" | "kind" | "spark" | "wrong", intent?: {id: string; userId: number; scope: string}) {
     await this.decisionData();
-    if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
+    if (why !== "defer" && move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later");
     const book = this.deckBook!, key = moveKey(move), before = book.decisions[key] && structuredClone(book.decisions[key]);
-    resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!));
-    resetLearn(book, move.kind ?? "unblock", moveScope(move, this.state!));
-    if (why === "defer") deferCard(book, move);
+    const reset = () => { resetYes(book, move.kind ?? "unblock", moveScope(move, this.state!)); resetLearn(book, move.kind ?? "unblock", moveScope(move, this.state!)); };
+    if (why === "defer") {
+      const counted = deferCard(book, move, intent);
+      if (counted) { reset(); if (move.id.startsWith("unlock:")) await this.tapBrainCard(move.id.slice(7), "later"); }
+    }
     else {
+      reset();
       const id = crypto.randomUUID(), scope = moveScope(move, this.state!);
       book.decisions[key] = { key, move, count: before?.count ?? 0, dismissed: true };
       const undo: DeckBook["undos"][number] = { id, expiresAt: Date.now() + 300000, key, before };
@@ -741,6 +744,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const labels = { once: "Card dismissed.", kind: "This kind of card is now muted here.", spark: "Your preference for the factory to decide these has been recorded.", wrong: "Correction saved for the next plan." };
       this.broadcast({ type: "log", level: "info", text: labels[why], actor: "player", actionId: id, at: Date.now() });
     }
+    // One durable book write contains both the parking effect and its receipt.
+    // A restart before/after this write can neither acknowledge an unapplied tap nor recount it.
+    if (intent) await this.accountPut("deckBook", book);
     await this.refreshDecisions();
   }
 
@@ -3355,7 +3361,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (!card) return; // stale or forged card ids never execute
       const original = card.id.endsWith(":deferred") ? this.openMoves!.find(m => `${m.id}:deferred` === card.id) ?? Object.values(this.deckBook!.decisions).find(d => `${d.move.id}:deferred` === card.id)?.move : card;
       if (!original) return;
-      if (msg.type === "defer_move") { await this.logTap(card, "later"); await this.swipe(original, "defer"); return; }
+      if (msg.type === "defer_move") {
+        const apply = async () => {
+          const current = (s.deck ?? (s.move ? [s.move] : [])).find(m => m.id === msg.moveId);
+          if (!current) return;
+          const intent = msg.intentId ? {id: msg.intentId, userId: auth.user!.id, scope: await issueRevision(original.id, JSON.stringify([original.plan, original.locked, original.options]))} : undefined;
+          if (!intent || !hasDeferReceipt(this.deckBook!, original, intent)) await this.logTap(current, "later");
+          await this.swipe(original, "defer", intent);
+        };
+        if (msg.intentId) await this.ctx.blockConcurrencyWhile(apply); else await apply();
+        return;
+      }
       if (msg.type === "dismiss_move") { await this.logTap(card, "never", undefined, msg.why); await this.swipe(original, msg.why); return; }
       const option = card.options.find(o => o.id === msg.optionId);
       if (!option) return;

@@ -8,7 +8,11 @@ export function moveKey(move: Move): string {
 export interface DeckRule { kind: string; scope: string; actionId: string }
 export interface DeckDecision { key: string; move: Move; count: number; deferred?: boolean; dismissed?: boolean }
 export interface DeckUndo { id: string; expiresAt: number; key: string; before?: DeckDecision; rule?: DeckRule; noteId?: string }
+export interface DeferIntent { id: string; userId: number; scope?: string }
+export interface DeferReceipt extends DeferIntent { moveId: string; key: string; at: number }
 export interface DeckBook {
+  /** Correlation only. Saved atomically with the deferred decision, bounded beyond the client's one-minute retry window. */
+  deferReceipts?: DeferReceipt[];
   decisions: Record<string, DeckDecision>; notes: { id: string; text: string }[]; undos: DeckUndo[];
   /** docs/ATTENTION.md: the player's Continues in a row per card class (`kind|scope`). A Later or a never resets it. */
   yes?: Record<string, number>;
@@ -27,11 +31,27 @@ export function thirdDefer(move: Move): Move {
     { id: 'keep-later', label: 'Keep it for next time', recommended: false, actions: [] },
   ] };
 }
-export function deferCard(book: DeckBook, move: Move): void {
+export function hasDeferReceipt(book: DeckBook, move: Move, intent: DeferIntent, now = Date.now()): boolean {
+  const key = moveKey(move);
+  return (book.deferReceipts ?? []).some(r => r.at > now - 600_000 && r.id === intent.id && r.userId === intent.userId && r.moveId === move.id && r.key === key && r.scope === intent.scope);
+}
+export function deferCard(book: DeckBook, move: Move, intent?: DeferIntent, now = Date.now()): boolean {
   const key = moveKey(move), prior = book.decisions[key];
+  if (intent) {
+    const receipts = (book.deferReceipts ?? []).filter(r => r.at > now - 600_000);
+    const replay = hasDeferReceipt(book, move, intent, now);
+    book.deferReceipts = receipts;
+    if (replay) {
+      // A reconnect starts a new check-in; replay the parking effect, not another lesson/count.
+      if (prior && !prior.dismissed) prior.deferred = true;
+      return false;
+    }
+    book.deferReceipts = [...receipts, {...intent, moveId: move.id, key, at: now}].slice(-128);
+  }
   // Duplicate deliveries of the same parked decision are not new player choices.
-  if (prior?.deferred || prior?.dismissed) return;
+  if (prior?.deferred || prior?.dismissed) return false;
   book.decisions[key] = { key, move, count: (prior?.count ?? 0) + 1, deferred: true };
+  return true;
 }
 export const yesKey = (kind: string, scope: string) => `${kind}|${scope}`;
 export function noteYes(book: DeckBook, kind: string, scope: string): number {
