@@ -1,0 +1,27 @@
+/* Deck juice (deck/juice/fx.ts). Everything is a short-lived absolutely-positioned overlay inside the deck host. */
+.djuice { position: absolute; pointer-events: none; z-index: 30; image-rendering: pixelated; will-change: transform, opacity; }
+.djuice-spark { width: 4px; height: 4px; background: var(--dj, #ffb347); box-shadow: 0 0 6px var(--dj, #ffb347); }
+.djuice-flash { width: 40px; height: 40px; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle, var(--dj, #ffb347) 0%, transparent 70%); }
+.djuice-gold { --dj: #ffb347; }
+.djuice-green { --dj: #6be37a; }
+.djuice-red { --dj: #ff5a4a; }
+.djuice-cyan { --dj: #5fe1ff; }
+.djuice-steam { border-radius: 50%; background: radial-gradient(circle, rgba(255, 246, 232, 0.85) 0%, rgba(255, 246, 232, 0.35) 55%, transparent 72%); }
+.djuice-stamp {
+  z-index: 40;
+  padding: 0.35em 0.7em 0.25em;
+  font: 700 clamp(22px, 6vw, 44px) / 1 "Silkscreen", "JetBrains Mono", monospace;
+  letter-spacing: 0.06em;
+  color: #7dff8a;
+  border: 4px solid #7dff8a;
+  border-radius: 6px;
+  background: rgba(10, 30, 14, 0.72);
+  text-shadow: 0 0 10px rgba(125, 255, 138, 0.7);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5), 0 0 24px rgba(125, 255, 138, 0.45);
+  white-space: nowrap;
+}
+.djuice-flame { z-index: 29; transform-origin: 50% 0; object-fit: contain; }
+div.djuice-flame {
+  background: radial-gradient(ellipse 50% 60% at 50% 20%, #fff6c0 0%, #ffcf3a 30%, #ff7a1a 60%, transparent 75%);
+  filter: drop-shadow(0 0 8px #ff8a2a);
+}
