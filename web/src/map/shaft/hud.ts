@@ -12,6 +12,7 @@ import { LEDGE_Z, MINES, TIERS } from "./layout";
 import { clickable, mineKey, type ShaftPlan } from "./plan";
 import type { ShaftStage, ShaftView } from "./stage";
 import { lineOrder, quietWord, WORDS, workOnLine, type Work } from "./waiting";
+import { simpleOn } from "../../flags";
 
 export interface HudHost {
   pick(key: string): void; // a chip or ping was clicked: open that thing's panel
@@ -20,7 +21,7 @@ export interface HudHost {
 }
 
 // the game's fixed plates over the map (App.tsx): the floor card and icons, the needs tray, the ticker, the controls
-const PLATES = [".hudtop", ".needs-slot", ".ticker", ".ctrl", ".judge-header", ".judge-caption"];
+const PLATES = [".hudtop", ".slowspot", ".needs-slot", ".ticker", ".ctrl", ".judge-header", ".judge-caption"];
 
 // a quiet machine never says IDLE: it says what it's waiting on (waiting.ts)
 const STATE_WORD: Record<string, string> = { WORKING: "WORKING", BLOCKED: "NEEDS YOU" };
@@ -65,11 +66,13 @@ export class ShaftHud {
   selected?: string; // the key whose panel is open
   showAll = false; // every label on (the keyboard is on the map, or the player asked)
   teaching = new Set<string>(); // labels the tour pins
+  quiet = simpleOn(); // the simple screen: no labels at all except on what's asked for (the task tray's card, a tap)
   private world: { I: Iron; stage: ShaftStage; sp: ShaftPlan } | null = null;
   private chips: Chip[] = [];
   private readonly tags = new Map<IronItem, HTMLSpanElement>();
   private pings: PingEl[] = [];
   private readonly floors: HTMLElement;
+  private readonly spot: HTMLElement; // the simple screen's spotlight: the map dims around what the task card is about
   private readonly floorBtns = new Map<string, HTMLButtonElement>();
   private idleText = new Map<string, string>();
   private lineAt = new Map<string, number>(); // each line machine's place, planner up to orbit
@@ -86,6 +89,10 @@ export class ShaftHud {
     // a dev StrictMode remount can build the next hud before the last one is disposed, so count them on the root
     root.dataset.shaftHuds = String(Number(root.dataset.shaftHuds ?? 0) + 1);
     root.classList.add("shaft");
+    this.spot = document.createElement("div");
+    this.spot.className = "shaftspot";
+    this.spot.setAttribute("aria-hidden", "true");
+    root.prepend(this.spot);
     // the elevator panel: one button per floor, the whole shaft, and follow-the-work
     this.floors = document.createElement("nav");
     this.floors.className = "shaftfloors";
@@ -248,8 +255,8 @@ export class ShaftHud {
       // ping already saying so, or when asked for (hover, keyboard on the map, selected, the tour). Down on one
       // floor, the machines there keep a faint name.
       const asked = teaching || this.showAll || (!!c.key && (c.key === this.hovered || c.key === this.selected));
-      const loud = (hot && !pinged.size) || asked;
-      const faint = !loud && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
+      const loud = (hot && !pinged.size && !this.quiet) || asked;
+      const faint = !loud && !this.quiet && floorView && (c.always || !!c.station) && !(c.key === "rework" && !this.reworkCount);
       const shown = loud || faint;
       c.el.classList.toggle("faint", faint);
       c.el.classList.toggle("teaching", teaching);
@@ -285,7 +292,7 @@ export class ShaftHud {
     }
 
     // item tags: wide screens, down on one floor and close enough to read (the whole shaft stays unlabeled)
-    const tagsOn = !phone && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
+    const tagsOn = !phone && !this.quiet && (floorView || this.showAll) && stage.viewH * stage.zoom <= 40;
     const seen = new Set<IronItem>();
     if (tagsOn)
       for (const it of I.items) {
@@ -308,6 +315,17 @@ export class ShaftHud {
         el.style.transform = `translate(${Math.round(x)}px,${Math.round(y)}px) translate(-50%,-100%)`;
       }
     for (const [it, el] of this.tags) if (!seen.has(it)) (el.remove(), this.tags.delete(it));
+
+    // the spotlight: on the simple screen, everything but the card's machine dims
+    const lit = this.quiet && this.selected ? this.chips.find((x) => x.key === this.selected) : undefined;
+    if (lit) {
+      const st = lit.station;
+      const [x, y] = stage.project(...(st ? ([st.x, st.y + 1.6, st.z] as [number, number, number]) : lit.at()));
+      this.spot.style.setProperty("--sx", `${Math.round(x)}px`);
+      this.spot.style.setProperty("--sy", `${Math.round(y)}px`);
+      this.spot.style.setProperty("--sr", `${Math.round(Math.min(W, H) * (phone ? 0.3 : 0.2))}px`);
+    }
+    this.spot.classList.toggle("on", !!lit);
 
     // pings: over the machine they're about
     for (const pe of this.pings) {
@@ -363,6 +381,7 @@ export class ShaftHud {
     for (const pe of this.pings) pe.el.remove();
     this.pings = [];
     this.floors.remove();
+    this.spot.remove();
     cover.top = cover.bottom = 0;
     const left = Number(this.root.dataset.shaftHuds ?? 1) - 1;
     this.root.dataset.shaftHuds = String(left);

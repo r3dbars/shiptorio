@@ -41,7 +41,9 @@ import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTI
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { MachineLight } from "./ui/MachineLight";
 import { AttentionTray } from "./ui/Attention";
-import { attentionOn, buildoutOn } from "./flags";
+import { attentionOn, buildoutOn, simpleOn } from "./flags";
+import { SlowSpotLine, TaskTray } from "./ui/TaskTray";
+import { slowSpot } from "./ui/slowSpot";
 import { Buildout, useFreeLook } from "./ui/Buildout";
 import { BuildStamp } from "./ui/BuildStamp";
 import { installBuildSound } from "./sound/build";
@@ -135,7 +137,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const intro = introMode(cfg);
   // Build as you go (?buildout=1): nothing exists until you build it, one card guides each build, and the
   // counters and free camera wait until "Look around" after the first rocket (ui/Buildout.tsx).
-  const buildout = !intro && buildoutOn();
+  const buildout = !intro && buildoutOn() && !simpleOn(); // the simple screen has no tour: you learn by doing (journey pick 1)
   const [free, lookAround] = useFreeLook();
   // "Look around" frees it only once every build is done, so a fresh factory starts in the dark again
   const guided = buildout && !(free && !!state && stepFrom(state).id === LOOK);
@@ -165,7 +167,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   // One thing talks at a time: a rocket's celebration, then a lesson, then a badge, then the card (bug hunt, 2026-10-27).
   const [celebrating, setCelebrating] = useState(false);
   // The welcome tour (or Build as you go) is the one teaching path, so lessons stay quiet unless ?lessons=1 asks for them.
-  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0", celebrating || !!ach.toast, new URLSearchParams(location.search).get("lessons") !== "1");
+  const tour = useTutorial(state, cfg.kind === "sim" && cfg.scenario === "first-run" && new URLSearchParams(location.search).get("tour") !== "0" && !simpleOn(), celebrating || !!ach.toast, new URLSearchParams(location.search).get("lessons") !== "1");
   const { show } = tour;
   // Coming back after hours away: a few seconds of what really shipped meanwhile, then the launch waiting on you.
   const [reduced] = useState(() => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
@@ -187,7 +189,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
     }
   };
   // ?checkin opens the deck on load, the way a phone check-in would.
-  const [checkin, setCheckin] = useState(() => new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin");
+  const [checkin, setCheckin] = useState(() => !simpleOn() && (new URLSearchParams(location.search).has("checkin") || cfg.scenario === "checkin"));
   const [focus, setFocus] = useState<string | null>(null); // what the check-in wants the map to zoom to
   // the map's pick keys: a station id as-is, a folder as d:<name>, any other machine as m:<id>
   const pickKey = (id: string) =>
@@ -207,8 +209,22 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const [progressing] = useState(() => !intro && progressOn());
   const profile = viewing ? `admin-view:${viewing.login}` : progressProfile(cfg.kind, login, guest);
   const prog = useProgress(state, profile, cfg.kind === "sim" ? `sim:${cfg.scenario}` : cfg.repo ?? "live", progressing && !tour.on && viewReady, !!viewing);
-  const brief = useBrief(progressing && !tour.on, !!state && state.districts.length > 0, profile);
+  const brief = useBrief(progressing && !tour.on && !simpleOn(), !!state && state.districts.length > 0, profile);
   const [calm] = useState(attentionOn); // docs/ATTENTION.md: on by default, ?attention=0 for the old Next move card
+  // The simple screen (?simple=1): one slow-spot line, one task tray, a map with no labels. The tray opens on its own
+  // whenever there's a card; tapping the line opens or closes it.
+  const simple = useState(simpleOn)[0] && !intro && !guided;
+  const [tasksAsked, setTasksAsked] = useState<boolean | null>(null);
+  const spot = slowSpot(deck, state?.bottleneck);
+  const ideas = deck.filter((m) => attentionOf(m) === "suggest").length;
+  const tasksOpen = tasksAsked ?? true; // one card at a time, or the "what's next" idea when nothing waits
+  // the look Justin picked (journey picks 5 and 6): glass plates, a hard spotlight. ?look= tries others (soft, nospot)
+  useEffect(() => {
+    if (!simple) return;
+    const look = new URLSearchParams(location.search).get("look");
+    document.documentElement.dataset.look = (look ?? "glass hard").replace(/,/g, " ");
+    return () => void delete document.documentElement.dataset.look;
+  }, [simple]);
   const nudge = useBottleneckNudge(deck, progressing, calm);
   achLink.current = { streak: prog.p.best, onUnlock: (a) => prog.bonus(a.xp, a.name), hold: !!tour.lesson || celebrating }; // achievements pay XP into progression; toasts wait out the tour coach card and a rocket
   // today's log remembers the deck you walked in to (the morning number the trend is made of)
@@ -504,7 +520,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
-          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding && !guided ? pings : undefined}
+          pings={intro ? (tourly.ping ? pings : undefined) : show("line") && !back.holding && !guided && !simple ? pings : undefined}
           cosmetics={cosmeticsOf(prog.p, progressing)}
 
           satellites={intro ? undefined : satellites}
@@ -527,7 +543,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             counts={counts}
             repo={state?.repo}
             showKey={false}
-            extra={(progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
+            compact={simple}
+            extra={simple ? undefined : (progressing && !tour.on) || empire.on || cfg.kind === "live" || sandbox ? (<>
               {sandbox && (
                 <a className="chip play-chip" href={signInUrl()} aria-label={PLAY.chipLabel} title={PLAY.chipLabel}>
                   <span>{PLAY.chip}<small>{PLAY.chipCta}</small></span>
@@ -597,6 +614,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             </button>}
           </div>
         </div>
+
+        {simple && state && <SlowSpotLine spot={spot} ideas={ideas} open={tasksOpen} onToggle={() => setTasksAsked(!tasksOpen)} />}
 
         {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
@@ -767,8 +786,10 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
             )}
           </section>
         ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
-          <div className="needs-slot" ref={hv.refs.needs as Ref<HTMLDivElement>}>
-            {calm ? (
+          <div className={simple ? "needs-slot simple" : "needs-slot"} ref={hv.refs.needs as Ref<HTMLDivElement>}>
+            {simple ? (
+              tasksOpen && <TaskTray deck={deck} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} autonomy={autonomy} nudge={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null} />
+            ) : calm ? (
               <AttentionTray
                 deck={deck}
                 send={sendCard}

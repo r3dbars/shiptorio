@@ -1065,3 +1065,29 @@ export const AWAY = {
   skip: "Tap to skip",
   skipLabel: "Skip the replay of what shipped while you were away",
 };
+
+/** The simple screen (?simple=1): the slow-spot line and the one task tray. */
+export const TASKS = {
+  slow: "Slow spot",
+  you: (n: number) => `You · ${n} waiting`,
+  stage: (stage: string, summary: string) => `${stage[0].toUpperCase()}${stage.slice(1)} · ${summary}`,
+  clear: "Nothing · all clear",
+  open: "Open",
+  hide: "Hide",
+  ideas: (n: number) => `${n} idea${n === 1 ? "" : "s"}`,
+  label: "Tasks",
+  lineLabel: (line: string) => `Slow spot: ${line}. Open the tasks`,
+  kind: { approve: "Approve", steer: "Stuck", suggest: "Idea" } as const,
+  of: (i: number, n: number) => `${i} of ${n}`,
+  prev: "Previous task",
+  next: "Next task",
+  later: "Later",
+  edit: "Edit",
+  more: "More",
+  less: "Less",
+  others: "Or do this instead",
+  does: (label: string) => `Continue: ${label}`,
+  earn: (left: number, label: string) => `${left} more ${label}, then the factory stops asking`,
+  swipeHint: "Swipe to see the next task",
+  done: "All clear. Nothing needs you right now.",
+};
