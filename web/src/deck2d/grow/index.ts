@@ -22,7 +22,7 @@ const SIZES: DeckSize[] = ["small", "medium", "large"];
 // ---------- the three decks ----------
 // All numbers but s/dy are sprite pixels: cap = where the right end cap starts, floor = back edge .. front rail
 // of the floor, skirt = bottom of the front iron skirt.
-// s scales each one to fit its stations (small ~1000 wide holds builder, medium ~1500 holds review, large = the
+// s scales each one to fit its stations (small ~1000 wide holds builder, medium ~1700 holds review, large = the
 // old 2039 so the bridge meets it at x 1905); dy puts every front rail at world y 318 so the belt (y 236) and
 // the stations' feet stay put as it grows.
 interface Geo { s: number; dy: number; w: number; h: number; cap: number; floor: [number, number]; skirt: number }
@@ -33,7 +33,7 @@ const geo = (w: number, h: number, width: number, cap: number, floor: [number, n
 };
 export const DECKS: Record<DeckSize, Geo> = {
   small: geo(1413, 642, 1000, 1120, [112, 285], 400),
-  medium: geo(2068, 596, 1500, 1700, [128, 278], 375),
+  medium: geo(2068, 596, 1700, 1700, [128, 278], 375),
   large: geo(2077, 517, 2039, 1690, [105, 248], 322),
 };
 const TILE = 80; // one new floor column, world px

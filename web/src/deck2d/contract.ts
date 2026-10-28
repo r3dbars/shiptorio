@@ -139,7 +139,7 @@ export function createBus(): DeckBus {
 export const DECK = { w: 2039, h: 657 } as const;
 export const BELT_Y = 236;
 export const STOP_X: Record<StopId, number> = {
-  repo: 210, planner: 480, builder: 740, checks: 990, review: 1250, gate: 1560, launch: 2834,
+  repo: 200, planner: 500, builder: 800, checks: 1100, review: 1400, gate: 1700, launch: 2834,
 };
 export const LAUNCH_Y = 250; // the launch circle on the rocket island
 /** Where things stand: a sprite's feet sit on this y at a stop (slightly in front of the belt). */
