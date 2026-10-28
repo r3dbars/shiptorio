@@ -2335,10 +2335,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   /** Creates the factory with districts from the repo and a starter line, if it doesn't exist yet. */
   private async ensureFactory(repo: string, installationId: number): Promise<void> {
     if (await this.githubStopped()) return;
-    await this.load();
+    const existing = await this.load();
     if (!validRepo(repo) || (this.meta && this.meta.repo.toLowerCase() !== repo.toLowerCase())) throw new Error("Repository mismatch");
 
-    if (await this.load()) {
+    if (existing) {
       if (await this.ctx.storage.get("githubNeedsInitialization")) {
         const tree = await repoTree(await installationToken(this.env, installationId), repo);
         if (await this.githubStopped()) return;
@@ -2351,7 +2351,9 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         this.meta = { repo, installationId };
         await this.accountPut("meta", this.meta);
       }
-      await this.autoConnectMines().catch(error => this.log("error", `Mine connection failed: ${String(error)}`));
+      // Optional provider discovery must not delay an already usable map. Persist
+      // the wake-up before returning so an eviction cannot lose the reconnect.
+      await this.accountPut("mineReconnectPending", { repo: this.meta!.repo, installationId });
       await this.scheduleTick();
       return;
     }
@@ -2362,6 +2364,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.githubStopped()) return;
     this.state = initialFactoryState(repo, tree, this.env);
     await this.save();
+  }
+
+  /** Alarm-owned optional discovery; deletion/installation changes invalidate old work. */
+  private async reconnectMines(): Promise<void> {
+    const pending = await this.ctx.storage.get<Meta>("mineReconnectPending");
+    if (!pending || await this.githubStopped()) return;
+    await this.assertAccountActive(pending.repo);
+    if (!this.meta || this.meta.repo !== pending.repo || this.meta.installationId !== pending.installationId) return;
+    await this.autoConnectMines();
+    // Keep the marker on failure, including partial connection, for the next alarm.
+    await this.ctx.storage.delete("mineReconnectPending");
   }
 
   async refreshDistricts(): Promise<void> {
@@ -3623,6 +3636,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     await this.githubGuard("retryReviewComments", () => this.retryReviewComments());
     await this.guard("planRunnerJobs", () => this.planRunnerJobs());
     await this.githubGuard("reconcileGitHub", () => this.reconcileGitHub());
+    await this.guard("reconnectMines", () => this.reconnectMines());
     await this.guard("watchdog", () => this.watchdog());
     const s = this.state!;
     await this.patch({ tick: s.tick + 1 });
