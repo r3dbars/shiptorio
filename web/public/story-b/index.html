@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#0e0f12" />
+    <title>Shiptorio story (B)</title>
+    <!-- Version B of the opening story: flat 2D, one thumb, ~60s, four beats.
+         Self-contained on purpose (no game code, no art) so it can be compared with /story. -->
+    <link rel="stylesheet" href="/story-b/story.css" />
+  </head>
+  <body>
+    <main id="app">
+      <header class="top">
+        <ol class="dots" aria-label="Story progress"><li></li><li></li><li></li><li></li></ol>
+        <div class="count" aria-live="polite"><svg viewBox="0 0 12 16" aria-hidden="true"><path d="M6 0 L10 7 L10 12 L2 12 L2 7 Z" /></svg><span id="shipped">0</span></div>
+      </header>
+      <section class="caption" aria-live="polite">
+        <h1 id="title"></h1>
+        <p id="sub"></p>
+      </section>
+      <svg id="stage" viewBox="0 40 340 440" role="img" aria-label="A small factory line"></svg>
+      <footer class="bottom">
+        <p id="prompt" class="prompt"></p>
+        <div id="card" class="card" hidden>
+          <div class="card-body">
+            <b id="card-title"></b>
+            <span id="card-sub"></span>
+            <span id="card-learn" class="learn" hidden></span>
+          </div>
+          <div class="card-hint" aria-hidden="true">swipe →</div>
+          <button id="approve" class="approve" type="button">Approve</button>
+        </div>
+        <div id="end" class="end" hidden>
+          <h2>That's your repo.</h2>
+          <p>Want to see the real one?</p>
+          <a class="cta" href="/">Show me my repo</a>
+          <button id="replay" class="ghost" type="button">Replay</button>
+        </div>
+      </footer>
+    </main>
+    <script src="/story-b/story.js"></script>
+  </body>
+</html>
