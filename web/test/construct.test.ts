@@ -197,3 +197,60 @@ test("an empty group still finishes", async () => {
   expect(play(run, CONSTRUCT_SECONDS + 0.1)).toBe(true);
   await run.done;
 });
+test("a warmed fade twin follows its original's disposal without retaining the old program owner", () => {
+  const { holder } = machine();
+  const mesh = holder.children[0].children[0] as THREE.Mesh;
+  const orig = new THREE.MeshPhongMaterial({ color: 0x123456 });
+  mesh.material = orig;
+  const warm = construct(holder, { reduced: true });
+  const twin = mesh.material as THREE.Material;
+  warm.cancel();
+  let disposed = 0;
+  twin.addEventListener("dispose", () => disposed++);
+  orig.dispose();
+  expect(disposed).toBe(1);
+  const next = construct(holder, { reduced: true });
+  const freshTwin = mesh.material as THREE.Material;
+  expect(freshTwin).not.toBe(twin);
+  next.cancel();
+  let freshDisposed = 0;
+  freshTwin.addEventListener("dispose", () => freshDisposed++);
+  orig.dispose();
+  expect(disposed).toBe(1); // old source listener was removed
+  expect(freshDisposed).toBe(1);
+  expect(mesh.material).toBe(orig);
+});
+
+test("a reused warm fade captures current original appearance and restores its original", () => {
+  const { holder } = machine();
+  const mesh = holder.children[0].children[0] as THREE.Mesh;
+  const orig = new THREE.MeshPhongMaterial({ color: 0x123456 });
+  mesh.material = orig;
+  const warm = construct(holder, { reduced: true });
+  const twin = mesh.material as THREE.MeshPhongMaterial;
+  warm.cancel();
+  orig.color.setHex(0xabcdef);
+  orig.emissive.setHex(0x102030);
+  orig.opacity = 0.6;
+  orig.map = new THREE.Texture();
+  orig.onBeforeCompile = () => {};
+  orig.customProgramCacheKey = () => "updated-original";
+  const beforeVersion = twin.version;
+  orig.needsUpdate = true;
+  const fade = construct(holder, { reduced: true });
+  expect(mesh.material).toBe(twin); // reuse retains the warmed material/program
+  fade.update(0.5);
+  expect(twin.color.getHex()).toBe(orig.color.getHex());
+  expect(twin.emissive.getHex()).toBe(orig.emissive.getHex());
+  expect(twin.map).toBe(orig.map);
+  expect(twin.onBeforeCompile).toBe(orig.onBeforeCompile);
+  expect(twin.customProgramCacheKey).toBe(orig.customProgramCacheKey);
+  expect(twin.version).toBeGreaterThan(beforeVersion);
+  expect(twin.opacity).toBeCloseTo(0.3, 5);
+  expect(twin.transparent).toBe(true);
+  fade.finish();
+  expect(mesh.material).toBe(orig);
+  expect(orig.opacity).toBe(0.6);
+  orig.dispose();
+  orig.map.dispose();
+});

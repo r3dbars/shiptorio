@@ -32,7 +32,8 @@ for(const path of paths){const target=realpathSync(path);if(!target.startsWith(r
 }
 
 /** Never publish through metadata/config/hooks that an agent or test could modify. */
-export async function prepareApprovedCommit(job: { sourceUrl: string; baseSha: string; allowedPaths: string[] }, files: ApprovedFiles, token = ""): Promise<{ sha: string; directory: string; push(branch: string): Promise<void>; close(): Promise<void> }> {
+export async function prepareApprovedCommit(job: { sourceUrl: string; baseSha: string; allowedPaths: string[]; refreshBase?: { expectedHeadSha: string } }, files: ApprovedFiles, token = ""): Promise<{ sha: string; directory: string; push(branch: string): Promise<void>; close(): Promise<void> }> {
+  if (job.refreshBase && (!/^[a-f0-9]{40}$/.test(job.refreshBase.expectedHeadSha) || job.refreshBase.expectedHeadSha === job.baseSha)) throw new Error("Invalid approved publication lease");
   const root = await mkdtemp(join(tmpdir(), "shiptorio-publish-"));
   const home = join(root, "home"), work = join(root, "checkout"), hooks = join(root, "empty-hooks");
   await mkdir(home); await mkdir(hooks);
@@ -86,12 +87,20 @@ export async function prepareApprovedCommit(job: { sourceUrl: string; baseSha: s
     const close = async () => { closed = true; env.GIT_CONFIG_VALUE_0 = ""; await rm(root, { recursive: true, force: true }); };
     return { sha, directory: work, close, async push(branch) {
       if (closed || !/^shiptorio\/runner-[a-f0-9-]{36}$/.test(branch)) throw new Error("Invalid publication branch");
-      await run(["push", url, `HEAD:refs/heads/${branch}`], work);
+      const ref = `refs/heads/${branch}`;
+      if (job.refreshBase) {
+        // The approved old head is immutable authority; never infer a lease from a fresh fetch.
+        // A lost acknowledgment can only recover the identical deterministic commit.
+        const current = (await run(["ls-remote", "--refs", url, ref], work)).split(/\s+/)[0];
+        if (current === sha) return;
+        if (current !== job.refreshBase.expectedHeadSha) throw new Error("Factory branch changed; approve a fresh plan");
+        await run(["push", `--force-with-lease=${ref}:${job.refreshBase.expectedHeadSha}`, url, `HEAD:${ref}`], work);
+      } else await run(["push", url, `HEAD:${ref}`], work);
     } };
   } catch (error) { env.GIT_CONFIG_VALUE_0 = ""; await rm(root, { recursive: true, force: true }); throw error; }
 }
 
-export async function publishApproved(job: { repo: string; token: string; baseSha: string; branch: string; allowedPaths: string[] }, files: ApprovedFiles): Promise<string> {
-  const commit = await prepareApprovedCommit({ sourceUrl: `https://github.com/${job.repo}.git`, baseSha: job.baseSha, allowedPaths: job.allowedPaths }, files, job.token);
+export async function publishApproved(job: { repo: string; token: string; baseSha: string; branch: string; allowedPaths: string[]; refreshBase?: { expectedHeadSha: string } }, files: ApprovedFiles): Promise<string> {
+  const commit = await prepareApprovedCommit({ sourceUrl: `https://github.com/${job.repo}.git`, baseSha: job.baseSha, allowedPaths: job.allowedPaths, refreshBase: job.refreshBase }, files, job.token);
   try { await commit.push(job.branch); return commit.sha; } finally { await commit.close(); }
 }

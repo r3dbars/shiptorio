@@ -3,7 +3,9 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { emptyDeckBook, moveKey } from "../src/deck-decisions";
 import { testD1 } from "./d1-fixture";
+import { flagKey } from "../src/flags";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
   ctx: unknown; env: unknown;
@@ -67,6 +69,137 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
 }
 
 describe("durable live check-in decisions", () => {
+  it("retries an unchanged decision after a transient cursor write failure", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; ctx: { storage: { put(key: string, value: unknown): Promise<void> } } };
+    const put = internal.ctx.storage.put.bind(internal.ctx.storage);
+    let cursorWrites = 0;
+    internal.ctx.storage.put = async (key, value) => {
+      if (key === "browserSeq" && ++cursorWrites === 2) throw new Error("Cursor storage temporarily unavailable");
+      await put(key, value);
+    };
+    internal.openMoves.find(m => m.id === "second")!.why = "New receipts";
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]); // Deck allocation failed.
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck"]);
+    expect(f.events.find(e => e.type === "deck")).toMatchObject({ deck: [{ id: "first" }, { id: "second", why: "New receipts" }] });
+  });
+
+  it("does not let an older failed publication invalidate a later identical payload after intervening changes", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; ctx: { storage: { put(key: string, value: unknown): Promise<void> } } };
+    const put = internal.ctx.storage.put.bind(internal.ctx.storage);
+    const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    let cursorWrites = 0;
+    internal.ctx.storage.put = async (key, value) => {
+      if (key === "browserSeq" && ++cursorWrites === 2) {
+        started.resolve(); await release.promise; throw new Error("Old cursor allocation failed");
+      }
+      await put(key, value);
+    };
+    const second = internal.openMoves.find(m => m.id === "second")!;
+    try {
+      second.why = "Payload A";
+      await internal.refreshDecisions();
+      await started.promise;
+      second.why = "Payload B";
+      await internal.refreshDecisions();
+      second.why = "Payload A";
+      await internal.refreshDecisions();
+    } finally { release.resolve(); }
+    await internal.broadcastQueue;
+    const decks = f.events.filter((e): e is Extract<ServerToWeb, { type: "deck" }> => e.type === "deck");
+    expect(decks.slice(-2).map(e => e.deck.find(m => m.id === "second")?.why)).toEqual(["Payload B", "Payload A"]);
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]); // Later A stays acknowledged.
+  });
+
+  it("publishes the first decisions, then keeps telemetry without repeating unchanged card frames or their authorization reads", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    expect(f.events.filter(e => e.type === "deck")).toHaveLength(1);
+    expect(f.events.filter(e => e.type === "move")).toHaveLength(1);
+    const internal = f.factory as unknown as { refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; env: { DB: { prepare(sql: string): any } } };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    let sessionReads = 0;
+    internal.env.DB.prepare = sql => { if (sql.startsWith("SELECT u.id, u.login FROM sessions")) sessionReads++; return prepare(sql); };
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]);
+    expect(sessionReads).toBe(1); // Fresh authorization for the one real telemetry frame.
+    expect(f.saved().move?.id).toBe("first");
+  });
+
+  it("publishes changed lower cards and changed top options, resolves removal, and can offer the same card again", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void> };
+    const refresh = async () => { f.events.length = 0; await internal.refreshDecisions(); await internal.broadcastQueue; };
+    internal.openMoves.find(m => m.id === "second")!.why = "The evidence changed";
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck"]);
+    internal.openMoves.find(m => m.id === "first")!.options[0].label = "Read the updated receipts";
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { options: [{ label: "Read the updated receipts" }] } });
+    const first = structuredClone(internal.openMoves.find(m => m.id === "first")!);
+    internal.openMoves = [];
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move_resolved"]);
+    internal.openMoves = [first];
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+  });
+
+  it("sends full snapshots on reconnect and still denies revoked sessions when decisions are unchanged", async () => {
+    const f = fixture([card("first")]);
+    await f.checkin();
+    f.events.length = 0;
+    await f.checkin();
+    const snapshot = f.events.find(e => e.type === "snapshot");
+    expect(snapshot).toMatchObject({ state: { move: { id: "first" }, deck: [{ id: "first" }] } });
+    const internal = f.factory as unknown as { refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; env: { DB: { prepare(sql: string): any } } };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    internal.env.DB.prepare = sql => sql.startsWith("SELECT u.id, u.login FROM sessions") ? { bind: () => ({ first: async () => null }) } : prepare(sql);
+    let closed = 0;
+    f.socket.close = () => { closed++; };
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events).toEqual([]);
+    expect(closed).toBe(1);
+  });
+
+  it("republishes unchanged cards under newly learned redaction policy without churning on duplicate registration", async () => {
+    const credential = "opaque provider credential 雪";
+    const f = fixture([card("first", { why: `Evidence includes ${credential}` })]);
+    await f.checkin();
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { why: `Evidence includes ${credential}` } });
+    const internal = f.factory as unknown as { redactor: { register(value: unknown): void }; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void> };
+    internal.redactor.register({ ACCESS_TOKEN: credential });
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+    expect(f.events.find(e => e.type === "deck")).toMatchObject({ deck: [{ why: "Evidence includes [REDACTED]" }] });
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { why: "Evidence includes [REDACTED]" } });
+    internal.redactor.register({ ACCESS_TOKEN: credential });
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]);
+  });
+
   it("returns an authorized handshake while another session frame authorization is held", async () => {
     const f = fixture([]);
     await f.factory.exportState();
@@ -349,32 +482,50 @@ describe("real runner proposals survive a deck full of passive source alerts", (
 });
 
 describe("the factory learns what the player approves (docs/LEARN.md)", () => {
-  it("fills the dots on each yes, learns on the third, then approves the next plan on its own", async () => {
+  type Job = Record<string, unknown>;
+  /** Three plan approvals in /web, each Continued by the player, so "Approving plans in /web" is learned. */
+  async function taught() {
     const { issueRevision } = await import("../src/runner-job");
     const items = [1, 2, 3, 4].map(n => ({ id: `gh-${n}`, kind: "bug" as const, source: "github_issue" as const, title: `Fix bug ${n}`, body: "A scoped fix", district: "web", state: "queued" as const, attempts: 0, updatedAt: 1 }));
     const approval = (n: number) => card(`approval-${n}`, { title: `Plan for bug ${n}`, kind: "build", stage: "build", itemId: `gh-${n}`, options: [{ id: "approve", label: "Approve plan", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: `job-${n}` }, reason: "Player approves the scoped plan" }] }] });
     const f = fixture([1, 2, 3].map(approval), { items });
-    for (const n of [1, 2, 3, 4]) f.data.set(`runnerJob:job-${n}`, { id: `job-${n}`, repo: "r3dbars/demo", itemId: `gh-${n}`, harness: "codex", allowedPaths: ["web/src/a.ts"], branch: `shiptorio/runner-${n}`, status: "awaiting_approval", approvalMoveId: `approval-${n}`,
-      inputRevision: await issueRevision(`Fix bug ${n}`, JSON.stringify({ body: "A scoped fix", failure: "", scars: [] })) });
+    const job = async (n: number, extra: Job = {}) => f.data.set(`runnerJob:job-${n}`, { id: `job-${n}`, repo: "r3dbars/demo", itemId: `gh-${n}`, harness: "codex", allowedPaths: ["web/src/a.ts"], branch: `shiptorio/runner-${n}`, status: "awaiting_approval", approvalMoveId: `approval-${n}`,
+      inputRevision: await issueRevision(`Fix bug ${n}`, JSON.stringify({ body: "A scoped fix", failure: "", scars: [] })), ...extra });
+    for (const n of [1, 2, 3]) await job(n);
     await f.checkin();
     const meter = (id: string) => f.saved().deck?.find(m => m.id === id)?.learn;
+    const internal = f.factory as unknown as { openMoves: Move[] | null; state: FactoryState; env: { CACHE: unknown }; runLearned(): Promise<void>; broadcastQueue: Promise<void> };
+    /** A fourth plan arrives, then one tick of learned work runs. */
+    const fourth = async (extra: Job = {}, item: Record<string, unknown> = {}) => {
+      await job(4, extra);
+      if (Object.keys(item).length) internal.state.items = internal.state.items.map(i => i.id === "gh-4" ? { ...i, ...item } : i);
+      f.data.set("openMoves", [...(f.data.get("openMoves") as Move[]), approval(4)]);
+      internal.openMoves = null;
+      await internal.runLearned();
+      await internal.broadcastQueue;
+      return f.data.get("runnerJob:job-4") as Job;
+    };
+    const flags = (values: Record<string, string>) => { internal.env.CACHE = { ...membershipCache, get: async (key: string) => values[key] ?? membershipCache.get(key) }; };
     expect(meter("approval-1")).toBeUndefined(); // no dots before the first yes
     await f.send({ type: "choose_move", moveId: "approval-1", optionId: "approve" });
     expect(meter("approval-2")).toEqual({ have: 1, need: 3 });
     await f.send({ type: "choose_move", moveId: "approval-2", optionId: "approve" });
     expect(meter("approval-3")).toEqual({ have: 2, need: 3 });
     await f.send({ type: "choose_move", moveId: "approval-3", optionId: "approve" });
+    return { f, fourth, flags };
+  }
+
+  it("fills the dots on each yes, learns on the third, then approves the next plan on its own, recorded as autonomy", async () => {
+    const { f, fourth } = await taught();
     expect(f.saved().learned).toEqual([{ key: "build|district:web|approve_runner_job", label: "Approving plans in /web", since: expect.any(Number) }]);
     expect(f.events.some(e => e.type === "log" && e.text.startsWith("Learned."))).toBe(true);
-
-    // A fourth plan arrives: the factory approves it on its own, logged as autonomy.
-    f.data.set("openMoves", [...(f.data.get("openMoves") as Move[]), approval(4)]);
-    const internal = f.factory as unknown as { openMoves: Move[] | null; runLearned(): Promise<void> };
-    internal.openMoves = null;
-    await internal.runLearned();
-    await (f.factory as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
-    expect(f.data.get("runnerJob:job-4")).toMatchObject({ status: "ready", approvedAt: expect.any(Number) });
-    expect(f.events.some(e => e.type === "log" && e.approvedBy === "autonomy" && e.itemId === "gh-4")).toBe(true);
+    // The player's own approvals stay the player's.
+    expect(f.data.get("runnerJob:job-1")).toMatchObject({ status: "ready", approvedBy: "player" });
+    expect(await fourth()).toMatchObject({ status: "ready", approvedAt: expect.any(Number), approvedBy: "autonomy" });
+    // The shared handler's own audit line says autonomy too, not the player.
+    const approvals = f.events.filter((e): e is Extract<ServerToWeb, { type: "log" }> => e.type === "log" && e.tool === "approve_runner_job" && e.itemId === "gh-4");
+    expect(approvals.length).toBeGreaterThan(0);
+    expect(approvals.every(e => e.approvedBy === "autonomy" && e.actor === "spark")).toBe(true);
     expect(await f.taps.prepare("SELECT action FROM card_taps WHERE card_id = 'approval-4'").bind().first()).toEqual({ action: "auto" });
 
     // Ask me again: the dots come back.
@@ -382,10 +533,74 @@ describe("the factory learns what the player approves (docs/LEARN.md)", () => {
     expect(f.saved().learned).toEqual([]);
   });
 
+  for (const [name, job, item] of [
+    ["a rework plan (job.reworkPr)", { reworkPr: 170 }, {}],
+    ["a base refresh (job.refreshBase)", { refreshBase: { expectedHeadSha: "c".repeat(40) } }, {}],
+    ["an item that already has a PR", {}, { prNumber: 170 }],
+    ["an item with a scar", {}, { scars: [{ station: "ci", reason: "red", at: 1 }] }],
+  ] as const) it(`never approves ${name} on its own, even after earlier first-build yeses`, async () => {
+    const { fourth } = await taught();
+    const stored = await fourth(job, item);
+    expect(stored.status).toBe("awaiting_approval");
+    expect(stored.approvedAt).toBeUndefined();
+  });
+
+  for (const [name, values] of [
+    ["the global learn kill switch", { [flagKey("learn")]: "false" }],
+    ["the global autonomy kill switch", { [flagKey("autonomy")]: "false" }],
+    ["the teacher's own learn opt-out", { [flagKey("learn", "test-player")]: "false" }],
+    ["the teacher's own autonomy opt-out", { [flagKey("autonomy", "test-player")]: "false" }],
+  ] as const) it(`does nothing on its own under ${name}`, async () => {
+    const { fourth, flags } = await taught();
+    flags(values);
+    expect(await fourth()).toMatchObject({ status: "awaiting_approval" });
+  });
+
+  it("a stale plan goes through the real handler's revision check and is never approved", async () => {
+    const { f, fourth } = await taught();
+    const stored = await fourth({ inputRevision: "stale" });
+    expect(stored).toMatchObject({ status: "failed", error: "Issue changed; request a fresh plan." });
+    expect(stored.approvedAt).toBeUndefined();
+    expect(f.events.some(e => e.type === "log" && e.tool === "approve_runner_job" && e.itemId === "gh-4")).toBe(false);
+  });
+
   it("a dismiss tells the planner to try something different, and empties the dots", async () => {
     const f = fixture([card("idea", { kind: "build" })]);
     await f.checkin();
     await f.send({ type: "dismiss_move", moveId: "idea", why: "once" });
     expect((f.data.get("deckBook") as { notes: { text: string }[] }).notes.at(-1)?.text).toContain("try a smaller or different version");
+  });
+});
+
+describe("runner decisions remain reachable among durable third-defer escalations", () => {
+  for (const status of ["failed", "awaiting_approval"] as const) it(`keeps the ${status} path visible without consuming governance decisions`, async () => {
+    const now = Date.now();
+    const issue = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the queued regression", district: "/", state: "queued" as const, attempts: 0, updatedAt: now };
+    const older = Array.from({ length: 12 }, (_, n) => ({ ...issue, id: `sentry-${n}`, source: "sentry" as const, updatedAt: now - 4 * 60 * 60_000, value: 100 }));
+    const alerts = older.map(item => card(`governance-${item.id}`, { itemId: item.id, kind: "unblock", stage: "inspect", createdAt: item.updatedAt }));
+    const book = emptyDeckBook();
+    for (const move of alerts) { const key = moveKey(move); book.decisions[key] = { key, move, count: 3 }; }
+    const originalBook = structuredClone(book);
+    const f = fixture(alerts, { items: [issue, ...older] });
+    f.data.set("deckBook", book);
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: now });
+    const job = { id: "job-58", itemId: issue.id, repo: "r3dbars/demo", status, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-job-58", baseSha: "a".repeat(40), plan: "Fix the scoped regression and prove it", approvalMoveId: "approval-58" };
+    f.data.set("runnerJob:job-58", structuredClone(job));
+    const internal = f.factory as unknown as { offerRunnerPlan(): Promise<void>; resolveRunnerMove(move: Move): Promise<void> };
+    await internal.offerRunnerPlan();
+    const tool = status === "awaiting_approval" ? "approve_runner_job" : "plan_runner_job";
+    const proposal = f.saved().deck?.find(move => move.itemId === issue.id && move.options.some(option => option.actions.some(action => action.tool === tool)));
+    expect(proposal).toBeDefined();
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.filter(move => move.id.endsWith(":deferred"))).toHaveLength(11);
+    expect((f.data.get("openMoves") as Move[]).filter(move => alerts.some(alert => alert.id === move.id))).toHaveLength(12);
+    expect(f.data.get("deckBook")).toEqual(originalBook);
+    expect(f.data.get("runnerJob:job-58")).toEqual(job);
+    await internal.resolveRunnerMove(proposal!);
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.filter(move => move.id.endsWith(":deferred")).every(move => move.title === "Never, or let the factory decide?")).toBe(true);
+    expect((f.data.get("openMoves") as Move[]).filter(move => alerts.some(alert => alert.id === move.id))).toHaveLength(12);
+    expect(f.data.get("deckBook")).toEqual(originalBook);
+    expect(f.data.get("runnerJob:job-58")).toEqual(job);
   });
 });

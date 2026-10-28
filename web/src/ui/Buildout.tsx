@@ -3,9 +3,10 @@
 // build. Later is on the left, the build on the right. On your own repo the steps that need something real (the
 // repo, your AI, an issue) open the repo picker, runner pairing or sign-in instead of pretending. The counters stay
 // hidden until the first rocket, then a "Look around" card frees the camera and turns them on.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { continueOption, type FactoryState, type WebToServer } from "@shiptorio/shared";
 import { HoldGesture, type HoldClock } from "./holdLaunch";
+import { holdRenderYield } from "./holdRender";
 import { RunnerConnection } from "./RunnerConnection";
 import { sound } from "../sound/engine";
 import { BUILD_MS, LOOK, STEPS, lineFor, onBuild, phaseAt, stepFrom, STARTER_ISSUE, type BuildPhase, type Step } from "../buildout/journey";
@@ -63,15 +64,53 @@ const realClock: HoldClock = {
 const BUILD_FALLBACK_MS = 9000;
 // A new card lands where the last hold was: the release of that press (a touch, mostly) must not tap it.
 const SETTLE_MS = 600;
-/** Drops taps that arrive within SETTLE_MS of this card (or this step) appearing. */
-function useSettled(key: string) {
-  const at = useRef(0);
-  useEffect(() => {
-    at.current = performance.now();
-  }, [key]);
-  return <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
-    if (performance.now() - at.current >= SETTLE_MS) fn(...a);
+/** Disabled until the carried release is safe; readiness belongs to this occurrence, even A → B → A. */
+export function useSettled(key: string) {
+  const generation = useMemo(() => ({ key }), [key]);
+  const active = useRef<typeof generation | null>(null);
+  const pressed = useRef<{ generation: typeof generation; target: EventTarget; kind: "pointer" | "key"; key?: string } | null>(null);
+  const [settled, setSettled] = useState<typeof generation | null>(null);
+  useLayoutEffect(() => {
+    active.current = generation;
+    pressed.current = null;
+    const timer = window.setTimeout(() => {
+      if (active.current === generation) setSettled(generation);
+    }, SETTLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      if (active.current === generation) active.current = null;
+    };
+  }, [generation]);
+  const ready = settled === generation;
+  const owns = (target: EventTarget) => pressed.current?.generation === generation && pressed.current.target === target;
+  const activationKey = (key: string) => key === " " || key === "Enter";
+  const input = {
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (ready && e.isPrimary && e.button === 0)
+        pressed.current = { generation, target: e.currentTarget, kind: "pointer" };
+    },
+    onPointerCancel: () => { pressed.current = null; },
+    onBlur: (e: React.FocusEvent<HTMLElement>) => { if (owns(e.currentTarget)) pressed.current = null; },
+    onKeyDown: (e: React.KeyboardEvent<HTMLElement>) => {
+      if (!activationKey(e.key)) return;
+      if (!ready || e.repeat) { if (!owns(e.currentTarget)) e.preventDefault(); return; }
+      pressed.current = { generation, target: e.currentTarget, kind: "key", key: e.key };
+    },
+    onKeyUp: (e: React.KeyboardEvent<HTMLElement>) => {
+      if (activationKey(e.key) && (!owns(e.currentTarget) || pressed.current?.kind !== "key" || pressed.current.key !== e.key))
+        e.preventDefault(); // suppress the native activation from another card's key release
+    },
   };
+  const run = <A extends unknown[]>(fn: (...a: A) => void) => (...a: A) => {
+    if (!ready || active.current !== generation) return;
+    const event = a[0] as React.MouseEvent<HTMLElement> | undefined;
+    const native = event?.nativeEvent as (MouseEvent & { pointerType?: string }) | undefined;
+    if (((event?.detail ?? 0) > 0 || native?.pointerType) &&
+      (!event || !owns(event.currentTarget) || pressed.current?.kind !== "pointer")) return;
+    pressed.current = null;
+    fn(...a); // bare detail-0 assistive activation remains a supported explicit action
+  };
+  return { ready, run, input };
 }
 // sign in with GitHub, then pick a repo (the same path the play-first chip takes)
 const SIGN_IN = `/auth/login?next=${encodeURIComponent("/?onboard=repo&source=live")}`;
@@ -84,8 +123,9 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
   const build = useRef(onBuild);
   build.current = onBuild;
   const gesture = useRef<HoldGesture | null>(null);
-  if (!gesture.current)
-    gesture.current = new HoldGesture(
+  const renderHold = useRef<ReturnType<typeof holdRenderYield> | null>(null);
+  if (!gesture.current) {
+    const lease = renderHold.current = holdRenderYield(
       {
         progress: setP,
         arm: () => sound.play("arm"),
@@ -96,12 +136,13 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
           build.current();
         },
       },
-      clock,
-      HOLD_BUILD_MS,
     );
+    gesture.current = new HoldGesture(lease.events, clock, HOLD_BUILD_MS);
+  }
   const g = gesture.current;
   useEffect(() => g.retarget(card), [g, card]);
   useEffect(() => {
+    renderHold.current?.mount();
     const leave = () => g.cancel();
     const hidden = () => { if (document.visibilityState !== "visible") g.cancel(); };
     window.addEventListener("blur", leave);
@@ -110,6 +151,7 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
       window.removeEventListener("blur", leave);
       document.removeEventListener("visibilitychange", hidden);
       g.dispose();
+      renderHold.current?.dispose();
     };
   }, [g]);
   const isKey = (e: React.KeyboardEvent) => e.key === " " || e.key === "Enter";
@@ -123,7 +165,7 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
       onPointerDown={(e) => {
         if (!e.isPrimary || e.button !== 0) return;
         e.currentTarget.setPointerCapture?.(e.pointerId);
-        g.press(card);
+        if (!g.holding && renderHold.current?.pointerDown(e.pointerId, e.pointerType)) g.press(card);
       }}
       onPointerUp={() => g.release()}
       onPointerCancel={() => g.cancel()}
@@ -132,7 +174,7 @@ export function BuildHold({ card, label, red, onBuild, clock = realClock }: { ca
       onKeyDown={(e) => {
         if (!isKey(e)) return;
         e.preventDefault();
-        if (!e.repeat) g.press(card);
+        if (!e.repeat && !g.holding && renderHold.current?.keyDown(e.key)) g.press(card);
       }}
       onKeyUp={(e) => {
         if (!isKey(e)) return;
@@ -278,7 +320,7 @@ function useAfterShip() {
 }
 
 function LookAround({ onGo }: { onGo: () => void }) {
-  const settled = useSettled("look");
+  const { ready, run: settled, input } = useSettled("look");
   if (!useAfterShip()) return null;
   return (
     <section className="card bo-card bo-look" role="region" aria-label={BUILDOUT.label} data-buildout-card="">
@@ -287,7 +329,7 @@ function LookAround({ onGo }: { onGo: () => void }) {
         <h2 className="bo-title">{BUILDOUT.look.title}</h2>
         <p className="bo-line">{BUILDOUT.look.why}</p>
       </div>
-      <button type="button" className="bo-tab" data-buildout-action="continue" onClick={settled(onGo)} autoFocus>
+      <button {...input} type="button" className="bo-tab" data-buildout-action="continue" disabled={!ready} onClick={settled(onGo)} autoFocus>
         {BUILDOUT.look.go}
       </button>
     </section>
@@ -329,7 +371,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
       .catch(() => {});
     return () => { on = false; };
   }, [step.id, live, issueApi]);
-  const settled = useSettled(step.id);
+  const { ready, run: settled, input } = useSettled(step.id);
   const name = BUILDOUT.name[step.id] ?? step.id;
   if (later === step.id) {
     return (
@@ -371,7 +413,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <a className="bo-tab" data-buildout-action="tap" href="/?onboard=repo&source=live">{BUILDOUT.real.pickRepo}</a>;
   } else if (live && step.id === "boiler") {
     // no fake power on your own repo: the boiler lights when your runner pairs
-    right = <button type="button" className="bo-tab" data-buildout-action="tap" aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
+    right = <button {...input} type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready} aria-expanded={pairing} onClick={settled(() => setPairing((v) => !v))}>{pairing ? BUILDOUT.real.pairDone : BUILDOUT.real.pair}</button>;
     if (pairing && repo) extra = <div className="bo-pair"><RunnerConnection repo={repo} /></div>;
   } else if (live && step.id === "builder") {
     // your builder rises when your runner brings its assembler online
@@ -383,7 +425,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
   } else if (live && step.id === "issue") {
     extra = <p className="bo-real" role="status">{starter === "done" ? BUILDOUT.real.starterFiled : starter === "failed" ? failLine || BUILDOUT.real.starterFailed : BUILDOUT.real.starterWhy}</p>;
     right = starter === "done" ? wait(BUILDOUT.real.issueWait) : (
-      <button type="button" className="bo-tab" data-buildout-action="tap" disabled={starter === "busy"} onClick={settled(() => void fileStarter())}>
+      <button {...input} type="button" className="bo-tab" data-buildout-action="tap" disabled={!ready || starter === "busy"} onClick={settled(() => void fileStarter())}>
         {BUILDOUT.real.starter}
       </button>
     );
@@ -391,7 +433,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
     right = <BuildHold card={step.id} label={action} red={step.id === "launch"} onBuild={go} />;
   } else if (step.trigger === "tap" || step.trigger === "continue") {
     const waiting = step.id === "planner" && live && !state.move; // the real plan hasn't come back yet
-    right = <button type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={waiting} onClick={settled(go)}>{action}</button>;
+    right = <button {...input} type="button" className="bo-tab" data-buildout-action={step.trigger} disabled={!ready || waiting} onClick={settled(go)}>{action}</button>;
   } else {
     // auto: nothing to press, the work happens on its own (real waits stay real)
     right = (
@@ -412,7 +454,7 @@ function BuildCard({ step, n, state, live, repo, send, onAsked }: { step: Step; 
 
   return (
     <section className="card bo-card" role="region" aria-label={BUILDOUT.label} data-buildout-card="" data-trigger={step.trigger}>
-      <button type="button" className="bo-later" onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
+      <button {...input} type="button" className="bo-later" disabled={!ready} onClick={settled(() => setLater(step.id))} aria-label={`${BUILDOUT.later}: ${name}`}>
         {BUILDOUT.later}
       </button>
       <div className="bo-body">

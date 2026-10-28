@@ -64,19 +64,28 @@ export const freshInspection = (headSha: string, ci?: { passed: boolean; reason:
 
 export const stageOf = (item: Item, gate: Gate) => item.inspection?.stages.find((st) => st.gate === gate);
 
+/** Explicit station membership prevents a truncated/duplicate receipt from passing vacuously. */
+export function stationsPassed(inspection: Inspection | undefined): boolean {
+  return !!inspection?.headSha && inspection.headSha !== "unknown" &&
+    GAUNTLET.every(({ gate }) => inspection.stages.filter(st => st.gate === gate).length === 1) &&
+    ["ci", "verify", "ai"].every(gate => inspection.stages.find(st => st.gate === gate)?.state === "passed") &&
+    (inspection.checks ?? []).every(c => c.state === "passed");
+}
+
 /** The next station that still has to run for this item, or null when it is waiting on the player. */
 export function nextGate(item: Item): "checks" | "verify" | "ai" | null {
   if (item.state !== "inspecting" || stageOf(item, "ci")?.state !== "passed") return null;
+  if (item.inspection?.checks?.some((c) => c.state === "rework")) return null;
   if (item.inspection?.checks?.some((c) => c.state === "pending")) return "checks";
   if (stageOf(item, "verify")?.state === "pending") return "verify";
-  if (stageOf(item, "ai")?.state === "pending") return "ai";
+  if (stageOf(item, "verify")?.state === "passed" && stageOf(item, "ai")?.state === "pending") return "ai";
   return null;
 }
 
 export function setStage(item: Item, gate: Gate, state: "passed" | "rework", reason: string, now = Date.now()): Item {
   const inspection = item.inspection ?? freshInspection("unknown");
   const stages = inspection.stages.map((st) => (st.gate === gate ? { ...st, state, reason } : st));
-  const machinesPassed = stages.filter((st) => st.gate !== "human").every((st) => st.state === "passed") && (inspection.checks ?? []).every((c) => c.state === "passed");
+  const machinesPassed = stationsPassed({ ...inspection, stages });
   const next: Item = { ...item, inspection: { ...inspection, stages, state: state === "rework" ? "rework" : machinesPassed ? "passed" : "pending" }, updatedAt: now };
   if (state === "rework") {
     const station = BY_GATE[gate].kind;

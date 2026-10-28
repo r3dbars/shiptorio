@@ -538,7 +538,12 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
     if (raw.length > 1024) return c.text("too large", 413);
     const repo = String(new URLSearchParams(raw).get("repo") ?? "").trim().toLowerCase();
     const installation = await deviceRepoAccess(c.env, user, repo);
-    if (!installation) return c.html(runnerPage("Repository unavailable", "<p>You need write access and a Shiptorio GitHub App installation for this repo. Go back and choose another.</p>"), 403, headers);
+    if (!installation) {
+      // Dead ends cost the pairing code: offer the App install and a way back with the same code.
+      const install = await installUrl(c.env).catch(() => null);
+      const back = `/runner/pair?code=${encodeURIComponent(code)}`;
+      return c.html(runnerPage("Repository unavailable", `<p>Shiptorio can't reach <b>${htmlEscape(repo || "that repo")}</b> yet. It needs the Shiptorio GitHub App installed on it, and you need write access.</p>${install ? `<a class="btn" href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on this repo</a>` : ""}<a class="btn ghost" href="${htmlEscape(back)}">Back</a><p><small>After installing, press Back and connect again. Your terminal keeps waiting for 10 minutes.</small></p>`), 403, headers);
+    }
     // Reserve approval before rotating the repo credential: concurrent approvals must not
     // rotate a second token after the first has already been delivered to the runner.
     if (!await resourceQuota(c.env, user.login, "repo", repo) || !await resourceQuota(c.env, user.login, "factory", repo)) return c.json({ error: "repository/factory quota reached" }, 429);
@@ -553,8 +558,13 @@ app.on(["GET", "POST"], "/runner/pair", async c => {
     await device(c.env, code).readyDevice();
     return c.html(runnerPage("Machine approved", `<p>Your terminal will confirm connection to <b>${htmlEscape(repo)}</b>. Return there to finish pairing, then <a href="/?source=live&repo=${encodeURIComponent(repo)}">open your factory</a>. The planner asks you to approve a plan before any code runs.</p>`), 200, headers);
   }
-  const wanted = c.req.query("repo") ?? "";
-  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Claude and Codex sign-ins stay on your computer.</p>`), 200, headers);
+  // Suggest repos the App already reaches so nobody has to guess owner/name.
+  const reachable = (await reposFor(c.env, user).catch(() => [])).map(r => r.full_name).slice(0, 200);
+  const wanted = c.req.query("repo") ?? (reachable.length === 1 ? reachable[0] : "");
+  const install = await installUrl(c.env).catch(() => null);
+  const options = reachable.map(r => `<option value="${htmlEscape(r)}"></option>`).join("");
+  const hint = reachable.length ? `<p><small>Pick one of your ${reachable.length} connected repos or type another.${install ? ` Not listed? <a href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on it</a>.` : ""}</small></p>` : install ? `<p><small>No repos connected yet. <a href="${htmlEscape(install)}" target="_blank" rel="noopener">Install the app on a repo</a> first.</small></p>` : "";
+  return c.html(runnerPage("Connect your machine", `<p>Check that your terminal shows this exact code:</p><h2><code>${code}</code></h2><p>Only approve a code you just requested on your own computer.</p><form method="post"><label>Repository (owner/name)<input name="repo" required list="pair-repos" autocomplete="off" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" value="${htmlEscape(wanted)}" placeholder="you/your-repo"></label><datalist id="pair-repos">${options}</datalist>${hint}<button>Connect this repo</button></form><p>This replaces the previous machine for that repo. Pair again to add another repo to this machine. Your Claude and Codex sign-ins stay on your computer.</p>`), 200, headers);
 });
 app.get("/api/repos/:owner/:repo/runner/status", async c => {
   const user = await resolveUser(c.req.raw, c.env);

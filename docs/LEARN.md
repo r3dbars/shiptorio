@@ -22,6 +22,17 @@
 Only `plan_runner_job` (start a plan) and `approve_runner_job` (approve a plan). Never a launch or merge (the held
 red button stays with the player), a customer reply, research, rework plans, locked cards, or autonomy cards.
 
+## Guardrails (review on #480)
+
+- **First-time work only** (`freshWork`): a rework plan (`job.reworkPr`), a base refresh (`job.refreshBase` or a
+  `refreshBase` action), or an item that already has a PR, is rejected or carries a scar never counts toward the
+  dots and is never answered on its own. #170 always needs a fresh personal yes.
+- **Flags**: `learn` must be on for the player who taught it (stored as `auto[key].by`), and an explicit `false` on
+  `autonomy` (global kill switch, or that player's own opt-out) stops all learned work.
+- **Truthful records**: the shared runner handler takes the initiator; a learned or level approval is stored as
+  `job.approvedBy = "autonomy"` and its audit log line says autonomy, never the player. A stale plan fails in the
+  handler's revision check and is not logged as done.
+
 ## The meter
 
 `Move.learn = { have, need }` on learnable cards, from the first yes on (a brand-new player's first card stays plain). The card shows ●●○ and one line: "Approve 1 more like this and then

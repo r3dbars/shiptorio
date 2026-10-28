@@ -818,15 +818,16 @@ export function createIron(opts) {
     srcs.slice(0, 1).forEach((s) => spawnItem(s));
   }
   const fv = new V3();
-  I.step = function (t, dt) {
+  I.step = function (t, dt, renderElapsed) {
     if (!built) return;
     dt *= I.policy.speed; I._t = t;
+    renderElapsed ??= dt; // legacy/manual callers keep the same scaled step
     if (I.driver.step) I.driver.step(dt, t);
     if (I.driver.intake) I.driver.intake(dt);
     stepEmerge(dt);
     stepPaths(dt);
     stepStations(dt);
-    I.updaters.forEach(({ name, u }) => { try { u.update(t, dt); } catch (e) { if (!u._err) { console.error('[SHAFT] ' + name + ' update:', e); u._err = 1; } } });
+    I.updaters.forEach(({ name, u }) => { try { u.update(t, dt, renderElapsed); } catch (e) { if (!u._err) { console.error('[SHAFT] ' + name + ' update:', e); u._err = 1; } } });
     // a machine hurries an item the real factory is already past (the driver says how much) so the line keeps pace
     for (const st of I.stationList) { const k = !st.item ? 1 : I.driver.hurry ? I.driver.hurry(st, st.item) : st.type !== 'launch' ? st.item.boost || 1 : 1; try { st.inst.update(t, dt * k); } catch (e) { if (!st._err) { console.error('[SHAFT] ' + st.id + ' update:', e); st._err = 1; } } }
     for (const st of I.stationList) {

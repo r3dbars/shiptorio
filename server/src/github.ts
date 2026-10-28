@@ -491,20 +491,48 @@ export async function openPullRequest(
   }, { shouldRetry: error => !(error instanceof RateLimitError) });
 }
 
-/** Inspect all checks on the CURRENT PR commit. An old or unrelated successful suite cannot pass a new fix. */
-export async function inspectPullRequest(token: string, repo: string, number: number, eventSha?: string) {
-  const pr = await gh<{ head: { sha: string } }>(`/repos/${repo}/pulls/${number}`, token);
-  if (eventSha && eventSha !== pr.head.sha) return { headSha: pr.head.sha, stale: true, state: "pending" as const, summary: "Ignoring checks for an older commit" };
+/** GitHub's own aggregate merge gate, not an inferred list of required check names.
+ * Only an explicitly clean, open PR for the inspected head/base may expose Launch.
+ * Unknown/unsupported states wait; the SHA-bound merge endpoint remains final authority.
+ */
+export async function pullRequestReadiness(token: string, repo: string, number: number, headSha: string, base: string) {
+  const pr = await gh<{ head?: { sha?: string }; base?: { ref?: string }; state?: string; merged?: boolean; draft?: boolean; mergeable?: boolean | null; mergeable_state?: string | null }>(
+    `/repos/${repo}/pulls/${number}`, token, { headers: { "cache-control": "no-store" } },
+  );
+  const mergeState = pr.mergeable_state ?? null;
+  if (pr.head?.sha !== headSha || pr.base?.ref !== base) return { mergeState, ready: false, reason: "The PR changed. Its current commit and target need fresh checks." };
+  if (pr.state !== "open" || pr.merged || pr.draft !== false) return { mergeState, ready: false, reason: "The PR must be open and ready for review before Launch." };
+  if (pr.mergeable === true && pr.mergeable_state === "clean") return { mergeState, ready: true, reason: "GitHub reports this PR ready to merge." };
+  const reason = pr.mergeable_state === "behind" ? "Waiting for the PR to include the latest base branch and pass fresh checks."
+    : pr.mergeable_state === "blocked" ? "Waiting for GitHub's required checks, reviews or repository rules."
+    : pr.mergeable_state === "dirty" ? "The PR has merge conflicts that must be resolved."
+    : "Waiting for GitHub to confirm this PR is ready to merge.";
+  return { mergeState, ready: false, reason };
+}
+
+/** Inspect all checks on the CURRENT PR commit. Never accept a moving head/base or check evidence for another commit. */
+export async function inspectPullRequest(token: string, repo: string, number: number, eventSha?: string, expectedBase?: string) {
+  type Pr = { head: { sha: string }; base: { ref: string; sha: string }; state: string; merged: boolean };
+  const path = `/repos/${repo}/pulls/${number}`;
+  const pr = await gh<Pr>(path, token);
+  const pending = (summary: string, stale = false) => ({ headSha: pr.head.sha, stale, state: "pending" as const, summary });
+  if (eventSha && eventSha !== pr.head.sha) return pending("Ignoring checks for an older commit", true);
+  if (expectedBase && pr.base?.ref !== expectedBase) return pending("PR targets a different base branch");
   const [checks, statuses] = await Promise.all([
-    gh<{ total_count: number; check_runs: { name: string; status: string; conclusion: string | null; output?: { summary?: string | null } }[] }>(`/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=100&filter=latest`, token),
+    gh<{ total_count: number; check_runs: { name: string; head_sha?: string; app?: { id: number }; status: string; conclusion: string | null; output?: { summary?: string | null } }[] }>(`/repos/${repo}/commits/${pr.head.sha}/check-runs?per_page=100&filter=latest`, token),
     gh<{ total_count: number; statuses: { state: string; context: string; description: string }[] }>(`/repos/${repo}/commits/${pr.head.sha}/status?per_page=100`, token),
   ]);
+  if (!pr.base?.ref || !pr.base.sha) return pending("Missing PR base metadata");
+
+  const latest = await gh<Pr>(path, token);
+  if (latest.head.sha !== pr.head.sha || latest.base?.ref !== pr.base?.ref || latest.base?.sha !== pr.base?.sha) return pending("PR changed while its checks were being read", true);
+  if (pr.state && (pr.state !== "open" || pr.merged)) return pending("PR is no longer open");
+  if (checks.check_runs.some(c => c.head_sha !== pr.head.sha)) return pending("Check evidence belongs to another commit");
   const failures = checks.check_runs.filter((c) => c.status === "completed" && !["success", "neutral", "skipped"].includes(c.conclusion ?? ""));
   const badStatuses = statuses.statuses.filter((s) => ["failure", "error"].includes(s.state));
   if (failures.length || badStatuses.length) return { headSha: pr.head.sha, stale: false, state: "failed" as const, summary: [...failures.map((c) => `${c.name}: ${c.conclusion}\n${c.output?.summary ?? ""}`), ...badStatuses.map((s) => `${s.context}: ${s.description}`)].join("\n").slice(0, 3000) };
-  if (!checks.check_runs.length && !statuses.statuses.length || checks.total_count > checks.check_runs.length || statuses.total_count > statuses.statuses.length || checks.check_runs.some((c) => c.status !== "completed") || statuses.statuses.some((s) => s.state !== "success")) return { headSha: pr.head.sha, stale: false, state: "pending" as const, summary: "Waiting for all checks on the current commit" };
-  // A skipped workflow is not evidence that a fix was tested.
-  if (!checks.check_runs.some((c) => c.conclusion === "success") && !statuses.statuses.some((s) => s.state === "success")) return { headSha: pr.head.sha, stale: false, state: "pending" as const, summary: "Waiting for a successful check" };
+  if (!checks.check_runs.length && !statuses.statuses.length || checks.total_count > checks.check_runs.length || statuses.total_count > statuses.statuses.length || checks.check_runs.some((c) => c.status !== "completed") || statuses.statuses.some((s) => s.state !== "success")) return pending("Waiting for all checks on the current commit");
+  if (!checks.check_runs.some((c) => c.conclusion === "success") && !statuses.statuses.some((s) => s.state === "success")) return pending("Waiting for a successful check");
   return { headSha: pr.head.sha, stale: false, state: "passed" as const, summary: "All reported checks passed on the current commit" };
 }
 

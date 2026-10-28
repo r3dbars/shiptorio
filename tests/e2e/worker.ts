@@ -3,6 +3,7 @@ import app, { Factory as ProductionFactory, type Env } from '../../server/src/in
 import { makeSessionCookie } from '../../server/src/session';
 import { createSession, upsertUser, saveReach } from '../../server/src/accounts';
 const knownRepos = new Set<string>();
+const fixturePulls = new Map<string, { head: string; base: string }>();
 // Match the production collaborator cache window; D1 revocation checks still run on every frame.
 const loadGrantTtlSeconds = 5 * 60;
 const installationId = (repo: string) => repo === 'load/crowd' ? 1000
@@ -76,14 +77,23 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p.includes('/git/ref/heads/')) return reply({ object: { sha: p.endsWith('/main') ? BASE : HEAD } });
   if (p.includes('/contents/')) return reply({ content: btoa('export const total = () => 0;'), encoding: 'base64' });
   if (p.includes('/compare/')) return reply({ status: 'ahead', ahead_by: 1, files });
-  if (p.endsWith('/check-runs')) return reply({ total_count: 1, check_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }] });
+  if (p.endsWith('/check-runs')) return reply({ total_count: 1, check_runs: [{ name: 'CI', app: { id: 15368 }, head_sha: p.split('/')[5], status: 'completed', conclusion: 'success' }] });
   if (p.endsWith('/status')) return reply({ total_count: 0, statuses: [] });
   if (p.endsWith('/files')) return reply(files);
   if (p.endsWith('/merge')) return reply({ merged: true, sha: HEAD, message: 'Fixture merge' });
   if (p.endsWith('/comments')) return reply(init?.method === 'POST' ? { id: 1 } : []);
   if (/\/issues\/1$/.test(p)) return reply({ number: 1, title: 'Fix cart total', body: 'Cart total is incorrect', state: 'open', user: { login: 'fixture' }, html_url: 'https://github.com/fixture/demo/issues/1' });
-  if (p.endsWith('/pulls/99')) return reply({ number: 99, head: { sha: HEAD }, base: { sha: BASE }, merged: false, state: 'open' });
-  if (p.endsWith('/pulls')) return init?.method === 'POST' ? reply({ number: 99, html_url: 'https://github.com/fixture/demo/pull/99' }) : reply([]);
+  if (p.endsWith('/pulls/99')) {
+    const repo = p.split('/').slice(2, 4).join('/');
+    const pull = fixturePulls.get(repo);
+    return reply({ number: 99, head: { sha: HEAD, ref: pull?.head ?? 'fixture-branch', repo: { full_name: repo } }, base: { sha: BASE, ref: pull?.base ?? 'main', repo: { full_name: repo } }, merged: false, state: 'open', draft: false, mergeable: true, mergeable_state: 'clean' });
+  }
+  if (p.endsWith('/pulls')) {
+    if (init?.method !== 'POST') return reply([]);
+    const repo = p.split('/').slice(2, 4).join('/');
+    fixturePulls.set(repo, JSON.parse(String(init.body)));
+    return reply({ number: 99, html_url: `https://github.com/${repo}/pull/99` });
+  }
   if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) {
     const repo = p.split('/').slice(2, 4).join('/');
     return reply({ id: repositoryId(repo), full_name: repo, default_branch: 'main' });

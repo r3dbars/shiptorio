@@ -15,7 +15,7 @@ export interface DeckBook {
   /** docs/LEARN.md: yeses in a row per learnable class (`kind|scope|tool`, server/src/learn.ts). */
   learnYes?: Record<string, number>;
   /** docs/LEARN.md: classes the factory now answers on its own. */
-  auto?: Record<string, { since: number; label: string }>;
+  auto?: Record<string, { since: number; label: string; /** the player who taught it; their flags decide whether it still runs */ by?: string }>;
   /** Items the factory moved on its own, so a PR that comes back un-learns its class. */
   autoRuns?: { itemId: string; key: string }[];
 }
