@@ -1,18 +1,19 @@
 // The construction moment: a stop goes from a tarped, padlocked plot to a finished machine with a gold burst and a
-// green check. ~5.4s until the engine's normal sprite takes over; the check and afterglow linger to ~7.6s.
+// green check. ~2.5s until the engine's normal sprite takes over; the check and afterglow linger to 3.5s
+// (the first run is serial, so this stays short).
 // Thread "Animate a station getting built"; this folder only. Art: Justin's ChatGPT sheets, cut by
 // scripts/art/cut-build.py into /deck/art/build-*.webp, fx-*.webp and <stop>-build-1..4.webp.
 //
 // The beats (seconds from the start):
 //   0.00 unlock    tarp whips off, padlock pops, plate drops away
-//   0.45 plot      chalk plot glows gold, corner lamps light
-//   1.00 scaffold  scaffold platform and crane rise beside the plot
-//   1.60 frame     the frame goes up from the feet
-//   2.50 panels    panels weld on over the frame
-//   3.60 top       the crane brings the top down; thump + dust at 4.25
-//   4.55 burst     scaffold and crane drop away, gold ring bursts, the machine flashes
-//   5.00 check     green check pops (small, overshoot, settle)
-//   5.40 done      the engine draws the normal idle sprite again
+//   0.20 plot      chalk plot glows gold, corner lamps light
+//   0.45 scaffold  scaffold platform and crane rise behind the plot
+//   0.70 frame     the frame goes up from the feet
+//   1.15 panels    panels weld on over the frame
+//   1.65 top       the crane brings the top down; thump + dust at 1.95
+//   2.10 burst     scaffold and crane drop away, gold ring bursts
+//   2.30 check     green check pops (small, overshoot, settle)
+//   2.50 done      the engine draws the normal idle sprite again
 // Calm by design (Justin, 2026-10-28): everything stays inside the stop's own slot (SLOT px either side, neighbours
 // are ~250 apart), no welding sparks or flashes mid-build, one small shake when the top lands, one burst at the end.
 // A stop with <stop>-build-1..4 sprites (builder today) plays those stages; others reveal their idle sprite instead.
@@ -20,7 +21,7 @@
 import { BELT_Y, LOOK, STOP_X, type ArtLoader, type DeckBus, type DeckView, type Stop, type StopId } from "../contract";
 
 export type BuildStage = "plot" | "scaffold" | "frame" | "panels" | "top" | "burst" | "check";
-export const STAGE_AT = { unlock: 0, plot: 0.45, scaffold: 1.0, frame: 1.6, panels: 2.5, top: 3.6, land: 4.25, burst: 4.55, check: 5.0, done: 5.4, gone: 7.6 } as const;
+export const STAGE_AT = { unlock: 0, plot: 0.2, scaffold: 0.45, frame: 0.7, panels: 1.15, top: 1.65, land: 1.95, burst: 2.1, check: 2.3, done: 2.5, gone: 3.5 } as const;
 /** Half-width of a stop's slot in world px: scaffold, crane, dust and burst stay inside it. */
 const SLOT = 110;
 const STAGES: BuildStage[] = ["plot", "scaffold", "frame", "panels", "top", "burst", "check"];
@@ -179,7 +180,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   function drawTarpOff(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), w = widthOf(j.stop), c = ctx0!;
     const tarp = img("build-tarp");
-    const k = span(t, 0.08, STAGE_AT.plot + 0.35);
+    const k = span(t, 0.04, STAGE_AT.plot + 0.2);
     if (tarp && k < 1) {
       const th = (tarp.height * w * 1.02) / tarp.width, shiver = t < 0.08 ? Math.sin(t * 160) * 2 : 0;
       c.save();
@@ -190,13 +191,13 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
       c.drawImage(tarp, -(w * 1.02) / 2, -th, w * 1.02, th);
       c.restore();
     }
-    const pk = span(t, 0, 0.45);
+    const pk = span(t, 0, 0.25);
     if (pk < 1) drawPlate(j.stop, x, f + 40, 1 - pk, ease.in(pk) * 40);
   }
 
   function drawScaffold(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), h = LOOK[j.stop].h, w = widthOf(j.stop), c = ctx0!;
-    const up = ease.out(span(t, STAGE_AT.scaffold, STAGE_AT.scaffold + 0.55)), off = span(t, STAGE_AT.burst - 0.15, STAGE_AT.burst + 0.3);
+    const up = ease.out(span(t, STAGE_AT.scaffold, STAGE_AT.scaffold + 0.3)), off = span(t, STAGE_AT.burst - 0.15, STAGE_AT.burst + 0.3);
     if (up <= 0 || off >= 1) return;
     const sc = img("build-scaffold");
     if (!sc) return;
@@ -209,7 +210,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
   /** The crane stands right of the plot and swings: left over the machine while it builds, up to lift, back for the top. */
   function drawCrane(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), h = LOOK[j.stop].h, w = widthOf(j.stop), c = ctx0!;
-    const up = ease.out(span(t, STAGE_AT.scaffold + 0.15, STAGE_AT.scaffold + 0.75)), off = span(t, STAGE_AT.burst - 0.2, STAGE_AT.burst + 0.35);
+    const up = ease.out(span(t, STAGE_AT.scaffold + 0.05, STAGE_AT.scaffold + 0.35)), off = span(t, STAGE_AT.burst - 0.2, STAGE_AT.burst + 0.35);
     if (up <= 0 || off >= 1) return;
     const swing = t < STAGE_AT.panels ? "up" : t < STAGE_AT.top - 0.35 ? (Math.floor(t * 1.6) % 2 ? "up" : "left") : "left";
     const im = img(`build-crane-${swing}`);
@@ -260,7 +261,7 @@ export function createBuild(art: ArtLoader, bus: DeckBus | null, opts: BuildOpti
 
   function drawBurst(j: Job) {
     const t = j.t, x = STOP_X[j.stop], f = feet(j.stop), h = LOOK[j.stop].h, w = widthOf(j.stop), c = ctx0!;
-    const k = span(t, STAGE_AT.burst, STAGE_AT.burst + 0.7);
+    const k = span(t, STAGE_AT.burst, STAGE_AT.burst + 0.45);
     if (k > 0 && k < 1) {
       const n = Math.min(4, 1 + Math.floor(k * 4)), im = img(`build-burst-${n}`), d = SLOT * 2 * (0.6 + k * 0.4);
       c.save(); c.globalCompositeOperation = "lighter"; c.globalAlpha = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
