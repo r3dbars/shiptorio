@@ -74,13 +74,13 @@ describe("durable live check-in decisions", () => {
     const internal = f.factory as unknown as { env: { DB: { prepare(sql: string): any } }; githubStopped(): Promise<boolean> };
     internal.githubStopped = async () => true;
     const prepare = internal.env.DB.prepare.bind(internal.env.DB);
-    let reads = 0, revoked = false;
+    let reads = 0, revoked = false, revokeDuringUpgrade = false;
     internal.env.DB.prepare = (sql: string) => {
       const statement = prepare(sql);
       if (!sql.startsWith("SELECT u.id, u.login FROM sessions")) return statement;
       return { ...statement, bind: (...args: unknown[]) => {
         const bound = statement.bind(...args);
-        return { ...bound, first: async () => { reads++; return revoked ? null : bound.first(); } };
+        return { ...bound, first: async () => { reads++; return revoked || revokeDuringUpgrade && reads > 1 ? null : bound.first(); } };
       } };
     };
     await f.checkin();
@@ -89,6 +89,14 @@ describe("durable live check-in decisions", () => {
     reads = 0;
     await f.checkin();
     expect(reads).toBe(2); // Never reuse the prior request's authority.
+    // A revocation between principal verification and repository authorization
+    // still denies the upgrade; the two reads are deliberately not collapsed.
+    reads = 0;
+    revokeDuringUpgrade = true;
+    const raced = await f.factory.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
+    expect(raced.status).toBe(403);
+    expect(reads).toBe(2);
+    expect((f.factory as any).socketFetch).toBeUndefined();
     revoked = true;
     const response = await f.factory.fetch(new Request("https://shiptorio.com/api/repos/r3dbars/demo/factory", { headers: { upgrade: "websocket", origin: "https://shiptorio.com", cookie: await browserCookies() } }));
     expect(response.status).toBe(401);
