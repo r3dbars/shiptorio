@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { loadConnections, persistRenewal, persistGrantRejection } from "../src/grant-store";
+import { loadConnections, persistRenewal, persistGrantRejection, importServicePairings } from "../src/grant-store";
 import { loadPairings, removePairing, savePairing, updatePairing, type Pairing } from "../src/pairing";
 
 // Runtime imports exercise the real verifier without adding Worker-only types to the runner TS graph.
@@ -176,3 +176,36 @@ test("permanent rejection is durable without deleting evidence, and a fresh pair
     expect((await loadConnections(root, env(original)))[0]).toEqual(fresh);
   });
 });
+
+
+test("service imports same-server standalone pairings without changing authority or the source", async () => inStore(async home => {
+  const source = resolve(home, "standalone"), target = resolve(home, "service");
+  const original = await grant(now + 120_000);
+  await savePairing(original, source);
+  expect(await importServicePairings(source, target, "https://shiptorio.com", "https://shiptorio.com", now)).toEqual([original.repo]);
+  expect(await loadPairings(target)).toEqual([original]);
+  expect(await loadPairings(source)).toEqual([original]);
+  expect(await importServicePairings(source, target, "https://shiptorio.com", "https://shiptorio.com", now)).toEqual([]);
+  expect((await stat(resolve(target, "pairings", encodeURIComponent(original.repo) + ".json"))).mode & 0o777).toBe(0o600);
+}));
+
+test("service import preserves replacement identities and permanent rejections; refuses other origins and expired grants", async () => inStore(async home => {
+  const source = resolve(home, "standalone"), target = resolve(home, "service");
+  const original = await grant(now + 120_000);
+  await savePairing(original, source);
+  expect(await importServicePairings(source, target, "https://elsewhere.example", "https://shiptorio.com", now)).toEqual([]);
+  expect(await loadPairings(target)).toEqual([]);
+  const replacement = await grant(now + 60_000, { pairId: "new-browser-approved-pair" });
+  await savePairing(replacement, target);
+  await importServicePairings(source, target, "https://shiptorio.com", "https://shiptorio.com", now);
+  expect(await loadPairings(target)).toEqual([replacement]);
+  await savePairing({ ...original, rejected: { code: "runner_pair_revoked", at: now } }, target);
+  await importServicePairings(source, target, "https://shiptorio.com", "https://shiptorio.com", now);
+  expect((await loadPairings(target))[0].rejected?.code).toBe("runner_pair_revoked");
+  await removePairing(original.repo, target);
+  for (const invalid of [{...original, rejected: {code:"runner_pair_revoked" as const, at:now}}, await grant(now - 1)]) {
+    await savePairing(invalid, source);
+    expect(await importServicePairings(source, target, "https://shiptorio.com", "https://shiptorio.com", now)).toEqual([]);
+    expect(await loadPairings(target)).toEqual([]);
+  }
+}));

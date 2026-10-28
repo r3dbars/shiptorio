@@ -681,3 +681,13 @@ After #498, hosted upgrades still exceeded the unchanged five-second client dead
 ### Codex cold-start socket admission — PR #510
 
 Verified whole-App regressions: Hono response assignment replaced appended App timing with the upstream DO header; use Hono's append API. Trace/rate/guest repeated the same URL-aware currentUser lookup three times; one request-local Hono promise reduces total session reads from five to three, retaining fresh scoped resolveUser, repoAccess and independent DO authorization. No cross-request principal cache. Actual9–10s cold upgrades were canceled at5s; a separate bounded15s handshake accepts these legitimate responses while first snapshot/pong keep5s and reconnect notice keeps3s. Client fake-clock tests pin6/10s success,15s hung retry,5s missing snapshot, rejection, disposal and existing heartbeat behavior. Cold requests are not claimed fast; live timing follows deploy.
+
+
+### Codex runner service pairing import — 2026-10-28
+
+Before: a valid standalone Testing pairing was absent from the running launchd
+service's separate data root. After: service installation imports same-origin valid
+pairings under the existing store lock, preserves originals/replacements/rejections,
+and reuses installed config. No new grant, approval, job claim or production deploy.
+Focused regressions cover import idempotence, owner-only files and refusal boundaries;
+existing sleep/network/revocation tests remain required. Full CI/Staging pending.

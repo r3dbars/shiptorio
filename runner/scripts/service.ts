@@ -2,6 +2,8 @@
 import { chmod, copyFile, cp, mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pairingConfig } from "../src/service-config";
+import { importServicePairings } from "../src/grant-store";
+import { loadPairings } from "../src/pairing";
 const runnerRoot = resolve(import.meta.dir, "..");
 const support = resolve(process.env.HOME!, "Library/Application Support/Shiptorio");
 const label = "com.shiptorio.runner";
@@ -16,13 +18,27 @@ const launch = async (args: string[], required = true) => {
 };
 if (process.platform !== "darwin") throw new Error("Run runner watch on this platform; service installation currently supports macOS.");
 if (action === "install") {
-  if (!(await Bun.file(resolve(runnerRoot, ".dev.vars")).exists())) throw new Error("Pair this Mac first");
+  const workspaceVars = Bun.file(resolve(runnerRoot, ".dev.vars"));
+  const installedVars = Bun.file(resolve(support, ".dev.vars"));
+  // Standalone pairing and the legacy service use different data roots. Adopt
+  // existing same-server grants; never replace a newer manual pairing.
+  const standalone = resolve(process.env.HOME!, ".local/share/shiptorio/runner");
+  const origin = async (root: string) => {
+    const file = Bun.file(resolve(root, "server-url"));
+    return await file.exists() ? (await file.text()).trim() : "https://shiptorio.com";
+  };
+  const serviceOrigin = await origin(support);
+  await importServicePairings(standalone, support, await origin(standalone), serviceOrigin);
+  if (!await workspaceVars.exists() && !await installedVars.exists() &&
+    !(await loadPairings(support)).length) throw new Error("Pair this Mac first");
   const runtime = resolve(support, "bun");
   await mkdir(support, { recursive: true, mode: 0o700 });
   const bundled = await Bun.build({ entrypoints: [resolve(runnerRoot, "src/cli.ts")], target: "bun", outdir: support, naming: "runner.mjs" });
   if (!bundled.success) throw new Error("Unable to bundle the background runner");
   const vars = Bun.file(resolve(support, ".dev.vars"));
-  const config = pairingConfig(await Bun.file(resolve(runnerRoot, ".dev.vars")).text(), await vars.exists() ? await vars.text() : undefined);
+  const config = await workspaceVars.exists()
+    ? pairingConfig(await workspaceVars.text(), await vars.exists() ? await vars.text() : undefined)
+    : await vars.exists() ? await vars.text() : `SHIPTORIO_URL=${serviceOrigin}\n`;
   await writeFile(resolve(support, ".dev.vars"), config, { mode: 0o600 });
   await chmod(resolve(support, ".dev.vars"), 0o600);
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o755);
