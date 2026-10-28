@@ -2353,7 +2353,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       }
       // Optional provider discovery must not delay an already usable map. Persist
       // the wake-up before returning so an eviction cannot lose the reconnect.
-      await this.accountPut("mineReconnectPending", { repo: this.meta!.repo, installationId });
+      await this.accountPut("mineReconnectPending", { repo: this.meta!.repo, installationId, generation: crypto.randomUUID() });
       await this.scheduleTick();
       return;
     }
@@ -2368,13 +2368,16 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   /** Alarm-owned optional discovery; deletion/installation changes invalidate old work. */
   private async reconnectMines(): Promise<void> {
-    const pending = await this.ctx.storage.get<Meta>("mineReconnectPending");
+    const pending = await this.ctx.storage.get<Meta & { generation: string }>("mineReconnectPending");
     if (!pending || await this.githubStopped()) return;
     await this.assertAccountActive(pending.repo);
     if (!this.meta || this.meta.repo !== pending.repo || this.meta.installationId !== pending.installationId) return;
     await this.autoConnectMines();
     // Keep the marker on failure, including partial connection, for the next alarm.
-    await this.ctx.storage.delete("mineReconnectPending");
+    await this.ctx.storage.transaction(async tx => {
+      const current = await tx.get<Meta & { generation: string }>("mineReconnectPending");
+      if (current?.generation === pending.generation) await tx.delete("mineReconnectPending");
+    });
   }
 
   async refreshDistricts(): Promise<void> {

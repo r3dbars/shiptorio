@@ -1,5 +1,5 @@
 import { expect, it, mock } from "bun:test";
-mock.module("cloudflare:workers", () => ({ DurableObject: class {} }));
+mock.module("cloudflare:workers", () => ({ DurableObject: class { constructor(public ctx: unknown, public env: unknown) {} } }));
 const { Factory } = await import("../src/factory");
 
 function fixture(data = new Map<string, unknown>()) {
@@ -9,6 +9,7 @@ function fixture(data = new Map<string, unknown>()) {
   f.ctx = { storage: {
     get: async (key: string) => data.get(key),
     delete: async (key: string) => data.delete(key),
+    transaction: async (run: (tx: unknown) => Promise<void>) => run(f.ctx.storage),
   } };
   f.assertAccountActive = async () => { if (erased) throw Error("Factory deleted"); };
   f.githubStopped = async () => stopped;
@@ -27,7 +28,7 @@ it("opens an existing factory without optional provider I/O and loads it once", 
   await f.ensure("owner/repo", 1);
   expect(providerCalled).toBe(false);
   expect(counts()).toEqual({ loads: 1, discoveries: 0, alarms: 1 });
-  expect(data.get("mineReconnectPending")).toEqual({ repo: "owner/repo", installationId: 1 });
+  expect(data.get("mineReconnectPending")).toMatchObject({ repo: "owner/repo", installationId: 1, generation: expect.any(String) });
 });
 
 it("durable discovery survives eviction and coalesces reconnects, clearing only on success", async () => {
@@ -63,4 +64,23 @@ it("repository mismatches fail before optional discovery is queued", async () =>
   await expect(x.f.ensure("other/repo", 1)).rejects.toThrow("Repository mismatch");
   expect(x.data.size).toBe(0);
   expect(x.counts().alarms).toBe(0);
+});
+
+
+it("a reconnect arriving during discovery retains its own durable wake-up", async () => {
+  const x = fixture(); await x.f.ensure("owner/repo", 1);
+  const first = x.data.get("mineReconnectPending");
+  let finish!: () => void;
+  x.f.autoConnectMines = () => new Promise<void>(resolve => { finish = resolve; });
+  const discovery = x.f.reconnectMines();
+  // Wait for the real deferred provider boundary, not a wall-clock timer.
+  while (!finish) await Promise.resolve();
+  await x.f.ensure("owner/repo", 1);
+  const newer = x.data.get("mineReconnectPending");
+  expect(newer).not.toEqual(first);
+  finish(); await discovery;
+  expect(x.data.get("mineReconnectPending")).toEqual(newer);
+  x.f.autoConnectMines = async () => {};
+  await x.f.reconnectMines();
+  expect(x.data.has("mineReconnectPending")).toBe(false);
 });
