@@ -24,8 +24,10 @@ function fixture() {
   f.refreshDecisions = async () => {};
   f.accountAlarm = async () => {};
   f.runGauntlet = async (target: Item) => {
-    events.push(`${target.id}:${nextGate(target)}`);
-    const advanced = setStage(target, nextGate(target) === "checks" ? "ci" : nextGate(target)!, "passed", "proof");
+    const gate = nextGate(target);
+    if (!gate) throw new Error("No pending station");
+    events.push(`${target.id}:${gate}`);
+    const advanced = setStage(target, gate === "checks" ? "ci" : gate, "passed", "proof");
     f.state.items = f.state.items.map((i: Item) => i === target ? advanced : i);
     return advanced;
   };
@@ -33,10 +35,14 @@ function fixture() {
 }
 it("advances one proven PR through verify and review before due background reconciliation", async () => {
   const { f, events } = fixture();
-  f.guard = async (name: string) => { events.push(`background:${name}`); throw new Error("end after first background boundary"); };
-  f.githubGuard = async (_name: string, run: () => Promise<void>) => run();
+  f.guard = async (name: string) => { events.push(`background:${name}`); };
+  f.githubGuard = async (name: string, run: () => Promise<void>) => {
+    if (name === "runGauntlet") return run();
+    events.push(`background:${name}`);
+    if (name === "reconcileGitHub") throw new Error("end at due reconciliation boundary");
+  };
   await f.tick();
-  expect(events).toEqual(["deliveries", "first:verify", "first:ai", "background:pollPostHog"]);
+  expect(events).toEqual(["deliveries", "first:verify", "first:ai", "background:pollPostHog", "background:tickSupport", "background:retryReviewComments", "background:planRunnerJobs", "background:reconcileGitHub"]);
   expect(f.state.items[0].state).toBe("on_pad");
   expect(nextGate(f.state.items[1])).toBe("verify");
 });

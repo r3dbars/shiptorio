@@ -2524,7 +2524,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       const gate = nextGate(target), head = target.inspection?.headSha, pr = target.prNumber;
       if (!gate || !head || !pr) return;
       const advanced = await this.runGauntlet(target);
-      if (!advanced || advanced.id !== target.id || advanced.prNumber !== pr || advanced.inspection?.headSha !== head || nextGate(advanced) === gate) return;
+      if (!advanced || advanced.id !== target.id || advanced.prNumber !== pr || advanced.inspection?.headSha !== head || !nextGate(advanced) || nextGate(advanced) === gate) return;
       // A webhook may replace an inspection even on the same head. Only the
       // station's exact published receipt can authorize the next station here.
       target = this.state?.items.find(i => i.id === advanced.id && i.prNumber === pr && i.inspection === advanced.inspection && i.inspection?.headSha === head);
