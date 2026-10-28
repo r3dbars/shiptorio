@@ -574,10 +574,25 @@ export const RESEARCH = {
 /** Your machine (ui/RunnerConnection.tsx): the local runner, drawn as a power cable into the factory's socket. */
 export const RUNNER = {
   title: "Connect your machine",
-  state: { online: "Working", offline: "Idle", unpaired: "Unplugged", unknown: "Checking", error: "Blocked" } as Record<"online" | "offline" | "unpaired" | "unknown" | "error", string>,
+  state: { online: "Connected", offline: "Idle", unpaired: "Unplugged", unknown: "Checking", error: "Blocked" } as Record<"online" | "offline" | "unpaired" | "unknown" | "error", string>,
   agent: { codex: "Codex", claude_code: "Claude Code", local: "Local model" } as Record<string, string>,
   job: { planning: "Planning", awaiting_approval: "Waiting for your approval", ready: "Ready to build", running: "Building", completed: "PR opened", failed: "Stopped" } as Record<string, string>,
   unknownJob: "Unknown",
+  /** The HUD light (ui/MachineLight.tsx): one line, is your machine on and what is it doing. */
+  light: {
+    label: "Your machine",
+    unplugged: "Not connected",
+    offline: "Offline",
+    signIn: "Sign in to Codex or Claude",
+    idle: "Connected · nothing to do",
+    yourTurn: "Connected · waiting on your OK",
+    planning: (n: string) => `Planning ${n}`,
+    planReady: (n: string) => `Plan ${n} ready · your OK`,
+    starting: (n: string) => `Starting ${n}`,
+    building: (n: string) => `Working on ${n}`,
+    aJob: "a job",
+    open: "Open your machine's connection",
+  },
   noAgents: "no agents detected",
   online: (agents: string) => `Online · ${agents}`,
   offline: "Offline · start your runner to connect",
@@ -1014,6 +1029,16 @@ export const JUDGE = {
 } as const;
 
 /** docs/ATTENTION.md: one card shape, three kinds, Continue or Later. */
+// docs/LEARN.md: the dots on a card, and the list of things the factory does on its own now.
+export const LEARN = {
+  line: (left: number) => `Approve ${left} more like this and then it's automatic.`,
+  aria: (have: number, need: number, left: number) => `${have} of ${need} approved. Approve ${left} more like this and then it's automatic.`,
+  title: "The factory does these for you",
+  why: "You said yes to these 3 times in a row. Launching still waits for you.",
+  stop: "Ask me again",
+  stopFor: (label: string) => `Ask me again about ${label}`,
+};
+
 export const ATTENTION = {
   kind: { approve: "Approve", steer: "Steer", suggest: "Suggested" } as const,
   continue: "Continue",
@@ -1049,4 +1074,55 @@ export const AWAY = {
   line: (n: number) => `${n} shipped while you were away`,
   skip: "Tap to skip",
   skipLabel: "Skip the replay of what shipped while you were away",
+};
+
+/** The simple screen (?simple=1): the slow-spot line and the one task tray. */
+export const TASKS = {
+  slow: "Slow spot",
+  you: (n: number) => `You · ${n} waiting`,
+  stage: (stage: string, summary: string) => `${stage[0].toUpperCase()}${stage.slice(1)} · ${summary}`,
+  clear: "Nothing · all clear",
+  open: "Open",
+  hide: "Hide",
+  ideas: (n: number) => `${n} idea${n === 1 ? "" : "s"}`,
+  label: "Tasks",
+  lineLabel: (line: string) => `Slow spot: ${line}. Open the tasks`,
+  kind: { approve: "Approve", steer: "Stuck", suggest: "Idea" } as const,
+  of: (i: number, n: number) => `${i} of ${n}`,
+  prev: "Previous task",
+  next: "Next task",
+  later: "Later",
+  edit: "Edit",
+  more: "More",
+  less: "Less",
+  others: "Or do this instead",
+  does: (label: string) => `Continue: ${label}`,
+  earn: (left: number, label: string) => `${left} more ${label}, then the factory stops asking`,
+  swipeHint: "Swipe right to continue, left for later, up for details, down to never see it again",
+  done: "All clear. Nothing needs you right now.",
+  // what a drag will do once you let go (journey round 3: right Continue, left Later, up details, down never)
+  drag: { go: "Continue", launch: "Launch", launchFar: "All the way to launch", later: "Later", more: "Details", less: "Close", never: "Never show again" },
+  never: "Never show this again",
+  neverAsk: "Gone. Why? (optional)",
+  neverWhy: [
+    { why: "wrong", label: "Wrong idea" },
+    { why: "once", label: "Try it another way" },
+  ] as const,
+  caughtUp: (n: number) => (n ? `All caught up. ${n} thing${n === 1 ? "" : "s"} moving.` : "All caught up."),
+  // following the work through the factory once you're caught up (round 3 pick 8, thread "Follow your work")
+  caught: "All caught up",
+  nothingMoving: "Nothing's moving right now.",
+  parked: (n: number) => `${n} parked for later`,
+  bringBack: "Bring back",
+  shipped: "Shipped",
+  setup: "Setup first",
+  welcome: "Welcome",
+  intro: "Your code factory. Work comes in as cards: say yes and it gets built, checked and shipped.",
+  inFlight: (n: number) => `${n} thing${n === 1 ? "" : "s"} moving through the factory`,
+  follow: (n: number) => (n === 1 ? "Follow it" : "Follow them"),
+  moving: "Moving",
+  now: (where: string) => `${where[0].toUpperCase()}${where.slice(1)}`,
+  stop: "Done",
+  prevWork: "Previous one",
+  nextWork: "Next one",
 };

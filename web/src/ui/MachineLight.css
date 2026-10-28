@@ -1,0 +1,12 @@
+/* The HUD lamp for your machine (ui/MachineLight.tsx), Black Iron: a square pixel lamp on a soot chip. Green steady when
+   connected, aether blinking while it works, amber when it waits on you, dim when it's unplugged. */
+.machine-light { --c: var(--iron-dim); display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px 3px 8px; cursor: pointer; color: var(--c); }
+.machine-light > span[role="status"] { display: flex; flex-direction: column-reverse; gap: 4px; font: 400 13px/1 var(--iron-mono); color: var(--iron-ink); white-space: nowrap; }
+.machine-light .ml-lamp { flex: none; width: 10px; height: 10px; background: var(--c); box-shadow: 0 0 0 2px var(--iron-soot), 0 0 0 4px var(--iron-line); }
+.machine-light.idle { --c: var(--iron-ok); }
+.machine-light.busy { --c: var(--iron-aether); border-color: #2a8a78 !important; }
+.machine-light.busy .ml-lamp { animation: iron-blink 0.9s infinite; box-shadow: 0 0 0 2px var(--iron-soot), 0 0 0 4px var(--iron-line), 0 0 10px var(--iron-aether); }
+.machine-light.wait { --c: var(--iron-amber); border-color: var(--iron-amber) !important; }
+.machine-light.wait .ml-lamp { animation: iron-blink 1.6s infinite; }
+.machine-light.off > span[role="status"] { color: var(--iron-dim); }
+@media (prefers-reduced-motion: reduce) { .machine-light .ml-lamp { animation: none !important; } }
