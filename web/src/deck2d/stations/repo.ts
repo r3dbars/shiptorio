@@ -1,49 +1,126 @@
-import { block, bulb, cylinder, halo, inset, LAMP, pipeH, pipeV, plinth } from "./parts";
+import type { StopState } from "../contract";
+import type { Color } from "./palette";
+import { shift, type Px } from "./px";
+import { BRASS, COPPER, IRON, bezel, blotch, cylH, cylV, drop, face, noise, rivet, smoke, strap, tone } from "./shade";
 import type { StationDef } from "./types";
 
-// Repo: a tall iron safe with a brass chimney, copper pipes looping over the top into an outlet box on the right,
-// a brass tank and gear on the left, a three-bar readout and a door with the branch mark.
-// Working: one readout bar steps along at a time.
+// Repo: a tall riveted iron safe. A dark chimney with a brass seam, copper pipes looping over both shoulders (the
+// right one drops into an outlet box), a brass tank and gear on the left, a three-bar readout with a lamp, and a
+// brass-framed door with the branch mark. Working: one readout bar brightens at a time. Jammed: red, with smoke.
+
+const LIT: Record<StopState, readonly Color[]> = {
+  idle: ["iron-0", "iron-2", "iron-3", "iron-4", "haze-2"],
+  working: ["sun-1", "sun-3", "sun-4", "sun-5", "sun-6"],
+  jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "haze-3"],
+  auto: ["ok-0", "ok-1", "ok-1", "ok-2", "white"],
+};
+const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
+
+/** A pipe bend seen from the front: a quarter ring of tube, banded across its thickness like a straight run. */
+function bend(g: Px, cx: number, cy: number, r0: number, r1: number, quad: "tl" | "tr") {
+  for (let y = Math.floor(cy - r1); y <= cy; y++) for (let x = Math.floor(cx - r1); x <= Math.ceil(cx + r1); x++) {
+    const dx = x + 0.5 - cx, dy = y + 0.5 - cy, d = Math.hypot(dx, dy);
+    if (d < r0 || d > r1 || dy > 0) continue;
+    if (quad === "tl" ? dx > 0 : dx < 0) continue;
+    const t = ((d - r0) / (r1 - r0)) * 2 - 1; // across the tube: -1 inner .. 1 outer
+    const up = -dy / (d || 1); // how much this bit of tube faces up (toward the light)
+    tone(g, x, y, COPPER, 0.2 + 0.4 * (1 - t * t) + 0.25 * up * (t > 0 ? 1 : 0.4) + (t > 0.2 && t < 0.7 && up > 0.6 ? 0.25 : 0));
+  }
+}
 
 export const repo: StationDef = {
-  w: 42, h: 46,
-  anim: (s) => (s === "working" ? { n: 4, fps: 4 } : { n: 1, fps: 0 }),
-  draw(g, s, f) {
-    const X = 9, Y = 15, W = 22, H = 26, D = 3;
-    // pipes behind: left riser + run into the chimney, right run down into the outlet box
-    pipeV(g, 4, 10, 16); pipeH(g, 4, 9, 14); g.set(4, 9, "copper-1");
-    pipeH(g, 24, 9, 10); pipeV(g, 32, 9, 18); g.set(34, 9, "copper-3");
-    // outlet box on the right
-    g.rect(31, 26, 8, 8, "iron-2"); g.box(31, 26, 8, 8, "brass-2"); g.hline(31, 26, 8, "brass-3"); g.vline(38, 26, 8, "brass-3");
-    g.rect(33, 28, 4, 4, "iron-0"); g.set(37, 27, "brass-4");
-    block(g, X, Y, W, H, D);
-    // chimney
-    cylinder(g, 16, 6, 7, 6); g.rect(15, 3, 9, 3, "brass-2"); g.hline(15, 3, 9, "brass-4"); g.hline(16, 4, 7, "iron-0"); g.hline(15, 11, 9, "brass-1");
-    // brass tank + gear, left
-    cylinder(g, 3, 24, 7, 14); for (const yy of [26, 33]) g.hline(3, yy, 7, "brass-1");
-    g.rect(3, 23, 7, 1, "brass-4");
-    g.disc(6.5, 37.5, 3.4, "brass-1"); g.disc(6.9, 37.1, 2.4, "brass-3"); g.disc(6.5, 37.5, 1, "iron-0");
-    for (const [tx, ty] of [[6, 33], [2, 37], [10, 37], [6, 41], [3, 34], [9, 34], [3, 40], [9, 40]]) g.set(tx, ty, "brass-2");
-    // readout: three bars + a lamp
-    inset(g, X + 3, Y + 3, 16, 6, "iron-0");
-    const lamp = LAMP[s], on = s !== "idle";
+  w: 52, h: 66,
+  anim: (s) => (s === "working" ? { n: 8, fps: 4 } : s === "jammed" ? { n: 8, fps: 3 } : { n: 1, fps: 0 }),
+  draw(raw, s, f) {
+    // traced from Justin's repo art at 54 tall, pulled in to ~50 wide; +1px outline margin, smoke headroom on top
+    const g = shift(raw, 1, 11);
+    const lit = LIT[s], glow = GLOW[s];
+
+    g.glow(4, 52, 40, 2, "iron-0", 0.5, true); // contact shadow
+
+    // --- copper pipes behind: left shoulder loop into the chimney, right run over and down into the outlet box
+    bend(g, 12, 15, 4, 8.5, "tl");
+    cylV(g, 4, 15, 4, 6, COPPER, { amb: 0.14 });
+    cylH(g, 12, 7, 11, 4, COPPER, { amb: 0.16, gloss: 0.8 });
+    cylH(g, 31, 7, 9, 4, COPPER, { amb: 0.16, gloss: 0.8 });
+    bend(g, 39, 15, 4, 8.5, "tr");
+    cylV(g, 43, 15, 4, 14, COPPER, { amb: 0.14, gloss: 1 });
+    for (const y of [12, 22]) cylV(g, 42, y, 6, 2, BRASS, { amb: 0.2 });
+
+    // --- outlet box (right)
+    drop(g, 40, 29, 10, 15);
+    face(g, 40, 29, 10, 15, IRON, 0.36, { seed: 4, grime: 2 });
+    strap(g, 40, 29, 10, 2, BRASS); strap(g, 40, 31, 2, 13, BRASS); strap(g, 48, 31, 2, 13, BRASS); strap(g, 40, 42, 10, 2, BRASS);
+    g.rect(43, 33, 5, 8, "soot"); g.vline(47, 34, 7, "iron-1"); g.hline(43, 40, 5, "iron-1");
+
+    // --- brass tank + gear (left)
+    cylV(g, 1, 20, 8, 17, BRASS, { amb: 0.12, gloss: 0.9 });
+    for (let y = 22; y < 35; y++) for (let x = 1; x < 3; x++) tone(g, x, y, IRON, 0.25 + (x - 1) * 0.08); // dark seam where it turns away
+    for (const y of [20, 28, 35]) cylV(g, 0, y, 10, 2, BRASS, { amb: 0.22 });
+    // --- body: top face, right side, front
+    for (let k = 0; k < 3; k++) for (let x = 12 + (3 - k); x <= 40; x++) tone(g, x, 13 + k, IRON, 0.55 + 0.15 * ((x - 12) / 28) + (blotch(x, 13 + k, 3, 2) - 0.5) * 0.2);
+    for (let y = 15; y < 50; y++) for (let x = 39; x < 41; x++) tone(g, x, y, IRON, 0.5 + (x - 39) * 0.08 + (noise(x, y, 6) - 0.5) * 0.08);
+    face(g, 11, 16, 28, 34, IRON, 0.34, { rust: 0.05, grime: 4, seed: 21 });
+    strap(g, 11, 16, 28, 2, BRASS, 4);
+    strap(g, 11, 18, 2, 31, BRASS, 5);
+    strap(g, 37, 18, 2, 31, BRASS, 5);
+    tone(g, 38, 16, BRASS, 1); tone(g, 38, 17, BRASS, 0.85); // corner catching the sun
+
+    // readout: three bars + a lamp in a dark slot
+    drop(g, 15, 20, 21, 7);
+    g.rect(15, 20, 21, 7, "iron-1"); g.box(15, 20, 21, 7, "brass-1"); g.hline(15, 20, 21, "brass-2"); g.vline(35, 20, 7, "brass-0");
+    g.rect(17, 21, 17, 5, "soot");
     for (let i = 0; i < 3; i++) {
-      const bright = s === "working" ? i === f : on;
-      const c = s === "idle" ? "iron-2" : bright ? lamp[2] : lamp[1];
-      g.rect(X + 4 + i * 3, Y + 4, 2, 4, s === "jammed" && !on ? lamp[0] : c);
+      const x = 19 + i * 3, hot = s === "working" ? i === f % 4 : s !== "idle";
+      tone(g, x, 22, lit, hot ? 1 : 0.72); tone(g, x, 23, lit, hot ? 0.85 : 0.6); tone(g, x, 24, lit, hot ? 0.7 : 0.45);
+      tone(g, x + 1, 22, lit, hot ? 0.85 : 0.6); tone(g, x + 1, 23, lit, 0.5); tone(g, x + 1, 24, lit, 0.35);
     }
-    bulb(g, X + 16, Y + 5.6, 1.6, s, on);
-    if (on) halo(g, X + 10, Y + 6, 9, s, s === "jammed");
+    const lamp = s === "idle" ? (["iron-0", "iron-1", "iron-2", "iron-3", "iron-4"] as const) : lit;
+    for (let y = 21; y <= 25; y++) for (let x = 29; x <= 33; x++) {
+      const dx = x + 0.5 - 31.5, dy = y + 0.5 - 23.5, d = Math.hypot(dx, dy);
+      if (d <= 2.3) tone(g, x, y, lamp, 0.55 + 0.3 * (dx - dy) / 2.3 - d * 0.05);
+    }
+    g.set(32, 22, s === "idle" ? "iron-4" : "white");
+    if (glow) { g.glowDisc(26, 23.5, 9, glow, 0.25, [17, 21, 17, 5]); g.glow(16, 20, 19, 1, glow, 0.25); }
+
     // the door with the branch mark
-    const dx = X + 3, dy = Y + 11, dw = 16, dh = 12;
-    g.rect(dx, dy, dw, dh, "iron-1"); g.box(dx, dy, dw, dh, "brass-2");
-    g.hline(dx, dy, dw, "brass-3"); g.vline(dx + dw - 1, dy, dh, "brass-3"); g.set(dx + dw - 1, dy, "brass-4");
-    const bx = dx + 5, by = dy + 3;
-    g.vline(bx, by, 7, "brass-3");
-    g.rect(bx - 1, by - 1, 3, 2, "brass-4"); g.rect(bx - 1, by + 6, 3, 2, "brass-4");
-    g.rect(bx + 5, by, 3, 2, "brass-4");
-    for (let i = 0; i < 4; i++) g.set(bx + 5 - i, by + 2 + i, "brass-3");
-    plinth(g, X - 1, Y + H, W + 2);
-    g.outline();
+    drop(g, 15, 28, 21, 20);
+    g.rect(15, 28, 21, 20, "iron-1");
+    for (let y = 30; y < 46; y++) for (let x = 17; x < 34; x++) tone(g, x, y, IRON, 0.3 + 0.08 * ((x - 17) / 17) + (blotch(x, y, 4, 9) - 0.5) * 0.2);
+    strap(g, 15, 28, 21, 2, BRASS); strap(g, 15, 46, 21, 2, BRASS, 0, false);
+    strap(g, 15, 30, 2, 16, BRASS, 0, false); strap(g, 34, 30, 2, 16, BRASS, 0, false);
+    for (const [x, y] of [[16, 29], [34, 29], [16, 46], [34, 46]]) rivet(g, x, y);
+    // the mark: two dots joined by a stem, a third dot branching off to the right
+    const mark = (x: number, y: number, v: number) => tone(g, x, y, BRASS, v);
+    for (let y = 33; y <= 42; y++) { mark(21, y, 0.55); mark(22, y, 0.75); g.set(20, y + 1, "soot"); }
+    for (const [cx, cy] of [[22, 32], [22, 43], [29, 35]]) for (let y = cy - 3; y <= cy + 3; y++) for (let x = cx - 3; x <= cx + 3; x++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+      if (d <= 2.1) mark(x, y, 0.55 + 0.25 * ((x + 0.5 - cx) - (y + 0.5 - cy)) / 2.1);
+      else if (d <= 2.9 && x < cx && y >= cy) g.set(x, y, "soot");
+    }
+    for (let i = 0; i < 5; i++) { mark(27 - i, 37 + i, 0.75); mark(26 - i, 37 + i, 0.5); g.set(26 - i, 38 + i, "soot"); }
+
+    // --- feet
+    for (const [fx, w] of [[3, 8], [36, 8]]) { strap(g, fx, 48, w, 3, BRASS, 3); cylH(g, fx, 51, w, 2, BRASS, { amb: 0.15 }); }
+
+    for (let y = 35; y <= 47; y++) for (let x = 2; x <= 14; x++) { // a brass cog low on the left
+      const dx = x + 0.5 - 8, dy = y + 0.5 - 41, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+      const R = Math.cos(a * 7) > 0.1 ? 5.6 : 4.3;
+      if (d > R) continue;
+      const k = (dx - dy) / (d || 1);
+      g.set(x, y, d < 1.4 ? "soot" : d < 2.4 ? "brass-1" : d > R - 1 ? (k > 0.5 ? "brass-4" : k < -0.5 ? "brass-0" : "brass-2") : k > 0.3 ? "brass-3" : "brass-2");
+    }
+
+    // --- chimney: dark iron stack with a brass seam, brass collar and lip
+    drop(g, 20, 11, 13, 3, "soot");
+    cylH(g, 20, 11, 13, 3, BRASS, { amb: 0.16, gloss: 0.7 });
+    for (let x = 21; x < 32; x += 3) rivet(g, x, 12);
+    cylV(g, 22, 2, 9, 9, IRON, { amb: 0.1, gloss: 0.7 });
+    g.vline(28, 2, 9, "brass-2"); g.vline(29, 2, 9, "brass-3");
+    cylV(g, 21, 0, 11, 2, BRASS, { amb: 0.3, gloss: 0.9 });
+    g.hline(23, 0, 7, "soot");
+
+    raw.outline();
+    if (s === "jammed") smoke(g, 25, -2, f / 8, true);
   },
 };
