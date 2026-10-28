@@ -3,7 +3,8 @@ import { IDX, NAMES, RGB, type Color } from "./palette";
 // Edge light: the rim of a shape that faces the sun (up or right, open to the sky) is one step lighter along its
 // material's ramp, the rim facing away one step darker. It is what makes a flat sprite read as a lit solid.
 const CHAINS: Color[][] = [
-  ["soot", "iron-0", "steel-0", "iron-1", "steel-1", "iron-2", "steel-2", "iron-3", "iron-4", "haze-2"],
+  ["soot", "iron-0", "iron-1", "iron-2", "iron-3", "iron-4", "haze-2"],
+  ["steel-0", "steel-1", "steel-2", "steel-3"],
   ["brass-0", "brass-1", "brass-2", "brass-3", "brass-4", "brass-5"],
   ["copper-0", "copper-1", "copper-2", "copper-3"],
   ["plate-0", "plate-1", "plate-2", "plate-3", "plate-4"],
@@ -12,9 +13,8 @@ const CHAINS: Color[][] = [
 ];
 const UP = new Uint8Array(NAMES.length).map((_, i) => i), DOWN = new Uint8Array(NAMES.length).map((_, i) => i);
 for (const ch of CHAINS) ch.forEach((c, i) => {
-  const step = ch.length > 8 ? 2 : 1; // the interleaved iron chain moves two places to make one visible step
-  UP[IDX[c]] = IDX[ch[Math.min(ch.length - 1, i + step)]];
-  DOWN[IDX[c]] = IDX[ch[Math.max(0, i - step)]];
+  UP[IDX[c]] = IDX[ch[Math.min(ch.length - 1, i + 1)]];
+  DOWN[IDX[c]] = IDX[ch[Math.max(0, i - 1)]];
 });
 
 // A tiny indexed pixel grid. Stations draw into it with whole art pixels and palette colors only, then it bakes
