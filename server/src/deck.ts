@@ -134,9 +134,10 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
   const visible = ranked.filter(m => keep.has(m)).slice(0, 12);
   const runnerDecision = (move: Move, tool: string) => {
     const item = state.items.find(i => i.id === move.itemId);
-    return move.stage === "build" && item?.source === "github_issue" && /^gh-\d+$/.test(item.id)
-      && ["ore", "queued", "rejected"].includes(item.state) && (tool !== "plan_runner_job" || !item.prNumber)
-      && move.options.some(o => o.actions.some(a => a.tool === tool));
+    const action = move.options.flatMap(o => o.actions).find(a => a.tool === tool);
+    const refresh = action?.args.refreshBase === true && !!item?.prNumber && /^shiptorio\/runner-[a-f0-9-]{36}$/.test(item.branch ?? "");
+    return !!action && move.stage === "build" && item?.source === "github_issue" && /^gh-\d+$/.test(item.id)
+      && (refresh ? ["on_pad", "passed", "inspecting", "rejected"].includes(item.state) : ["ore", "queued", "rejected"].includes(item.state) && (tool !== "plan_runner_job" || !item.prNumber));
   };
   // A real plan awaiting consent must remain reachable. Otherwise reserve one existing
   // build/retry proposal in a non-merge slot. This changes membership only; Spark still orders the capped deck.

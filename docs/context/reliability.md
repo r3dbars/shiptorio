@@ -67,3 +67,26 @@ callers keep its existing deny-on-error behavior. A failed/limited GitHub lookup
 503 with a retry delay, not a revoked-grant code. Known revoked permission or pairing
 still denies access. A late renewal cannot clear a persisted rejection, and renewal is
 skipped when a grant has already reached its approving browser session's expiry.
+
+## A factory PR falls behind its base
+
+A completed local build is not automatically refreshed when main advances. The factory
+checks at most three tracked runner PRs per 30 seconds, rotating the candidates. An
+open, same-repository PR behind main gets an “Update to latest main” planning card.
+The player reviews a NEW plan naming the exact new base, existing PR/branch and old
+head, including explicit branch replacement. The previous build approval is not reused.
+
+The local agent rebuilds only the freshly approved files from the new base. The
+supervisor runs checks and new base-failing/head-passing regression proof. Trusted
+publication creates one commit whose only parent is that base, then replaces ONLY the
+factory branch with an explicit old-head force-with-lease. A changed branch refuses
+publication; a lost acknowledgment only recovers the identical deterministic SHA.
+PR #351's isolated, immutable source-fetch boundary stays in place; `publication.ts`
+needs this narrow lease-aware extension, not an agent Git escape or full-history fetch.
+
+The server rechecks PR identity and current base at approval, claim and completion,
+retains its one-commit/approved-path/complete-patch checks, requires fresh proof, and
+resets the gauntlet for the new head. If main advances during publication, completion
+fails: the scoped publication identity is retained only to offer another NEW plan,
+never to pass verify or reuse its proof. Launch remains a separate game action. The
+release's authoritative readiness guard must also hold Launch when main advances later.

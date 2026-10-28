@@ -483,3 +483,17 @@ No new App permissions, direct factory merge, policy bypass or check-name list.
 This aggregate readiness snapshot does not enumerate required-check/App provenance;
 GitHub's SHA-bound merge endpoint remains the final authority. Root owns combined
 release validation and deployment; this draft is not production acceptance.
+
+### Codex factory base refresh (2026-10-28)
+
+[PR #466](https://github.com/r3dbars/shiptorio/pull/466), based on root's frozen75 release:
+a behind factory PR requests a fresh game approval, rebuilds one scoped commit on the
+new base, and replaces the SAME branch only with the exact approved old-head lease.
+New regression proof and a fresh gauntlet are required; no live factory actions were
+performed. Real local Git covers lease races and deterministic acknowledgment recovery;
+server fixture covers fresh approval, same-PR completion and Launch, plus base changes
+at approval/claim/finish. Full check and hosted status are recorded in the PR. Root
+owns batching, merge and Deploy; this chat does not merge. Narrow `publication.ts`
+exception extends merged #351's trusted boundary, without changing workspace code.
+Root authorized one narrow deck reservation exception: explicit same-PR refresh proposals
+and approvals keep a runner slot in a full deck; merge-gate priority stays intact.

@@ -139,6 +139,23 @@ describe("runner decisions stay reachable in a full alert deck", () => {
   const clock = 5 * 60 * 60_000;
   const alerts = () => Array.from({ length: 12 }, (_, n) => move(`alert-${n}`, { kind: "unblock", stage: "intake", createdAt: clock - 4 * 60 * 60_000, options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] }));
   const runner = (tool: "plan_runner_job" | "approve_runner_job", id = tool) => move(id, { kind: "build", stage: "build", itemId: "gh-58", createdAt: clock, options: [{ id: tool === "plan_runner_job" ? "codex" : "approve", label: "Continue the build", recommended: true, actions: [{ tool, args: tool === "plan_runner_job" ? { harness: "codex" } : { jobId: "job-58" }, reason: "Player approval is required" }] }] });
+  for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps explicit same-PR base refresh ${tool} reachable without displacing merge gates`, () => {
+    const s = state([item("gh-58", { state: "on_pad", updatedAt: clock, prNumber: 99, branch: "shiptorio/runner-00000000-0000-4000-8000-000000000001" })]);
+    const decision = runner(tool);
+    decision.options[0].actions[0].args.refreshBase = true;
+    const candidates = [...alerts(), decision];
+    expect(buildDeck(s, candidates, { now: clock }).some(card => card.id === tool)).toBe(true);
+    expect(buildDeck(s, candidates, { now: clock })).toHaveLength(12);
+    decision.options[0].actions[0].args.refreshBase = false;
+    expect(buildDeck(s, candidates, { now: clock }).some(card => card.id === tool)).toBe(false);
+    decision.options[0].actions[0].args.refreshBase = true;
+    s.items[0].branch = "human-owned";
+    expect(buildDeck(s, candidates, { now: clock }).some(card => card.id === tool)).toBe(false);
+    s.items[0].branch = "shiptorio/runner-00000000-0000-4000-8000-000000000001";
+    const gates = alerts().map((card, n) => ({ ...card, itemId: `gate-${n}`, options: [{ id: "launch", label: "Launch", recommended: true, actions: [{ tool: "request_merge", args: { pr: n + 1 }, reason: "Passed" }] }] }));
+    expect(buildDeck(s, [...gates, decision], { now: clock }).some(card => card.id === tool)).toBe(false);
+    expect(buildDeck(s, [...gates, decision], { now: clock })).toHaveLength(12);
+  });
   for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps ${tool} visible after feedback resets the item's wait time`, () => {
     const s = state([item("gh-58", { updatedAt: clock })]);
     const decision = runner(tool);
