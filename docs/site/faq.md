@@ -81,3 +81,7 @@ The docs are. The app opens up after the hackathon. Built for the Meta AI Develo
 Open an issue on the repo. If you're playing a live factory on Shiptorio's own repo, your bug becomes ore, and the factory might fix it for you.
 
 If the planner is busy or unavailable, planning rests behind one card showing the local resume time. Attempts have a two-minute deadline and retry automatically after the cooldown or daily reset. Raising a call, token or spend limit also wakes parked plans; ambiguous paid calls keep their reservations. Existing checks and merge decisions remain available.
+
+## Why does my factory say Reconnecting?
+
+A cold factory or a network interruption can take several seconds to reconnect. Keep the page open: it retries automatically and restores the current factory once the connection is verified. A slow connection does not approve work or launch a PR.

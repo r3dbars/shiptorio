@@ -1,4 +1,4 @@
-import { privateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
+import { privateSocketTiming, measureSocket } from "./private-socket-timing";
 import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
 import { godRoutes } from "./admin-god";
@@ -102,9 +102,17 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 };
 
 
-const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => measureSocket(privateSocketTiming(c.env), "app_signed_in", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
+// Hono creates this context per request. Reuse only the URL-aware lookup here;
+// scoped resolveUser/repoAccess and the Durable Object retain independent checks.
+const signedIn = (c: Context<AppEnv>): Promise<User | null> => {
+  const existing = c.get("signedInLookup");
+  if (existing) return existing;
+  const fresh = measureSocket(privateSocketTiming(c.env), "app_signed_in", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
+  c.set("signedInLookup", fresh);
+  return fresh;
+};
 
-type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean; guest: Guest } };
+type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean; guest: Guest; signedInLookup?: Promise<User | null> } };
 const app = new Hono<AppEnv>();
 testUserRoutes(app);
 export const requireUser = async (c: Context<AppEnv>, next: Next) => {
@@ -124,10 +132,10 @@ app.use("*", async (c, next) => {
   return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
     c.header("X-Request-ID", trace.requestId);
     const timing = privateSocketTiming(c.env);
-    const user = await measureSocket(timing, "app_trace_auth", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
+    const user = await measureSocket(timing, "app_trace_auth", () => signedIn(c));
     if (user) { trace.userId = accountIdentity(user.id); Sentry.setUser({ id: accountIdentity(user.id) }); }
     await next();
-    if (timing) c.res = timingResponse(c.res, timing);
+    if (timing) c.header("Server-Timing", timing.header(), { append: true });
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);
     // A paired runner polls every 5s. Successful polls go to the console only, so they don't burn KV writes.

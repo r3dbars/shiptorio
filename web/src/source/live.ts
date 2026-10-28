@@ -3,6 +3,8 @@ import { parseLiveMessage } from "./schemas";
 import type { Listener, Source, StatusListener } from ".";
 
 const HEARTBEAT_MS = 15_000;
+// A cold authenticated upgrade can take ten seconds; snapshot/pong deadlines stay short.
+const CONNECT_MS = 15_000;
 const DEAD_MS = 5_000;
 const NOTICE_MS = 3_000;
 
@@ -73,8 +75,13 @@ export function connectLive(repo: string, onMessage: Listener, onStatus: StatusL
     openedAt = Date.now();
     openedOnline = typeof navigator === "undefined" || navigator.onLine !== false;
     const current = () => !closed && ws === socket;
-    // Covers a hung handshake and an open socket that never sends its snapshot.
-    deadline = setTimeout(lost, DEAD_MS);
+    // Bound connection establishment separately from an opened socket missing its snapshot.
+    deadline = setTimeout(lost, CONNECT_MS);
+    socket.onopen = () => {
+      if (!current() || synced) return;
+      clearTimeout(deadline);
+      deadline = setTimeout(lost, DEAD_MS);
+    };
     socket.onmessage = (e) => {
       if (!current() || typeof e.data !== "string") return;
       if (e.data === "pong") {
