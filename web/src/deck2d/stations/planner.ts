@@ -18,6 +18,7 @@ const LIT: Record<StopState, Ramp> = {
   jammed: ["jam-0", "jam-1", "jam-1", "jam-2", "jam-2", "haze-3"],
   auto: ["ok-0", "ok-1", "ok-1", "ok-2", "ok-2", "white"],
 };
+const DIM: Ramp = ["soot", "plate-0", "plate-1", "plate-2", "plate-3"]; // unlit glass still shows a little colour
 const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-5", jammed: "jam-2", auto: "ok-2" };
 
 function lampBall(g: Px, cx: number, cy: number, r: number, ramp: Ramp) {
@@ -31,10 +32,10 @@ function lampBall(g: Px, cx: number, cy: number, r: number, ramp: Ramp) {
 function icon(g: Px, x: number, y: number, k: number) {
   const rows = [
     ["#.#.#", ".###.", "##.##", ".###.", "#.#.#"], // gear
-    ["#....", "#.#..", "#####", "#.#.#", "#####"], // factory
-    ["..#..", ".###.", ".###.", "#####", "#.#.#"], // rocket
+    ["#....", "#.#..", "#.#.#", "#...#", "#####"], // factory
+    ["..#..", ".#.#.", ".#.#.", ".###.", "#...#"], // rocket
   ][k];
-  g.box(x - 1, y - 1, 7, 7, "steel-2"); // each step sits in its own little frame, like the mockup's tiles
+  g.box(x - 1, y - 1, 7, 7, "plate-3"); g.hline(x - 1, y + 5, 7, "plate-2"); g.vline(x - 1, y - 1, 7, "plate-2"); // each step sits in its own little frame, like the mockup's tiles
   rows.forEach((r, j) => [...r].forEach((c, i) => c === "#" && g.set(x + i, y + j, "steel-1")));
 }
 
@@ -69,13 +70,13 @@ export const planner: StationDef = {
         if (s === "working" && k === f % 3) { g.box(ix - 1, iy - 1, 7, 7, "sun-4"); g.glow(ix - 2, iy - 2, 9, 9, "sun-5", 0.25); }
         icon(g, ix, iy, k);
       }
-      if (k < 2) { g.set(ix + 5, iy + 2, "steel-1"); }
+      if (k < 2) { g.set(ix + 6, iy + 2, "steel-1"); g.set(ix + 5, iy + 1, "steel-2"); g.set(ix + 5, iy + 3, "steel-2"); }
     }
     // three lamps along the top of the board
     for (let k = 0; k < 3; k++) {
       const lx = 19.5 + k * 7;
       cylH(g, Math.round(lx) - 2, 5, 4, 2, BRASS, { amb: 0.25 });
-      lampBall(g, lx, 3.5, 1.9, s === "idle" ? LIT.idle : lit);
+      lampBall(g, lx, 3.5, 1.9, s === "idle" ? DIM : lit);
       if (glow) g.glowDisc(lx, 3.5, 3.5, glow, 0.25);
     }
 
@@ -109,6 +110,11 @@ export const planner: StationDef = {
       cylH(g, x0 + Math.floor(w / 2) - 1, y0 + 1, 3, 2, BRASS, { amb: 0.4, gloss: 1 });
     }
     for (let y = 30; y < 41; y++) for (let x = 17; x < 31; x++) g.set(x, y, y < 32 ? "plate-0" : "soot");
+    // a tool crate pushed into the kneehole: planks, a brass rim, handles sticking out
+    for (const [x, c] of [[20, "steel-2"], [22, "copper-1"], [25, "iron-3"], [27, "plate-3"]] as const) { g.vline(x, 32, 4, c); g.set(x, 32, x === 22 ? "copper-2" : "brass-3"); }
+    drop(g, 18, 35, 12, 6);
+    for (let y = 35; y < 41; y++) for (let x = 18; x < 30; x++) tone(g, x, y, WOOD, 0.42 + 0.15 * ((x - 18) / 12) + ((y - 35) % 3 === 2 ? -0.18 : 0) + (noise(x, y, 5) - 0.5) * 0.1);
+    strap(g, 18, 35, 12, 1, BRASS, 0, false); g.set(19, 37, "brass-3"); g.set(28, 37, "brass-3");
     strap(g, 2, 29, 2, 12, BRASS, 0, false); strap(g, 44, 29, 2, 12, BRASS, 0, false);
     for (const fx of [2, 40]) { cylH(g, fx, 41, 6, 2, BRASS, { amb: 0.15 }); }
     g.hline(8, 41, 32, "plate-0");
