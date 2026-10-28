@@ -347,3 +347,45 @@ describe("real runner proposals survive a deck full of passive source alerts", (
     else expect(await f.factory.runnerJobs()).toEqual([]);
   });
 });
+
+describe("the factory learns what the player approves (docs/LEARN.md)", () => {
+  it("fills the dots on each yes, learns on the third, then approves the next plan on its own", async () => {
+    const { issueRevision } = await import("../src/runner-job");
+    const items = [1, 2, 3, 4].map(n => ({ id: `gh-${n}`, kind: "bug" as const, source: "github_issue" as const, title: `Fix bug ${n}`, body: "A scoped fix", district: "web", state: "queued" as const, attempts: 0, updatedAt: 1 }));
+    const approval = (n: number) => card(`approval-${n}`, { title: `Plan for bug ${n}`, kind: "build", stage: "build", itemId: `gh-${n}`, options: [{ id: "approve", label: "Approve plan", recommended: true, actions: [{ tool: "approve_runner_job", args: { jobId: `job-${n}` }, reason: "Player approves the scoped plan" }] }] });
+    const f = fixture([1, 2, 3].map(approval), { items });
+    for (const n of [1, 2, 3, 4]) f.data.set(`runnerJob:job-${n}`, { id: `job-${n}`, repo: "r3dbars/demo", itemId: `gh-${n}`, harness: "codex", allowedPaths: ["web/src/a.ts"], branch: `shiptorio/runner-${n}`, status: "awaiting_approval", approvalMoveId: `approval-${n}`,
+      inputRevision: await issueRevision(`Fix bug ${n}`, JSON.stringify({ body: "A scoped fix", failure: "", scars: [] })) });
+    await f.checkin();
+    const meter = (id: string) => f.saved().deck?.find(m => m.id === id)?.learn;
+    expect(meter("approval-1")).toEqual({ have: 0, need: 3 });
+    await f.send({ type: "choose_move", moveId: "approval-1", optionId: "approve" });
+    expect(meter("approval-2")).toEqual({ have: 1, need: 3 });
+    await f.send({ type: "choose_move", moveId: "approval-2", optionId: "approve" });
+    expect(meter("approval-3")).toEqual({ have: 2, need: 3 });
+    await f.send({ type: "choose_move", moveId: "approval-3", optionId: "approve" });
+    expect(f.saved().learned).toEqual([{ key: "build|district:web", label: "Plans in /web", since: expect.any(Number) }]);
+    expect(f.events.some(e => e.type === "log" && e.text.startsWith("Learned."))).toBe(true);
+
+    // A fourth plan arrives: the factory approves it on its own, logged as autonomy.
+    f.data.set("openMoves", [...(f.data.get("openMoves") as Move[]), approval(4)]);
+    const internal = f.factory as unknown as { openMoves: Move[] | null; runLearned(): Promise<void> };
+    internal.openMoves = null;
+    await internal.runLearned();
+    await (f.factory as unknown as { broadcastQueue: Promise<void> }).broadcastQueue;
+    expect(f.data.get("runnerJob:job-4")).toMatchObject({ status: "ready", approvedAt: expect.any(Number) });
+    expect(f.events.some(e => e.type === "log" && e.approvedBy === "autonomy" && e.itemId === "gh-4")).toBe(true);
+    expect(await f.taps.prepare("SELECT action FROM card_taps WHERE card_id = 'approval-4'").bind().first()).toEqual({ action: "auto" });
+
+    // Ask me again: the dots come back.
+    await f.send({ type: "unlearn", key: "build|district:web" });
+    expect(f.saved().learned).toEqual([]);
+  });
+
+  it("a dismiss tells the planner to try something different, and empties the dots", async () => {
+    const f = fixture([card("idea", { kind: "build" })]);
+    await f.checkin();
+    await f.send({ type: "dismiss_move", moveId: "idea", why: "once" });
+    expect((f.data.get("deckBook") as { notes: { text: string }[] }).notes.at(-1)?.text).toContain("try a smaller or different version");
+  });
+});
