@@ -126,6 +126,7 @@ const RUNNER_LEASE_MS = 30 * 60 * 1000;
 const LOST_CLAIM_MS = 45_000;
 // Local runner planning/publication currently requires a real GitHub issue.
 const runnerIssue = (item: Item) => item.source === "github_issue" && /^gh-\d+$/.test(item.id);
+const proposesPlan = (move: Move) => move.options.some(o => o.actions.some(a => a.tool === "plan_runner_job"));
 const MINE_KIND: Record<Signal["source"], SourceKind | undefined> = { github_issue: "github", sentry: "sentry", posthog: "posthog", inbox: undefined, lint: undefined };
 // Where each mine's ore deposit sits on the live map, left of the splitter.
 const DEPOSIT_Y: Record<MineKind, number> = { sentry: -3, posthog: 3 };
@@ -381,8 +382,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (jobId && !jobs.some(j => j.id === jobId && j.status === "awaiting_approval")) return false;
       if (move.stage === "pad" && item && item.state !== "on_pad" && item.state !== "rejected") return false;
       if (move.stage === "resources" && !move.id.startsWith("runner-auth:") && s.bottleneck?.stage !== "resources") return false;
+      // A stuck alarm is stale once the item moves on, and a queued issue isn't stuck while your machine is online: it waits on its plan card.
+      if (move.id.startsWith("stuck:") && item && (!move.title.endsWith(`stuck at ${item.state}`) || item.state === "queued" && presenceFresh)) return false;
       return true;
     });
+    // One plan card at a time, the oldest first (older factories dealt one per queued issue).
+    let planCard = false;
+    this.openMoves = this.openMoves.filter(m => !proposesPlan(m) || suppressed(this.deckBook!, m) || (planCard ? false : (planCard = true)));
     this.openMoves = this.openMoves.filter(m => !m.id.startsWith("bottleneck:") || m.id === `bottleneck:${s.bottleneck?.stationId ?? s.bottleneck?.stage}`);
     const impliedMove = this.openMoves.find(m => m.id.startsWith("bottleneck:"));
     // docs/ATTENTION.md: behind the flag, the player's Continues in a row lift that class of card a little.
@@ -763,7 +769,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (jobs.some(j => ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
     const presence = await this.ctx.storage.get<{ harnesses: RunnerJob["harness"][]; seenAt: number }>("runnerPresence");
     if (!presence || Date.now() - presence.seenAt > 20000) return;
+    // One plan card at a time: the next issue is dealt once this one is planned, built or set aside.
+    if (s.deck?.some(proposesPlan)) return;
+    await this.decisionData();
+    const parked = new Set(this.openMoves!.filter(m => proposesPlan(m) && suppressed(this.deckBook!, m)).map(m => m.itemId));
     for (const item of lineOrder(s.items.filter(i => runnerIssue(i) && ["queued", "ore", "rejected"].includes(i.state) && !i.prNumber))) {
+      if (parked.has(item.id)) continue;
       if (planningHold(await this.ctx.storage.get<PlanningRetry>(`planningRetry:${item.id}`))) continue;
       if (await this.ctx.storage.get<number>(`runnerDeferred:${item.id}`) === item.updatedAt) continue;
     const small = presence.harnesses.includes("local") && looksSmall({ kind: item.kind, title: item.title, scars: item.scars?.length ?? 0 });
@@ -771,6 +782,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const choices = presence.harnesses.slice(0, 3).map(harness => ({ id: harness, label: harness === "local" ? "Plan on your computer (free)" : `Plan with ${harnessLabel(harness)}`, recommended: harness === lead, actions: [{ tool: "plan_runner_job", args: { harness }, reason: "Read this issue and propose a file scope before building." }] }));
     if (!choices.length) return;
     await this.publishRunnerMove({ id: crypto.randomUUID(), title: `Plan #${item.id.slice(3)}: ${item.title}`, why: "Get a focused plan first. Review its files and steps before any code changes.", stage: "build", kind: "build", itemId: item.id, createdAt: Date.now(), options: [...choices, { id: "decline", label: "Later", recommended: false, actions: [] }] });
+    return;
     }
   }
 
@@ -907,7 +919,19 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     return { needsRepair: !!repair, repairCommand: repair ? "shiptorio-runner pair" : null, repairReason: repair?.code ?? null,
       paired, online: paired && !repair && !!presence && Date.now() - presence.seenAt < 20000,
       seenAt: presence?.seenAt ?? null, harnesses: presence?.harnesses ?? [],
-      lastJob: last ? { id: last.id, status: last.status } : null };
+      lastJob: last ? { id: last.id, status: last.status } : null, ...await this.runnerNow(jobs) };
+  }
+  /** What your machine is doing right now, in one line: the job it's on, else the card it waits on you for. */
+  private async runnerNow(jobs: RunnerJob[]) {
+    const state = await this.load();
+    const rank = ["running", "ready", "awaiting_approval", "planning"];
+    const job = jobs.filter(j => rank.includes(j.status)).sort((a, b) => rank.indexOf(a.status) - rank.indexOf(b.status))[0];
+    const item = job && state?.items.find(i => i.id === job.itemId);
+    const waiting = state?.deck?.find(m => m.options.some(o => o.actions.some(a => a.tool === "plan_runner_job" || a.tool === "approve_runner_job")));
+    return {
+      working: job ? { itemId: job.itemId, number: job.itemId.startsWith("gh-") ? Number(job.itemId.slice(3)) : null, title: item?.title ?? "", status: job.status, harness: job.harness } : null,
+      waitingOn: waiting ? { moveId: waiting.id, title: waiting.title } : null,
+    };
   }
   async activateRunner(pairId: string) { await this.assertAccountActive(); await this.accountPut("runnerPair", pairId); await this.ctx.storage.delete("runnerPresence"); await this.ctx.storage.delete("runnerRepair"); await this.ctx.storage.delete("runnerGrantExpiry"); }
   async pairRunner(): Promise<string> {
@@ -3142,12 +3166,14 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private async watchdog(): Promise<void> {
     const now = Date.now();
+    const presence = await this.ctx.storage.get<{ seenAt: number }>("runnerPresence");
+    const runnerOnline = !!presence && now - presence.seenAt < 20000;
     for (const item of [...this.state!.items]) {
       const key = `stageClock:${item.id}`;
       let clock = await this.ctx.storage.get<{ state: string; since: number; alerted?: boolean }>(key);
       const stage = `${item.state}:${item.machineId ?? ""}`;
       if (!clock || clock.state !== stage) clock = { state: stage, since: item.updatedAt };
-      if (!clock.alerted) {
+      if (!clock.alerted && !(item.state === "queued" && runnerOnline)) {
         const result = stuckItem(item, clock.since, now);
         if (result) {
           await this.patch({ items: [result.item] });
