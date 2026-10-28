@@ -65,6 +65,32 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       await info.attach('recovered-shaft', { body: await page.screenshot(), contentType: 'image/png' });
     });
 
+    test('restoration waits for a real held launch gesture before submitting graphics', async ({ page }) => {
+      await observeGpu(page);
+      await page.goto('/?source=sim&world=shaft&scenario=checkin');
+      await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 90000 }).toBeGreaterThan(0);
+      const launch = page.getByRole('button', { name: /Hold to launch:.*Launch #143/ });
+      await expect(launch).toBeVisible();
+      const box = await launch.boundingBox();
+      expect(box).not.toBeNull();
+      await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+      await page.mouse.down();
+      try {
+        // Let the normal loop see the physical hold before testing a restore.
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        const before = await page.evaluate(() => (window as any).__gpu.draws);
+        await page.evaluate(() => (window as any).__gpu.extension.loseContext());
+        await expect.poll(() => page.evaluate(() => (window as any).__gpu.lost)).toBe(1);
+        await page.evaluate(() => (window as any).__gpu.extension.restoreContext());
+        await expect.poll(() => page.evaluate(() => (window as any).__gpu.restored)).toBe(1);
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        expect(await page.evaluate(() => (window as any).__gpu.draws)).toBe(before);
+      } finally { await page.mouse.up(); }
+      const released = await page.evaluate(() => (window as any).__gpu.draws);
+      await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 2000, intervals: [25, 50] }).toBeGreaterThan(released);
+      await expect(page.locator('.crash')).toHaveCount(0);
+    });
+
     test('a context that never restores gets a fresh canvas and current factory', async ({ page }) => {
       await observeGpu(page);
       await openShaft(page);
