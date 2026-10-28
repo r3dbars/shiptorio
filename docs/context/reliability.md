@@ -70,9 +70,10 @@ credentials were preserved, with no personal-Keychain fallback or new sign-in.
 [First Staging attempt](https://github.com/r3dbars/shiptorio/actions/runs/40765682609)
 passed tests/build/storage/fixture checks but failed at deployment with Cloudflare
 internal authentication error `10500`. This failure is retained; it was not rerun
-or relabeled green. Local service repair is independently verified above. A green
-descendant Staging deployment is still a separate receipt; no production promotion
-was performed by this task. Earlier transient production heartbeat 500s were
+or relabeled green. Local service repair is independently verified above.
+[Next normal Staging deployment](https://github.com/r3dbars/shiptorio/actions/runs/40765902742)
+passed on descendant `34bb82ef9b657e772371549cd18062d2d547ff32`, which contains #519;
+the failed attempt remains visible. No production promotion was performed by this task. Earlier transient production heartbeat 500s were
 followed by successful retained-grant heartbeats; their cause remains unproven.
 
 ## Delivery and outbound calls
