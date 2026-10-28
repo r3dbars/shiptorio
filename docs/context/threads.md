@@ -608,3 +608,7 @@ plain dark background. Focused visual PR updates the shared Wordmark, gate and
 server-page brand image; the gate drops its decorative film. Password/session/CSRF
 code is untouched. This explicitly authorized branding task extends the usual
 backend lane. Local full check: 1,307 passed, two existing skips, zero failures; lint/types/build green. Miniflare browser previews at 390×844 and 1440×900 loaded the correct image, showed the entire form without overflow, and displayed wrong-password feedback without script errors. Root releases batches; not deployed.
+
+### Polished logo dev refresh (2026-10-28)
+
+Refreshed #467 onto dev for the fast staging lane. Preserved the approved brass public welcome page byte-for-byte; only gated/shared branding changes remain. The previous local phone/desktop preview is historical evidence, with fresh local check and exact-head dev CI required before this merge. Production still changes only on an explicit dev-to-main promotion.
