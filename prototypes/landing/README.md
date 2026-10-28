@@ -10,7 +10,8 @@ loopback, serves only allowlisted read-only files and does not read credentials.
 Play and Connect buttons open accessible local previews; the demo performs no real
 repo operations. Docs and Open Shiptorio links are explicitly external.
 
-This exploration is stacked on #467 and stays separate from the public homepage.
+This exploration targets dev and stays separate from the public homepage.
+The polished logo asset is supplied by #467; preserve that dependency when merging.
 Choose a direction before moving selected code into the product. The initial visual
 concepts informed layout; coded icons and real product art intentionally replace
 decorative generated treatments for an honest, editable website prototype.
