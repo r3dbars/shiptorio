@@ -37,7 +37,7 @@ import { FactoryText, factorySummary } from "./ui/FactoryText";
 import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
-import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
+import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, TASKS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn, buildoutOn, simpleOn } from "./flags";
@@ -215,6 +215,13 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const [tasksAsked, setTasksAsked] = useState<boolean | null>(null);
   const spot = slowSpot(deck, state?.bottleneck);
   const ideas = deck.filter((m) => attentionOf(m) === "suggest").length;
+  const [caughtUp, setCaughtUp] = useState(false); // you answered the last card: zoom out over everything moving
+  useEffect(() => {
+    if (!caughtUp) return;
+    const t = setTimeout(() => setCaughtUp(false), 6000);
+    return () => clearTimeout(t);
+  }, [caughtUp]);
+  useEffect(() => { if (deck.length) setCaughtUp(false); }, [deck.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const tasksOpen = tasksAsked ?? true; // one card at a time, or the "what's next" idea when nothing waits
   // the look Justin picked (journey picks 5 and 6): glass plates, a hard spotlight. ?look= tries others (soft, nospot)
   useEffect(() => {
@@ -514,7 +521,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           state={state}
           onPick={pickOnMap}
           focus={intro ? tourly.cam.focus : (focusKey ?? panel ?? parkKey)}
-          wide={intro ? tourly.cam.wide : null}
+          wide={intro ? tourly.cam.wide : simple && caughtUp ? 1 : null}
           lift={intro ? (window.innerWidth <= 760 ? 0.24 : 0.13) : 0}
           showLabels={showLabels}
           teachingKeys={intro ? undefined : lessonFocus(state, tour.lesson?.id)}
@@ -612,7 +619,8 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </div>
 
-        {simple && state && <SlowSpotLine spot={spot} ideas={ideas} open={tasksOpen} onToggle={() => setTasksAsked(!tasksOpen)} />}
+        {simple && caughtUp && <div className="caughtup" role="status">{TASKS.caughtUp(inFlight.length)}</div>}
+        {simple && state && spot.who === "line" && <SlowSpotLine spot={spot} ideas={ideas} open={tasksOpen} onToggle={() => setTasksAsked(!tasksOpen)} />}
 
         {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
         {tour.lesson && (
@@ -785,7 +793,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
           <div className={simple ? "needs-slot simple" : "needs-slot"} ref={hv.refs.needs as Ref<HTMLDivElement>}>
             {simple ? (
-              tasksOpen && <TaskTray deck={deck} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} autonomy={autonomy} nudge={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null} />
+              tasksOpen && <TaskTray deck={deck} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} onCaughtUp={() => setCaughtUp(true)} autonomy={autonomy} nudge={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null} />
             ) : calm ? (
               <AttentionTray
                 deck={deck}

@@ -1073,6 +1073,15 @@ export const TASKS = {
   others: "Or do this instead",
   does: (label: string) => `Continue: ${label}`,
   earn: (left: number, label: string) => `${left} more ${label}, then the factory stops asking`,
-  swipeHint: "Swipe to see the next task",
+  swipeHint: "Swipe right to continue, left for later, up for details, down to never see it again",
   done: "All clear. Nothing needs you right now.",
+  // what a drag will do once you let go (journey round 3: right Continue, left Later, up details, down never)
+  drag: { go: "Continue", launch: "Launch", launchFar: "All the way to launch", later: "Later", more: "Details", less: "Close", never: "Never show again" },
+  never: "Never show this again",
+  neverAsk: "Gone. Why? (optional)",
+  neverWhy: [
+    { why: "wrong", label: "Wrong idea" },
+    { why: "once", label: "Do it differently next time" },
+  ] as const,
+  caughtUp: (n: number) => (n ? `All caught up. ${n} thing${n === 1 ? "" : "s"} moving.` : "All caught up."),
 };
