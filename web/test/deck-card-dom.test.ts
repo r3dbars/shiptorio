@@ -115,3 +115,26 @@ test("a hold card needs a held press or a full swipe, never a tap or a flick", a
   expect(t.got).toEqual(["approve:f"]);
   t.h.destroy();
 });
+
+test("?px=1 draws the pixel card (canvas plate, buttons, dots); ?px=0 keeps the painted one", async () => {
+  const had = Object.getOwnPropertyDescriptor(globalThis, "location");
+  try {
+    Object.defineProperty(globalThis, "location", { configurable: true, value: new URL("http://localhost/deck.html?px=1") });
+    const t = await mount();
+    t.h.show(card("g", 1));
+    expect(t.host.querySelector(".ironcard")!.classList.contains("px")).toBe(true);
+    expect(t.live()!.querySelectorAll(":scope > .ic-pxbg").length).toBe(1);
+    expect(t.live()!.querySelectorAll(".ic-btn > .ic-pxbg").length).toBe(2);
+    expect(t.live()!.querySelectorAll(".ic-dot > .ic-pxdot").length).toBe(3);
+    t.h.destroy();
+    Object.defineProperty(globalThis, "location", { configurable: true, value: new URL("http://localhost/deck.html?px=0") });
+    const u = await mount();
+    u.h.show(card("h"));
+    expect(u.host.querySelector(".ironcard")!.classList.contains("px")).toBe(false);
+    expect(u.live()!.querySelector(".ic-pxbg")).toBeNull();
+    u.h.destroy();
+  } finally {
+    if (had) Object.defineProperty(globalThis, "location", had);
+    else delete (globalThis as Record<string, unknown>).location;
+  }
+});

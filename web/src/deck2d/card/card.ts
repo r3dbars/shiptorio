@@ -6,8 +6,12 @@
 // a ghost while the source deals the next one, which slides up from below. One answer per card, ever.
 // show(null) right after an answer says "All caught up" for a moment, then the card steps aside for the caption.
 // A hold card ships real code (a merge): Approve takes a held press (or held →), or a swipe nearly all the way across.
+// ?px=1 (the pixel canvas): the plate, buttons and dots are drawn in code in the 48 colors at a whole-number scale
+// (pixel.ts), and the card only moves in whole art px, never tilts. ?px=0 is the painted look below, unchanged.
 
 import type { CardView, MountCard } from "../contract";
+import { pixelOn } from "../../flags";
+import { cardScale, paintButton, paintDot, paintPlate, pixelLayer } from "./pixel";
 import "./card.css";
 
 const SWIPE_SHARE = 0.28; // let go past this share of the card's width to answer
@@ -61,7 +65,11 @@ interface Face {
   approve: HTMLButtonElement;
   no: HTMLElement;
   yes: HTMLElement;
+  px?: { redrawLater(): void }; // pixel mode: repaint the Later button when it lights up or goes dark
 }
+
+// pixel mode is decided once per page; the scale follows the window
+let PX = false;
 
 function face(): Face {
   const root = el("section", "ic-card");
@@ -78,7 +86,14 @@ function face(): Face {
   approve.innerHTML = '<i class="ic-fill" aria-hidden="true"></i><b>Approve</b> <span aria-hidden="true">→</span>';
   actions.append(later, approve);
   root.append(title, dots, line, actions);
-  return { root, title, dots, line, later, approve, no: later.querySelector("b")!, yes: approve.querySelector("b")! };
+  const f: Face = { root, title, dots, line, later, approve, no: later.querySelector("b")!, yes: approve.querySelector("b")! };
+  if (PX) {
+    pixelLayer(root, cardScale, paintPlate);
+    const l = pixelLayer(later, cardScale, (c, w, h) => paintButton(c, w, h, later.classList.contains("lit")));
+    pixelLayer(approve, cardScale, (c, w, h) => paintButton(c, w, h, true));
+    f.px = { redrawLater: l.redraw };
+  }
+  return f;
 }
 
 function fill(f: Face, card: View) {
@@ -100,12 +115,27 @@ function setDots(f: Face, dots: CardView["dots"], pop?: number) {
   if (!dots || dots.need <= 0) return void f.dots.replaceChildren();
   const need = Math.min(8, dots.need);
   f.dots.setAttribute("aria-label", `${Math.min(dots.have, dots.need)} of ${dots.need} approvals toward automatic`);
-  f.dots.replaceChildren(...Array.from({ length: need }, (_, i) => el("span", `ic-dot${i < dots.have ? " on" : ""}${i === pop ? " pop" : ""}`)));
+  f.dots.replaceChildren(...Array.from({ length: need }, (_, i) => {
+    const d = el("span", `ic-dot${i < dots.have ? " on" : ""}${i === pop ? " pop" : ""}`);
+    if (PX) {
+      // green only once this kind runs on its own (every dot filled); brass while you're still earning it
+      const cv = el("canvas", "ic-pxdot");
+      cv.width = 7;
+      cv.height = 7;
+      const c = cv.getContext("2d");
+      if (c) paintDot(c, i >= dots.have ? "off" : dots.have >= dots.need ? "done" : "on");
+      d.append(cv);
+    }
+    return d;
+  }));
 }
 
 export const mountCard: MountCard = (host, handlers) => {
-  const wrap = el("div", "ironcard");
+  PX = pixelOn();
+  const wrap = el("div", `ironcard${PX ? " px" : ""}`);
   wrap.setAttribute("aria-live", "polite");
+  const setScale = () => wrap.style.setProperty("--p", `${cardScale()}px`);
+  if (PX) { setScale(); window.addEventListener("resize", setScale); }
   host.appendChild(wrap);
 
   let shown: View | null = null;
@@ -151,7 +181,9 @@ export const mountCard: MountCard = (host, handlers) => {
     f.root.style.setProperty("--lean-r", String(Math.max(0, lean)));
     f.root.style.setProperty("--lean-l", String(Math.max(0, -lean)));
     f.approve.classList.toggle("lit", lean > 0.15);
+    const was = f.later.classList.contains("lit");
     f.later.classList.toggle("lit", lean < -0.35);
+    if (was !== f.later.classList.contains("lit")) f.px?.redrawLater();
   };
 
   const answer = (a: Answer) => {
@@ -168,7 +200,7 @@ export const mountCard: MountCard = (host, handlers) => {
     const m = f.root.style.transform.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/);
     f.root.style.setProperty("--fx", `${m ? m[1] : 0}px`);
     f.root.style.setProperty("--fy", `${m ? m[2] : 0}px`);
-    f.root.style.setProperty("--ft", `${m ? Math.max(-MAX_TILT, Math.min(MAX_TILT, Number(m[1]) * TILT_PER_PX)) : 0}deg`);
+    f.root.style.setProperty("--ft", `${m && !PX ? Math.max(-MAX_TILT, Math.min(MAX_TILT, Number(m[1]) * TILT_PER_PX)) : 0}deg`);
     f.root.style.transform = "";
     setLean(f, a === "approve" ? 1 : -1);
     if (a === "approve" && card.dots && card.dots.have < card.dots.need) {
@@ -206,8 +238,14 @@ export const mountCard: MountCard = (host, handlers) => {
       drag.t = now;
       drag.dx = e.clientX - drag.x0;
       drag.dy = (e.clientY - drag.y0) * 0.2;
-      const tilt = still() ? 0 : Math.max(-MAX_TILT, Math.min(MAX_TILT, drag.dx * TILT_PER_PX));
-      f.root.style.transform = `translate(${drag.dx}px, ${drag.dy}px) rotate(${tilt}deg)`;
+      if (PX) {
+        // whole art px only, sideways only, no tilt
+        const p = cardScale();
+        f.root.style.transform = `translate(${Math.round(drag.dx / p) * p}px, 0px)`;
+      } else {
+        const tilt = still() ? 0 : Math.max(-MAX_TILT, Math.min(MAX_TILT, drag.dx * TILT_PER_PX));
+        f.root.style.transform = `translate(${drag.dx}px, ${drag.dy}px) rotate(${tilt}deg)`;
+      }
       setLean(f, leanOf(drag.dx, drag.w, !!shown?.hold));
     });
     const end = (e: PointerEvent, cancel: boolean) => {
@@ -262,6 +300,7 @@ export const mountCard: MountCard = (host, handlers) => {
       if (performance.now() - answeredAt < AFTER_ANSWER_MS && !caughtUp) {
         const root = el("section", "ic-card ic-in after ic-empty");
         root.append(el("h2", "ic-title", "All caught up"), el("p", "ic-line", "Nothing is waiting on you."));
+        if (PX) pixelLayer(root, cardScale, paintPlate);
         wrap.appendChild(root);
         caughtUp = { root, timer: setTimeout(() => { if (caughtUp?.root === root) { caughtUp = null; leave(root, "down"); } }, CAUGHT_UP_MS) };
       }
@@ -270,6 +309,7 @@ export const mountCard: MountCard = (host, handlers) => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", stopHold);
+      window.removeEventListener("resize", setScale);
       stopHold();
       clearCaughtUp();
       wrap.remove();
