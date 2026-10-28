@@ -454,6 +454,10 @@ secret-scan counts and validation receipts are recorded in the PR; see [security
 
 Day 2 gauntlet trust checkpoint: pinned 15 Testing patches (10 bad, 5 good), executable witnesses and a live production-reviewer harness. Results and limitations are generated in [EVAL.md](../EVAL.md) from raw receipts; no production reviewer changes.
 
+## Codex private CPU preparation on dev — PR #428
+
+Rebased only the four original adapter commits onto updated isolated-test source #354, keeping the nine-file measurement delta separate from historical unrelated UI work. Local projection tests pass (four tests,28 assertions), and the private real-workerd probe passes signed webhook, heartbeat, empty claim, native alarm, replay/argument/public-route denial and zero native egress. No remote caller, resource/configuration change or measurement was authorized or executed; the historical A/B pair and30% target remain unproven. Merge after #354 and current dev checks; no production promotion.
+
 ## Testing proving ground (Codex, 2026-10-27)
 
 [Testing PR #18](https://github.com/r3dbars/Testing/pull/18) adds CI and new tests only: executable README examples, source/built CLI coupon checks, and fixtures proving the gate rejects #12's silently ignored `--coupon SAVE10` form. Nine tests, types, build, and five gate fixtures pass locally; the real README gate remains red on main's stale npm Setup until the separately owned README rework lands. No merge of #12/#13 was attempted (#13 was already merged at inspection). All ten ladder drafts (2 docs, 3 reproduced bugs, 3 tests, 2 tiny features), scopes, and acceptance lines are in #18's description. Justin explicitly asked to hold publication until the queue clears: the live check found 12 stuck queued items and shared usage of 214/400 calls, 956879/1000000 tokens. Open nothing until a fresh queue/budget check permits the first batch, then release 3/3/3/1. Testing #18 stays draft and unmerged until its real README check is green; these receipts do not certify clean factory ships or an autonomy level-up.
@@ -608,3 +612,5 @@ only moves on a `dev → main` promotion, which runs the full suite and gets the
 - 2026-10-27 — Codex: planner outage recovery builds on #312 with classified cooldowns, a two-minute planning deadline, persisted automatic resumption (including raised caps without refunding unknown spend), one calm resting card, and deterministic bottleneck fallback. Small scope exceptions: factory.ts wires durable jobs/cards/alarms; web/src/source/live.ts formats the resting deadline in the browser's timezone. Moves the Oct 27 live-loop reliability checkpoint forward.
 
 - 2026-10-28 — Codex: #371 rebased onto dev, retaining admin stops, explicit base-refresh provenance, native model JSON formats and websocket sequence guards. Raised call/token/spend caps resume parked plans without refunding ambiguous paid calls; focused stop/quota/recovery tests cover the new dev integration.
+
+Retains production-disabled negative-ID identities and scoped fixture delegation while preserving current administrator controls and request redaction. The bot workflow now pins existing reviewed action SHAs and disables persisted checkout credentials. No fixture resources or configuration were changed. Local proof and exact-head dev CI are required before merge.
