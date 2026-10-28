@@ -56,7 +56,7 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(v2.jam).toBe("review");
   expect(review.state).toBe("jammed");
   expect(review.waiting).toBe("REVIEW WAITING");
-  expect(review.items.length).toBeGreaterThanOrEqual(5);
+  expect(review.items.length).toBeGreaterThanOrEqual(4); // story CALL_PILE (#549 lowered it to 4)
   expect(review.items.slice(1).every((i) => i.look === "wait")).toBe(true);
   expect(v2.card!.dots).toEqual({ have: 0, need: 3 });
   expect(v2.caption).toBeNull(); // the card talks while it's up
