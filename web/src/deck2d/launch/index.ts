@@ -100,7 +100,7 @@ export const createLayer: CreateLayer = (art: ArtLoader, bus: DeckBus): DeckLaye
     }
     const was = p;
     if (p < 0 || target < p || preview) p = target; // first frame, a reset or a scrub: jump
-    else p = Math.min(target, p + dt / 12); // a big jump forward still plays, just quicker
+    else p = Math.min(target, p + dt / 6); // a big jump forward still plays, just quicker
     if (was >= 0 && p > was) cues(was, p);
     for (const b of bits) { b.t += dt; b.x += b.vx * dt; b.y += b.vy * dt; if (b.kind !== "dust") b.vy += (b.kind === "rock" ? 900 : 600) * dt; else b.vx *= 0.98; }
     for (let i = bits.length - 1; i >= 0; i--) if (bits[i].t >= bits[i].life) bits.splice(i, 1);

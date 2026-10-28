@@ -6,7 +6,7 @@
 //   tower   the launch tower goes up in three lifts inside scaffolding
 //   rocket  the crane hauls a rocket up from the clouds, swings it over and lowers it onto the ring
 
-export const LAUNCH_BUILD_SECONDS = 26; // a good pace for the whole thing at speed 1 (story: islandProgress += dt / this)
+export const LAUNCH_BUILD_SECONDS = 12; // the whole build at speed 1 (story: islandProgress += dt / this); keep it short, the bottleneck is the point
 
 export type Phase = "none" | "rise" | "bridge" | "tower" | "rocket" | "done";
 export const PHASES: { phase: Exclude<Phase, "none" | "done">; from: number; to: number }[] = [
