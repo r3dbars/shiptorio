@@ -1,6 +1,24 @@
 # Decisions and open items
 
-- 2026-10-27: The 12-card cap reserves at most one existing eligible runner decision
+- 2026-10-27 deployment recovery: external merge #427 put unverified UI at main
+  `c5e23309`. Cancellation of Deploy40604211672 raced Cloudflare acceptance.
+  [Rollback40604702919](https://github.com/r3dbars/shiptorio/actions/runs/40604702919)
+  restored verified `eb6a820`; live version and anonymous401 confirmed.
+  Root temporarily set repository `DEPLOY_ENABLED=false` to prevent another
+  unverified main deployment. Preserve merged history in repair #445; restore
+  `DEPLOY_ENABLED=true` only after its current-main combined checks pass, then
+  deploy main and verify the exact live SHA. No other Worker was changed.
+
+- 2026-10-27: A full governance/escalation window can no longer hide the only real
+  runner plan or approval. Keep the existing passive-alert replacement preference,
+  then reserve the lowest-ranked non-merge slot when needed. This only changes the
+  visible 12-card window: proposals, choices, defer counts and job state stay intact.
+  Merge-gate decisions retain priority; twelve merge-gate cards still own all twelve
+  slots. Spark ordering, suppression and launch proof are unchanged.
+
+
+- 2026-10-27 (historical policy, superseded by the governance-window rule above):
+  The 12-card cap reserves at most one existing eligible runner decision
   when passive source alerts would hide it. Awaiting plan consent takes precedence
   over a new planning proposal; only a passive unblock/Look later slot can be replaced.
   Score order and Spark ordering remain intact, as do suppression, explicit escalation
@@ -423,3 +441,17 @@ production config; provider key values, revocations and permissions are unchange
 ## 2026-10-26 — Foundry S-rocket identity
 
 Justin selected the third refined rocket/S logo and **“A little play. A lot shipped.”** He asked Codex to implement it as code across the title screen, company logo, app titles and overlays, and merge it. The design uses dark enamel, brass, pipe rails and larger industrial headings; the existing factory artwork remains. See `docs/art/FOUNDRY-BRAND.md` for source assets and typography.
+
+Load-gate repair (2026-10-28): publish a decision deck and its top card only when
+that exact serialized payload changes within the live Factory instance. The first
+publication and every new socket's full snapshot remain; tick/bottleneck telemetry
+continues. Every actual frame still revalidates the session and repository access.
+This removes duplicate publication work rather than caching authorization or changing
+load budgets. CI profile timing is sampled evidence, not billed production CPU.
+A newly registered redaction secret invalidates those publication stamps through a
+per-instance monotonic policy revision, so the same raw card is sent again with the
+new scrubbing policy. Registering the same secret twice does not trigger new frames.
+Publication deduplication also tracks each pending frame by object identity. If
+cursor allocation or queued delivery rejects, only that publication's stamp is
+released for retry; an older failure cannot clear a newer stamp after an A/B/A
+payload sequence. Failures are reported and the next unchanged refresh retries.

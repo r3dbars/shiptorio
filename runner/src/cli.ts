@@ -290,6 +290,7 @@ async function execute(job: Job, pair: Pairing) {
     if (proof) {
       await Bun.write(resolve(root, ".work", `${job.id}.verify.log`), proof.logTail, { mode: 0o600 });
       console.log(`Verify bay: base fails=${proof.failsOnBase}, head passes=${proof.passesOnHead}`);
+      if (job.refreshBase && (!proof.failsOnBase || !proof.passesOnHead)) throw new Error("Base refresh requires fresh base-failing and head-passing proof");
       if (verifyPaths.length && !proof.passesOnHead) throw new Error("Regression recipe failed on the fix commit");
     }
     if (JSON.stringify(await snapshotApproved(sandbox, paths)) !== JSON.stringify(frozen)) throw new Error("Checks changed approved files");

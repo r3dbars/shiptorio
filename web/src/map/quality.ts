@@ -11,6 +11,15 @@ const CAP = 1000 / 30;
 const IDLE_AFTER = 4000; // ms without input before a phone drops to 30 fps
 const SLOW = 24; // ms; an average above this for 60 frames in a row steps down a tier
 const WARMUP = 3000;
+// Repeated foreground stalls can be too slow to enter the ordinary average path.
+// Two 0.5–2s frames after warm-up use the existing lowest tier. Longer gaps are
+// treated as suspension/clock jumps; one isolated stall never changes the look.
+const STALL_MIN = 500;
+const STALL_MAX = 2000;
+// Tier 2 alone can still overwhelm a severe device. Four continuously slow
+// foreground frames earn a smaller scene target; one stall or sleep never does.
+const SEVERE_MIN = 250;
+const SEVERE_FRAMES = 4;
 
 export class FrameGovernor {
   tier = 0;
@@ -19,6 +28,10 @@ export class FrameGovernor {
   private lastInput = performance.now();
   private n = 0;
   private slowFrames = 0;
+  private stalledFrames = 0;
+  private severeFrames = 0;
+  private severeDevice = false;
+  get severe() { return this.severeDevice; }
   private readonly born = performance.now();
 
   constructor(private readonly phone: boolean) {
@@ -39,9 +52,19 @@ export class FrameGovernor {
     const idle = this.phone && !moving && now - this.lastInput > IDLE_AFTER;
     const capped = this.tier >= 2 || idle;
     const gap = now - this.lastDraw;
+    const foreground = typeof document === "undefined" || document.visibilityState === "visible";
+    if (!foreground || !Number.isFinite(gap) || gap < 0 || gap > STALL_MAX) this.severeFrames = 0;
     if (capped && gap < CAP - 4) return false;
     this.lastDraw = now;
     this.n++;
+    const severe = this.tier === 2 && foreground && this.avg !== -Infinity && now - this.born > WARMUP
+      && gap >= SEVERE_MIN && gap <= STALL_MAX;
+    this.severeFrames = severe ? this.severeFrames + 1 : 0;
+    if (this.severeFrames >= SEVERE_FRAMES) this.severeDevice = true;
+    const stalled = this.tier < 2 && foreground && this.avg !== -Infinity && now - this.born > WARMUP
+      && gap >= STALL_MIN && gap <= STALL_MAX;
+    this.stalledFrames = stalled ? this.stalledFrames + 1 : 0;
+    if (this.stalledFrames >= 2) this.tier = 2;
     // only uncapped frames say how fast the device really is; skip long gaps (tab switches)
     // and not during the first seconds, while shaders compile and the island builds
     if (!capped && gap < 500 && this.avg !== -Infinity && now - this.born > WARMUP) {

@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { HoldClock } from "../src/ui/holdLaunch";
+import { submitWhenUnheld } from "../src/ui/holdRender";
 
 const KEYS = ["window", "document", "navigator", "HTMLElement", "Element", "Node", "MouseEvent", "KeyboardEvent", "PointerEvent", "FocusEvent", "Event", "CustomEvent", "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame", "IS_REACT_ACT_ENVIRONMENT"] as const;
 const saved = new Map<string, PropertyDescriptor | undefined>();
@@ -50,19 +51,20 @@ function fakeClock() {
   return { clock, to, timers };
 }
 
-async function mount(clock: HoldClock, card = "launch:7") {
+async function mount(clock: HoldClock, card = "launch:7", kind: "launch" | "build" = "launch") {
   const React = await import("react");
   const { act } = React;
   const { createRoot } = await import("react-dom/client");
   const { HoldLaunch } = await import("../src/ui/Attention");
+  const { BuildHold } = await import("../src/ui/Buildout");
   const { SoundCaptions } = await import("../src/ui/SoundCaptions");
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
   const launched: string[] = [];
-  const render = (c: string) => act(() => root.render(<><HoldLaunch card={c} label="Launch #7: webhook tests" clock={clock} onLaunch={(id) => launched.push(id)} /><SoundCaptions /></>));
+  const render = (c: string) => act(() => root.render(<>{kind === "launch" ? <HoldLaunch card={c} label="Launch #7: webhook tests" clock={clock} onLaunch={(id) => launched.push(id)} /> : <BuildHold card={c} label="Build it" clock={clock} onBuild={() => launched.push(c)} />}<SoundCaptions /></>));
   await render(card);
-  const button = () => host.querySelector("button.alaunch") as HTMLButtonElement;
+  const button = () => host.querySelector(kind === "launch" ? "button.alaunch" : "button.bo-hold") as HTMLButtonElement;
   const fire = (ev: Event) => act(() => { button().dispatchEvent(ev); });
   return {
     launched,
@@ -146,7 +148,7 @@ test("a real full hold plays exactly four countdown clanks and submits one reque
     expect(play.mock.calls.filter(([s]) => s === "hold_go")).toHaveLength(1);
     expect(play.mock.calls.filter(([s]) => s === "hold_cancel")).toHaveLength(0);
     expect(b.launched).toEqual(["launch:7"]);
-  } finally { await b.unmount(); tick.mockRestore(); play.mockRestore(); }
+  } finally { await b.key("keyup"); await b.unmount(); tick.mockRestore(); play.mockRestore(); }
 });
 
 test("cancel then re-arm resets the countdown and captions distinguish requests from launches", async () => {
@@ -177,5 +179,47 @@ test("cancel then re-arm resets the countdown and captions distinguish requests 
     expect(play.mock.calls.filter(([s]) => s === "hold_cancel")).toHaveLength(1);
     expect(play.mock.calls.filter(([s]) => s === "hold_go")).toHaveLength(1);
     expect(b.launched).toEqual(["launch:7"]);
-  } finally { await b.unmount(); tick.mockRestore(); play.mockRestore(); }
+  } finally { await b.key("keyup"); await b.unmount(); tick.mockRestore(); play.mockRestore(); }
+});
+
+test("mounted consent controls yield scene submission and unmount always releases it", async () => {
+  const { submitWhenUnheld } = await import("../src/ui/holdRender");
+  const { BuildHold } = await import("../src/ui/Buildout");
+  const { act } = await import("react");
+  const { createRoot } = await import("react-dom/client");
+  // Launch uses the existing real component fixture; both keyboard and pointer
+  // native presses enter the same unchanged HoldGesture consent controller.
+  const launch = await mount(fakeClock().clock);
+  try {
+    await launch.key("keydown");
+    expect(submitWhenUnheld(() => {})).toBe(false);
+  } finally { await launch.unmount(); }
+  expect(submitWhenUnheld(() => {})).toBe(true);
+
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  await act(() => root.render(<BuildHold card="tunnel" label="Build" clock={fakeClock().clock} onBuild={() => {}} />));
+  try {
+    await act(() => host.querySelector("button")!.dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true, isPrimary: true, button: 0, pointerId: 1,
+    })));
+    expect(submitWhenUnheld(() => {})).toBe(false);
+  } finally { await act(() => root.unmount()); host.remove(); }
+  expect(submitWhenUnheld(() => {})).toBe(true);
+});
+
+for (const kind of ["launch", "build"] as const) test(`${kind}: completed physical hold keeps GL yielded through unmount until the real pointer ends`, async () => {
+  const c = fakeClock(), m = await mount(c.clock, "A", kind);
+  let unmounted = false;
+  const up = (pointerId: number) => window.dispatchEvent(new PointerEvent("pointerup", { pointerId, bubbles: true }));
+  try {
+    await m.act(() => m.button().dispatchEvent(new PointerEvent("pointerdown", { pointerId: 41, isPrimary: true, button: 0, bubbles: true })));
+    await m.act(() => c.to(1000));
+    expect(m.launched).toEqual(["A"]);
+    expect(submitWhenUnheld(() => {})).toBe(false);
+    await m.unmount(); unmounted = true;
+    expect(submitWhenUnheld(() => {})).toBe(false);
+    up(99); expect(submitWhenUnheld(() => {})).toBe(false);
+    up(41); expect(submitWhenUnheld(() => {})).toBe(true);
+  } finally { up(41); if (!unmounted) await m.unmount(); }
 });
