@@ -452,3 +452,13 @@ export function burst(target: THREE.Object3D, opts: BurstOpts = {}): BurstRun {
     cancel: end,
   };
 }
+
+/** One of each thing a burst draws (arcs, sparks, flash, ring), for the scene to compile at load (ShaftScene.warm). */
+export function burstWarmups(): THREE.Object3D[] {
+  const add = () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false }));
+  const sparks = new THREE.InstancedMesh(box, add(), 1);
+  sparks.setColorAt(0, new THREE.Color(0xffffff));
+  return [sparks, new THREE.InstancedMesh(box, add(), 1), new THREE.Mesh(box, add()), flash];
+}

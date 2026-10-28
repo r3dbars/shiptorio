@@ -49,8 +49,10 @@ export function fullPlan(sp: ShaftPlan): ShaftPlan {
   const sources = p.sources?.includes("github") ? p.sources : ["github", ...(p.sources ?? [])];
   const first = assemblers[0].id;
   // a plant read off the state before its builder stands feeds nothing yet: it's the first builder's
-  // and a plant feeding the placeholder planner feeds the skeleton's, or the key flips mid-build and the whole shaft rebuilds
-  const power = (p.power ?? []).map((x) => (x.type === "dynamo" && !x.feeds?.length ? { ...x, feeds: [first] } : x.feeds?.includes("planner") && planner.id !== "planner" ? { ...x, feeds: x.feeds.map((f) => (f === "planner" ? planner.id : f)) } : x));
+  // feeds named before their machine stands (plan.ts says "planner" until the splitter exists) point at the
+  // placeholder, so the key stays put and the shaft isn't rebuilt mid-build when the real plant arrives
+  const fed = (ids: string[] | undefined) => ids?.map((id) => (id === "planner" ? planner.id : id));
+  const power = (p.power ?? []).map((x) => (x.type === "dynamo" && !x.feeds?.length ? { ...x, feeds: [first] } : { ...x, feeds: fed(x.feeds) }));
   if (!power.some((x) => x.type === "steam")) power.unshift({ id: SKELETON.steam, type: "steam", feeds: [planner.id] });
   if (!power.some((x) => x.type !== "steam" && x.feeds?.includes(first))) power.push({ id: SKELETON.dynamo, type: "dynamo", feeds: [first], harness: "claude_code" });
   for (const x of power) labels[x.id] ??= x.type === "dynamo" ? "DYNAMO" : x.type.toUpperCase();
@@ -282,6 +284,26 @@ export class Buildout {
       this.moment.burst?.cancel();
       this.moment.anchor?.removeFromParent();
       this.moment = { ...this.moment, phase: "chalk", t: 0, holders: [], pieces: [], runs: [], burst: null, anchor: null };
+    }
+  }
+
+  /** Run one draw with every hidden machine showing and unculled, so their shaders compile and link now, at load,
+   *  and revealing one mid-build never stalls the frame (and the player's hold) on a compile. */
+  precompile(draw: (holders: THREE.Object3D[]) => void) {
+    const holders = [...this.hiddenStations].map((id) => this.I!.stations[id].holder);
+    if (!holders.length) return; // returning factories need no construction warm-up
+    const culled: THREE.Object3D[] = [];
+    for (const h of holders) {
+      h.visible = true;
+      h.traverse((o) => {
+        if (o.frustumCulled) (o.frustumCulled = false), culled.push(o);
+      });
+    }
+    try {
+      draw(holders);
+    } finally {
+      for (const o of culled) o.frustumCulled = true;
+      for (const h of holders) h.visible = false;
     }
   }
 
