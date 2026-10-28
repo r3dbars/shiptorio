@@ -68,3 +68,17 @@ it("rechecks pause, lifecycle and GitHub cooldown between stations without selec
     expect(events).toEqual(["first:verify"]);
   }
 });
+
+it("caps a three-station path at two and never starts AI or another PR as a third station", async () => {
+  const { f, events } = fixture();
+  f.state.items[0].inspection.checks = [{ id: "test-check", state: "pending", reason: "waiting" }];
+  f.runGauntlet = async (target: Item) => {
+    const gate = nextGate(target); events.push(`${target.id}:${gate}`);
+    const advanced = gate === "checks" ? { ...target, inspection: { ...target.inspection!, checks: target.inspection!.checks!.map(c => ({ ...c, state: "passed" })) } }
+      : setStage(target, "verify", "passed", "proof");
+    f.state.items[0] = advanced; return advanced;
+  };
+  await f.runGauntletBurst();
+  expect(events).toEqual(["first:checks", "first:verify"]);
+  expect(nextGate(f.state.items[0])).toBe("ai");
+});

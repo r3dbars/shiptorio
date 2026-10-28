@@ -127,19 +127,18 @@ describe("live gauntlet in the Factory", () => {
 
       const saved = () => data.get("state") as FactoryState;
 
-      await f.alarm(); // verify bay
+      await f.alarm(); // verify → AI before the background comment retry
       expect(saved().items[0].inspection?.stages.find((s) => s.gate === "verify")?.state).toBe("passed");
-      alarm = null;
-      await f.alarm(); // AI review, then the launch card
       expect(saved().items[0].state).toBe("on_pad");
       expect(calls).toContain("POST /repos/r3dbars/demo/issues/99/comments");
-      // The first post and its credential retry failed: it's queued, logged in the decision log, and the next tick retries it.
-      expect((data.get("pendingReviewComments") as unknown[]).length).toBe(1);
+      // The post and credential retry failed and were recorded. The same alarm's
+      // background retry now follows foreground proof and recovers that queued comment.
       expect(saved().brain?.thoughts.some((t) => t.outcome.includes("didn't post"))).toBe(true);
-      alarm = null;
-      await f.alarm();
       expect(commentTries).toBe(3);
       expect(data.get("pendingReviewComments")).toEqual([]);
+      alarm = null;
+      await f.alarm();
+      expect(commentTries).toBe(3); // A later tick must not duplicate the comment.
       const card = events.filter((e) => e.type === "move").at(-1)!.move!;
       expect(card.options.map((o) => o.id)).toEqual(["launch", "later"]);
       expect(card.evidence).toHaveLength(3);

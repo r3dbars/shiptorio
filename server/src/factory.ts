@@ -2515,12 +2515,29 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   private gauntletRunning = false;
 
-  /** Runs the next pending station (verify bay, then AI review) for one PR per tick. */
-  private async runGauntlet(): Promise<void> {
+  /** Keep foreground proof moving before optional polling uses this installation's budget.
+   * At most two stations on one unchanged PR; background work still gets every tick. */
+  private async runGauntletBurst(): Promise<void> {
+    let target = this.state?.items.find(i => nextGate(i) && i.prNumber);
+    for (let count = 0; count < 2 && target; count++) {
+      if (Date.now() < this.githubRestUntil || await this.githubStopped() || await adminPaused(this.env.DB, this.meta?.repo)) return;
+      const gate = nextGate(target), head = target.inspection?.headSha, pr = target.prNumber;
+      if (!gate || !head || !pr) return;
+      const advanced = await this.runGauntlet(target);
+      if (!advanced || advanced.id !== target.id || advanced.prNumber !== pr || advanced.inspection?.headSha !== head || nextGate(advanced) === gate) return;
+      // A webhook may replace an inspection even on the same head. Only the
+      // station's exact published receipt can authorize the next station here.
+      target = this.state?.items.find(i => i.id === advanced.id && i.prNumber === pr && i.inspection === advanced.inspection && i.inspection?.headSha === head);
+    }
+  }
+
+  /** Runs one station, preserving every current-head/inspection fence. */
+  private async runGauntlet(target?: Item): Promise<Item | undefined> {
     if (this.gauntletRunning || !this.meta || !this.state) return;
-    const item = this.state.items.find((i) => nextGate(i) && i.prNumber);
+    const item = target ? this.state.items.find(i => i === target && nextGate(i) && i.prNumber) : this.state.items.find((i) => nextGate(i) && i.prNumber);
     if (!item) return;
     const gate = nextGate(item)!;
+    let advanced: Item | undefined;
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
     this.gauntletRunning = true;
     const pr = item.prNumber!;
@@ -2553,6 +2570,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const now = await currentInLane();
         if (!now) return;
         const { item: checked, ran } = runChecks(now, files);
+        advanced = checked;
         await this.patch({ items: [checked] });
         for (const r of ran) this.log(r.passed ? "success" : "warn", `${techById(r.id)?.name ?? r.id} ${r.passed ? "passed" : "sent back"} PR #${pr}: ${r.reason}`, item.id);
         if (checked.state === "rejected") await this.noteRework(checked);
@@ -2560,7 +2578,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
         const now = await currentInLane();
         if (!now) return;
-        await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
+        advanced = setStage(now, "verify", v.passed ? "passed" : "rework", v.reason);
+        await this.patch({ items: [advanced] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
         if (!v.passed) await this.noteRework(now);
       } else {
@@ -2581,11 +2600,13 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
         const afterComment = await currentInLane();
         if (!afterComment) return;
-        await this.patch({ items: [setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
+        advanced = setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason);
+        await this.patch({ items: [advanced] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
         if (verdict.verdict !== "pass") await this.noteRework(now);
       }
       await this.scheduleTick();
+      return advanced;
     } catch (e) {
       if (e instanceof BudgetError || e instanceof RateLimitError) {
         if (e instanceof RateLimitError) this.githubRest(e.retryAt);
@@ -3592,6 +3613,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (await this.githubStopped()) return;
     if (await adminPaused(this.env.DB,this.meta?.repo)) { await this.accountAlarm(Date.now()+TICK_MS); return; }
     if (!(await this.load())) return;
+    await this.githubGuard("runGauntlet", () => this.runGauntletBurst());
     await this.guard("pollPostHog", () => this.pollPostHog());
     await this.guard("tickSupport", () => this.tickSupport());
     await this.githubGuard("retryReviewComments", () => this.retryReviewComments());
@@ -3668,7 +3690,6 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       break;
     }
 
-    await this.githubGuard("runGauntlet", () => this.runGauntlet());
     await this.guard("orbitExpire", () => this.orbitExpire());
     await this.guard("autoLaunchPermitted", () => this.autoLaunchPermitted());
     await this.guard("offerGauntletMove", () => this.offerGauntletMove(true));
