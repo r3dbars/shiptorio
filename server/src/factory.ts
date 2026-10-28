@@ -71,7 +71,7 @@ import {
   type GoalGuess,
   type Goals,
 } from "@shiptorio/shared";
-import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, type AppCredentials } from "./github";
+import { commitToBranch, fileContent, gh, installationToken, inspectPullRequest, freshIssueInput, issueReporters, openIssues, openPullRequest, repoTree, runnerInstallationToken, pullRequestReadiness, type AppCredentials } from "./github";
 import { hasMachine, pickAssembler, SAFE_PATH, starterLine, upsert } from "./engine";
 import { layoutMap } from "./map";
 import { initialFactoryState } from "./factory-initialization";
@@ -83,7 +83,7 @@ import { ciReport, codeSearch, factoryBrief, issueComments, signalsBrief, treePa
 import { issueRevision, RunnerHarness, runnerPathAllowed, validLease, type RunnerJob, type RunnerReceipt } from "./runner-job";
 import { enforceRoute, geothermalGuard, harnessLabel, LOCAL_POWER_ID, looksSmall, ruleRoute } from "./geothermal";
 import { foldSignal, matchDistrict, oreWeight } from "./ore";
-import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, verifyFromDiff, withChecks } from "./gauntlet";
+import { canRework, proofComment, diffText, freshInspection, launchMove, liveStations, mergePullRequest, nextGate, prFiles, referencedFiles, researchMove, reviewComment, reviewDiff, reworkMove, runChecks, setStage, stageOf, stationsPassed, verifyFromDiff, withChecks } from "./gauntlet";
 import { autonomyView, emptyBook, laneOf, mayAutoLaunch, permitMove, permitReady, recordRework, recordShip, setPermit, snooze, earned, type PermitBook } from "./permits";
 import { escape, grantLevel, ladderOf, LEVEL_NAME, levelMove, levelReady, levelTap, lowerLevel, snoozeLevel } from "./levels";
 import { githubStatus, normalizeGitHub, type GitHubPayload } from "./sources/github";
@@ -2227,10 +2227,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const token = await installationToken(this.env, this.meta.installationId);
     for (const item of this.state!.items) {
       if (!["inspecting", "on_pad", "passed"].includes(item.state) || !item.prNumber || !(prNumbers.includes(item.prNumber) || (headSha && item.inspection?.headSha === headSha))) continue;
-      const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha);
+      const result = await inspectPullRequest(token, this.meta.repo, item.prNumber, headSha, this.state!.baseBranch);
       if (result.stale) continue;
       if (result.state === "pending") {
-        if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed") {
+        if (item.state !== "inspecting" || stageOf(item, "ci")?.state === "passed" || item.inspection?.headSha !== result.headSha) {
           await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(result.headSha), updatedAt: Date.now() }] });
         }
         continue;
@@ -2242,8 +2242,8 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       if (result.state === "passed") {
         if (item.branch?.startsWith("shiptorio/runner-")) {
           // Every check run reports in; only a new head (or the first green) restarts the gauntlet.
-          if (stageOf(item, "ci")?.state === "passed" && (!headSha || headSha === item.inspection?.headSha)) continue;
-          const fresh = { ...item, inspection: freshInspection(result.headSha) };
+          if (stageOf(item, "ci")?.state === "passed" && result.headSha === item.inspection?.headSha) continue;
+          const fresh = { ...item, state: "inspecting" as const, inspection: freshInspection(result.headSha) };
           await this.patch({ items: [setStage(fresh, "ci", "passed", result.summary)] });
           this.log("success", `CI inspector passed PR #${item.prNumber}. On to the verify bay.`, item.id);
           await this.scheduleTick();
@@ -2355,24 +2355,30 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     if (gate === "ai" && !sparkConfigured(this.env)) return; // waits for Spark power; the station shows the pile
     this.gauntletRunning = true;
     const pr = item.prNumber!;
-    const headSha = item.inspection!.headSha;
+    const inspection = item.inspection!;
+    const headSha = inspection.headSha;
     // Any await can let a webhook/reconciliation replace this inspection. Results
     // belong only to the commit and station that started the run.
-    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection?.headSha === headSha && nextGate(i) === gate);
+    const current = () => this.state!.items.find(i => i.id === item.id && i.prNumber === pr && i.inspection === inspection && nextGate(i) === gate);
     try {
       const token = await installationToken(this.env, this.meta.installationId);
+      const evidence = await inspectPullRequest(token, this.meta.repo, pr, headSha, this.state.baseBranch);
+      if (evidence.stale || evidence.state !== "passed") return;
       const files = await prFiles(token, this.meta.repo, pr);
       const jobs = (await this.runnerJobs()).filter(j => j.itemId === item.id);
       if (jobs.some(j => j.reworkPr === pr && ["planning", "awaiting_approval", "ready", "running"].includes(j.status))) return;
       const job = jobs.find(j => j.headSha === item.inspection?.headSha && j.status === "completed") ?? jobs.find(j => j.prUrl?.endsWith(`/pull/${pr}`) && !j.headSha);
       const builder = job?.harness === "codex" ? "Codex" : job?.harness === "claude_code" ? "Claude Code" : job?.harness === "local" ? "Local model" : "the planner";
       const lane = laneOf(files.map((f) => f.filename)) ?? undefined;
-      const currentInLane = () => {
+      const currentInLane = async () => {
+        if (!current()) return;
+        const refreshed = await inspectPullRequest(token, this.meta!.repo, pr, headSha, this.state!.baseBranch);
+        if (refreshed.stale || refreshed.state !== "passed") return;
         const now = current();
         return now ? { ...now, lane } : now;
       };
       if (gate === "checks") {
-        const now = currentInLane();
+        const now = await currentInLane();
         if (!now) return;
         const { item: checked, ran } = runChecks(now, files);
         await this.patch({ items: [checked] });
@@ -2380,7 +2386,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         if (checked.state === "rejected") await this.noteRework(checked);
       } else if (gate === "verify") {
         const v = verifyFromDiff(files.map((f) => f.filename), !!job, job?.proof);
-        const now = currentInLane();
+        const now = await currentInLane();
         if (!now) return;
         await this.patch({ items: [setStage(now, "verify", v.passed ? "passed" : "rework", v.reason)] });
         this.log(v.passed ? "success" : "warn", `Verify bay ${v.passed ? "passed" : "sent back"} PR #${pr}: ${v.reason}`, item.id);
@@ -2398,10 +2404,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
         const record = async (step: SparkStep) => this.broadcast({ type: "log", level: "info", text: step.result, at: step.at, actor: "spark", tool: step.tool, reason: step.reason, itemId: item.id });
         const verdict = await this.think("review", { title: `PR #${pr}: ${item.title}`, itemId: item.id, target: "review-1" }, () => reviewDiff(this.sparkEnv(), { title: item.title, body: item.body ?? "", builder }, diffText(files), context, box, record),
           v => ({ outcome: `${v.verdict === "pass" ? `Passed ${builder}'s PR` : `Sent ${builder}'s PR back`}${v.steps?.length ? ` after ${v.steps.length - 1} ${v.steps.length === 2 ? "look" : "looks"} at the repo` : ""}`, reason: v.reason }));
-        const now = currentInLane();
+        const now = await currentInLane();
         if (!now) return;
         await this.postReviewComment(token, pr, `${reviewComment(verdict, builder)}\n\n<!-- shiptorio-review-head:${now.inspection!.headSha} -->`, item.id);
-        const afterComment = currentInLane();
+        const afterComment = await currentInLane();
         if (!afterComment) return;
         await this.patch({ items: [setStage(afterComment, "ai", verdict.verdict === "pass" ? "passed" : "rework", verdict.reason)] });
         this.log(verdict.verdict === "pass" ? "success" : "warn", `AI review ${verdict.verdict === "pass" ? "passed" : "sent back"} PR #${pr}: ${verdict.reason}`, item.id);
@@ -2464,8 +2470,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     const now = Date.now();
     for (const item of s.items) {
       if (!item.prNumber || (await this.ctx.storage.get<number>(`gauntletDeferred:${item.id}`) ?? 0) > now) continue;
-      if (item.state === "on_pad" && item.inspection?.state === "passed") {
-        await this.publishGauntletMove(launchMove(item, now));
+      if (item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection)) {
+        const inspection = item.inspection;
+        let readiness = { ready: false, reason: "Waiting for GitHub to confirm this PR is ready to merge." };
+        try {
+          const token = await installationToken(this.env, this.meta!.installationId);
+          readiness = await pullRequestReadiness(token, this.meta!.repo, item.prNumber, inspection.headSha, s.baseBranch);
+        } catch (error) { this.log("warn", "GitHub merge readiness is unavailable; Launch is waiting.", item.id); report(error, "factory.merge_readiness_unavailable"); }
+        if (!this.state!.items.some(i => i.id === item.id && i.inspection === inspection && i.state === "on_pad")) continue;
+        // Replace carried Launch cards too. A transient GitHub hold must not erase
+        // completed runner/AI receipts or invent a rework scar.
+        await this.decisionData();
+        this.openMoves = this.openMoves!.filter(m => !(m.itemId === item.id && m.stage === "pad") || m.kind === (readiness.ready ? "ship" : "unblock"));
+        const move = launchMove(item, now);
+        await this.publishGauntletMove(readiness.ready ? move : {
+          ...move, title: `PR #${item.prNumber} is waiting on GitHub`, why: readiness.reason, kind: "unblock",
+          options: [{ id: "later", label: "Later", recommended: true, actions: [] }],
+        });
         await this.refreshDecisions();
         continue;
       }
@@ -2503,7 +2524,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
       return true;
     }
     if (optionId.startsWith("rework-") && move.options.some(o => o.id === optionId)) return false;
-    const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed";
+    const ready = optionId === "launch" && item.state === "on_pad" && item.inspection?.state === "passed" && stationsPassed(item.inspection);
     const overrule = optionId === "overrule" && item.state === "rejected";
     if (!ready && !overrule) return true;
     await this.launch(item, overrule ? "overrule" : "player");
@@ -2514,15 +2535,17 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   private async launch(item: Item, by: "player" | "overrule" | "autonomy"): Promise<void> {
     if (by === "autonomy" && !(await flagEnabled(this.env, "permits"))) return;
     if (!item.prNumber || !this.meta) return;
+    const launchingInspection = this.state!.items.find(current => current.id === item.id)?.inspection;
     try {
       const token = await installationToken(this.env, this.meta.installationId);
       const head = (await gh<{ head: { sha: string } }>(`/repos/${this.meta.repo}/pulls/${item.prNumber}`, token)).head.sha;
       if (by !== "overrule") {
+        if (!stationsPassed(item.inspection)) throw new Error("Current checks require complete station receipts.");
         if (item.inspection?.headSha !== head) {
           await this.patch({ items: [{ ...item, state: "inspecting", machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() }] });
           throw new Error("The PR changed after its checks ran. It goes back through the gauntlet.");
         }
-        const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head);
+        const checks = await inspectPullRequest(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
         if (checks.stale) throw new Error("The PR changed while its checks were being refreshed.");
         if (checks.state !== "passed") {
           const current = checks.state === "failed" ? setStage(item, "ci", "rework", checks.summary) : { ...item, state: "inspecting" as const, machineId: "ci-1", inspection: freshInspection(head), updatedAt: Date.now() };
@@ -2543,6 +2566,15 @@ class FactoryBase extends DurableObject<FactoryEnv> {
           throw new Error("The PR changed its permitted lane. A player must review the launch.");
         }
         await this.accountPut(`autoLaunch:${item.id}`, item.prNumber);
+      }
+      // Even an explicit overrule cannot bypass GitHub repository policy.
+      const readiness = await pullRequestReadiness(token, this.meta.repo, item.prNumber, head, this.state!.baseBranch);
+      if (!readiness.ready) {
+        await this.offerGauntletMove();
+        throw new Error(`Current checks: ${readiness.reason}`);
+      }
+      if (by !== "overrule" && !this.state!.items.some(current => current.id === item.id && current.prNumber === item.prNumber && current.inspection === launchingInspection && current.inspection?.headSha === head && current.state === "on_pad" && stationsPassed(current.inspection))) {
+        throw new Error("Current checks changed while launch was being refreshed.");
       }
       const mergeSha = await mergePullRequest(token, this.meta.repo, item.prNumber, head, item.title);
       const reason = by === "overrule" ? "You overruled the gauntlet and merged." : by === "autonomy" ? `Launch permit: ${item.lane}. Every station passed on this commit.` : "You merged at the merge gate.";
