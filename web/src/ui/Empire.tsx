@@ -5,6 +5,7 @@
 //
 // Behind a flag while Justin looks at it: ?empire=1 turns it on (and remembers), ?empire=0 off.
 
+import { previewOn } from "../flags";
 import { useEffect, useMemo, useState } from "react";
 import { rollup, stuckScore, summarizeIsland, type FactoryState, type IslandSummary } from "@shiptorio/shared";
 import type { SourceConfig } from "../source";
@@ -19,10 +20,11 @@ export function empireOn(search = location.search): boolean {
   const v = new URLSearchParams(search).get("empire");
   try {
     if (v === "1") localStorage.setItem(FLAG_KEY, "1");
-    if (v === "0") localStorage.removeItem(FLAG_KEY);
-    return v === "1" || (v !== "0" && localStorage.getItem(FLAG_KEY) === "1");
+    if (v === "0") localStorage.setItem(FLAG_KEY, "0");
+    const kept = localStorage.getItem(FLAG_KEY);
+    return v === "1" || (v !== "0" && (kept === "1" || (kept !== "0" && previewOn()))); // on at shiptorio.dev (flags.ts)
   } catch {
-    return v === "1";
+    return v === "1" || (v !== "0" && previewOn());
   }
 }
 

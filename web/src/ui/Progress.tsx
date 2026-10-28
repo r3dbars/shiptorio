@@ -3,6 +3,7 @@
 // (tomorrow's deck shrinking as trust grows) and unlocks. Plus an opt-in nudge when the bottleneck is you.
 // Behind ?progress=1 until it's on by default. Rules live in shared/src/progression.ts.
 
+import { previewOn } from "../flags";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   achieved,
@@ -59,8 +60,9 @@ export const progressProfile = (kind: "sim" | "live", login?: string | null, gue
 export function progressOn(): boolean {
   const q = new URLSearchParams(location.search).get("progress");
   if (q === "1" || q === "demo") store.set(ON_KEY, "1");
-  if (q === "0") store.set(ON_KEY, null);
-  return store.get(ON_KEY) === "1";
+  if (q === "0") store.set(ON_KEY, "0");
+  const kept = store.get(ON_KEY);
+  return kept === "1" || (kept !== "0" && previewOn()); // a preview feature: on at shiptorio.dev (flags.ts)
 }
 
 export interface Pop {

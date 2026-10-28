@@ -32,6 +32,18 @@ test("flag precedence, user isolation, defaults and fail-closed storage", async 
   expect((await readFlags(env as never, "alice")).research).toBe(false);
   expect(await flagEnabled({ CACHE: { get: async () => { throw new Error("offline"); } } } as never, "permits")).toBe(false);
 });
+test("FEATURES=all (shiptorio.dev) defaults every flag on, and KV false still kills it", async () => {
+  const values = new Map<string, string>();
+  const env = { FEATURES: "all", CACHE: { get: async (key: string) => values.get(key) ?? null } };
+  expect(await flagEnabled(env as never, "autonomy")).toBe(true);
+  expect(await flagEnabled(env as never, "brain", "alice")).toBe(true);
+  expect(await flagEnabled({ FEATURES: "all" } as never, "newFeatures")).toBe(true);
+  values.set(flagKey("brain"), "false");
+  expect(await flagEnabled(env as never, "brain", "alice")).toBe(false);
+  values.set(flagKey("autonomy", "alice"), "false");
+  expect(await flagEnabled(env as never, "autonomy", "alice")).toBe(false);
+  expect(await flagEnabled({ CACHE: env.CACHE } as never, "autonomy")).toBe(false);
+});
 test("health bypasses preview only for its exact path, reports degraded dependencies without details", async () => {
   const { env, request } = fixture();
   const healthy = await request("/api/health");

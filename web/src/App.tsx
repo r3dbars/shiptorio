@@ -137,7 +137,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
   const intro = introMode(cfg);
   // Build as you go (?buildout=1): nothing exists until you build it, one card guides each build, and the
   // counters and free camera wait until "Look around" after the first rocket (ui/Buildout.tsx).
-  const buildout = !intro && buildoutOn() && !simpleOn(); // the simple screen has no tour: you learn by doing (journey pick 1)
+  const buildout = !intro && buildoutOn(); // buildoutOn() is off under the simple screen: no tour, you learn by doing (journey pick 1)
   const [free, lookAround] = useFreeLook();
   // "Look around" frees it only once every build is done, so a fresh factory starts in the dark again
   const guided = buildout && !(free && !!state && stepFrom(state).id === LOOK);

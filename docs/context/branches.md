@@ -14,6 +14,23 @@ into main when I want to." Goal: as fast as possible, so he can iterate.
 2. Quick checks go green → merge (squash is fine on `dev`).
 3. Staging deploys shiptorio.dev in ~3 min. Justin plays it there.
 
+## New features are on on dev
+
+Justin, 2026-10-28: "can we just always have no flags by default? It's just annoying ... everything just pushed into
+dev, I can experiment with it all and see it all working together."
+
+- **Web:** `previewOn()` in `web/src/flags.ts` is true on shiptorio.dev, so every `feature("name")` is on there with no
+  URL params. Today that's the simple screen, the floating city art (`artpass`), progress and empire. shiptorio.com
+  keeps them off. `?name=0` turns one off anywhere (debugging), `?name=1` turns one on, `?preview=1` / `?preview=0`
+  picks the whole dev set on any host (localhost, e2e).
+- **Server:** the staging worker sets `FEATURES=all` (`server/wrangler.jsonc`), so every `FLAG_DEFAULTS` flag (brain,
+  autonomy, newFeatures, ...) defaults on there. A KV global `false` at /admin/flags is still a kill switch.
+- **Clash rule:** the simple screen has no tour (journey pick 1), so on dev a fresh visit goes straight to it; Build as
+  you go and the welcome tour play with `?simple=0`. `buildoutOn()` already folds that in.
+- **New features:** ship ON on dev from their first PR. Use `feature("name")`, never a bare `?name=1` check.
+- **Promoting:** a dev → main promotion keeps prod's defaults. Flipping prod is Justin's call: add the host to
+  `PREVIEW_HOSTS`, or flip one feature's default, in its own PR.
+
 ## Promote to production
 
 Open https://github.com/r3dbars/shiptorio/compare/main...dev?expand=1 and create the PR (a Claude thread can open it

@@ -18,6 +18,15 @@ runner reliability, limits/quota visibility, security). This supersedes the earl
 [`docs/context/`](docs/context/README.md). Commit and push often: many agents work here at once,
 so check open PRs and recent `main` commits before you start.**
 
+**New features ship ON on dev, no URL flag needed (Justin, 2026-10-28: "can we just always have no flags by
+default? ... everything just pushed into dev, I can experiment with it all").** On shiptorio.dev every preview feature
+is on; shiptorio.com keeps its defaults until a promotion flips them. Gate a new web feature with
+`feature("name")` from `web/src/flags.ts` (on at shiptorio.dev, `?name=0` / `?name=1` anywhere, `?preview=1` for the
+whole dev set on localhost), never a bare `?name=1` check. A new server flag goes in `FLAG_DEFAULTS` (prod default);
+staging's `FEATURES=all` turns it on there. Make it work alongside every other dev feature (the simple screen,
+the floating city art, progress, empire) and screenshot the plain shiptorio.dev path, not a flagged URL.
+See [`docs/context/branches.md`](docs/context/branches.md#new-features-are-on-on-dev).
+
 **The loop in one page: [`docs/LOOP.md`](docs/LOOP.md)** (visual: `docs/loop.html`). Ore → power → line →
 **verification gauntlet** (CI inspector, verify bay, AI review, merge gate, orbit watch) → rocket; fails ride the
 rework belt back to Spark with a scar tag; every station is clickable.
