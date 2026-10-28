@@ -137,19 +137,19 @@ export function rivet(g: Px, x: number, y: number, light: Color = "brass-3", dar
 
 /** Smoke: a few soft puffs drifting up and to the right from (x, y). p is the loop phase 0..1; heavy = jam smoke. */
 export function smoke(g: Px, x: number, y: number, p: number, heavy = false) {
-  const n = heavy ? 4 : 2;
+  // puffs are born small at the stack, swell, drift right and thin out; each has its own wobble so they never line up
+  const n = heavy ? 3 : 2;
   for (let k = 0; k < n; k++) {
-    const q = (p + k / n) % 1, rise = q * (heavy ? 13 : 10);
-    if (q > 0.92) continue;
-    const r = (heavy ? 1.8 : 1.1) + q * (heavy ? 2.6 : 1.6);
-    const cx = x + q * 6 + Math.sin(q * 6 + k) * 1.2, cy = y - rise;
-    const fade = q > 0.65 ? 1 : 0; // older puffs lose their dark side
+    const q = (p + k / n) % 1;
+    if (q > 0.9) continue;
+    const rise = q * (heavy ? 12 : 9), r = (heavy ? 1.3 : 0.8) + q * (heavy ? 2.4 : 1.5);
+    const cx = x + q * (heavy ? 7 : 5) + Math.sin(q * 9 + k * 2.1) * 1.4, cy = y - rise;
     for (let yy = Math.floor(cy - r); yy <= Math.ceil(cy + r); yy++) for (let xx = Math.floor(cx - r); xx <= Math.ceil(cx + r); xx++) {
       const dx = (xx + 0.5 - cx) / r, dy = (yy + 0.5 - cy) / r, d = dx * dx + dy * dy;
       if (d > 1) continue;
-      const v = 0.45 + 0.45 * (dx * 0.6 - dy * 0.6) + fade * 0.25 - (heavy ? 0.1 : 0);
-      if (!heavy && q > 0.5 && ((xx + yy) & 1)) continue; // thin wisp breaks up as it rises
-      tone(g, xx, yy, SMOKE, v);
+      if (q > 0.55 && d > 0.45 && ((xx + yy) & 1)) continue; // older puffs fray at the edge
+      if (!heavy && q > 0.5 && ((xx + yy) & 1)) continue; // a thin wisp breaks up as it rises
+      tone(g, xx, yy, SMOKE, 0.35 + 0.4 * (dx * 0.5 - dy * 0.6) + q * 0.3 - d * 0.15);
     }
   }
 }
