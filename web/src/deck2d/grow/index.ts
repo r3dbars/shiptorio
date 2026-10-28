@@ -161,6 +161,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     ctx.drawImage(im, sx, y0, w / G.s, y1 - y0, x, wy(G, y0) + dy, w, (y1 - y0) * G.s);
     ctx.globalAlpha = 1;
   }
+  const hash = (n: number) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
   // the new size's own art at world x (its sprite already shows the finished deck)
   const srcAt = (G: Geo, x: number) => x / G.s;
 
@@ -257,7 +258,10 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     for (let i = 0; i < n; i++) {
       const x = a + i * TILE, w = Math.min(TILE, capAt(gr.to) - x) + (PX ? 0 : 1), sx = srcAt(G, x);
       if (w <= (PX ? 0 : 1)) continue;
-      if (stag(t, T.rocks, i, n, 0.5) >= 1) blit(ctx, im, G, sx, x, w, "under"); // fused rock
+      const ro = stag(t, T.rocks, i, n, 0.5); // fused rock
+      if (PX && ro > 0 && ro < 1) { // one art px column at a time, so the leading edge is ragged rock, not a cut
+        for (let c = 0; c * 5 < w; c++) if (ro >= 0.2 + 0.8 * hash(x / 5 + c)) blit(ctx, im, G, srcAt(G, x + c * 5), x + c * 5, 5, "under");
+      } else if (ro >= 1) blit(ctx, im, G, sx, x, w, "under");
       const pk = stag(t, T.plates, i, n); // plates drop in
       if (pk > 0) blit(ctx, im, G, sx, x, w, "floor", off(-(1 - easeOut(pk)) * 60), fade(Math.min(1, pk * 3)));
       const rk = stag(t, T.rails, i, n, 0.5); // back rail drops, front rail rises
@@ -269,21 +273,44 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     }
   }
 
-  // pixel mode beams: soot-outlined iron girders and posts on the art grid, light on top (light from upper right)
+  // pixel mode beams: the hull's own warm iron, lit from the upper right. Each girder shows a top face and a
+  // bevelled front face with panel seams, rivets (light px over dark px) and grime dithered along the bottom;
+  // posts are banded dark -> light left to right, with X braces between them down to where the rock fuses
   function drawBeamsPx(ctx: CanvasRenderingContext2D, a: number, cap: number, yb: number, yf: number, ys: number) {
-    const [b0, b1, b2] = [snap(yb) - 10, snap(yf) - 10, snap(ys) - 5], w = cap - a, P = 5;
-    const girder = (y: number, h: number) => {
-      ctx.fillStyle = PALETTE.soot[0]; ctx.fillRect(a, y - P, w, h + 2 * P);
-      ctx.fillStyle = PALETTE.iron[2]; ctx.fillRect(a, y, w, h);
-      ctx.fillStyle = PALETTE.iron[4]; ctx.fillRect(a, y, w, P); // lit top edge
+    const P = 5, L = PALETTE.plate, B = PALETTE.brass, S = PALETTE.soot[0];
+    const px = (x: number, y: number, c: string, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(x, y, w * P, h * P); };
+    const cols = Math.round((cap - a) / P);
+    const girder = (y: number, h: number) => { // h art px tall: 1 top-face row + front face
+      px(a, y - P, S, cols, h + 2);
+      px(a, y, L[4], cols); // top face, sunlit
+      px(a, y + P, L[3], cols); // bevel: light inner top edge
+      if (h > 3) px(a, y + 2 * P, L[2], cols, h - 3);
+      for (let c = 0; c < cols; c++) px(a + c * P, y + (h - 1) * P, (c & 1) ? L[1] : L[0]); // grime checker
+      for (let c = 15; c < cols; c += 16) { px(a + c * P, y + P, L[1], 1, h - 2); px(a + (c + 1) * P, y + P, L[3], 1, h - 2); } // seams
+      const ry = y + Math.max(1, (h >> 1) - 1) * P;
+      for (let c = 3; c < cols; c += 6) { px(a + c * P, ry, B[4]); px(a + c * P, ry + P, L[0]); } // rivets
     };
-    girder(b0, 2 * P);
-    for (let x = a; x < cap; x += TILE) { // posts from the front girder down to where the rock fuses
-      ctx.fillStyle = PALETTE.soot[0]; ctx.fillRect(x, b1, 4 * P, b2 - b1 + 4 * P);
-      ctx.fillStyle = PALETTE.iron[1]; ctx.fillRect(x + P, b1, 2 * P, b2 - b1 + 3 * P);
-      ctx.fillStyle = PALETTE.brass[2]; ctx.fillRect(x + P, b1 + 2 * P, P, P); // rivet
+    const [g0, g1, g2] = [snap(yb) - 2 * P, snap(yf) - 2 * P, snap(ys) - P], h1 = 5, top = g1 + (h1 + 1) * P;
+    const posts: number[] = [];
+    for (let x = a; x < cap - 4 * P; x += TILE) posts.push(x);
+    // X braces first, so posts and girders sit on top of them
+    for (let k = 0; k + 1 < posts.length; k++) {
+      const x0 = posts[k] + 4 * P, x1 = posts[k + 1], n = Math.round((x1 - x0) / P), rows = Math.round((g2 - top) / P);
+      for (let c = 0; c < n; c++) {
+        const r = Math.round((c / Math.max(1, n - 1)) * (rows - 1));
+        px(x0 + c * P, top + r * P, L[1]); px(x0 + c * P, top + (r + 1) * P, S);
+        px(x0 + c * P, top + (rows - 1 - r) * P, L[2]); px(x0 + c * P, top + (rows - r) * P, S);
+      }
     }
-    girder(b1, 3 * P);
+    for (const x of posts) {
+      const rows = Math.round((g2 + 3 * P - g1) / P);
+      px(x - P, g1, S, 6, rows + 1);
+      [L[0], L[1], L[2], L[3]].forEach((c, k) => px(x + k * P, g1, c, 1, rows));
+      px(x, g1 + rows * P - P, L[0], 4); // dark foot, it sinks into the rock
+      for (let r = h1 + 3; r < rows - 2; r += 6) { px(x + 2 * P, g1 + r * P, B[4]); px(x + 2 * P, g1 + (r + 1) * P, L[0]); }
+    }
+    girder(g0, 3);
+    girder(g1, h1);
   }
 
   // the crane stands on the far end of the end cap, arm out over the sky (never over a station), and is gone
