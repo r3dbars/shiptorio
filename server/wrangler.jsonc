@@ -42,6 +42,7 @@
   "env": {
     "staging": {
       "name": "shiptorio-staging",
+      "services": [{ "binding": "TEST_FACTORY", "service": "shiptorio-fixture" }],
       "triggers": { "crons": ["17 4 * * *"] },
       "routes": [{ "pattern": "shiptorio.dev", "custom_domain": true }],
       "durable_objects": { "bindings": [{ "name": "FACTORY", "class_name": "Factory" }] },
@@ -51,6 +52,7 @@
         "PUBLIC_URL": "https://shiptorio.dev",
         // every feature flag defaults on here (server/src/flags.ts); production keeps FLAG_DEFAULTS
         "FEATURES": "all",
+        "TEST_USERS": "on",
         "ALLOWED_LOGINS": "r3dbars",
         "ADMIN_LOGINS": "r3dbars",
         "SPARK_BASE_URL": "https://api.meta.ai/v1",
