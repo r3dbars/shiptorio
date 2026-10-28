@@ -1,5 +1,6 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import { assertBuildEventPrefix, BUILDOUT_STEPS as STEPS } from '../contract/buildout-events';
+import { observeManualLaunch, type LaunchObservation } from '../contract/launch-observation';
 
 // Build As You Go (?buildout=1): the demo shop starts dark and empty, and every piece
 // the app needs gets built in front of the player while the guided issue rides through.
@@ -20,12 +21,13 @@ const watchBuilds = (page: Page) => page.addInitScript(() => {
 const builds = (page: Page): Promise<Build[]> => page.evaluate(() => (window as any).__builds);
 
 // Hold with a real mouse on desktop and real touch on phones, like the launch hold.
-async function hold(page: Page, info: TestInfo, button: ReturnType<Page['locator']>, until: () => Promise<boolean>) {
+async function hold(page: Page, info: TestInfo, button: ReturnType<Page['locator']>, until: () => Promise<boolean>, beforePress?: () => Promise<void>) {
   const box = await button.boundingBox();
   expect(box, 'hold button has a box').not.toBeNull();
   const point = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
   const touch = info.project.name === 'desktop' ? null : await page.context().newCDPSession(page);
   try {
+    await beforePress?.();
     if (touch) await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, id: 0 }] });
     else { await page.mouse.move(point.x, point.y); await page.mouse.down(); }
     await expect.poll(until, { timeout: 6_000 }).toBe(true);
@@ -37,6 +39,7 @@ async function hold(page: Page, info: TestInfo, button: ReturnType<Page['locator
 
 async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; shoot: boolean }) {
   const errors: string[] = [];
+  let launchCard: LaunchObservation | undefined;
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   if (opts.reduced) await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -77,7 +80,8 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
       if (await card.getAttribute('data-trigger') === 'hold')
         await expect(action.first(), `${id} advertises a real hold`).toHaveAttribute('data-buildout-action', 'hold');
       const kind = await action.first().getAttribute('data-buildout-action'); // hold, tap or continue
-      if (kind === 'hold') await hold(page, info, action.first(), async () => await started() || await next());
+      if (kind === 'hold') await hold(page, info, action.first(), async () => await started() || await next(),
+        id === 'launch' ? async () => { launchCard = await observeManualLaunch(page); } : undefined);
       else await action.first().click();
     }
     if (NO_PIECES.has(id)) {
@@ -105,7 +109,8 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
   }
 
   // The rocket went: counters and the "Look around" card come out, then free look.
-  await expect(page.locator('.ship-cel').first()).toBeVisible({ timeout: 30_000 });
+  expect(launchCard, 'the manual Launch press started its actual-card visibility check').toBeDefined();
+  await launchCard!();
   await expect(root).toHaveAttribute('data-step', 'look', { timeout: 30_000 });
   await shot('09-launched.png');
   const look = card.getByRole('button', { name: /look around/i });
