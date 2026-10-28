@@ -254,3 +254,7 @@ existing platform skips, zero failures**; typechecks and builds pass. Separate
 preflight, private-error redaction, prompt source-change cancellation and nonlocal
 target rejection. Full repository checks and exact-head dev CI are separate gates;
 none substitutes for the outstanding ten-minute hosted comparison.
+
+### Existing-map connection work (2026-10-28, PR #515)
+
+Optional Sentry/PostHog credential discovery no longer holds an existing map's connection open. `ensureFactory` loads once, durably requests discovery, and preserves the normal alarm wake-up. The alarm handles discovery after the foreground gauntlet; an unsuccessful attempt retains the marker. Deletion, lifecycle and installation identity are checked before deferred work. A new factory and a factory needing GitHub initialization still await their required initialization. This removes optional work from connection establishment; it is not a receipt that every cold connection meets the three-second target.

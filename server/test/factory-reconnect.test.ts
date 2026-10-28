@@ -15,14 +15,17 @@ function fixture(data = new Map<string, unknown>()) {
   f.load = async () => { loads++; return { repo: "owner/repo" }; };
   f.accountPut = async (key: string, value: unknown) => { if (erased) throw Error("Factory deleted"); data.set(key, value); };
   f.autoConnectMines = async () => { discoveries++; };
+  f.log = () => {};
   f.scheduleTick = async () => { alarms++; };
   return { f, data, counts: () => ({loads, discoveries, alarms}), stop: () => { stopped = true; }, erase: () => { erased = true; } };
 }
 
 it("opens an existing factory without optional provider I/O and loads it once", async () => {
   const { f, data, counts } = fixture();
-  f.autoConnectMines = async () => { throw Error("provider must not be on socket path"); };
+  let providerCalled = false;
+  f.autoConnectMines = async () => { providerCalled = true; throw Error("provider must not be on socket path"); };
   await f.ensure("owner/repo", 1);
+  expect(providerCalled).toBe(false);
   expect(counts()).toEqual({ loads: 1, discoveries: 0, alarms: 1 });
   expect(data.get("mineReconnectPending")).toEqual({ repo: "owner/repo", installationId: 1 });
 });
