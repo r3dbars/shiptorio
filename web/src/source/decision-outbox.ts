@@ -26,6 +26,17 @@ export class DecisionOutbox {
     }
   }
 
+  knows(message: Decision) {
+    const card = this.cards.get(message.moveId);
+    return !!card && (message.type !== "choose_move" || card.options.some(o => o.id === message.optionId));
+  }
+
+  replayable(message: Decision) {
+    if (message.type !== "choose_move") return true;
+    const actions = this.cards.get(message.moveId)?.options.find(o => o.id === message.optionId)?.actions;
+    return actions?.length === 1 && ["plan_runner_job", "approve_runner_job", "request_merge"].includes(actions[0].tool);
+  }
+
   enqueue(message: Decision) {
     const card = this.cards.get(message.moveId);
     if (!card || message.type === "choose_move" && !card.options.some(o => o.id === message.optionId)) { this.changed("changed"); return; }

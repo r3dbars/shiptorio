@@ -375,3 +375,20 @@ it("never queues a card or option that this source has not received", () => tran
   first.open();first.message(decisionSnapshot());expect(first.sent).toEqual([]);
   source.send({type:"choose_move",moveId:"plan-1",optionId:"forged"});expect(first.sent).toEqual([]);source.close();
 }));
+it("a persistent inspect card is sent once online without false acknowledgement retries", () => transportTest(h => {
+  const state=JSON.parse(decisionSnapshot());state.state.deck[0].options[0].actions=[{tool:"inspect_bottleneck",args:{stage:"inspect"},reason:"Read the queue"}];
+  const source=h.connect(),first=h.sockets[0];first.open();first.message(JSON.stringify(state));
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  for(let n=0;n<4;n++){h.advance(14_000);first.message("pong");}
+  expect(h.sockets).toHaveLength(1);
+  expect(first.sent.filter(raw=>raw.includes('"choose_move"'))).toHaveLength(1);
+  expect(h.messages.some(msg=>msg.type==="log" && msg.level==="warn")).toBe(false);
+  source.close();
+}));
+it("offline nonreplayable choices request an explicit retry and never run after reconnect", () => transportTest(h => {
+  const state=JSON.parse(decisionSnapshot());state.state.deck[0].options[0].actions=[{tool:"run_missing_check",args:{headSha:"a"},reason:"Queue a check"}];
+  const source=h.connect(),first=h.sockets[0];first.open();first.message(JSON.stringify(state));first.close();
+  source.send({type:"choose_move",moveId:"plan-1",optionId:"approve"});
+  expect(h.messages.at(-1)).toMatchObject({type:"log",level:"warn",text:expect.stringContaining("could not be confirmed")});
+  h.advance(300);const fresh=h.sockets[1];fresh.open();fresh.message(JSON.stringify(state));expect(fresh.sent).toEqual([]);source.close();
+}));
