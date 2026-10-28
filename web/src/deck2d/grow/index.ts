@@ -273,22 +273,26 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     }
   }
 
-  // pixel mode beams: the hull's own warm iron, lit from the upper right. Each girder shows a top face and a
-  // bevelled front face with panel seams, rivets (light px over dark px) and grime dithered along the bottom;
-  // posts are banded dark -> light left to right, with X braces between them down to where the rock fuses
+  // pixel mode beams: dark cool steel, lit from the upper right, brass only as rivets (Justin's art direction).
+  // Each girder shows a top face and a bevelled front face with panel seams, rivets (light px over dark px) with a
+  // rust streak under every other one, and grime dithered along the bottom; posts are banded dark -> light left to
+  // right, with X braces between them down to where the rock fuses
   function drawBeamsPx(ctx: CanvasRenderingContext2D, a: number, cap: number, yb: number, yf: number, ys: number) {
-    const P = 5, L = PALETTE.plate, B = PALETTE.brass, S = PALETTE.soot[0];
+    const P = 5, St = PALETTE.steel, Ru = PALETTE.copper[0], Br = PALETTE.brass[4], S = PALETTE.soot[0], Gr = PALETTE.iron[0];
     const px = (x: number, y: number, c: string, w = 1, h = 1) => { ctx.fillStyle = c; ctx.fillRect(x, y, w * P, h * P); };
     const cols = Math.round((cap - a) / P);
     const girder = (y: number, h: number) => { // h art px tall: 1 top-face row + front face
       px(a, y - P, S, cols, h + 2);
-      px(a, y, L[4], cols); // top face, sunlit
-      px(a, y + P, L[3], cols); // bevel: light inner top edge
-      if (h > 3) px(a, y + 2 * P, L[2], cols, h - 3);
-      for (let c = 0; c < cols; c++) px(a + c * P, y + (h - 1) * P, (c & 1) ? L[1] : L[0]); // grime checker
-      for (let c = 15; c < cols; c += 16) { px(a + c * P, y + P, L[1], 1, h - 2); px(a + (c + 1) * P, y + P, L[3], 1, h - 2); } // seams
+      px(a, y, St[3], cols); // top face, sunlit
+      px(a, y + P, St[2], cols); // bevel: light inner top edge
+      if (h > 3) px(a, y + 2 * P, St[1], cols, h - 3);
+      for (let c = 0; c < cols; c++) px(a + c * P, y + (h - 1) * P, (c & 1) ? Gr : St[0]); // grime checker
+      for (let c = 15; c < cols; c += 16) { px(a + c * P, y + P, St[0], 1, h - 2); px(a + (c + 1) * P, y + P, St[2], 1, h - 2); } // seams
       const ry = y + Math.max(1, (h >> 1) - 1) * P;
-      for (let c = 3; c < cols; c += 6) { px(a + c * P, ry, B[4]); px(a + c * P, ry + P, L[0]); } // rivets
+      for (let c = 3, k = 0; c < cols; c += 6, k++) {
+        px(a + c * P, ry, Br); px(a + c * P, ry + P, St[0]); // rivet
+        if (k & 1 && ry + 2 * P < y + (h - 1) * P) px(a + c * P, ry + 2 * P, Ru); // rust streak
+      }
     };
     const [g0, g1, g2] = [snap(yb) - 2 * P, snap(yf) - 2 * P, snap(ys) - P], h1 = 5, top = g1 + (h1 + 1) * P;
     const posts: number[] = [];
@@ -298,16 +302,16 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
       const x0 = posts[k] + 4 * P, x1 = posts[k + 1], n = Math.round((x1 - x0) / P), rows = Math.round((g2 - top) / P);
       for (let c = 0; c < n; c++) {
         const r = Math.round((c / Math.max(1, n - 1)) * (rows - 1));
-        px(x0 + c * P, top + r * P, L[1]); px(x0 + c * P, top + (r + 1) * P, S);
-        px(x0 + c * P, top + (rows - 1 - r) * P, L[2]); px(x0 + c * P, top + (rows - r) * P, S);
+        px(x0 + c * P, top + r * P, St[1]); px(x0 + c * P, top + (r + 1) * P, S);
+        px(x0 + c * P, top + (rows - 1 - r) * P, St[2]); px(x0 + c * P, top + (rows - r) * P, S);
       }
     }
     for (const x of posts) {
       const rows = Math.round((g2 + 3 * P - g1) / P);
       px(x - P, g1, S, 6, rows + 1);
-      [L[0], L[1], L[2], L[3]].forEach((c, k) => px(x + k * P, g1, c, 1, rows));
-      px(x, g1 + rows * P - P, L[0], 4); // dark foot, it sinks into the rock
-      for (let r = h1 + 3; r < rows - 2; r += 6) { px(x + 2 * P, g1 + r * P, B[4]); px(x + 2 * P, g1 + (r + 1) * P, L[0]); }
+      St.forEach((c, k) => px(x + k * P, g1, c, 1, rows));
+      px(x, g1 + rows * P - P, St[0], 4); // dark foot, it sinks into the rock
+      for (let r = h1 + 3; r < rows - 2; r += 6) { px(x + 2 * P, g1 + r * P, Br); px(x + 2 * P, g1 + (r + 1) * P, St[0]); }
     }
     girder(g0, 3);
     girder(g1, h1);
