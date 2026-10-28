@@ -497,7 +497,7 @@ Normal Staging deploys retain the tester flag/service binding only on shiptorio.
 
 ## Codex gauntlet progress — PR #502
 
-Periodic reconciliation could spend nine installation request slots between verify and AI review, making the unchanged 45-second Stranger acceptance depend on alarm timing. The real Factory now advances at most two stations for one unchanged PR before background polling, retaining per-station fresh GitHub evidence, inspection identity, resource cooldowns and operator pauses. No API limits or test deadlines change; no merge is automatic. Focused scheduling/freshness/rework/permit coverage passes; final full check and exact-head CI are required before dev merge.
+Periodic reconciliation could spend nine installation request slots between verify and AI review, making the unchanged 45-second Stranger acceptance depend on alarm timing. The real Factory now advances at most two stations for one unchanged PR before background polling, retaining per-station fresh GitHub evidence, inspection identity, resource cooldowns and operator pauses. No API limits or test deadlines change; no merge is automatic. Focused scheduling/freshness/rework/permit coverage passes; final full check and exact-head CI are required before dev merge. The first hosted run passed the unchanged gauntlet deadline and real hold-to-Launch fixture, then exposed a separate harness parser bug treating the legitimate exact `pong` heartbeat as malformed JSON. Only that reserved text frame is now classified separately; malformed/unknown non-JSON frames still fail and all gameplay assertions remain enabled.
 
 ## Testing proving ground (Codex, 2026-10-27)
 
