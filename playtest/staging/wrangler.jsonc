@@ -1,0 +1,21 @@
+{
+  "name": "shiptorio-fixture",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [],
+  "durable_objects": { "bindings": [
+    { "name": "FACTORY", "class_name": "Factory" },
+    { "name": "FIXTURE_PROVIDERS", "class_name": "FixtureProvider" }
+  ] },
+  "migrations": [{ "tag": "fixture-v1", "new_sqlite_classes": ["Factory", "FixtureProvider"] }],
+  "d1_databases": [{ "binding": "DB", "database_name": "shiptorio-fixture", "database_id": "bec7a5ae-817f-449f-926d-85eb2dc7cb65", "migrations_dir": "../../server/migrations" }],
+  "kv_namespaces": [{ "binding": "CACHE", "id": "8add9e00be2745c793bd2bd77cfc0b9a" }],
+  "vars": {
+    "PUBLIC_URL": "https://shiptorio.dev", "TEST_USERS": "on", "FIXTURE_INSTANCE": "shiptorio-fixture",
+    "ALLOWED_LOGINS": "", "ADMIN_LOGINS": "", "GITHUB_APP_ID": "1", "GITHUB_CLIENT_ID": "fixture",
+    "GITHUB_APP_SLUG": "shiptorio-stub", "SPARK_BASE_URL": "https://api.meta.ai/v1", "SPARK_MODEL": "muse-spark-1.3"
+  }
+}
