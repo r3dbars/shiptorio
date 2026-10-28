@@ -39,6 +39,7 @@ import { captions, SoundCaptions, useCaptionsOn } from "./ui/SoundCaptions";
 import { EmpireSheet, IslandChip, satellitesFor, useEmpire } from "./ui/Empire";
 import { ACTIVITY, HUD, LEVEL_LABEL, LINE, MACHINE_NAME, MAP, PLAY, POWER, SETTINGS, STATE_LABEL, STATS, WORDS } from "./copy";
 import { RunnerConnection } from "./ui/RunnerConnection";
+import { MachineLight } from "./ui/MachineLight";
 import { AttentionTray } from "./ui/Attention";
 import { attentionOn, buildoutOn } from "./flags";
 import { Buildout, useFreeLook } from "./ui/Buildout";
@@ -531,6 +532,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
                   <span>{PLAY.chip}<small>{PLAY.chipCta}</small></span>
                 </a>
               )}
+              {cfg.kind === "live" && <MachineLight repo={cfg.repo} onOpen={() => toggleSheet("power")} />}
               <SparkSpendChip expanded={sheet === "thinks"} repo={cfg.kind === "live" ? cfg.repo : undefined} onOpen={() => toggleSheet("thinks")} />
               {progressing && !tour.on && <ProgressChip p={prog.p} onOpen={() => toggleSheet("progress")} />}
               {empire.on && <IslandChip e={empire} open={sheet === "empire"} onToggle={() => { setPanel(null); toggleSheet("empire"); }} />}
