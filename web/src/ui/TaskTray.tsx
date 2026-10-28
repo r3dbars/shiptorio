@@ -5,7 +5,7 @@
 // (with an optional one-tap why, the factory's feedback signal). A launch still merges real code, so it takes the held
 // red button or a swipe all the way across. Every gesture has a button too.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { attentionOf, continueOption, type FactoryState, type Item, type Move, type WebToServer } from "@shiptorio/shared";
 import { NEXT_MOVE, STAGE_LABEL, STATE_WORD, TASKS, THINKS, WORDS } from "../copy";
 import { HoldLaunch, isLaunch, plugsInAgent } from "./Attention";
@@ -23,7 +23,10 @@ const RIDE_MS = 8000; // following the work: how long the camera rides one item 
 const WENT_KEY = "shiptorio:simple-went"; // set on the first Continue: until then the Go tab glows
 
 type Never = Extract<WebToServer, { type: "dismiss_move" }>["why"];
-type Drag = { x: number; y: number; w: number };
+// A drag and a button press belong to one showing of one card and one pointer: if the deck swaps the card underneath
+// (the server, another tab) the gesture is dropped, so letting go never answers the card that took its place.
+type Drag = { card: string; pointer: number; x: number; y: number; w: number };
+type Press = { card: string; pointer: number };
 
 interface Props {
   deck: Move[];
@@ -57,6 +60,26 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
   const [open, setOpen] = useState(false);
   const [d, setD] = useState({ x: 0, y: 0 });
   const drag = useRef<Drag | null>(null);
+  const press = useRef<Press | null>(null);
+  const cardId = card?.id ?? null;
+  const dropGesture = useRef(() => {});
+  dropGesture.current = () => {
+    drag.current = null;
+    press.current = null;
+    setD((v) => (v.x || v.y ? { x: 0, y: 0 } : v));
+  };
+  useEffect(() => dropGesture.current(), [cardId]);
+  // the window losing focus or the page hiding ends any gesture in progress, with nothing sent
+  useEffect(() => {
+    const drop = () => dropGesture.current();
+    const hidden = () => { if (document.visibilityState === "hidden") drop(); };
+    window.addEventListener("blur", drop);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("blur", drop);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }, []);
   const [went, setWent] = useState(wentBefore);
   const [asking, setAsking] = useState<Move | null>(null); // a never waiting on its optional why
   const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -218,10 +241,21 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
     far < SWIPE_PX ? null
     : horiz ? (d.x < 0 ? "later" : launch ? (d.x > w * LAUNCH_SHARE ? "launch" : "launchFar") : "go")
     : d.y < 0 ? (open ? null : "more") : open ? "less" : "never";
-  const letGo = () => {
+  // A card's answer buttons act only for a press that started on this showing of this card (or a keyboard or
+  // assistive click, which has no pointer press: detail 0).
+  const guard = (act: () => void) => ({
+    onPointerDown: (e: ReactPointerEvent) => { if (e.isPrimary) press.current = { card: card.id, pointer: e.pointerId }; },
+    onClick: (e: ReactMouseEvent) => {
+      const p = press.current;
+      press.current = null;
+      if (e.detail === 0 ? !p || p.card === card.id : p?.card === card.id) act();
+    },
+  });
+  const letGo = (on: string) => {
     const was = intent;
     drag.current = null;
     setD({ x: 0, y: 0 });
+    if (on !== card.id) return; // the card changed under the drag: nothing for the one that replaced it
     if (was === "later") later(card);
     else if (was === "go" || was === "launch") go(card);
     else if (was === "more") setOpen(true);
@@ -233,19 +267,27 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
     <div className="needs tasktray" role="region" aria-label={TASKS.label}>
       {ask}
       <section
+        key={card.id}
         className={`acard ${kind} tabbed task${open ? " open" : ""}${intent ? ` will-${intent}` : ""}`}
         aria-label={`${TASKS.kind[kind]}: ${card.title}`}
         aria-live="polite"
         style={d.x || d.y ? { transform: horiz ? `translateX(${d.x}px) rotate(${d.x / 40}deg)` : `translateY(${d.y}px)` } : undefined}
         title={TASKS.swipeHint}
         onPointerDown={(e) => {
-          if ((e.target as Element).closest("button, a, details")) return;
-          drag.current = { x: e.clientX, y: e.clientY, w: e.currentTarget.offsetWidth };
-          e.currentTarget.setPointerCapture(e.pointerId);
+          if (!e.isPrimary || e.button !== 0 || drag.current || (e.target as Element).closest("button, a, details")) return;
+          drag.current = { card: card.id, pointer: e.pointerId, x: e.clientX, y: e.clientY, w: e.currentTarget.offsetWidth };
+          e.currentTarget.setPointerCapture?.(e.pointerId);
         }}
-        onPointerMove={(e) => { if (drag.current) setD({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }); }}
-        onPointerUp={() => { if (drag.current) letGo(); }}
-        onPointerCancel={() => { drag.current = null; setD({ x: 0, y: 0 }); }}
+        onPointerMove={(e) => {
+          const g = drag.current;
+          if (g && g.pointer === e.pointerId && g.card === card.id) setD({ x: e.clientX - g.x, y: e.clientY - g.y });
+        }}
+        onPointerUp={(e) => {
+          const g = drag.current;
+          if (g && g.pointer === e.pointerId) letGo(g.card);
+        }}
+        onPointerCancel={(e) => { if (drag.current?.pointer === e.pointerId) dropGesture.current(); }}
+        onLostPointerCapture={(e) => { if (drag.current?.pointer === e.pointerId) dropGesture.current(); }}
       >
         {intent && <span className="tintent" aria-hidden="true">{TASKS.drag[intent]}</span>}
         <div className="abody">
@@ -270,18 +312,18 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
                 <div className="aothers">
                   <span>{TASKS.others}</span>
                   {others.map((o) => (
-                    <button key={o.id} type="button" onClick={() => { said.current = card.itemId ?? null; answered(card); send({ type: "choose_move", moveId: card.id, optionId: o.id }); }}>
+                    <button key={o.id} type="button" {...guard(() => { said.current = card.itemId ?? null; answered(card); send({ type: "choose_move", moveId: card.id, optionId: o.id }); })}>
                       {o.label}
                     </button>
                   ))}
                 </div>
               )}
               {card.url && <a href={card.url} target="_blank" rel="noreferrer">{WORDS.prLink}</a>}
-              <button type="button" className="tnever-btn" onClick={() => never(card)}>{TASKS.never}</button>
+              <button type="button" className="tnever-btn" {...guard(() => never(card))}>{TASKS.never}</button>
             </div>
           )}
           <div className="aacts">
-            <button type="button" className="alater" data-sfx onClick={() => later(card)}>{TASKS.later}</button>
+            <button type="button" className="alater" data-sfx {...guard(() => later(card))}>{TASKS.later}</button>
             <button type="button" className="atog" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
               {open ? TASKS.less : others.length ? TASKS.edit : TASKS.more}
             </button>
@@ -297,7 +339,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, i
         {launch ? (
           <HoldLaunch key={card.id} card={card.id} label={option.label} onLaunch={(id) => { if (id === card.id) go(card, true); }} />
         ) : (
-          <button type="button" className={`ago atab${went ? "" : " glow"}`} data-sfx onClick={() => go(card)}>
+          <button type="button" className={`ago atab${went ? "" : " glow"}`} data-sfx {...guard(() => go(card))}>
             {TASKS.drag.go}
             <span aria-hidden="true"> →</span>
             <span className="sr">: {option.label}</span>
