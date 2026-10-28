@@ -60,3 +60,14 @@ test("recovery refuses symlinked workspace roots", async () => {
   try { await symlink(tmpdir(), resolve(root, ".recovery")); await expect(recoverWorkspace(root, assignment())).rejects.toThrow("symlink"); }
   finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test("refresh recovery refuses a changed prior-head lease or base instead of reusing old proof", async () => {
+  const root = await realpath(await mkdtemp(resolve(tmpdir(), "shiptorio-refresh-recovery-")));
+  try {
+    const j = { ...assignment(), reworkPr: 99, verifyBaseSha: "a".repeat(40), refreshBase: { expectedHeadSha: "b".repeat(40) } };
+    const first = await recoverWorkspace(root, j);
+    await expect(recoverWorkspace(root, { ...j, refreshBase: { expectedHeadSha: "c".repeat(40) } })).rejects.toThrow("assignment changed");
+    await expect(recoverWorkspace(root, { ...j, baseSha: "d".repeat(40), verifyBaseSha: "d".repeat(40) })).rejects.toThrow("assignment changed");
+    await first.close();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

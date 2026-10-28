@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareApprovedCommit } from "../src/publication";
@@ -51,5 +51,13 @@ test("base refresh replaces only the leased factory branch with one trusted comm
     await expect(publication.push(branch)).rejects.toThrow("changed; approve a fresh plan");
     expect(await git(remote, "rev-parse", `refs/heads/${branch}`)).toBe(concurrent);
     await expect(publication.push("main")).rejects.toThrow("Invalid publication branch");
+    // Race AFTER ls-remote: a receive hook advances the ref before Git's final ref transaction.
+    // The explicit force-with-lease must still refuse the write (not merely our preflight read).
+    await git(remote, "update-ref", `refs/heads/${branch}`, oldHead);
+    const hook = join(remote, "hooks", "pre-receive");
+    await Bun.write(hook, `#!/bin/sh\nunset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_QUARANTINE_PATH\ngit --git-dir='${remote}' update-ref 'refs/heads/${branch}' '${concurrent}' '${oldHead}'\n`);
+    await chmod(hook, 0o755);
+    await expect(publication.push(branch)).rejects.toThrow("publication git push failed");
+    expect(await git(remote, "rev-parse", `refs/heads/${branch}`)).toBe(concurrent);
   } finally { await publication?.close(); await rm(root, { recursive: true, force: true }); }
 }, 20000);
