@@ -342,9 +342,23 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   // Publication state is per live DO instance, not an authorization cache. A new
   // instance publishes its first deck/move, and each new socket still gets a snapshot.
-  private publishedDeck?: string;
-  private publishedMove?: string;
-  private publishedDecisionPolicy?: number;
+  private decisionPublications: Partial<Record<"deck" | "move", { payload: string; policyRevision: number }>> = {};
+
+  private publishDecisionFrame(message: Extract<ServerToWeb, { type: "deck" | "move" }>): void {
+    const type = message.type, payload = JSON.stringify(message), policyRevision = this.redactor.policyRevision;
+    const previous = this.decisionPublications[type];
+    if (previous?.payload === payload && previous.policyRevision === policyRevision) return;
+    // Pending publications also suppress duplicates. A rejected cursor/delivery
+    // must release only its own stamp: an older failure cannot invalidate a newer
+    // payload, or a later identical payload under a new policy (the ABA case).
+    const publication = { payload, policyRevision };
+    this.decisionPublications[type] = publication;
+    const failed = (error: unknown) => {
+      if (this.decisionPublications[type] === publication) delete this.decisionPublications[type];
+      report(error, "factory.decision_publication_failed", { kind: type });
+    };
+    try { void this.broadcast(message).catch(failed); } catch (error) { failed(error); }
+  }
 
   private async refreshDecisions() {
     if (!this.state || !this.meta || this.batchingDecisions) return;
@@ -419,20 +433,12 @@ class FactoryBase extends DurableObject<FactoryEnv> {
     // Unchanged decisions need no new transport frame. Every frame we do publish
     // retains broadcast's fresh session/membership checks; tick and queue telemetry
     // keep flowing even when the cards are unchanged.
-    const policyRevision = this.redactor.policyRevision;
-    if (policyRevision !== this.publishedDecisionPolicy) {
-      this.publishedDeck = undefined;
-      this.publishedMove = undefined;
+    this.publishDecisionFrame({ type: "deck", deck });
+    if (s.move) this.publishDecisionFrame({ type: "move", move: s.move });
+    else {
+      delete this.decisionPublications.move;
+      if (previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
     }
-    const deckPayload = JSON.stringify(deck), movePayload = JSON.stringify(s.move);
-    if (deckPayload !== this.publishedDeck) {
-      this.broadcast({ type: "deck", deck });
-      this.publishedDeck = deckPayload;
-    }
-    if (s.move && movePayload !== this.publishedMove) this.broadcast({ type: "move", move: s.move });
-    else if (!s.move && previous) this.broadcast({ type: "move_resolved", moveId: previous.id, actor: "player" });
-    this.publishedMove = movePayload;
-    this.publishedDecisionPolicy = policyRevision;
   }
 
   // ---------- the bottleneck brain (docs/BRAIN.md): collect signals, diagnose ONE bottleneck, deal ONE unlock ----------

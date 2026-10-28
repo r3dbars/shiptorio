@@ -68,6 +68,60 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
 }
 
 describe("durable live check-in decisions", () => {
+  it("retries an unchanged decision after a transient cursor write failure", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; ctx: { storage: { put(key: string, value: unknown): Promise<void> } } };
+    const put = internal.ctx.storage.put.bind(internal.ctx.storage);
+    let cursorWrites = 0;
+    internal.ctx.storage.put = async (key, value) => {
+      if (key === "browserSeq" && ++cursorWrites === 2) throw new Error("Cursor storage temporarily unavailable");
+      await put(key, value);
+    };
+    internal.openMoves.find(m => m.id === "second")!.why = "New receipts";
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]); // Deck allocation failed.
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck"]);
+    expect(f.events.find(e => e.type === "deck")).toMatchObject({ deck: [{ id: "first" }, { id: "second", why: "New receipts" }] });
+  });
+
+  it("does not let an older failed publication invalidate a later identical payload after intervening changes", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; ctx: { storage: { put(key: string, value: unknown): Promise<void> } } };
+    const put = internal.ctx.storage.put.bind(internal.ctx.storage);
+    const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    let cursorWrites = 0;
+    internal.ctx.storage.put = async (key, value) => {
+      if (key === "browserSeq" && ++cursorWrites === 2) {
+        started.resolve(); await release.promise; throw new Error("Old cursor allocation failed");
+      }
+      await put(key, value);
+    };
+    const second = internal.openMoves.find(m => m.id === "second")!;
+    try {
+      second.why = "Payload A";
+      await internal.refreshDecisions();
+      await started.promise;
+      second.why = "Payload B";
+      await internal.refreshDecisions();
+      second.why = "Payload A";
+      await internal.refreshDecisions();
+    } finally { release.resolve(); }
+    await internal.broadcastQueue;
+    const decks = f.events.filter((e): e is Extract<ServerToWeb, { type: "deck" }> => e.type === "deck");
+    expect(decks.slice(-2).map(e => e.deck.find(m => m.id === "second")?.why)).toEqual(["Payload B", "Payload A"]);
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]); // Later A stays acknowledged.
+  });
+
   it("publishes the first decisions, then keeps telemetry without repeating unchanged card frames or their authorization reads", async () => {
     const f = fixture([card("first"), card("second")]);
     await f.checkin();

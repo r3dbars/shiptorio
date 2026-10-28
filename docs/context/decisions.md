@@ -451,3 +451,7 @@ load budgets. CI profile timing is sampled evidence, not billed production CPU.
 A newly registered redaction secret invalidates those publication stamps through a
 per-instance monotonic policy revision, so the same raw card is sent again with the
 new scrubbing policy. Registering the same secret twice does not trigger new frames.
+Publication deduplication also tracks each pending frame by object identity. If
+cursor allocation or queued delivery rejects, only that publication's stamp is
+released for retry; an older failure cannot clear a newer stamp after an A/B/A
+payload sequence. Failures are reported and the next unchanged refresh retries.
