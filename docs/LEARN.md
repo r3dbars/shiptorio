@@ -7,7 +7,8 @@
 
 ## The rule (v0, kept very simple)
 
-- **A kind of card** is the deck's existing class: card `kind` plus `moveScope` (usually the folder), e.g. `build|district:web`.
+- **A kind of card** is card `kind` + `moveScope` (usually the folder) + the suggested option's tool, e.g.
+  `build|district:web|approve_runner_job`. Starting plans and approving plans are learned apart.
 - **Continue** (the suggested option, as is) fills one dot. 3 in a row and the factory does that kind on its own.
 - **Later**, **Edit** (another option) or **Never** empties the dots.
 - **Never → Just this one** also leaves the planner a note: try a smaller or different version, or suggest something
@@ -23,7 +24,7 @@ red button stays with the player), a customer reply, research, rework plans, loc
 
 ## The meter
 
-`Move.learn = { have, need }` on learnable cards. The card shows ●●○ and one line: "Approve 1 more like this and then
+`Move.learn = { have, need }` on learnable cards, from the first yes on (a brand-new player's first card stays plain). The card shows ●●○ and one line: "Approve 1 more like this and then
 it's automatic." (Justin's round 3 pick) An old streak from before learning never skips the last dot.
 
 ## Code

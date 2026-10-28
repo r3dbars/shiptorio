@@ -824,7 +824,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
   // factory. Build cards carry the dots, stamped fresh every deal.
   const LEARN_NEED = 3;
   let learnYes = 0, learnedBuild = false;
-  const stampLearn = (m: Move): Move => m.kind === "build" && m.options.some((o) => o.recommended && o.actions[0]?.tool === "start_job") && !learnedBuild ? { ...m, learn: { have: learnYes, need: LEARN_NEED } } : m;
+  const stampLearn = (m: Move): Move => m.kind === "build" && m.options.some((o) => o.recommended && o.actions[0]?.tool === "start_job") && !learnedBuild && learnYes > 0 ? { ...m, learn: { have: learnYes, need: LEARN_NEED } } : m;
   const dealDeck = () => {
     if (s.move) s.move = stampLearn(s.move);
     s.deck = [...(s.move ? [s.move] : []), ...pending].slice(0, 12).map(stampLearn);
@@ -948,7 +948,7 @@ export function connectSim(name: ScenarioName, onMessage: Listener, onStatus: St
         learnYes = opt === "go" ? learnYes + 1 : 0;
         if (learnYes >= LEARN_NEED && !learnedBuild) {
           learnedBuild = true;
-          apply({ learned: [{ key: "build|district", label: "Build cards", since: Date.now() }] });
+          apply({ learned: [{ key: "build|sim|start_job", label: "Starting builds", since: Date.now() }] });
           emit({ type: "log", level: "success", text: "Learned. The factory does these on its own now.", at: Date.now(), actor: "player", reason: "You said yes 3 times in a row. Turn it off in Make it yours." });
         }
         if (opt !== "go") {

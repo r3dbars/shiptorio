@@ -12,7 +12,9 @@ export interface DeckBook {
   decisions: Record<string, DeckDecision>; notes: { id: string; text: string }[]; undos: DeckUndo[];
   /** docs/ATTENTION.md: the player's Continues in a row per card class (`kind|scope`). A Later or a never resets it. */
   yes?: Record<string, number>;
-  /** docs/LEARN.md: classes the factory now answers on its own (server/src/learn.ts). */
+  /** docs/LEARN.md: yeses in a row per learnable class (`kind|scope|tool`, server/src/learn.ts). */
+  learnYes?: Record<string, number>;
+  /** docs/LEARN.md: classes the factory now answers on its own. */
   auto?: Record<string, { since: number; label: string }>;
   /** Items the factory moved on its own, so a PR that comes back un-learns its class. */
   autoRuns?: { itemId: string; key: string }[];
