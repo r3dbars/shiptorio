@@ -95,7 +95,7 @@ export const review: StationDef = {
     }
 
     // --- warning bulbs on the front corners
-    for (const bx of [3, 39]) {
+    for (const bx of [3, 35]) { // the right bulb stays clear of the engine's lever at +18
       cylH(g, bx - 1, 24, 4, 2, BRASS, { amb: 0.2 });
       for (let y = 20; y < 24; y++) for (let x = bx - 1; x < bx + 2; x++) { const d = Math.hypot(x + 0.5 - (bx + 0.5), y + 0.5 - 22); if (d <= 1.8) tone(g, x, y, s === "idle" ? LIT.idle : lit, 0.5 + 0.3 * ((x - bx) - (y - 21.5)) / 1.8); }
       if (glow) g.glowDisc(bx + 0.5, 22, 3.5, glow, 0.25, [bx - 1, 20, 3, 4]);
