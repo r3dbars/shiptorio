@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import * as THREE from "three";
 import { Buildout } from "../src/map/shaft/buildout";
 import type { Iron } from "../src/map/shaft/core";
@@ -97,4 +97,28 @@ test("hurrying skips construction but preserves the complete burst and payoff", 
     r.step(1); expect(r.bo.busy).toBe(true);
     r.step(0.5); expect(events.map(e => e.phase)).toEqual(["start", "burst", "done"]);
   } finally { r.close(); }
+});
+
+test("the natural normal burst tail continues through payoff before resources are released", async () => {
+  const random = spyOn(Math, "random").mockReturnValue(0.5);
+  const r = rig(false);
+  try {
+    r.step(0.5); r.step(4); // construct ends; real burst begins
+    const internal = r.bo as unknown as { moment: { phase: string; burst: { done: Promise<void> } } };
+    const burst = internal.moment.burst;
+    let ended = false;
+    void burst.done.then(() => { ended = true; });
+    for (let i = 0; i < 10; i++) r.step(0.1);
+    // Floating-point residue may leave the exact nominal boundary just short.
+    r.step(0.001);
+    expect(internal.moment.phase).toBe("payoff");
+    await Promise.resolve();
+    expect(ended).toBe(false); // particles are not force-finished at the phase boundary
+    r.step(0.2); await Promise.resolve();
+    expect(ended).toBe(false);
+    r.step(1.3); await Promise.resolve();
+    expect(ended).toBe(true);
+    expect(events.map(e => e.phase)).toEqual(["start", "burst", "done"]);
+    expect(r.bo.busy).toBe(false);
+  } finally { r.close(); random.mockRestore(); }
 });

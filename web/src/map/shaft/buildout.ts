@@ -574,7 +574,7 @@ export class Buildout {
       if (mo.phase === "burst") {
         mo.burst?.update(elapsed);
         if (mo.t < duration) return;
-        mo.burst?.finish();
+        // The nominal burst ends here; natural particles may finish during payoff.
         mo.phase = "payoff";
         mo.t = 0;
         const f = stepById(mo.step).lights;
@@ -582,7 +582,9 @@ export class Buildout {
         if (f) this.hooks.light(this.litFloors);
         continue;
       }
+      mo.burst?.update(elapsed);
       if (mo.t < duration) return;
+      mo.burst?.finish(); // guarantee resource cleanup even if a particle lingered
       mo.anchor?.removeFromParent();
       this.moment = null;
       emitBuild({ id: mo.step, phase: "done", first: true });
