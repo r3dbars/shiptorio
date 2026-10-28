@@ -514,3 +514,10 @@ The root candidate needs its own complete checks. No factory PR has been merged;
 Logo #467 is separate visual work; landing workshop #469 belongs to Justin's other
 thread and is excluded from this batch. Production remains the password-gated rollback
 until a verified deployment. This entry incorporates the pending helper receipt #470.
+
+Combined source `0004cf88` passed the actual Mac full check: 1,400 passed, two
+existing skips, zero failures; lint/types/web and runner build green. The earlier
+`736488b0` candidate was rejected after its native Keychain regression; its manual
+CI was cancelled rather than accepted. Corrected #471 uses the native settings
+suffix, with disposable-keychain disabled-timeout detection and restoration proof.
+The final combined remote browser/load run is still required. No deployment yet.
