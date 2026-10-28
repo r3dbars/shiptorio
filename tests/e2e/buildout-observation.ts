@@ -8,6 +8,8 @@ export type BuildoutObservation = {
   phase: string | null;
   trigger: string | null;
   actionKind: string | null;
+  at?: number;
+  perf?: Record<string, number>;
 };
 
 // One read-only browser command captures facts at the same instant. Visibility and
@@ -18,6 +20,8 @@ export function readBuildout(page: Page): Promise<BuildoutObservation> {
     const card = document.querySelector('[data-buildout-card]');
     return {
       events: (window as any).__builds,
+      at: performance.now(),
+      perf: (window as any).__shipPerf?.(),
       step: root?.getAttribute('data-step') ?? null,
       phase: root?.getAttribute('data-phase') ?? null,
       trigger: card?.getAttribute('data-trigger') ?? null,

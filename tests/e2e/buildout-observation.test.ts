@@ -41,3 +41,14 @@ test('a checkpoint returns one complete fresh history and both action attributes
   expect([fresh.trigger, fresh.actionKind]).toEqual(['hold', 'hold']);
   expect(reads).toBe(2);
 });
+
+
+test('existing checkpoint refresh carries optional performance evidence without another read', async () => {
+  let reads = 0;
+  const perf = { fps: 2.4, workMs: 12, tier: 2, calls: 170, triangles: 40000 };
+  const observed = buildoutObserver(async () => { reads++; return { ...snapshot([]), at: 1200, perf }; });
+  const checkpoint = await observed.refresh();
+  expect(checkpoint.perf).toEqual(perf);
+  expect(checkpoint.at).toBe(1200);
+  expect(reads).toBe(1);
+});
