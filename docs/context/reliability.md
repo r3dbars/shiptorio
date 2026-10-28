@@ -247,7 +247,10 @@ The replacement local test boundary requires numeric loopback before startup,
 asserts the explicit socket-adapter identity, and verifies staging/production
 origins produce zero client constructions. No further hosted load was run.
 
-Focused local harness validation: **13 passed, 0 failed**, including real CLI
+Full local `bun run check` on the rebased dev integration: **1,506 passed, two
+existing platform skips, zero failures**; typechecks and builds pass. Separate
+`bun run typecheck:tests` passes. Focused local harness validation: **13 passed,
+0 failed**, including real CLI
 preflight, private-error redaction, prompt source-change cancellation and nonlocal
 target rejection. Full repository checks and exact-head dev CI are separate gates;
 none substitutes for the outstanding ten-minute hosted comparison.
