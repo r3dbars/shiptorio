@@ -7,6 +7,7 @@ import * as THREE from "three";
 
 import type { Iron, IronItem, Layout } from "./core";
 import { FinishPass } from "./finish";
+import { drawRecoveryFrame } from "./recoveryFrame";
 import { floorFrame, followH, isFloorView, isPhone, stationFrame, type FloorView } from "./frame";
 
 export const YAW = Math.PI / 4;
@@ -243,8 +244,9 @@ export class ShaftStage {
     this.I.emit("camera", { camera: cam, root: this.root, scene: this.scene, viewH: vh });
   }
 
-  render(renderer: THREE.WebGLRenderer) {
+  render(renderer: THREE.WebGLRenderer, unfiltered = false) {
     this.aim();
+    if (unfiltered) { drawRecoveryFrame(renderer, this.scene, this.camera); return; }
     this.finish.setSize(this.W, this.H, this.pixel);
     this.finish.render(renderer, this.scene, this.camera);
   }

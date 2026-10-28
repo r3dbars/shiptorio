@@ -5,7 +5,7 @@ import { recoveryBasic, syncRecoveryBasic, type LitMaterial } from "./recoveryBa
 const lit = (m: THREE.Material): m is LitMaterial => {
   const flags = m as unknown as Record<string, boolean>;
   const maps = m as unknown as Record<string, unknown>;
-  return !!(flags.isMeshPhongMaterial || flags.isMeshLambertMaterial || flags.isMeshStandardMaterial || flags.isMeshToonMaterial)
+  return !!(flags.isMeshBasicMaterial || flags.isMeshPhongMaterial || flags.isMeshLambertMaterial || flags.isMeshStandardMaterial || flags.isMeshToonMaterial)
     && !maps.envMap && !maps.lightMap && !maps.aoMap && !maps.displacementMap;
 };
 const materials = (o: MaterialObject) => Array.isArray(o.material) ? o.material : [o.material];
@@ -26,6 +26,7 @@ export class RecoveryMaterials {
   private finishing = false;
   private serial = 0;
   get epoch() { return this.serial; }
+  get unfiltered() { return this.active && this.frames < 2; }
   get active() { return this.root !== null; }
   get pending() { return this.groups.size; }
 
@@ -53,7 +54,10 @@ export class RecoveryMaterials {
       const shape = Object.entries(mesh.geometry.attributes).map(([name, attr]) => `${name}:${attr.itemSize}:${attr.normalized}`).sort().join(",");
       const morph = Object.entries(mesh.geometry.morphAttributes).map(([name, attrs]) => `${name}:${attrs?.length ?? 0}`).sort().join(",");
       const key = `${list.map(m => `${m.uuid}:${m.version}`).join(",")}|${shape}|${morph}|${(mesh as THREE.InstancedMesh).isInstancedMesh ? "instances" : "mesh"}|${(mesh as THREE.SkinnedMesh).isSkinnedMesh ? "skin" : "rigid"}`;
-      if (this.warmed.has(key)) { this.originalLighting = true; return; }
+      if (this.warmed.has(key)) {
+        this.originalLighting ||= list.some(m => !(m as THREE.MeshBasicMaterial).isMeshBasicMaterial);
+        return;
+      }
       const next = list.map(m => lit(m) ? this.basic(m) : m);
       o.material = Array.isArray(source) ? next : next[0];
       this.bindings.set(o, { original: source, temporary: o.material });

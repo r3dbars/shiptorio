@@ -662,7 +662,7 @@ export class ShaftScene {
           this.warmPending = false;
           this.bo.precompile((holders) => this.warm(stage, holders));
         }
-        this.recovery.render(this.renderer, () => stage.render(this.renderer));
+        this.recovery.render(this.renderer, () => stage.render(this.renderer, this.recovery.unfiltered));
         this.recovery.advance();
         perf.recovery(this.recovery.active, this.recovery.pending, this.recovery.epoch);
         perf.dimensions({

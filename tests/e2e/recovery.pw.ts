@@ -107,7 +107,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       await page.keyboard.press('ArrowDown');
     });
 
-    for (const failure of ['react', 'webgl'] as const) test(`${failure} render failure shows one Reload button and one telemetry event`, async ({ page, baseURL }, info) => {
+    for (const failure of ['react', 'webgl', 'shader'] as const) test(`${failure} render failure shows one Reload button and one telemetry event`, async ({ page, baseURL }, info) => {
       const events: any[] = [];
       await page.route('**/api/telemetry/config', route => route.fulfill({ json: { dsn: `${baseURL!.replace('://', '://public@')}/1`, release: 'recovery-test', userId: null, requestId: 'recovery' } }));
       await page.route('**/api/1/envelope/**', async route => {
@@ -130,6 +130,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
         await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 90000 }).toBeGreaterThan(0);
         await page.evaluate(() => { (window as any).__gpu.gl.drawElements = () => { throw new Error('Forced GPU render failure'); }; });
       }
+      if (failure === 'shader') {
+        await expect.poll(() => page.evaluate(() => (window as any).__gpu.draws), { timeout: 90000 }).toBeGreaterThan(0);
+        await page.evaluate(() => {
+          const gl = (window as any).__gpu.gl as WebGL2RenderingContext;
+          const source = gl.shaderSource.bind(gl);
+          gl.shaderSource = (shader, text) => source(shader, gl.getShaderParameter(shader, gl.SHADER_TYPE) === gl.FRAGMENT_SHADER ? text + '\nINVALID_RECOVERY_FRAGMENT;' : text);
+          (window as any).__gpu.extension.loseContext();
+        });
+        await expect.poll(() => page.evaluate(() => (window as any).__gpu.lost)).toBe(1);
+        await page.evaluate(() => (window as any).__gpu.extension.restoreContext());
+      }
       const crash = page.getByRole('alert');
       await expect(crash).toContainText('Boiler blew');
       await expect(crash.getByRole('button')).toHaveCount(1);
@@ -137,7 +148,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
       await expect(crash).not.toContainText('Forced render');
       await expect.poll(() => events.length).toBe(1);
       expect(events[0].message).toBe('Game render failed');
-      expect(events[0].tags.reason).toBe(`${failure}_render`);
+      expect(events[0].tags.reason).toBe(failure === "react" ? "react_render" : "webgl_render");
       await page.screenshot({ path: `/tmp/shiptorio-crash-${viewport.width}-${info.project.name}.png` });
       await info.attach(`crash-${viewport.width}`, { body: await page.screenshot(), contentType: 'image/png' });
       expect(events).toHaveLength(1);

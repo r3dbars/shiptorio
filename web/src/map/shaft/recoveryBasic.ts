@@ -1,5 +1,5 @@
 import * as THREE from "three";
-export type LitMaterial = THREE.MeshPhongMaterial | THREE.MeshLambertMaterial | THREE.MeshStandardMaterial | THREE.MeshToonMaterial;
+export type LitMaterial = THREE.MeshBasicMaterial | THREE.MeshPhongMaterial | THREE.MeshLambertMaterial | THREE.MeshStandardMaterial | THREE.MeshToonMaterial;
 
 /** One unlit program family, with feature switches as uniforms rather than one cold program per map/color combination. */
 export function recoveryBasic(source: LitMaterial, white: THREE.Texture): THREE.ShaderMaterial {
@@ -30,7 +30,8 @@ function uv(texture: THREE.Texture | null) { return texture?.channel ? `uv${text
 
 export function syncRecoveryBasic(material: THREE.ShaderMaterial, source: LitMaterial, white: THREE.Texture) {
   const u = material.uniforms;
-  (u.diffuse.value as THREE.Color).copy(source.color).add(source.emissive.clone().multiplyScalar(source.emissiveIntensity));
+  (u.diffuse.value as THREE.Color).copy(source.color);
+  if ("emissive" in source) (u.diffuse.value as THREE.Color).add(source.emissive.clone().multiplyScalar(source.emissiveIntensity));
   u.opacity.value = source.opacity;
   u.alphaTest.value = source.alphaTest;
   for (const key of ["map", "alphaMap"] as const) {

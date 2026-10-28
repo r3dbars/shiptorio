@@ -142,3 +142,24 @@ test("unsupported custom lit programs keep their shadow update during recovery",
   recovery.render({ shadowMap: shadow } as unknown as Pick<THREE.WebGLRenderer, "shadowMap">, () => expect(shadow.needsUpdate).toBe(true));
   recovery.cancel();
 });
+
+test("only the first two admitted recovery frames bypass finish; new loss restarts that bound", () => {
+  const root = new THREE.Group(); root.add(mesh()); const recovery = new RecoveryMaterials();
+  expect(recovery.unfiltered).toBe(false); recovery.begin(root);
+  for (let n = 0; n < 2; n++) { expect(recovery.unfiltered).toBe(true); recovery.prepare(); recovery.advance(); }
+  expect(recovery.unfiltered).toBe(false); recovery.begin(root); expect(recovery.unfiltered).toBe(true);
+  recovery.cancel(); expect(recovery.unfiltered).toBe(false);
+});
+
+test("ordinary unlit meshes share the temporary family without inventing emissive or changing source state", () => {
+  let disposed = 0;
+  const map = new THREE.Texture(); map.addEventListener("dispose", () => disposed++);
+  const material = new THREE.MeshBasicMaterial({ color: 0x123456, map, alphaTest: 0.4, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+  const hook = material.onBeforeCompile, root = new THREE.Group(), object = new THREE.Mesh(new THREE.BoxGeometry(), material); root.add(object);
+  const recovery = new RecoveryMaterials(); recovery.begin(root); recovery.prepare();
+  const temporary = object.material as unknown as THREE.ShaderMaterial;
+  expect(temporary.uniforms.diffuse.value).toEqual(material.color); expect(temporary.uniforms.map.value).toBe(map);
+  expect(temporary.uniforms.alphaTest.value).toBe(0.4); expect(temporary.opacity).toBe(0.7); expect(temporary.side).toBe(THREE.DoubleSide);
+  expect(temporary.transparent).toBe(true); expect(material.onBeforeCompile).toBe(hook);
+  recovery.advance(); expect(object.material).toBe(material); recovery.cancel(); expect(disposed).toBe(0);
+});
