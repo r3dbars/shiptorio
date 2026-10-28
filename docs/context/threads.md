@@ -600,3 +600,11 @@ only moves on a `dev → main` promotion, which runs the full suite and gets the
 - 2026-10-27 — Codex: planner outage recovery builds on #312 with classified cooldowns, a two-minute planning deadline, persisted automatic resumption (including raised caps without refunding unknown spend), one calm resting card, and deterministic bottleneck fallback. Small scope exceptions: factory.ts wires durable jobs/cards/alarms; web/src/source/live.ts formats the resting deadline in the browser's timezone. Moves the Oct 27 live-loop reliability checkpoint forward.
 
 - 2026-10-28 — Codex: #371 rebased onto dev, retaining admin stops, explicit base-refresh provenance, native model JSON formats and websocket sequence guards. Raised call/token/spend caps resume parked plans without refunding ambiguous paid calls; focused stop/quota/recovery tests cover the new dev integration.
+
+## Polished plain logo (Codex, October 28)
+
+Justin requested the approved GPT Images brass wordmark in the product, using its
+plain dark background. Focused visual PR updates the shared Wordmark, gate and
+server-page brand image; the gate drops its decorative film. Password/session/CSRF
+code is untouched. This explicitly authorized branding task extends the usual
+backend lane. Phone/desktop preview and local checks pending; root releases batches.

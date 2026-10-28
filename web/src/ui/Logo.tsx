@@ -1,6 +1,6 @@
 import { BRAND } from "../copy";
 
-// Original Foundry vector art. See scripts/brand/build.py and docs/art/FOUNDRY-BRAND.md.
+// Approved polished wordmark; compact vector seal stays crisp at icon sizes.
 const VECTOR = { imageRendering: "auto" } as const;
 
 type Props = { className?: string; decorative?: boolean };
@@ -8,9 +8,9 @@ type Props = { className?: string; decorative?: boolean };
 export function Wordmark({ width = 300, className, decorative }: Props & { width?: number }) {
   return (
     <img
-      src="/brand/wordmark.svg?v=foundry-o2"
+      src="/brand/wordmark-polished.webp"
       width={width}
-      height={Math.round((width * 240) / 1085)}
+      height={Math.round(width / 3)}
       alt={decorative ? "" : BRAND.wordmarkAlt}
       aria-hidden={decorative || undefined}
       className={className}

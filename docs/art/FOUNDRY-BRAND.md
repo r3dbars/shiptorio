@@ -14,3 +14,20 @@ The final O in SHIPTORIO is a point-up brass hexagon with near-black petrol enam
 The title screen and waitlist retain the existing original factory artwork/film. The password form retains its native POST, nonce script, CSRF and cookie handling. “Private preview” is removed from the title artwork; access policy is unchanged.
 
 This UI work was explicitly requested from Codex, extending the usual backend lane. No shared protocol or factory decisions change.
+
+## Polished wordmark (Justin, October 28)
+
+Justin approved the GPT Images refinement with two matching chamfered rectangular
+O letters, brushed brass and a small rocket inside the final O. The selected plain
+petrol-background version is `web/public/brand/wordmark-polished.webp` (2172 × 724,
+3:1). This is a quality-95 WebP encoding of the approved generated image, not the
+busy factory-background exploration. It is used by the password gate, shared app
+wordmark and server-rendered connection pages. The gate now uses a quiet solid
+background instead of loading the factory film. Password, CSRF and session behavior
+are unchanged. The compact vector seal and favicons remain the existing artwork.
+
+The generated wordmark is a separately authored asset; `scripts/brand/build.py`
+continues to build the earlier vector assets and does not regenerate this image.
+Generation direction: preserve SHIPTORIO lettering, match both O contours, refine
+brass/bevels/rivets/kerning and the small rocket, with a plain near-black petrol
+background and no additional copy. Generated with the built-in GPT Images tool.
