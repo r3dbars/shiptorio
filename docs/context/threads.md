@@ -659,3 +659,7 @@ Retains production-disabled negative-ID identities and scoped fixture delegation
 ### Codex socket handshake latency — PR #498
 
 Hosted isolated-fixture upgrades took 5.46–6.15s, longer than the unchanged client five-second deadline; snapshots followed open within 2ms. Reuse the verified immutable principal only within the same upgrade (four session reads become two), retaining independent repository authorization and later message revalidation. The private fixture tracks post-upgrade lease cleanup with waitUntil while preserving reset leases/TTL. Regression proves distinct requests and revoked sessions are rechecked; hosted improvement awaits deployment measurement.
+
+### Codex private fixture connection profiling
+
+After #498, hosted upgrades still exceeded the unchanged five-second client deadline. The private fixture now returns fixed-name Server-Timing phase durations (no request data/secrets) and revalidates its private session before deciding whether provisioning is needed. A valid existing persona session no longer rewrites users/progress/allowlist on each read; expired/revoked/wrong-persona sessions still take the provisioning path. Reset revokes private D1 sessions before deleting its KV cache, so stale KV values cannot skip reseeding. `node playtest/staging/timing-host.mjs` proves the actual workerd DO 101 retains its socket, timing header and first frame (one guarded local upgrade). Live phase measurements and full player-loop acceptance remain pending deployment.
