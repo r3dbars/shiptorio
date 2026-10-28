@@ -1,4 +1,5 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { assertBuildEventPrefix, BUILDOUT_STEPS as STEPS } from '../contract/buildout-events';
 
 // Build As You Go (?buildout=1): the demo shop starts dark and empty, and every piece
 // the app needs gets built in front of the player while the guided issue rides through.
@@ -7,7 +8,6 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 // data-buildout-action, and each build fires `shiptorio:build` (start, burst, done).
 // Mirrors STEP_IDS in web/src/buildout/journey.ts. `issue` and `build` reveal nothing new
 // (the cart rolls, then rides into the builder), so they may advance without a build moment.
-const STEPS = ['tunnel', 'boiler', 'builder', 'issue', 'planner', 'build', 'checks', 'launch'] as const;
 const AUTO = new Set<string>(['build', 'checks']);
 const NO_PIECES = new Set<string>(['issue', 'build']);
 type Build = { id: string; phase: 'start' | 'burst' | 'done'; at: number };
@@ -59,10 +59,15 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
 
   for (const [i, id] of STEPS.entries()) {
     const n = String(i + 1).padStart(2, '0');
-    await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
     const done = async () => (await builds(page)).some(b => b.id === id && b.phase === 'done');
     const started = async () => (await builds(page)).some(b => b.id === id && b.phase === 'start');
     const next = async () => (await root.getAttribute('data-step')) !== id;
+    // Automatic work can finish before the poller observes its transient card.
+    // Manual decisions still require their exact step and real player action.
+    if (AUTO.has(id))
+      await expect.poll(async () => await done() || await root.getAttribute('data-step') === id,
+        { timeout: 60_000, message: `step ${n} is ${id} or already completed` }).toBe(true);
+    else await expect(root, `step ${n} is ${id}`).toHaveAttribute('data-step', id, { timeout: 60_000 });
     // Steps 6 (build runs) and 7 (checks) build themselves; the rest wait on the player.
     const action = card.locator('[data-buildout-action]');
     if (!AUTO.has(id) && !(await started())) {
@@ -94,9 +99,9 @@ async function firstRun(page: Page, info: TestInfo, opts: { reduced: boolean; sh
     if (NO_PIECES.has(id)) expect(log.map(b => b.phase), `${id} logical markers`).toEqual(['start', 'burst', 'done']);
     else if (opts.reduced) expect(ms, `${id} reduced build ms`).toBeLessThan(4_500);
     else expect(ms, `${id} build ms`).toBeGreaterThan(3_000);
-    // One build at a time, in order, each exactly once.
-    const doneIds = (await builds(page)).filter(b => b.phase === 'done').map(b => b.id);
-    expect(doneIds).toEqual(STEPS.slice(0, i + 1).filter(s => doneIds.includes(s) || !NO_PIECES.has(s)));
+    // Even if the next automatic step has arrived, every captured phase must be
+    // one ordered, non-overlapping journey; duplicates and replay still fail.
+    assertBuildEventPrefix(await builds(page));
   }
 
   // The rocket went: counters and the "Look around" card come out, then free look.
