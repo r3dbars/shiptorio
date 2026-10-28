@@ -79,8 +79,7 @@ and lets you leave, no fake speed-up.
   can reach the pad while the planner is still rising), and the card waits for the scene so every build plays in order.
   Steps that reveal nothing (`issue`, `build`) count as built as soon as `stepFrom` passes them.
 - `data-phase="chalk|construct|burst|payoff|done"` while a build plays, driven by the scene's `shiptorio:build` events
-  (start, then `phaseAt` from that moment until `burst`; `burst`; `done`), never by the card's own clock. Builds are timed
-  on frames, so on a slow device a build takes longer than 7 s of wall time.
+  (start, then `phaseAt` from that moment until `burst`; `burst`; `done`), never by the card's own clock. Builds advance on frames using real elapsed time, independently of the movement physics clamp, so reduced-motion fades do not stretch on low-frame-rate devices.
 - The coach card: `role="region"`, accessible name "Build", attribute `data-buildout-card`. Its main action button carries
   `data-buildout-action="<trigger>"` (`hold`, `tap` or `continue`). Later on the left, Continue on the right.
 - Slice 6 also mounts `<BuildStamp />` (slice 4) next to the card, behind the flag.

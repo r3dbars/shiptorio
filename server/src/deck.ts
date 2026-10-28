@@ -134,19 +134,23 @@ export function buildDeck(state: FactoryState, candidates: readonly Move[] = [..
   const visible = ranked.filter(m => keep.has(m)).slice(0, 12);
   const runnerDecision = (move: Move, tool: string) => {
     const item = state.items.find(i => i.id === move.itemId);
-    return move.stage === "build" && item?.source === "github_issue" && /^gh-\d+$/.test(item.id)
-      && ["ore", "queued", "rejected"].includes(item.state) && (tool !== "plan_runner_job" || !item.prNumber)
-      && move.options.some(o => o.actions.some(a => a.tool === tool));
+    const action = move.options.flatMap(o => o.actions).find(a => a.tool === tool);
+    const refresh = action?.args.refreshBase === true && !!item?.prNumber && /^shiptorio\/runner-[a-f0-9-]{36}$/.test(item.branch ?? "");
+    return !!action && move.stage === "build" && item?.source === "github_issue" && /^gh-\d+$/.test(item.id)
+      && (refresh ? ["on_pad", "passed", "inspecting", "rejected"].includes(item.state) : ["ore", "queued", "rejected"].includes(item.state) && (tool !== "plan_runner_job" || !item.prNumber));
   };
   // A real plan awaiting consent must remain reachable. Otherwise reserve one existing
-  // build/retry proposal. This changes membership only; Spark still orders the capped deck.
+  // build/retry proposal in a non-merge slot. This changes membership only; Spark still orders the capped deck.
   const runner = ranked.find(move => runnerDecision(move, "approve_runner_job"))
     ?? ranked.find(move => runnerDecision(move, "plan_runner_job"));
   if (!runner || visible.some(move => move.id === runner.id)) return visible;
   const passive = [...visible].reverse().find(move => move.kind === "unblock" && !move.id.endsWith(":deferred")
     && move.options.length > 0 && move.options.every(o => o.id === "later" && o.actions.length === 0));
-  if (!passive) return visible; // never displace another executable decision or an escalation
-  const ids = new Set(visible.filter(move => move.id !== passive.id).map(move => move.id));
+  // Governance and other pending decisions may fill every slot too. Page out the
+  // lowest-ranked non-merge card, without answering, deleting or rewriting it.
+  const replace = passive ?? [...visible].reverse().find(move => !gate.includes(move));
+  if (!replace) return visible; // all twelve slots belong to merge-gate decisions
+  const ids = new Set(visible.filter(move => move.id !== replace.id).map(move => move.id));
   ids.add(runner.id);
   return ranked.filter(move => ids.has(move.id));
 }

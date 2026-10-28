@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { FactoryState, Move, type Item, type Move as MoveType } from "@shiptorio/shared";
+import { thirdDefer } from "../src/deck-decisions";
 import { buildDeck, deckScore, enrichMove, GROW_BONUS, moveScope } from "../src/deck";
 const now = 600_000;
 const item = (id: string, overrides: Partial<Item> = {}): Item => ({ id, kind: "bug", source: "github_issue", title: id, district: "server", state: "queued", attempts: 0, updatedAt: 0, ...overrides });
@@ -138,6 +139,23 @@ describe("runner decisions stay reachable in a full alert deck", () => {
   const clock = 5 * 60 * 60_000;
   const alerts = () => Array.from({ length: 12 }, (_, n) => move(`alert-${n}`, { kind: "unblock", stage: "intake", createdAt: clock - 4 * 60 * 60_000, options: [{ id: "later", label: "Look later", recommended: true, actions: [] }] }));
   const runner = (tool: "plan_runner_job" | "approve_runner_job", id = tool) => move(id, { kind: "build", stage: "build", itemId: "gh-58", createdAt: clock, options: [{ id: tool === "plan_runner_job" ? "codex" : "approve", label: "Continue the build", recommended: true, actions: [{ tool, args: tool === "plan_runner_job" ? { harness: "codex" } : { jobId: "job-58" }, reason: "Player approval is required" }] }] });
+  for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps explicit same-PR base refresh ${tool} reachable without displacing merge gates`, () => {
+    const s = state([item("gh-58", { state: "on_pad", updatedAt: clock, prNumber: 99, branch: "shiptorio/runner-00000000-0000-4000-8000-000000000001" })]);
+    const decision = runner(tool);
+    decision.options[0].actions[0].args.refreshBase = true;
+    const candidates = [...alerts(), decision];
+    expect(buildDeck(s, candidates, { now: clock }).some(card => card.id === tool)).toBe(true);
+    expect(buildDeck(s, candidates, { now: clock })).toHaveLength(12);
+    decision.options[0].actions[0].args.refreshBase = false;
+    expect(buildDeck(s, candidates, { now: clock }).some(card => card.id === tool)).toBe(false);
+    decision.options[0].actions[0].args.refreshBase = true;
+    s.items[0].branch = "human-owned";
+    expect(buildDeck(s, candidates, { now: clock }).some(card => card.id === tool)).toBe(false);
+    s.items[0].branch = "shiptorio/runner-00000000-0000-4000-8000-000000000001";
+    const gates = alerts().map((card, n) => ({ ...card, itemId: `gate-${n}`, options: [{ id: "launch", label: "Launch", recommended: true, actions: [{ tool: "request_merge", args: { pr: n + 1 }, reason: "Passed" }] }] }));
+    expect(buildDeck(s, [...gates, decision], { now: clock }).some(card => card.id === tool)).toBe(false);
+    expect(buildDeck(s, [...gates, decision], { now: clock })).toHaveLength(12);
+  });
   for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps ${tool} visible after feedback resets the item's wait time`, () => {
     const s = state([item("gh-58", { updatedAt: clock })]);
     const decision = runner(tool);
@@ -147,6 +165,18 @@ describe("runner decisions stay reachable in a full alert deck", () => {
     expect(deck).toHaveLength(12);
     expect(deck.some(card => card.id === decision.id)).toBe(true);
     expect(deck.filter(card => card.id.startsWith("alert-"))).toHaveLength(11);
+  });
+  for (const tool of ["plan_runner_job", "approve_runner_job"] as const) it(`keeps ${tool} reachable behind twelve governance escalations`, () => {
+    const s = state([item("gh-58", { updatedAt: clock })]);
+    const escalations = alerts().map(thirdDefer);
+    const candidates = [...escalations, runner(tool)];
+    const original = structuredClone(candidates);
+    const deck = buildDeck(s, candidates, { now: clock });
+    expect(deck).toHaveLength(12);
+    expect(deck.some(card => card.id === tool)).toBe(true);
+    expect(deck.filter(card => card.id.endsWith(":deferred"))).toHaveLength(11);
+    expect(candidates).toEqual(original);
+    expect(buildDeck(s, escalations, { now: clock }).map(card => card.id).sort()).toEqual(escalations.map(card => card.id).sort());
   });
   it("reserves only one slot, preferring already planned consent, without reordering the selected deck", () => {
     const s = state([item("gh-58", { updatedAt: clock })]);
@@ -164,15 +194,36 @@ describe("runner decisions stay reachable in a full alert deck", () => {
     expect(buildDeck(state(), [...alerts(), approval], { now: clock }).some(card => card.id === approval.id)).toBe(false);
     expect(buildDeck(state([item("gh-58", { updatedAt: clock })]), [...alerts(), approval], { now: clock, suppressedIds: new Set([approval.id]) }).some(card => card.id === approval.id)).toBe(false);
   });
-  it("never evicts executable cards or explicit third-defer and review escalation choices", () => {
+  it("pages one non-merge decision out of the window without changing or consuming it", () => {
     const s = state([item("gh-58", { updatedAt: clock })]);
     const executable = alerts().map(card => ({ ...card, options: [{ id: "go", label: "Review", recommended: true, actions: [{ tool: "inspect_bottleneck", args: {}, reason: "Check the real bottleneck" }] }] }));
     const escalation = alerts().map(card => ({ ...card, id: `${card.id}:deferred` }));
     const review = alerts().map(card => ({ ...card, kind: "review" as const }));
     for (const protectedCards of [executable, escalation, review]) {
-      const deck = buildDeck(s, [...protectedCards, runner("plan_runner_job")], { now: clock });
-      expect(deck.map(card => card.id)).toEqual(buildDeck(s, protectedCards, { now: clock }).map(card => card.id));
+      const candidates = [...protectedCards, runner("plan_runner_job")];
+      const original = structuredClone(candidates);
+      const deck = buildDeck(s, candidates, { now: clock });
+      expect(deck).toHaveLength(12);
+      expect(deck.some(card => card.id === "plan_runner_job")).toBe(true);
+      expect(candidates).toEqual(original);
+      const restored = buildDeck(s, protectedCards, { now: clock });
+      expect(restored).toHaveLength(12);
+      expect(restored.map(card => card.id).sort()).toEqual(protectedCards.map(card => card.id).sort());
     }
+  });
+
+  it("retains merge-gate priority and reserves a runner slot only when a non-merge slot exists", () => {
+    const gates = Array.from({ length: 12 }, (_, n) => move(`launch-${n}`, { ...ship(), id: `launch-${n}`, itemId: `pr-${n}` }));
+    const s = state([item("gh-58", { updatedAt: clock }), ...gates.map(card => item(card.itemId!, { state: "on_pad", prNumber: 1, updatedAt: clock }))]);
+    const approval = runner("approve_runner_job");
+    const allGates = buildDeck(s, [...gates, approval], { now: clock });
+    expect(allGates).toHaveLength(12);
+    expect(allGates.every(card => card.id.startsWith("launch-"))).toBe(true);
+    expect(allGates.every(card => card.locked && card.options[0].actions[0].tool === "run_missing_check")).toBe(true);
+    const mixed = buildDeck(s, [...gates.slice(0, 11), ...alerts().map(thirdDefer), approval], { now: clock });
+    expect(mixed).toHaveLength(12);
+    expect(mixed.filter(card => card.id.startsWith("launch-"))).toHaveLength(11);
+    expect(mixed.some(card => card.id === approval.id)).toBe(true);
   });
 
 });

@@ -368,6 +368,17 @@ renewing from the independent heartbeat; preserving revocation and saved work.
 
 ## Codex merge helper
 
+- 2026-10-27: root queue release integrates #443 governance-slot fix, reviewed #442 pinned action updates and #376 check-only receipts. #170 fresh plan awaits Justin; UI #444 and factory #373 remain excluded. Exact combined checks and production deployment are required before release.
+
+- 2026-10-27 23:13 UTC: ready Claude heads inspected after root #438 deployed. #433 exact `dbf5df18300712090f452a1e126a902aaff77ea0` had no manual browser/load run; dispatched [40600771254](https://github.com/r3dbars/shiptorio/actions/runs/40600771254) once. Queued; not ready proof. One manual PR at a time. #427 remains under root hold for buildout acceptance coverage/rendering; no duplicate dispatch, no merges or retargets, no factory changes.
+
+Historical check-only dispatch receipt (heads below are superseded; queued was never counted as green):
+- 2026-10-27 19:50 UTC: check-only batch helper; no merges or retargets. Ready Claude PRs had green check/selfhost and Stranger on the heads below, but browser/load were skipped. Dispatched each missing manual CI once; queued is not ready-to-release proof:
+  - #357, `89268d9ae8c8524acb46c0f9480ce776b844b502`: [CI 40572747521](https://github.com/r3dbars/shiptorio/actions/runs/40572747521), queued.
+  - #359, `38f60297ed4f2fe769dba24238b636f9ba436843`: [CI 40572751171](https://github.com/r3dbars/shiptorio/actions/runs/40572751171), queued.
+  - #363, `92e4e5232bfb995befe8e24a5083e385193c62ab`: [CI 40572754927](https://github.com/r3dbars/shiptorio/actions/runs/40572754927), queued.
+- Root owns final combined release checks and Deploy. Factory PRs untouched; password gate unchanged.
+
 - 2026-10-27: #342 head `1dbb4fc376a2cfe4673b66b770f31d689465ae71` passed required check/selfhost/Stranger and full manual browser/load [40564032048](https://github.com/r3dbars/shiptorio/actions/runs/40564032048). Squash merged as `7304199df5ed6259e7a8fff8d5402f21dfe67ab5`; [Deploy 40565415889](https://github.com/r3dbars/shiptorio/actions/runs/40565415889) green; live version matched and private factory returned 401 anonymously.
 - 2026-10-27: #346 was already merged. Updated its branch from main through merge commit `db5614982220d4eafeff107cf82e022b6c6f4501` (identical tree to deployed main at dispatch). Manual browser/load [40565878063](https://github.com/r3dbars/shiptorio/actions/runs/40565878063) passed all jobs. [Deploy 40566612966](https://github.com/r3dbars/shiptorio/actions/runs/40566612966) passed at verified descendant `1bdeeb4`; no second PR merge attempted.
 - 2026-10-27: #345 is already merged; updating the historical branch from main `1bdeeb4` returned a merge conflict. Owner notified in the PR; no code was edited. Its integrated code was covered by the green full manual run for #346.
@@ -445,3 +456,120 @@ sequence/snapshot/heartbeat wiring because browser-socket.ts does not own delive
 Contract/journey assertions recognize seq/pong; the deck fixture drains background
 check-in work and the goal assertion allows transport metadata. Comeback, sound,
 shaft, source/index.ts and other active lanes remain untouched.
+
+## Root release reconciliation (2026-10-27)
+
+Main received #427 as c5e23309 while #445 was completing its green older-base checks. Deploy40604211672 cancellation raced Cloudflare acceptance; root restored the recorded verified eb6a820 Worker using [Rollback40604702919](https://github.com/r3dbars/shiptorio/actions/runs/40604702919). Live version matched eb6a820 and anonymous factory access remained401. Preserve all merged main code in the repair candidate, apply only the reviewed buildout elapsed-clock backport, restore complete Pixel coverage and correct logical no-piece assertions. The reduced builder still has an observed4.5-second budget failure; older green #445 checks do not validate the newly combined candidate.
+
+Deployment recovery receipt: [Rollback40604702919](https://github.com/r3dbars/shiptorio/actions/runs/40604702919) is green and live `/api/version` is eb6a820; anonymous `/api/me` returns401. `DEPLOY_ENABLED=false` is a temporary repository release freeze, not deletion of auto-deploy. Restore it only with validated current-main repair. #445 now preserves c5e23309 plus the queue/action fixes, reviewed elapsed animation clock, logical-step assertions and all Pixel cases. Its previous52b4f2f1 all-green run predates that combination. Shader prewarm owner #446 is under runtime review; its relaxed timing/hold tests are excluded.
+
+Final repair validation candidate: #447 shader warm-up retains current material state and releases cached twins with originals; #448 partitions all browser cases across six viewport/shard jobs without changing deadlines; #449 removes the demo rocket real-merge claim; #450 bounds exact-output short-text redaction caching and invalidates it on new credentials; #451 validates ordered phase prefixes across already-completed automatic steps; #452 makes the existing600ms guard visibly disabled and occurrence-fenced. Each source passed its scoped proof; #447/#450/#451/#452 also passed a full local check. The previous f5e strict matrix had all three reduced journeys passing original timings, with three full-motion failures (one test snapshot race and two dropped fresh taps); its load p95 was5177ms against5000. Those failures remain retained. Fresh combined full check, original strict six cases and all nine CI jobs are required; no skipped draft checks or old-head success count as acceptance. Production stays on verified eb6a820 with auto-deploy temporarily paused until this repair passes and main Deploy is explicitly verified.
+
+Slow-renderer follow-up: #454 makes existing low-quality fallback recognize two sustained foreground500–2000ms frames (including idle phones), while preserving pins, hidden/clock-jump handling and hold safety. #455 threads optional render elapsed time only to floor growth; physics, driver, other updaters and legacy stepping retain their original delta. Before fixes, remote862e CI missed6-second holds and15-second floor completion even though strict local6/6 passed. Both fixes have failing-before/passing-after regressions and one green full check; the next exact combined nine-job CI run must validate all48 browser cases before release. No retry, frame-clock safety, test deadline or workload was relaxed.
+
+Combined candidate `2eb0199e` remains held: [CI 40611004397](https://github.com/r3dbars/shiptorio/actions/runs/40611004397) passed check, selfhost, load and all three second browser shards, but failed the first browser shards on hold responsiveness and journey/floor assertions. [Stranger 40611011939](https://github.com/r3dbars/shiptorio/actions/runs/40611011939) passed. Owners are tracing the actual renderer cost and captured event order; no unchanged-head retry or acceptance relaxation. Root also integrated #388's pinned `54ec7483` test-only change: an isolated merge onto `2eb0199e` passed a full local check (1,337 passed, two existing skips, zero failures). This is local compatibility evidence, not a merged or deployed release. Production remains verified `eb6a820`, with the password gate and temporary deploy freeze retained.
+
+Measured hold/consent repairs: #457 (`0ca5fdfc`) yields only expensive scene submission during a genuine hold, preserving simulation and the existing consent clock. An unpinned SwiftShader/4x CPU probe recorded a native press-to-build start of 1,061ms, with drawing paused during the hold and resumed afterward; full local check passed (1,340 tests, two existing skips). #459 (`7579482d`) fixes an actual captured carried-release approval: the previous issue press ended after the planner's 600ms guard expired, so its release approved the new card. Settled buttons now require their own current-generation pointer/key press; bare assistive activation remains supported. Real component regressions fail before and pass after; full local check passed (1,338 tests, two existing skips), and independent code review found no blocker. These source receipts do not replace the final combined browser/Stranger/security checks or main deployment verification.
+
+Further retained evidence: [CI 40613954864](https://github.com/r3dbars/shiptorio/actions/runs/40613954864) passed check, selfhost, Stranger, CodeQL and every second browser shard; phone reduced journeys passed. It failed load tick p95 (5,340.79ms against 5,000ms), late celebration checks and desktop duration/overall time. #460 (`c27c1b20`) removes unchanged decision publications while preserving actual-frame authorization, reconnect snapshots, new-secret redaction invalidation, and identity-guarded retry after cursor storage failure. One controlled local pair measured tick p95 1,027→755ms on its earlier performance head; final correctness additions passed focused tests and full check. This is local evidence, not a prediction of CI or billed production CPU.
+
+#462 (`ecc09a38`) retains an actual visible shipped-card observation starting immediately before manual Launch, with the original 30-second bound. The captured Pixel trace shows the visible green SHIPPED card after manual input, before the old late poll; early/missing celebrations still fail. #461 (`7ce2ce73`) carries elapsed time through construction phases instead of dropping overshoot, stops before spending it on another queued build, and lets natural particle tails finish during payoff. Real-controller regressions cover slow frames, actual holders, cleanup, hurry and queue boundaries. The combined `097ecb02` full local check passed (1,362 passed, two existing skips, zero failures; lint/types/build green). The standalone runner bundle remains unchanged. A controlled three-build software-renderer comparison found no meaningful benefit from disabling trace screenshots, so full tracing is retained. Remote combined acceptance and deployment remain pending; production is still the verified rollback with the password gate enabled.
+
+## GitHub merge readiness guard (Codex, 2026-10-28)
+
+[#464](https://github.com/r3dbars/shiptorio/pull/464) reuses the permission-free first
+commit of #406 (complete station receipts and current-head/base fencing), excluding
+its held Administration-policy reader. Before: reported checks plus station passes
+could offer Launch while GitHub reports `behind` or `blocked`. A failing-before
+regression reproduces that false green. After: an uncached PR read requires an open,
+non-draft, explicitly mergeable `clean` PR on the inspected head and configured base.
+All other/missing states or API failures wait without discarding completed proof;
+carried Launch cards are withdrawn, and the final merge rechecks even an overrule.
+No new App permissions, direct factory merge, policy bypass or check-name list.
+This aggregate readiness snapshot does not enumerate required-check/App provenance;
+GitHub's SHA-bound merge endpoint remains the final authority. Root owns combined
+release validation and deployment; this draft is not production acceptance.
+
+### Codex factory base refresh (2026-10-28)
+
+[PR #466](https://github.com/r3dbars/shiptorio/pull/466), based on root's frozen75 release:
+a behind factory PR requests a fresh game approval, rebuilds one scoped commit on the
+new base, and replaces the SAME branch only with the exact approved old-head lease.
+New regression proof and a fresh gauntlet are required; no live factory actions were
+performed. Real local Git covers lease races and deterministic acknowledgment recovery;
+server fixture covers fresh approval, same-PR completion and Launch, plus base changes
+at approval/claim/finish. Full check and hosted status are recorded in the PR. Root
+owns batching, merge and Deploy; this chat does not merge. Narrow `publication.ts`
+exception extends merged #351's trusted boundary, without changing workspace code.
+Root authorized one narrow deck reservation exception: explicit same-PR refresh proposals
+and approvals keep a runner slot in a full deck; merge-gate priority stays intact.
+
+## Root combined repair candidate — October 28
+
+Integrates #464 (GitHub merge-readiness guard), #465 (read-only browser observations),
+#466 (freshly approved same-PR base refresh), and #468 + #471 (runner re-install with
+verified Keychain protection). Conflict resolution retains both complete provider
+identity and current-head check metadata in the rework fixtures. A base-moved warning
+is emitted once at failed publication rather than on every waiting alarm.
+
+#468's exact-head browser/load run was dispatched once by the check-only helper:
+[40696934882](https://github.com/r3dbars/shiptorio/actions/runs/40696934882), head
+`c7ccd833c530ab9d394c64b3068469dfee4ae27f`; no skipped job is accepted as proof.
+The root candidate needs its own complete checks. No factory PR has been merged;
+#170 still requires fresh base-update approval and the player's final Launch.
+Logo #467 is separate visual work; landing workshop #469 belongs to Justin's other
+thread and is excluded from this batch. Production remains the password-gated rollback
+until a verified deployment. This entry incorporates the pending helper receipt #470.
+
+Combined source `0004cf88` passed the actual Mac full check: 1,400 passed, two
+existing skips, zero failures; lint/types/web and runner build green. The earlier
+`736488b0` candidate was rejected after its native Keychain regression; its manual
+CI was cancelled rather than accepted. Corrected #471 uses the native settings
+suffix, with disposable-keychain disabled-timeout detection and restoration proof.
+The final combined remote browser/load run is still required. No deployment yet.
+
+Browser/Stranger integration preflight found older provider stubs omitted current
+check head SHA and PR readiness/base metadata now required by #464/#466. The d946
+manual run was cancelled rather than claiming acceptance. Root updates only the
+provider fixtures to model real metadata; safety checks and browser assertions stay
+unchanged. The fixture PR identity now follows the repo/branch actually submitted.
+Local real journey and Stranger reruns precede the next frozen full manual dispatch.
+
+## Nonblocking GPU submission candidate (Codex, 2026-10-28)
+
+[#478](https://github.com/r3dbars/shiptorio/pull/478) starts from diagnostic #475.
+Hosted desktop samples already showed tier 2 with low JS submission work, so no
+quality/governor change is proposed. A zero-timeout WebGL2 fence poll keeps at most
+one normal RAF submission pending; simulation, camera, builds and consent clocks
+continue, and HUD work stays outside GPU admission. Ordinary shadow cadence counts
+actual submissions; urgent build invalidations stay latched. Unsupported/failed
+fences or a five-second unsignaled fence fall back to the previous rendering path;
+context loss/restoration and disposal release sync references. Existing perf frame
+metrics retain their logical-frame meaning, with separate passive submission/skip/
+failure counters. Fake-GL, hold and governor tests pass (17 tests/80 assertions).
+The unchanged original desktop dark-to-rocket journey passes locally in 1.5 minutes;
+111 passive samples ended at 947 submissions, six pending skips and zero fence
+failures. That low local skip rate does not establish a hosted speedup. Full local
+check passes: 1,406 tests, two existing skips, zero failures; lint/types/build green.
+Hosted comparative evidence remains pending. This is an unproven performance
+candidate, not a released fix. Root owns hosted verification, merging and deployment.
+
+## Physical hold rendering lease (Codex, 2026-10-28)
+
+[#479](https://github.com/r3dbars/shiptorio/pull/479) extends #478 after the hosted
+Pixel trace showed consent/tunnel-start arriving before native touchEnd while
+synchronous shader warm-up blocked the observer. Real BuildHold/HoldLaunch DOM
+regressions fail before and pass after: consent still submits at the original
+threshold, but its render pause follows the matching physical press through card
+unmount. Up/cancel, blur, hidden state or a fresh matching down after a missed up
+releases detached ownership. Early abandonment releases immediately; assistive
+activation and controller timing are unchanged. Cleanup/setup replay remains safe.
+Focused tests pass (28 tests, 101 assertions); full check and original Pixel journeys
+are pending. This fixes input ordering, not the residual shader stall after release.
+Root owns hosted validation, release integration and deployment.
+
+## Root release repair — native hold lifetime and final batch
+
+- Integrated [#479](https://github.com/r3dbars/shiptorio/pull/479) runtime `34952d8af6aeaeca55c51d19d342183cbda2a772` after independent review: accepted native holds retain only their rendering lease until matching physical release, including card unmount. Lost-touch recovery uses primary pointer type, not reusable IDs. Consent timing/controller and assistive activation remain unchanged. Focused regressions: 29 passed / 105 assertions; final full check and hosted combined acceptance remain required.
+- The candidate also integrates selected [landing #472](https://github.com/r3dbars/shiptorio/pull/472), [pairing guidance #473](https://github.com/r3dbars/shiptorio/pull/473), and GPU admission [#478](https://github.com/r3dbars/shiptorio/pull/478). Retained failed hosted evidence; no unchanged-head retries, deadline changes, skipped acceptance or direct factory merge.
+- Production remains independently deployed runner release `d024fec7` until final combined CI and Deploy succeed. Factory [#463](https://github.com/r3dbars/shiptorio/pull/463) still requires a fresh personally approved base refresh and in-game Launch. Cold shader work after releasing the finger remains a measured performance limitation; this change does not claim to eliminate compilation.

@@ -3,6 +3,7 @@ import { authorizedDB, membershipCache, authorizedSocket, browserEnv, browserCoo
 import { describe, expect, it, mock } from "bun:test";
 import { FactoryState, type Move, type ServerToWeb } from "@shiptorio/shared";
 import { starterLine } from "../src/engine";
+import { emptyDeckBook, moveKey } from "../src/deck-decisions";
 import { testD1 } from "./d1-fixture";
 
 mock.module("cloudflare:workers", () => ({ DurableObject: class {
@@ -67,6 +68,137 @@ function fixture(cards: Move[], stateOverrides: Partial<FactoryState> = {}) {
 }
 
 describe("durable live check-in decisions", () => {
+  it("retries an unchanged decision after a transient cursor write failure", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; ctx: { storage: { put(key: string, value: unknown): Promise<void> } } };
+    const put = internal.ctx.storage.put.bind(internal.ctx.storage);
+    let cursorWrites = 0;
+    internal.ctx.storage.put = async (key, value) => {
+      if (key === "browserSeq" && ++cursorWrites === 2) throw new Error("Cursor storage temporarily unavailable");
+      await put(key, value);
+    };
+    internal.openMoves.find(m => m.id === "second")!.why = "New receipts";
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]); // Deck allocation failed.
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck"]);
+    expect(f.events.find(e => e.type === "deck")).toMatchObject({ deck: [{ id: "first" }, { id: "second", why: "New receipts" }] });
+  });
+
+  it("does not let an older failed publication invalidate a later identical payload after intervening changes", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; ctx: { storage: { put(key: string, value: unknown): Promise<void> } } };
+    const put = internal.ctx.storage.put.bind(internal.ctx.storage);
+    const started = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+    let cursorWrites = 0;
+    internal.ctx.storage.put = async (key, value) => {
+      if (key === "browserSeq" && ++cursorWrites === 2) {
+        started.resolve(); await release.promise; throw new Error("Old cursor allocation failed");
+      }
+      await put(key, value);
+    };
+    const second = internal.openMoves.find(m => m.id === "second")!;
+    try {
+      second.why = "Payload A";
+      await internal.refreshDecisions();
+      await started.promise;
+      second.why = "Payload B";
+      await internal.refreshDecisions();
+      second.why = "Payload A";
+      await internal.refreshDecisions();
+    } finally { release.resolve(); }
+    await internal.broadcastQueue;
+    const decks = f.events.filter((e): e is Extract<ServerToWeb, { type: "deck" }> => e.type === "deck");
+    expect(decks.slice(-2).map(e => e.deck.find(m => m.id === "second")?.why)).toEqual(["Payload B", "Payload A"]);
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]); // Later A stays acknowledged.
+  });
+
+  it("publishes the first decisions, then keeps telemetry without repeating unchanged card frames or their authorization reads", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    expect(f.events.filter(e => e.type === "deck")).toHaveLength(1);
+    expect(f.events.filter(e => e.type === "move")).toHaveLength(1);
+    const internal = f.factory as unknown as { refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; env: { DB: { prepare(sql: string): any } } };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    let sessionReads = 0;
+    internal.env.DB.prepare = sql => { if (sql.startsWith("SELECT u.id, u.login FROM sessions")) sessionReads++; return prepare(sql); };
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]);
+    expect(sessionReads).toBe(1); // Fresh authorization for the one real telemetry frame.
+    expect(f.saved().move?.id).toBe("first");
+  });
+
+  it("publishes changed lower cards and changed top options, resolves removal, and can offer the same card again", async () => {
+    const f = fixture([card("first"), card("second")]);
+    await f.checkin();
+    const internal = f.factory as unknown as { openMoves: Move[]; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void> };
+    const refresh = async () => { f.events.length = 0; await internal.refreshDecisions(); await internal.broadcastQueue; };
+    internal.openMoves.find(m => m.id === "second")!.why = "The evidence changed";
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck"]);
+    internal.openMoves.find(m => m.id === "first")!.options[0].label = "Read the updated receipts";
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { options: [{ label: "Read the updated receipts" }] } });
+    const first = structuredClone(internal.openMoves.find(m => m.id === "first")!);
+    internal.openMoves = [];
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move_resolved"]);
+    internal.openMoves = [first];
+    await refresh();
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+  });
+
+  it("sends full snapshots on reconnect and still denies revoked sessions when decisions are unchanged", async () => {
+    const f = fixture([card("first")]);
+    await f.checkin();
+    f.events.length = 0;
+    await f.checkin();
+    const snapshot = f.events.find(e => e.type === "snapshot");
+    expect(snapshot).toMatchObject({ state: { move: { id: "first" }, deck: [{ id: "first" }] } });
+    const internal = f.factory as unknown as { refreshDecisions(): Promise<void>; broadcastQueue: Promise<void>; env: { DB: { prepare(sql: string): any } } };
+    const prepare = internal.env.DB.prepare.bind(internal.env.DB);
+    internal.env.DB.prepare = sql => sql.startsWith("SELECT u.id, u.login FROM sessions") ? { bind: () => ({ first: async () => null }) } : prepare(sql);
+    let closed = 0;
+    f.socket.close = () => { closed++; };
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events).toEqual([]);
+    expect(closed).toBe(1);
+  });
+
+  it("republishes unchanged cards under newly learned redaction policy without churning on duplicate registration", async () => {
+    const credential = "opaque provider credential 雪";
+    const f = fixture([card("first", { why: `Evidence includes ${credential}` })]);
+    await f.checkin();
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { why: `Evidence includes ${credential}` } });
+    const internal = f.factory as unknown as { redactor: { register(value: unknown): void }; refreshDecisions(): Promise<void>; broadcastQueue: Promise<void> };
+    internal.redactor.register({ ACCESS_TOKEN: credential });
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch", "deck", "move"]);
+    expect(f.events.find(e => e.type === "deck")).toMatchObject({ deck: [{ why: "Evidence includes [REDACTED]" }] });
+    expect(f.events.find(e => e.type === "move")).toMatchObject({ move: { why: "Evidence includes [REDACTED]" } });
+    internal.redactor.register({ ACCESS_TOKEN: credential });
+    f.events.length = 0;
+    await internal.refreshDecisions();
+    await internal.broadcastQueue;
+    expect(f.events.map(e => e.type)).toEqual(["patch"]);
+  });
+
   it("returns an authorized handshake while another session frame authorization is held", async () => {
     const f = fixture([]);
     await f.factory.exportState();
@@ -345,5 +477,39 @@ describe("real runner proposals survive a deck full of passive source alerts", (
     expect(f.saved().deck?.some(move => move.itemId === item.id && move.options.some(option => option.actions.some(action => action.tool === tool)))).toBe(true);
     if (status !== "none") expect(f.data.get("runnerJob:job-58")).toEqual(job);
     else expect(await f.factory.runnerJobs()).toEqual([]);
+  });
+});
+
+
+describe("runner decisions remain reachable among durable third-defer escalations", () => {
+  for (const status of ["failed", "awaiting_approval"] as const) it(`keeps the ${status} path visible without consuming governance decisions`, async () => {
+    const now = Date.now();
+    const issue = { id: "gh-58", kind: "bug" as const, source: "github_issue" as const, title: "Fix the queued regression", district: "/", state: "queued" as const, attempts: 0, updatedAt: now };
+    const older = Array.from({ length: 12 }, (_, n) => ({ ...issue, id: `sentry-${n}`, source: "sentry" as const, updatedAt: now - 4 * 60 * 60_000, value: 100 }));
+    const alerts = older.map(item => card(`governance-${item.id}`, { itemId: item.id, kind: "unblock", stage: "inspect", createdAt: item.updatedAt }));
+    const book = emptyDeckBook();
+    for (const move of alerts) { const key = moveKey(move); book.decisions[key] = { key, move, count: 3 }; }
+    const originalBook = structuredClone(book);
+    const f = fixture(alerts, { items: [issue, ...older] });
+    f.data.set("deckBook", book);
+    f.data.set("runnerPresence", { harnesses: ["codex"], seenAt: now });
+    const job = { id: "job-58", itemId: issue.id, repo: "r3dbars/demo", status, harness: "codex", allowedPaths: ["server/src/engine.ts"], branch: "shiptorio/runner-job-58", baseSha: "a".repeat(40), plan: "Fix the scoped regression and prove it", approvalMoveId: "approval-58" };
+    f.data.set("runnerJob:job-58", structuredClone(job));
+    const internal = f.factory as unknown as { offerRunnerPlan(): Promise<void>; resolveRunnerMove(move: Move): Promise<void> };
+    await internal.offerRunnerPlan();
+    const tool = status === "awaiting_approval" ? "approve_runner_job" : "plan_runner_job";
+    const proposal = f.saved().deck?.find(move => move.itemId === issue.id && move.options.some(option => option.actions.some(action => action.tool === tool)));
+    expect(proposal).toBeDefined();
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.filter(move => move.id.endsWith(":deferred"))).toHaveLength(11);
+    expect((f.data.get("openMoves") as Move[]).filter(move => alerts.some(alert => alert.id === move.id))).toHaveLength(12);
+    expect(f.data.get("deckBook")).toEqual(originalBook);
+    expect(f.data.get("runnerJob:job-58")).toEqual(job);
+    await internal.resolveRunnerMove(proposal!);
+    expect(f.saved().deck).toHaveLength(12);
+    expect(f.saved().deck?.filter(move => move.id.endsWith(":deferred")).every(move => move.title === "Never, or let the factory decide?")).toBe(true);
+    expect((f.data.get("openMoves") as Move[]).filter(move => alerts.some(alert => alert.id === move.id))).toHaveLength(12);
+    expect(f.data.get("deckBook")).toEqual(originalBook);
+    expect(f.data.get("runnerJob:job-58")).toEqual(job);
   });
 });

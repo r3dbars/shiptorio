@@ -165,8 +165,10 @@ files to uninstall the legacy service.
 Approving a plan stays bound to that exact issue and plan even if another card moves to
 the top of the deck. If the issue changes before approval, request a fresh plan.
 
-If old source alerts fill the check-in, one existing build or plan-approval card stays
-reachable. This only makes the decision visible; it does not approve a plan or start work.
+If old alerts or governance choices fill the check-in, one existing build or plan-approval
+card stays reachable in a non-merge slot. Other decisions remain pending and return when
+space opens; their choices and defer counts are unchanged. Merge-gate cards keep priority.
+This only makes the decision visible; it does not approve a plan or start work.
 
 ### macOS says signed in, then asks again
 
@@ -187,3 +189,16 @@ connection and tells you to run `shiptorio-runner pair`. Saved builds and receip
 your computer. A fresh pairing replaces the stopped connection. The factory's runner status
 also reports when re-pairing is needed; a generic network error or unclassified 401 alone
 does not erase or stop the saved pairing.
+
+## Update a PR after main advances
+
+If a factory PR falls behind main, choose **Plan update and verify again** in the
+game. Review the fresh plan: it names the new base, existing PR and branch, and the
+exact old head that may be replaced. Approving rebuilds the fix on that base and
+replaces only that factory branch. A concurrent branch edit stops the update.
+
+Your local agent runs fresh regression proof and supervisor checks. The same PR goes
+through CI, verification and review again; you still choose **Launch** separately.
+If main moves during the build, the factory asks for another plan instead of treating
+old evidence as current. Updating the installed runner may be needed for this new job
+format; an old runner cannot publish the refreshed branch with its normal push.

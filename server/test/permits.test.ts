@@ -90,7 +90,7 @@ describe("permits in the Factory", () => {
     globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (/\/comments\?per_page=100&page=/.test(url)) return Response.json([]);
-      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", status: "completed", conclusion: "success" }] });
+      if (url.includes("/check-runs?")) return Response.json({ total_count: 1, check_runs: [{ name: "CI", app: { id: 15368 }, head_sha: new URL(url).pathname.split("/").at(-2), status: "completed", conclusion: "success" }] });
       if (url.includes("/status?")) return Response.json({ total_count: 0, statuses: [] });
       if (url.endsWith("/access_tokens")) return Response.json({ token: "t" });
       if (url.endsWith("/files?per_page=100")) return Response.json([{ filename: "docs/SETUP.md", status: "modified", patch: "+x" }]);
@@ -98,7 +98,7 @@ describe("permits in the Factory", () => {
       if (url.endsWith("/comments")) return Response.json({ id: 1 });
       const m = url.match(/\/pulls\/(\d+)(\/merge)?$/);
       if (m?.[2]) { merged.push(m[1]); return Response.json({ merged: true }); }
-      if (m) return Response.json({ head: { sha: head }, merged: false });
+      if (m) return Response.json({ base: { ref: "main", sha: "base" }, head: { sha: head }, state: "open", draft: false, mergeable: true, mergeable_state: "clean", merged: false });
       throw new Error(`unexpected ${url}`);
     }) as typeof fetch;
     try {

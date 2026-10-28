@@ -10,3 +10,9 @@ test("HTTP job assignments reject malformed and escaping executable fields", () 
   }
   expect(RenewResponse.safeParse({ token: "bad\nINJECT=secret", expires: 1234 }).success).toBe(false);
 });
+
+test("base refresh assignments require the same PR and a new proof base, never an inferred push lease", () => {
+  const refresh = { ...job, reworkPr: 99, verifyBaseSha: job.baseSha, refreshBase: { expectedHeadSha: "b".repeat(40) } };
+  expect(ClaimResponse.parse({ job: refresh }).job?.refreshBase).toEqual(refresh.refreshBase);
+  for (const change of [{ reworkPr: undefined }, { verifyBaseSha: undefined }, { verifyBaseSha: "c".repeat(40) }, { refreshBase: { expectedHeadSha: job.baseSha } }, { refreshBase: { expectedHeadSha: "--all" } }]) expect(ClaimResponse.safeParse({ job: { ...refresh, ...change } }).success).toBe(false);
+});
