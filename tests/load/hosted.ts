@@ -1,19 +1,26 @@
 // Deliberately separate from run.ts: no local test bypasses or production fallback.
-import WebSocket from 'ws';
+import { LoadWebSocket as WebSocket } from './socket-client';
+import { setTimeout as delay } from 'node:timers/promises';
+import { setMaxListeners } from 'node:events';
 import { mkdir } from 'node:fs/promises';
 import { assertWire } from '../contract/assert-wire';
-import { fixtures, stagingOrigin, stats, pinnedBuild, type Fixture } from './hosted-support';
+import { fixtures, stagingOrigin, stats, pinnedBuild, loadProfile, LoadFailure, publicFailure, type Fixture } from './hosted-support';
 
 const origin = stagingOrigin(process.env.LOAD_ORIGIN);
 const preflightOnly = process.argv.includes('--preflight');
 const output = process.env.LOAD_REPORT ?? 'test-results/hosted-load.json';
 const durationMs = 600_000;
-const supplemental = Number(process.env.LOAD_SUPPLEMENTAL_OBSERVERS ?? 0);
-if (![0, 200].includes(supplemental)) throw new Error('LOAD_SUPPLEMENTAL_OBSERVERS must be 0 (requested product profile) or 200 (beyond-target stress)');
-const targetSockets = 50 + supplemental;
+const profile = loadProfile(process.env.LOAD_SUPPLEMENTAL_OBSERVERS);
+const { supplemental, targetSockets } = profile;
+const cancelled = new AbortController();
+setMaxListeners(0, cancelled.signal);
+const sleep = (ms: number) => delay(ms, undefined, { signal: cancelled.signal }).catch(error => { if (!cancelled.signal.aborted) throw error; });
+let workload: Promise<unknown>[] = [];
 const requestMs: number[] = [], apiMs: number[] = [], fanoutMs: number[] = [], upgradesMs: number[] = [];
 const failures: Record<string, number> = {};
 let attempts = 0, failed = 0, unexpectedCloses = 0, stopping = false, startedAt = '', endedAt = '';
+const stop = () => { stopping = true; stage = 'cancelled'; cancelled.abort(); for (const { ws } of sockets) ws.terminate(); };
+process.once('SIGINT', stop); process.once('SIGTERM', stop);
 const fail = (kind: string) => { failed++; failures[kind] = (failures[kind] ?? 0) + 1; };
 const sockets: { ws: WebSocket; fixture: Fixture; snapshot: boolean }[] = [];
 const probes = new Map<string, { start: number; remaining: Set<WebSocket>; x: number; y: number }>();
@@ -26,7 +33,7 @@ async function get(path: string, cookie = '', measured = true) {
   if (measured) attempts++;
   const begin = performance.now();
   try {
-    const res = await fetch(origin + path, { headers: cookie ? { cookie } : {}, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+    const res = await fetch(origin + path, { headers: cookie ? { cookie } : {}, redirect: 'manual', signal: AbortSignal.any([cancelled.signal, AbortSignal.timeout(15_000)]) });
     const body = await res.text();
     if (measured) {
       (path.startsWith('/api/') ? apiMs : requestMs).push(performance.now() - begin);
@@ -34,7 +41,7 @@ async function get(path: string, cookie = '', measured = true) {
     }
     return { status: res.status, body };
   } catch {
-    if (measured) fail('http:transport');
+    if (measured && !cancelled.signal.aborted) fail('http:transport');
     return { status: 0, body: '' };
   }
 }
@@ -47,47 +54,50 @@ try {
   preflight = { health: health.status, judge: judge.status, version: version.status };
   console.log(JSON.stringify({ origin, ...preflight }));
   if (health.status !== 200 || judge.status !== 200 || !judge.body.includes('<html'))
-    throw new Error(`Staging preflight failed: health=${health.status}, public /judge=${judge.status}`);
-  if (version.status !== 200) throw new Error('Staging build SHA is unavailable; comparison requires a version receipt');
+    throw new LoadFailure(`Staging preflight failed: health=${health.status}, public /judge=${judge.status}`);
+  if (version.status !== 200) throw new LoadFailure('Staging build SHA is unavailable; comparison requires a version receipt');
   if (!preflightOnly) {
     const expectedBuild = pinnedBuild(build, process.env.LOAD_EXPECTED_SHA);
-    const setupToken = process.env.LOAD_SETUP_TOKEN_FILE ? (await Bun.file(process.env.LOAD_SETUP_TOKEN_FILE).json()).LOAD_SETUP_TOKEN as string : undefined;
+    if (!process.env.LOAD_SETUP_TOKEN_FILE) throw new LoadFailure('LOAD_SETUP_TOKEN_FILE is required for source/auth/fixture guards');
+    const setupToken = (await Bun.file(process.env.LOAD_SETUP_TOKEN_FILE).json()).LOAD_SETUP_TOKEN as string;
+    if (typeof setupToken !== 'string' || !setupToken) throw new LoadFailure('Missing private setup token');
     const runtime = async () => {
-      if (!setupToken) return null;
-      const r = await fetch(origin + '/__load/status', { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${setupToken}` }, signal: AbortSignal.timeout(15000) });
-      if (!r.ok) throw new Error('Staging runtime guard unavailable');
+      const r = await fetch(origin + '/__load/status', { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${setupToken}` }, signal: AbortSignal.any([cancelled.signal, AbortSignal.timeout(15000)]) });
+      if (!r.ok) throw new LoadFailure('Staging runtime guard unavailable');
       const state = await r.json() as { grantsAlive?: boolean };
-      if (state.grantsAlive === false) throw new Error('Synthetic provider grants are unhealthy; invalid setup');
+      if (state.grantsAlive === false) throw new LoadFailure('Synthetic provider grants are unhealthy; invalid setup');
       return JSON.stringify(state);
     };
     const expectedRuntime = await runtime();
     const file = process.env.LOAD_FIXTURES_FILE;
-    if (!file) throw new Error('LOAD_FIXTURES_FILE is required (private staging-only fixture JSON)');
+    if (!file) throw new LoadFailure('LOAD_FIXTURES_FILE is required (private staging-only fixture JSON)');
     const factory = fixtures(await Bun.file(file).json());
     stage = 'connecting';
     const connect = (fixture: Fixture) => new Promise<void>((resolve, reject) => {
       attempts++;
       const begin = performance.now();
-      const ws = new WebSocket(`${origin.replace('https:', 'wss:')}/api/repos/${fixture.repo}/factory`, {
+      let ws: WebSocket;
+      try { ws = new WebSocket(`${origin.replace('https:', 'wss:')}/api/repos/${fixture.repo}/factory`, {
         headers: { cookie: fixture.cookie, origin }, handshakeTimeout: 15_000, followRedirects: false,
-      });
+      }); } catch { fail('upgrade:setup'); reject(new LoadFailure('Invalid socket setup')); return; }
       const client = { ws, fixture, snapshot: false };
       sockets.push(client);
-      const timeout = setTimeout(() => { fail('socket:no-snapshot'); reject(new Error('Missing initial snapshot')); ws.terminate(); }, 20_000);
+      const timeout = setTimeout(() => { rejectUpgrade('upgrade:no-snapshot'); ws.terminate(); }, 20_000);
       let upgradeFailed = false;
       const rejectUpgrade = (kind: string) => {
         if (upgradeFailed || client.snapshot) return;
-        upgradeFailed = true; fail(kind); clearTimeout(timeout); reject(new Error('Socket handshake failed; see aggregate report'));
+        upgradeFailed = true; if (!stopping) fail(kind); clearTimeout(timeout); reject(new LoadFailure('Socket handshake failed; see aggregate report'));
       };
       ws.on('unexpected-response', (_req, res) => { rejectUpgrade(`upgrade:${res.statusCode}`); res.resume(); ws.terminate(); });
-      ws.on('error', () => { if (!client.snapshot) rejectUpgrade('upgrade:transport'); else { attempts++; fail('socket:transport'); } });
-      ws.on('close', () => { if (!stopping && client.snapshot) { unexpectedCloses++; attempts++; fail('socket:closed'); } });
+      ws.on('error', () => { if (stopping) return; if (!client.snapshot) rejectUpgrade('upgrade:transport'); else { attempts++; fail('socket:transport'); } });
+      ws.on('close', () => { if (!client.snapshot) { rejectUpgrade('upgrade:closed'); return; } if (!stopping && client.snapshot) { unexpectedCloses++; attempts++; fail('socket:closed'); } });
       ws.on('message', data => {
+        if (stopping) return;
         try {
           const m = assertWire(JSON.parse(String(data)));
           if (m.type === 'snapshot' && !client.snapshot) {
             const machine = m.state.machines.find(x => x.id === fixture.machineId);
-            if (!machine || machine.state !== 'idle') throw new Error('Missing idle probe machine');
+            if (!machine || machine.state !== 'idle') throw new LoadFailure('Missing idle probe machine');
             client.snapshot = true;
             clearTimeout(timeout); upgradesMs.push(performance.now() - begin); resolve();
           }
@@ -101,10 +111,11 @@ try {
         } catch { attempts++; fail('socket:invalid-wire-or-fixture'); rejectUpgrade('upgrade:invalid-fixture'); }
       });
     });
-    // 200 supplemental live observers stress the shared factory. /judge itself is
+    // Supplemental live observers are opt-in and stress the shared factory. /judge itself is
     // still simulation-only; these are NOT claimed as actual judge sockets.
     const cohort = [...Array.from({ length: supplemental }, (_, i) => factory[i % factory.length]), ...factory];
     const connected = await Promise.allSettled(cohort.map(connect));
+    if (stopping) throw new LoadFailure('Load cancelled');
     const rejectedUpgrades = connected.filter(r => r.status === 'rejected').length;
     console.log(JSON.stringify({ connected: sockets.filter(c => c.snapshot).length, rejectedUpgrades }));
     // A failed baseline still runs its full observation window, without retrying
@@ -118,16 +129,16 @@ try {
         const page = await get('/judge');
         const paths = new Set([...page.body.matchAll(/(?:src|href)="(\/assets\/[^"?#]+\.(?:js|css))"/g)].map(m => m[1]));
         await Promise.all([...paths].map(path => get(path)));
-        await Bun.sleep(Math.min(90_000, Math.max(0, deadline - performance.now())));
+        await sleep(Math.min(90_000, Math.max(0, deadline - performance.now())));
       } while (!stopping && performance.now() < deadline);
     });
     const polling = (async () => {
       do {
         const version = await get('/api/version', '', false);
-        try { pinnedBuild(JSON.parse(version.body), expectedBuild); if (await runtime() !== expectedRuntime) throw new Error('Staging auth epoch changed'); }
-        catch (error) { stage = 'invalidated'; throw new Error('Staging runtime invalidated: ' + (error instanceof Error ? error.message : 'guard failed')); }
+        try { pinnedBuild(JSON.parse(version.body), expectedBuild); if (await runtime() !== expectedRuntime) throw new LoadFailure('Staging auth epoch changed'); }
+        catch (error) { if (stopping) throw new LoadFailure('Load cancelled'); stage = 'invalidated'; throw new LoadFailure('Staging runtime invalidated: ' + (publicFailure(error))); }
         await get('/api/repos', factory[0].cookie);
-        await Bun.sleep(Math.min(5_000, Math.max(0, deadline - performance.now())));
+        await sleep(Math.min(5_000, Math.max(0, deadline - performance.now())));
       } while (!stopping && performance.now() < deadline);
     })();
     const events = (async () => {
@@ -150,25 +161,28 @@ try {
         round++;
         // Observer heartbeat mirrors web/src/source/live.ts. No synthetic IP headers.
         for (const { ws } of sockets) if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-        await Bun.sleep(Math.min(30_000, Math.max(0, deadline - performance.now())));
+        await sleep(Math.min(30_000, Math.max(0, deadline - performance.now())));
         console.log(JSON.stringify({ phase: 'progress', at: new Date().toISOString(), open: sockets.filter(c => c.ws.readyState === WebSocket.OPEN).length, fanoutMs: stats(fanoutMs), failures }));
       } while (!stopping && performance.now() < deadline);
     })();
-    await Promise.all([events, polling, ...judgeViewers]);
+    workload = [events, polling, ...judgeViewers];
+    await Promise.all(workload);
     endedAt = new Date().toISOString();
     for (const p of probes.values()) { for (const _ of p.remaining) fail('socket:missing-probe'); }
     stage = 'complete';
   }
 } catch (error) {
-  blocked = error instanceof Error ? error.message : 'Load failed';
+  blocked = publicFailure(error);
   process.exitCode = 1;
 } finally {
   const openAtEnd = sockets.filter(c => c.ws.readyState === WebSocket.OPEN).length;
   stopping = true;
+  cancelled.abort();
   for (const { ws } of sockets) ws.terminate();
+  await Promise.allSettled(workload);
   const errorRate = attempts ? failed / attempts : null;
   const report = {
-    profile: supplemental ? 'beyond-target-250-socket-stress' : 'requested-product-200-http-50-socket', origin, observedAt, preflight, stage, blocked, build, startedAt, endedAt, durationMs,
+    profile: profile.name, origin, observedAt, preflight, stage, blocked, build, startedAt, endedAt, durationMs,
     cohort: { judgeHttpViewers: 200, supplementalLiveObservers: supplemental, signedInFactorySockets: 50, connectedSnapshots: sockets.filter(c => c.snapshot).length, openAtEnd, unexpectedCloses },
     apiMs: stats(apiMs), pageAndAssetMs: stats(requestMs), upgradeMs: stats(upgradesMs), fanoutMs: stats(fanoutMs),
     attempts, failed, errorRate, failures,

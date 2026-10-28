@@ -6,10 +6,11 @@ import { starterLine } from '../../server/src/engine';
 import { saveFactoryState } from '../../server/src/state-storage';
 import { browserSocketAuth, browserSocketEpoch } from '../../server/src/browser-socket';
 import { repoAccess, requireUser } from '../../server/src/authorization';
+import { stagingControlAllowed } from './hosted-support';
 import { byRepoId } from '../../server/src/repository';
 const REPO = 'load-test/shiptorio-load-crowd';
 const REPO_ID = 900000002, INSTALLATION = 900000001;
-const USERS = Array.from({ length: 5 }, (_, i) => ({ id: 900000001 + i, login: `staging-load-${i}` }));
+const USERS = Array.from({ length: 5 }, (_, i) => ({ id: -(900000001 + i), login: `staging-load-${i}` }));
 interface LoadEnv extends Env { LOAD_SETUP_TOKEN: string; LOAD_SETUP_UNTIL: string }
 export class Factory extends ProductionFactory {
   async loadStatus(cookie: string) {
@@ -33,9 +34,9 @@ async function grants(env: LoadEnv) {
 export default {
   async fetch(request: Request, env: LoadEnv, ctx: ExecutionContext) {
     const url = new URL(request.url);
-    if (url.hostname !== 'shiptorio.dev' || env.PUBLIC_URL !== 'https://shiptorio.dev') return new Response('Staging only', { status: 403 });
+    if (url.origin !== 'https://shiptorio.dev' || env.PUBLIC_URL !== 'https://shiptorio.dev') return new Response('Staging only', { status: 403 });
     if (!url.pathname.startsWith('/__load/')) return app.fetch(request, env, ctx);
-    if (request.method !== 'POST' || !env.LOAD_SETUP_TOKEN || request.headers.get('authorization') !== `Bearer ${env.LOAD_SETUP_TOKEN}` || Date.now() > Number(env.LOAD_SETUP_UNTIL)) return new Response('Not found', { status: 404 });
+    if (!stagingControlAllowed(request, env)) return new Response('Not found', { status: 404 });
     if (url.pathname === '/__load/diagnose') {
       const { cookie } = await request.json() as { cookie: string };
       return Response.json({ worker: { epoch: await browserSocketEpoch(env), browserUser: !!await browserSocketAuth(new Request('https://shiptorio.dev', { headers: { cookie } }), env) }, object: await (byRepoId(env, REPO_ID) as unknown as { loadStatus(cookie: string): Promise<unknown> }).loadStatus(cookie) });

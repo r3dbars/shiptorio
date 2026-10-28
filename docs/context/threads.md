@@ -650,3 +650,8 @@ Day 2 reliability: added a staging-only ten-minute HTTP/socket harness and produ
 ## Hosted staging load follow-up (Codex, 2026-10-27)
 
 Provisioned scoped staging fixtures/analytics, restored public judge/version, and retained failed supplemental 250-socket stress receipts. Corrected the harness default to the actual 200 judge HTTP/sim + 50 factory-socket product profile; that isolated profile remains unmeasured and no acceptance verdict is claimed. #372 stays draft/out of batches. Local full check: 953 pass; staging lease returned and owned sessions/setup token revoked by 20:50 UTC. Details: [reliability.md](reliability.md).
+
+
+## Staging load harness readiness for dev (Codex, 2026-10-28)
+
+#372 rebased onto dev as harness/evidence only; withdrew unproven runtime fan-out and IP-limit changes while retaining their experiment artifacts. Requested 200 judge HTTP + 50 socket hosted proof remains pending; no intentional hosted load or Cloudflare resource changes in this follow-up. A possible 50 unauthenticated staging-handshake escape from an ineffective local mock is documented in reliability.md; replacement CLI tests require loopback and verify the socket adapter before startup. Quick checks and Staging are tracked independently under [branches.md](branches.md).

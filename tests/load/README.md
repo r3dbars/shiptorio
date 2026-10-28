@@ -6,9 +6,9 @@ does not follow HTTP/WS redirects, and never seeds with local auth bypasses.
 
 ```sh
 bun tests/load/hosted.ts --preflight
-LOAD_FIXTURES_FILE=/private/path/staging-load.json LOAD_REPORT=test-results/before.json bun tests/load/hosted.ts
-# Deploy the single measured bottleneck fix with Staging, then:
-LOAD_FIXTURES_FILE=/private/path/staging-load.json LOAD_REPORT=test-results/after.json bun tests/load/hosted.ts
+LOAD_SETUP_TOKEN_FILE=/private/path/setup-token.json LOAD_FIXTURES_FILE=/private/path/staging-load.json LOAD_REPORT=test-results/before.json bun tests/load/hosted.ts
+# Future authorized comparison: deploy the measured fix with Staging, then:
+LOAD_SETUP_TOKEN_FILE=/private/path/setup-token.json LOAD_FIXTURES_FILE=/private/path/staging-load.json LOAD_REPORT=test-results/after.json bun tests/load/hosted.ts
 ```
 
 The private fixture file is an array of **50** objects:
@@ -134,3 +134,34 @@ with `revoke-sessions.sql`, and deleted the owned `LOAD_SETUP_TOKEN` secret. Sha
 preview/session secrets were preserved after coordination handoff. At handback the instrumented staging
 entrypoint remained installed, with its setup endpoint disabled by token removal.
 The coordinator owns subsequent staging restoration. Inactive synthetic states remain; grants expire by TTL.
+
+
+## Harness readiness and local verification (2026-10-28)
+
+PR #372 now carries harness/docs/evidence only. The unproven runtime candidate is
+archived in `evidence/candidate-server.patch`; its feature-specific test source is
+archived alongside it. No broadcast or rate-limit change ships with this harness.
+The historical 250-socket failures above do not establish the requested 50-socket
+profile or identify a validated bottleneck. Hosted acceptance remains pending.
+
+`bun test tests/load/client.test.ts tests/load/hosted.test.ts` exercises the CLI in
+child processes using an explicit socket adapter. The preload requires a numeric
+loopback origin and verifies adapter identity before starting any client. HTTP is
+mocked in-process; both staging and production origins are rejected with zero
+client constructions. The normal hosted CLI retains its exact staging-only guard.
+Cancellation aborts HTTP work and viewer timers and closes sockets promptly;
+unknown native errors are redacted before being written to reports.
+
+An earlier local test used a Bun built-in `ws` preload mock that did not apply.
+It may have attempted 50 unauthenticated staging handshakes with a literal fake
+cookie during 2026-10-28 16:57:12–17:10:53 UTC. Server outcomes and exact request
+times are unknown; this was not a successful load run. See
+`evidence/local-orchestration-incident-2026-10-28.json`. The explicit adapter and
+loopback guards above replace that unsafe boundary. No production target was used.
+
+New fixture identities use negative synthetic IDs. `revoke-sessions.sql` covers
+both the historical positive IDs and new IDs with a synthetic-login guard. Private
+setup/fixture JSON is created with mode 0600 inside a mode 0700 directory. Tooling
+is opt-in: this readiness follow-up neither provisions nor deploys its entrypoint,
+and performs no further hosted load. Integration follows dev → Staging; production
+promotion remains a separate user request.

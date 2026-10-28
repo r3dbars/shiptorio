@@ -216,3 +216,38 @@ has browser failures and is not a green receipt for the final head. Nothing was
 skipped, quarantined, loosened or retried-to-green. PR #372 stays draft: requested
 load acceptance, single-bottleneck validation, exact-head hosted checks and
 production release remain outstanding.
+
+
+## 2026-10-28: harness-only readiness on dev
+
+PR #372 is now scoped to the staging harness, its opt-in fixture tooling and the
+historical receipts above. The unproven production `factory.ts` / `rate-limit.ts`
+changes are withdrawn. Their patch and feature-specific test source remain in
+`tests/load/evidence/` as historical artifacts; the parallel-broadcast and raised-IP
+policy assertions are removed with those withdrawn features, not disabled to make
+an unchanged production feature pass. Existing production authorization/rate-limit
+tests remain untouched. No performance change is being released in this PR.
+
+Default load stays 200 judge HTTP/simulator viewers plus 50 signed-in sockets,
+with no implicit additional observers. Hosted acceptance remains unmeasured.
+Harness readiness/local CI does not establish the requested p95/error budget.
+This follow-up performs no hosted load, Cloudflare resource changes or manual deploy.
+The workflow in [branches.md](branches.md) now governs integration: quick checks
+then merge to `dev`; Staging deployment is verified separately. Production only
+moves through a user-requested `dev` → `main` promotion.
+
+
+Local orchestration initially exposed a transport-mock failure: Bun's built-in
+`ws` ignored a preload mock, so a failed cancellation test may have attempted 50
+unauthenticated staging handshakes with a fake cookie. Conservative audit window:
+**2026-10-28 16:57:12–17:10:53 UTC**; actual request times/outcomes are unknown.
+This is not a valid load result or a claim of harmlessness. The bounded incident
+receipt is [preserved](../../tests/load/evidence/local-orchestration-incident-2026-10-28.json).
+The replacement local test boundary requires numeric loopback before startup,
+asserts the explicit socket-adapter identity, and verifies staging/production
+origins produce zero client constructions. No further hosted load was run.
+
+Focused local harness validation: **13 passed, 0 failed**, including real CLI
+preflight, private-error redaction, prompt source-change cancellation and nonlocal
+target rejection. Full repository checks and exact-head dev CI are separate gates;
+none substitutes for the outstanding ten-minute hosted comparison.

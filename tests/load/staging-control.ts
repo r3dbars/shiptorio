@@ -1,14 +1,13 @@
-import { chmod } from 'node:fs/promises';
+import { writePrivateJSON } from './private-files';
 const secrets = await Bun.file('.test-runtime/staging-load/secrets.json').json();
 export async function control(path: 'seed' | 'grants') {
   const r = await fetch(`https://shiptorio.dev/__load/${path}`, { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${secrets.LOAD_SETUP_TOKEN}` }, signal: AbortSignal.timeout(120000) });
-  if (!r.ok) throw new Error(`Staging ${path}: ${r.status} ${(await r.text()).slice(0, 100)}`);
+  if (!r.ok) throw new Error(`Staging ${path}: ${r.status}`);
   return r.json();
 }
 if (process.argv.includes('seed')) {
   const fixtures = await control('seed');
-  await Bun.write('.test-runtime/staging-load/fixtures.json', JSON.stringify(fixtures));
-  await chmod('.test-runtime/staging-load/fixtures.json', 0o600);
+  await writePrivateJSON('.test-runtime/staging-load/fixtures.json', fixtures);
   console.log('Created 50 socket fixtures across five staging-only accounts; cookies saved privately');
 } else if (process.argv.includes('keep-warm')) {
   let failureCount = 0;
