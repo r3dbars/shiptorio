@@ -1,5 +1,5 @@
 import {
-  ART_PX, BELT_Y, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
+  ART_PX, BELT_Y, DECK_DX, DECK_END, snap, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
   type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
@@ -15,18 +15,18 @@ const drawStation = (Object.values(import.meta.glob("../stations/index.ts", { ea
 // It draws whatever DeckView it's handed and animates the in-between (crates sliding stop to stop by item id,
 // stations dropping in, the rocket going up), and emits DeckEvents for juice/ by diffing views.
 
-const PAD = { x: 1905, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
+const PAD = { x: 1905 + DECK_DX, y: -50, s: 0.72 }; // bridge + rocket island sprite; its bridge meets the deck's right edge
 const BRIDGE_Y = PAD.y + PAD.s * 560;
 const ORB = { x: 1043, y: 578 };
 /** The twin boiler: in pixel mode it is drawn in code at full art size (bakeoff/boiler2d.ts), standing on the back
  * edge of the floor behind Repo and Planner; ?px=0 keeps the small boiler-on picture. */
-const BOILER = { x: 240, base: 182 };
+const BOILER = { x: DECK_DX ? 280 : 240, base: 182 };
 const BOUNDS = { x0: -20, x1: PAD.x + 1533 * PAD.s + 20, y0: -30, y1: 670 };
 const SPEED = 170, GAP = 50, CRATE = 42;
 const LEVER = { x: STOP_X.review + 92, base: FLOOR_Y + 48, h: 78 };
 
 // The belt: along the deck, down onto the bridge, out to the launch circle.
-const PATH: [number, number][] = [[STOP_X.repo + 60, BELT_Y], [1915, BELT_Y], [1995, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
+const PATH: [number, number][] = [[STOP_X.repo + 60, BELT_Y], [1915 + DECK_DX, BELT_Y], [1995 + DECK_DX, BRIDGE_Y], [STOP_X.launch - 130, BRIDGE_Y], [STOP_X.launch - 34, LAUNCH_Y]];
 const SEGS: { ax: number; ay: number; bx: number; by: number; len: number; at: number; a: number }[] = [];
 let PATH_LEN = 0;
 for (let i = 1; i < PATH.length; i++) {
@@ -69,7 +69,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   const rocket = { y: 0, v: 0, mode: "ready" as "ready" | "count" | "up" | "away" | "down", t: 0 };
   let prev: DeckView | null = null, lever = 0;
 
-  let deckW = 2039, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
+  let deckW = DECK_END, islandUp = true, islandIn = true; // how much platform is built (deck.size / deck.island)
 
   // ---------- camera ----------
   const cam = { x: 1400, y: 300, s: 0.3, manual: 0, all: false, pin: null as StopId | null };
@@ -325,7 +325,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     // The platform grows (placeholder until Justin's small/medium deck art lands: the big deck, clipped).
     const dk = v.deck ?? { size: "large", island: "built" };
     const reach = { small: 0.42, medium: 0.7, large: 1 }[dk.size];
-    deckW += ((reach + (dk.growing ?? 0) * 0.28) * 2039 - deckW) * Math.min(1, dt * 3);
+    deckW += ((reach + (dk.growing ?? 0) * 0.28) * DECK_END - deckW) * Math.min(1, dt * 3);
     const deck = img("deck");
     if (deck && !owned.has("deck")) { cx.save(); cx.beginPath(); cx.rect(-50, -100, deckW + 50, 900); cx.clip(); cx.drawImage(deck, 0, 0); cx.restore(); }
     const island = dk.island === "built" ? 1 : dk.island === "building" ? dk.islandProgress ?? 0 : 0;

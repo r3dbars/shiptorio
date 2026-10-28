@@ -12,7 +12,7 @@
 //   rails   back rail drops down, front rail rises
 //   glow    the new seams glow gold, then cool
 //   done    one dust puff as it locks in (the story caption says what changed)
-import { PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot } from "../contract";
+import { PALETTE, snap, type ArtLoader, type CreateLayer, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, HULL } from "../contract";
 import { pixelOn } from "../../flags";
 
 export type DeckSize = "small" | "medium" | "large";
@@ -355,7 +355,8 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
       else if (slot === "front") drawFront(ctx);
     },
     bounds() {
-      const deckEnd = g ? capX() + capW(g.to) : endAt(now());
+      // pixel mode's wide layout (contract DECK_DX): the full deck runs to HULL.x1, drawn by props/
+      const deckEnd = g ? capX() + capW(g.to) : now() === "large" ? Math.max(endAt("large"), HULL.x1) : endAt(now());
       return { x0: -20, x1: deckEnd + 20 }; // just the deck; the engine frames the island itself once it's up
     },
     seek(from: DeckSize, to: DeckSize, t: number) {
