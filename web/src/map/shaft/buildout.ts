@@ -18,8 +18,8 @@ import * as THREE from "three";
 import type { FactoryState } from "@shiptorio/shared";
 
 import { STEP_IDS, STEPS, cameraFor, emitBuild, resolve, stepById, stepFrom, type StepId } from "../../buildout/journey";
-import { burst, type BurstRun } from "./burst";
-import { construct, type ConstructRun } from "./construct";
+import { burst, BURST_REDUCED_SECONDS, type BurstRun } from "./burst";
+import { construct, CONSTRUCT_REDUCED_SECONDS, type ConstructRun } from "./construct";
 import type { Iron } from "./core";
 import type { Layout, PathDef, Plan, StationDef } from "./layout";
 import { LEDGE_Z, MINES, MINE_FACE_Z } from "./layout";
@@ -540,42 +540,54 @@ export class Buildout {
     }
     const mo = this.moment;
     if (!mo || !this.I) return;
-    mo.t += dt;
-    if (mo.phase === "chalk") {
-      if (mo.t >= CHALK_S || mo.hurry) this.startConstruct(mo);
-      return;
-    }
-    if (mo.phase === "construct") {
-      let all = true;
-      for (const r of mo.runs) if (!r.update(dt)) all = false;
-      const k = mo.hurry || this.reduced ? 1 : Math.min(1, mo.t / CONSTRUCT_S);
-      // the pieces grow one after another along the flow, each over 40% of the time
-      const n = mo.pieces.length;
-      mo.pieces.forEach((pc, i) => {
-        const start = n > 1 ? (i / (n - 1)) * 0.6 : 0;
-        const u = Math.min(1, Math.max(0, (k - start) / 0.4));
-        this.setRise(pc.id, u >= 1 ? 1 : u * u * (3 - 2 * u));
-      });
-      if (n) this.syncShadows();
-      if (all && (k >= 1 || mo.hurry)) this.startBurst(mo);
-      return;
-    }
-    if (mo.phase === "burst") {
-      const fin = !mo.burst || mo.burst.update(dt);
-      if (fin && (mo.t >= BURST_S || this.reduced)) {
+    // One rendered frame can cross several phases. Spend only the time each
+    // phase needs, carrying the remainder forward instead of dropping it at t=0.
+    // Never spend old elapsed time on a newly queued build after this one ends.
+    let remaining = Math.max(0, dt);
+    for (let transitions = 0; transitions < 4; transitions++) {
+      const duration = mo.phase === "chalk" ? (mo.hurry ? 0 : CHALK_S)
+        : mo.phase === "construct" ? (mo.hurry ? 0 : this.reduced ? (mo.runs.length ? CONSTRUCT_REDUCED_SECONDS : 0) : CONSTRUCT_S)
+        : mo.phase === "burst" ? (this.reduced ? BURST_REDUCED_SECONDS : BURST_S) : PAYOFF_S;
+      const elapsed = Math.min(remaining, Math.max(0, duration - mo.t));
+      mo.t += elapsed;
+      remaining -= elapsed;
+      if (mo.phase === "chalk") {
+        if (mo.t < duration) return;
+        this.startConstruct(mo);
+        continue;
+      }
+      if (mo.phase === "construct") {
+        for (const r of mo.runs) r.update(elapsed);
+        const k = mo.hurry || this.reduced ? 1 : Math.min(1, mo.t / CONSTRUCT_S);
+        // the pieces grow one after another along the flow, each over 40% of the time
+        const n = mo.pieces.length;
+        mo.pieces.forEach((pc, i) => {
+          const start = n > 1 ? (i / (n - 1)) * 0.6 : 0;
+          const u = Math.min(1, Math.max(0, (k - start) / 0.4));
+          this.setRise(pc.id, u >= 1 ? 1 : u * u * (3 - 2 * u));
+        });
+        if (n) this.syncShadows();
+        if (mo.t < duration) return;
+        this.startBurst(mo); // finishes runs, including any floating-point residue
+        continue;
+      }
+      if (mo.phase === "burst") {
+        mo.burst?.update(elapsed);
+        if (mo.t < duration) return;
+        mo.burst?.finish();
         mo.phase = "payoff";
         mo.t = 0;
         const f = stepById(mo.step).lights;
         this.shown.add(mo.step);
         if (f) this.hooks.light(this.litFloors);
+        continue;
       }
-      return;
-    }
-    if (mo.t >= PAYOFF_S) {
+      if (mo.t < duration) return;
       mo.anchor?.removeFromParent();
       this.moment = null;
       emitBuild({ id: mo.step, phase: "done", first: true });
       this.advance();
+      return;
     }
   }
 
