@@ -8,7 +8,7 @@
 // between from its straight middle, in stages (each one a DeckEvent for juice/):
 //   beams   bare girders span the gap while the end cap rolls out
 //   plates  floor plates drop in
-//   rocks   rock chunks drift up out of the clouds and fuse underneath
+//   rocks   the rock underside fuses on just under the new section
 //   rails   back rail drops down, front rail rises
 //   glow    the new seams glow gold, then cool
 //   done    one dust puff as it locks in (the story caption says what changed)
@@ -43,11 +43,11 @@ const TILE = 80; // one new floor column, world px
 
 // ---------- timeline, seconds from the start of a grow ----------
 const T: Record<Exclude<GrowPhase, "done">, readonly [number, number]> = {
-  beams: [0, 0.9], plates: [0.7, 2.5], rocks: [1.2, 3.2], rails: [2.4, 3.4], glow: [3.3, 4.3],
+  beams: [0, 0.5], plates: [0.4, 1.3], rocks: [0.15, 0.9], rails: [1.2, 1.8], glow: [1.8, 2.3], // ~2.5s: the first run is serial
 };
 export const GROW_SECONDS = T.glow[1] + 0.1;
-const SWAP = 0.25; // the old deck fades into the new size's art at the start
-const FINISH: readonly [number, number] = [3.8, 4.3]; // stage art settles into the finished deck
+const SWAP = 0.2; // the old deck fades into the new size's art at the start
+const FINISH: readonly [number, number] = [2.0, 2.4]; // stage art settles into the finished deck
 const STAGE_ART = [0, 1, 2, 3].flatMap((i) => [`grow-section-${i}`, `grow-rock-${i}`, `grow-seam-${i}`]);
 const PHASES = Object.keys(T) as Exclude<GrowPhase, "done">[];
 
@@ -75,7 +75,6 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   let size: DeckSize | null = null; // null until the first view says where we start (no grow on page load)
   let g: Growth | null = null;
   let puffs: Puff[] = [];
-  let time = 0;
   const queue: DeckSize[] = [];
   for (const n of [...SIZES.map(sprite), ...STAGE_ART, "grow-crane"]) art.get(n); // start loading now
 
@@ -103,7 +102,6 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   }
 
   function tick(dt: number, fx = true) {
-    time += dt;
     if (!g && queue.length) g = { from: now(), to: queue.shift()!, t: 0, fired: new Set() };
     if (g) {
       g.t += dt;
@@ -166,6 +164,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     const G = DECKS[gr.to], t = gr.t, end = capAt(gr.to), w = end - a, k = G.s * 0.95;
     const ys = wy(G, G.skirt), yf = wy(G, G.floor[1]);
     const settle = span(t, FINISH); // 0..1: stage art fades into the finished deck
+    const keep = 1 - settle * settle; // the stage art stays mostly solid while the deck fades in over it, so no sky shows through
     ctx.save();
     ctx.beginPath(); ctx.rect(a - 2, -400, cap - a + 4, 1600); ctx.clip(); // the frame only shows as far as the cap has rolled
     // rocks: rise from below and step through their four fusing frames
@@ -173,17 +172,17 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
     if (rk > 0) {
       const f = art.get(`grow-rock-${Math.min(3, Math.floor(rk * 4))}`)!;
       const h = f.naturalHeight * k;
-      ctx.globalAlpha = Math.min(1, rk * 3) * (1 - settle);
-      ctx.drawImage(f, a, ys - 10 + (1 - easeOut(rk)) * 200, w, h);
+      ctx.globalAlpha = Math.min(1, rk * 5) * keep;
+      ctx.drawImage(f, a, ys - 10 + (1 - easeOut(rk)) * 40, w, h); // close under the deck, never a ghost in the clouds
     }
     // the section: which frame, with a short cross-fade into the next
-    const st = t < T.plates[0] + 0.2 ? 0 : t < T.rails[0] ? 1 : t < T.glow[0] ? 2 : 3;
-    const next = [T.plates[0] + 0.2, T.rails[0], T.glow[0], Infinity][st];
+    const st = t < T.plates[0] + 0.1 ? 0 : t < T.rails[0] ? 1 : t < T.glow[0] ? 2 : 3;
+    const next = [T.plates[0] + 0.1, T.rails[0], T.glow[0], Infinity][st];
     const fade = clamp01((t - (next - 0.15)) / 0.15);
     const sec = (i: number, al: number) => {
       const f = art.get(`grow-section-${i}`)!;
       const h = f.naturalHeight * k;
-      ctx.globalAlpha = al * (1 - settle);
+      ctx.globalAlpha = al * keep;
       ctx.drawImage(f, a - 6, ys + 8 - h, w + 12, h);
     };
     sec(st, 1);
@@ -209,7 +208,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
       const k = stag(t, T.rocks, i, n, 0.5);
       if (k > 0 && k < 1) {
         const e = easeOut(k), x = a + i * TILE;
-        blit(ctx, im, G, srcAt(G, x), x, Math.min(TILE, capAt(gr.to) - x), "under", (1 - e) * 360 + Math.sin(time * 2 + i) * 6 * (1 - e), Math.min(1, k * 4));
+        blit(ctx, im, G, srcAt(G, x), x, Math.min(TILE, capAt(gr.to) - x), "under", (1 - e) * 40, Math.min(1, k * 5));
       }
     }
     // beams: back + front girder, posts and a truss, out to wherever the cap is
@@ -248,7 +247,7 @@ export function createGrow(art: ArtLoader, bus: DeckBus): GrowLayer {
   function drawCrane(ctx: CanvasRenderingContext2D, gr: Growth, cap: number) {
     const c = art.get("grow-crane");
     if (!c) return;
-    const t = gr.t, inK = span(t, [0.1, 0.6]), outK = span(t, [T.plates[1] - 0.4, T.plates[1]]);
+    const t = gr.t, inK = span(t, [0.05, 0.35]), outK = span(t, [T.plates[1] - 0.25, T.plates[1]]);
     if (inK <= 0 || outK >= 1) return;
     const G = DECKS[gr.to], h = c.naturalHeight * G.s, w = c.naturalWidth * G.s;
     const feet = wy(G, G.floor[0]) + (wy(G, G.floor[1]) - wy(G, G.floor[0])) * 0.35, x = cap + capW(gr.to) * 0.55;
