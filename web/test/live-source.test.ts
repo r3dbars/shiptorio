@@ -206,10 +206,37 @@ describe("quiet resync", () => {
     expect(h.statuses).toEqual(["connecting", "live"]);
     source.close();
   }));
-  it("times out a hung handshake or missing snapshot", () => transportTest(h => {
-    const source = h.connect(); h.advance(5_250);
-    expect(h.sockets).toHaveLength(2);
+  for (const delay of [6000, 10000]) it(`accepts a legitimate ${delay}ms cold handshake without restarting it`, () => transportTest(h => {
+    const source = h.connect(), socket = h.sockets[0];
+    h.advance(delay);
+    expect(h.sockets).toHaveLength(1); expect(socket.closeCalls).toBe(0);
+    expect(h.notices.size).toBe(1); expect(h.statuses).toEqual(["connecting"]);
+    socket.open(); sync(socket);
+    expect(h.messages).toHaveLength(1); expect(h.statuses).toEqual(["connecting", "live"]);
+    expect(h.notices.size).toBe(0); source.close();
+  }));
+  it("closes and retries a handshake still hung at fifteen seconds", () => transportTest(h => {
+    const source = h.connect(), socket = h.sockets[0]; h.advance(14_999);
+    expect(socket.closeCalls).toBe(0); expect(h.sockets).toHaveLength(1);
+    h.advance(251);
+    expect(socket.closeCalls).toBe(1); expect(h.sockets).toHaveLength(2);
     expect(h.messages).toHaveLength(0); source.close();
+  }));
+  it("keeps a five-second first-snapshot bound after a slow successful upgrade", () => transportTest(h => {
+    const source = h.connect(), socket = h.sockets[0]; h.advance(10_000); socket.open();
+    h.advance(4000); socket.message("pong"); // A heartbeat cannot substitute for the first snapshot.
+    h.advance(999); expect(socket.closeCalls).toBe(0);
+    h.advance(1); expect(socket.closeCalls).toBe(1);
+    h.advance(250); expect(h.sockets).toHaveLength(2);
+    expect(h.messages).toHaveLength(0); source.close();
+  }));
+  it("retries rejected or closed handshakes immediately instead of waiting for cold grace", () => transportTest(h => {
+    const source = h.connect(), rejected = h.sockets[0];
+    (rejected as any).onerror();
+    expect(rejected.closeCalls).toBe(1);
+    h.advance(250); expect(h.sockets).toHaveLength(2);
+    h.sockets[1].close(); h.advance(500);
+    expect(h.sockets).toHaveLength(3); source.close();
   }));
 });
 

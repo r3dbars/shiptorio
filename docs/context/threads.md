@@ -671,3 +671,7 @@ After #498, hosted upgrades still exceeded the unchanged five-second client dead
 ### Codex private socket application phase profile — PR #507
 
 #500 measured cold10.48s/warm4.73–4.82s upgrades; the internal application phase accounted for9.40s/3.83–3.88s. Add request-local fixed numeric App/Factory phases only through the private fixture's in-process capability (and exact private config plus a verified negative principal for DO output). No deadlines, authorization/revocation/repository/quota checks, caches or production configuration change. Preserve all nested timing headers and upgraded sockets. Root owns the uninterrupted hosted bot; next live measurements wait for that run to finish.
+
+### Codex cold-start socket admission — PR #510
+
+Verified whole-App regressions: Hono response assignment replaced appended App timing with the upstream DO header; use Hono's append API. Trace/rate/guest repeated the same URL-aware currentUser lookup three times; one request-local Hono promise reduces total session reads from five to three, retaining fresh scoped resolveUser, repoAccess and independent DO authorization. No cross-request principal cache. Actual9–10s cold upgrades were canceled at5s; a separate bounded15s handshake accepts these legitimate responses while first snapshot/pong keep5s and reconnect notice keeps3s. Client fake-clock tests pin6/10s success,15s hung retry,5s missing snapshot, rejection, disposal and existing heartbeat behavior. Cold requests are not claimed fast; live timing follows deploy.
