@@ -37,6 +37,45 @@ restarts the helper after process exit; macOS sleep still suspends all local wor
 The existing twelve-hour clock-jump/ten-minute outage and revocation tests remain
 required. This is deterministic recovery proof, not a physical overnight sleep test.
 
+### Verified Mac service repair receipts — 2026-10-28
+
+[Fix #519](https://github.com/r3dbars/shiptorio/pull/519) merged into `dev` as
+`ba50c2a842971ab0700f7de2bb1e2d5e9d74de75`. Its exact reviewed head
+`ed13d417ed5c473287a3e6988ebf323de6ca1e01` passed
+[check/selfhost](https://github.com/r3dbars/shiptorio/actions/runs/40764767645),
+[Stranger E2E](https://github.com/r3dbars/shiptorio/actions/runs/40764763804), and
+[CodeQL](https://github.com/r3dbars/shiptorio/actions/runs/40764763630).
+Local full check: 1,614 passed, two existing platform skips, zero failures;
+typechecks/build passed. Existing twelve-hour sleep/ten-minute outage and explicit
+revocation tests passed; an actual overnight physical sleep has not been observed.
+
+At 20:46:16 UTC, launchd PID 41993 had zero children and zero recovery journals.
+The old bundle/config/pairings/plist were backed up privately before stopping it.
+The exact merged source was installed; launchd restarted as PID 98895 with
+`KeepAlive` and `RunAtLoad`, watching Shiptorio **and Testing**. Testing's grant
+and expiry were byte-identical to their standalone originals, with no new pairing
+or manual job claim. Installed bundle SHA-256:
+`dc77a938290cd3ce599cfa367a0c948ea1b5c2aca6076b8692f4d84057e85168`.
+
+An independent owner-authenticated production
+`GET /api/repos/r3dbars/Testing/runner/status` then reported
+`paired: true`, `online: true`, `needsRepair: false`, `harnesses: ["codex"]`,
+with `seenAt: 1793220395211` (20:46:35.211 UTC). Installed doctor passed Codex
+authentication, verification sandbox, Codex sandbox, and both repository pairing
+checks. No real assembler edit or new build was initiated as a diagnostic.
+Claude remains unavailable: its existing dedicated Keychain does not unlock.
+Read-only comparison found no identical alternate dedicated store/password pair;
+credentials were preserved, with no personal-Keychain fallback or new sign-in.
+
+[First Staging attempt](https://github.com/r3dbars/shiptorio/actions/runs/40765682609)
+passed tests/build/storage/fixture checks but failed at deployment with Cloudflare
+internal authentication error `10500`. This failure is retained; it was not rerun
+or relabeled green. Local service repair is independently verified above.
+[Next normal Staging deployment](https://github.com/r3dbars/shiptorio/actions/runs/40765902742)
+passed on descendant `34bb82ef9b657e772371549cd18062d2d547ff32`, which contains #519;
+the failed attempt remains visible. No production promotion was performed by this task. Earlier transient production heartbeat 500s were
+followed by successful retained-grant heartbeats; their cause remains unproven.
+
 ## Delivery and outbound calls
 
 GitHub delivery IDs and Sentry Request-IDs (body SHA-256 fallback) use the existing D1 delivery ledger with seven-day retention. Pending duplicates may enqueue again to recover a failed handoff; the DO queue coalesces them. Seven-day DO completion tombstones also close the race between a completed handler and a delayed intake enqueue. Both ledgers clean expired completed entries; pending or failed payloads are retained.
