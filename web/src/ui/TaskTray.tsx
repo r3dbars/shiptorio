@@ -6,18 +6,20 @@
 // red button or a swipe all the way across. Every gesture has a button too.
 
 import { useEffect, useRef, useState } from "react";
-import { attentionOf, continueOption, type FactoryState, type Move, type WebToServer } from "@shiptorio/shared";
-import { NEXT_MOVE, STAGE_LABEL, TASKS, THINKS, WORDS } from "../copy";
+import { attentionOf, continueOption, type FactoryState, type Item, type Move, type WebToServer } from "@shiptorio/shared";
+import { NEXT_MOVE, STAGE_LABEL, STATE_WORD, TASKS, THINKS, WORDS } from "../copy";
 import { HoldLaunch, isLaunch, plugsInAgent } from "./Attention";
 import { because } from "./because";
 import { openUnlockLink } from "./unlockLink";
 import { sound } from "../sound/engine";
 import { taskOrder, type SlowSpot } from "./slowSpot";
+import { moving } from "./moving";
 import "./TaskTray.css";
 
 const SWIPE_PX = 70;
 const LAUNCH_SHARE = 0.55; // a launch swipe has to cross over half the card
 const ASK_MS = 6000; // how long the optional "why" waits after a never before it goes as a plain never
+const RIDE_MS = 8000; // following the work: how long the camera rides one item before it moves on to the next
 const WENT_KEY = "shiptorio:simple-went"; // set on the first Continue: until then the Go tab glows
 
 type Never = Extract<WebToServer, { type: "dismiss_move" }>["why"];
@@ -30,6 +32,7 @@ interface Props {
   onPower?: () => void; // live local-agent setup opens Power, never a server connector action
   onCaughtUp?: () => void; // you answered the last card
   autonomy?: FactoryState["autonomy"];
+  items?: Item[]; // the work on the line, for "follow them" once you're all caught up
   // the "what's next" idea when nothing waits on you: how the simple screen teaches by doing (no tour, journey pick 1)
   nudge?: { kicker: string; title: string; cta: string; onGo: () => void } | null;
 }
@@ -42,7 +45,7 @@ const wentBefore = () => {
   }
 };
 
-export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, nudge }: Props) {
+export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, items, nudge }: Props) {
   const [gone, setGone] = useState<Set<string>>(() => new Set()); // answered here; hidden before the server agrees
   const tasks = taskOrder(deck).filter((m) => !gone.has(m.id));
   const [curId, setCurId] = useState<string | null>(null);
@@ -58,6 +61,19 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, n
   const [asking, setAsking] = useState<Move | null>(null); // a never waiting on its optional why
   const askTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const answeredHere = useRef(false);
+  // all caught up: the work in flight, and which one the camera is riding (null = not following)
+  const said = useRef<string | null>(null); // the item your last yes was about, so the ride starts there
+  const flight = moving(items, said.current);
+  const [rideId, setRideId] = useState<string | null>(null);
+  const riding = !card && rideId ? flight.findIndex((it) => it.id === rideId) : -1;
+  const ride = riding >= 0 ? flight[riding] : null;
+  const hop = (by: number) => flight.length && setRideId(flight[(Math.max(0, riding) + by + flight.length) % flight.length].id);
+  // ride each one for a few seconds, then the next; a tap on the arrows starts the clock over
+  useEffect(() => {
+    if (!ride || flight.length < 2) return;
+    const t = setTimeout(() => hop(1), RIDE_MS);
+    return () => clearTimeout(t);
+  }, [ride?.id, flight.length]);
 
   // forget answered cards once the server has dropped them, so a card that comes back later shows again
   useEffect(() => {
@@ -66,7 +82,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, n
   }, [deck, gone]);
   useEffect(() => setOpen(false), [card?.id]);
   // the camera follows the card; with no card it goes back to where the player was
-  const focus = card?.focus ?? null;
+  const focus = card ? (card.focus ?? null) : ride ? `item:${ride.id}` : null;
   const onFocusRef = useRef(onFocus);
   onFocusRef.current = onFocus;
   useEffect(() => onFocusRef.current(focus), [focus, card?.id]);
@@ -119,6 +135,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, n
     }
     const option = continueOption(move);
     if (onPower && plugsInAgent(option)) return onPower();
+    said.current = move.itemId ?? null;
     answered(move);
     openUnlockLink(move, option);
     send({ type: "choose_move", moveId: move.id, optionId: option.id });
@@ -135,6 +152,31 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, n
     </div>
   );
 
+  if (!card && ride) return <Riding item={ride} at={riding} of={flight.length} hop={hop} stop={() => setRideId(null)} />;
+  if (!card && flight.length) {
+    // all caught up with work in flight: follow it through the factory (round 3 pick 8); the next idea waits beside it
+    const n = flight.length;
+    return (
+      <div className="needs tasktray" role="region" aria-label={TASKS.label}>
+        {ask}
+        <section className="acard suggest tabbed task caught" aria-label={TASKS.caught}>
+          <div className="abody">
+            <div className="atop"><b>{TASKS.caught}</b></div>
+            <span className="att">{TASKS.inFlight(n)}</span>
+            {nudge && (
+              <div className="aacts">
+                <button type="button" className="alater" data-sfx onClick={nudge.onGo}>{nudge.cta}</button>
+              </div>
+            )}
+          </div>
+          <button type="button" className="ago atab" data-sfx onClick={() => setRideId(flight[0].id)}>
+            {TASKS.follow(n)}
+            <span aria-hidden="true"> →</span>
+          </button>
+        </section>
+      </div>
+    );
+  }
   if (!card) {
     if (!nudge) return ask ? <div className="needs tasktray">{ask}</div> : null;
     return (
@@ -228,7 +270,7 @@ export function TaskTray({ deck, send, onFocus, onPower, onCaughtUp, autonomy, n
                 <div className="aothers">
                   <span>{TASKS.others}</span>
                   {others.map((o) => (
-                    <button key={o.id} type="button" onClick={() => { answered(card); send({ type: "choose_move", moveId: card.id, optionId: o.id }); }}>
+                    <button key={o.id} type="button" onClick={() => { said.current = card.itemId ?? null; answered(card); send({ type: "choose_move", moveId: card.id, optionId: o.id }); }}>
                       {o.label}
                     </button>
                   ))}
@@ -276,5 +318,33 @@ export function SlowSpotLine({ spot, open, onToggle, ideas }: { spot: SlowSpot; 
       {spot.who !== "you" && ideas > 0 && <span className="ideas">{TASKS.ideas(ideas)}</span>}
       {has && <span className="go">{open ? TASKS.hide : TASKS.open}</span>}
     </button>
+  );
+}
+
+/** Following the work: one piece in flight at a time, the camera riding it up the shaft, "2 of 4" to step through. */
+function Riding({ item, at, of, hop, stop }: { item: Item; at: number; of: number; hop: (by: number) => void; stop: () => void }) {
+  return (
+    <div className="needs tasktray" role="region" aria-label={TASKS.moving}>
+      <section className="acard suggest tabbed task riding" aria-label={`${TASKS.moving}: ${item.title}`} aria-live="polite">
+        <div className="abody">
+          <div className="atop">
+            <b>{TASKS.moving}</b>
+            <span>{TASKS.now(STATE_WORD[item.state])}</span>
+          </div>
+          <span className="att">{item.prNumber ? `#${item.prNumber} ` : ""}{item.title}</span>
+          <div className="aacts">
+            {item.prUrl && <a className="alater" href={item.prUrl} target="_blank" rel="noreferrer">{WORDS.prLink}</a>}
+            {of > 1 && (
+              <span className="tpager">
+                <button type="button" aria-label={TASKS.prevWork} onClick={() => hop(-1)}>‹</button>
+                <span>{TASKS.of(at + 1, of)}</span>
+                <button type="button" aria-label={TASKS.nextWork} onClick={() => hop(1)}>›</button>
+              </span>
+            )}
+          </div>
+        </div>
+        <button type="button" className="ago atab" data-sfx onClick={stop}>{TASKS.stop}</button>
+      </section>
+    </div>
   );
 }

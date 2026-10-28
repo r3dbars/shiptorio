@@ -44,6 +44,7 @@ import { AttentionTray } from "./ui/Attention";
 import { attentionOn, buildoutOn, simpleOn } from "./flags";
 import { SlowSpotLine, TaskTray } from "./ui/TaskTray";
 import { slowSpot } from "./ui/slowSpot";
+import { moving } from "./ui/moving"; // with work in flight the tray's own card says all caught up and offers to follow it
 import { Buildout, useFreeLook } from "./ui/Buildout";
 import { BuildStamp } from "./ui/BuildStamp";
 import { installBuildSound } from "./sound/build";
@@ -628,7 +629,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
           </div>
         </div>
 
-        {simple && caughtUp && <div className="caughtup" role="status">{TASKS.caughtUp(inFlight.length)}</div>}
+        {simple && caughtUp && !moving(state?.items).length && <div className="caughtup" role="status">{TASKS.caughtUp(0)}</div>}
         {simple && state && spot.who === "line" && <SlowSpotLine spot={spot} ideas={ideas} open={tasksOpen} onToggle={() => setTasksAsked(!tasksOpen)} />}
 
         {viewing && sheet !== "god" && <div className="god-view-banner" role="status">Viewing as {viewing.login} · {viewing.writable ? "Write mode enabled" : "Read-only"}</div>}
@@ -802,7 +803,7 @@ export function App({ config, onIntroDone, login }: { config?: SourceConfig; onI
         ) : back.holding || tour.lesson || (tour.on && (celebrating || !!ach.toast)) ? null : (
           <div className={simple ? "needs-slot simple" : "needs-slot"} ref={hv.refs.needs as Ref<HTMLDivElement>}>
             {simple ? (
-              tasksOpen && <TaskTray deck={deck} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} onCaughtUp={() => setCaughtUp(true)} autonomy={autonomy} nudge={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null} />
+              tasksOpen && <TaskTray deck={deck} items={state?.items} send={sendCard} onFocus={setFocus} onPower={cfg.kind === "live" ? () => setSheet("power") : undefined} onCaughtUp={() => setCaughtUp(true)} autonomy={autonomy} nudge={whatNext ? { kicker: whatNext.kicker, title: whatNext.title, cta: whatNext.cta.label, onGo: () => onNudge(whatNext.cta.action) } : null} />
             ) : calm ? (
               <AttentionTray
                 deck={deck}
