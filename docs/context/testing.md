@@ -11,7 +11,7 @@ pinned browser/test/runtime dependencies. No production credentials are needed.
 | Contract only | `bun test tests/contract` | Schema variant/required-field drift, missing web branches or Patch fields, callback behavior |
 | Existing #85 playtest | `bun run playtest --check` | Seeded journeys across every registered scenario, including guided intro and disconnects |
 | E2E + visual | `bun run test:e2e` | User journey, invalid wire messages, app exceptions, screenshot differences |
-| Load | `bun run test:load` | Socket failures, missing deliveries, p95 message >3 s or tick RPC >5 s |
+| Load | `bun run test:load` (CI: `test:load:ci`, median of up to 3) | Socket failures, missing deliveries, p95 message >3 s or tick RPC >5 s |
 
 ## Browser journey and visual smoke
 
@@ -110,19 +110,25 @@ raw JSON and CPU profiles are available from that run's artifacts.
 
 ## CI and evidence
 
-PR CI runs the fast suite plus the web build (drafts retain the repo's existing skip
-policy). Heavy browser/visual and load jobs run **only** on manual CI dispatch:
+Every ready PR (and every merge-queue group) runs the whole suite on its own: check,
+selfhost, the six browser shards and load (`bun run test:load:ci`, the same budget judged
+on the median of up to three runs). When all four pass, the `full-suite` job posts the
+`release-validation` status on the PR head, which main requires. Nobody dispatches or
+stamps it by hand anymore. Drafts skip CI.
+
+Manual dispatch still works for focused diagnostics and baselines:
 
 ```sh
 gh workflow run ci.yml --ref <branch> -f update_baselines=false
 ```
 
-The manual run uploads `browser-evidence` and `load-evidence` for seven days. For a
-reviewed Linux baseline refresh, dispatch with `update_baselines=true`, download
-`browser-evidence`, inspect the `tests/e2e/baselines/linux/` images, commit them, then
-run again with `false` to prove comparisons pass. Baseline generation alone is not
-visual regression proof. PR CI and manual runs use separate concurrency groups;
-new runs cancel obsolete runs of the same event/branch. No scheduled heavy runs.
+A dispatch with `browser_grep` or `update_baselines=true` never posts release-validation.
+Runs upload `browser-evidence` and `load-evidence` for seven days. For a reviewed Linux
+baseline refresh, dispatch with `update_baselines=true`, download `browser-evidence`,
+inspect the `tests/e2e/baselines/linux/` images, commit them, then let the PR run prove
+comparisons pass. Baseline generation alone is not visual regression proof. A new push
+cancels the obsolete run of the same branch, except on `release/*` branches, where an
+in-flight run always finishes. No scheduled heavy runs.
 
 The `/__test/*` endpoints, provider stubs and controlled alarm wrapper exist only in
 `tests/e2e/worker.ts`; production `server/wrangler.jsonc` still imports
