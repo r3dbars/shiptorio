@@ -3,6 +3,10 @@
 ## Hosted tester playthrough fixes (Codex, 2026-10-28)
 
 The hosted test-newbie run observed a real factory-socket launched transition and PR #7 merged inside the isolated fixture, but failed on the newly enabled overview's 403 and a stale button wait after Launch. Allow only the signed tester's read-only overview through the existing private fixture; production, mutations and repo overrides stay denied. The bot now ends an outstanding action when its authoritative Launch transition arrives; earlier action failures still fail. Focused boundary/action tests pass; full check, dev CI and a fresh hosted playthrough remain required. This is fixture proof, not a real GitHub/Codex ship.
+## GitHub connection reliability (Codex, 2026-10-28)
+
+Backend GitHub connection reliability: cancellation, missing setup, invalid provider JSON and network/provider failures now have safe retry pages; the token exchange is bounded. No new session is issued after failed repository discovery. Guest merge and normal sign-in retain their checks. See `github-connect.md`; new 2D frontend paths remain untouched. Focused failure tests reproduce the previous unhandled errors; full check and exact-head dev CI govern release.
+
 ## Polished logo dev refresh (Codex, 2026-10-28)
 
 #467 updates the shared Wordmark, password gate and server-page brand image to the approved polished asset, with a quiet gate background. Password/session/CSRF code is untouched. The approved brass public welcome page remains byte-for-byte unchanged. Product-source local check: 1,421 passed, two existing skips, zero failures; lint/types/build green. Earlier Miniflare previews at 390×844 and 1440×900 verified image loading, full form visibility and wrong-password feedback. Refreshed onto dev; exact-head quick CI, Stranger and CodeQL govern merge. Production remains an explicit dev-to-main promotion.

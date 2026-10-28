@@ -115,7 +115,7 @@ test("account import consumes a guest once and preserves existing account progre
 });
 
 test("real OAuth callback imports the guest and remains idempotent on a repeated callback", async () => {
-  const env = environment(), guest = await createGuest(env), cookie = await guestCookie(env, guest.id);
+  const env = { ...environment(), GITHUB_CLIENT_ID: "fixture-client", GITHUB_CLIENT_SECRET: "fixture-secret" }, guest = await createGuest(env), cookie = await guestCookie(env, guest.id);
   await writeGuestProgress(env, guest, JSON.stringify(progress(28)));
   await writeGuestPrefs(env, guest, { intro: "complete" });
   globalThis.fetch = (async (input: RequestInfo | URL) => {
