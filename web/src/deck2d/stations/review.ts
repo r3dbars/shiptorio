@@ -1,7 +1,7 @@
 import type { StopState } from "../contract";
 import type { Color } from "./palette";
 import { shift, type Px } from "./px";
-import { BRASS, IRON, blotch, cylH, drop, face, noise, rivet, smoke, strap, tone, type Ramp } from "./shade";
+import { BAND, BRASS, IRON, blotch, cylH, drop, face, noise, rivet, smoke, strap, tone, type Ramp } from "./shade";
 import type { StationDef } from "./types";
 
 // Review: a low riveted inspection bench with a crate on hazard stripes, two jointed brass arms holding lamps over
@@ -17,22 +17,22 @@ const LIT: Record<StopState, Ramp> = {
 };
 const GLOW: Record<StopState, Color | null> = { idle: null, working: "sun-6", jammed: "jam-2", auto: "ok-2" };
 
-/** A 2px brass rod between two points, lit on its upper-right side. */
+/** A round brass rod (3px thick) between two points, banded across its thickness, lit on the upper-right side. */
 function rod(g: Px, x0: number, y0: number, x1: number, y1: number) {
-  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
-  const nx = -(y1 - y0), ny = x1 - x0, nl = Math.hypot(nx, ny) || 1, lit = (nx - ny) / nl > 0; // which side faces the light
-  for (let i = 0; i <= n; i++) {
-    const x = Math.round(x0 + ((x1 - x0) * i) / n), y = Math.round(y0 + ((y1 - y0) * i) / n);
-    tone(g, x, y, BRASS, lit ? 0.75 : 0.4);
-    tone(g, x + (Math.abs(y1 - y0) > Math.abs(x1 - x0) ? 1 : 0), y + (Math.abs(y1 - y0) > Math.abs(x1 - x0) ? 0 : 1), BRASS, lit ? 0.4 : 0.7);
+  const len = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / len, uy = (y1 - y0) / len, nx = -uy, ny = ux;
+  const litSide = nx - ny > 0 ? 1 : -1; // the normal that faces up-right
+  for (let y = Math.floor(Math.min(y0, y1) - 2); y <= Math.max(y0, y1) + 2; y++) for (let x = Math.floor(Math.min(x0, x1) - 2); x <= Math.max(x0, x1) + 2; x++) {
+    const px = x + 0.5 - x0, py = y + 0.5 - y0, along = px * ux + py * uy, across = (px * nx + py * ny) * litSide;
+    if (along < 0 || along > len || Math.abs(across) > 1.6) continue;
+    tone(g, x, y, BRASS, 0.42 + 0.3 * (across / 1.6) + (across > 0.3 && across < 1 ? 0.15 : 0));
   }
 }
 function joint(g: Px, x: number, y: number) {
-  for (let yy = y - 2; yy <= y + 2; yy++) for (let xx = x - 2; xx <= x + 2; xx++) {
-    const d = Math.hypot(xx + 0.5 - (x + 0.5), yy + 0.5 - (y + 0.5));
-    if (d <= 1.9) tone(g, xx, yy, BRASS, 0.5 + 0.3 * ((xx - x) - (yy - y)) / 1.9);
+  for (let yy = y - 3; yy <= y + 3; yy++) for (let xx = x - 3; xx <= x + 3; xx++) {
+    const d = Math.hypot(xx - x, yy - y);
+    if (d <= 2.6) tone(g, xx, yy, BRASS, d > 1.9 ? 0.25 + 0.3 * ((xx - x) - (yy - y)) / 2.6 : 0.5 + 0.3 * ((xx - x) - (yy - y)) / 2.6);
   }
-  g.set(x, y, "brass-0");
+  g.set(x, y, "soot"); g.set(x + 1, y - 1, "brass-4");
 }
 
 export const review: StationDef = {
@@ -74,21 +74,24 @@ export const review: StationDef = {
     }
     if (s === "jammed") for (const y of [cy + 2, cy + ch - 3]) for (let x = cx; x < cx + cw; x++) tone(g, x, y, LIT.jammed, x < cx + 3 ? 0.4 : 0.6);
     if (s === "working") for (let x = cx + 1; x < cx + cw - 1; x++) tone(g, x, cy + 1 + f * 2, lit, 0.9);
-    if (glow) g.glow(cx, cy - 2, cw + 1, ch + 2, glow, 0.25); // the lamps' light on the crate
+    if (glow) g.glow(cx, cy - 2, cw + 1, 6, glow, 0.25); // the lamps' light on the crate top
 
     // --- the two arms: post top -> elbow out -> shoulder up -> forearm in to the lamp head
-    rod(g, 10, 21, 6, 14); joint(g, 6, 14);
-    rod(g, 6, 14, 11, 4); joint(g, 11, 4);
-    rod(g, 11, 4, 16, 8);
-    rod(g, 33, 21, 37, 14); joint(g, 37, 14);
-    rod(g, 37, 14, 32, 4); joint(g, 32, 4);
-    rod(g, 32, 4, 27, 8);
-    for (const [hx, dir] of [[16, 1], [26, -1]] as const) { // cone shades opening down toward the crate
-      for (let j = 0; j < 4; j++) for (let i = -1 - Math.floor(j / 2); i <= 1 + Math.floor(j / 2) + 1; i++) {
-        tone(g, hx + i, 7 + j, BRASS, j === 0 ? 0.75 : 0.3 + (dir * i + 2) * 0.1);
+    rod(g, 10.5, 21, 6, 13); rod(g, 6, 13, 11, 2); rod(g, 11, 2, 16.5, 3.5);
+    joint(g, 10, 21); joint(g, 6, 13); joint(g, 11, 2);
+    rod(g, 33.5, 21, 38, 13); rod(g, 38, 13, 33, 2); rod(g, 33, 2, 27.5, 3.5);
+    joint(g, 33, 21); joint(g, 38, 13); joint(g, 33, 2);
+    for (const hx of [17, 27]) { // bell shades opening down toward the crate
+      for (let j = 0; j < 5; j++) {
+        const half = 1 + j * 0.7;
+        for (let x = Math.floor(hx - half); x <= Math.ceil(hx + half); x++) {
+          const u = (x + 0.5 - hx) / (half + 0.5);
+          if (j === 4 || j === 0) tone(g, x, 3 + j, BRASS, 0.4 + 0.3 * (u + 1) / 2); // brass rims
+          else tone(g, x, 3 + j, BAND, 0.3 + 0.45 * (u + 1) / 2 + (u > 0.3 && u < 0.7 ? 0.2 : 0)); // dark steel bell
+        }
       }
-      for (let i = -2; i <= 3; i++) tone(g, hx + i, 11, lit, s === "idle" ? 0.3 : 0.65 + (i + 2) * 0.06);
-      if (glow) g.glowDisc(hx + 0.5, 11.5, 4, glow, 0.25, [hx - 2, 11, 6, 1]);
+      for (let x = hx - 2; x <= hx + 2; x++) tone(g, x, 8, lit, s === "idle" ? 0.3 : 0.6 + (x - hx + 2) * 0.08);
+      if (glow) g.glowDisc(hx + 0.5, 9, 4, glow, 0.25, [hx - 2, 8, 5, 1]);
     }
 
     // --- warning bulbs on the front corners
