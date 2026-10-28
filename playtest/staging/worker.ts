@@ -1,3 +1,4 @@
+import { settleFixtureLease } from "./request-lease";
 // PRIVATE, isolated test backend. Production/staging application entries never import this file.
 import { app } from "../../server/src/index";
 import { createSession, currentUser } from "../../server/src/accounts";
@@ -79,6 +80,7 @@ export default {
     const entered = await gate.fetch(new Request("http://fixture.internal/enter", { method: "POST", headers: { "x-test-persona": persona } }));
     if (!entered.ok) return new Response("Fixture reset in progress", { status: 409 });
     const { leaseId } = await entered.json() as { leaseId: string };
+    let upgraded = false;
     try {
     await seedTestUser(env, persona);
     let session = await env.CACHE.get(`fixture-session:${persona}`);
@@ -106,11 +108,11 @@ export default {
     }
     const response = await app.fetch(internal, localEnv, ctx);
     // An upgrade owns its headers; ordinary responses must never replace the outer app's session.
-    if (response.status === 101) return response;
+    if (response.status === 101) { upgraded = true; return response; }
     const clean = new Response(response.body, response); clean.headers.delete("set-cookie");
     return clean;
     } finally {
-      await gate.fetch(new Request("http://fixture.internal/exit", { method: "POST", headers: { "x-test-persona": persona, "content-type": "application/json" }, body: JSON.stringify({ leaseId }) })).catch(() => undefined);
+      await settleFixtureLease(upgraded, () => gate.fetch(new Request("http://fixture.internal/exit", { method: "POST", headers: { "x-test-persona": persona, "content-type": "application/json" }, body: JSON.stringify({ leaseId }) })), ctx);
     }
   },
 } satisfies ExportedHandler<FixtureEnv>;

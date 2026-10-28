@@ -3223,10 +3223,10 @@ class FactoryBase extends DurableObject<FactoryEnv> {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
     const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.socketFetch(request, auth));
+    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.#socketFetch(request, auth));
   }
 
-  private async socketFetch(request: Request, auth: BrowserSocketAuth | null): Promise<Response> {
+  async #socketFetch(request: Request, auth: BrowserSocketAuth | null): Promise<Response> {
 
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const user = auth?.user;
