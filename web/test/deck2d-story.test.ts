@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
+import { STAGE_AT } from "../src/deck2d/build/build";
 import { STOPS } from "../src/deck2d/contract";
+import { GROW_SECONDS } from "../src/deck2d/grow/index";
+import { LAUNCH_BUILD_SECONDS } from "../src/deck2d/launch/timeline";
 import { STORY_CARD, createStory, type Story } from "../src/deck2d/story";
 
 // Steps the story until cond() or the time limit (sim seconds). Returns the sim seconds it took.
@@ -19,18 +22,18 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(v0.shippy).toEqual({ pose: "folded", at: "corner" });
   expect(v0.deck).toEqual({ size: "small", island: "none" });
 
-  // ONE thing moves at a time: builds, grows and the island never overlap, and no caption shows while one plays
+  // ONE thing moves at a time: builds, grows and the island never overlap; a caption may ride ~2s into a build, no longer
   const busy: { what: string; from: number; to: number }[] = [];
   let t0 = 0, prev = s.view();
   run(s, () => {
     const v = s.view();
     t0 += 0.1;
-    for (const st of v.stops) if (st.built && !prev.stops.find((x) => x.id === st.id)!.built && st.id !== "launch") busy.push({ what: st.id, from: t0, to: t0 + 7.6 });
-    if (v.deck!.size !== prev.deck!.size) busy.push({ what: v.deck!.size, from: t0, to: t0 + 7.4 });
-    if (v.deck!.island === "building" && prev.deck!.island === "none") busy.push({ what: "island", from: t0, to: t0 + 12 });
+    for (const st of v.stops) if (st.built && !prev.stops.find((x) => x.id === st.id)!.built && st.id !== "launch") busy.push({ what: st.id, from: t0, to: t0 + STAGE_AT.gone });
+    if (v.deck!.size !== prev.deck!.size) busy.push({ what: v.deck!.size, from: t0, to: t0 + GROW_SECONDS });
+    if (v.deck!.island === "building" && prev.deck!.island === "none") busy.push({ what: "island", from: t0, to: t0 + LAUNCH_BUILD_SECONDS });
     const now = busy.filter((b) => t0 > b.from + 0.05 && t0 < b.to - 0.05);
     expect(now.length).toBeLessThanOrEqual(1);
-    if (now.length) expect(v.caption).toBeNull();
+    if (now.some((b) => t0 > b.from + 2.2)) expect(v.caption).toBeNull();
     if (v.shipped > 0) expect(v.deck!.island).toBe("built");
     prev = v;
     return v.stops.find((x) => x.id === "launch")!.built;
@@ -42,10 +45,9 @@ test("the story plays all four beats and ends on the connect card", () => {
   let t = run(s, () => s.view().shipped >= 2);
   const built = s.view().stops.filter((x) => x.built).map((x) => x.id);
   expect(built).toEqual(["repo", "planner", "builder", "checks", "launch"]);
-  // beat 2 builds Review and Gate one at a time too, on a still line
-  run(s, () => s.view().stops.find((x) => x.id === "review")!.built);
-  expect(s.view().stops.every((x) => x.items.length === 0)).toBe(true);
-  expect(s.view().stops.find((x) => x.id === "gate")!.built).toBe(false);
+  // beat 2 builds Gate, then Review (the call), one at a time
+  run(s, () => s.view().stops.find((x) => x.id === "gate")!.built);
+  expect(s.view().stops.find((x) => x.id === "review")!.built).toBe(false);
 
   // 2 there's always a bottleneck: review jams, a card slides up
   t += run(s, () => s.view().card != null);
