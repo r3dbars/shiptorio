@@ -7,20 +7,28 @@
     if (event.target === dialog && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) dialog.close();
   });
   var say = function (text, kind) { note.textContent = text; note.className = "note" + (kind ? " " + kind : ""); };
-  if (/[?&]joined=1/.test(location.search)) { dialog.showModal(); say("You're on the list. We'll email you when your island is ready.", "ok"); }
-  form.addEventListener("submit", function (e) {
+  if (/[?&]joined=1/.test(location.search)) { dialog.showModal(); form.hidden = true; say("You're on the waitlist.", "ok"); }
+  form.addEventListener("submit", async function (e) {
     e.preventDefault();
     var email = form.email.value.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { say("That email doesn't look right. Try again?", "err"); form.email.focus(); return; }
-    var button = form.querySelector("button"); button.disabled = true; say("Joining…");
-    fetch("/api/waitlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email, website: form.website.value, ref: document.referrer.slice(0, 200) }) })
-      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
-      .then(function (r) {
-        if (r.ok) { say("You're on the list. We'll email you when your island is ready.", "ok"); form.reset(); }
-        else say(r.status === 429 ? "Too many tries from here. Give it an hour." : (r.body.error || "That didn't work. Try again in a minute."), "err");
-      })
-      .catch(function () { say("Couldn't reach the factory. Check your connection and try again.", "err"); })
-      .then(function () { button.disabled = false; });
+    var button = form.querySelector("button");
+    if (button.disabled) return;
+    button.disabled = true; form.setAttribute("aria-busy", "true"); say("Joining…");
+    var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 15000);
+    try {
+      var response = await fetch("/api/waitlist", { method: "POST", redirect: "error", signal: controller.signal, headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ email: email, website: form.website.value }) });
+      var body = await response.json().catch(function () { return null; });
+      if (!response.ok || !body || body.ok !== true) {
+        say(response.status === 429 ? "Too many tries from here. Give it an hour." : (body && typeof body.error === "string" ? body.error : "Couldn't join right now. Please try again."), "err");
+        return;
+      }
+      form.reset(); form.hidden = true; say("You're on the waitlist.", "ok");
+    } catch (_) {
+      say("Couldn't reach the factory. Please try again.", "err");
+    } finally {
+      clearTimeout(timer); button.disabled = false; form.removeAttribute("aria-busy");
+    }
   });
 
   // A recording of our own music and SFX engine. Only an explicit click starts audio.

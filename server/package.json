@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun scripts/dev-setup.ts && wrangler dev",
+    "dev": "bun scripts/dev-setup.ts && wrangler dev --infer-origin-from-routes=false",
     "deploy": "wrangler d1 migrations apply shiptorio --remote && wrangler d1 execute shiptorio --remote --file ops/production-owner.sql && wrangler deploy --name shiptorio --var BUILD_SHA:$(git rev-parse HEAD)",
     "typecheck": "tsc --noEmit && tsc --noEmit -p test"
   },
