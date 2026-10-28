@@ -1,9 +1,10 @@
 import {
   ART_PX, BELT_Y, FLOOR_Y, LAUNCH_Y, LOOK, PALETTE_48, STOPS, STOP_X,
-  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type LayerSlot, type ShippyModule, type StopId,
+  type ArtLoader, type DeckBus, type DeckLayer, type DeckView, type Item, type LayerSlot, type ShippyModule, type StopId,
 } from "../contract";
 import { pixelOn } from "../../flags";
 import { createPixelCanvas } from "./pixel";
+import * as pd from "./pxdraw";
 
 // The deck renderer: sky, clouds, deck, bridge + rocket island, belt, stations, crates, rocket, camera.
 // It draws whatever DeckView it's handed and animates the in-between (crates sliding stop to stop by item id,
@@ -208,8 +209,12 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     cx.globalAlpha = 1;
   }
   function belt() {
-    const b = img("belt"); if (!b) return;
     const segs = islandUp ? SEGS : SEGS.slice(0, 1);
+    if (px) {
+      for (const g of segs) pd.beltRun(cx, g.ax, g.ay, g.bx, g.by, islandUp ? g.len : Math.min(g.len, deckEnd() - 100 - g.ax), t, SPEED * 0.35);
+      return;
+    }
+    const b = img("belt"); if (!b) return;
     const bh = 34, bw = b.naturalWidth * bh / b.naturalHeight, step = bw / 5; // the strip holds 5 chevron panels
     const off = (t * SPEED * 0.35) % step;
     for (const g of segs) {
@@ -222,6 +227,7 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
   }
   function crate(c: Crate) {
     const [x, y] = at(c.d);
+    if (px) { if (c.fade > 0.5) pd.crate(cx, x, y, c.look as Item["look"]); return; } // pixel art: no half-faded sprites
     if (c.look === "wait") glow(x, y - 18, 46, "255,70,50", 0.3);
     cx.globalAlpha = c.fade;
     put("crate-" + c.look, x, y + 12, CRATE);
@@ -240,8 +246,8 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (s.state === "jammed") {
       // the one marker on the deck: a steady beacon with a slow breath, not a strobe
       const x = STOP_X[id], top = BELT_Y + L.drop - L.h;
-      glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4));
-      put("beacon", x, top + 18, 54);
+      if (px) pd.beacon(cx, x, top, t);
+      else { glow(x, top, 130, "255,60,40", 0.22 + 0.08 * Math.sin(t * 2.4)); put("beacon", x, top + 18, 54); }
       if (s.waiting && put("plate", x - 6, BELT_Y + 106, 52)) {
         cx.fillStyle = "#2b1a0a"; cx.textAlign = "center"; cx.textBaseline = "middle"; cx.font = "15px Silkscreen, monospace";
         const [a, b] = s.waiting.split(" ");
@@ -254,7 +260,9 @@ export function createEngine(cv: HTMLCanvasElement, art: ArtLoader, bus: DeckBus
     if (!rv.built) return;
     const e = 1 - drop.review, fall = -420 * e * e;
     if (prev && v.shippy.pose === "lever") lever = 0.4;
-    put(lever > 0 ? "lever-down" : rv.state === "jammed" ? "lever-glow" : "lever-up", LEVER.x, LEVER.base + fall, LEVER.h);
+    const mode = lever > 0 ? "down" : rv.state === "jammed" ? "glow" : "up";
+    if (px) pd.lever(cx, LEVER.x, LEVER.base + fall, mode);
+    else put("lever-" + mode, LEVER.x, LEVER.base + fall, LEVER.h);
   }
   function rocketDraw() {
     const rk = img("rocket"), fl = img("flame");

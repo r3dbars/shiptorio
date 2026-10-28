@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#2a1410" />
+<title>Shiptorio 3D deck spike</title>
+<!-- Time-boxed spike: can real 3D, rendered tiny and upscaled crisp, read as the Black Iron pixel deck? src/deck3d/. Not linked from the game. -->
+<link rel="preload" href="/fonts/silkscreen-400.woff2" as="font" type="font/woff2" crossorigin />
+<style>
+@font-face { font-family: "Silkscreen"; src: url("/fonts/silkscreen-400.woff2") format("woff2"); font-display: swap; }
+:root { color-scheme: dark; --fg: #fdfaec; --muted: #f9c47a; --panel: rgba(10, 6, 4, .72); --brass: #fdc727; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #432f29; }
+canvas { position: fixed; left: 0; top: 0; image-rendering: pixelated; touch-action: none; cursor: grab; }
+canvas:active { cursor: grabbing; }
+.hud { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font: 400 11px/1 "Silkscreen", ui-monospace, monospace; color: var(--fg); }
+.hud b { font-weight: 400; color: var(--muted); padding: 8px 10px; background: var(--panel); letter-spacing: .06em; }
+.hud button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid #6b5360; padding: 8px 10px; min-height: 32px; cursor: pointer; letter-spacing: .06em; }
+.hud button[aria-pressed="false"] { color: #8f6f62; }
+.hud button:focus-visible { outline: 2px solid #41f3f7; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="view" aria-label="A floating iron deck in 3D: a belt carries a crate past the Builder and the Checks station while Shippy the robot watches"></canvas>
+<div class="hud" role="group" aria-label="Spike controls">
+  <b>3D spike · drag to look around</b>
+  <button type="button" id="t-px" aria-pressed="true">Pixels</button>
+  <button type="button" id="t-pal" aria-pressed="true">Palette</button>
+  <button type="button" id="t-line" aria-pressed="true">Outlines</button>
+</div>
+<script type="module" src="/src/deck3d/main.ts"></script>
+</body>
+</html>
