@@ -1,8 +1,8 @@
 import { settleFixtureLease } from "./request-lease";
 // PRIVATE, isolated test backend. Production/staging application entries never import this file.
 import { app } from "../../server/src/index";
-import { createSession, currentUser } from "../../server/src/accounts";
-import { seedTestUser } from "../../server/src/test-users";
+import { fixtureSession } from "./session";
+import { FixtureTiming } from "./timing";
 import { makeSessionCookie } from "../../server/src/session";
 import { ISOLATED_TEST_CONTEXT, verifyTestDelegation } from "../../server/src/test-delegation";
 import { personaId, personaRepo } from "../../server/src/test-users-policy";
@@ -45,7 +45,9 @@ globalThis.fetch = fixtureOnlyFetch;
 export default {
   async fetch(request: Request, env: FixtureEnv, ctx: ExecutionContext): Promise<Response> {
     if (env.FIXTURE_INSTANCE !== "shiptorio-fixture" || env.TEST_USERS !== "on" || env.PUBLIC_URL !== "https://shiptorio.dev") return new Response("Fixture disabled", { status: 503 });
+    const timing = new FixtureTiming();
     const persona = await verifyTestDelegation(request, env.TEST_FACTORY_KEY ?? "");
+    timing.mark("verify");
     if (!persona || persona === "test-guest") return new Response("Private fixture authorization required", { status: 403 });
     if (new URL(request.url).pathname === "/test/reset") {
       const repo = personaRepo(persona), id = personaId(persona), installation = 9000 + Math.abs(id);
@@ -80,16 +82,14 @@ export default {
     const entered = await gate.fetch(new Request("http://fixture.internal/enter", { method: "POST", headers: { "x-test-persona": persona } }));
     if (!entered.ok) return new Response("Fixture reset in progress", { status: 409 });
     const { leaseId } = await entered.json() as { leaseId: string };
+    timing.mark("enter");
     let upgraded = false;
     try {
-    await seedTestUser(env, persona);
-    let session = await env.CACHE.get(`fixture-session:${persona}`);
-    if (!session || !(await currentUser(env, session))) {
-      session = (await createSession(env, { id: personaId(persona), login: persona }, "isolated staging fixture")).split(";")[0];
-      await env.CACHE.put(`fixture-session:${persona}`, session, { expirationTtl: 86400 });
-    }
+    const session = await fixtureSession(env, persona);
+    timing.mark("session");
     const preview = (await makeSessionCookie(`${env.SESSION_SECRET}:${env.APP_PASSWORD}`, "preview")).split(";")[0].replace("shiptorio_session=", "shiptorio_access=");
     const cookie = `${session}; ${preview}`;
+    timing.mark("preview");
     const headers = new Headers(request.headers); headers.delete("x-shiptorio-test-delegation"); headers.set("cookie", cookie);
     const internal = new Request(request, { headers });
     const localEnv = { ...env, [ISOLATED_TEST_CONTEXT]: true, ASSETS: { fetch: async () => new Response("No public fixture assets", { status: 404 }) } as unknown as Fetcher };
@@ -99,6 +99,7 @@ export default {
       await fixture.seedPersona(persona, repo, 9000 + Math.abs(personaId(persona)));
       await fixture.setRepositoryId(990000 + Math.abs(personaId(persona)));
     }
+    timing.mark("seed");
     if (new URL(request.url).pathname === "/test/install") {
       const response = await provider.fetch(new Request(`http://fixture.internal/install${new URL(request.url).search}`, { method: request.method, redirect: "manual", headers: { "x-test-persona": persona } }));
       const clean = new Response(response.body, response); clean.headers.delete("set-cookie"); return clean;
@@ -106,11 +107,13 @@ export default {
     if (persona !== "test-broke" && await env.DB.prepare("SELECT 1 FROM user_repos WHERE user_id=? AND repo=?").bind(personaId(persona), repo).first()) {
       await provider.fetch(new Request("http://fixture.internal/start", { method: "POST", headers: { "content-type": "application/json", "x-test-persona": persona }, body: JSON.stringify({ cookie }) }));
     }
+    timing.mark("runner");
     const response = await app.fetch(internal, localEnv, ctx);
+    timing.mark("app");
     // An upgrade owns its headers; ordinary responses must never replace the outer app's session.
-    if (response.status === 101) { upgraded = true; return response; }
+    if (response.status === 101) { upgraded = true; return timing.attach(response); }
     const clean = new Response(response.body, response); clean.headers.delete("set-cookie");
-    return clean;
+    return timing.attach(clean);
     } finally {
       await settleFixtureLease(upgraded, () => gate.fetch(new Request("http://fixture.internal/exit", { method: "POST", headers: { "x-test-persona": persona, "content-type": "application/json" }, body: JSON.stringify({ leaseId }) })), ctx);
     }
