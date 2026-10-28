@@ -16,6 +16,7 @@ import * as THREE from "three";
 import type { FactoryState } from "@shiptorio/shared";
 
 import { buildoutOn } from "../../flags";
+import { submitWhenUnheld } from "../../ui/holdRender";
 import { perf } from "../perf";
 import { FrameGovernor } from "../quality";
 import type { Cosmetics, Ping } from "../scene";
@@ -616,13 +617,17 @@ export class ShaftScene {
     this.clogs.step(this.t, dt, this.reduceMotion);
     const shadows = this.governor.shadows();
     this.renderer.shadowMap.needsUpdate ||= shadows; // a build may have asked for one too
-    if (this.warmPending && this.bo) {
-      this.warmPending = false;
-      this.bo.precompile((holders) => this.warm(stage, holders));
-    }
-    stage.render(this.renderer);
-    this.hud.place(this.W, this.H);
-    this.quietChips();
+    // Consent UI keeps its RAF and safety clock. Only expensive GL/precompile
+    // yields while a native hold is active; simulation and camera still step.
+    submitWhenUnheld(() => {
+      if (this.warmPending && this.bo) {
+        this.warmPending = false;
+        this.bo.precompile((holders) => this.warm(stage, holders));
+      }
+      stage.render(this.renderer);
+      this.hud.place(this.W, this.H);
+      this.quietChips();
+    });
     perf.work(performance.now() - now);
   };
 
