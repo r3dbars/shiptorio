@@ -41,6 +41,10 @@ jobs:
       - run: bun test
       - name: Verify real Durable Object storage on host
         run: bun run test:storage
+      # Install before mutation: setup failure must never leave a broken deployment live.
+      - name: Install smoke Chromium
+        timeout-minutes: 2
+        run: bun x playwright install --with-deps --no-shell chromium
       # Capture the active version BEFORE mutation, not whichever version is second later.
       # Refuse split traffic: rollback restores exactly one known 100% version.
       - name: Capture rollback target
@@ -63,10 +67,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Live smoke
-        id: smoke
+        id: live_smoke
         run: bun scripts/smoke/live.ts https://shiptorio.com "$GITHUB_SHA"
+      - name: Browser smoke
+        id: smoke
+        run: node scripts/smoke/browser.mjs https://shiptorio.com "$RUNNER_TEMP/browser-smoke/deploy"
       - name: Roll back failed deployment
-        if: ${{ always() && steps.previous.outcome == 'success' && (steps.deploy.outcome == 'failure' || steps.smoke.outcome == 'failure') }}
+        if: ${{ always() && steps.previous.outcome == 'success' && (steps.deploy.outcome == 'failure' || steps.live_smoke.outcome == 'failure' || steps.smoke.outcome == 'failure') }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -85,6 +92,14 @@ jobs:
           (cd server && bun x wrangler deployments list --name shiptorio --json) > "$RUNNER_TEMP/restored.json"
           jq -e --arg version "$PREVIOUS_VERSION" 'sort_by(.created_on) | last | .versions | length == 1 and .[0].version_id == $version and .[0].percentage == 100' "$RUNNER_TEMP/restored.json"
           bun scripts/smoke/live.ts https://shiptorio.com "$PREVIOUS_COMMIT"
+          node scripts/smoke/browser.mjs https://shiptorio.com "$RUNNER_TEMP/browser-smoke/restored"
           echo "Rollback verified; the deployment job remains FAILED." >> "$GITHUB_STEP_SUMMARY"
           echo "::error::Rollback verified. Rejected deployment $GITHUB_SHA; fix the branch before redeploying."
           exit 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: deploy-browser-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/browser-smoke/
+          retention-days: 7
+          if-no-files-found: warn
