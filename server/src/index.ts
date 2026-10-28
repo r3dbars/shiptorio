@@ -685,16 +685,22 @@ app.on(["GET", "POST"], "/connect/:kind", async (c) => {
 });
 
 app.get("/api/repos", async (c) => {
-  const user = await resolveUser(c.req.raw, c.env);
-  if (!user) return c.json({ error: "login required" }, 401);
-  const repos = { results: await reposFor(c.env, user) };
-  // Preserve the legacy database fields while serving the browser's repo-card contract.
-  // Issue counts are not available from this query; omit them rather than inventing zero.
-  return c.json({ repos: (await Promise.all(repos.results.map(async repo => await repoAccess(c.env, user, repo.full_name) ? repo : null))).filter((repo): repo is NonNullable<typeof repo> => !!repo).map(repo => ({
-    ...repo,
-    fullName: repo.full_name,
-    blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
-  })) });
+  try {
+    const user = await resolveUser(c.req.raw, c.env);
+    if (!user) return c.json({ error: "login required" }, 401);
+    const repos = { results: await reposFor(c.env, user) };
+    // Preserve the legacy database fields while serving the browser's repo-card contract.
+    // Issue counts are not available from this query; omit them rather than inventing zero.
+    return c.json({ repos: (await Promise.all(repos.results.map(async repo => await repoAccess(c.env, user, repo.full_name, "read", true) ? repo : null))).filter((repo): repo is NonNullable<typeof repo> => !!repo).map(repo => ({
+      ...repo,
+      fullName: repo.full_name,
+      blurb: repo.default_branch ? `Default branch: ${repo.default_branch}` : "Connected GitHub repository",
+    })) });
+  } catch {
+    log("warn", "github.repositories_unavailable");
+    c.header("Retry-After", "5");
+    return c.json({ error: "Could not load your repositories. Try again shortly.", code: "repository_discovery_unavailable" }, 503);
+  }
 });
 
 // The empire overview: one small summary per repo this player can reach (shared/src/empire.ts).
