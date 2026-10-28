@@ -14,7 +14,7 @@ export const emptyBrain = (model: string, online: boolean): Brain => ({ model, o
 /** Adds one decision, newest first. Pure: returns a new brain. */
 export function recordThought(brain: Brain, thought: Omit<Thought, "id">): Brain {
   const score = scoreThought(brain.score ?? emptyScore(), thought);
-  const t: Thought = { ...thought, id: crypto.randomUUID(), title: thought.title.slice(0, 160), outcome: thought.outcome.slice(0, 200), reason: thought.reason.slice(0, 400) };
+  const t: Thought = { ...thought, id: crypto.randomUUID(), title: thought.title.slice(0, 160), outcome: thought.outcome.replace(/\bSpark\b/gi, "planner").slice(0, 200), reason: thought.reason.replace(/\bSpark\b/gi, "planner").slice(0, 400) };
   return {
     ...brain,
     model: thought.by === "spark" ? thought.model : brain.model,

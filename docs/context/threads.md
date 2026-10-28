@@ -586,3 +586,5 @@ Justin (16:31Z) picked the flow in `docs/context/branches.md`: every agent PR (C
 runs only check/selfhost/Stranger/CodeQL, merges on green and auto-deploys shiptorio.dev. `main` = shiptorio.com and
 only moves on a `dev → main` promotion, which runs the full suite and gets the automatic `release-validation` status
 (#485). Release batches and release/* branches are retired. Promotions merge with a merge commit, never squash.
+
+- 2026-10-27 — Codex: planner outage recovery builds on #312 with classified cooldowns, a two-minute planning deadline, persisted automatic resumption (including raised caps without refunding unknown spend), one calm resting card, and deterministic bottleneck fallback. Small scope exceptions: factory.ts wires durable jobs/cards/alarms; web/src/source/live.ts formats the resting deadline in the browser's timezone. Moves the Oct 27 live-loop reliability checkpoint forward.
