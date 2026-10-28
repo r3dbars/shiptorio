@@ -3313,7 +3313,7 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
         });
         if (!s.move) {
-          s.move = { id: crypto.randomUUID(), title: "Plug in Claude or ChatGPT to start building.", why: "The factory plans the work; your local subscription agents write the code.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
+          s.move = { id: crypto.randomUUID(), title: "Your computer writes the code. Plug it in to start building.", why: "The factory plans the work. Claude Code or Codex on your computer writes the code: paste one line, once.", stage: "resources", itemId: item.id, createdAt: now, options: [{ id: "connect", label: "Connect a local agent", recommended: true, actions: [{ tool: "connect_source", args: { kind: "claude" }, reason: "No subscription builder is connected." }] }] };
           await this.publishDecision(s.move);
         }
         continue;
