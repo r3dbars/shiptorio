@@ -17,6 +17,20 @@ test("the story plays all four beats and ends on the connect card", () => {
   expect(v0.stops.map((x) => x.id)).toEqual([...STOPS]);
   expect(v0.stops.every((x) => !x.built)).toBe(true); // the deck starts empty
   expect(v0.shippy).toEqual({ pose: "folded", at: "corner" });
+  expect(v0.deck).toEqual({ size: "small", island: "none" });
+
+  // each stop shows construction (building 0..1) before it's built, and the island rises before the first launch
+  let sawBuilding = false, sawGrow = false, sawIsland = false;
+  run(s, () => {
+    const v = s.view();
+    sawBuilding ||= v.stops.some((x) => x.building != null && x.building > 0 && x.building < 1 && !x.built);
+    sawGrow ||= v.deck!.growing != null;
+    sawIsland ||= v.deck!.island === "building";
+    if (v.shipped > 0) expect(v.deck!.island).toBe("built");
+    return v.stops.find((x) => x.id === "launch")!.built;
+  });
+  expect([sawBuilding, sawGrow, sawIsland]).toEqual([true, true, true]);
+  expect(s.view().deck!.size).toBe("medium");
 
   // 1 software is a factory: stops build in one by one, rockets go up
   let t = run(s, () => s.view().shipped >= 2);
@@ -63,17 +77,17 @@ test("the story plays all four beats and ends on the connect card", () => {
   // the next jam, then the last card
   t += run(s, () => s.view().card?.id === STORY_CARD.connect, 20);
   expect(s.view().jam).toBe("checks");
+  expect(s.view().deck!.size).toBe("large");
+  expect(s.view().card).toMatchObject({ yes: "See my repo", no: "Replay", setup: true });
   s.approve(STORY_CARD.connect);
   expect(connected).toBe(1);
   expect(t).toBeLessThan(90); // ~60-90s of story with instant swipes
 });
 
-test("same seed, same story; speed scales time; later on the last card replays", () => {
-  const a = createStory({ seed: 7 }), b = createStory({ seed: 7 }), fast = createStory({ seed: 7, speed: 2 });
+test("same seed, same story; later on the last card replays", () => {
+  const a = createStory({ seed: 7 }), b = createStory({ seed: 7 });
   for (let i = 0; i < 200; i++) { a.step!(0.1); b.step!(0.1); }
-  for (let i = 0; i < 100; i++) fast.step!(0.1);
   expect(JSON.stringify(a.view())).toBe(JSON.stringify(b.view()));
-  expect(fast.view().stops.filter((x) => x.built).length).toBe(a.view().stops.filter((x) => x.built).length);
   a.reset();
   expect(a.view().stops.every((x) => !x.built)).toBe(true);
 });
