@@ -1,3 +1,4 @@
+import { PRIVATE_SOCKET_TIMING, PrivateSocketTiming } from "../../server/src/private-socket-timing";
 import { settleFixtureLease } from "./request-lease";
 // PRIVATE, isolated test backend. Production/staging application entries never import this file.
 import { app } from "../../server/src/index";
@@ -93,7 +94,7 @@ export default {
     timing.mark("preview");
     const headers = new Headers(request.headers); headers.delete("x-shiptorio-test-delegation"); headers.set("cookie", cookie);
     const internal = new Request(request, { headers });
-    const localEnv = { ...env, [ISOLATED_TEST_CONTEXT]: true, ASSETS: { fetch: async () => new Response("No public fixture assets", { status: 404 }) } as unknown as Fetcher };
+    const localEnv = { ...env, [ISOLATED_TEST_CONTEXT]: true, [PRIVATE_SOCKET_TIMING]: new PrivateSocketTiming(), ASSETS: { fetch: async () => new Response("No public fixture assets", { status: 404 }) } as unknown as Fetcher };
     const repo = personaRepo(persona), provider = env.FIXTURE_PROVIDERS.get(env.FIXTURE_PROVIDERS.idFromName(persona));
     if (persona !== "test-newbie") {
       const fixture = env.FACTORY.get(env.FACTORY.idFromName(`repo:${990000 + Math.abs(personaId(persona))}`)) as unknown as { seedPersona(p: string, r: string, i: number): Promise<void>; setRepositoryId(id: number): Promise<void> };

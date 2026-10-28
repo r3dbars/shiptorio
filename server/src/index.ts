@@ -1,3 +1,4 @@
+import { privateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
 import { configuredAdmin } from "./admin-policy";
 import { auditAdmin } from "./admin-control";
 import { godRoutes } from "./admin-god";
@@ -101,7 +102,7 @@ const factory = async (env: Env, repo: string, repoId?: number) => {
 };
 
 
-const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+const signedIn = (c: { env: Env; req: { header(name: string): string | undefined; url: string } }) => measureSocket(privateSocketTiming(c.env), "app_signed_in", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
 
 type AppEnv = { Bindings: Env; Variables: { user: User; runner: RunnerIdentity; artNonce: string; gateResponse: boolean; guest: Guest } };
 const app = new Hono<AppEnv>();
@@ -122,9 +123,11 @@ app.use("*", async (c, next) => {
   const start = Date.now();
   return inTrace(trace, c.env, task => c.executionCtx.waitUntil(task), async () => {
     c.header("X-Request-ID", trace.requestId);
-    const user = await currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url));
+    const timing = privateSocketTiming(c.env);
+    const user = await measureSocket(timing, "app_trace_auth", () => currentUser(c.env, c.req.header("cookie") ?? null, new URL(c.req.url)));
     if (user) { trace.userId = accountIdentity(user.id); Sentry.setUser({ id: accountIdentity(user.id) }); }
     await next();
+    if (timing) c.res = timingResponse(c.res, timing);
     // A response can be replaced by auth, assets, or a websocket upgrade.
     c.header("X-Request-ID", trace.requestId);
     // A paired runner polls every 5s. Successful polls go to the console only, so they don't burn KV writes.
@@ -254,15 +257,16 @@ app.use("*", async (c, next) => {
     if (!user && !await selfhostSetupAccess(c.req.raw, c.env)) return c.json({ error: "login required" }, 401);
   }
   if (scoped) {
-    const user = await resolveUser(c.req.raw, c.env);
+    const timing = privateSocketTiming(c.env);
+    const user = await measureSocket(timing, "app_scope_auth", () => resolveUser(c.req.raw, c.env));
     if (!user) return c.json({ error: "login required" }, 401);
     const repo = match ? `${match[1]}/${match[2]}` : c.req.query("repo") ?? "";
     // Connector pages may disclose an inbound bearer URL or activate a mine on
     // GET; all connector management and repository mutations require writers.
     const authority = path.startsWith("/connect/") || !["GET", "HEAD"].includes(c.req.method) ? "write" : "read";
-    const view = await readAdminView(c.env,c.req.raw);
-    if (!validRepo(repo) || !(view?.repo === repo.toLowerCase() && (authority === "read" || view.writable)) && !await repoAccess(c.env, user, repo, authority)) return c.json({ error: "repository access denied" }, 403);
-    if (!view && match && (!await resourceQuota(c.env,user.login,'repo',repo) || !await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
+    const view = await measureSocket(timing, "app_admin_view", () => readAdminView(c.env,c.req.raw));
+    if (!validRepo(repo) || !(view?.repo === repo.toLowerCase() && (authority === "read" || view.writable)) && !await measureSocket(timing, "app_repo_access", () => repoAccess(c.env, user, repo, authority))) return c.json({ error: "repository access denied" }, 403);
+    if (!view && match && !await measureSocket(timing, "app_quotas", async () => await resourceQuota(c.env,user.login,'repo',repo) && await resourceQuota(c.env,user.login,'factory',repo))) return c.json({error:'repository/factory quota reached'},429);
     c.set("user", user);
   }
   await next();
@@ -843,13 +847,14 @@ app.get("/api/repos/:owner/:repo/factory", async (c) => {
   if (c.req.header("origin") !== new URL(c.req.url).origin) return c.json({ error: "invalid origin" }, 403);
   const repo = `${c.req.param("owner")}/${c.req.param("repo")}`;
   if (!REPO_RE.test(repo)) return c.json({ error: "bad repo" }, 400);
-  if (await factoryDeleted(c.env.DB, repo)) return c.json({ error: "factory deleted" }, 410);
-  const f = await factory(c.env, repo);
-  if (c.env.GITHUB_APP_ID && !await readAdminView(c.env,c.req.raw)) {
-    const installationId = await installationFor(c.env, repo);
-    if (installationId) await f.ensure(repo, installationId);
+  const timing = privateSocketTiming(c.env);
+  if (await measureSocket(timing, "app_deleted", () => factoryDeleted(c.env.DB, repo))) return c.json({ error: "factory deleted" }, 410);
+  const f = await measureSocket(timing, "app_factory_lookup", () => factory(c.env, repo));
+  if (c.env.GITHUB_APP_ID && !await measureSocket(timing, "app_admin_view", () => readAdminView(c.env,c.req.raw))) {
+    const installationId = await measureSocket(timing, "app_installation", () => installationFor(c.env, repo));
+    if (installationId) await measureSocket(timing, "app_ensure", () => f.ensure(repo, installationId));
   }
-  return f.fetch(c.req.raw);
+  return measureSocket(timing, "app_socket_fetch", () => f.fetch(c.req.raw));
 });
 
 async function installationFor(env: Env, repo: string): Promise<number> {

@@ -1,3 +1,4 @@
+import { PrivateSocketTiming, measureSocket, timingResponse } from "./private-socket-timing";
 import { assertRefreshItem, ownsRefreshPr, refreshTarget, RefreshBaseMoved } from "./runner-refresh";
 import { adminPaused, auditAdmin } from "./admin-control";
 import { activeAdminView, readAdminView, viewCookieValue } from "./admin-view";
@@ -3243,31 +3244,34 @@ class FactoryBase extends DurableObject<FactoryEnv> {
 
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== new URL(request.url).origin) return new Response("invalid origin", { status: 403 });
-    const auth = await browserSocketAuth(request, this.env);
-    return inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.#socketFetch(request, auth));
+    const env = this.env as FactoryEnv & { TEST_USERS?: string; FIXTURE_INSTANCE?: string };
+    const timing = env.PUBLIC_URL === "https://shiptorio.dev" && env.TEST_USERS === "on" && env.FIXTURE_INSTANCE === "shiptorio-fixture" ? new PrivateSocketTiming() : undefined;
+    const auth = await measureSocket(timing, "do_auth", () => browserSocketAuth(request, this.env));
+    const response = await inTrace({ requestId: request.headers.get("X-Request-ID") ?? crypto.randomUUID(), userId: auth?.userId === undefined ? undefined : accountIdentity(auth.userId) }, this.env, task => this.ctx.waitUntil(task), () => this.#socketFetch(request, auth, timing));
+    return timing && auth?.user && auth.user.id < 0 ? timingResponse(response, timing) : response;
   }
 
-  async #socketFetch(request: Request, auth: BrowserSocketAuth | null): Promise<Response> {
+  async #socketFetch(request: Request, auth: BrowserSocketAuth | null, timing?: PrivateSocketTiming): Promise<Response> {
 
     if (request.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
     const user = auth?.user;
     if (!auth || !user) return new Response("login required", { status: 401 });
     const match = new URL(request.url).pathname.match(/^\/api\/repos\/([^/]+)\/([^/]+)\/factory$/);
     const repo = match ? `${match[1]}/${match[2]}`.toLowerCase() : "";
-    await this.load();
-    const adminView = await readAdminView(this.env,request);
+    await measureSocket(timing, "do_load", () => this.load());
+    const adminView = await measureSocket(timing, "do_admin_view", () => readAdminView(this.env,request));
     if (viewCookieValue(request.headers.get("cookie")) && !adminView) return new Response("Admin view expired",{status:403});
-    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await repoAccess(this.env, user, repo)) return new Response("repository access denied", { status: 403 });
+    if (!validRepo(repo) || repo !== this.meta?.repo.toLowerCase() || !(adminView?.repo === repo) && !await measureSocket(timing, "do_repo_access", () => repoAccess(this.env, user, repo))) return new Response("repository access denied", { status: 403 });
     Object.assign(auth, { repo, user, ...(adminView ? {adminView:adminView.idHash} : {}) });
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server, ["web"]);
     server.serializeAttachment(auth);
-    const state = await this.load();
+    const state = await measureSocket(timing, "do_load", () => this.load());
 
     if (!browserSocketAllowed(auth, this.env, this.socketEpoch)) { server.close(1008, "Sign in again"); }
     else if (state) {
       const snapshot = this.redactor.value(structuredClone({ type: "snapshot", state } satisfies ServerToWeb));
-      server.send(await this.browserFrames.frame(snapshot, false));
+      server.send(await measureSocket(timing, "do_frame", () => this.browserFrames.frame(snapshot, false)));
     }
     else server.send(JSON.stringify({ type: "log", level: "warn", text: "No factory yet. Is the GitHub App installed on this repo?", at: Date.now() }));
     // Restoring the map must not wait for a new planner turn (or provider latency).
