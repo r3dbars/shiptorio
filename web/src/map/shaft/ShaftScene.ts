@@ -570,7 +570,8 @@ export class ShaftScene {
 
   // what's on screen sits higher when the bottom is covered (a card, a sheet, the phone controls)
   private applyBias() {
-    if (this.stage) this.stage.bias = biasFor(this.W, this.H, this.lift, !!this.home);
+    // the simple screen centres what the card is about, on every screen (journey round 3: "right in the center")
+    if (this.stage) this.stage.bias = this.hud.quiet && this.home ? { x: 0, y: 0 } : biasFor(this.W, this.H, this.lift, !!this.home);
   }
 
   private stationOfKey(key: string): string | undefined {

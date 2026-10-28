@@ -63,3 +63,19 @@ Pick 11, in Justin's words: the agent runs the game and keeps its own evals of w
 Later or dismiss. A dismiss is a chance to tweak the task or suggest something else. Over time it suggests what you
 actually take. Start very simple: a dots meter on the card (●●○) with one plain sentence, like "2 more yeses and the
 factory does this for you". The meter sits on the approve card where the `.tearn` line is now.
+
+## Round 3 picks (Justin, 2026-10-28 15:25)
+
+Same picks page, db doc `picks/journey3`.
+
+- **Glass:** smoky (the default). **Spotlight:** medium, and what the card is about sits in the middle of the screen,
+  phone and desktop (`ShaftScene.applyBias`: no bias on the simple screen while focused).
+- **Cards show the title only.** Gestures: right = Continue (a launch needs the swipe to cross over half the card, or
+  the held red button), left = Later, up = the details, down = never show this again, with an optional one-tap why
+  (Wrong idea → `wrong`, Do it differently next time → `once`; no tap → `once` after 6 s). Every gesture has a button.
+- **First card:** Go glows until your first Continue. **Count:** "1 of 9" with arrows.
+- **Top line:** hidden. It only shows when the factory itself is jammed (not when it's waiting on you: the card says that).
+- **After your last card:** zoom out over the whole factory, "All caught up. N things moving." Following your own
+  PRs through the factory is its own thread ("Follow your work through the factory").
+- **Mac setup card:** "Your Mac writes the code" (why first). **Lamp:** just the lamp, no words (#474).
+- **Dots meter:** "Approve 2 more like this and then it's automatic" (`LearnDots`, #480).
