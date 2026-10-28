@@ -20,30 +20,47 @@ type Px = (ax: number, ay: number, color: string) => void;
 
 // ---- shapes ------------------------------------------------------------------------------------------------
 
-/** A soft pixel blob, radius r art px: a filled diamond-ish disc (no arcs), core lighter than the rim. */
-export function blob(px: Px, r: number, rim: string, core: string) {
+/**
+ * A puff of steam or dust, radius r art px: banded shading lit from the upper right (highlight, light, mid, shadow
+ * from the ramp), dithered in a checker where two bands meet, and a lacy dithered rim that eats inward as `thin`
+ * goes 0 -> 1. No arcs: every px is tested on the grid.
+ */
+export function puff(px: Px, r: number, ramp: readonly string[], thin = 0, seed = 0) {
+  const [shadow, mid, light, high] = ramp;
+  const BANDS = [0.3, 0.5, 0.7]; // shadow | mid | light | high
   for (let y = -r; y <= r; y++)
     for (let x = -r; x <= r; x++) {
-      const d = x * x + y * y;
-      if (d > r * r + r * 0.6) continue;
-      px(x, y, d <= (r - 1) * (r - 1) && x >= -1 && y <= 0 ? core : rim); // light from the upper right
+      const d = Math.sqrt(x * x + y * y) / (r + 0.5);
+      if (d > 1) continue;
+      const checker = ((x + y + seed) & 1) === 0;
+      // thinning: the rim goes first, then holes open in a checker toward the core
+      if (d > 1 - thin * 0.9 && checker) continue;
+      if (thin > 0.6 && d > 0.95 - thin) continue;
+      const lit = 0.55 * (1 - d) + 0.45 * ((x - y) / (2 * r + 1) + 0.5);
+      let band = BANDS.findIndex((t) => lit < t);
+      if (band < 0) band = 3;
+      // dither the seam: just under a threshold, every other px takes the next band up
+      const t = BANDS[band];
+      if (t !== undefined && t - lit < 0.05 && checker) band++;
+      px(x, y, [shadow, mid, light, high][Math.min(3, band)]);
     }
 }
 
-// 7 x 6 check mark, 1 = ok green, 2 = soot outline
+// 10 x 8 check mark, a 2 px stroke so it has room for a bevel. h = lit top/right face, m = body, d = shadow
+// (bottom/left), g = white glint, o = soot outline.
 const CHECK = [
-  "0000022",
-  "0000212",
-  "2202122",
-  "2121220",
-  "0211200",
-  "0022000",
+  "0000000oo0",
+  "000000ohgo",
+  "00000ohmdo",
+  "oo00ohmdo0",
+  "ohoohmdo00",
+  "odmhmdo000",
+  "0odmdo0000",
+  "00ooo00000",
 ];
 export function check(px: Px) {
-  CHECK.forEach((row, y) => [...row].forEach((c, x) => {
-    if (c === "1") px(x - 3, y - 3, x >= 4 ? PALETTE.ok[2] : PALETTE.ok[1]);
-    else if (c === "2") px(x - 3, y - 3, PALETTE.soot[0]);
-  }));
+  const C: Record<string, string> = { h: PALETTE.ok[2], m: PALETTE.ok[1], d: PALETTE.ok[0], g: PALETTE.white[0], o: PALETTE.soot[0] };
+  CHECK.forEach((row, y) => [...row].forEach((c, x) => { if (C[c]) px(x - 5, y - 4, C[c]); }));
 }
 
 // 3 x 5 pixel letters, just what AUTOMATED needs
@@ -68,9 +85,13 @@ export function plate(px: Px, word = "AUTOMATED") {
       const ring = x === 1 || y === 1 || x === w - 2 || y === h - 2;
       px(x0 + x, y0 + y, edge ? PALETTE.soot[0] : ring ? (x >= w - 2 || y <= 1 ? PALETTE.ok[2] : PALETTE.ok[1]) : PALETTE.ok[0]);
     }
-  [...word].forEach((ch, i) => (FONT[ch] ?? []).forEach((row, y) => [...row].forEach((c, x) => {
-    if (c === "1") px(x0 + 3 + i * 4 + x, y0 + 3 + y, PALETTE.ok[2]);
+  px(x0 + w - 3, y0 + 2, PALETTE.white[0]); // glint where the light hits the bevel
+  // letters: a 1 px soot shadow down-left first, then the bright face, so they read as stamped in relief
+  const letters = (dx: number, dy: number, color: string) => [...word].forEach((ch, i) => (FONT[ch] ?? []).forEach((row, y) => [...row].forEach((c, x) => {
+    if (c === "1") px(x0 + 3 + i * 4 + x + dx, y0 + 3 + y + dy, color);
   })));
+  letters(-1, 1, PALETTE.soot[0]);
+  letters(0, 0, PALETTE.ok[2]);
 }
 
 // ---- effects -----------------------------------------------------------------------------------------------
@@ -86,39 +107,52 @@ export interface Fx {
 
 const fade = (f: number, n: number): 0.25 | 0.5 | 0.75 => (f < n * 0.4 ? 0.75 : f < n * 0.75 ? 0.5 : 0.25);
 
-/** A steam puff: rises 1 art px a frame and grows, then thins out. */
+const STEAM = [PALETTE.haze[1], PALETTE.haze[2], PALETTE.haze[3], PALETTE.white[0]] as const;
+const DUST = [PALETTE.plate[2], PALETTE.plate[4], PALETTE.haze[2], PALETTE.haze[3]] as const;
+
+/** A steam puff: rises 1 art px a frame and grows, then thins out from the rim in. */
 export function steamFx(x: number, y: number, size = 2, drift = 0): Fx {
   const frames = 8;
+  const seed = Math.round(x / P + y / P) & 1;
   return { x, y, t: 0, frames, draw(px, f, alpha) {
     alpha(fade(f, frames));
     const r = Math.min(size + 2, size + (f >> 1));
     const ox = Math.round((drift * f) / 3);
-    blob((ax, ay, c) => px(ax + ox, ay - f, c), r, PALETTE.haze[2], PALETTE.white[0]);
+    puff((ax, ay, c) => px(ax + ox, ay - f, c), r, STEAM, f / (frames - 1), seed + f);
   } };
 }
 
-/** Dust kicked out sideways along the floor: dir -1 left, 1 right. */
+/** Dust kicked out sideways along the floor: dir -1 left, 1 right. Rolls out, settles, thins. */
 export function dustFx(x: number, y: number, dir: -1 | 1): Fx {
   const frames = 6;
   return { x, y, t: 0, frames, draw(px, f, alpha) {
     alpha(fade(f, frames));
     const r = 1 + (f >> 1);
-    blob((ax, ay, c) => px(ax + dir * (2 + f * 2), ay - (f >> 1), c), r, PALETTE.plate[3], PALETTE.haze[3]);
+    puff((ax, ay, c) => px(ax + dir * (2 + f * 2), ay - (f >> 1), c), r, DUST, f / (frames - 1), f);
   } };
 }
 
 /** A green check that pops up 2 art px, holds, then is gone. */
 export function checkFx(x: number, y: number, holdFrames = 10): Fx {
-  return { x, y, t: 0, frames: 2 + holdFrames, draw(px, f) {
+  return { x, y, t: 0, frames: 2 + holdFrames, draw(px, f, alpha) {
     const lift = f === 0 ? 0 : f === 1 ? -3 : -2; // overshoot one px, settle
+    // a contact shadow on whatever it hovers over, on the light layer
+    alpha(0.5);
+    for (let x = -4; x <= 3; x++) px(x, 5, PALETTE.iron[0]);
+    alpha(1);
     check((ax, ay, c) => px(ax, ay + lift, c));
   } };
 }
 
 /** The AUTOMATED plate stamping on: drops 2 px onto its spot, holds, gone. */
 export function stampFx(x: number, y: number, holdFrames = 14): Fx {
-  return { x, y, t: 0, frames: 2 + holdFrames, draw(px, f) {
+  const w = plateWidth("AUTOMATED");
+  return { x, y, t: 0, frames: 2 + holdFrames, draw(px, f, alpha) {
     const drop = f === 0 ? -2 : 0;
+    // cast shadow down-left onto the station, light layer
+    alpha(0.5);
+    for (let ax = 0; ax < w; ax++) px(-Math.floor(w / 2) + ax - 1, 6, PALETTE.iron[0]);
+    alpha(1);
     plate((ax, ay, c) => px(ax, ay + drop, c));
   } };
 }
