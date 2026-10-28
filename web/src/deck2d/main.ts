@@ -34,7 +34,7 @@ const seed = Number(params.get("seed")) || 0;
   const shippy = ((shippyMod?.createShippy as CreateShippy | undefined) ?? fallbackShippy)(art);
   const cv = document.getElementById("world") as HTMLCanvasElement;
   const layers: DeckLayer[] = [];
-  for (const f of ["grow", "build", "launch"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
+  for (const f of ["grow", "build", "launch", "juice"]) { const m = await load(f, "createLayer"); if (m) layers.push((m.createLayer as CreateLayer)(art, bus)); }
   const engine = createEngine(cv, art, bus, shippy, layers);
 
   const mountCard = (cardMod?.mountCard as MountCard | undefined) ?? fallbackCard;
