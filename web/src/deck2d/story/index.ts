@@ -34,9 +34,9 @@ type Job = { kind: "stop"; id: StopId; line?: string } | { kind: "grow"; size: D
 type DeckSize = NonNullable<DeckView["deck"]>["size"];
 const JOB_SEC = { stop: 2.4, grow: 1.4 } as const;
 const JOB_GAP = 0.8;
-// The rocket island has its own long build (launch/timeline.ts LAUNCH_BUILD_SECONDS), so it rises in parallel,
+// The rocket island has its own build (launch/timeline.ts LAUNCH_BUILD_SECONDS), so it rises in parallel,
 // starting as soon as the repo is down. The engine won't launch until it's "built".
-const ISLAND_SEC = 26;
+const ISLAND_SEC = 12;
 const BEAT1: Job[] = [
   { kind: "stop", id: "repo", line: "Ideas land in your repo." },
   { kind: "stop", id: "planner", line: "A planner picks the next one." },
@@ -175,7 +175,7 @@ export function createStory(opts: StoryOptions = {}): Story {
       if (done) S.size = job.size;
     }
     if (done) { S.job = null; S.jobGap = JOB_GAP; }
-    if (done && !S.jobs.length && S.island === "building") S.caption = "Last piece: somewhere to launch from.";
+    if (done && !S.jobs.length && S.island === "building" && (S.islandProgress ?? 0) < 0.75) S.caption = "Last piece: somewhere to launch from.";
   }
 
   function director() {
